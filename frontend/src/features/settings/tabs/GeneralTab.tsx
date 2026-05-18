@@ -249,6 +249,7 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               <option value="nl">Nederlands</option>
               <option value="pt">Português (Brasil)</option>
               <option value="ru">Русский</option>
+              <option value="fr">Français</option>
             </select>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
               {t('settings.general.defaultLanguageHelp')}

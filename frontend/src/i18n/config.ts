@@ -8,6 +8,7 @@ import deTranslations from './locales/de.json';
 import ruTranslations from './locales/ru.json';
 import ptTranslations from './locales/pt.json';
 import nlTranslations from './locales/nl.json';
+import frTranslations from './locales/fr.json';
 
 i18n
   .use(HttpBackend)
@@ -32,6 +33,9 @@ i18n
       },
       nl: {
         translation: nlTranslations,
+      },
+      fr: {
+        translation: frTranslations,
       },
     },
 
