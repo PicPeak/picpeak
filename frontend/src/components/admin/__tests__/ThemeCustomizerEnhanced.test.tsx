@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { ReactElement } from 'react';
 
 import { ThemeCustomizerEnhanced } from '../ThemeCustomizerEnhanced';
 import type { ThemeConfig } from '../../../types/theme.types';
@@ -14,6 +16,16 @@ vi.mock('react-i18next', async () => {
     })
   };
 });
+
+// Component uses useQuery for admin-settings + fonts; tests don't exercise
+// those data paths, so just give them a client that won't retry on the
+// (intentionally absent) network.
+const renderWithQueryClient = (ui: ReactElement) => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } }
+  });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+};
 
 describe('ThemeCustomizerEnhanced', () => {
   const baseTheme: ThemeConfig = {
@@ -32,7 +44,7 @@ describe('ThemeCustomizerEnhanced', () => {
     const handleChange = vi.fn();
     const handleApply = vi.fn().mockResolvedValue(undefined);
 
-    render(
+    renderWithQueryClient(
       <ThemeCustomizerEnhanced
         value={baseTheme}
         onChange={handleChange}
@@ -55,7 +67,7 @@ describe('ThemeCustomizerEnhanced', () => {
   it('disables the Apply button while applying', () => {
     const handleChange = vi.fn();
 
-    render(
+    renderWithQueryClient(
       <ThemeCustomizerEnhanced
         value={baseTheme}
         onChange={handleChange}

@@ -58,7 +58,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   feedbackOptions,
   heroPhotoOverride,
   welcomeMessage,
-  onLogout
+  onLogout,
+  showOriginalFilename = false,
 }) => {
   // These props are passed by parent but we use our own feedback system, so mark as intentionally unused
   void _onPhotoClick;
@@ -379,6 +380,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           useEnhancedProtection={useEnhancedProtection}
           useCanvasRendering={useCanvasRendering}
           onFeedbackChange={onFeedbackChange}
+          showOriginalFilename={showOriginalFilename}
         />
       )}
 

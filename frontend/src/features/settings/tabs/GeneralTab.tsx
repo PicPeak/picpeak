@@ -4,6 +4,7 @@ import { Button, Card, Input, Loading } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
 import type { GeneralSettings } from '../hooks/useSettingsState';
 import { MAX_FILES_PER_UPLOAD_LIMIT } from '../hooks/useSettingsState';
+import { SUPPORTED_LANGUAGES } from "../../../components/common/LanguageSelector.tsx";
 
 interface GeneralTabProps {
   generalSettings: GeneralSettings;
@@ -161,6 +162,28 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
                 {t('settings.general.maxFilesPerUploadHelp', { max: MAX_FILES_PER_UPLOAD_LIMIT })}
               </p>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                {t('settings.general.maxUploadBatchSize')}
+              </label>
+              <Input
+                type="number"
+                value={generalSettings.max_upload_batch_size_mb}
+                onChange={(e) => {
+                  const parsed = parseInt(e.target.value, 10);
+                  setGeneralSettings(prev => ({
+                    ...prev,
+                    max_upload_batch_size_mb: Number.isFinite(parsed)
+                      ? Math.max(1, parsed)
+                      : prev.max_upload_batch_size_mb
+                  }));
+                }}
+                min="1"
+              />
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                {t('settings.general.maxUploadBatchSizeHelp')}
+              </p>
+            </div>
           </div>
 
           <div>
@@ -228,6 +251,21 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               {t('settings.general.enableShortGalleryUrlsHelp')}
             </p>
           </div>
+
+          <div>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={generalSettings.use_original_filenames_for_downloads}
+                onChange={(e) => setGeneralSettings(prev => ({ ...prev, use_original_filenames_for_downloads: e.target.checked }))}
+                className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+              />
+              <span className="ml-2 text-sm text-neutral-700 dark:text-neutral-300">{t('settings.general.useOriginalFilenames')}</span>
+            </label>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 ml-6 mt-1">
+              {t('settings.general.useOriginalFilenamesHelp')}
+            </p>
+          </div>
         </div>
       </Card>
 
@@ -244,11 +282,9 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
               onChange={(e) => setGeneralSettings(prev => ({ ...prev, default_language: e.target.value }))}
               className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             >
-              <option value="en">English</option>
-              <option value="de">Deutsch</option>
-              <option value="nl">Nederlands</option>
-              <option value="pt">Português (Brasil)</option>
-              <option value="ru">Русский</option>
+              {SUPPORTED_LANGUAGES.map(lang => (
+                <option key={lang.code} value={lang.code}>{lang.name}</option>
+              ))}
             </select>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
               {t('settings.general.defaultLanguageHelp')}

@@ -159,4 +159,33 @@ describe('publicSiteService', () => {
 
     expect(payload.branding.colors.accentDark).toBe('#5C8762');
   });
+
+  it('exposes surface tokens and uses theme-aware public site CSS', async () => {
+    const publicSiteRows = buildPublicSiteRows({});
+    const brandingRows = buildBrandingRows({
+      themeConfig: {
+        primaryColor: '#014E4E',
+        accentColor: '#017C7C',
+        backgroundColor: '#0D0D0D',
+        surfaceColor: '#111414',
+        elevatedColor: '#182222',
+        surfaceBorderColor: '#1E2E2E',
+        textColor: '#EBEBEB',
+        mutedTextColor: '#B6C2C2'
+      }
+    });
+
+    db.mockImplementationOnce(() => ({ whereIn: () => Promise.resolve(publicSiteRows) }));
+    db.mockImplementationOnce(() => ({ whereIn: () => Promise.resolve(brandingRows) }));
+
+    const payload = await getPublicSitePayload({ bypassCache: true });
+
+    expect(payload.branding.colors.surface).toBe('#111414');
+    expect(payload.branding.colors.elevated).toBe('#182222');
+    expect(payload.branding.colors.border).toBe('#1E2E2E');
+    expect(payload.branding.colors.mutedText).toBe('#B6C2C2');
+    expect(payload.baseCss).toContain('var(--brand-surface');
+    expect(payload.baseCss).toContain('var(--brand-muted-text');
+  });
+
 });

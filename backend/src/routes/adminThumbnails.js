@@ -3,7 +3,7 @@ const router = express.Router();
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { generateThumbnail } = require('../services/imageProcessor');
+const { generateThumbnail, ensurePreviewImage } = require('../services/imageProcessor');
 const path = require('path');
 const fs = require('fs').promises;
 const logger = require('../utils/logger');
@@ -25,7 +25,9 @@ router.get('/settings', adminAuth, requirePermission('photos.view'), async (req,
         'thumbnail_height',
         'thumbnail_fit',
         'thumbnail_quality',
-        'thumbnail_format'
+        'thumbnail_format',
+        // Lightbox preview tier (#492). Boolean, default false.
+        'lightbox_preview_enabled'
       ])
       .select('setting_key', 'setting_value');
 
@@ -51,7 +53,7 @@ router.get('/settings', adminAuth, requirePermission('photos.view'), async (req,
 // Update thumbnail settings
 router.put('/settings', adminAuth, requirePermission('photos.edit'), async (req, res) => {
   try {
-    const { width, height, fit, quality, format } = req.body;
+    const { width, height, fit, quality, format, lightbox_preview_enabled } = req.body;
     
     // Validate inputs
     if (width && (width < 50 || width > 1000)) {
@@ -77,14 +79,35 @@ router.put('/settings', adminAuth, requirePermission('photos.edit'), async (req,
     if (fit) updates.push({ setting_key: 'thumbnail_fit', setting_value: JSON.stringify(fit) });
     if (quality) updates.push({ setting_key: 'thumbnail_quality', setting_value: quality });
     if (format) updates.push({ setting_key: 'thumbnail_format', setting_value: JSON.stringify(format) });
+    // Lightbox preview tier (#492). Boolean — store JSON-stringified
+    // so the round-trip matches what migration 104 seeds.
+    if (typeof lightbox_preview_enabled === 'boolean') {
+      updates.push({
+        setting_key: 'lightbox_preview_enabled',
+        setting_value: JSON.stringify(lightbox_preview_enabled),
+      });
+    }
 
     for (const update of updates) {
-      await db('app_settings')
+      const updated = await db('app_settings')
         .where('setting_key', update.setting_key)
         .update({
           setting_value: update.setting_value,
           updated_at: db.fn.now()
         });
+      // Defensive insert when the row is missing — covers the case
+      // where lightbox_preview_enabled is being saved on an install
+      // that pre-dates migration 104. Existing thumbnail_* keys are
+      // seeded by migration 040 so the update path always wins for
+      // them; this only fires on the new key.
+      if (!updated) {
+        await db('app_settings').insert({
+          setting_key: update.setting_key,
+          setting_value: update.setting_value,
+          setting_type: update.setting_key === 'lightbox_preview_enabled' ? 'thumbnail' : 'thumbnail',
+          updated_at: db.fn.now(),
+        });
+      }
     }
     
     res.json({ 
@@ -167,6 +190,58 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
   } catch (error) {
     logger.error('Error starting thumbnail regeneration:', error);
     res.status(500).json({ error: 'Failed to start thumbnail regeneration' });
+  }
+});
+
+// Regenerate all preview-tier images (#492). Eager backfill counterpart
+// to ensurePreviewImage's lazy generation. Mirrors the regenerate
+// (thumbnails) endpoint above — same auth, same fire-and-forget shape,
+// same per-photo error handling.
+router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'), async (req, res) => {
+  try {
+    const { eventId } = req.body;
+
+    let query = db('photos').select('id', 'event_id', 'path', 'media_type', 'mime_type', 'preview_path');
+    if (eventId) query = query.where('event_id', eventId);
+    // Skip videos — preview tier is image-only.
+    query = query.where(function() {
+      this.whereNull('media_type').orWhere('media_type', '!=', 'video');
+    });
+
+    const photos = await query;
+    if (photos.length === 0) {
+      return res.json({ message: 'No image photos to regenerate previews for', count: 0 });
+    }
+
+    res.json({
+      message: `Started regenerating ${photos.length} previews`,
+      count: photos.length,
+    });
+
+    setImmediate(async () => {
+      let successCount = 0;
+      let errorCount = 0;
+      for (const photo of photos) {
+        try {
+          // Force regeneration regardless of existing preview state by
+          // nulling the cached path so ensurePreviewImage doesn't
+          // short-circuit on a stale isPreviewValid check.
+          const newPreviewPath = await ensurePreviewImage({ ...photo, preview_path: null });
+          if (newPreviewPath) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch (error) {
+          logger.error(`Error regenerating preview for photo ${photo.id}:`, error);
+          errorCount++;
+        }
+      }
+      logger.info(`Preview regeneration complete: ${successCount} success, ${errorCount} errors`);
+    });
+  } catch (error) {
+    logger.error('Error starting preview regeneration:', error);
+    res.status(500).json({ error: 'Failed to start preview regeneration' });
   }
 });
 

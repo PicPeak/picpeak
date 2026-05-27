@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import { parseContentDispositionFilename } from '../utils/contentDisposition';
 
 export interface AdminPhoto {
   id: number;
@@ -102,11 +103,18 @@ class PhotosService {
     const response = await api.get(`/admin/events/${eventId}/photos/${photoId}/download`, {
       responseType: 'blob'
     });
-    
+
+    // Read the filename from the server's Content-Disposition so the
+    // #493 original-filename toggle reaches disk for admin downloads
+    // too (see contentDisposition.ts).
+    const headerName =
+      response.headers['content-disposition'] || response.headers['Content-Disposition'];
+    const serverFilename = parseContentDispositionFilename(headerName);
+
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
     link.href = url;
-    link.download = filename;
+    link.download = serverFilename || filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

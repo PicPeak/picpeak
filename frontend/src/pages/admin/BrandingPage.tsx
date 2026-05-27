@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Eye, Palette, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { Button, Card, Input, ErrorBoundary, Loading } from '../../components/common';
+import { Button, Card, Input, ErrorBoundary, Loading, MarkdownContent } from '../../components/common';
 import { ThemeCustomizerEnhanced, GalleryPreview } from '../../components/admin';
 import { useTheme, type ThemeConfig, GALLERY_THEME_PRESETS } from '../../contexts/ThemeContext';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { settingsService, type BrandingSettings } from '../../services/settings.service';
 import { useTranslation } from 'react-i18next';
 import { buildResourceUrl } from '../../utils/url';
+import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
+import { CustomerDashboardBrandingCard } from '../../components/admin/CustomerDashboardBrandingCard';
 
 export const BrandingPage: React.FC = () => {
   const { t } = useTranslation();
@@ -32,6 +34,16 @@ export const BrandingPage: React.FC = () => {
     logo_display_mode: 'logo_and_text',
     hide_powered_by: false,
     force_color_mode: null,
+    login_logo_frame_enabled: true,
+    login_logo_size: 'medium',
+    facebook_url: '',
+    instagram_url: '',
+    whatsapp_url: '',
+    twitter_url: '',
+    youtube_url: '',
+    promo_markdown: '',
+    promo_position: 'above_footer',
+    promo_alignment: 'center',
   });
 
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(theme);
@@ -349,6 +361,133 @@ export const BrandingPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Social media links (#441) — appear as icons in the gallery
+              footer above the legal-links row. Empty = hidden. */}
+          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
+              {t('branding.socialMedia.title', 'Social Media')}
+            </h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+              {t('branding.socialMedia.help', 'Add URLs to render social-media icons in the gallery footer. Leave a field empty to hide that icon.')}
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input
+                label="Facebook"
+                type="url"
+                value={brandingSettings.facebook_url || ''}
+                onChange={(e) => handleBrandingChange('facebook_url', e.target.value)}
+                placeholder="https://facebook.com/yourstudio"
+              />
+              <Input
+                label="Instagram"
+                type="url"
+                value={brandingSettings.instagram_url || ''}
+                onChange={(e) => handleBrandingChange('instagram_url', e.target.value)}
+                placeholder="https://instagram.com/yourstudio"
+              />
+              <Input
+                label="WhatsApp"
+                type="text"
+                value={brandingSettings.whatsapp_url || ''}
+                onChange={(e) => handleBrandingChange('whatsapp_url', e.target.value)}
+                placeholder="https://wa.me/491234567890 or +491234567890"
+                helperText={t('branding.socialMedia.whatsappHelp', 'A wa.me URL or a phone number with country code (will be converted).')}
+              />
+              <Input
+                label="X / Twitter"
+                type="url"
+                value={brandingSettings.twitter_url || ''}
+                onChange={(e) => handleBrandingChange('twitter_url', e.target.value)}
+                placeholder="https://x.com/yourstudio"
+              />
+              <Input
+                label="YouTube"
+                type="url"
+                value={brandingSettings.youtube_url || ''}
+                onChange={(e) => handleBrandingChange('youtube_url', e.target.value)}
+                placeholder="https://youtube.com/@yourstudio"
+              />
+            </div>
+          </div>
+
+          {/* Promotional banner (#440) — markdown content rendered above
+              or below the gallery footer. Per-event override is set on
+              the Edit Event form; this is the global default. */}
+          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
+              {t('branding.promo.title', 'Gallery Promotional Banner')}
+            </h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+              {t('branding.promo.help', 'Markdown shown above or below the gallery footer (e.g. seasonal offer, print discount). Per-event overrides take priority.')}
+            </p>
+            <div className="space-y-3">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    {t('branding.promo.position', 'Position')}
+                  </label>
+                  <select
+                    value={brandingSettings.promo_position || 'above_footer'}
+                    onChange={(e) => handleBrandingChange('promo_position', e.target.value as 'above_footer' | 'below_footer')}
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="above_footer">{t('branding.promo.aboveFooter', 'Above footer')}</option>
+                    <option value="below_footer">{t('branding.promo.belowFooter', 'Below footer')}</option>
+                  </select>
+                </div>
+                {/* Horizontal alignment (#482). Defaults to center
+                    so the banner aligns with the gallery footer. */}
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                    {t('branding.promo.alignment', 'Alignment')}
+                  </label>
+                  <select
+                    value={brandingSettings.promo_alignment || 'center'}
+                    onChange={(e) => handleBrandingChange('promo_alignment', e.target.value as 'left' | 'center' | 'right')}
+                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="left">{t('branding.promo.alignLeft', 'Left')}</option>
+                    <option value="center">{t('branding.promo.alignCenter', 'Center (default — matches footer)')}</option>
+                    <option value="right">{t('branding.promo.alignRight', 'Right')}</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  {t('branding.promo.content', 'Content (markdown)')}
+                </label>
+                <textarea
+                  value={brandingSettings.promo_markdown || ''}
+                  onChange={(e) => handleBrandingChange('promo_markdown', e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm"
+                  rows={5}
+                  placeholder={t('branding.promo.placeholder', '**Spring offer**: 20% off prints with code SPRING — see the [print shop](https://example.com).')}
+                />
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                  {t('branding.promo.markdownHelp', 'Bold, italic, links, lists, and headings supported. HTML is stripped.')}
+                </p>
+              </div>
+              {brandingSettings.promo_markdown && brandingSettings.promo_markdown.trim() && (
+                <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-4 bg-neutral-50 dark:bg-neutral-800/40">
+                  <div className="text-xs uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
+                    {t('branding.promo.preview', 'Preview')}
+                  </div>
+                  {/* Preview mirrors the live gallery render — same
+                      alignment class so the admin sees what guests
+                      will see (#482). */}
+                  <MarkdownContent
+                    source={brandingSettings.promo_markdown}
+                    className={`text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm prose-a:text-primary-600 dark:prose-a:text-primary-400 ${
+                      brandingSettings.promo_alignment === 'left' ? 'text-left'
+                        : brandingSettings.promo_alignment === 'right' ? 'text-right'
+                        : 'text-center'
+                    }`}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
             <div>
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
@@ -559,6 +698,58 @@ export const BrandingPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Login-page-only logo controls (#354 follow-up). These do
+             NOT affect gallery/admin headers — those keep their own
+             logo_size knob above. */}
+          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
+            <h3 className="text-md font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+              {t('branding.loginLogo.title', 'Login pages logo')}
+            </h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+              {t('branding.loginLogo.subtitle', 'Controls only /admin/login and /customer/login. Gallery and admin chrome use the logo settings above.')}
+            </p>
+
+            <div className="space-y-4">
+              {/* Frame toggle */}
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={brandingSettings.login_logo_frame_enabled !== false}
+                  onChange={(e) => handleBrandingChange('login_logo_frame_enabled', e.target.checked)}
+                  className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+                />
+                <div>
+                  <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                    {t('branding.loginLogo.frame', 'Show tinted frame behind the logo')}
+                  </span>
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                    {t(
+                      'branding.loginLogo.frameHelp',
+                      'When off, the logo sits directly on the page background. Useful for logos that already include their own backdrop.',
+                    )}
+                  </p>
+                </div>
+              </label>
+
+              {/* Size selector */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  {t('branding.loginLogo.size', 'Logo size on login pages')}
+                </label>
+                <select
+                  value={brandingSettings.login_logo_size || 'medium'}
+                  onChange={(e) => handleBrandingChange('login_logo_size', e.target.value as 'small' | 'medium' | 'large' | 'xlarge')}
+                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                >
+                  <option value="small">{t('branding.loginLogo.sizeSmall', 'Small')}</option>
+                  <option value="medium">{t('branding.loginLogo.sizeMedium', 'Medium (default)')}</option>
+                  <option value="large">{t('branding.loginLogo.sizeLarge', 'Large')}</option>
+                  <option value="xlarge">{t('branding.loginLogo.sizeXLarge', 'Extra large')}</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           {/* White Label Settings */}
           <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
             <h3 className="text-md font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('branding.whiteLabel', 'White Label')}</h3>
@@ -736,6 +927,14 @@ export const BrandingPage: React.FC = () => {
           )}
         </Card>
 
+        {/* Customer dashboard branding (#354). Sits between "Company
+            Information" and "Gallery Theme" so it stays adjacent to the
+            other brand-visibility controls. Self-hides when the
+            customerPortal feature flag is off. */}
+        <div className="mb-6">
+          <CustomerDashboardBrandingSection />
+        </div>
+
         {/* Theme Customization */}
         <div className="mb-6">
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
@@ -799,4 +998,15 @@ export const BrandingPage: React.FC = () => {
       </div>
     </ErrorBoundary>
   );
+};
+
+/**
+ * Customer-dashboard branding card. Pulled out so the BrandingPage
+ * stays readable and the feature-flag gate is local — no conditional
+ * hooks in the parent.
+ */
+const CustomerDashboardBrandingSection: React.FC = () => {
+  const customerPortalEnabled = useFeatureEnabled('customerPortal');
+  if (!customerPortalEnabled) return null;
+  return <CustomerDashboardBrandingCard />;
 };

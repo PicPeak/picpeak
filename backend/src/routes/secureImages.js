@@ -8,6 +8,11 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
 const { withLocalCopy } = require('../services/imageProcessor');
 const { getStorage } = require('../services/storage');
+const {
+  getUseOriginalFilenames,
+  pickRawDownloadName,
+} = require('../services/downloadFilenameService');
+const { buildContentDisposition } = require('../utils/filenameSanitizer');
 
 const router = express.Router();
 
@@ -339,9 +344,16 @@ router.get('/:slug/secure-download/:photoId/:token',
         'download'
       );
 
+      // #493/#507: respect the original-filename toggle here too. The
+      // regular `/gallery/:slug/download/:photoId` route already does
+      // this — secure-images was missed in the original PR and ran
+      // even when the admin had opted into original camera filenames.
+      const useOriginal = await getUseOriginalFilenames();
+      const downloadName = pickRawDownloadName(photo, useOriginal);
+
       res.set({
         'Content-Type': photo.mime_type || 'image/jpeg',
-        'Content-Disposition': `attachment; filename="${photo.filename}"`,
+        'Content-Disposition': buildContentDisposition(downloadName),
         'Content-Length': fileBuffer.length,
         'X-Download-Protected': 'true'
       });

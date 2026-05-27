@@ -111,8 +111,12 @@ export const PhotoLikes: React.FC<PhotoLikesProps> = ({
       onClick={handleLikeClick}
       disabled={isSubmitting}
       className={`group flex items-center gap-2 px-3 py-2 rounded-lg transition-all ${
-        isLiked 
-          ? 'bg-red-50 text-red-600 hover:bg-red-100' 
+        // Filled solid-red state matches the lightbox toolbar (#538 bug
+        // 2). The previous `bg-red-50 text-red-600` was almost invisible
+        // — particularly on dark themes and coloured gallery backgrounds
+        // — so the user couldn't tell the like had registered.
+        isLiked
+          ? 'bg-red-500/80 text-white hover:bg-red-500'
           : 'bg-surface text-muted-theme hover:bg-black/10'
       } ${isSubmitting ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
       aria-label={isLiked ? t('feedback.unlike', 'Unlike') : t('feedback.like', 'Like')}

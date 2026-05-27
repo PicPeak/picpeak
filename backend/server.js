@@ -161,7 +161,12 @@ const corsOptions = {
       callback(null, false);
     }
   },
-  credentials: true
+  credentials: true,
+  // Expose Content-Disposition so split (cross-origin) frontend
+  // deployments can read the server's chosen download filename. Used
+  // by the gallery/admin download flows to honour the #493 "original
+  // camera filename" toggle on individual photo downloads (#507).
+  exposedHeaders: ['Content-Disposition'],
 };
 
 // Only attach CORS to API endpoints, not static assets
@@ -182,6 +187,10 @@ function composeInlineStyles(payload) {
   --brand-accent: ${branding.colors.accent};
   --brand-background: ${branding.colors.background};
   --brand-text: ${branding.colors.text};
+  --brand-surface: ${branding.colors.surface || '#ffffff'};
+  --brand-elevated: ${branding.colors.elevated || '#f5f5f5'};
+  --brand-border: ${branding.colors.border || '#e5e5e5'};
+  --brand-muted-text: ${branding.colors.mutedText || '#737373'};
 }`);
 
   if (payload.baseCss) {
@@ -503,8 +512,16 @@ if (process.env.NODE_ENV === 'development') {
 // Slack, Facebook, etc.) don't execute JS, so the SPA's client-side meta tags
 // never reach them. nginx routes UA-detected crawlers from /gallery/:slug to
 // here; humans still get the SPA via try_files.
-const { isSocialCrawler, handleGalleryOgRequest } = require('./src/services/galleryOgService');
+const {
+  isSocialCrawler,
+  handleGalleryOgRequest,
+  handleGalleryOgCover,
+} = require('./src/services/galleryOgService');
 app.get('/og/gallery/:slug', handleGalleryOgRequest);
+// Public hero-photo cover served as og:image when the admin has flipped
+// events.og_image_share_enabled (#474). Unauthenticated by design;
+// returns 404 unless the opt-in is on AND a hero_photo_id is set.
+app.get('/og/gallery/:slug/cover', handleGalleryOgCover);
 
 // robots.txt endpoint (dynamic, served from DB settings)
 const { generateRobotsTxt } = require('./src/services/robotsTxtService');
@@ -555,6 +572,7 @@ app.use('/api/gallery', require('./src/routes/galleryGuests'));
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin/auth', adminAuthRoutes);
 app.use('/api/admin/system', require('./src/routes/adminSystem'));
+app.use('/api/admin/feature-flags', require('./src/routes/adminFeatureFlags'));
 app.use('/api/admin/backup', require('./src/routes/adminBackup'));
 app.use('/api/admin/database-backup', require('./src/routes/adminDatabaseBackup'));
 app.use('/api/admin/feedback', require('./src/routes/adminFeedback'));
@@ -567,6 +585,44 @@ app.use('/api/admin/photo-export', require('./src/routes/adminPhotoExport'));
 app.use('/api/admin/css-templates', require('./src/routes/adminCssTemplates'));
 app.use('/api/admin/events', require('./src/routes/adminEventRename'));
 app.use('/api/admin/users', require('./src/routes/adminUsers'));
+// Customer portal (#354). The customerPortal feature flag is a
+// VISIBILITY toggle for the admin surface, not a kill switch for
+// customer access. Enforcement:
+//
+//   1. Frontend: RequireFeature guards + AdminSidebar visibility
+//      hide the Clients section when the flag is off. Customer-side
+//      /customer/* surfaces stay reachable.
+//   2. Backend: NO route-level gate. The admin surface is gated by
+//      adminAuth + permission checks (admin still has rights to
+//      manage customer records even if the section is hidden in
+//      their UI). The customer surface is gated by customerAuth +
+//      is_active checks on customer_accounts.
+//
+// For close-to-realtime access changes use the dedicated tools:
+//   - Revoke a customer's access to ONE gallery → "Manage galleries"
+//     dialog removes the event_customer_assignments row, which
+//     verifyGalleryAccess re-checks on every customer-minted JWT.
+//   - Lock out a customer entirely → "Deactivate" sets is_active=false
+//     and bumps password_changed_at, killing every outstanding JWT.
+//   - Toggle per-customer feature surfaces (calendar/quotes/bills)
+//     → toggles on the customer detail page.
+//
+// Putting the global flag in the kill-switch role was a mistake — a
+// stray click in Settings → Features would lock every paying
+// customer out at once. PR-revert moved the gate back to per-record.
+//
+// `noStoreCache` belt-and-braces the cache-control story for both
+// surfaces: any response — 200, 4xx, 5xx — carries `Cache-Control:
+// no-store` so a transient error (the now-reverted #458 410, a
+// permission flip mid-session, a backend restart) can't get pinned
+// in browser or intermediate caches and outlive its cause. See the
+// PR #458 → #470 history in the middleware file for context.
+const { noStoreCache } = require('./src/middleware/noStoreCache');
+app.use('/api/admin/customers', noStoreCache, require('./src/routes/adminCustomers'));
+// Customer-side surface (#354). Strictly separate from /api/admin/* —
+// distinct token type, distinct cookie, distinct middleware.
+app.use('/api/customer/auth', noStoreCache, require('./src/routes/customerAuth'));
+app.use('/api/customer', noStoreCache, require('./src/routes/customer'));
 app.use('/api/admin/event-types', require('./src/routes/adminEventTypes'));
 app.use('/api/admin/api-tokens', require('./src/routes/adminApiTokens'));
 app.use('/api/admin/webhooks', require('./src/routes/adminWebhooks'));

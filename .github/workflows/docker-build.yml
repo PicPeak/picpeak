@@ -45,6 +45,13 @@ env:
   # Computing them with bash parameter expansion (${VAR,,}) keeps the workflow
   # working on forks regardless of the owner's name casing.
 
+# Default GITHUB_TOKEN to read-only at the workflow level. Each job that
+# needs to publish to GHCR sets `packages: write` explicitly. This keeps
+# the rest of the workflow (and any future steps) from inheriting unneeded
+# privileges (CKV2_GHA_1).
+permissions:
+  contents: read
+
 jobs:
   # -----------------------------------------------------------------------------
   # Backend: per-arch build, then merge into a multi-arch manifest
@@ -62,6 +69,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Trivy uploads its SARIF to the Security tab from this job — see
+      # the "Run Trivy" step below. Scanning per-arch by digest (#476)
+      # is reliable; scanning the multi-arch index by tag from the
+      # merge-* job was not.
+      security-events: write
 
     steps:
     - name: Checkout code
@@ -146,13 +158,58 @@ jobs:
         if-no-files-found: error
         retention-days: 1
 
+    # Per-arch vulnerability scan (#476). Scanning the multi-arch
+    # manifest from the merge-* job by tag is unreliable — Trivy's
+    # remote resolver crashes intermittently with "no child with
+    # platform linux/amd64 in index". The fix is to scan each leg
+    # by its single-platform digest right here, where it just landed
+    # in GHCR. Tag pinned (was @master) so the action + bundled
+    # Trivy binary don't float between runs.
+    #
+    # exit-code is left unset (=0) for now: Trivy reports findings
+    # to the Security tab but doesn't fail the build. Flipping that
+    # to '1' to actually gate CI is a deliberate follow-up — needs an
+    # audit pass first so the next beta build doesn't surprise red.
+    - name: Run Trivy vulnerability scanner (per-arch, by digest)
+      if: steps.push-decision.outputs.push == 'true'
+      uses: aquasecurity/trivy-action@v0.36.0
+      env:
+        # docker/build-push-action wraps every push in an OCI index
+        # (carries the SLSA provenance attestation alongside the
+        # actual image). Trivy's remote backend defaults to
+        # linux/amd64 regardless of host arch when resolving an
+        # index, which makes the arm64 leg crash with "no child
+        # with platform linux/amd64". Telling Trivy which child to
+        # scan keeps the provenance attestation intact and fixes
+        # the resolver crash. Pin to matrix.platform so each leg
+        # scans its own arch.
+        TRIVY_PLATFORM: ${{ matrix.platform }}
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        format: 'sarif'
+        output: 'trivy-backend-${{ env.PLATFORM_PAIR }}.sarif'
+        severity: 'CRITICAL,HIGH'
+        timeout: '10m'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      if: steps.push-decision.outputs.push == 'true'
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: 'trivy-backend-${{ env.PLATFORM_PAIR }}.sarif'
+        # Distinct category per arch so the Security tab surfaces
+        # per-platform findings independently — an amd64-only CVE in
+        # a base layer doesn't get masked by the arm64 scan.
+        category: 'backend-vulnerabilities-${{ env.PLATFORM_PAIR }}'
+
   merge-backend:
     needs: build-backend
     runs-on: ubuntu-latest
+    # No security-events permission here — vulnerability scanning moved
+    # to per-arch build-backend jobs (#476). This job's only job is to
+    # combine the per-arch digests into a multi-arch manifest.
     permissions:
       contents: read
       packages: write
-      security-events: write
     # Only run when at least one digest was pushed (i.e. not on PRs without push intent).
     if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
 
@@ -224,23 +281,6 @@ jobs:
       run: |
         docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:${{ steps.meta-backend.outputs.version }}
 
-    - name: Run Trivy vulnerability scanner
-      if: github.event_name != 'pull_request' && steps.login-ghcr.outcome == 'success'
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}:${{ steps.meta-backend.outputs.version }}
-        format: 'sarif'
-        output: 'trivy-backend.sarif'
-        severity: 'CRITICAL,HIGH'
-        timeout: '10m'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      if: github.event_name != 'pull_request' && steps.login-ghcr.outcome == 'success'
-      uses: github/codeql-action/upload-sarif@v4
-      with:
-        sarif_file: 'trivy-backend.sarif'
-        category: 'backend-vulnerabilities'
-
   # -----------------------------------------------------------------------------
   # Frontend: per-arch build, then merge into a multi-arch manifest
   # -----------------------------------------------------------------------------
@@ -257,6 +297,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # See build-backend for the rationale (#476). Same pattern: per-arch
+      # vulnerability scan by digest, SARIF uploaded to the Security tab.
+      security-events: write
 
     steps:
     - name: Checkout code
@@ -341,13 +384,40 @@ jobs:
         if-no-files-found: error
         retention-days: 1
 
+    # Per-arch vulnerability scan (#476). See build-backend for the
+    # full rationale; identical pattern here, only the image-ref +
+    # SARIF filename + category change.
+    - name: Run Trivy vulnerability scanner (per-arch, by digest)
+      if: steps.push-decision.outputs.push == 'true'
+      uses: aquasecurity/trivy-action@v0.36.0
+      env:
+        # See build-backend for the rationale — pin Trivy's platform
+        # to the matrix arch so its remote-index resolver picks the
+        # right child instead of defaulting to linux/amd64 and
+        # crashing on the arm64 leg.
+        TRIVY_PLATFORM: ${{ matrix.platform }}
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        format: 'sarif'
+        output: 'trivy-frontend-${{ env.PLATFORM_PAIR }}.sarif'
+        severity: 'CRITICAL,HIGH'
+        timeout: '10m'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      if: steps.push-decision.outputs.push == 'true'
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: 'trivy-frontend-${{ env.PLATFORM_PAIR }}.sarif'
+        category: 'frontend-vulnerabilities-${{ env.PLATFORM_PAIR }}'
+
   merge-frontend:
     needs: build-frontend
     runs-on: ubuntu-latest
+    # See merge-backend — vulnerability scanning moved to the per-arch
+    # build-frontend matrix (#476). This job only publishes the manifest.
     permissions:
       contents: read
       packages: write
-      security-events: write
     if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
 
     steps:
@@ -417,23 +487,6 @@ jobs:
     - name: Inspect manifest
       run: |
         docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ steps.meta-frontend.outputs.version }}
-
-    - name: Run Trivy vulnerability scanner
-      if: github.event_name != 'pull_request' && steps.login-ghcr.outcome == 'success'
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ steps.meta-frontend.outputs.version }}
-        format: 'sarif'
-        output: 'trivy-frontend.sarif'
-        severity: 'CRITICAL,HIGH'
-        timeout: '10m'
-
-    - name: Upload Trivy scan results to GitHub Security tab
-      if: github.event_name != 'pull_request' && steps.login-ghcr.outcome == 'success'
-      uses: github/codeql-action/upload-sarif@v4
-      with:
-        sarif_file: 'trivy-frontend.sarif'
-        category: 'frontend-vulnerabilities'
 
   summary:
     needs: [build-backend, merge-backend, build-frontend, merge-frontend]

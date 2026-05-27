@@ -9,6 +9,30 @@ import { cmsService } from '../../services/cms.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import '../../styles/prose-overrides.css';
 
+// Force rel="noopener noreferrer" on target="_blank" anchors in CMS-authored
+// HTML so editors can't accidentally (or maliciously) introduce reverse
+// tabnabbing via the legal pages.
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A' && node.getAttribute('target') === '_blank') {
+    node.setAttribute('rel', 'noopener noreferrer');
+  }
+});
+
+// CMS-configured external_url may be edited by lower-privileged staff; reject
+// anything outside http(s) so the legal route can't be turned into a
+// javascript:/data: launcher.
+const sanitizeExternalUrl = (url: string): string | null => {
+  try {
+    const parsed = new URL(url, window.location.origin);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
 export const LegalPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
   const { i18n } = useTranslation();
@@ -47,12 +71,15 @@ export const LegalPage: React.FC = () => {
   // External-URL override: full-page redirect so the visitor lands on the
   // operator's own canonical legal page. Use replace() so the back button
   // returns to the gallery instead of looping back through the redirect.
-  const willRedirect = !!(page?.use_external_url && page?.external_url);
+  const safeExternalUrl = page?.use_external_url && page?.external_url
+    ? sanitizeExternalUrl(page.external_url)
+    : null;
+  const willRedirect = !!safeExternalUrl;
   useEffect(() => {
-    if (willRedirect && page?.external_url) {
-      window.location.replace(page.external_url);
+    if (safeExternalUrl) {
+      window.location.replace(safeExternalUrl);
     }
-  }, [willRedirect, page?.external_url]);
+  }, [safeExternalUrl]);
 
   if (isLoading || willRedirect) {
     return (

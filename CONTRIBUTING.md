@@ -38,7 +38,7 @@ Unsure where to begin? You can start by looking through these issues:
 
 ### Pull Requests
 
-1. **Fork the repo** and create your branch from `main`
+1. **Fork the repo** and create your branch from `beta`
 2. **Install dependencies**:
    ```bash
    cd backend && npm install

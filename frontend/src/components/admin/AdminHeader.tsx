@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Menu, User, LogOut, Settings, Bell, Lock, CheckCircle, Trash2, Sun, Moon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
-import { useLocalizedTimeAgo } from '../../hooks/useLocalizedTimeAgo';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { useAdminAuth } from '../../contexts';
@@ -25,8 +24,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick }) => {
   const { user, logout } = useAdminAuth();
   const { isDark, toggle: toggleDarkMode, forcedMode } = useAdminDarkMode();
   const { t } = useTranslation();
-  const { format } = useLocalizedDate();
-  const { formatTimeAgo } = useLocalizedTimeAgo();
+  const { format, formatDistanceToNow } = useLocalizedDate();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -190,7 +188,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick }) => {
                                   {notificationsService.formatNotificationMessage(notification)}
                                 </p>
                                 <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                                  {formatTimeAgo(notification.createdAt)}
+                                  {formatDistanceToNow(notification.createdAt, { addSuffix: true })}
                                 </p>
                               </div>
                             </div>

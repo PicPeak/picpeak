@@ -1,0 +1,227 @@
+name: Fresh-install smoke
+
+# Verifies that a clean Postgres install boots cleanly under the same
+# conditions a new user hits on their first `docker compose up -d`. The
+# specific scenarios this guards against — see #484 for the original
+# reproduction:
+#
+#   1. Bind-mounted host directories owned by a UID other than 1001
+#      (the container's nodejs user). The entrypoint must self-chown
+#      and drop privileges via su-exec.
+#   2. Cold-start Postgres with no prior schema (the FK-order bug fixed
+#      in #494, the index/created_at error fixed in #511, and any
+#      future migration-order issue that only surfaces on an empty DB).
+#
+# Triggers only on changes that touch the install path so unrelated PRs
+# don't pay the build cost.
+
+on:
+  push:
+    branches: [main, beta]
+    paths:
+      - 'backend/Dockerfile'
+      - 'backend/wait-for-db.sh'
+      - 'backend/migrations/**'
+      - 'backend/package*.json'
+      - 'docker-compose.production.yml'
+      - '.github/workflows/install-smoke.yml'
+  pull_request:
+    branches: [main, beta]
+    paths:
+      - 'backend/Dockerfile'
+      - 'backend/wait-for-db.sh'
+      - 'backend/migrations/**'
+      - 'backend/package*.json'
+      - 'docker-compose.production.yml'
+      - '.github/workflows/install-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build for the runner's arch only — we just need a runnable image.
+      # The full multi-arch build is the docker-build workflow's job.
+      - name: Build backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          load: true
+          tags: picpeak-backend:smoke
+          cache-from: type=gha,scope=install-smoke
+          cache-to: type=gha,mode=max,scope=install-smoke
+
+      - name: Create Docker network
+        run: docker network create picpeak-smoke
+
+      # Mount as UID 1000 (the typical GitHub Actions runner user, and a
+      # common mismatch case on Linux hosts). The entrypoint must chown
+      # this to 1001 itself — that's the regression we're guarding.
+      - name: Prepare host bind-mount dirs owned by UID 1000
+        run: |
+          mkdir -p smoke-mounts/storage smoke-mounts/data smoke-mounts/logs
+          chmod 755 smoke-mounts smoke-mounts/*
+          ls -ld smoke-mounts/*
+
+      - name: Start Postgres
+        run: |
+          docker run -d --name picpeak-smoke-pg --network picpeak-smoke \
+            -e POSTGRES_USER=picpeak \
+            -e POSTGRES_PASSWORD=smokepass \
+            -e POSTGRES_DB=picpeak_prod \
+            --health-cmd="pg_isready -U picpeak -d picpeak_prod" \
+            --health-interval=2s --health-timeout=2s --health-retries=30 \
+            postgres:15-alpine
+
+      - name: Wait for Postgres healthy
+        run: |
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' picpeak-smoke-pg 2>/dev/null || echo starting)
+            if [ "$status" = "healthy" ]; then
+              echo "postgres healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "postgres did not become healthy in 60s"
+          docker logs picpeak-smoke-pg
+          exit 1
+
+      - name: Start backend with mismatched-UID bind mounts (fresh install)
+        run: |
+          docker run -d --name picpeak-smoke-bk --network picpeak-smoke \
+            -e NODE_ENV=production \
+            -e JWT_SECRET=smoketestsecretvalueof32characters \
+            -e DB_HOST=picpeak-smoke-pg \
+            -e DB_USER=picpeak \
+            -e DB_PASSWORD=smokepass \
+            -e DB_NAME=picpeak_prod \
+            -e ADMIN_EMAIL=admin@smoke.local \
+            -e ADMIN_PASSWORD=smokeAdminPass12345 \
+            -e STORAGE_PATH=/app/storage \
+            -v "$PWD/smoke-mounts/storage:/app/storage" \
+            -v "$PWD/smoke-mounts/data:/app/data" \
+            -v "$PWD/smoke-mounts/logs:/app/logs" \
+            picpeak-backend:smoke
+
+      - name: Wait for backend healthy
+        run: |
+          for i in $(seq 1 120); do
+            status=$(docker inspect -f '{{.State.Status}}' picpeak-smoke-bk 2>/dev/null || echo missing)
+            health=$(docker inspect -f '{{.State.Health.Status}}' picpeak-smoke-bk 2>/dev/null || echo none)
+            if [ "$status" = "exited" ]; then
+              echo "FAIL: backend exited during cold-start (restart loop scenario)"
+              docker logs picpeak-smoke-bk
+              echo "--- error.log ---"
+              cat smoke-mounts/logs/error.log 2>/dev/null || echo "(no error.log)"
+              exit 1
+            fi
+            if [ "$health" = "healthy" ]; then
+              echo "backend healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "FAIL: backend did not become healthy in 120s"
+          docker ps -a
+          docker logs picpeak-smoke-bk
+          exit 1
+
+      - name: Verify chown happened (container view)
+        run: |
+          # All three dirs should now be owned by nodejs (UID 1001).
+          # If the entrypoint's self-chown branch didn't fire, they'd
+          # still be owned by the runner UID and node would have hit
+          # EACCES creating storage subdirs.
+          for d in /app/storage /app/data /app/logs; do
+            owner_uid=$(docker exec picpeak-smoke-bk stat -c '%u' "$d")
+            if [ "$owner_uid" != "1001" ]; then
+              echo "FAIL: $d is owned by UID $owner_uid (expected 1001)"
+              exit 1
+            fi
+            echo "ok: $d owned by UID $owner_uid"
+          done
+
+      - name: Verify app is actually serving
+        run: |
+          # /health is what docker's HEALTHCHECK polls, but hit it
+          # directly to confirm the response shape matches what the
+          # frontend + reverse proxy expect.
+          body=$(docker exec picpeak-smoke-bk wget -qO- http://localhost:3000/health)
+          echo "/health => $body"
+          echo "$body" | grep -q '"status":"ok"' || {
+            echo "FAIL: /health did not return status:ok"
+            exit 1
+          }
+
+      - name: Verify node runs as nodejs (not root)
+        run: |
+          # dumb-init runs as root (PID 1), node must be running as
+          # nodejs (UID 1001) — if su-exec drop didn't happen the app
+          # would be running as root which is the security regression
+          # we're guarding against. Alpine ships BusyBox ps, which
+          # doesn't support `-p PID` or pgrep, so list + awk instead.
+          user=$(docker exec picpeak-smoke-bk ps -o user,comm | awk '$2=="node" {print $1; exit}')
+          if [ "$user" != "nodejs" ]; then
+            echo "FAIL: node running as '$user' (expected nodejs)"
+            docker exec picpeak-smoke-bk ps -o pid,user,comm
+            exit 1
+          fi
+          echo "ok: node running as $user"
+
+      - name: Verify no restart loop
+        run: |
+          restart_count=$(docker inspect -f '{{.RestartCount}}' picpeak-smoke-bk)
+          if [ "$restart_count" -gt 0 ]; then
+            echo "FAIL: container restarted $restart_count time(s) — install loop bug returning"
+            docker logs picpeak-smoke-bk
+            exit 1
+          fi
+          echo "ok: 0 restarts"
+
+      # Restart with `--user 5005:5005` (no root, can't chown) against
+      # bind mounts owned by 1000 — entrypoint must fail loud with the
+      # actionable preflight error, not silently restart-loop.
+      - name: Verify preflight fails loud on unwritable mounts
+        run: |
+          docker rm -f picpeak-smoke-bk2 2>/dev/null || true
+          set +e
+          out=$(docker run --rm --user 5005:5005 --network picpeak-smoke \
+            -e NODE_ENV=production -e JWT_SECRET=x \
+            -e DB_HOST=picpeak-smoke-pg -e DB_USER=picpeak \
+            -e DB_PASSWORD=smokepass -e DB_NAME=picpeak_prod \
+            -e STORAGE_PATH=/app/storage \
+            -v "$PWD/smoke-mounts/storage:/app/storage" \
+            -v "$PWD/smoke-mounts/data:/app/data" \
+            -v "$PWD/smoke-mounts/logs:/app/logs" \
+            picpeak-backend:smoke 2>&1)
+          rc=$?
+          set -e
+          echo "$out"
+          if [ $rc -eq 0 ]; then
+            echo "FAIL: preflight should have exited non-zero"
+            exit 1
+          fi
+          echo "$out" | grep -q "is not writable by UID 5005" || {
+            echo "FAIL: preflight error message missing or wrong"
+            exit 1
+          }
+          echo "ok: preflight failed loud with actionable error"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f picpeak-smoke-bk picpeak-smoke-bk2 picpeak-smoke-pg 2>/dev/null || true
+          docker network rm picpeak-smoke 2>/dev/null || true

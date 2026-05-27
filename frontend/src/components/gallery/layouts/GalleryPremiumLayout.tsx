@@ -6,8 +6,10 @@ import Thumbnails from 'yet-another-react-lightbox/plugins/thumbnails';
 import Zoom from 'yet-another-react-lightbox/plugins/zoom';
 import Fullscreen from 'yet-another-react-lightbox/plugins/fullscreen';
 import Download from 'yet-another-react-lightbox/plugins/download';
+import Captions from 'yet-another-react-lightbox/plugins/captions';
 import 'yet-another-react-lightbox/styles.css';
 import 'yet-another-react-lightbox/plugins/thumbnails.css';
+import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -42,6 +44,10 @@ interface PhotoCardProps {
   useEnhancedProtection?: boolean;
   useCanvasRendering?: boolean;
   feedbackEnabled?: boolean;
+  // #506: track the per-event "allow likes" toggle so the per-photo
+  // Like button respects it. `feedbackEnabled` alone isn't enough —
+  // an event can have feedback on but likes specifically disabled.
+  allowLikes?: boolean;
   index: number;
 }
 
@@ -61,6 +67,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   useEnhancedProtection = false,
   useCanvasRendering = false,
   feedbackEnabled = false,
+  allowLikes = false,
   index
 }) => {
   // Note: height is passed but not used as we maintain aspect ratio via width
@@ -113,15 +120,18 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         {isSelected && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
       </button>
 
-      {/* Like Button */}
-      <button
-        onClick={onLike}
-        className={`gallery-premium-like-btn ${isLiked ? 'liked' : ''}`}
-      >
-        <Heart
-          className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`}
-        />
-      </button>
+      {/* Like Button — #506: only when feedback master is on AND the
+          per-event "allow likes" sub-toggle is on. */}
+      {feedbackEnabled && allowLikes && (
+        <button
+          onClick={onLike}
+          className={`gallery-premium-like-btn ${isLiked ? 'liked' : ''}`}
+        >
+          <Heart
+            className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`}
+          />
+        </button>
+      )}
 
       {/* Selection Border */}
       {isSelected && (
@@ -177,7 +187,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   feedbackEnabled = false,
   feedbackOptions,
   heroPhotoOverride,
-  onLogout
+  onLogout,
+  showOriginalFilename = false,
 }) => {
   // These props are passed by parent but we use our own lightbox, so mark as intentionally unused
   void _onPhotoClick;
@@ -225,16 +236,20 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }));
   }, [filteredPhotos]);
 
-  // Lightbox slides
+  // Lightbox slides. `title` powers the Captions plugin — only emitted
+  // when the admin has flipped the original-filenames toggle (#508).
   const slides = useMemo(() => {
     return filteredPhotos.map(photo => ({
       src: photo.url,
       alt: photo.filename,
       width: photo.width || 1200,
       height: photo.height || 800,
-      download: allowDownloads ? photo.url : undefined
+      download: allowDownloads ? photo.url : undefined,
+      title: showOriginalFilename
+        ? (photo.original_filename || photo.filename)
+        : undefined,
     }));
-  }, [filteredPhotos, allowDownloads]);
+  }, [filteredPhotos, allowDownloads, showOriginalFilename]);
 
   const handleLike = useCallback(async (photo: Photo, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -502,6 +517,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                   useEnhancedProtection={useEnhancedProtection}
                   useCanvasRendering={useCanvasRendering}
                   feedbackEnabled={feedbackEnabled}
+                  allowLikes={!!feedbackOptions?.allowLikes}
                   index={photoIndex}
                 />
               );
@@ -528,7 +544,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         close={() => setLightboxIndex(-1)}
         index={lightboxIndex}
         slides={slides}
-        plugins={allowDownloads ? [Thumbnails, Zoom, Fullscreen, Download] : [Thumbnails, Zoom, Fullscreen]}
+        plugins={[
+          Thumbnails,
+          Zoom,
+          Fullscreen,
+          ...(allowDownloads ? [Download] : []),
+          ...(showOriginalFilename ? [Captions] : []),
+        ]}
         animation={{ fade: 300, swipe: 250 }}
         styles={{
           container: { backgroundColor: 'rgba(0, 0, 0, 0.95)' },

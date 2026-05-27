@@ -17,11 +17,12 @@ import {
   CheckCircle,
   XCircle,
 } from 'lucide-react';
-import { parseISO, formatDistanceToNow, isPast } from 'date-fns';
+import { parseISO, isPast } from 'date-fns';
 
 import { Button, Input, Card, Loading } from '../../components/common';
 import { userManagementService } from '../../services/userManagement.service';
 import type { AdminUser, AdminRole, AdminInvitation } from '../../types';
+import { useLocalizedDate } from "../../hooks";
 
 type TabType = 'users' | 'invitations';
 
@@ -368,6 +369,7 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 export const UserManagementPage: React.FC = () => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { formatDistanceToNow } = useLocalizedDate()
 
   // State
   const [activeTab, setActiveTab] = useState<TabType>('users');

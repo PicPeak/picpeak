@@ -15,8 +15,18 @@ RUN npm ci --legacy-peer-deps
 # Copy source code
 COPY . .
 
+# Run as non-root: the node:alpine image ships a `node` user (uid 1000).
+RUN chown -R node:node /app
+USER node
+
 # Expose the development server port
 EXPOSE 3005
+
+# Vite returns 200 on '/' once it's serving the SPA — good enough for a
+# liveness probe in dev. start-period is long because cold dep-optimize on
+# first run can take 20-30s.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3005/ || exit 1
 
 # Start development server
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3005"]

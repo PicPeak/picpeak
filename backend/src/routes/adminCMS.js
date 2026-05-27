@@ -73,7 +73,8 @@ router.put('/pages/:slug', adminAuth, requirePermission('cms.edit'), [
   body('content_de').optional().isString(),
   body('logo_url').optional({ nullable: true }).isString(),
   body('use_external_url').optional().isBoolean(),
-  body('external_url').optional({ nullable: true }).isString()
+  body('external_url').optional({ nullable: true }).isString(),
+  body('show_in_footer').optional().isBoolean()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -126,6 +127,9 @@ router.put('/pages/:slug', adminAuth, requirePermission('cms.edit'), [
     if (Object.prototype.hasOwnProperty.call(req.body, 'external_url')) {
       const trimmed = typeof external_url === 'string' ? external_url.trim() : '';
       updateFields.external_url = trimmed || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'show_in_footer')) {
+      updateFields.show_in_footer = !!req.body.show_in_footer;
     }
 
     await db('cms_pages').where('slug', slug).update(updateFields);

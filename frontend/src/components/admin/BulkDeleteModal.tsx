@@ -1,19 +1,21 @@
 import React, { useState } from 'react';
-import { Trash2, AlertTriangle, X, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Trash2, AlertTriangle, X, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Input } from '../common';
 import type { Event } from '../../types';
 
+// The exact literal a user must type to confirm bulk deletion. Kept English
+// across locales (matching GitHub's repo-deletion pattern) so it can never
+// be interpreted as autofillable text or be triggered by passkey/Windows
+// Hello flows on a password field — see issue #417.
+const CONFIRM_LITERAL = 'DELETE';
+
 interface BulkDeleteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (password: string) => Promise<void>;
+  onConfirm: () => Promise<void>;
   selectedEvents: Event[];
   isLoading?: boolean;
-  /** Set when the server responded 401 INVALID_PASSWORD; surfaces inline. */
-  passwordError?: string | null;
-  /** Clear the inline password error when the user starts typing again. */
-  onPasswordErrorClear?: () => void;
 }
 
 export const BulkDeleteModal: React.FC<BulkDeleteModalProps> = ({
@@ -22,25 +24,18 @@ export const BulkDeleteModal: React.FC<BulkDeleteModalProps> = ({
   onConfirm,
   selectedEvents,
   isLoading = false,
-  passwordError = null,
-  onPasswordErrorClear,
 }) => {
   const { t } = useTranslation();
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
 
   if (!isOpen) return null;
 
   const count = selectedEvents.length;
+  const confirmed = confirmText === CONFIRM_LITERAL;
 
   const handleSubmit = async () => {
-    if (!password || isLoading) return;
-    await onConfirm(password);
-  };
-
-  const handlePasswordChange = (val: string) => {
-    setPassword(val);
-    if (passwordError && onPasswordErrorClear) onPasswordErrorClear();
+    if (!confirmed || isLoading) return;
+    await onConfirm();
   };
 
   return (
@@ -61,7 +56,6 @@ export const BulkDeleteModal: React.FC<BulkDeleteModalProps> = ({
             </button>
           </div>
 
-          {/* Processing-state banner replaces the warning + form when in flight. */}
           {isLoading ? (
             <div className="py-8 text-center">
               <Loader2 className="w-8 h-8 mx-auto mb-3 animate-spin text-red-600 dark:text-red-400" />
@@ -90,28 +84,22 @@ export const BulkDeleteModal: React.FC<BulkDeleteModalProps> = ({
 
               <div className="mb-6">
                 <Input
-                  type={showPassword ? 'text' : 'password'}
-                  label={t('events.bulkDelete.passwordLabel', 'Re-enter your password to confirm')}
-                  value={password}
-                  onChange={(e) => handlePasswordChange(e.target.value)}
-                  placeholder={t('events.bulkDelete.passwordPlaceholder', 'Your admin password')}
-                  helperText={t('events.bulkDelete.passwordHelp', 'We require your password as a safeguard against accidental bulk deletions.')}
-                  error={passwordError || undefined}
-                  leftIcon={<Lock className="w-5 h-5" />}
-                  rightIcon={
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="p-1"
-                      tabIndex={-1}
-                    >
-                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                    </button>
-                  }
+                  type="text"
+                  label={t(
+                    'events.bulkDelete.confirmLabel',
+                    'Type {{literal}} to confirm',
+                    { literal: CONFIRM_LITERAL }
+                  )}
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  placeholder={CONFIRM_LITERAL}
+                  helperText={t(
+                    'events.bulkDelete.confirmHelp',
+                    'A typed confirmation prevents accidental deletions and isn\'t affected by browser autofill or passkey shortcuts.'
+                  )}
                   autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && password) handleSubmit();
-                  }}
+                  autoComplete="off"
+                  spellCheck={false}
                 />
               </div>
 
@@ -126,7 +114,7 @@ export const BulkDeleteModal: React.FC<BulkDeleteModalProps> = ({
                 <Button
                   variant="primary"
                   onClick={handleSubmit}
-                  disabled={!password || isLoading}
+                  disabled={!confirmed || isLoading}
                   leftIcon={<Trash2 className="w-4 h-4" />}
                   className="bg-red-600 hover:bg-red-700 focus:ring-red-500 text-white"
                 >

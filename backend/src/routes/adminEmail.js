@@ -315,6 +315,13 @@ router.get('/templates', adminAuth, requirePermission('email.view'), async (req,
         template_key: template.template_key,
         variables: parseVariables(template),
         translations,
+        // Categorisation + feature-flag link added by migration 098.
+        // Older installs that haven't run the migration yet return
+        // 'core' / null fall-backs so the frontend keeps working
+        // without a hard dependency on the new columns.
+        category: template.category || 'core',
+        subcategory: template.subcategory || null,
+        feature_flag: template.feature_flag || null,
         updated_at: template.updated_at,
       });
     }
@@ -344,6 +351,10 @@ router.get('/templates/:key', adminAuth, requirePermission('email.view'), async 
       template_key: template.template_key,
       variables: parseVariables(template),
       translations,
+      // See list endpoint for the rationale on the || fallbacks.
+      category: template.category || 'core',
+      subcategory: template.subcategory || null,
+      feature_flag: template.feature_flag || null,
       updated_at: template.updated_at,
     });
   } catch (error) {

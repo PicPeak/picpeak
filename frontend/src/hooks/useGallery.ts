@@ -65,6 +65,35 @@ export const useDownloadPhoto = () => {
   });
 };
 
+// Save-aware download — opens the OS share sheet on mobile (so "Save to
+// Photos" lands the file in the Photos/Gallery app instead of Files),
+// falls back to a regular download on browsers without Web Share file
+// support. See galleryService.savePhotoToDevice for the negotiation
+// (#531).
+//
+// Toast omitted on success because the share-sheet path doesn't really
+// finish from this code's perspective — the OS UI takes over and the
+// user picks where it goes. Showing "Photo downloaded" before they've
+// even picked is misleading. The fallback download path is also silent
+// to keep the two paths symmetrical; the file appearing in Downloads
+// is its own affordance.
+export const useSavePhotoToDevice = () => {
+  return useMutation({
+    mutationFn: ({
+      slug,
+      photoId,
+      filename,
+    }: {
+      slug: string;
+      photoId: number;
+      filename: string;
+    }) => galleryService.savePhotoToDevice(slug, photoId, filename),
+    onError: () => {
+      toast.error('Failed to save photo');
+    },
+  });
+};
+
 export const useDownloadAllPhotos = () => {
   return useMutation({
     mutationFn: ({ slug, zipReady }: { slug: string; zipReady?: boolean }) =>

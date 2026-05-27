@@ -11,7 +11,7 @@ const { checkForUpdates, getCurrentChannel } = require('../services/updateCheckS
 const { detectEnvironment, generateUpdateInstructions } = require('../services/environmentService');
 const {
   checkAndNotifyUpdates,
-  sendUpdateNotificationNow,
+  sendTestUpdateNotification,
   getUpdateNotificationSettings
 } = require('../services/updateNotificationService');
 const router = express.Router();
@@ -352,13 +352,18 @@ router.put('/updates/notifications', adminAuth, requirePermission('settings.edit
 });
 
 // Manually trigger update notification email
+// Send a test update notification email. Uses the dedicated
+// `version_update_test` template (migration 087) rather than reusing
+// `version_update_available`, so admins on the latest version can still
+// verify their SMTP + recipient config — the previous handler bailed
+// with "No updates available" when nothing was pending (#418).
 router.post('/updates/notifications/send', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
-    const result = await sendUpdateNotificationNow();
+    const result = await sendTestUpdateNotification();
     res.json(result);
   } catch (error) {
-    logger.error('Error sending update notification:', error);
-    res.status(500).json({ error: 'Failed to send update notification' });
+    logger.error('Error sending test update notification:', error);
+    res.status(500).json({ error: 'Failed to send test update notification' });
   }
 });
 

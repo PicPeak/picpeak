@@ -41,6 +41,10 @@ interface CreateEventData {
   show_feedback_to_guests?: boolean;
   photo_cap?: number | null;
   default_photo_sort?: string;
+  // Customer accounts assigned to this event (#354). Optional array of
+  // customer_accounts.id; backend service diffs against the existing
+  // assignments and applies inserts/deletes inside the same transaction.
+  customer_account_ids?: number[];
 }
 
 interface UpdateEventData {
@@ -62,6 +66,11 @@ interface UpdateEventData {
   external_path?: string | null;
   photo_cap?: number | null;
   default_photo_sort?: string;
+  // Per-event opt-in for hero photo as social-share preview (#474).
+  og_image_share_enabled?: boolean;
+  // Customer accounts (#354). Same semantics as on CreateEventData;
+  // omit the field to leave assignments untouched, send [] to clear.
+  customer_account_ids?: number[];
 }
 
 export type EventStatusFilter = 'active' | 'inactive' | 'archived' | 'draft' | 'expiring';
@@ -148,10 +157,12 @@ export const eventsService = {
     return response.data;
   },
 
-  // Bulk delete events (admin) — destructive. Requires the calling admin's
-  // password as a server-side confirmation gate. On 401 the server returns
-  // { error, code: 'INVALID_PASSWORD' } and no events are touched.
-  async bulkDeleteEvents(eventIds: number[], password: string): Promise<{
+  // Bulk delete events (admin) — destructive. The client-side confirmation
+  // gate is a typed-literal pattern in the modal (issue #417); no password
+  // is sent because passkey/autofill flows on a password input could
+  // auto-submit the form. The admin session JWT remains the auth boundary,
+  // matching DELETE /admin/events/:id which has never required a password.
+  async bulkDeleteEvents(eventIds: number[]): Promise<{
     message: string;
     results: {
       successful: Array<{ id: number; name: string }>;
@@ -160,7 +171,6 @@ export const eventsService = {
   }> {
     const response = await api.post('/admin/events/bulk-delete', {
       eventIds,
-      password,
     });
     return response.data;
   },

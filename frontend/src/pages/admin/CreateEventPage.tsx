@@ -17,6 +17,7 @@ import { toast } from 'react-toastify';
 
 import { Button, Input, Card, PasswordGenerator } from '../../components/common';
 import { ThemeCustomizerEnhanced, GalleryPreview, WelcomeMessageEditor, FeedbackSettings } from '../../components/admin';
+import { CustomerAccountPicker } from '../../components/admin/CustomerAccountPicker';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -68,6 +69,10 @@ interface FormData {
   client_password: string;
   // Default photo sort
   default_photo_sort: string;
+  // Customer accounts assigned to this event (#354). The state holds
+  // the full picker selection so chips render without an extra fetch;
+  // only the ids are sent to the backend on submit.
+  customer_accounts: Array<{ id: number; email: string; displayName: string | null }>;
 }
 
 // Fallback event types (used when API is unavailable)
@@ -127,6 +132,7 @@ export const CreateEventPage: React.FC = () => {
     client_access_enabled: false,
     client_password: '',
     default_photo_sort: 'upload_date_desc',
+    customer_accounts: [],
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -240,17 +246,45 @@ export const CreateEventPage: React.FC = () => {
     }));
   }, [publicSettings]);
 
+  // Honour the global "Enable Guest Feedback by default" admin setting (#520).
+  // Same one-shot apply pattern as require_password above — only seeds the
+  // master toggle. The sub-toggles (likes / ratings / comments) keep their
+  // hard-coded true defaults so a flipped master immediately gives sensible
+  // behaviour without a second admin setting to manage.
+  const feedbackEnabledDefaultApplied = useRef(false);
+  useEffect(() => {
+    if (feedbackEnabledDefaultApplied.current) return;
+    if (publicSettings?.event_default_feedback_enabled === undefined) return;
+    feedbackEnabledDefaultApplied.current = true;
+    setFormData(prev => ({
+      ...prev,
+      feedback_settings: {
+        ...prev.feedback_settings,
+        feedback_enabled: publicSettings.event_default_feedback_enabled === true
+      }
+    }));
+  }, [publicSettings]);
+
   // Apply the global Branding default theme on first load so admins who set a
   // site-wide default in Branding actually see it on new events (#323).
   // This is the "always inherit colours from Branding" guarantee — every new
   // gallery starts with the site palette unless the admin then picks a preset
   // or hits Sync from Branding inside the customizer to re-pull it later.
-  const brandingThemeApplied = useRef(false);
+  //
+  // Track the last theme_config we applied as a stringified hash rather than
+  // a boolean ref. React Query can hand us cached (stale) settings on first
+  // observer render and then push fresh data once the network call resolves;
+  // a boolean ref locks in the stale theme and ignores the fresh one (#323-B
+  // / smoke spec 07). With a hash, we re-apply when the source actually
+  // changes — including the stale → fresh transition — but skip when nothing
+  // new has arrived.
+  const lastAppliedThemeHashRef = useRef<string | null>(null);
   useEffect(() => {
-    if (brandingThemeApplied.current) return;
     const brandingTheme = settings?.theme_config as ThemeConfig | undefined;
     if (!brandingTheme || Object.keys(brandingTheme).length === 0) return;
-    brandingThemeApplied.current = true;
+    const hash = JSON.stringify(brandingTheme);
+    if (lastAppliedThemeHashRef.current === hash) return;
+    lastAppliedThemeHashRef.current = hash;
 
     // Identify which preset (if any) the Branding theme matches. Compare
     // only on the preset's own fields so saved themes carrying extras
@@ -274,11 +308,23 @@ export const CreateEventPage: React.FC = () => {
     }));
   }, [settings]);
 
-  // Update theme when event type changes — but only when the event type has
-  // an explicit recommended preset. Skip the generic 'default' so the global
-  // Branding theme isn't clobbered by Classic Grid for event types like
-  // "Other" (#323).
+  // Update theme when the user actively changes the event type — but only
+  // when the new type has an explicit recommended preset. Skips both the
+  // generic 'default' (so types like "Other" don't clobber the global
+  // Branding theme with Classic Grid) and the very first render (so the
+  // wedding default doesn't out-race the Branding-default effect above
+  // when eventTypes resolves AFTER settings — #323-B / smoke spec 07).
+  const prevEventTypeRef = useRef<string | null>(null);
   useEffect(() => {
+    const prev = prevEventTypeRef.current;
+    prevEventTypeRef.current = formData.event_type;
+    // First render: just record the initial value and let the
+    // Branding-default effect own the theme. Without this guard the
+    // initial-mount fire of this effect (and any later eventTypes
+    // refetch that swaps `availableEventTypes` identity) would
+    // overwrite the Branding theme with the wedding preset.
+    if (prev === null || prev === formData.event_type) return;
+
     const selectedType = availableEventTypes.find(t => t.value === formData.event_type);
     const recommendedPreset = selectedType?.theme_preset;
 
@@ -416,6 +462,10 @@ export const CreateEventPage: React.FC = () => {
       client_password: formData.client_access_enabled ? formData.client_password : undefined,
       // Default photo sort
       default_photo_sort: formData.default_photo_sort,
+      // Customer accounts assigned to this event (#354). Sent as a flat
+      // array of ids; the backend service diffs against the existing
+      // assignments and applies adds/removes inside one transaction.
+      customer_account_ids: formData.customer_accounts.map((c) => c.id),
     };
 
     createMutation.mutate(payload);
@@ -733,6 +783,15 @@ export const CreateEventPage: React.FC = () => {
                   onChange={handleInputChange('customer_phone')}
                 />
               )}
+
+              {/* Customer accounts (#354). The picker is decoupled from
+                  the freeform customer_name / customer_email fields above
+                  — those stay as the event's primary contact while
+                  customer_account_ids drives login-level access. */}
+              <CustomerAccountPicker
+                value={formData.customer_accounts}
+                onChange={(next) => setFormData((prev) => ({ ...prev, customer_accounts: next }))}
+              />
 
               <Input
                 type="email"

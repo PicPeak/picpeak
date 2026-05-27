@@ -1,6 +1,7 @@
 const chokidar = require('chokidar');
 const path = require('path');
 const fs = require('fs').promises;
+const sharp = require('sharp');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { generateThumbnail, generateVideoPlaceholder } = require('./imageProcessor');
@@ -91,7 +92,23 @@ async function processNewPhoto(filePath) {
   // Calculate relative thumbnail path
   const relativeThumbPath = thumbnailPath; // thumbnailPath is already relative to storage root
   const mimeType = detectedMime || (isVideo ? 'video/mp4' : 'image/jpeg');
-  
+
+  // Capture image dimensions so aspect-aware layouts (masonry / mosaic /
+  // justified) can size each card to the photo's real proportions
+  // instead of the 800×600 fallback in MasonryGalleryLayout (#447).
+  // Skip videos — those would need ffprobe.
+  let dimensions = null;
+  if (!isVideo) {
+    try {
+      const metadata = await sharp(filePath).metadata();
+      if (metadata.width && metadata.height) {
+        dimensions = { width: metadata.width, height: metadata.height };
+      }
+    } catch (err) {
+      logger.debug(`Could not read image dimensions for ${filename}: ${err.message}`);
+    }
+  }
+
   // Check if photo already exists (by filename or path, to handle replacements)
   const existingPhoto = await db('photos')
     .where({ event_id: event.id })
@@ -110,7 +127,8 @@ async function processNewPhoto(filePath) {
       thumbnail_path: relativeThumbPath,
       type: isVideo ? 'video' : photoType,
       size_bytes: stats.size,
-      mime_type: mimeType
+      mime_type: mimeType,
+      ...(dimensions && { width: dimensions.width, height: dimensions.height })
     }).returning('id');
     const photoId = insertResult[0]?.id || insertResult[0];
 

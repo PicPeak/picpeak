@@ -25,6 +25,23 @@ export interface PublicSettings {
    * AdminDarkModeContext + ThemeContext both honor this.
    */
   branding_force_color_mode?: 'dark' | 'light' | null;
+  /**
+   * Login-page-only branding (#354 follow-up). Applies exclusively to
+   * /admin/login and /customer/login. Defaults: frame on, size 'medium'.
+   */
+  branding_login_logo_frame_enabled?: boolean;
+  branding_login_logo_size?: 'small' | 'medium' | 'large' | 'xlarge';
+  // Footer overhaul (#441 + #440). Empty strings mean "hide".
+  branding_facebook_url?: string;
+  branding_instagram_url?: string;
+  branding_whatsapp_url?: string;
+  branding_twitter_url?: string;
+  branding_youtube_url?: string;
+  branding_promo_markdown?: string;
+  branding_promo_position?: 'above_footer' | 'below_footer';
+  // Per-install promo banner alignment (#482). Defaults to 'center'
+  // so the banner aligns with the gallery footer's centering.
+  branding_promo_alignment?: 'left' | 'center' | 'right';
   theme_config: any;
   default_language: string;
   enable_analytics: boolean;
@@ -45,6 +62,7 @@ export interface PublicSettings {
   event_require_event_date?: boolean;
   event_require_expiration?: boolean;
   event_default_require_password?: boolean;
+  event_default_feedback_enabled?: boolean;
   gallery_show_filter_bar?: boolean;
   event_phone_field_enabled?: boolean;
   // SEO meta tags (consumed by RobotsMetaTags)

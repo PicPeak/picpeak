@@ -23,3 +23,4 @@ export { ProtectedImage } from './ProtectedImage';
 export { ProtectionWarning } from './ProtectionWarning';
 export { ReCaptcha } from './ReCaptcha';
 export { PasswordGenerator } from './PasswordGenerator';
+export { MarkdownContent } from './MarkdownContent';

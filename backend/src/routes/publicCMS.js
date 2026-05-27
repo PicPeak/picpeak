@@ -33,6 +33,11 @@ router.get('/pages/:slug', async (req, res) => {
       // toggle can be flipped back on, but it shouldn't leak via the API).
       use_external_url: !!page.use_external_url,
       external_url: page.use_external_url && page.external_url ? page.external_url : null,
+      // Footer visibility (#441). Default true for legacy rows; admins
+      // can hide a CMS page from the gallery footer when their
+      // jurisdiction doesn't require it (e.g. impressum / datenschutz
+      // outside DE/AT).
+      show_in_footer: page.show_in_footer !== false,
       updated_at: page.updated_at
     });
   } catch (error) {

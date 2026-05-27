@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 
 import { useAdminAuth } from '../../contexts';
+import { FeatureFlagsProvider } from '../../contexts/FeatureFlagsContext';
 import { useSessionTimeout } from '../../hooks/useSessionTimeout';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminHeader } from './AdminHeader';
@@ -30,6 +31,28 @@ export const AdminLayout: React.FC = () => {
     return <Navigate to="/admin/login" replace />;
   }
 
+  // FeatureFlagsProvider wraps the entire admin chrome — sidebar reads
+  // flags to decide which surfaces to render, the Features tab reads/writes
+  // the same source. Mounted INSIDE the auth-required tree so the GET to
+  // /api/admin/feature-flags has a session cookie attached.
+  return (
+    <FeatureFlagsProvider>
+      <AdminLayoutInner
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+        mustChangePassword={mustChangePassword}
+      />
+    </FeatureFlagsProvider>
+  );
+};
+
+interface AdminLayoutInnerProps {
+  sidebarOpen: boolean;
+  setSidebarOpen: (v: boolean) => void;
+  mustChangePassword: boolean;
+}
+
+const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSidebarOpen, mustChangePassword }) => {
   return (
     <div className="h-screen bg-neutral-50 dark:bg-neutral-950 flex overflow-hidden">
       {/* Mandatory Password Change Modal */}

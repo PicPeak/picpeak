@@ -3,11 +3,14 @@ import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import HttpBackend from 'i18next-http-backend';
 
-import enTranslations from './locales/en.json';
-import deTranslations from './locales/de.json';
-import ruTranslations from './locales/ru.json';
-import ptTranslations from './locales/pt.json';
-import nlTranslations from './locales/nl.json';
+const localeFiles = import.meta.glob<Record<string, string>>('./locales/*.json', { eager: true, import: 'default' });
+
+const resources = Object.fromEntries(
+  Object.entries(localeFiles).map(([path, translations]) => {
+    const lang = path.match(/\/(\w+)\.json$/)?.[1];
+    return [lang, { translation: translations }];
+  })
+);
 
 i18n
   .use(HttpBackend)
@@ -17,23 +20,7 @@ i18n
     fallbackLng: 'en',
     debug: false,
 
-    resources: {
-      en: {
-        translation: enTranslations,
-      },
-      de: {
-        translation: deTranslations,
-      },
-      ru: {
-        translation: ruTranslations,
-      },
-      pt: {
-        translation: ptTranslations,
-      },
-      nl: {
-        translation: nlTranslations,
-      },
-    },
+    resources,
 
     interpolation: {
       escapeValue: false,

@@ -20,7 +20,7 @@ import { Button, Card, Loading } from '../../components/common';
 import { UpdateNotification } from '../../components/admin/UpdateNotification';
 import { useQuery } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
-import { adminService } from '../../services/admin.service';
+import { adminService, ActivityType } from '../../services/admin.service';
 
 interface StatCard {
   title: string;
@@ -246,8 +246,8 @@ export const AdminDashboard: React.FC = () => {
             ) : (
               recentActivity.slice(0, 5).map((activity) => {
                 // Get color based on activity type
-                const getActivityColor = (type: string) => {
-                  const colors: Record<string, string> = {
+                const getActivityColor = (type: ActivityType) => {
+                  const colors: Partial<Record<ActivityType, string>> = {
                     'event_created': 'bg-green-500',
                     'photos_uploaded': 'bg-blue-500',
                     'event_archived': 'bg-purple-500',
@@ -264,21 +264,20 @@ export const AdminDashboard: React.FC = () => {
 
                 // Format activity message with translations
                 const getActivityMessage = (): string => {
-                  const translationKey = `admin.activities.${activity.type}`;
                   const params: Record<string, any> = {
                     eventName: activity.eventName || t('common.unknown'),
                     count: activity.metadata?.count || 0,
                     template: activity.metadata?.template_key || '',
                     categoryName: activity.metadata?.category_name || ''
                   };
+                  const translated = t(`admin.activities.${activity.type}`, params);
 
                   // Translate; if key missing i18n returns the key string itself
-                  const translated = t(translationKey, params) as string;
-                  if (!translated || translated === translationKey) {
+                  if (!translated || translated === `admin.activities.${activity.type}`) {
                     // Fallback: format a readable English message
                     return adminService.formatActivityMessage(activity);
                   }
-                  return translated;
+                  return translated as string;
                 };
 
                 return (

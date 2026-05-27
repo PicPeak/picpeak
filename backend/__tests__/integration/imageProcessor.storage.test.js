@@ -137,6 +137,41 @@ describe.each(backendCases())('imageProcessor through $name', ({ setup }) => {
     expect(await storage.exists(key)).toBe(true);
   });
 
+  test('generatePreviewImage writes to /previews and skips enlargement of small originals', async () => {
+    const src = await makeSourceJpeg(tmpDir, 'preview-source.jpg');
+    const key = await imageProcessor.generatePreviewImage(src);
+    expect(key).toBe('previews/preview_preview-source.jpg');
+    expect(await storage.exists(key)).toBe(true);
+
+    if (storage.kind() === 'local') {
+      const meta = await sharp(storage.resolveLocalPath(key)).metadata();
+      expect(meta.format).toBe('jpeg');
+      // Source is 800x600 and default longEdge is 1920 with
+      // withoutEnlargement: true → preview must NOT be upscaled.
+      expect(meta.width).toBe(800);
+      expect(meta.height).toBe(600);
+    }
+  });
+
+  test('generatePreviewImage shrinks oversized images to fit longEdge while preserving aspect', async () => {
+    const src = await makeSourceJpeg(tmpDir, 'preview-shrink.jpg');
+    const key = await imageProcessor.generatePreviewImage(src, { longEdge: 400 });
+    expect(await storage.exists(key)).toBe(true);
+    if (storage.kind() === 'local') {
+      const meta = await sharp(storage.resolveLocalPath(key)).metadata();
+      // 800x600 → fit:'inside' inside 400×400 → 400×300.
+      expect(meta.width).toBe(400);
+      expect(meta.height).toBe(300);
+    }
+  });
+
+  test('isPreviewValid returns true for a real preview and false for a missing key', async () => {
+    const src = await makeSourceJpeg(tmpDir, 'preview-valid.jpg');
+    const key = await imageProcessor.generatePreviewImage(src);
+    expect(await imageProcessor.isPreviewValid(key)).toBe(true);
+    expect(await imageProcessor.isPreviewValid('previews/does-not-exist.jpg')).toBe(false);
+  });
+
   test('isThumbnailValid returns true for a good thumbnail and false for nothing', async () => {
     const src = await makeSourceJpeg(tmpDir, 'valid-check.jpg');
     const key = await imageProcessor.generateThumbnail(src);

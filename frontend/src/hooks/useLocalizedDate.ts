@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { format as dateFnsFormat, formatDistanceToNow as dateFnsFormatDistanceToNow } from 'date-fns';
-import { de, enUS, ptBR } from 'date-fns/locale';
+import { de, enUS, ptBR, fr } from 'date-fns/locale';
 import { usePublicSettings } from './usePublicSettings';
 
 // Convert old date format strings to new date-fns format
@@ -17,9 +17,17 @@ export const useLocalizedDate = () => {
   const { data: settings } = usePublicSettings();
   
   const getLocale = () => {
-    if (i18n.language === 'de') return de;
-    if (i18n.language === 'pt' || i18n.language === 'pt-BR') return ptBR;
-    return enUS;
+    switch (i18n.language) {
+      case 'de':
+        return de;
+      case 'pt':
+      case 'pt-BR':
+        return ptBR;
+      case 'fr':
+        return fr;
+      default:
+        return enUS;
+    }
   };
   
   const format = (date: Date | string, formatStr?: string) => {

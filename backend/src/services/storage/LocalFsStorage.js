@@ -76,6 +76,11 @@ class LocalFsStorage {
     return fs.createReadStream(abs);
   }
 
+  async getRange(relPath, start, end) {
+    const abs = this._resolve(relPath);
+    return fs.createReadStream(abs, { start, end });
+  }
+
   async getToFile(relPath, localPath) {
     const abs = this._resolve(relPath);
     await fsp.mkdir(path.dirname(localPath), { recursive: true });

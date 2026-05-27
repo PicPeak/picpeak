@@ -361,6 +361,16 @@ async function getFilesToBackupInternal(includeArchived = true) {
   }
 
   await scanDirectory(path.join(storagePath, 'thumbnails'), files, storagePath);
+  // Lightbox preview tier (#492). Cheap to back up — typically a few
+  // hundred KB per photo — and saves admins the regenerate cycle on
+  // a restore. Tolerated when missing (admins who never enabled the
+  // feature won't have the folder; scanDirectory short-circuits on
+  // ENOENT cleanly).
+  await scanDirectory(path.join(storagePath, 'previews'), files, storagePath);
+  // Heroes too — same logic; admins who picked a hero photo for the
+  // gallery header had its 1920x1080 file generated and was missed
+  // by the original backup walk before this addition.
+  await scanDirectory(path.join(storagePath, 'heroes'), files, storagePath);
   await scanDirectory(path.join(storagePath, 'uploads'), files, storagePath);
 
   return files;

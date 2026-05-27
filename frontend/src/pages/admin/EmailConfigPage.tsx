@@ -23,14 +23,38 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { emailService, type EmailConfig, type EmailTemplate, type EmailTemplateTranslation } from '../../services/email.service';
 import { settingsService } from '../../services/settings.service';
 import { useTranslation } from 'react-i18next';
+import { SUPPORTED_LANGUAGES } from "../../components/common/LanguageSelector.tsx";
+import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
 
-const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: 'English', flag: '🇬🇧' },
-  { code: 'de', name: 'Deutsch', flag: '🇩🇪' },
-  { code: 'nl', name: 'Nederlands', flag: '🇳🇱' },
-  { code: 'pt', name: 'Português', flag: '🇧🇷' },
-  { code: 'ru', name: 'Русский', flag: '🇷🇺' },
-];
+/**
+ * Template categorisation (migration 098). Sidebar sections render
+ * in this order. Empty categories are hidden automatically. New
+ * categories: add the key here, give it an i18n label
+ * (email.categories.<key>), set `feature_flag` on templates that
+ * should chip out when the matching flag is off. No other UI
+ * changes required.
+ */
+const CATEGORY_ORDER: readonly string[] = [
+  'core',
+  'customers',
+  'calendar',
+  'quotes',
+  'billing',
+] as const;
+
+/**
+ * Sub-categorisation inside `core` (which carries 14 templates and
+ * deserves its own internal headers). Order is the render sequence.
+ * Templates whose subcategory isn't in this list fall through to a
+ * trailing "other" bucket so a forward-compat row never disappears.
+ * Other top-level categories are flat (no sub-sections) for now.
+ */
+const CORE_SUBCATEGORY_ORDER: readonly string[] = [
+  'gallery',
+  'admin',
+  'backup',
+  'system',
+] as const;
 
 const defaultTemplateKeys = [
   {
@@ -124,6 +148,7 @@ export const EmailConfigPage: React.FC = () => {
   const [emailMutedTextColor, setEmailMutedTextColor] = useState('#666666');
   const [emailButtonTextColor, setEmailButtonTextColor] = useState('#ffffff');
   const queryClient = useQueryClient();
+  const { flags: featureFlags } = useFeatureFlags();
 
   // SMTP Configuration state
   const [smtpConfig, setSmtpConfig] = useState<EmailConfig>({
@@ -721,11 +746,36 @@ export const EmailConfigPage: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card padding="sm">
             <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('email.templates')}</h3>
-            <div className="space-y-2">
-              {templates.map(template => {
-                const templateInfo = defaultTemplateKeys.find(t => t.key === template.template_key);
+            {/* Templates grouped by category (migration 098). Categories
+                in CATEGORY_ORDER render in sequence; templates that
+                report an unrecognised category fall into 'core' so a
+                forward-compat row never disappears from the UI.
+                Empty categories are hidden — admins don't see a
+                section header with no body. Templates whose
+                feature_flag is currently false stay fully visible and
+                editable, just chip-tagged so the admin knows the
+                feature is dormant. */}
+            {(() => {
+              // 1. Bucket templates by top-level category (forward-compat:
+              //    unknown categories fall into 'core').
+              const byCategory: Record<string, EmailTemplate[]> = {};
+              for (const template of templates) {
+                const cat = CATEGORY_ORDER.includes(template.category || 'core')
+                  ? (template.category || 'core')
+                  : 'core';
+                (byCategory[cat] = byCategory[cat] || []).push(template);
+              }
+              const visibleCategories = CATEGORY_ORDER.filter((c) => byCategory[c]?.length);
+
+              // 2. Renders a single template button. Pulled out so the
+              //    flat path and the sub-category path share it.
+              const renderTemplate = (template: EmailTemplate) => {
+                const templateInfo = defaultTemplateKeys.find((t) => t.key === template.template_key);
                 const translationCount = getTranslationCount(template);
                 const enTranslation = template.translations?.en;
+                const featureOff = template.feature_flag
+                  ? featureFlags[template.feature_flag as FeatureKey] === false
+                  : false;
                 return (
                   <button
                     key={template.template_key}
@@ -739,21 +789,83 @@ export const EmailConfigPage: React.FC = () => {
                         : 'bg-neutral-50 dark:bg-neutral-700 border-2 border-transparent hover:bg-neutral-100 dark:hover:bg-neutral-600'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium text-neutral-900 dark:text-neutral-100">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-medium text-neutral-900 dark:text-neutral-100 truncate">
                         {templateInfo?.name || template.template_key}
                       </p>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-200 dark:bg-neutral-600 text-neutral-600 dark:text-neutral-300">
-                        {translationCount}/{SUPPORTED_LANGUAGES.length}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {featureOff && (
+                          <span
+                            className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+                            title={t('email.featureOffTooltip', 'The feature this template belongs to is currently disabled. You can still edit the template — it will be used once the feature is re-enabled.')}
+                          >
+                            {t('email.featureOff', 'Feature off')}
+                          </span>
+                        )}
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-200 dark:bg-neutral-600 text-neutral-600 dark:text-neutral-300">
+                          {translationCount}/{SUPPORTED_LANGUAGES.length}
+                        </span>
+                      </div>
                     </div>
                     <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1 truncate">
                       {enTranslation?.subject || ''}
                     </p>
                   </button>
                 );
-              })}
-            </div>
+              };
+
+              return (
+                <div className="space-y-5">
+                  {visibleCategories.map((category) => {
+                    // Inside 'core' we group templates further by
+                    // subcategory so the busy bucket reads cleanly.
+                    // Other categories render their templates flat.
+                    if (category === 'core') {
+                      const bySub: Record<string, EmailTemplate[]> = {};
+                      for (const template of byCategory.core) {
+                        const sub = CORE_SUBCATEGORY_ORDER.includes(template.subcategory || '')
+                          ? (template.subcategory as string)
+                          : 'other';
+                        (bySub[sub] = bySub[sub] || []).push(template);
+                      }
+                      const visibleSubs = [
+                        ...CORE_SUBCATEGORY_ORDER.filter((s) => bySub[s]?.length),
+                        ...(bySub.other?.length ? ['other'] : []),
+                      ];
+                      return (
+                        <div key={category}>
+                          <h4 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                            {t(`email.categories.${category}`, category)}
+                          </h4>
+                          <div className="space-y-4 pl-1">
+                            {visibleSubs.map((sub) => (
+                              <div key={sub}>
+                                <h5 className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
+                                  {t(`email.subcategories.${sub}`, sub)}
+                                </h5>
+                                <div className="space-y-2">
+                                  {bySub[sub].map(renderTemplate)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div key={category}>
+                        <h4 className="px-1 mb-2 text-[11px] font-semibold uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                          {t(`email.categories.${category}`, category)}
+                        </h4>
+                        <div className="space-y-2">
+                          {byCategory[category].map(renderTemplate)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </Card>
 
           <div className="lg:col-span-2">
@@ -795,7 +907,7 @@ export const EmailConfigPage: React.FC = () => {
                           : 'text-neutral-600 dark:text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200'
                       }`}
                     >
-                      <span>{lang.flag}</span>
+                      <lang.Flag/>
                       <span>{lang.name}</span>
                       {!hasContent && lang.code !== 'en' && (
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400" title={t('email.noTranslation')} />

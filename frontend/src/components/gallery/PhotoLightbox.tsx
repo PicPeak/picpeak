@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, MessageSquare, Heart, Star } from 'lucide-react';
 import type { Photo } from '../../types';
-import { useDownloadPhoto } from '../../hooks/useGallery';
+import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { AuthenticatedImage } from '../common';
 import { PhotoFeedback } from './PhotoFeedback';
 import { feedbackService } from '../../services/feedback.service';
@@ -24,6 +24,11 @@ interface PhotoLightboxProps {
   onFeedbackChange?: () => void;
   disableRightClick?: boolean;
   enableDevtoolsProtection?: boolean;
+  // When true, surface each photo's original camera filename in the
+  // bottom toolbar — useful for photographers matching guest selections
+  // back to source files (#508). Tied to the admin-side toggle that
+  // also drives original-filename downloads (#493).
+  showOriginalFilename?: boolean;
 }
 
 export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
@@ -40,6 +45,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   onFeedbackChange,
   disableRightClick = false,
   enableDevtoolsProtection = false,
+  showOriginalFilename = false,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
@@ -71,6 +77,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     feedback_enabled?: boolean;
     allow_likes?: boolean;
     allow_ratings?: boolean;
+    allow_comments?: boolean;
+    show_feedback_to_guests?: boolean;
     require_name_email?: boolean;
   } | null>(null);
   const [myLiked, setMyLiked] = useState<boolean>(false);
@@ -91,7 +99,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   }, []);
 
 
-  const downloadPhotoMutation = useDownloadPhoto();
+  // Save-aware download. On mobile (where Web Share + files is supported)
+  // this opens the OS share sheet so "Save to Photos" actually lands in
+  // the Photos/Gallery app — matters for non-technical clients who
+  // otherwise have to chain Files → unzip → save (#531). Desktop and
+  // unsupported browsers fall through to a regular <a download>.
+  const downloadPhotoMutation = useSavePhotoToDevice();
   const currentPhoto = photos[currentIndex];
   
   // DevTools protection - enabled by individual setting OR legacy protection level
@@ -398,6 +411,16 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           setDragX(0);
         }
       }
+    } else if (e.touches.length === 1 && zoom > 1) {
+      // Single-finger pan when zoomed in (#532). Mirrors the desktop
+      // handleMouseDown path so mobile users can drag a zoomed image
+      // around instead of being stuck looking at the centre crop.
+      // Carousel swipe is disabled in this branch — when zoom > 1 the
+      // gesture has to mean "pan", not "next photo", or zoomed nav
+      // becomes unusable.
+      const t = e.touches[0];
+      setIsDragging(true);
+      setDragStart({ x: t.clientX - dragOffset.x, y: t.clientY - dragOffset.y });
     } else if (e.touches.length === 1 && zoom <= 1 && (phase === 'idle' || phase === 'dragging')) {
       const t = e.touches[0];
       swipeStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
@@ -419,6 +442,24 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       const newZoom = Math.max(1, Math.min(3, zoom * scale));
       setZoom(newZoom);
       setTouchDistance(newDistance);
+      // Pinch-out back down to 1.0 has to re-centre the image — without
+      // this the previous pan offset persists and the photo sits off-
+      // centre at the natural zoom level (#532 follow-on).
+      if (newZoom <= 1 && (dragOffset.x !== 0 || dragOffset.y !== 0)) {
+        setDragOffset({ x: 0, y: 0 });
+      }
+      return;
+    }
+
+    if (isDragging && zoom > 1 && e.touches.length === 1) {
+      // Single-finger pan when zoomed (#532). Touch counterpart to
+      // handleMouseMove. Same dragOffset state so the transform on the
+      // <img> stays consistent across input modalities.
+      const t = e.touches[0];
+      setDragOffset({
+        x: t.clientX - dragStart.x,
+        y: t.clientY - dragStart.y,
+      });
       return;
     }
 
@@ -446,6 +487,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     setTouchDistance(null);
+    // Release single-finger pan state (#532). The pan offset itself
+    // persists so the image stays where the user left it — only the
+    // "actively dragging" flag clears.
+    if (isDragging) setIsDragging(false);
     const start = swipeStartRef.current;
     if (phase === 'dragging' && start && e.changedTouches.length > 0) {
       const t = e.changedTouches[0];
@@ -593,10 +638,23 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         }}
       >
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-2 flex-wrap">
-          <div className="text-white">
+          <div className="text-white min-w-0">
             <p className="text-sm opacity-75">
               {currentIndex + 1} / {photos.length}
             </p>
+            {/* #508 — original camera filename next to the counter when
+                the admin has flipped the matching toggle. Falls back to
+                the storage filename only if `original_filename` is null
+                (pre-migration-062 uploads). truncate + max-w keep long
+                names from pushing the action row to another line. */}
+            {showOriginalFilename && (currentPhoto.original_filename || currentPhoto.filename) && (
+              <p
+                className="text-xs opacity-60 truncate max-w-[14rem] sm:max-w-md mt-0.5"
+                title={currentPhoto.original_filename || currentPhoto.filename}
+              >
+                {currentPhoto.original_filename || currentPhoto.filename}
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-end">
@@ -641,9 +699,19 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   aria-label={myLiked ? 'Unlike photo' : 'Like photo'}
                   title={myLiked ? 'Unlike' : 'Like'}
                 >
-                  <Heart className={`w-5 h-5 ${myLiked ? 'text-white' : 'text-white'}`} />
+                  {/* fill-current on the liked state so the heart is
+                      actually visible against the red background — both
+                      branches were `text-white` only (#538 follow-on
+                      bug from @Tietge86). */}
+                  <Heart className={`w-5 h-5 text-white ${myLiked ? 'fill-current' : ''}`} />
                 </button>
-                <span className="text-white text-xs min-w-[1.5rem] text-center select-none">{likeCount}</span>
+                {/* Aggregate like count is admin-only when the admin
+                    has hidden feedback from guests (#538 bug 3). Without
+                    this gate, a guest could see how many other guests
+                    liked a photo even with show_feedback_to_guests off. */}
+                {feedbackSettings?.show_feedback_to_guests && (
+                  <span className="text-white text-xs min-w-[1.5rem] text-center select-none">{likeCount}</span>
+                )}
               </div>
             )}
 
@@ -665,8 +733,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               </div>
             )}
             
-            {/* Feedback button with indicator */}
-            {feedbackEnabled && (
+            {/* Feedback button with indicator. Gated on allow_comments
+                because likes/ratings already have their own dedicated
+                toolbar buttons above — this MessageSquare button only
+                opens the comments panel, so it has nothing to do when
+                comments are off (#518). */}
+            {feedbackEnabled && feedbackSettings?.allow_comments && (
               <button
                 onClick={() => {
                   setShowFeedback(!showFeedback);
@@ -696,20 +768,38 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       {(() => {
         const isVideoCurrent = currentPhoto.media_type === 'video';
 
-        const renderSlide = (photo: Photo | null, isCurrent: boolean) => {
+        // Stable per-slide keys so React's reconciler can MOVE existing
+        // DOM nodes across slot positions on commit rather than
+        // re-fetching the AuthenticatedImage at the new position (#505 —
+        // that re-fetch is what caused the black blink during swipe).
+        // Edge case: 2-photo galleries assign the same photo to both
+        // `prev` and `next`; fall back to slot-prefixed keys to keep
+        // siblings unique. >2-photo galleries (the common case) get
+        // plain photo.id keys so a "next becomes current" commit
+        // preserves the loaded image instance.
+        const slideKey = (photo: Photo | null, slot: 'prev' | 'current' | 'next') => {
+          if (!photo) return `empty-${slot}`;
+          if (photos.length === 2) return `${slot}-${photo.id}`;
+          return `photo-${photo.id}`;
+        };
+
+        const renderSlide = (photo: Photo | null, isCurrent: boolean, slot: 'prev' | 'current' | 'next') => {
           // Reserve the slot even when there's no neighbour (single-photo
           // gallery) so the flex layout keeps slides aligned.
           if (!photo) {
-            return <div className="h-full" style={{ flex: '0 0 33.3333%' }} aria-hidden="true" />;
+            return <div key={slideKey(photo, slot)} className="h-full" style={{ flex: '0 0 33.3333%' }} aria-hidden="true" />;
           }
 
           // Neighbouring slides are plain thumbnails — they're only on
           // screen during the swipe animation, so we save the work of a
           // protected canvas pipeline for them. The current slide keeps
-          // the full protection chain.
+          // the full protection chain. Wrapper className matches the
+          // current slide so object-contain sizing renders the same
+          // visible height (#505 — earlier `px-2` made wide images
+          // shorter on neighbours than on current).
           if (!isCurrent) {
             return (
-              <div className="h-full flex items-center justify-center px-2" style={{ flex: '0 0 33.3333%' }}>
+              <div key={slideKey(photo, slot)} className="h-full flex items-center justify-center" style={{ flex: '0 0 33.3333%' }}>
                 {photo.media_type === 'video' && photo.thumbnail_url ? (
                   <img
                     src={photo.thumbnail_url}
@@ -719,7 +809,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   />
                 ) : (
                   <AuthenticatedImage
-                    src={photo.url}
+                    // Prefer the lightbox preview tier when the admin
+                    // opted in (#492). Falls back to `url` (the
+                    // original) when preview_url is null — happens
+                    // when the toggle is off, when the photo is a
+                    // video, or briefly while lazy generation runs.
+                    src={photo.preview_url || photo.url}
                     alt={photo.filename}
                     fallbackSrc={photo.thumbnail_url || undefined}
                     className="max-w-full max-h-full object-contain select-none pointer-events-none"
@@ -737,12 +832,15 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
           return (
             <div
+              key={slideKey(photo, slot)}
               className="h-full flex items-center justify-center"
               style={{ flex: '0 0 33.3333%' }}
               onClick={handleImageClick}
             >
               <AuthenticatedImage
-                src={photo.url}
+                // Same preview-prefer-with-fallback logic as the
+                // off-screen tile above (#492).
+                src={photo.preview_url || photo.url}
                 alt={photo.filename}
                 fallbackSrc={photo.thumbnail_url || undefined}
                 className="max-w-full max-h-full object-contain select-none"
@@ -831,9 +929,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 }}
                 onTransitionEnd={handleTrackTransitionEnd}
               >
-                {renderSlide(prevPhoto, false)}
-                {renderSlide(currentPhoto, true)}
-                {renderSlide(nextPhoto, false)}
+                {renderSlide(prevPhoto, false, 'prev')}
+                {renderSlide(currentPhoto, true, 'current')}
+                {renderSlide(nextPhoto, false, 'next')}
               </div>
             )}
           </div>

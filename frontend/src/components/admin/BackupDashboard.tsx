@@ -8,11 +8,9 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
-  TrendingUp,
   Shield,
   Server,
   Cloud,
-  Calendar,
   Play,
   Loader2,
   AlertTriangle,
@@ -21,7 +19,59 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import { Card, Button } from '../common';
 
-const StatCard = ({ icon: Icon, label, value, color = 'blue', subtext }) => (
+export type HealthStatus = 'excellent' | 'good' | 'warning' | 'critical';
+export type BackupDestinationType = 's3' | 'rsync' | 'local';
+
+interface BackupStatistics {
+  total_size?: number;
+  files_processed?: number;
+  database_backed_up?: boolean;
+  photos_backed_up?: number;
+  total_photos?: number;
+  archives_backed_up?: number;
+  photo_count?: number;
+}
+
+interface BackupRecord {
+  id: number;
+  status: 'completed' | 'failed' | 'running';
+  backup_type: string;
+  created_at: string;
+  duration_seconds: number;
+  statistics?: BackupStatistics;
+}
+
+interface BackupStatus {
+  lastBackup?: BackupRecord;
+  totalBackups?: number;
+  recentBackups?: BackupRecord[];
+}
+
+interface BackupConfig {
+  backup_destination_type?: BackupDestinationType;
+  backup_enabled?: boolean;
+  backup_s3_bucket?: string;
+  backup_destination_path?: string;
+  backup_rsync_host?: string;
+  backup_retention_days?: number;
+}
+
+interface StatCardProps {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string | number;
+  color?: string;
+  subtext?: string;
+}
+
+interface BackupDashboardProps {
+  status?: BackupStatus;
+  config?: BackupConfig;
+  onRunBackup: () => void;
+  isBackupRunning: boolean;
+}
+
+const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, color = 'blue', subtext }) => (
   <Card className="p-6">
     <div className="flex items-center justify-between">
       <div className="flex-1">
@@ -38,7 +88,7 @@ const StatCard = ({ icon: Icon, label, value, color = 'blue', subtext }) => (
   </Card>
 );
 
-const formatBytes = (bytes) => {
+const formatBytes = (bytes: number): string => {
   if (!bytes) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -46,28 +96,34 @@ const formatBytes = (bytes) => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
 };
 
-export const BackupDashboard = ({ status, config, onRunBackup, isBackupRunning }) => {
+const healthColors: Record<HealthStatus, string> = {
+  excellent: 'green',
+  good: 'blue',
+  warning: 'amber',
+  critical: 'red',
+};
+
+export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config, onRunBackup, isBackupRunning }) => {
   const { t } = useTranslation();
   const lastBackup = status?.lastBackup;
-  const statistics = lastBackup?.statistics || {};
+  const statistics = lastBackup?.statistics ?? {};
   const isConfigured = config && config.backup_destination_type;
   const isEnabled = config?.backup_enabled;
 
-  // Calculate backup health score
-  const getHealthScore = () => {
+  const getHealthScore = (): { score: number; status: HealthStatus; message: string } => {
     if (!lastBackup) return { score: 0, status: 'critical', message: t('backup.dashboard.healthMessages.noBackups') };
-    
-    const hoursSinceBackup = (Date.now() - new Date(lastBackup.created_at)) / (1000 * 60 * 60);
-    
+
+    const hoursSinceBackup = (Date.now() - new Date(lastBackup.created_at).getTime()) / (1000 * 60 * 60);
+
     if (lastBackup.status === 'failed') {
       return { score: 0, status: 'critical', message: t('backup.dashboard.healthMessages.lastBackupFailed') };
     }
-    
+
     if (hoursSinceBackup < 24) {
       return { score: 100, status: 'excellent', message: t('backup.dashboard.healthMessages.upToDate') };
     } else if (hoursSinceBackup < 48) {
       return { score: 75, status: 'good', message: t('backup.dashboard.healthMessages.recent') };
-    } else if (hoursSinceBackup < 168) { // 1 week
+    } else if (hoursSinceBackup < 168) {
       return { score: 50, status: 'warning', message: t('backup.dashboard.healthMessages.gettingOld') };
     } else {
       return { score: 25, status: 'critical', message: t('backup.dashboard.healthMessages.outdated') };
@@ -75,12 +131,6 @@ export const BackupDashboard = ({ status, config, onRunBackup, isBackupRunning }
   };
 
   const health = getHealthScore();
-  const healthColors = {
-    excellent: 'green',
-    good: 'blue',
-    warning: 'amber',
-    critical: 'red'
-  };
 
   return (
     <div className="space-y-6">
@@ -106,10 +156,10 @@ export const BackupDashboard = ({ status, config, onRunBackup, isBackupRunning }
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('backup.dashboard.health.title')}</h3>
           <span className={`px-3 py-1 rounded-full text-sm font-medium bg-${healthColors[health.status]}-100 dark:bg-${healthColors[health.status]}-900/40 text-${healthColors[health.status]}-700 dark:text-${healthColors[health.status]}-300`}>
-            {health.status.charAt(0).toUpperCase() + health.status.slice(1)}
+            {t(`backup.dashboard.healthStatus.${health.status}`)}
           </span>
         </div>
-        
+
         <div className="flex items-center space-x-4">
           <div className="relative w-24 h-24">
             <svg className="w-24 h-24 transform -rotate-90">
@@ -137,7 +187,7 @@ export const BackupDashboard = ({ status, config, onRunBackup, isBackupRunning }
               <span className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{health.score}%</span>
             </div>
           </div>
-          
+
           <div className="flex-1">
             <p className="text-neutral-700 dark:text-neutral-300 font-medium">{health.message}</p>
             {lastBackup && (
@@ -145,7 +195,7 @@ export const BackupDashboard = ({ status, config, onRunBackup, isBackupRunning }
                 Last successful backup: {formatDistanceToNow(new Date(lastBackup.created_at), { addSuffix: true })}
               </p>
             )}
-            
+
             <Button
               onClick={onRunBackup}
               disabled={!isConfigured || !isEnabled || isBackupRunning}
@@ -177,7 +227,7 @@ export const BackupDashboard = ({ status, config, onRunBackup, isBackupRunning }
           color="blue"
           subtext={lastBackup ? `${t('backup.dashboard.stats.last')}: ${format(new Date(lastBackup.created_at), 'PP')}` : t('backup.dashboard.stats.noBackupsYet')}
         />
-        
+
         <StatCard
           icon={HardDrive}
           label={t('backup.dashboard.stats.backupSize')}
@@ -185,7 +235,7 @@ export const BackupDashboard = ({ status, config, onRunBackup, isBackupRunning }
           color="green"
           subtext={`${statistics.files_processed || 0} ${t('backup.dashboard.stats.files')}`}
         />
-        
+
         <StatCard
           icon={Clock}
           label={t('backup.dashboard.stats.lastDuration')}
@@ -193,7 +243,7 @@ export const BackupDashboard = ({ status, config, onRunBackup, isBackupRunning }
           color="purple"
           subtext={lastBackup ? format(new Date(lastBackup.created_at), 'p') : ''}
         />
-        
+
         <StatCard
           icon={Shield}
           label={t('backup.dashboard.stats.backupStatus')}

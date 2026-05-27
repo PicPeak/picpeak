@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
+const { slugify } = require('../utils/slug');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const router = express.Router();
@@ -393,7 +394,21 @@ router.post('/', adminAuth, requirePermission('events.create'), [
     'upload_date_desc', 'upload_date_asc',
     'capture_date_desc', 'capture_date_asc',
     'filename_asc', 'filename_desc'
-  ])
+  ]),
+  // Per-event promotional override (#440). Three-way mode:
+  //   inherit → fall back to global branding_promo_markdown
+  //   custom  → render this event's promo_markdown verbatim
+  //   off     → suppress entirely for this event
+  body('promo_mode').optional().isIn(['inherit', 'custom', 'off']),
+  body('promo_markdown').optional({ nullable: true }).isString(),
+  // Per-event opt-in for using hero photo as the social-share preview
+  // image (#474). When false (default), galleryOgService falls back to
+  // the brand logo for og:image / Twitter Card.
+  body('og_image_share_enabled').optional().isBoolean(),
+  // Customer accounts assigned to this event (#354). Optional array of
+  // customer_accounts.id — many-to-many via event_customer_assignments.
+  body('customer_account_ids').optional().isArray(),
+  body('customer_account_ids.*').optional().isInt({ min: 1 })
 ], async (req, res) => {
   try {
     logger.debug('Create event request body', { body: req.body });
@@ -425,7 +440,7 @@ router.post('/', adminAuth, requirePermission('events.create'), [
       allow_presigned_download = false,
       require_password: requirePasswordInput,
       // Feedback settings
-      feedback_enabled = false,
+      feedback_enabled: feedbackEnabledInput,
       allow_ratings = true,
       allow_likes = true,
       allow_comments = true,
@@ -493,6 +508,17 @@ router.post('/', adminAuth, requirePermission('events.create'), [
     }
     const requirePassword = parseBooleanInput(requirePasswordInput, requirePasswordFallback);
 
+    // Default feedback_enabled from global "event_default_feedback_enabled"
+    // setting when the body omits it (#520 — same pattern as require_password
+    // above, lets admins make Guest Feedback ON the out-of-box default for
+    // new events instead of toggling it on every time).
+    let feedbackEnabledFallback = false;
+    if (feedbackEnabledInput === undefined) {
+      const setting = await readBooleanSetting('event_default_feedback_enabled');
+      if (setting !== undefined) feedbackEnabledFallback = setting;
+    }
+    const feedback_enabled = parseBooleanInput(feedbackEnabledInput, feedbackEnabledFallback);
+
     // Debug logging
     logger.debug('Download control values', {
       allow_downloads,
@@ -524,12 +550,10 @@ router.post('/', adminAuth, requirePermission('events.create'), [
       }
     }
     
-    // Generate unique slug
-    const processedEventName = event_name
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, '-') // Replace non-alphanumeric with dash
-      .replace(/-+/g, '-')         // Replace multiple dashes with single dash
-      .replace(/^-|-$/g, '');      // Remove leading/trailing dashes
+    // Generate unique slug. Uses the shared util so accented names
+    // (Família, Decoração, etc.) get transliterated instead of dropped
+    // — see backend/src/utils/slug.js for the why (#525).
+    const processedEventName = slugify(event_name);
 
     // Use event_date in slug if provided, otherwise use random suffix
     const slugSuffix = event_date || crypto.randomBytes(3).toString('hex');
@@ -653,12 +677,37 @@ router.post('/', adminAuth, requirePermission('events.create'), [
       ...(client_access_enabled && client_password ? {
         client_password_hash: await bcrypt.hash(client_password, getBcryptRounds()),
         client_share_token: crypto.randomBytes(32).toString('hex')
-      } : {})
+      } : {}),
+      // Per-event opt-in for hero-photo OG share image (#474). Defaults
+      // false on create — admin opts in from the event detail page once
+      // they've picked a hero they're comfortable surfacing publicly.
+      og_image_share_enabled: formatBoolean(req.body.og_image_share_enabled === true),
     }).returning('id');
     
     // Handle both PostgreSQL (returns array of objects) and SQLite (returns array of IDs)
     const eventId = insertResult[0]?.id || insertResult[0];
-    
+
+    // Apply customer-account assignments (#354). Skip when the customer
+    // portal flag is off — the frontend hides the picker in that case,
+    // but a stale tab could still POST customer_account_ids; we ignore
+    // them rather than 403 the entire create.
+    if (Array.isArray(req.body.customer_account_ids)) {
+      try {
+        const customerAccountsService = require('../services/customerAccountsService');
+        if (await customerAccountsService.isCustomerPortalEnabled()) {
+          await customerAccountsService.setAssignmentsForEvent(
+            eventId,
+            req.body.customer_account_ids,
+            req.admin.id
+          );
+        }
+      } catch (e) {
+        logger.error('Failed to set customer assignments on event create', {
+          eventId, error: e.message,
+        });
+      }
+    }
+
     // Insert feedback settings if feedback is enabled
     if (feedback_enabled) {
       await db('event_feedback_settings').insert({
@@ -937,6 +986,17 @@ router.get('/:id', adminAuth, requirePermission('events.view'), async (req, res)
       .where('event_id', id)
       .countDistinct('ip_address as uniqueVisitors');
 
+    // Customer accounts assigned to this event (#354). Hydrates the
+    // CustomerAccountPicker on the EventDetailsPage admin form. Returns
+    // an empty array on installs missing the table (e.g. pre-migrate).
+    let customerAccounts = [];
+    try {
+      const customerAccountsService = require('../services/customerAccountsService');
+      customerAccounts = await customerAccountsService.getAssignmentsForEvent(parseInt(id, 10));
+    } catch (e) {
+      logger.warn('Failed to load customer assignments for event', { eventId: id, error: e.message });
+    }
+
     res.json(mapEventForApi({
       ...event,
       photo_count: parseInt(photoCount) || 0,
@@ -944,7 +1004,14 @@ router.get('/:id', adminAuth, requirePermission('events.view'), async (req, res)
       total_views: parseInt(totalViews) || 0,
       total_downloads: parseInt(totalDownloads) || 0,
       unique_visitors: parseInt(uniqueVisitors) || 0,
-      recent_photos: recentPhotos
+      recent_photos: recentPhotos,
+      customer_accounts: customerAccounts.map((c) => ({
+        id: c.id,
+        email: c.email,
+        display_name: c.display_name,
+        first_name: c.first_name,
+        last_name: c.last_name,
+      })),
     }));
   } catch (error) {
     console.error('Error fetching event:', error);
@@ -1100,7 +1167,21 @@ router.put('/:id', adminAuth, requirePermission('events.edit'), requireEventOwne
     'upload_date_desc', 'upload_date_asc',
     'capture_date_desc', 'capture_date_asc',
     'filename_asc', 'filename_desc'
-  ])
+  ]),
+  // Per-event promotional override (#440). Three-way mode:
+  //   inherit → fall back to global branding_promo_markdown
+  //   custom  → render this event's promo_markdown verbatim
+  //   off     → suppress entirely for this event
+  body('promo_mode').optional().isIn(['inherit', 'custom', 'off']),
+  body('promo_markdown').optional({ nullable: true }).isString(),
+  // Per-event opt-in for using hero photo as the social-share preview
+  // image (#474). When false (default), galleryOgService falls back to
+  // the brand logo for og:image / Twitter Card.
+  body('og_image_share_enabled').optional().isBoolean(),
+  // Customer accounts assigned to this event (#354). Optional array of
+  // customer_accounts.id — many-to-many via event_customer_assignments.
+  body('customer_account_ids').optional().isArray(),
+  body('customer_account_ids.*').optional().isInt({ min: 1 })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -1192,14 +1273,6 @@ router.put('/:id', adminAuth, requirePermission('events.edit'), requireEventOwne
       return res.status(400).json({ error: 'external_path is required when source_mode is reference' });
     }
 
-    // Handle client access fields (#172)
-    if (Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled')) {
-      updates.client_access_enabled = formatBoolean(updates.client_access_enabled);
-      // Auto-generate client share token when first enabling
-      if (parseBooleanInput(updates.client_access_enabled, false) && !event.client_share_token) {
-        updates.client_share_token = crypto.randomBytes(32).toString('hex');
-      }
-    }
     if (Object.prototype.hasOwnProperty.call(updates, 'client_password') && updates.client_password) {
       updates.client_password_hash = await bcrypt.hash(updates.client_password, getBcryptRounds());
       delete updates.client_password;
@@ -1210,6 +1283,13 @@ router.put('/:id', adminAuth, requirePermission('events.edit'), requireEventOwne
       updates.client_share_token = crypto.randomBytes(32).toString('hex');
     }
     delete updates.regenerate_client_token;
+
+    // customer_account_ids (#354) is a body-only field consumed
+    // separately below by customerAccountsService.setAssignmentsForEvent
+    // — it isn't a column on the events table, so spreading it into
+    // the UPDATE statement throws "column does not exist" and crashes
+    // the entire edit with 500 Failed to update event.
+    delete updates.customer_account_ids;
 
     // Log the update request for debugging
     logger.debug('Update event request', {
@@ -1245,19 +1325,39 @@ router.put('/:id', adminAuth, requirePermission('events.edit'), requireEventOwne
     }
 
     // Enforce expires_at requirement based on app settings
-    if (Object.prototype.hasOwnProperty.call(updates, 'expires_at')) {
-      if (!updates.expires_at) {
-        const fieldReqs = await getEventFieldRequirements();
-        if (fieldReqs.require_expiration) {
-          return res.status(400).json({ error: 'Expiration date is required.' });
-        }
-        updates.expires_at = null;
-      }
+    // Allow admins to clear `expires_at` on edit even when the global
+    // `event_require_expiration` setting is ON (#426). The setting now
+    // controls only the create-time default — once an event exists, an
+    // admin editing it can override and remove the expiration. Empty /
+    // null values normalize to NULL in the column ("never expires").
+    if (Object.prototype.hasOwnProperty.call(updates, 'expires_at') && !updates.expires_at) {
+      updates.expires_at = null;
     }
 
     // Format hero logo settings if provided
     if (Object.prototype.hasOwnProperty.call(updates, 'hero_logo_visible')) {
       updates.hero_logo_visible = formatBoolean(updates.hero_logo_visible);
+    }
+
+    // Per-event opt-in for hero-photo OG share image (#474). Coerce so
+    // SQLite stores 0/1 and Postgres stores boolean true/false.
+    if (Object.prototype.hasOwnProperty.call(updates, 'og_image_share_enabled')) {
+      updates.og_image_share_enabled = formatBoolean(updates.og_image_share_enabled === true);
+    }
+
+    // Per-event promotional override (#440). Normalize promo_markdown to
+    // NULL when mode is anything other than 'custom' so we don't carry
+    // stale text after the admin switches modes. Empty markdown also
+    // becomes NULL.
+    if (Object.prototype.hasOwnProperty.call(updates, 'promo_mode')
+      || Object.prototype.hasOwnProperty.call(updates, 'promo_markdown')) {
+      const mode = updates.promo_mode;
+      if (mode && mode !== 'custom') {
+        updates.promo_markdown = null;
+      } else if (Object.prototype.hasOwnProperty.call(updates, 'promo_markdown')) {
+        const md = typeof updates.promo_markdown === 'string' ? updates.promo_markdown.trim() : '';
+        updates.promo_markdown = md || null;
+      }
     }
 
     // Sync header_style / hero_divider_style from color_theme JSON when not
@@ -1281,10 +1381,39 @@ router.put('/:id', adminAuth, requirePermission('events.edit'), requireEventOwne
       }
     }
 
+    // Handle client access fields (#172)
+    if (Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled')) {
+      updates.client_access_enabled = formatBoolean(updates.client_access_enabled);
+      // Auto-generate client share token when first enabling
+      if (parseBooleanInput(updates.client_access_enabled, false) && !event.client_share_token && !updates.client_share_token) {
+        updates.client_share_token = crypto.randomBytes(32).toString('hex');
+      }
+    }
+
     // Update event
     await db('events')
       .where('id', id)
       .update(updates);
+
+    // Customer-account assignments (#354). Same skip semantics as POST:
+    // ignore when the customer portal flag is off so stale tabs don't
+    // 4xx the whole edit.
+    if (Array.isArray(req.body.customer_account_ids)) {
+      try {
+        const customerAccountsService = require('../services/customerAccountsService');
+        if (await customerAccountsService.isCustomerPortalEnabled()) {
+          await customerAccountsService.setAssignmentsForEvent(
+            parseInt(id, 10),
+            req.body.customer_account_ids,
+            req.admin.id
+          );
+        }
+      } catch (e) {
+        logger.error('Failed to set customer assignments on event update', {
+          eventId: id, error: e.message,
+        });
+      }
+    }
 
     // Log activity
     await logActivity('event_updated',
@@ -1652,18 +1781,23 @@ router.post('/bulk-archive', adminAuth, requirePermission('events.archive'), [
   }
 });
 
-// Bulk delete — destructive, irreversible. Requires the calling admin to
-// re-enter their password as a confirmation gate (verified against the
-// stored bcrypt hash, same pattern as /auth/admin/change-password). Caps at
-// 100 events per request to keep request time bounded; the per-event
-// cascade touches 5 DB tables + 3 filesystem paths so 1000 events would
-// risk timing out the request. Loops via deleteEventCascade so the per-
-// event delete behaviour stays in lock-step with DELETE /:id.
+// Bulk delete — destructive, irreversible. Caps at 100 events per request
+// to keep request time bounded; the per-event cascade touches 5 DB tables
+// + 3 filesystem paths so 1000 events would risk timing out the request.
+// Loops via deleteEventCascade so the per-event delete behaviour stays in
+// lock-step with DELETE /:id.
+//
+// Confirmation is enforced client-side via the typed-DELETE pattern in
+// BulkDeleteModal (#417). The previous server-side bcrypt-password gate
+// was dropped because the destructive single-event DELETE /:id has never
+// required a password either — events.delete permission + admin session
+// is the auth boundary for both. The typed-literal client gate is the
+// "accidental click" safeguard, and unlike a password input it isn't
+// affected by passkey/Windows Hello autofill that auto-submits the form.
 const BULK_DELETE_MAX = 100;
 router.post('/bulk-delete', adminAuth, requirePermission('events.delete'), [
   body('eventIds').isArray({ min: 1, max: BULK_DELETE_MAX }).withMessage(`eventIds must be an array of 1-${BULK_DELETE_MAX} ids`),
-  body('eventIds.*').isInt().withMessage('Each eventId must be an integer'),
-  body('password').isString().notEmpty().withMessage('Password is required for confirmation')
+  body('eventIds.*').isInt().withMessage('Each eventId must be an integer')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -1671,19 +1805,7 @@ router.post('/bulk-delete', adminAuth, requirePermission('events.delete'), [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { eventIds, password } = req.body;
-
-    // Verify the admin's password before doing anything destructive.
-    // Same pattern as /auth/admin/change-password (auth.js).
-    const admin = await db('admin_users').where({ id: req.admin.id }).first();
-    if (!admin) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-    const validPassword = await bcrypt.compare(password, admin.password_hash);
-    if (!validPassword) {
-      logger.warn('Incorrect password on bulk-delete attempt', { adminId: req.admin.id, eventCount: eventIds.length });
-      return res.status(401).json({ error: 'Incorrect password', code: 'INVALID_PASSWORD' });
-    }
+    const { eventIds } = req.body;
 
     // Editor-role events.delete permission is already gated by the route
     // middleware. We do NOT additionally filter to created_by here because

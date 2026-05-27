@@ -23,6 +23,9 @@ const { apiTokenAuth, requireApiScope } = require('../../middleware/apiTokenAuth
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const { generateThumbnail } = require('../../services/imageProcessor');
 const logger = require('../../utils/logger');
+const { slugify } = require('../../utils/slug');
+const { formatBoolean } = require('../../utils/dbCompat');
+const { parseBooleanInput } = require('../../utils/parsers');
 
 const router = express.Router();
 
@@ -51,8 +54,8 @@ const photoUpload = multer({
   }
 });
 
-const slugify = (s) =>
-  String(s).toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+// slugify now imported from ../../utils/slug — shared with adminEvents
+// and events.js so the diacritic fix from #502 lands here too (#525).
 
 // ──────────────────────────────────────────────────────────────────────────
 // POST /events — create event
@@ -86,6 +89,8 @@ const slugify = (s) =>
  *               require_password: { type: boolean, default: true }
  *               password: { type: string, nullable: true, description: "Required when require_password is true." }
  *               expires_at: { type: string, format: date-time, nullable: true }
+ *               color_theme: { type: string, nullable: true, description: "Preset name (e.g. 'default') or JSON-encoded ThemeConfig. Persisted as-is on the event row." }
+ *               feedback_enabled: { type: boolean, nullable: true, description: "Enable guest feedback for this gallery. When omitted, falls back to the global event_default_feedback_enabled setting." }
  *     responses:
  *       201:
  *         description: Event created
@@ -116,7 +121,9 @@ router.post(
     body('admin_email').optional({ nullable: true, checkFalsy: true }).isEmail(),
     body('require_password').optional().isBoolean(),
     body('password').optional({ nullable: true }).isString().isLength({ min: 6 }),
-    body('expires_at').optional({ nullable: true, checkFalsy: true }).isISO8601()
+    body('expires_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
+    body('color_theme').optional({ nullable: true }).isString().trim(),
+    body('feedback_enabled').optional().isBoolean()
   ],
   async (req, res) => {
     try {
@@ -126,8 +133,27 @@ router.post(
         event_name, event_type, event_date,
         customer_name = null, customer_email = null, customer_phone = null,
         admin_email = null, require_password = true, password,
-        expires_at = null
+        expires_at = null,
+        color_theme = null,
+        feedback_enabled: feedbackEnabledInput
       } = req.body;
+
+      // Issue #550 — mirror the admin POST path so API-created events
+      // pick up the global "Enable Guest Feedback by default" toggle
+      // (event_default_feedback_enabled). Without this, the UI reads
+      // a missing event_feedback_settings row as "feedback off"
+      // regardless of the admin's chosen default.
+      let feedbackEnabledFallback = false;
+      if (feedbackEnabledInput === undefined) {
+        const setting = await db('app_settings').where('setting_key', 'event_default_feedback_enabled').first();
+        if (setting) {
+          try {
+            const parsed = JSON.parse(setting.setting_value);
+            if (typeof parsed === 'boolean') feedbackEnabledFallback = parsed;
+          } catch { /* keep false */ }
+        }
+      }
+      const feedback_enabled = parseBooleanInput(feedbackEnabledInput, feedbackEnabledFallback);
 
       if (require_password && (!password || password.length < 6)) {
         return res.status(400).json({ error: 'Password is required when require_password is true (min 6 chars)' });
@@ -173,11 +199,35 @@ router.post(
         created_at: new Date().toISOString(),
         created_by: req.admin.id,
         is_draft: false,
+        // Issue #550 — without this, editing an API-created event in the
+        // admin UI snaps the theme picker to GALLERY_THEME_PRESETS.default
+        // and saving overwrites whatever theme was inherited visually.
+        color_theme,
         ...(customer_name ? { customer_name } : {}),
         ...(customer_email ? { customer_email } : {}),
         ...(persistPhone ? { customer_phone: persistPhone } : {})
       }).returning('id');
       const id = insertResult[0]?.id || insertResult[0];
+
+      // Issue #550 — mirror adminEvents.js: create event_feedback_settings
+      // row when feedback is enabled, so the gallery actually shows
+      // feedback UI. Sub-flags default to the same values the admin form
+      // ships with (everything on except require_name_email).
+      if (feedback_enabled) {
+        await db('event_feedback_settings').insert({
+          event_id: id,
+          feedback_enabled: formatBoolean(true),
+          allow_ratings: formatBoolean(true),
+          allow_likes: formatBoolean(true),
+          allow_comments: formatBoolean(true),
+          allow_favorites: formatBoolean(true),
+          require_name_email: formatBoolean(false),
+          moderate_comments: formatBoolean(true),
+          show_feedback_to_guests: formatBoolean(true),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      }
 
       await logActivity('event_created', { via: 'api_v1', event_type }, id, {
         type: 'admin', id: req.admin.id, name: req.admin.username
@@ -338,6 +388,13 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), async (req, res
  *             required: [photo]
  *             properties:
  *               photo: { type: string, format: binary }
+ *               category_id:
+ *                 type: integer
+ *                 description: |
+ *                   Optional. If provided, the photo is filed under the
+ *                   given photo_categories.id (must belong to the event
+ *                   or be a global category). If omitted, the photo
+ *                   lands uncategorized.
  *     responses:
  *       201:
  *         description: Photo uploaded
@@ -351,6 +408,7 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), async (req, res
  *                 path: { type: string }
  *                 thumbnail_path: { type: string, nullable: true }
  *                 size_bytes: { type: integer }
+ *                 category_id: { type: integer, nullable: true }
  *       400: { description: No file or invalid type }
  *       404: { description: Event not found }
  */
@@ -367,6 +425,38 @@ router.post(
 
       const event = await db('events').where({ id: req.params.id }).first();
       if (!event) return res.status(404).json({ error: 'Event not found' });
+
+      // Optional category assignment, mirroring the admin upload route
+      // (adminPhotos.js). Multipart form field `category_id`. If the
+      // category looks up to a "collage" slug, the photo's `type` flips
+      // accordingly so existing collage-aware UI paths still work.
+      const rawCategoryId = req.body?.category_id;
+      const parsedCategoryId = rawCategoryId ? parseInt(rawCategoryId, 10) : NaN;
+      let categoryId = null;
+      let photoType = 'individual';
+      if (!Number.isNaN(parsedCategoryId)) {
+        // Scope to categories owned by this event (event_id = event.id) or
+        // marked global (is_global = true) — see migration
+        // backend/migrations/legacy/004_add_categories_and_cms.js. An API
+        // token inherits its owning admin's powers (no per-event scoping
+        // in apiTokenAuth), so accepting any category_id would silently
+        // mis-file uploads under a category belonging to a different event.
+        const category = await db('photo_categories')
+          .where({ id: parsedCategoryId })
+          .andWhere(function () {
+            this.where({ event_id: event.id }).orWhere('is_global', true);
+          })
+          .first();
+        if (!category) {
+          return res.status(400).json({
+            error: `Unknown or out-of-scope category_id ${parsedCategoryId}`,
+          });
+        }
+        categoryId = category.id;
+        if (category.slug === 'collage' || category.slug === 'collages') {
+          photoType = 'collage';
+        }
+      }
 
       const ext = path.extname(req.file.originalname);
       const finalName = `${Date.now()}_${crypto.randomBytes(4).toString('hex')}${ext}`;
@@ -408,7 +498,8 @@ router.post(
         original_filename: req.file.originalname,
         path: relPath,
         thumbnail_path: thumbRel,
-        type: 'individual',
+        type: photoType,
+        category_id: categoryId,
         size_bytes: stat.size,
         width,
         height,
@@ -432,7 +523,14 @@ router.post(
         });
       } catch (e) { /* non-fatal */ }
 
-      res.status(201).json({ id, filename: finalName, path: relPath, thumbnail_path: thumbRel, size_bytes: stat.size });
+      res.status(201).json({
+        id,
+        filename: finalName,
+        path: relPath,
+        thumbnail_path: thumbRel,
+        size_bytes: stat.size,
+        category_id: categoryId
+      });
     } catch (error) {
       logger.error('v1 POST /events/:id/photos failed', { error: error.message });
       if (tempPath) await fs.unlink(tempPath).catch(() => {});

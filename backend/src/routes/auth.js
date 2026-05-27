@@ -476,7 +476,18 @@ router.post('/gallery/logout', async (req, res) => {
 router.get('/session', async (req, res) => {
   try {
     const { slug } = req.query;
-    const token = getAdminTokenFromRequest(req) || getGalleryTokenFromRequest(req, slug);
+    // Token precedence: when ?slug= is present the caller is asking
+    // specifically about gallery auth (GalleryAuthContext), so prefer the
+    // gallery token. Without this, an admin who's also dogfooding the
+    // customer dashboard from the same browser would always get
+    // {type:'admin'} back here, the gallery context's
+    // `type === 'gallery'` check would fail, and the page would fall
+    // through to the per-event password prompt — even though the
+    // gallery_token_<slug> cookie was correctly set on the prior
+    // /api/customer/events/:slug/access-token response.
+    const token = slug
+      ? (getGalleryTokenFromRequest(req, slug) || getAdminTokenFromRequest(req))
+      : (getAdminTokenFromRequest(req) || getGalleryTokenFromRequest(req, slug));
 
     if (!token) {
       return res.status(401).json({ error: 'No token provided' });

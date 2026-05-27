@@ -16,10 +16,13 @@ export interface GeneralSettings {
   max_file_size_mb: number;
   max_files_per_upload: number;
   allowed_file_types: string;
+  // #509 — re-added after the main-into-beta merge dropped it.
+  max_upload_batch_size_mb: number;
   enable_analytics: boolean;
   enable_registration: boolean;
   maintenance_mode: boolean;
   short_gallery_urls: boolean;
+  use_original_filenames_for_downloads: boolean;
   default_language: string;
   date_format: { format: string; locale: string };
 }
@@ -51,6 +54,7 @@ export interface EventSettings {
   event_require_event_date: boolean;
   event_require_expiration: boolean;
   event_default_require_password: boolean;
+  event_default_feedback_enabled: boolean;
   gallery_show_filter_bar: boolean;
   event_phone_field_enabled: boolean;
 }
@@ -69,7 +73,7 @@ export interface SeoSettings {
 
 export function useSettingsState() {
   const queryClient = useQueryClient();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { updateUserProfile } = useAdminAuth();
 
   // Fetch settings
@@ -90,10 +94,12 @@ export function useSettingsState() {
     max_file_size_mb: 50,
     max_files_per_upload: 500,
     allowed_file_types: 'jpg,jpeg,png,gif,webp',
+    max_upload_batch_size_mb: 95,
     enable_analytics: true,
     enable_registration: false,
     maintenance_mode: false,
     short_gallery_urls: false,
+    use_original_filenames_for_downloads: false,
     default_language: 'en',
     date_format: { format: 'dd/MM/yyyy', locale: 'en-GB' }
   });
@@ -128,6 +134,7 @@ export function useSettingsState() {
     event_require_event_date: true,
     event_require_expiration: true,
     event_default_require_password: true,
+    event_default_feedback_enabled: false,
     gallery_show_filter_bar: true,
     event_phone_field_enabled: false
   });
@@ -162,10 +169,6 @@ export function useSettingsState() {
   // Initialize settings from API
   useEffect(() => {
     if (settings) {
-      if (settings.general_default_language && settings.general_default_language !== i18n.language) {
-        i18n.changeLanguage(settings.general_default_language);
-      }
-
       setGeneralSettings({
         site_url: settings.general_site_url || '',
         default_expiration_days: toNumber(settings.general_default_expiration_days, 30),
@@ -175,10 +178,15 @@ export function useSettingsState() {
           Math.max(1, toNumber(settings.general_max_files_per_upload, 500))
         ),
         allowed_file_types: settings.general_allowed_file_types || 'jpg,jpeg,png,gif,webp',
+        max_upload_batch_size_mb: toNumber(settings.general_max_upload_batch_size_mb, 95),
         enable_analytics: toBoolean(settings.general_enable_analytics, true),
         enable_registration: toBoolean(settings.general_enable_registration, false),
         maintenance_mode: toBoolean(settings.general_maintenance_mode, false),
         short_gallery_urls: toBoolean(settings.general_short_gallery_urls, false),
+        use_original_filenames_for_downloads: toBoolean(
+          settings.general_use_original_filenames_for_downloads,
+          false
+        ),
         default_language: settings.general_default_language || 'en',
         date_format: settings.general_date_format
           ? (typeof settings.general_date_format === 'string'
@@ -214,6 +222,7 @@ export function useSettingsState() {
         event_require_event_date: toBoolean(settings.event_require_event_date, true),
         event_require_expiration: toBoolean(settings.event_require_expiration, true),
         event_default_require_password: toBoolean(settings.event_default_require_password, true),
+        event_default_feedback_enabled: toBoolean(settings.event_default_feedback_enabled, false),
         gallery_show_filter_bar: toBoolean(settings.gallery_show_filter_bar, true),
         event_phone_field_enabled: toBoolean(settings.event_phone_field_enabled, false)
       });
@@ -230,7 +239,7 @@ export function useSettingsState() {
         sitemap_url: settings.seo_sitemap_url || ''
       });
     }
-  }, [settings, i18n]);
+  }, [settings]);
 
   useEffect(() => {
     if (adminProfile) {

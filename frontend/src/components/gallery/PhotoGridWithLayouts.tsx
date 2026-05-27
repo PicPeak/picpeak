@@ -71,6 +71,9 @@ interface PhotoGridWithLayoutsProps {
   // Client visibility controls (#172)
   isClient?: boolean;
   onToggleVisibility?: (photoId: number, currentVisibility: string) => void;
+  // Mirror of the admin original-filename toggle (#508). When true, the
+  // lightbox bottom toolbar surfaces each photo's original camera name.
+  showOriginalFilename?: boolean;
 }
 
 export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
@@ -105,7 +108,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   welcomeMessage,
   onLogout,
   isClient = false,
-  onToggleVisibility
+  onToggleVisibility,
+  showOriginalFilename = false,
 }) => {
   const { t } = useTranslation();
   const { theme } = useTheme();
@@ -238,6 +242,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     onLogout,
     isClient,
     onToggleVisibility,
+    showOriginalFilename,
   };
 
   // Determine if we should show hero header (decoupled from layout)
@@ -379,6 +384,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           enableDevtoolsProtection={enableDevtoolsProtection}
           initialShowFeedback={openFeedbackInitially}
           onFeedbackChange={onFeedbackChange}
+          showOriginalFilename={showOriginalFilename}
         />
       )}
     </>

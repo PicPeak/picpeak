@@ -57,8 +57,9 @@ const safeParseDate = (dateValue: unknown): Date | null => {
 import { toast } from 'react-toastify';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
-import { Button, Input, Card, Loading } from '../../components/common';
+import { Button, Input, Card, Loading, MarkdownContent } from '../../components/common';
 import { EventCategoryManager, AdminPhotoGrid, AdminPhotoViewer, PhotoFilters, PasswordResetModal, ThemeCustomizerEnhanced, ThemeDisplay, HeroPhotoSelector, FocalPointPicker, PhotoUploadModal, FeedbackSettings, FeedbackModerationPanel, EventRenameDialog, PhotoFilterPanel, PhotoExportMenu, AdminGuestsList } from '../../components/admin';
+import { CustomerAccountPicker } from '../../components/admin/CustomerAccountPicker';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
@@ -284,6 +285,18 @@ export const EventDetailsPage: React.FC = () => {
     photo_cap: number;
     // Default photo sort
     default_photo_sort: string;
+    // Per-event promotional override (#440). Three-way mode:
+    //   inherit → use the global branding_promo_markdown
+    //   custom  → render this event's promo_markdown
+    //   off     → no promo for this event regardless of global
+    promo_mode: 'inherit' | 'custom' | 'off';
+    promo_markdown: string;
+    // Customer accounts assigned to this event (#354). Hydrated from
+    // the GET /admin/events/:id response and sent back as a flat id
+    // array on save.
+    customer_accounts: Array<{ id: number; email: string; displayName: string | null }>;
+    // Per-event opt-in for hero photo as social-share preview (#474).
+    og_image_share_enabled: boolean;
   };
 
   const [isEditing, setIsEditing] = useState(false);
@@ -321,6 +334,15 @@ export const EventDetailsPage: React.FC = () => {
     photo_cap: 0,
     // Default photo sort
     default_photo_sort: 'upload_date_desc',
+    // Per-event promotional override (#440)
+    promo_mode: 'inherit',
+    promo_markdown: '',
+    // Customer accounts (#354) — hydrated from event response.
+    customer_accounts: [],
+    // Per-event social-share opt-in (#474). Default false everywhere
+    // so a freshly opened editor never displays "on" against the saved
+    // (off) state.
+    og_image_share_enabled: false,
   });
   const [feedbackSettings, setFeedbackSettings] = useState<FeedbackSettingsType>({
     feedback_enabled: false,
@@ -350,6 +372,12 @@ export const EventDetailsPage: React.FC = () => {
   const [logoUploading, setLogoUploading] = useState(false);
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig | null>(null);
   const [currentPresetName, setCurrentPresetName] = useState<string>('default');
+  // Tracks whether the admin actually interacted with the theme picker
+  // during this edit session. Prevents the save handler from writing the
+  // initial display state back to `events.color_theme`, which silently
+  // overwrote branding inheritance on events with a NULL color_theme
+  // (API-created events — #550 follow-up).
+  const [themeChanged, setThemeChanged] = useState(false);
   const [cssTemplates, setCssTemplates] = useState<EnabledTemplate[]>([]);
 
   // Fetch CSS templates when component mounts or editing starts
@@ -459,7 +487,6 @@ export const EventDetailsPage: React.FC = () => {
   }, [showMediaFilter, photoFilters.media_type]);
 
   const { data: publicSettings } = usePublicSettings();
-  const requireExpiration = publicSettings?.event_require_expiration !== false;
   const phoneFieldEnabled = publicSettings?.event_phone_field_enabled === true;
 
   // Fetch categories for the event
@@ -577,6 +604,18 @@ export const EventDetailsPage: React.FC = () => {
       photo_cap: event.photo_cap || 0,
       // Default photo sort
       default_photo_sort: event.default_photo_sort || 'upload_date_desc',
+      // Per-event promotional override (#440)
+      promo_mode: ((event as { promo_mode?: 'inherit' | 'custom' | 'off' }).promo_mode) || 'inherit',
+      promo_markdown: (event as { promo_markdown?: string }).promo_markdown || '',
+      // Customer accounts (#354). The backend returns
+      // `customer_accounts: [{ id, email, display_name, ... }]`; map to
+      // the picker's shape.
+      customer_accounts: ((event as { customer_accounts?: Array<{ id: number; email: string; display_name?: string | null }> }).customer_accounts || [])
+        .map((c) => ({ id: c.id, email: c.email, displayName: c.display_name ?? null })),
+      // Per-event social-share opt-in (#474). Coerce explicitly so
+      // SQLite's 0/1 and Postgres's true/false both render the switch
+      // in the right state on first paint.
+      og_image_share_enabled: event.og_image_share_enabled === true,
     });
 
     setShowNewPassword(false);
@@ -610,10 +649,20 @@ export const EventDetailsPage: React.FC = () => {
         setCurrentPresetName('default');
       }
     } else {
-      setCurrentTheme(GALLERY_THEME_PRESETS.default.config);
-      setCurrentPresetName('default');
+      // No color_theme stored — the gallery renders with the site
+      // branding theme as a fallback. Mirror that here so the picker
+      // shows the same palette the admin sees on the gallery, rather
+      // than the hardcoded Classic Grid preset that has nothing to do
+      // with their branding (#550 follow-up). currentPresetName=custom
+      // because the inherited config isn't a named preset; combined
+      // with themeChanged=false below, saving without touching the
+      // picker leaves color_theme NULL and preserves inheritance.
+      const branding = publicSettings?.theme_config as ThemeConfig | undefined;
+      setCurrentTheme(branding ?? GALLERY_THEME_PRESETS.default.config);
+      setCurrentPresetName(branding ? 'custom' : 'default');
     }
-    
+    setThemeChanged(false);
+
     setIsEditing(true);
   };
 
@@ -686,10 +735,11 @@ export const EventDetailsPage: React.FC = () => {
       return;
     }
 
-    if (requireExpiration && !editForm.expires_at) {
-      toast.error(t('validation.expirationRequired', 'Expiration date is required.'));
-      return;
-    }
+    // No expiration-required validation on edit (#426). The global
+    // `event_require_expiration` setting only enforces a default at
+    // create-time — once an event exists, an admin can clear the
+    // expiration via this form. The matching backend gate was dropped
+    // in adminEvents.js.
 
     // Clean up the data - remove undefined values
     const updateData: any = {
@@ -718,13 +768,24 @@ export const EventDetailsPage: React.FC = () => {
       // Header style settings (decoupled from layout, #158)
       header_style: currentTheme?.headerStyle || 'standard',
       hero_divider_style: currentTheme?.heroDividerStyle || 'wave',
+      // Per-event promotional override (#440). Backend nulls
+      // promo_markdown automatically when mode != 'custom'.
+      promo_mode: editForm.promo_mode,
+      promo_markdown: editForm.promo_mode === 'custom' ? editForm.promo_markdown : null,
+      // Customer accounts (#354) — flat array of ids. Backend diffs
+      // against existing assignments in one transaction.
+      customer_account_ids: editForm.customer_accounts.map((c) => c.id),
     };
     
     // Only include fields that have defined values
     if (editForm.welcome_message !== undefined && editForm.welcome_message !== null) {
       updateData.welcome_message = editForm.welcome_message;
     }
-    if (themeToSave) {
+    // Only persist color_theme when the admin actually interacted with
+    // the picker. Writing the initial display state back to the row
+    // silently overwrote NULL (= "inherit branding") with the picker's
+    // default preset on any save (#550 follow-up).
+    if (themeChanged && themeToSave) {
       updateData.color_theme = themeToSave;
     }
     if (editForm.upload_category_id !== undefined) {
@@ -733,6 +794,10 @@ export const EventDetailsPage: React.FC = () => {
     if (editForm.hero_photo_id !== undefined) {
       updateData.hero_photo_id = editForm.hero_photo_id;
     }
+    // Per-event hero-photo OG share opt-in (#474). Always send the
+    // current state — the backend writes through formatBoolean either
+    // way, so an explicit save can flip the value back to false.
+    updateData.og_image_share_enabled = editForm.og_image_share_enabled;
     updateData.source_mode = editForm.source_mode;
     updateData.external_path = editForm.source_mode === 'reference'
       ? externalPathToSave
@@ -1115,6 +1180,13 @@ export const EventDetailsPage: React.FC = () => {
                   </div>
                 )}
 
+                {/* Customer accounts (#354). Picker self-hides when the
+                    customerPortal feature flag is off. */}
+                <CustomerAccountPicker
+                  value={editForm.customer_accounts}
+                  onChange={(next) => setEditForm((prev) => ({ ...prev, customer_accounts: next }))}
+                />
+
                 <div>
                   <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
                     {t('events.expirationDate')}
@@ -1134,6 +1206,35 @@ export const EventDetailsPage: React.FC = () => {
                   onSelect={(photoId) => setEditForm(prev => ({ ...prev, hero_photo_id: photoId }))}
                   isEditing={isEditing}
                 />
+
+                {/* Per-event social-share opt-in (#474). Toggle is
+                    disabled when no hero photo is picked — there's
+                    nothing to surface as the cover. The help text
+                    deliberately spells out the public-by-design
+                    consequence so an admin doesn't flip this on for
+                    a sensitive gallery without realising what they're
+                    sharing with link-preview crawlers. */}
+                <div className="ml-6 mt-3">
+                  <label className={`flex items-start gap-2 cursor-pointer ${editForm.hero_photo_id ? '' : 'opacity-60 cursor-not-allowed'}`}>
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+                      checked={editForm.og_image_share_enabled === true}
+                      disabled={!editForm.hero_photo_id}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, og_image_share_enabled: e.target.checked }))}
+                    />
+                    <span className="text-sm">
+                      <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                        {t('events.ogShare.title', 'Use hero photo as social-share preview')}
+                      </span>
+                      <span className="block text-xs text-neutral-600 dark:text-neutral-400 mt-0.5">
+                        {editForm.hero_photo_id
+                          ? t('events.ogShare.help', 'When this gallery URL is shared on WhatsApp, Facebook, Slack, etc., the link preview will show the hero photo above. The thumbnail is fetched unauthenticated by link-preview crawlers — anyone with the URL effectively makes this image public. Off by default; pick a hero you are comfortable surfacing publicly before enabling.')
+                          : t('events.ogShare.heroRequired', 'Pick a hero photo above first — this option uses it as the WhatsApp / Facebook / Slack preview image.')}
+                      </span>
+                    </span>
+                  </label>
+                </div>
 
                 {/* Hero Image Focal Point Picker (#162) */}
                 {editForm.hero_photo_id && (() => {
@@ -1363,6 +1464,52 @@ export const EventDetailsPage: React.FC = () => {
                     settings={feedbackSettings}
                     onChange={setFeedbackSettings}
                   />
+                </div>
+
+                {/* Promotional Banner Override (#440) — three-way: inherit / custom / off */}
+                <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+                  <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
+                    {t('events.promoBanner.title', 'Promotional Banner')}
+                  </h3>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+                    {t('events.promoBanner.help', 'Choose how this gallery handles the promotional banner. "Inherit" uses your global default; "Custom" overrides it for this event; "Off" hides it entirely.')}
+                  </p>
+                  <div className="space-y-2">
+                    {(['inherit', 'custom', 'off'] as const).map((mode) => (
+                      <label key={mode} className="flex items-center">
+                        <input
+                          type="radio"
+                          name="promo_mode"
+                          value={mode}
+                          checked={editForm.promo_mode === mode}
+                          onChange={() => setEditForm(prev => ({ ...prev, promo_mode: mode }))}
+                          className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 focus:ring-primary-500"
+                        />
+                        <span className="ml-2 text-sm text-neutral-700 dark:text-neutral-300">
+                          {t(`events.promoBanner.mode_${mode}`, mode === 'inherit' ? 'Inherit global default' : mode === 'custom' ? 'Custom override for this event' : 'Off (hide for this event)')}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  {editForm.promo_mode === 'custom' && (
+                    <div className="mt-3 space-y-2">
+                      <textarea
+                        value={editForm.promo_markdown}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, promo_markdown: e.target.value }))}
+                        rows={5}
+                        placeholder={t('events.promoBanner.placeholder', 'Markdown content (e.g. **Special offer:** [book your next session](https://example.com))')}
+                        className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark font-mono text-sm"
+                      />
+                      {editForm.promo_markdown.trim() && (
+                        <div className="border border-neutral-200 dark:border-neutral-700 rounded-lg p-3 bg-neutral-50 dark:bg-neutral-900">
+                          <p className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400 mb-2">
+                            {t('events.promoBanner.preview', 'Preview')}
+                          </p>
+                          <MarkdownContent source={editForm.promo_markdown} className="text-sm text-neutral-800 dark:text-neutral-200 prose-sm prose-a:text-primary-600 dark:prose-a:text-primary-400" />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Download Protection Settings */}
@@ -2083,10 +2230,12 @@ export const EventDetailsPage: React.FC = () => {
                 onChange={(theme) => {
                   setCurrentTheme(theme);
                   setEditForm(prev => ({ ...prev, color_theme: JSON.stringify(theme) }));
+                  setThemeChanged(true);
                 }}
                 presetName={currentPresetName}
                 onPresetChange={(presetName) => {
                   setCurrentPresetName(presetName);
+                  setThemeChanged(true);
                   if (presetName !== 'custom') {
                     const preset = GALLERY_THEME_PRESETS[presetName];
                     if (preset) {
@@ -2121,6 +2270,7 @@ export const EventDetailsPage: React.FC = () => {
                   setCurrentTheme(merged);
                   setCurrentPresetName('custom');
                   setEditForm(prev => ({ ...prev, color_theme: JSON.stringify(merged) }));
+                  setThemeChanged(true);
                   toast.success(t('toast.brandingPaletteSynced', 'Palette synced from Branding.'));
                 }}
                 isPreviewMode={true}

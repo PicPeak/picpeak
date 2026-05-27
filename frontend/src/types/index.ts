@@ -47,6 +47,12 @@ export interface Event {
   hero_logo_size?: 'small' | 'medium' | 'large' | 'xlarge';
   hero_logo_position?: 'top' | 'center' | 'bottom';
   hero_logo_url?: string | null;
+  // Per-event opt-in for using the hero photo as the social-share
+  // preview image (#474). When false, og:image falls back to the
+  // brand logo. Defaults false on existing rows so no admin's hero
+  // photo gets surfaced via WhatsApp share until they consciously
+  // flip it on.
+  og_image_share_enabled?: boolean;
   // Header style settings (decoupled from layout)
   header_style?: 'hero' | 'standard' | 'minimal' | 'none';
   hero_divider_style?: 'wave' | 'straight' | 'angle' | 'curve' | 'none';
@@ -82,9 +88,18 @@ export interface GalleryInfo {
 export interface Photo {
   id: number;
   filename: string;
+  // Original camera filename (e.g. DSC_1234.jpg) — populated for uploads
+  // post migration 062. Null for legacy rows. Surfaced in the lightbox
+  // when the admin toggles `use_original_filenames` on (#508).
+  original_filename?: string | null;
   url: string;
   thumbnail_url?: string;
   hero_url?: string; // Hero-optimized image URL (1920x1080) for full-width hero sections
+  // Lightbox preview URL (#492). Set only when the admin has flipped
+  // lightbox_preview_enabled in Settings → Thumbnails. Aspect-preserved
+  // ≤1920px JPEG; the lightbox prefers it over `url` for image photos
+  // and falls back to `url` when null (off, video, or not yet generated).
+  preview_url?: string | null;
   secure_url_template?: string;
   download_url_template?: string;
   requires_token?: boolean;
@@ -157,6 +172,10 @@ export interface GalleryData {
     hero_image_anchor?: string;
     // Default photo sort order
     default_photo_sort?: string;
+    // Mirror of admin's `general_use_original_filenames_for_downloads`.
+    // When true, the lightbox surfaces each photo's `original_filename`
+    // alongside the position counter (#508).
+    use_original_filenames?: boolean;
   };
   categories?: PhotoCategory[];
   photos: Photo[];

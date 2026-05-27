@@ -300,6 +300,59 @@
     color: var(--color-accent);
   }
 
+  .text-accent-dark {
+    color: var(--color-accent-dark);
+  }
+
+  /*
+   * Low-opacity accent fills used as "icon tile" / "tinted chip"
+   * backgrounds (Features tab feature icons, Sidebar Preview pills,
+   * Customer dashboard branding card header). Picks up the admin's CI
+   * accent automatically — previously these places used Tailwind's
+   * hardcoded `primary-50` palette which stayed green regardless of
+   * branding settings.
+   *
+   * Mix weights bumped from 12% / 28% to 18% / 55% so the tint reads
+   * as "tinted" rather than "barely there" on dark backgrounds. The
+   * pill foreground intentionally falls back to a high-contrast theme
+   * colour rather than the accent itself (.text-accent-dark on an
+   * accent-soft bg disappears because both come from the same
+   * source).
+   *
+   * color-mix is supported on every browser we ship (Chromium 111+,
+   * Safari 16.2+, Firefox 113+ — see baseline). Older browsers fall
+   * back to the var(--color-accent-dark) below.
+   */
+  .bg-accent-soft {
+    background-color: var(--color-accent-dark);
+    background-color: color-mix(in srgb, var(--color-accent-dark) 18%, transparent);
+  }
+  .dark .bg-accent-soft {
+    background-color: var(--color-accent-dark);
+    background-color: color-mix(in srgb, var(--color-accent-dark) 55%, transparent);
+  }
+  .border-accent-soft {
+    border-color: var(--color-accent-dark);
+    border-color: color-mix(in srgb, var(--color-accent-dark) 45%, transparent);
+  }
+  .dark .border-accent-soft {
+    border-color: color-mix(in srgb, var(--color-accent-dark) 70%, transparent);
+  }
+
+  /*
+   * Foreground for content sitting on .bg-accent-soft. Uses the
+   * theme's text token (already high-contrast against both light
+   * backgrounds and dark surfaces) instead of the accent itself —
+   * accent-on-accent-soft was the reason the Sidebar Preview pills
+   * read as "barely visible".
+   */
+  .text-on-accent-soft {
+    color: var(--color-accent-dark);
+  }
+  .dark .text-on-accent-soft {
+    color: #ffffff;
+  }
+
   /*
    * Selected-tile state for picker grids (Gallery Layout, Filter Bar Style,
    * Header Style, Hero Divider, Theme Presets). Used in place of the dim
@@ -414,6 +467,46 @@
 
   .dark .input::placeholder {
     @apply text-neutral-500;
+  }
+
+  /*
+   * Customer-surface scope (#354): the default .input and .card classes
+   * hard-code bg-white, and the customer surface uses theme variables
+   * rather than the admin's `.dark` class trigger. Overriding here so
+   * every <Input> and <Card> rendered inside the customer surface picks
+   * up var(--color-surface) / var(--color-text) automatically — no
+   * per-page wrapper needed. Same treatment for native <select>
+   * elements which share the .input mental model on the profile and
+   * accept-invite forms.
+   *
+   * The .customer-surface marker is set on the root <div> of every
+   * customer page (CustomerLayout, CustomerLoginPage, CustomerAcceptInvitePage,
+   * CustomerResetPasswordPage). Pages outside this scope (admin, public
+   * gallery) keep their original styling.
+   */
+  .customer-surface .card,
+  .customer-surface .card-hover {
+    background-color: var(--color-surface);
+    border-color: var(--color-surface-border);
+  }
+
+  .customer-surface .input,
+  .customer-surface select.input,
+  .customer-surface input.input {
+    background-color: var(--color-surface);
+    border-color: var(--color-surface-border);
+    color: var(--color-text);
+  }
+
+  .customer-surface .input::placeholder {
+    color: var(--color-muted-text);
+    opacity: 0.7;
+  }
+
+  .customer-surface .input:disabled {
+    background-color: var(--color-elevated, var(--color-surface));
+    color: var(--color-muted-text);
+    opacity: 0.7;
   }
 
   .dark .input-themed {

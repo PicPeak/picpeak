@@ -173,6 +173,25 @@ export const EventsTab: React.FC<EventsTabProps> = ({
             <label className="flex items-start gap-3">
               <input
                 type="checkbox"
+                checked={eventSettings.event_default_feedback_enabled}
+                onChange={(e) => setEventSettings(prev => ({ ...prev, event_default_feedback_enabled: e.target.checked }))}
+                className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+              />
+              <div>
+                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  {t('settings.events.defaultFeedbackEnabled', 'Enable Guest Feedback by default')}
+                </span>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                  {t('settings.events.defaultFeedbackEnabledHelp', 'Pre-check "Guest Feedback" when creating new events. Individual feedback options (likes, ratings, comments) can still be customised per event.')}
+                </p>
+              </div>
+            </label>
+          </div>
+
+          <div>
+            <label className="flex items-start gap-3">
+              <input
+                type="checkbox"
                 checked={eventSettings.gallery_show_filter_bar}
                 onChange={(e) => setEventSettings(prev => ({ ...prev, gallery_show_filter_bar: e.target.checked }))}
                 className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"

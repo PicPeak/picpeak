@@ -46,19 +46,37 @@ const NLFlag: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => 
   </svg>
 );
 
-const languages = [
+const FRFlag: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
+  <svg className={className} viewBox="0 0 640 480" xmlns="http://www.w3.org/2000/svg">
+    <path fill="#002395" d="M0 0h213.3v480H0z"/>
+    <path fill="#fff" d="M213.3 0h213.4v480H213.3z"/>
+    <path fill="#ED2939" d="M426.7 0H640v480H426.7z"/>
+  </svg>
+);
+
+const ESFlag: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
+  <svg className={className} viewBox="0 0 640 480" xmlns="http://www.w3.org/2000/svg">
+    <path fill="#AA151B" d="M0 0h640v120H0z"/>
+    <path fill="#F1BF00" d="M0 120h640v240H0z"/>
+    <path fill="#AA151B" d="M0 360h640v120H0z"/>
+  </svg>
+);
+
+export const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', Flag: GBFlag },
   { code: 'de', name: 'Deutsch', Flag: DEFlag },
   { code: 'ru', name: 'Русский', Flag: RUFlag },
   { code: 'pt', name: 'Português', Flag: PTBRFlag },
   { code: 'nl', name: 'Nederlands', Flag: NLFlag },
+  { code: 'fr', name: 'Français', Flag: FRFlag },
+  { code: 'es', name: 'Español', Flag: ESFlag },
 ];
 
 export const LanguageSelector: React.FC = () => {
   const { i18n } = useTranslation();
   const [isOpen, setIsOpen] = React.useState(false);
 
-  const currentLanguage = languages.find(lang => lang.code === i18n.language) || languages[0];
+  const currentLanguage = SUPPORTED_LANGUAGES.find(lang => lang.code === i18n.language) || SUPPORTED_LANGUAGES[0];
 
   const handleLanguageChange = (languageCode: string) => {
     i18n.changeLanguage(languageCode);
@@ -69,16 +87,22 @@ export const LanguageSelector: React.FC = () => {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-200 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        className="flex items-center gap-2 px-2 sm:px-3 py-2 text-sm font-medium text-neutral-700 dark:text-neutral-200 bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-600 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500"
+        // On <sm the language *name* is hidden — the Globe + flag pair
+        // is enough recognition on its own and stops this control from
+        // pushing into the company-name title on narrow mobile widths
+        // (#523). Full name stays on sm+ where there's room.
+        aria-label={currentLanguage.name}
+        title={currentLanguage.name}
       >
         <Globe className="w-4 h-4" />
         <currentLanguage.Flag className="w-5 h-5" />
-        <span>{currentLanguage.name}</span>
+        <span className="hidden sm:inline">{currentLanguage.name}</span>
       </button>
 
       {isOpen && (
         <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-neutral-800 rounded-lg shadow-lg border border-neutral-200 dark:border-neutral-700 py-1 z-50">
-          {languages.map((language) => (
+          {SUPPORTED_LANGUAGES.map((language) => (
             <button
               key={language.code}
               onClick={() => handleLanguageChange(language.code)}

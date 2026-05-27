@@ -3,22 +3,19 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Calendar,
-  Mail,
   Archive,
   BarChart3,
   Settings,
   X,
-  Palette,
-  FileText,
-  HardDrive,
   Users,
-  Tags
+  Briefcase,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { settingsService } from '../../services/settings.service';
 import { VersionInfo } from './VersionInfo';
 import { usePermissions } from '../../contexts/PermissionsContext';
+import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
 
 interface AdminSidebarProps {
   isOpen: boolean;
@@ -29,32 +26,79 @@ interface NavItem {
   nameKey: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
-  permission?: string;
+  permission?: string | false;
+  /** Single required flag — entry hidden when this is false. */
+  featureFlag?: FeatureKey;
+  /**
+   * "At least one of these must be on" — used by the Clients section
+   * to hide the sidebar entry when the parent flag is on but no
+   * child sub-feature is enabled. Empty arrays are treated as no
+   * constraint.
+   */
+  featureFlagsAny?: FeatureKey[];
 }
 
+// Sidebar shape after the Settings reorg (#feature-flags-settings-reorg).
+//
+// Removed (now live as Settings tabs, with redirects from the old
+// top-level paths so bookmarks keep working):
+//   /admin/email, /admin/branding, /admin/event-types, /admin/backup,
+//   /admin/cms.
+//
+// Feature-gated (only render when the corresponding feature flag is on):
+//   Analytics → flags.analytics
+//   Users     → flags.userManagement
 const navigation: NavItem[] = [
-  { nameKey: 'navigation.dashboard', href: '/admin/dashboard', icon: LayoutDashboard },
-  { nameKey: 'navigation.events', href: '/admin/events', icon: Calendar, permission: 'events.view' },
-  { nameKey: 'navigation.archives', href: '/admin/archives', icon: Archive, permission: 'archives.view' },
-  { nameKey: 'admin.analytics', href: '/admin/analytics', icon: BarChart3, permission: 'analytics.view' },
-  { nameKey: 'navigation.emailSettings', href: '/admin/email', icon: Mail, permission: 'email.view' },
-  { nameKey: 'navigation.branding', href: '/admin/branding', icon: Palette, permission: 'branding.view' },
-  { nameKey: 'navigation.settings', href: '/admin/settings', icon: Settings, permission: 'settings.view' },
-  { nameKey: 'navigation.eventTypes', href: '/admin/event-types', icon: Tags, permission: 'settings.view' },
-  { nameKey: 'navigation.backup', href: '/admin/backup', icon: HardDrive, permission: 'backup.view' },
-  { nameKey: 'navigation.cmsPages', href: '/admin/cms', icon: FileText, permission: 'cms.view' },
-  { nameKey: 'navigation.users', href: '/admin/users', icon: Users, permission: 'users.view' },
+  { nameKey: 'navigation.dashboard', href: '/admin/dashboard', icon: LayoutDashboard, permission: false },
+  { nameKey: 'navigation.events',    href: '/admin/events',    icon: Calendar,        permission: 'events.view' },
+  { nameKey: 'navigation.archives',  href: '/admin/archives',  icon: Archive,         permission: 'archives.view' },
+  { nameKey: 'admin.analytics',      href: '/admin/analytics', icon: BarChart3,       permission: 'analytics.view', featureFlag: 'analytics' },
+  { nameKey: 'navigation.settings',  href: '/admin/settings',  icon: Settings,        permission: 'settings.view' },
+  { nameKey: 'navigation.users',     href: '/admin/users',     icon: Users,           permission: 'users.view',     featureFlag: 'userManagement' },
+  // Clients section (#354 follow-up) — admin-side surface for the
+  // CRM-area sub-features. Today this entry leads to /admin/clients
+  // which renders a Settings-style sub-nav with one item (Accounts).
+  // When calendar / quotes / bills / messaging ship they slot in as
+  // additional sub-nav items inside ClientsLayout without needing
+  // their own top-level sidebar entry.
+  //
+  // Gate uses the parent `clients` flag (master). The Accounts page
+  // itself is independently gated by `customerPortal` inside the
+  // route tree — that nested check is invisible from here.
+  //
+  // `permission: 'customers.view'` is the only Clients-area
+  // permission today; future sub-features (booking, billing) get
+  // their own permission keys and the gate here grows into an OR.
+  {
+    nameKey: 'navigation.clients', href: '/admin/clients', icon: Briefcase,
+    permission: 'customers.view',
+    featureFlag: 'clients',
+    // Hide the entry when the parent is on but no sub-feature is —
+    // there's nothing inside ClientsLayout to link to. Add future
+    // sub-flags (calendar, quotes, bills, messaging) here as they
+    // ship; the entry reappears the moment any of them is enabled.
+    featureFlagsAny: ['customerPortal'],
+  },
 ];
 
 export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose }) => {
   const location = useLocation();
   const { t } = useTranslation();
   const { hasPermission } = usePermissions();
+  const { flags } = useFeatureFlags();
 
-  // Filter navigation items based on permissions
-  const filteredNavigation = navigation.filter(item => {
-    if (!item.permission) return true;
-    return hasPermission(item.permission);
+  const filteredNavigation = navigation.filter((item) => {
+    if (item.permission && !hasPermission(item.permission as string)) return false;
+    if (item.featureFlag && !flags[item.featureFlag]) return false;
+    // featureFlagsAny: entry is hidden when none of the listed
+    // sub-flags are on, even if the parent flag IS on. Used by
+    // the Clients section so the sidebar entry only appears when
+    // there's at least one sub-feature it can link to.
+    if (item.featureFlagsAny && item.featureFlagsAny.length > 0
+        && !item.featureFlagsAny.some((k) => flags[k])) {
+      return false;
+    }
+    return true;
   });
 
   return (

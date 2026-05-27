@@ -15,7 +15,13 @@ services:
       - picpeak-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-picpeak}"]
+      # `pg_isready -U <user>` without -d defaults to probing a database
+      # whose name matches the user — postgres then logs constant
+      # `FATAL: database "picpeak" does not exist` even though the
+      # actual DB is `picpeak_prod`. Pinning -d to DB_NAME makes the
+      # probe hit the real database and silences the log noise that
+      # made #484's reporter think the install was broken.
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-picpeak} -d ${DB_NAME:-picpeak}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -64,8 +70,13 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      # Backend exposes /health on internal port 3000
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      # Backend exposes /health on internal port 3000.
+      # The backend image only ships wget (Alpine base) — using curl
+      # here makes `docker ps` show the container as `unhealthy`
+      # indefinitely even when /health responds. Mirrors the wget-based
+      # HEALTHCHECK already declared in backend/Dockerfile so docker
+      # compose, plain `docker run`, and `docker ps` all agree.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -77,6 +88,16 @@ services:
     container_name: picpeak-frontend
     # Note: Pre-built frontend uses Nginx to proxy /api to backend:3001.
     # Prefer keeping API base as '/api' in builds to avoid CORS.
+    environment:
+      # Substituted into index.html at container start (see frontend/
+      # docker-entrypoint.sh) so social link previews reaching the
+      # static SPA shell (WhatsApp Business API, Twilio, LinkPreview,
+      # etc. — see #521) show the configured brand instead of the
+      # generic "PicPeak" default. Defaults applied when unset; restart
+      # the frontend container after changing for the new title to
+      # take effect.
+      - BRAND_TITLE=${BRAND_TITLE:-PicPeak}
+      - BRAND_DESCRIPTION=${BRAND_DESCRIPTION:-Photo gallery shared with PicPeak.}
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     networks:

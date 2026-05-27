@@ -12,6 +12,37 @@ const userManagementService = require('../services/userManagementService');
 const router = express.Router();
 
 /**
+ * Coerce any of the shapes a TIMESTAMP column produces across our
+ * supported drivers into a single ISO 8601 string the frontend (and
+ * any external API consumer) can safely pass to date-fns / new Date.
+ *
+ * Postgres → Date object (becomes ISO via JSON.stringify anyway, but
+ *   pinning the format defends against driver-side surprises).
+ * SQLite → integer milliseconds since epoch (the surface that crashed
+ *   the admin Users page in #485 — `parseISO(123456789)` blows up
+ *   with "e.split is not a function"). Native installs default to
+ *   SQLite, so this path matters every release.
+ * Already a string → assume it's a parseable ISO/RFC3339 (Postgres
+ *   driver may stringify under JSON serialization mid-pipeline).
+ *
+ * Returns null/undefined unchanged so an unset last_login surfaces as
+ * "Never" in the UI rather than 1970-01-01T00:00:00Z.
+ */
+function toIso(value) {
+  if (value === null || value === undefined || value === '') return value;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'number') return new Date(value).toISOString();
+  if (typeof value === 'string') {
+    // Numeric-as-string ("1778752458666") happens when the SQLite
+    // driver stringifies large integers — re-coerce so the frontend
+    // doesn't try to parseISO('1778752458666').
+    if (/^\d{10,}$/.test(value)) return new Date(Number(value)).toISOString();
+    return value;
+  }
+  return value;
+}
+
+/**
  * Transform user object from snake_case (DB) to camelCase (API)
  */
 function transformUser(user) {
@@ -20,10 +51,10 @@ function transformUser(user) {
     username: user.username,
     email: user.email,
     isActive: user.is_active,
-    lastLogin: user.last_login,
+    lastLogin: toIso(user.last_login),
     lastLoginIp: user.last_login_ip,
-    createdAt: user.created_at,
-    updatedAt: user.updated_at,
+    createdAt: toIso(user.created_at),
+    updatedAt: toIso(user.updated_at),
     roleId: user.role_id,
     roleName: user.role_name,
     roleDisplayName: user.role_display_name,
@@ -52,8 +83,8 @@ function transformInvitation(invitation) {
   return {
     id: invitation.id,
     email: invitation.email,
-    expiresAt: invitation.expires_at,
-    createdAt: invitation.created_at,
+    expiresAt: toIso(invitation.expires_at),
+    createdAt: toIso(invitation.created_at),
     roleName: invitation.role_name,
     invitedBy: invitation.invited_by
   };
@@ -212,4 +243,7 @@ router.post('/:id/reset-password', [
   successResponse(res, { message: 'Password reset email sent', ...result });
 }));
 
+// Test surface: expose the date normaliser so the unit test can pin
+// the contract without spinning up the full router.
 module.exports = router;
+module.exports.__test = { toIso, transformUser, transformInvitation };

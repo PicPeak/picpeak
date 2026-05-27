@@ -4,7 +4,39 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>PicPeak - Photo Sharing Platform</title>
+    <!--
+      Static fallback title + Open Graph defaults (#521).
+
+      The runtime SPA updates these once React loads, and social-crawler
+      User-Agents hitting /gallery/<slug> get a per-event rich preview
+      served by backend's galleryOgService instead of this static shell.
+
+      But the third path — link previews fetched by WhatsApp Business
+      API, Twilio, LinkPreview, or any service that caches metadata
+      with a non-crawler UA — gets *this* HTML as-is. Defaulting the
+      title to "PicPeak - Photo Sharing Platform" left every such
+      preview looking unbranded for self-hosted installs.
+
+      ${BRAND_TITLE} / ${BRAND_DESCRIPTION} are replaced at *container
+      start* by the frontend image's docker-entrypoint.sh (envsubst on
+      an index.html.tpl snapshot taken at image build). That keeps the
+      tokens working even for self-hosters running the pre-built GHCR
+      image — set BRAND_TITLE in compose env and the next container
+      restart picks it up. No frontend rebuild needed.
+
+      Vite dev server doesn't run the entrypoint, so dev mode shows the
+      literal tokens in the tab title — acceptable since dev sessions
+      don't care about social previews.
+    -->
+    <title>${BRAND_TITLE}</title>
+    <meta name="description" content="${BRAND_DESCRIPTION}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="${BRAND_TITLE}" />
+    <meta property="og:title" content="${BRAND_TITLE}" />
+    <meta property="og:description" content="${BRAND_DESCRIPTION}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${BRAND_TITLE}" />
+    <meta name="twitter:description" content="${BRAND_DESCRIPTION}" />
 
     <!-- Pre-React theme bootstrap (#358).
          The browser may paint the very first frame before our inline

@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
+const { slugify } = require('../utils/slug');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const archiver = require('archiver');
@@ -217,7 +218,7 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
                   const insertResult = await db('photo_categories').insert({
                     event_id: archive.id,
                     name: categoryName,
-                    slug: categoryName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+                    slug: slugify(categoryName),
                     created_at: new Date()
                   }).returning('id');
                   

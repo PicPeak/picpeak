@@ -12,5 +12,7 @@ export { CMSPage } from './CMSPage';
 export { BackupManagement } from './BackupManagement';
 export { EventFeedbackPage } from './EventFeedbackPage';
 export { UserManagementPage } from './UserManagementPage';
+export { CustomerManagementPage } from './CustomerManagementPage';
+export { CustomerDetailPage } from './CustomerDetailPage';
 export { EventTypesPage } from './EventTypesPage';
 export { WebhookDeliveriesPage } from './WebhookDeliveriesPage';

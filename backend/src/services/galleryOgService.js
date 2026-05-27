@@ -1,11 +1,18 @@
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
+const { ensureThumbnail } = require('./imageProcessor');
+const { getStorage } = require('./storage');
 
 const SOCIAL_CRAWLER_PATTERNS = [
   /facebookexternalhit/i,
   /facebot/i,
   /Twitterbot/i,
+  // WhatsApp's main app crawler is "WhatsApp/X.Y.Z"; the Business
+  // API and some Cloud API senders use "WhatsAppBot" or "wa-bot/" —
+  // detect both so API-driven sends get the rich preview too (#521).
   /WhatsApp/i,
+  /WhatsAppBot/i,
+  /wa-bot/i,
   /Slackbot/i,
   /TelegramBot/i,
   /SkypeUriPreview/i,
@@ -22,7 +29,12 @@ const SOCIAL_CRAWLER_PATTERNS = [
   /Mastodon/i,
   /Bluesky/i,
   /OpenGraph/i,
-  /opengraph/i
+  /opengraph/i,
+  // Generic preview/scrape services commonly used in business
+  // messaging stacks (Twilio, LinkPreview.net, etc.). Match the
+  // canonical lowercase substring; the /i flag handles case.
+  /LinkPreview/i,
+  /Slack-ImgProxy/i
 ];
 
 function isSocialCrawler(userAgent) {
@@ -149,10 +161,27 @@ async function buildOgMetadata(slug, requestPath) {
     description = `Photo gallery from ${eventName}.`;
   }
 
+  // Per-event hero-photo opt-in (#474). When the admin has flipped
+  // events.og_image_share_enabled AND a hero_photo_id is set AND that
+  // photo has a generated thumbnail, point og:image at the public
+  // cover endpoint instead of the brand logo. Falls back silently to
+  // the logo on any of those misses so a half-configured event still
+  // gets a polished link preview rather than a broken image.
+  let image = logoUrl;
+  if (event.og_image_share_enabled && event.hero_photo_id) {
+    const heroPhoto = await db('photos')
+      .where({ id: event.hero_photo_id, event_id: event.id })
+      .select('id', 'thumbnail_path')
+      .first();
+    if (heroPhoto && heroPhoto.thumbnail_path) {
+      image = `${base}/og/gallery/${event.slug}/cover`;
+    }
+  }
+
   return {
     title,
     description,
-    image: logoUrl,
+    image,
     url: `${base}/gallery/${event.slug}`,
     siteName,
     eventName,
@@ -210,9 +239,85 @@ async function handleGalleryOgRequest(req, res) {
   }
 }
 
+/**
+ * Public cover-image endpoint for OG/Twitter Card previews (#474).
+ *
+ * Streams the gallery's hero-photo thumbnail unauthenticated — but
+ * ONLY when the admin has flipped events.og_image_share_enabled on
+ * that event. Any miss (slug not found, opt-in not set, no hero, no
+ * thumbnail) returns 404; buildOgMetadata above falls back to the
+ * brand logo for the og:image when this would 404, so callers never
+ * see a broken-image preview.
+ *
+ * Why a dedicated endpoint instead of reusing /api/gallery/:slug/
+ * thumbnail/:photoId — the latter is gated by verifyGalleryAccess
+ * (gallery JWT or per-event password). Social crawlers don't carry
+ * either, so we need a separate, explicitly-public path that the
+ * admin opted into.
+ */
+async function handleGalleryOgCover(req, res) {
+  try {
+    const { slug } = req.params;
+    if (!slug || !/^[a-zA-Z0-9_-]{1,255}$/.test(slug)) {
+      res.status(400).type('text/plain').send('Invalid gallery slug');
+      return;
+    }
+    const event = await resolveSlug(slug);
+    if (!event || !event.og_image_share_enabled || !event.hero_photo_id) {
+      res.status(404).type('text/plain').send('Cover not available');
+      return;
+    }
+
+    const photo = await db('photos')
+      .where({ id: event.hero_photo_id, event_id: event.id })
+      .first();
+    if (!photo) {
+      res.status(404).type('text/plain').send('Cover not available');
+      return;
+    }
+
+    const thumbnailPath = await ensureThumbnail(photo);
+    if (!thumbnailPath) {
+      res.status(404).type('text/plain').send('Cover not available');
+      return;
+    }
+
+    const storage = getStorage();
+    const stat = await storage.stat(thumbnailPath);
+    if (!stat) {
+      res.status(404).type('text/plain').send('Cover not available');
+      return;
+    }
+
+    // ETag = thumbnail mtime + photo id so a regenerated thumb (e.g.
+    // after the admin changes thumbnail fit mode) busts crawler
+    // caches. Keep the cache window short on the response itself —
+    // crawlers like WhatsApp re-fetch eagerly; admins shouldn't have
+    // to wait an hour for a swap to land in chat previews.
+    const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
+    const etag = `"og-cover-${photo.id}-${mtimeMs}"`;
+    if (req.headers['if-none-match'] === etag) {
+      return res.status(304).end();
+    }
+    res.set({
+      'Content-Type': 'image/jpeg',
+      'Cache-Control': 'public, max-age=300',
+      'X-Content-Type-Options': 'nosniff',
+      'ETag': etag,
+    });
+    if (stat.size) res.setHeader('Content-Length', stat.size);
+    const stream = await storage.get(thumbnailPath);
+    stream.pipe(res);
+  } catch (error) {
+    logger.error('Failed to stream gallery OG cover', { error: error.message });
+    res.status(500).type('text/plain').send('Internal server error');
+  }
+}
+
 module.exports = {
   isSocialCrawler,
   buildOgMetadata,
   renderOgHtml,
-  handleGalleryOgRequest
+  handleGalleryOgRequest,
+  handleGalleryOgCover
 };

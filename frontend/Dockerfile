@@ -33,8 +33,11 @@ FROM nginx:1.28-alpine
 # Upgrade all packages to fix security vulnerabilities (OpenSSL, libexpat, BusyBox CVEs)
 RUN apk upgrade --no-cache
 
-# Install runtime dependencies
-RUN apk add --no-cache curl
+# Install runtime dependencies. `gettext` provides envsubst, used by
+# docker-entrypoint.sh for the BRAND_TITLE / BRAND_DESCRIPTION runtime
+# substitution into index.html (#521 — runtime fix for self-hosters
+# on the pre-built GHCR image who can't override at build time).
+RUN apk add --no-cache curl gettext
 
 # Remove default nginx config
 RUN rm -rf /etc/nginx/conf.d/*
@@ -44,6 +47,16 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Snapshot index.html as a template so the entrypoint always renders
+# from a known-good source — not from its own previous substitution.
+# Container restarts can change BRAND_TITLE freely; the rendered file
+# is recomputed from the .tpl each time.
+RUN mv /usr/share/nginx/html/index.html /usr/share/nginx/html/index.html.tpl
+
+# Runtime entrypoint that envsubsts the template and execs nginx
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Set permissions (nginx user already exists in nginx:alpine)
 RUN chown -R nginx:nginx /usr/share/nginx/html && \
@@ -62,5 +75,8 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 # Switch to non-root user
 USER nginx
 
-# Start nginx
+# Start nginx via the entrypoint so each container start re-renders
+# index.html from the template against the current BRAND_TITLE /
+# BRAND_DESCRIPTION env vars (defaults applied when unset).
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]

@@ -83,11 +83,15 @@ async function up() {
       });
     }
     
-    // Add indexes if they don't exist
+    // Add indexes if they don't exist. backup_runs (created in 029) tracks
+    // chronology via `started_at` — the original `created_at` reference
+    // here was a bug that emitted a "column does not exist" ERROR in the
+    // postgres log on every fresh install (silently caught below). See
+    // migration 105 for the matching back-fix on already-applied installs.
     try {
       await db.raw('CREATE INDEX IF NOT EXISTS idx_backup_runs_mode_status ON backup_runs(backup_mode, status)');
       await db.raw('CREATE INDEX IF NOT EXISTS idx_backup_runs_parent ON backup_runs(parent_backup_id)');
-      await db.raw('CREATE INDEX IF NOT EXISTS idx_backup_runs_created_mode ON backup_runs(created_at, backup_mode)');
+      await db.raw('CREATE INDEX IF NOT EXISTS idx_backup_runs_started_mode ON backup_runs(started_at, backup_mode)');
     } catch (error) {
       console.log('Note: Some indexes may already exist, continuing...');
     }
@@ -144,16 +148,17 @@ async function up() {
     });
   }
 
-  // Add composite indexes for common query patterns
+  // Add composite indexes for common query patterns. Same `started_at`
+  // correction as above — `created_at` doesn't exist on backup_runs.
   try {
     await db.raw(`
-      CREATE INDEX IF NOT EXISTS idx_backup_runs_recent_successful 
-      ON backup_runs(created_at DESC) 
+      CREATE INDEX IF NOT EXISTS idx_backup_runs_recent_successful
+      ON backup_runs(started_at DESC)
       WHERE status = 'completed' AND backup_mode = 'full';
     `);
     await db.raw(`
-      CREATE INDEX IF NOT EXISTS idx_backup_runs_incremental_chain 
-      ON backup_runs(parent_backup_id, created_at) 
+      CREATE INDEX IF NOT EXISTS idx_backup_runs_incremental_chain
+      ON backup_runs(parent_backup_id, started_at)
       WHERE backup_mode = 'incremental';
     `);
   } catch (error) {
@@ -194,10 +199,13 @@ async function down() {
       });
     }
     
-    // Drop indexes
+    // Drop indexes. `idx_backup_runs_created_mode` is the legacy name
+    // shipped by an earlier revision of this migration; kept in the drop
+    // list so a down() against any historic state cleans up either name.
     try {
       await db.raw('DROP INDEX IF EXISTS idx_backup_runs_mode_status');
       await db.raw('DROP INDEX IF EXISTS idx_backup_runs_parent');
+      await db.raw('DROP INDEX IF EXISTS idx_backup_runs_started_mode');
       await db.raw('DROP INDEX IF EXISTS idx_backup_runs_created_mode');
     } catch (error) {
       // Ignore errors if indexes don't exist

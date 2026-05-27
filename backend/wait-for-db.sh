@@ -3,6 +3,43 @@
 
 set -e
 
+# Permission handling (#484): the image starts as root so this script can
+# chown bind-mounted host volumes to UID 1001 (nodejs) before dropping
+# privileges via su-exec. This avoids the fresh-install restart loop where
+# the host directory's UID (commonly 1000) didn't match the container's
+# hard-coded nodejs user. Compose deployments that pin `user:` to something
+# other than root skip this branch — they own permissions themselves and hit
+# the preflight check below instead.
+if [ "$(id -u)" = "0" ]; then
+  if ! chown -R nodejs:nodejs /app/storage /app/data /app/logs 2>/dev/null; then
+    echo "ERROR: failed to chown /app/storage, /app/data, /app/logs to nodejs (UID 1001)." >&2
+    echo "  This usually means the host filesystem rejects chown (e.g. NFS without root squash" >&2
+    echo "  disabled, or a SELinux/AppArmor policy blocking the operation)." >&2
+    echo "  Workaround: pre-chown the host directories to 1001:1001 and pin 'user: \"1001:1001\"'" >&2
+    echo "  in your compose file so this script never tries to chown them itself." >&2
+    echo "  See https://docs.picpeak.app/deployment/docker#permissions" >&2
+    exit 1
+  fi
+  exec su-exec nodejs:nodejs "$0" "$@"
+fi
+
+# Belt-and-suspenders: if we got here as non-root (compose `user:` override),
+# verify the bind mounts are actually writable before proceeding. Failing
+# loud here beats the previous behavior — silent mkdir-||-true at line 69
+# followed by a confusing migration error and a restart loop.
+_uid="$(id -u)"
+_gid="$(id -g)"
+for _dir in /app/storage /app/data /app/logs; do
+  if [ ! -w "$_dir" ]; then
+    echo "ERROR: $_dir is not writable by UID $_uid." >&2
+    echo "  Either drop the 'user:' override from your compose file so the container starts as" >&2
+    echo "  root and can self-fix permissions, or run on the host:" >&2
+    echo "    chown -R $_uid:$_gid <host-mount-for-$_dir>" >&2
+    echo "  See https://docs.picpeak.app/deployment/docker#permissions" >&2
+    exit 1
+  fi
+done
+
 host="${DB_HOST:-postgres}"
 port="${DB_PORT:-5432}"
 user="${DB_USER:-picpeak}"

@@ -172,75 +172,82 @@ async function checkAndNotifyUpdates() {
 }
 
 /**
- * Force send update notification (for manual trigger from admin UI)
+ * Send a TEST notification email to the configured recipients (manual
+ * trigger from the admin "Send Test Email" button on the Update
+ * Notifications page).
+ *
+ * Uses the version_update_test template (migration 087) which is
+ * explicitly labelled as a configuration check rather than a real update
+ * notice. Crucially this path does NOT require updateAvailable to be
+ * true — it sends regardless of whether the instance is on the latest
+ * version, so admins can verify their SMTP + recipient list work before
+ * an actual update lands (#418).
+ *
+ * Does NOT update last_notified_version — that field is owned by the
+ * real-update path so a test send doesn't shadow a future genuine
+ * notification for the same version.
  */
-async function sendUpdateNotificationNow() {
-  logger.info('Manually triggering update notification...');
+async function sendTestUpdateNotification() {
+  logger.info('Sending test update notification email...');
 
   try {
-    // Check for available updates
-    const updateInfo = await checkForUpdates(true); // Force refresh
-
-    if (!updateInfo.updateAvailable) {
-      return { success: false, message: 'No updates available' };
-    }
-
-    const newVersion = updateInfo.latest.forChannel;
     const settings = await getUpdateNotificationSettings();
 
-    // Get recipients
     const recipients = await getNotificationRecipients(settings.recipients);
-
     if (recipients.length === 0) {
       return { success: false, message: 'No recipients configured' };
     }
 
-    // Ensure email transporter is initialized
-    await initializeTransporter();
+    // checkForUpdates is best-effort here — we want the version + channel
+    // for the email body, but a transient failure shouldn't block the test
+    // send. Fall back to env-derived defaults so the email still goes out.
+    let updateInfo;
+    try {
+      updateInfo = await checkForUpdates(true);
+    } catch (error) {
+      logger.warn('checkForUpdates failed during test send, using fallbacks:', error.message);
+      updateInfo = {
+        current: process.env.npm_package_version || 'unknown',
+        channel: process.env.UPDATE_CHANNEL || 'stable'
+      };
+    }
 
-    // Send email to each recipient
-    const releaseNotesUrl = `https://github.com/the-luap/picpeak/releases/tag/v${newVersion}`;
     const channelLabel = updateInfo.channel === 'beta' ? 'Beta' : 'Stable';
+
+    await initializeTransporter();
 
     let successCount = 0;
     let errorCount = 0;
 
     for (const email of recipients) {
       try {
-        await sendTemplateEmail(email, 'version_update_available', {
+        await sendTemplateEmail(email, 'version_update_test', {
           current_version: updateInfo.current,
-          new_version: newVersion,
           channel: channelLabel,
-          release_notes_url: releaseNotesUrl
+          recipient_email: email
         });
         successCount++;
       } catch (error) {
         errorCount++;
-        logger.error(`Failed to send update notification to ${email}:`, error);
+        logger.error(`Failed to send test update notification to ${email}:`, error);
       }
-    }
-
-    // Update last notified version
-    if (successCount > 0) {
-      await updateLastNotifiedVersion(newVersion);
     }
 
     return {
       success: successCount > 0,
-      newVersion,
       successCount,
       errorCount,
       totalRecipients: recipients.length
     };
   } catch (error) {
-    logger.error('Error sending manual update notification:', error);
+    logger.error('Error sending test update notification:', error);
     return { success: false, message: error.message };
   }
 }
 
 module.exports = {
   checkAndNotifyUpdates,
-  sendUpdateNotificationNow,
+  sendTestUpdateNotification,
   getUpdateNotificationSettings,
   getNotificationRecipients
 };

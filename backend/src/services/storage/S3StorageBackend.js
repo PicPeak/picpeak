@@ -80,6 +80,10 @@ class S3StorageBackend {
     return this.adapter.downloadStream(this._key(relPath));
   }
 
+  async getRange(relPath, start, end) {
+    return this.adapter.downloadStream(this._key(relPath), { range: `bytes=${start}-${end}` });
+  }
+
   async getToFile(relPath, localPath) {
     await fsp.mkdir(path.dirname(localPath), { recursive: true });
     await this.adapter.download(this._key(relPath), localPath);

@@ -134,6 +134,88 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
   }
 });
 
+/**
+ * Customer-surface branding settings (#354 follow-up).
+ *
+ * Two toggles control what shows in the customer dashboard header:
+ *   customer_show_logo          (default true)
+ *   customer_show_company_name  (default true)
+ *
+ * The Calendar / Quotes / Bills feature globals that used to live here
+ * have moved to the maintainer's Features tab (feature_flags table).
+ *
+ * IMPORTANT: both routes MUST be registered before the generic
+ * `router.get('/:type', ...)` below — Express matches routes in
+ * registration order.
+ */
+router.get('/customer-surface', adminAuth, requirePermission('settings.view'), async (req, res) => {
+  try {
+    const rows = await db('app_settings')
+      .where('setting_type', 'customer_surface')
+      .select('setting_key', 'setting_value');
+
+    const settings = {};
+    for (const r of rows) {
+      let value = r.setting_value;
+      if (value === null || value === undefined) {
+        settings[r.setting_key] = null;
+        continue;
+      }
+      if (typeof value !== 'string') {
+        settings[r.setting_key] = value;
+      } else {
+        try { settings[r.setting_key] = JSON.parse(value); }
+        catch { settings[r.setting_key] = value; }
+      }
+    }
+
+    res.json(settings);
+  } catch (error) {
+    console.error('Customer surface settings fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch customer surface settings' });
+  }
+});
+
+router.put('/customer-surface', adminAuth, requirePermission('settings.edit'), async (req, res) => {
+  try {
+    // Branding-only whitelist (calendar/quotes/bills feature globals
+    // moved to the Features tab / feature_flags table).
+    const allowed = [
+      'customer_show_logo',
+      'customer_show_company_name',
+    ];
+    const updates = [];
+    for (const key of allowed) {
+      if (Object.prototype.hasOwnProperty.call(req.body, key)) {
+        const value = !!req.body[key];
+        updates.push({ setting_key: key, setting_value: JSON.stringify(value), setting_type: 'customer_surface' });
+      }
+    }
+
+    for (const u of updates) {
+      const existing = await db('app_settings').where('setting_key', u.setting_key).first();
+      if (existing) {
+        await db('app_settings').where('setting_key', u.setting_key).update({
+          setting_value: u.setting_value,
+          setting_type: u.setting_type,
+          updated_at: new Date(),
+        });
+      } else {
+        await db('app_settings').insert({ ...u, created_at: new Date(), updated_at: new Date() });
+      }
+    }
+
+    // Clear the public-site cache so any consumer relying on it
+    // (e.g. customer login footer if it picks these up) refetches.
+    clearPublicSiteCache();
+
+    res.json({ message: 'Customer surface settings updated', updated: updates.map((u) => u.setting_key) });
+  } catch (error) {
+    console.error('Customer surface settings save error:', error);
+    res.status(500).json({ error: 'Failed to save customer surface settings' });
+  }
+});
+
 // Get settings by type
 router.get('/:type', adminAuth, requirePermission('settings.view'), async (req, res) => {
   try {
@@ -220,7 +302,28 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
       logo_display_hero,
       logo_display_mode,
       hide_powered_by,
-      force_color_mode
+      force_color_mode,
+      // Login-page-only branding (#354 follow-up). Both toggles apply
+      // exclusively to /admin/login and /customer/login — the gallery
+      // and admin chrome use their own logo_size / logo_max_height.
+      // - login_logo_frame_enabled: true (default) renders the tinted
+      //   square behind the logo; false drops it.
+      // - login_logo_size: 'small' | 'medium' | 'large' | 'xlarge'
+      //   matches the gallery logo_size token set but applies only to
+      //   the two login screens.
+      login_logo_frame_enabled,
+      login_logo_size,
+      // Footer overhaul (#441 + #440). Socials are URL strings (empty
+      // hides the icon). Promo content is markdown (rendered via
+      // marked → DOMPurify on the frontend, no raw HTML accepted).
+      facebook_url,
+      instagram_url,
+      whatsapp_url,
+      twitter_url,
+      youtube_url,
+      promo_markdown,
+      promo_position,
+      promo_alignment
     } = req.body;
 
     // Normalize force_color_mode: only 'dark' | 'light' | null are valid.
@@ -232,6 +335,27 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
 
     // Get current watermark settings hash for change detection
     const oldSettingsHash = await watermarkService.getSettingsHash();
+
+    // Normalize promo_position: only 'above_footer' | 'below_footer' valid.
+    const normalizedPromoPosition = promo_position === 'below_footer'
+      ? 'below_footer'
+      : 'above_footer';
+
+    // Normalize promo_alignment: 'left' | 'center' | 'right'. Defaults
+    // to 'center' to match the gallery footer's full-width centering
+    // (#482 — the previous default left the markdown left-aligned in
+    // a max-w-3xl block, which read as visually offset from the footer).
+    const allowedPromoAlignments = ['left', 'center', 'right'];
+    const normalizedPromoAlignment = allowedPromoAlignments.includes(promo_alignment)
+      ? promo_alignment
+      : 'center';
+
+    // Normalize login_logo_size to the same token set as logo_size.
+    // Anything else falls back to 'medium' on the next render.
+    const allowedLoginLogoSizes = ['small', 'medium', 'large', 'xlarge'];
+    const normalizedLoginLogoSize = allowedLoginLogoSizes.includes(login_logo_size)
+      ? login_logo_size
+      : undefined;
 
     const brandingSettings = {
       company_name,
@@ -252,7 +376,23 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
       logo_display_hero,
       logo_display_mode,
       hide_powered_by,
-      force_color_mode: normalizedForceColorMode
+      force_color_mode: normalizedForceColorMode,
+      // Login-only knobs (only persist when the request actually
+      // included the key, so a partial PUT from another tab doesn't
+      // accidentally clear them).
+      ...(login_logo_frame_enabled !== undefined && { login_logo_frame_enabled }),
+      ...(normalizedLoginLogoSize !== undefined && { login_logo_size: normalizedLoginLogoSize }),
+      // Footer overhaul (#441 + #440). String fields normalize empty/
+      // undefined → '' so the column is always a known type. Only persist
+      // when the request actually included the key (partial PUTs).
+      ...(facebook_url !== undefined  && { facebook_url:  String(facebook_url  || '').trim() }),
+      ...(instagram_url !== undefined && { instagram_url: String(instagram_url || '').trim() }),
+      ...(whatsapp_url !== undefined  && { whatsapp_url:  String(whatsapp_url  || '').trim() }),
+      ...(twitter_url !== undefined   && { twitter_url:   String(twitter_url   || '').trim() }),
+      ...(youtube_url !== undefined   && { youtube_url:   String(youtube_url   || '').trim() }),
+      ...(promo_markdown !== undefined && { promo_markdown: typeof promo_markdown === 'string' ? promo_markdown : '' }),
+      ...(promo_position !== undefined && { promo_position: normalizedPromoPosition }),
+      ...(promo_alignment !== undefined && { promo_alignment: normalizedPromoAlignment })
     };
 
     // Handle favicon deletion if empty string or null is provided
@@ -658,6 +798,19 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
     }
     if (Object.prototype.hasOwnProperty.call(settings, 'general_short_gallery_urls')) {
       clearShareLinkSettingsCache();
+    }
+    // Toggling the original-filenames setting (#493) requires busting the
+    // per-event pre-generated zips so the next download-all rebuilds with the
+    // new entry names. Single-photo downloads pick up the change as soon as
+    // the in-memory cache TTL in downloadFilenameService expires (cleared
+    // here for immediacy).
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_use_original_filenames_for_downloads')) {
+      try {
+        require('../services/downloadFilenameService').clearCache();
+        require('../services/downloadZipService').invalidateAll();
+      } catch (e) {
+        console.warn('Failed to invalidate download caches after filename setting change:', e.message);
+      }
     }
 
     // Log activity

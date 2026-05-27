@@ -29,6 +29,7 @@
  * @property {(relPath: string, body: NodeJS.ReadableStream | Buffer, options?: PutOptions) => Promise<void>} put
  * @property {(relPath: string, localPath: string, options?: PutOptions) => Promise<void>} putFromFile
  * @property {(relPath: string) => Promise<NodeJS.ReadableStream>} get - Returns a readable stream of the object body.
+ * @property {(relPath: string, start: number, end: number) => Promise<NodeJS.ReadableStream>} getRange - Returns a readable stream of the object body for the inclusive byte range [start, end]. Used by video range-request handlers.
  * @property {(relPath: string, localPath: string) => Promise<void>} getToFile - Streams the object to a local path (creates parent dirs).
  * @property {(relPath: string) => Promise<boolean>} exists
  * @property {(relPath: string) => Promise<StatResult|null>} stat - Null if missing.

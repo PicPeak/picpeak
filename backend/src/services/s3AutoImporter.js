@@ -17,9 +17,11 @@
 
 const path = require('path');
 const mime = require('mime-types');
+const sharp = require('sharp');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getStorage } = require('./storage');
+const { withLocalCopy } = require('./imageProcessor');
 const logger = require('../utils/logger');
 
 const POLL_INTERVAL_MS = parseInt(process.env.STORAGE_AUTO_IMPORT_INTERVAL_MS || `${5 * 60 * 1000}`, 10);
@@ -98,6 +100,26 @@ async function processEvent(event, storage) {
       const isVideo = mimeType.startsWith('video/');
       if (!isImage && !isVideo) continue;
 
+      // Capture image dimensions so aspect-aware layouts (masonry /
+      // mosaic / justified) can size each card to the photo's real
+      // proportions instead of the 800×600 fallback (#447). Materialize
+      // a tmp local copy via withLocalCopy — withLocalCopy handles the
+      // S3 download + cleanup. Skip videos (would need ffprobe).
+      let dimensions = null;
+      if (isImage) {
+        try {
+          dimensions = await withLocalCopy(entry.key, async (localPath) => {
+            const metadata = await sharp(localPath).metadata();
+            if (metadata.width && metadata.height) {
+              return { width: metadata.width, height: metadata.height };
+            }
+            return null;
+          });
+        } catch (err) {
+          logger.debug(`[s3AutoImporter] could not read dimensions for ${entry.key}: ${err.message}`);
+        }
+      }
+
       try {
         const insertResult = await db('photos').insert({
           event_id: event.id,
@@ -110,6 +132,7 @@ async function processEvent(event, storage) {
           mime_type: mimeType,
           source_origin: 'managed',
           uploaded_at: new Date().toISOString(),
+          ...(dimensions && { width: dimensions.width, height: dimensions.height }),
         }).returning('id');
         const photoId = insertResult[0]?.id || insertResult[0];
 

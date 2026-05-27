@@ -1,6 +1,33 @@
 import { api } from '../config/api';
 import type { AdminUser, AdminRole, AdminInvitation } from '../types';
 
+/**
+ * Defence-in-depth normalisation for date fields (#485). The backend
+ * now always returns these as ISO strings via toIso() in adminUsers.js,
+ * but this wrapper:
+ *
+ *   - Lets the page survive a stale backend during a mid-deploy window
+ *     (older backend still returns SQLite epoch-ms numbers).
+ *   - Lets the page survive an external API consumer's response cache
+ *     that captured the pre-fix shape.
+ *
+ * The original crash was `parseISO(123456789)` in
+ * AdminUsersPage → `e.split is not a function`. Coercing here means
+ * the next consumer of the AdminUser type can rely on the field
+ * being a string regardless of how it landed.
+ */
+function normalizeDateValue(value: unknown): string | null | undefined {
+  if (value === null || value === undefined || value === '') return value as null | undefined;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'number') return new Date(value).toISOString();
+  if (typeof value === 'string') {
+    // SQLite via some drivers stringifies large integers — coerce back.
+    if (/^\d{10,}$/.test(value)) return new Date(Number(value)).toISOString();
+    return value;
+  }
+  return undefined;
+}
+
 // Transform snake_case API response to camelCase for frontend
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function transformUser(user: any): AdminUser {
@@ -9,14 +36,26 @@ function transformUser(user: any): AdminUser {
     username: user.username,
     email: user.email,
     isActive: user.isActive ?? user.is_active,
-    lastLogin: user.lastLogin ?? user.last_login,
+    lastLogin: normalizeDateValue(user.lastLogin ?? user.last_login),
     lastLoginIp: user.lastLoginIp ?? user.last_login_ip,
-    createdAt: user.createdAt ?? user.created_at,
-    updatedAt: user.updatedAt ?? user.updated_at,
+    createdAt: normalizeDateValue(user.createdAt ?? user.created_at),
+    updatedAt: normalizeDateValue(user.updatedAt ?? user.updated_at),
     roleId: user.roleId ?? user.role_id,
     roleName: user.roleName ?? user.role_name,
     roleDisplayName: user.roleDisplayName ?? user.role_display_name,
     createdByUsername: user.createdByUsername ?? user.created_by_username,
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function transformInvitation(invitation: any): AdminInvitation {
+  return {
+    id: invitation.id,
+    email: invitation.email,
+    roleName: invitation.roleName ?? invitation.role_name,
+    invitedBy: invitation.invitedBy ?? invitation.invited_by,
+    expiresAt: normalizeDateValue(invitation.expiresAt ?? invitation.expires_at) as string,
+    createdAt: normalizeDateValue(invitation.createdAt ?? invitation.created_at) as string,
   };
 }
 
@@ -127,7 +166,7 @@ export const userManagementService = {
    */
   async getInvitations(): Promise<AdminInvitation[]> {
     const response = await api.get<GetInvitationsResponse>('/admin/users/invitations');
-    return response.data.invitations;
+    return response.data.invitations.map(transformInvitation);
   },
 
   /**
@@ -135,7 +174,7 @@ export const userManagementService = {
    */
   async createInvitation(data: CreateInvitationData): Promise<AdminInvitation> {
     const response = await api.post<CreateInvitationResponse>('/admin/users/invite', data);
-    return response.data.invitation;
+    return transformInvitation(response.data.invitation);
   },
 
   /**

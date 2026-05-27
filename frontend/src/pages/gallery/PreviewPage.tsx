@@ -42,9 +42,14 @@ export const PreviewPage: React.FC = () => {
   };
 
   useEffect(() => {
-    // Listen for theme preview messages from the branding page
+    // Listen for theme preview messages from the branding page.
+    // Only accept messages from our own origin — the branding page that
+    // posts these is served from the same origin as the preview window.
+    // Without this check any third-party page could window.open() the
+    // preview and postMessage arbitrary `branding`/`theme` payloads.
     const handleMessage = (event: MessageEvent) => {
-      if (event.data.type === 'THEME_PREVIEW') {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type === 'THEME_PREVIEW') {
         setTheme(event.data.theme);
         setBrandingSettings(event.data.branding);
       }

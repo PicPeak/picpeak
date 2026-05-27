@@ -147,7 +147,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 <Download className="w-5 h-5" />
               </Button>
             )}
-            {feedbackOptions?.allowLikes && (
+            {feedbackEnabled && feedbackOptions?.allowLikes && (
               <Button
                 variant="ghost"
                 size="sm"

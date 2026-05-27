@@ -105,7 +105,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
                   <Download className="w-5 h-5 text-neutral-800" />
                 </button>
               )}
-              {feedbackOptions?.allowLikes && (
+              {feedbackEnabled && feedbackOptions?.allowLikes && (
                 <button
                   className={`p-2 rounded-full transition-colors ${likedLocal ? 'bg-red-500/90 hover:bg-red-500' : 'bg-white/90 hover:bg-white'}`}
                   onClick={async (e) => {

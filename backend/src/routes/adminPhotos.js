@@ -7,7 +7,11 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { ensureThumbnail } = require('../services/imageProcessor');
 const { isVideoMimeType } = require('../services/videoProcessor');
-const { generatePhotoFilename } = require('../utils/filenameSanitizer');
+const { generatePhotoFilename, buildContentDisposition } = require('../utils/filenameSanitizer');
+const {
+  getUseOriginalFilenames,
+  pickRawDownloadName,
+} = require('../services/downloadFilenameService');
 const { escapeLikePattern } = require('../utils/sqlSecurity');
 const { validateUploadedFiles } = require('../middleware/uploadValidation');
 const { getMaxFilesPerUpload, getAllowedMimeTypes } = require('../services/uploadSettings');
@@ -222,15 +226,28 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     let photoType = 'individual'; // default
     let categoryName = 'individual';
 
-    // Look up the actual category from database if provided
+    // Look up the actual category from database if provided. Scope the
+    // lookup to (event_id = event.id OR is_global = true) — same contract
+    // the public v1 upload route enforces (#500 / #525). Without it, the
+    // admin upload silently accepts any category id including ones that
+    // belong to a different event. The v1 route rejects out-of-scope ids
+    // with 400; mirror that here so admin and v1 stay consistent.
     if (parsedCategoryId && !isNaN(parsedCategoryId)) {
-      const category = await db('photo_categories').where({ id: parsedCategoryId }).first();
-      if (category) {
-        categoryName = category.slug || category.name.toLowerCase().replace(/\s+/g, '_');
-        // Use category slug for type determination
-        if (category.slug === 'collage' || category.slug === 'collages') {
-          photoType = 'collage';
-        }
+      const category = await db('photo_categories')
+        .where({ id: parsedCategoryId })
+        .andWhere(function () {
+          this.where({ event_id: event.id }).orWhere('is_global', true);
+        })
+        .first();
+      if (!category) {
+        return res.status(400).json({
+          error: `Unknown or out-of-scope category_id ${parsedCategoryId}`
+        });
+      }
+      categoryName = category.slug || category.name.toLowerCase().replace(/\s+/g, '_');
+      // Use category slug for type determination
+      if (category.slug === 'collage' || category.slug === 'collages') {
+        photoType = 'collage';
       }
     } else if (category_id === 'collage') {
       // For backwards compatibility, accept string values
@@ -649,6 +666,12 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     if (photo.hero_path) {
       await storage.delete(photo.hero_path).catch(() => {});
     }
+    // Lightbox preview tier (#492). Same disposable-derived semantics
+    // as thumbnail / hero — wipe on photo delete so we don't leak
+    // orphaned files into previews/ that no DB row references.
+    if (photo.preview_path) {
+      await storage.delete(photo.preview_path).catch(() => {});
+    }
 
     // Delete pre-generated watermark if exists
     if (photo.watermark_path) {
@@ -783,6 +806,10 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
       if (photo.hero_path) {
         await storage.delete(photo.hero_path).catch(() => {});
       }
+      // Lightbox preview tier (#492) — bulk delete cleanup.
+      if (photo.preview_path) {
+        await storage.delete(photo.preview_path).catch(() => {});
+      }
       if (photo.watermark_path) {
         await watermarkGeneratorService.deleteForPhoto(photo.id);
       }
@@ -901,6 +928,11 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
     const storage = getStorage();
     const storageKey = resolvePhotoStorageKey(event, photo);
 
+    // #493: respect the original-filenames toggle for admin downloads too.
+    const useOriginal = await getUseOriginalFilenames();
+    const downloadName = pickRawDownloadName(photo, useOriginal);
+    const contentDisposition = buildContentDisposition(downloadName);
+
     if (storageKey) {
       const stat = await storage.stat(storageKey);
       if (!stat) {
@@ -909,7 +941,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
       res.set({
         'Content-Type': photo.mime_type || 'application/octet-stream',
         'Content-Length': stat.size,
-        'Content-Disposition': `attachment; filename="${photo.filename}"`,
+        'Content-Disposition': contentDisposition,
       });
       const stream = await storage.get(storageKey);
       stream.pipe(res);
@@ -923,7 +955,11 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
     } catch (error) {
       return res.status(404).json({ error: 'Photo file not found' });
     }
-    res.download(filePath, photo.filename);
+    res.set({
+      'Content-Type': photo.mime_type || 'application/octet-stream',
+      'Content-Disposition': contentDisposition,
+    });
+    res.sendFile(filePath);
   } catch (error) {
     console.error('Error downloading photo:', error);
     res.status(500).json({ error: 'Failed to download photo' });

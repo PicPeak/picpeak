@@ -7,20 +7,9 @@ import {
   RefreshCw,
   AlertCircle,
   CheckCircle,
-  Calendar,
-  Database,
-  FileArchive,
-  Cloud,
-  Server,
-  Loader2,
-  Info,
-  Shield,
   Clock,
-  Download,
-  Upload,
-  Trash2,
-  Search,
-  Filter
+  Loader2,
+  Shield,
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -34,41 +23,37 @@ import { BackupHistory } from '../../components/admin/BackupHistory';
 import { RestoreWizard } from '../../components/admin/RestoreWizard';
 import { api } from '../../config/api';
 
-// Tab components will be defined inside the component to use translations
+type TabId = 'dashboard' | 'configuration' | 'history' | 'restore';
 
-export const BackupManagement = () => {
-  const [activeTab, setActiveTab] = useState('dashboard');
+export const BackupManagement: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const queryClient = useQueryClient();
   const { t } = useTranslation();
 
-  // Tab components with translations
   const tabs = [
-    { id: 'dashboard', label: t('backup.tabs.dashboard'), icon: HardDrive },
-    { id: 'configuration', label: t('backup.tabs.configuration'), icon: Settings },
-    { id: 'history', label: t('backup.tabs.history'), icon: History },
-    { id: 'restore', label: t('backup.tabs.restore'), icon: RefreshCw }
+    { id: 'dashboard' as const, label: t('backup.tabs.dashboard'), icon: HardDrive },
+    { id: 'configuration' as const, label: t('backup.tabs.configuration'), icon: Settings },
+    { id: 'history' as const, label: t('backup.tabs.history'), icon: History },
+    { id: 'restore' as const, label: t('backup.tabs.restore'), icon: RefreshCw },
   ];
 
-  // Fetch backup status
   const { data: backupStatus, isLoading: statusLoading } = useQuery({
     queryKey: ['backup-status'],
     queryFn: async () => {
       const response = await api.get('/admin/backup/status');
       return response.data;
     },
-    refetchInterval: 10000 // Refresh every 10 seconds
+    refetchInterval: 10000,
   });
 
-  // Fetch backup configuration
   const { data: backupConfig, isLoading: configLoading } = useQuery({
     queryKey: ['backup-config'],
     queryFn: async () => {
       const response = await api.get('/admin/backup/config');
       return response.data;
-    }
+    },
   });
 
-  // Trigger manual backup
   const manualBackupMutation = useMutation({
     mutationFn: async () => {
       const response = await api.post('/admin/backup/run');
@@ -78,15 +63,14 @@ export const BackupManagement = () => {
       toast.success(t('backup.messages.backupStarted'));
       queryClient.invalidateQueries({ queryKey: ['backup-status'] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       const message = error.response?.data?.error || t('backup.messages.backupFailed');
       toast.error(message);
-    }
+    },
   });
 
-  // Update configuration
   const updateConfigMutation = useMutation({
-    mutationFn: async (config) => {
+    mutationFn: async (config: unknown) => {
       const response = await api.put('/admin/backup/config', config);
       return response.data;
     },
@@ -94,10 +78,10 @@ export const BackupManagement = () => {
       toast.success(t('backup.messages.configUpdated'));
       queryClient.invalidateQueries({ queryKey: ['backup-config'] });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       const message = error.response?.data?.error || t('backup.messages.configUpdateFailed');
       toast.error(message);
-    }
+    },
   });
 
   if (statusLoading || configLoading) {
@@ -142,7 +126,7 @@ export const BackupManagement = () => {
                 </>
               )}
             </div>
-            
+
             {backupConfig?.backup_enabled && (
               <div className="flex items-center space-x-2">
                 <Clock className="h-5 w-5 text-neutral-400" />
@@ -156,11 +140,11 @@ export const BackupManagement = () => {
           <div className="flex items-center space-x-3">
             <Button
               onClick={() => manualBackupMutation.mutate()}
-              disabled={backupStatus?.isRunning || manualBackupMutation.isLoading}
+              disabled={backupStatus?.isRunning || manualBackupMutation.isPending}
               variant="secondary"
               size="sm"
             >
-              {manualBackupMutation.isLoading ? (
+              {manualBackupMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   {t('backup.actions.starting')}
@@ -172,7 +156,7 @@ export const BackupManagement = () => {
                 </>
               )}
             </Button>
-            
+
             <div className={`flex items-center space-x-1 px-3 py-1 rounded-full text-sm font-medium ${
               backupConfig?.backup_enabled
                 ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
@@ -213,26 +197,26 @@ export const BackupManagement = () => {
       {/* Tab Content */}
       <div className="mt-6">
         {activeTab === 'dashboard' && (
-          <BackupDashboard 
-            status={backupStatus} 
+          <BackupDashboard
+            status={backupStatus}
             config={backupConfig}
             onRunBackup={() => manualBackupMutation.mutate()}
-            isBackupRunning={backupStatus?.isRunning || manualBackupMutation.isLoading}
+            isBackupRunning={backupStatus?.isRunning || manualBackupMutation.isPending}
           />
         )}
-        
+
         {activeTab === 'configuration' && (
           <BackupConfiguration
             config={backupConfig}
-            onSave={(newConfig) => updateConfigMutation.mutate(newConfig)}
-            isSaving={updateConfigMutation.isLoading}
+            onSave={(newConfig: unknown) => updateConfigMutation.mutate(newConfig)}
+            isSaving={updateConfigMutation.isPending}
           />
         )}
-        
+
         {activeTab === 'history' && (
           <BackupHistory />
         )}
-        
+
         {activeTab === 'restore' && (
           <RestoreWizard />
         )}

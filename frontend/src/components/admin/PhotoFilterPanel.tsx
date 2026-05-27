@@ -19,7 +19,7 @@ const RATING_OPTIONS = [
   { value: 3, label: 'filter.threeStarsPlus' },
   { value: 4, label: 'filter.fourStarsPlus' },
   { value: 5, label: 'filter.fiveStarsOnly' },
-];
+] as const;
 
 export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
   filters,

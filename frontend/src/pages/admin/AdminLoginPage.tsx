@@ -8,6 +8,7 @@ import { Button, Input, Card, ReCaptcha } from '../../components/common';
 import { useAdminAuth } from '../../contexts';
 import { authService } from '../../services/auth.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
+import { resolveLoginLogoClasses } from '../../utils/loginLogoSize';
 import { api } from '../../config/api';
 
 export const AdminLoginPage: React.FC = () => {
@@ -122,18 +123,32 @@ export const AdminLoginPage: React.FC = () => {
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: 'var(--color-background, #fafafa)' }}>
       <div className="w-full max-w-md">
-        {/* Logo/Header */}
+        {/* Logo/Header — frame visibility and size are admin-controllable
+            via Branding → "Login pages logo" settings. Both knobs apply
+            to /admin/login and /customer/login exclusively. */}
         <div className="text-center mb-8">
-          <div
-            className="w-[200px] h-[150px] mx-auto mb-6 rounded-2xl flex items-center justify-center"
-            style={{ backgroundColor: '#eee6d2' }}
-          >
-            <img
-              src={resolvedLogoUrl}
-              alt={companyName}
-              className="w-[180px] h-[130px] object-contain"
-            />
-          </div>
+          {(() => {
+            const cls = resolveLoginLogoClasses(settingsData?.branding_login_logo_size);
+            const showFrame = settingsData?.branding_login_logo_frame_enabled !== false;
+            return showFrame ? (
+              <div
+                className={`${cls.frameOuter} mx-auto mb-6 rounded-2xl flex items-center justify-center`}
+                style={{ backgroundColor: '#eee6d2' }}
+              >
+                <img
+                  src={resolvedLogoUrl}
+                  alt={companyName}
+                  className={`${cls.frameInner} object-contain`}
+                />
+              </div>
+            ) : (
+              <img
+                src={resolvedLogoUrl}
+                alt={companyName}
+                className={`${cls.bare} object-contain mx-auto mb-6`}
+              />
+            );
+          })()}
           <h1 className="text-3xl font-bold" style={{ color: 'var(--color-text, #171717)' }}>{t('adminLogin.title')}</h1>
           <p className="mt-2" style={{ color: 'var(--color-text, #171717)', opacity: 0.7 }}>{t('adminLogin.subtitle')}</p>
         </div>

@@ -1,19 +1,13 @@
 {
+  "name": "picpeak",
+  "version": "0.0.0",
+  "private": true,
   "scripts": {
     "test:e2e": "playwright test"
   },
-  "dependencies": {
-    "better-sqlite3": "^12.2.0",
-    "canvas": "^3.2.0",
-    "node-fetch": "^2.7.0"
-  },
   "devDependencies": {
     "@playwright/test": "^1.57.0",
+    "dotenv": "^16.4.5",
     "puppeteer": "^24.17.0"
-  },
-  "overrides": {
-    "prebuild-install": {
-      "tar-fs": "2.1.4"
-    }
   }
 }

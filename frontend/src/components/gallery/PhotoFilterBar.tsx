@@ -81,12 +81,13 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
             onClick={() => setShowSortMenu(!showSortMenu)}
             className="w-full md:w-auto text-sm md:text-base"
           >
-            <span className="hidden md:inline">{t('common.sortBy')} </span>
-            {sortBy === 'date' ? t('gallery.sortByDate').replace('Sort by ', '') :
-             sortBy === 'name' ? t('gallery.sortByName').replace('Sort by ', '') :
-             sortBy === 'size' ? t('gallery.sortBySize').replace('Sort by ', '') :
+            <span className="hidden md:inline">{t('common.sortBy')}{" "}
+            {sortBy === 'date' ? t('gallery.sortByDate').replace(t('common.sortBy'), '') :
+             sortBy === 'name' ? t('gallery.sortByName').replace(t('common.sortBy'), '') :
+             sortBy === 'size' ? t('gallery.sortBySize').replace(t('common.sortBy'), '') :
              sortBy === 'capture_date' ? t('photoSort.dateTaken', 'Date Taken') :
              t('gallery.sortByRating', 'Rating')}
+              </span>
           </Button>
           
           {showSortMenu && (

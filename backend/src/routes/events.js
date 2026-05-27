@@ -4,6 +4,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
+const { slugify } = require('../utils/slug');
 const { validatePasswordInContext, getBcryptRounds } = require('../utils/passwordValidation');
 const { adminAuth } = require('../middleware/auth');
 const fs = require('fs').promises;
@@ -125,8 +126,8 @@ router.post('/', adminAuth, [
       }
     }
     
-    // Generate unique slug
-    const baseSlug = `${event_type}-${event_name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${event_date}`;
+    // Generate unique slug — slugify() handles accents (see #525).
+    const baseSlug = `${event_type}-${slugify(event_name)}-${event_date}`;
     let slug = baseSlug;
     let counter = 1;
     

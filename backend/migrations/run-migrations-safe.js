@@ -38,7 +38,48 @@ async function markMigrationAsApplied(filename) {
 // Detect existing schema and mark migrations as applied
 async function detectExistingSchema() {
   console.log('Detecting existing schema...');
-  
+
+  // Modern-bootstrap fingerprint check (#530).
+  //
+  // A DB with the post-initializeDatabase state (photo_categories +
+  // cms_pages present, which db.js:initializeDatabase() creates as
+  // part of the consolidated modern bootstrap) but an empty migrations
+  // table is a recovery scenario — either restored from a backup that
+  // lost the migrations table, or someone invoked initializeDatabase()
+  // outside the migration runner.
+  //
+  // Treating this as a regular "existing deployment" runs the legacy
+  // chain first, which renames email_templates.subject → subject_en
+  // (legacy/008). Then core/029 fails when it tries to insert email
+  // templates referencing the pre-rename `subject` column. Fresh
+  // installs avoid this by running ONLY core migrations (core/059
+  // handles the rename later, after core/029 has inserted templates).
+  // Real legacy upgrades avoid it because their migrations table
+  // already records that legacy/008–028 ran historically.
+  //
+  // The fix: when the modern bootstrap fingerprint is detected, mark
+  // every legacy migration as applied. This matches what fresh
+  // installs do (skip legacy entirely) and keeps the legacy chain
+  // from operating on a schema state it doesn't expect. Real legacy
+  // upgrades hit no-op markings here because they already have their
+  // migrations recorded.
+  const hasPhotoCategoriesTable = await db.schema.hasTable('photo_categories');
+  const hasCmsPagesTable = await db.schema.hasTable('cms_pages');
+  if (hasPhotoCategoriesTable && hasCmsPagesTable) {
+    const legacyDir = path.join(__dirname, 'legacy');
+    try {
+      const legacyFiles = await fs.readdir(legacyDir);
+      const legacyMigrations = legacyFiles.filter((f) => /^\d{3}_.*\.js$/.test(f));
+      for (const filename of legacyMigrations) {
+        await markMigrationAsApplied(filename);
+      }
+    } catch (err) {
+      // Non-fatal — only legacy dir absence (very-old test setups)
+      // would land here. Original table-based markers below still run.
+      console.log(`Could not enumerate legacy migrations: ${err.message}`);
+    }
+  }
+
   const tableChecks = [
     { table: 'events', migration: '001_init.js' },
     { table: 'photos', migration: '001_init.js' },
@@ -49,7 +90,7 @@ async function detectExistingSchema() {
     { table: 'backup_runs', migration: '029_add_backup_service_tables.js' },
     { table: 'gallery_feedback', migration: '033_add_gallery_feedback.js' },
   ];
-  
+
   for (const check of tableChecks) {
     const exists = await db.schema.hasTable(check.table);
     if (exists) {
@@ -126,18 +167,26 @@ async function runMigrations() {
     const hasActivityLogsTable = await db.schema.hasTable('activity_logs');
     
     // Get applied migrations
-    const appliedMigrations = await db('migrations').select('filename');
-    const appliedFilenames = appliedMigrations.map(m => m.filename);
-    
+    let appliedMigrations = await db('migrations').select('filename');
+    let appliedFilenames = appliedMigrations.map(m => m.filename);
+
     // Check if this is a new deployment
     // It's new if no essential tables exist OR no migrations have been applied
     const hasEssentialTables = hasEventsTable && hasPhotosTable && hasAdminTable && hasActivityLogsTable;
     const isDatabaseEmpty = !hasEventsTable && !hasPhotosTable && !hasAdminTable && !hasActivityLogsTable;
     const isNewDeployment = isDatabaseEmpty || (appliedFilenames.length === 0 && !hasEssentialTables);
-    
+
     // Only detect existing schema for truly existing deployments
     if (!isNewDeployment) {
       await detectExistingSchema();
+      // detectExistingSchema may have inserted rows into the migrations
+      // table (e.g. for 004_add_categories_and_cms.js when photo_categories
+      // already exists). Re-query so the iteration below sees the up-to-date
+      // applied set — otherwise the loop attempts those migrations again,
+      // their tx-internal `insert into migrations` conflicts, and postgres
+      // logs a "duplicate key" ERROR on every fresh-after-partial install.
+      appliedMigrations = await db('migrations').select('filename');
+      appliedFilenames = appliedMigrations.map(m => m.filename);
     }
     
     // Get migration files from appropriate directories

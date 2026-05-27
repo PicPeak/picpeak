@@ -25,6 +25,26 @@ export interface BrandingSettings {
    * `colorMode` override is ignored. `null` means no force (default behavior).
    */
   force_color_mode?: 'dark' | 'light' | null;
+  /**
+   * Login-page-only branding (#354 follow-up). Applies exclusively to
+   * /admin/login and /customer/login. Frame default is true; size
+   * default is 'medium' (matches the visual state before the toggle).
+   */
+  login_logo_frame_enabled?: boolean;
+  login_logo_size?: 'small' | 'medium' | 'large' | 'xlarge';
+  // Footer overhaul (#441 + #440). Empty strings hide each social
+  // icon individually; promo_markdown empty hides the slot for events
+  // in 'inherit' mode. Position controls global default placement.
+  facebook_url?: string;
+  instagram_url?: string;
+  whatsapp_url?: string;
+  twitter_url?: string;
+  youtube_url?: string;
+  promo_markdown?: string;
+  promo_position?: 'above_footer' | 'below_footer';
+  // Per-install promo banner alignment (#482). Defaults to center
+  // so the banner aligns with the gallery footer.
+  promo_alignment?: 'left' | 'center' | 'right';
 }
 
 export interface ThemeSettings {
@@ -132,6 +152,10 @@ export interface PublicSiteBranding {
     accent: string;
     background: string;
     text: string;
+    surface?: string;
+    elevated?: string;
+    border?: string;
+    mutedText?: string;
   };
 }
 
@@ -299,7 +323,30 @@ export const settingsService = {
         ? 'dark'
         : rawSettings.branding_force_color_mode === 'light'
           ? 'light'
-          : null
+          : null,
+      // Login-only knobs (#354). Default to frame ON, size 'medium' so
+      // installs that haven't toggled them keep the visual state shipped
+      // before the controls existed.
+      login_logo_frame_enabled: this._parseBoolean(rawSettings.branding_login_logo_frame_enabled, true),
+      login_logo_size: ['small', 'medium', 'large', 'xlarge'].includes(rawSettings.branding_login_logo_size)
+        ? rawSettings.branding_login_logo_size
+        : 'medium',
+      // Footer overhaul (#441 + #440 / #460). These were added to the
+      // BrandingSettings interface but not to the read mapper, so the
+      // BrandingPage form initialised them as empty strings on every
+      // load. The next save then sent the empty form back to the
+      // backend and wiped the saved values from the DB — even though
+      // the gallery footer kept rendering them until the next save.
+      facebook_url: rawSettings.branding_facebook_url || '',
+      instagram_url: rawSettings.branding_instagram_url || '',
+      whatsapp_url: rawSettings.branding_whatsapp_url || '',
+      twitter_url: rawSettings.branding_twitter_url || '',
+      youtube_url: rawSettings.branding_youtube_url || '',
+      promo_markdown: rawSettings.branding_promo_markdown || '',
+      promo_position: rawSettings.branding_promo_position === 'below_footer' ? 'below_footer' : 'above_footer',
+      promo_alignment: ['left', 'center', 'right'].includes(rawSettings.branding_promo_alignment)
+        ? rawSettings.branding_promo_alignment
+        : 'center'
     };
   },
 

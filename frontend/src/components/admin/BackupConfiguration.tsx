@@ -5,18 +5,11 @@ import {
   Server,
   Cloud,
   HardDrive,
-  Clock,
-  Calendar,
-  Shield,
   AlertCircle,
-  Info,
   Eye,
   EyeOff,
   Wifi,
-  CheckCircle,
-  XCircle,
   Loader2,
-  FolderOpen,
   Database,
   Image,
   FileArchive
@@ -24,26 +17,58 @@ import {
 import { toast } from 'react-toastify';
 import { Button, Card, Input } from '../common';
 
-export const BackupConfiguration = ({ config, onSave, isSaving }) => {
+interface BackupFormData {
+  backup_enabled: boolean;
+  backup_destination_type: 'local' | 'rsync' | 's3';
+  backup_destination_path: string;
+  backup_rsync_host: string;
+  backup_rsync_user: string;
+  backup_rsync_path: string;
+  backup_rsync_ssh_key: string;
+  backup_s3_endpoint: string;
+  backup_s3_bucket: string;
+  backup_s3_access_key: string;
+  backup_s3_secret_key: string;
+  backup_s3_region: string;
+  backup_schedule: string;
+  backup_schedule_cron: string;
+  backup_retention_days: number;
+  backup_include_database: boolean;
+  backup_include_photos: boolean;
+  backup_include_archives: boolean;
+  backup_include_thumbnails: boolean;
+  backup_include_temp: boolean;
+  backup_compression: boolean;
+  backup_encryption: boolean;
+  backup_encryption_passphrase: string;
+}
+
+interface BackupConfigurationProps {
+  config?: Partial<BackupFormData>;
+  onSave: (data: BackupFormData) => void;
+  isSaving: boolean;
+}
+
+export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config, onSave, isSaving }) => {
   const { t } = useTranslation();
-  
+
   const destinationTypes = [
     {
-      id: 'local',
+      id: 'local' as const,
       name: t('backup.configuration.destinationTypes.local.name'),
       icon: HardDrive,
       description: t('backup.configuration.destinationTypes.local.description'),
       fields: ['backup_destination_path']
     },
     {
-      id: 'rsync',
+      id: 'rsync' as const,
       name: t('backup.configuration.destinationTypes.rsync.name'),
       icon: Server,
       description: t('backup.configuration.destinationTypes.rsync.description'),
       fields: ['backup_rsync_host', 'backup_rsync_user', 'backup_rsync_path', 'backup_rsync_ssh_key']
     },
     {
-      id: 's3',
+      id: 's3' as const,
       name: t('backup.configuration.destinationTypes.s3.name'),
       icon: Cloud,
       description: t('backup.configuration.destinationTypes.s3.description'),
@@ -57,8 +82,8 @@ export const BackupConfiguration = ({ config, onSave, isSaving }) => {
     { value: 'weekly', label: t('backup.configuration.schedule.options.weekly') },
     { value: 'custom', label: t('backup.configuration.schedule.options.custom') }
   ];
-  
-  const [formData, setFormData] = useState({
+
+  const [formData, setFormData] = useState<BackupFormData>({
     backup_enabled: false,
     backup_destination_type: 'local',
     backup_destination_path: '',
@@ -101,33 +126,32 @@ export const BackupConfiguration = ({ config, onSave, isSaving }) => {
     }
   }, [config]);
 
-  const handleChange = (field, value) => {
+  const handleChange = <K extends keyof BackupFormData>(field: K, value: BackupFormData[K]) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Validate required fields
-    const destinationType = destinationTypes.find(t => t.id === formData.backup_destination_type);
-    const missingFields = [];
-    
+
+    const destinationType = destinationTypes.find(dt => dt.id === formData.backup_destination_type);
+    const missingFields: string[] = [];
+
     if (formData.backup_enabled && destinationType) {
       destinationType.fields.forEach(field => {
-        if (!formData[field] && !field.includes('optional')) {
+        if (!formData[field as keyof BackupFormData] && !field.includes('optional')) {
           missingFields.push(field);
         }
       });
     }
-    
+
     if (missingFields.length > 0) {
       toast.error(t('backup.configuration.messages.requiredFields'));
       return;
     }
-    
+
     onSave(formData);
   };
 
@@ -138,13 +162,11 @@ export const BackupConfiguration = ({ config, onSave, isSaving }) => {
       await new Promise(resolve => setTimeout(resolve, 2000));
       toast.success(t('backup.configuration.messages.connectionSuccess'));
     } catch (error) {
-      toast.error(t('backup.configuration.messages.connectionFailed') + ': ' + error.message);
+      toast.error(t('backup.configuration.messages.connectionFailed') + ': ' + (error as Error).message);
     } finally {
       setTestingConnection(false);
     }
   };
-
-  const selectedDestination = destinationTypes.find(t => t.id === formData.backup_destination_type);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -399,7 +421,7 @@ export const BackupConfiguration = ({ config, onSave, isSaving }) => {
       {/* Schedule Configuration */}
       <Card className="p-6">
         <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('backup.configuration.schedule.title')}</h3>
-        
+
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
@@ -456,7 +478,7 @@ export const BackupConfiguration = ({ config, onSave, isSaving }) => {
       {/* Backup Content Selection */}
       <Card className="p-6">
         <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('backup.configuration.whatToBackup.title')}</h3>
-        
+
         <div className="space-y-3">
           <label className="flex items-center">
             <input
@@ -527,7 +549,7 @@ export const BackupConfiguration = ({ config, onSave, isSaving }) => {
       {/* Advanced Options */}
       <Card className="p-6">
         <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('backup.configuration.advancedOptions.title')}</h3>
-        
+
         <div className="space-y-4">
           <label className="flex items-center">
             <input

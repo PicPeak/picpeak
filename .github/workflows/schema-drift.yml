@@ -1,0 +1,189 @@
+name: Schema drift (#530)
+
+# Verifies that `migrate:safe` can recover a DB that's been seeded only
+# by `initializeDatabase()` — the recovery scenario where the migrations
+# tracking table is empty but the schema already has the modern bootstrap.
+#
+# This is NOT how production reaches its state on normal installs or
+# upgrades. The scenario only fires when:
+#   - A backup was restored that captured tables but not the migrations
+#     table (manifest divergence),
+#   - Someone manually invoked initializeDatabase() outside the migration
+#     runner (recovery / debugging),
+#   - The DB was moved between systems and the migrations table was not
+#     copied along.
+#
+# When `detectExistingSchema()` sees the modern-bootstrap fingerprint
+# (photo_categories + cms_pages tables) but an empty migrations table,
+# it treats it as an "existing deployment" — which runs the legacy
+# chain first. Legacy/008 renames email_templates.subject → subject_en,
+# but core/029 (which runs later in this chain) inserts email templates
+# referencing the pre-rename column name. The chain dies with a
+# "column subject does not exist" error.
+#
+# Fix (in the same PR as this workflow): when the modern-bootstrap
+# fingerprint is detected, mark all legacy migrations as applied so the
+# chain matches what a fresh install runs — only core/*, in order.
+#
+# This workflow boots the failing scenario from scratch on every PR
+# that touches the migrations or db.js, so any future migration with
+# the same shape is caught before merge.
+
+on:
+  push:
+    branches: [main, beta]
+    paths:
+      - 'backend/migrations/**'
+      - 'backend/src/database/db.js'
+      - 'backend/knexfile.js'
+      - '.github/workflows/schema-drift.yml'
+  pull_request:
+    branches: [main, beta]
+    paths:
+      - 'backend/migrations/**'
+      - 'backend/src/database/db.js'
+      - 'backend/knexfile.js'
+      - '.github/workflows/schema-drift.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade-from-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: picpeak
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: picpeak_drift
+        options: >-
+          --health-cmd "pg_isready -U picpeak -d picpeak_drift"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend deps
+        working-directory: ./backend
+        run: npm ci
+
+      # Step 1: simulate the recovery state — DB has the modern bootstrap
+      # (post-initializeDatabase) but no migrations recorded. Calling
+      # initializeDatabase() directly outside the migration runner is the
+      # one-line repro for backup-restore-lost-migrations and manual-
+      # invocation paths.
+      - name: Seed DB with initializeDatabase() only
+        working-directory: ./backend
+        env:
+          NODE_ENV: production
+          DATABASE_CLIENT: pg
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: picpeak
+          DB_PASSWORD: testpass
+          DB_NAME: picpeak_drift
+        run: |
+          node -e "require('./src/database/db').initializeDatabase().then(() => { console.log('bootstrap ok'); process.exit(0); }).catch(e => { console.error('bootstrap FAILED:', e.message); process.exit(1); })"
+
+      # Sanity-check the recovery shape before migrate:safe runs. If
+      # initializeDatabase() ever stops producing photo_categories +
+      # cms_pages, the fingerprint check would silently no-op and this
+      # workflow would lose its teeth — assert the precondition.
+      - name: Assert recovery-state fingerprint
+        env:
+          PGPASSWORD: testpass
+        run: |
+          installed=$(psql -h localhost -U picpeak -d picpeak_drift -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename IN ('photo_categories', 'cms_pages')")
+          if [ "$installed" != "2" ]; then
+            echo "FAIL: expected photo_categories + cms_pages from initializeDatabase(); got $installed."
+            psql -h localhost -U picpeak -d picpeak_drift -c "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
+            exit 1
+          fi
+          # initializeDatabase() doesn't create the `migrations` tracking
+          # table — that's the migrate:safe runner's job. So in the recovery
+          # scenario, the table either (a) doesn't exist yet or (b) exists
+          # but is empty (e.g. someone created it but didn't populate it).
+          # Both are valid recovery states; check via to_regclass first so
+          # we don't parse a SELECT against a nonexistent table.
+          has_migrations_table=$(psql -h localhost -U picpeak -d picpeak_drift -tAc "SELECT to_regclass('public.migrations')::text")
+          if [ -z "$has_migrations_table" ]; then
+            migrations_count=0
+          else
+            migrations_count=$(psql -h localhost -U picpeak -d picpeak_drift -tAc "SELECT count(*) FROM migrations")
+          fi
+          if [ "$migrations_count" != "0" ]; then
+            echo "FAIL: migrations table should be empty for the recovery scenario; has $migrations_count rows."
+            exit 1
+          fi
+          echo "ok: recovery state confirmed (bootstrap tables present, migrations table empty or absent)."
+
+      # Step 2: run migrate:safe — the test. Before #530's fix in
+      # detectExistingSchema, this died at core/029 with a "column
+      # subject does not exist" error. After the fix, it should complete
+      # cleanly with every migration either applied or marked.
+      - name: Run migrate:safe against the recovery state
+        working-directory: ./backend
+        env:
+          NODE_ENV: production
+          DATABASE_CLIENT: pg
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: picpeak
+          DB_PASSWORD: testpass
+          DB_NAME: picpeak_drift
+        run: npm run migrate:safe
+
+      # Step 3: schema-shape assertion. A fresh install through migrate:
+      # safe produces 48 tables; the recovery scenario should converge
+      # to the same number. Off-by-one is fine but a 10+ table delta
+      # means a migration silently bailed in the recovery path.
+      - name: Assert final schema matches fresh-install shape
+        env:
+          PGPASSWORD: testpass
+        run: |
+          tables=$(psql -h localhost -U picpeak -d picpeak_drift -tAc "SELECT count(*) FROM pg_tables WHERE schemaname='public'")
+          echo "Final table count: $tables"
+          # Allow a small drift window — exact count creeps over time as
+          # new migrations land; tight pin would force a workflow edit
+          # on every schema PR. 40+ is a healthy floor that catches the
+          # original bug (which left 17 tables) while staying robust to
+          # forward changes.
+          if [ "$tables" -lt 40 ]; then
+            echo "FAIL: too few tables ($tables) — migrate:safe likely bailed mid-chain."
+            psql -h localhost -U picpeak -d picpeak_drift -c "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
+            exit 1
+          fi
+          echo "ok: schema converged to a fresh-install-equivalent shape."
+
+      # Step 4: verify the legacy migrations were all marked applied
+      # (rather than silently bailing inside the chain). The fix in
+      # detectExistingSchema marks legacy/* when the modern bootstrap
+      # is detected — confirm the markings actually landed.
+      - name: Assert legacy migrations marked applied
+        env:
+          PGPASSWORD: testpass
+        run: |
+          legacy_count=$(psql -h localhost -U picpeak -d picpeak_drift -tAc "SELECT count(*) FROM migrations WHERE filename LIKE '008_%' OR filename LIKE '009_%' OR filename LIKE '013_%' OR filename LIKE '019_%' OR filename LIKE '020_%' OR filename LIKE '026_%' OR filename LIKE '028_%'")
+          if [ "$legacy_count" -lt 7 ]; then
+            echo "FAIL: legacy migrations not marked applied ($legacy_count of 7 expected)."
+            psql -h localhost -U picpeak -d picpeak_drift -c "SELECT filename FROM migrations WHERE filename LIKE '0%' ORDER BY filename"
+            exit 1
+          fi
+          echo "ok: legacy migrations marked applied by detectExistingSchema."

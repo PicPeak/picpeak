@@ -186,9 +186,18 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
       void loadFontForFamily(themeConfig.fontFamily);
     }
 
-    if (themeConfig.headingFontFamily) {
-      root.style.setProperty('--heading-font-family', themeConfig.headingFontFamily);
-      void loadFontForFamily(themeConfig.headingFontFamily);
+    // "Same as body" is stored as headingFontFamily='' — in that case
+    // mirror the body family so a stale --heading-font-family (e.g.
+    // from a previously-visited gallery with a serif heading theme)
+    // doesn't bleed into pages that picked the matched-fonts option.
+    // Without this fall-through the CSS variable retained the last
+    // explicit value across theme switches, which is why the customer
+    // profile and admin login rendered serif headings even though the
+    // active theme had "Same as body" selected.
+    const effectiveHeadingFont = themeConfig.headingFontFamily || themeConfig.fontFamily;
+    if (effectiveHeadingFont) {
+      root.style.setProperty('--heading-font-family', effectiveHeadingFont);
+      void loadFontForFamily(effectiveHeadingFont);
     }
     
     if (themeConfig.borderRadius) {

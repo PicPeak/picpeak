@@ -4,6 +4,7 @@ export type { GeneralSettings, SecuritySettings, AnalyticsSettings, EventSetting
 export { useStatusTab } from './hooks/useStatusTab';
 
 // Tab components
+export { FeaturesTab } from './tabs/FeaturesTab';
 export { GeneralTab } from './tabs/GeneralTab';
 export { EventsTab } from './tabs/EventsTab';
 export { StatusTab } from './tabs/StatusTab';

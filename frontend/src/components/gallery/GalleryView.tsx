@@ -23,6 +23,7 @@ import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { api } from '../../config/api';
 import { Upload, Menu, Eye, EyeOff, Shield } from 'lucide-react';
 import { galleryService } from '../../services/gallery.service';
+import { feedbackService } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
 import { useGalleryCustomCss } from '../../hooks/useGalleryCustomCss';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
@@ -143,6 +144,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   const disableRightClick = data?.event?.disable_right_click === true;
   const enableDevtoolsProtection = data?.event?.enable_devtools_protection === true;
   const useCanvasRendering = data?.event?.use_canvas_rendering === true;
+  // #508 — surface original camera filenames in the lightbox when the
+  // admin has flipped the same toggle that drives original-name downloads.
+  const showOriginalFilename = data?.event?.use_original_filenames === true;
 
   // DevTools protection - enabled by individual setting OR legacy protection level
   const devToolsEnabled = enableDevtoolsProtection || protectionLevel === 'enhanced' || protectionLevel === 'maximum';
@@ -226,6 +230,46 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
     }
   }, [feedbackSettings]);
 
+  // In guest identity mode both the "Liked / Favorited / Rated /
+  // Commented" filters AND the matching chip-count labels need to scope
+  // to the *current guest's* interactions, not the global aggregates on
+  // each photo row (#538 bug 1). Pull the current guest's feedback via
+  // /my-feedback (already keyed by x-guest-token in the api interceptor)
+  // and build per-type photo-id sets so both consumers below can do
+  // O(1) lookups.
+  //
+  // Always-on in guest mode (not gated on the active filter) because
+  // the chip counts render whether or not a feedback filter is selected
+  // — gating on filterType would leave "Liked (0)" stale until the user
+  // clicks the chip, which is the same UX cliff bug 1 was reporting.
+  const isGuestIdentityMode = feedbackSettings?.identity_mode === 'guest';
+  const { data: myFeedbackRows } = useQuery<Array<{
+    photo_id: number;
+    feedback_type: 'like' | 'favorite' | 'rating' | 'comment';
+  }>>({
+    queryKey: ['my-feedback', slug],
+    queryFn: () => feedbackService.getMyFeedback(slug),
+    enabled: isGuestIdentityMode && !!slug,
+    staleTime: 30 * 1000,
+  });
+
+  const myFeedbackPhotoIds = useMemo(() => {
+    const sets = {
+      liked: new Set<number>(),
+      favorited: new Set<number>(),
+      rated: new Set<number>(),
+      commented: new Set<number>(),
+    };
+    if (!myFeedbackRows) return sets;
+    for (const row of myFeedbackRows) {
+      if (row.feedback_type === 'like') sets.liked.add(row.photo_id);
+      else if (row.feedback_type === 'favorite') sets.favorited.add(row.photo_id);
+      else if (row.feedback_type === 'rating') sets.rated.add(row.photo_id);
+      else if (row.feedback_type === 'comment') sets.commented.add(row.photo_id);
+    }
+    return sets;
+  }, [myFeedbackRows]);
+
   // Apply branding settings
   useEffect(() => {
     if (settingsData) {
@@ -243,6 +287,21 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         logo_display_hero: settingsData.branding_logo_display_hero !== false,
         logo_display_mode: settingsData.branding_logo_display_mode || 'logo_and_text',
         hide_powered_by: settingsData.branding_hide_powered_by === true,
+        // Footer overhaul (#441 + #440). All five socials are optional;
+        // empty strings → that icon is hidden. promo_markdown is the
+        // global default; per-event override happens in GalleryLayout.
+        facebook_url: settingsData.branding_facebook_url || '',
+        instagram_url: settingsData.branding_instagram_url || '',
+        whatsapp_url: settingsData.branding_whatsapp_url || '',
+        twitter_url: settingsData.branding_twitter_url || '',
+        youtube_url: settingsData.branding_youtube_url || '',
+        promo_markdown: settingsData.branding_promo_markdown || '',
+        promo_position: settingsData.branding_promo_position === 'below_footer' ? 'below_footer' : 'above_footer',
+        // Promo alignment (#482). Defaults to 'center' to match the
+        // gallery footer; see GalleryLayout.
+        promo_alignment: ['left', 'center', 'right'].includes(settingsData.branding_promo_alignment)
+          ? settingsData.branding_promo_alignment
+          : 'center',
       });
     }
   }, [settingsData]);
@@ -426,19 +485,33 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
       );
     }
     
-    // Apply feedback filter
+    // Apply feedback filter. In guest identity mode the filter has to
+    // scope to the *current guest's* interactions (#538 bug 1) — the
+    // aggregate counts on each photo row are global across all guests,
+    // which gave an empty grid when the guest had liked photos that
+    // nobody else had touched. Falls back to the aggregate-count check
+    // in simple/non-guest mode where there's no per-person identity to
+    // scope by.
     switch (filterType) {
       case 'liked':
-        photos = photos.filter(photo => (photo.like_count || 0) > 0);
+        photos = isGuestIdentityMode
+          ? photos.filter(photo => myFeedbackPhotoIds.liked.has(photo.id))
+          : photos.filter(photo => (photo.like_count || 0) > 0);
         break;
       case 'favorited':
-        photos = photos.filter(photo => (photo.favorite_count || 0) > 0);
+        photos = isGuestIdentityMode
+          ? photos.filter(photo => myFeedbackPhotoIds.favorited.has(photo.id))
+          : photos.filter(photo => (photo.favorite_count || 0) > 0);
         break;
       case 'rated':
-        photos = photos.filter(photo => (photo.average_rating || 0) > 0 || (photo.total_ratings || 0) > 0);
+        photos = isGuestIdentityMode
+          ? photos.filter(photo => myFeedbackPhotoIds.rated.has(photo.id))
+          : photos.filter(photo => (photo.average_rating || 0) > 0 || (photo.total_ratings || 0) > 0);
         break;
       case 'commented':
-        photos = photos.filter(photo => (photo.comment_count || 0) > 0);
+        photos = isGuestIdentityMode
+          ? photos.filter(photo => myFeedbackPhotoIds.commented.has(photo.id))
+          : photos.filter(photo => (photo.comment_count || 0) > 0);
         break;
       default:
         break;
@@ -484,22 +557,29 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
     }
     
     return photos;
-  }, [data?.photos, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, filterType, mediaFilter]);
+  }, [data?.photos, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, filterType, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds]);
 
-  const likeCount = useMemo(
-    () => data?.photos?.filter(p => (p.like_count ?? 0) > 0).length || 0,
-    [data?.photos]
-  );
+  // Counts shown in the filter chips ("Liked (N)", etc.). In guest
+  // mode these need to mirror the per-guest filter behaviour above —
+  // otherwise the chip says "Liked (5)" globally but clicking it
+  // surfaces 3 (the guest's own subset), which is the same confusing
+  // mismatch #538 reported for the filter itself. Fall back to the
+  // global aggregate in simple mode where no per-person identity
+  // exists.
+  const likeCount = useMemo(() => {
+    if (isGuestIdentityMode) return myFeedbackPhotoIds.liked.size;
+    return data?.photos?.filter(p => (p.like_count ?? 0) > 0).length || 0;
+  }, [data?.photos, isGuestIdentityMode, myFeedbackPhotoIds]);
 
-  const favoriteCount = useMemo(
-    () => data?.photos?.filter(p => (p.favorite_count ?? 0) > 0).length || 0,
-    [data?.photos]
-  );
+  const favoriteCount = useMemo(() => {
+    if (isGuestIdentityMode) return myFeedbackPhotoIds.favorited.size;
+    return data?.photos?.filter(p => (p.favorite_count ?? 0) > 0).length || 0;
+  }, [data?.photos, isGuestIdentityMode, myFeedbackPhotoIds]);
 
-  const ratedCount = useMemo(
-    () => data?.photos?.filter(p => (p.total_ratings || 0) > 0 || (p.average_rating || 0) > 0).length || 0,
-    [data?.photos]
-  );
+  const ratedCount = useMemo(() => {
+    if (isGuestIdentityMode) return myFeedbackPhotoIds.rated.size;
+    return data?.photos?.filter(p => (p.total_ratings || 0) > 0 || (p.average_rating || 0) > 0).length || 0;
+  }, [data?.photos, isGuestIdentityMode, myFeedbackPhotoIds]);
 
   // Check if downloads are allowed (both event setting and not expired)
   const allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
@@ -662,6 +742,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           heroImageAnchor={data?.event?.hero_image_anchor || 'center'}
           welcomeMessage={event.welcome_message}
           onLogout={logout}
+          showOriginalFilename={showOriginalFilename}
         />
 
         {/* Upload Modal for full-page layouts */}
@@ -726,7 +807,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
       ) : null}
 
       <GalleryLayout
-        event={event}
+        event={{
+          ...event,
+          // Per-event promo override (#440). Sourced from the gallery
+          // /info response so the layout can decide between inherit /
+          // custom / off without a second fetch.
+          promo_mode: (data?.event as { promo_mode?: 'inherit' | 'custom' | 'off' })?.promo_mode,
+          promo_markdown: (data?.event as { promo_markdown?: string | null })?.promo_markdown,
+        }}
         brandingSettings={brandingSettings}
         headerStyle={data?.event?.header_style || theme.headerStyle}
         showLogout={true}
@@ -896,6 +984,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
             welcomeMessage={event.welcome_message}
             isClient={isClient}
             onToggleVisibility={isClient ? handleToggleVisibility : undefined}
+            showOriginalFilename={showOriginalFilename}
           />
         </div>
 

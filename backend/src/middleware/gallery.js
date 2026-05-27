@@ -120,7 +120,36 @@ async function verifyGalleryAccess(req, res, next) {
       logger.warn('[verifyGalleryAccess] Event not found for slug', { slug: requestedSlug || 'no-slug', tokenEventId: decoded.eventId });
       return res.status(404).json({ error: 'Gallery not found or expired' });
     }
-    
+
+    // Customer-minted gallery JWTs (#354): when the customer obtained
+    // this token via /api/customer/events/:slug/access-token, the
+    // payload carries `via:'customer'` and `customerId`. The admin
+    // can revoke the customer's access at any time by removing the
+    // event_customer_assignments row from the "Manage galleries"
+    // dialog on the customer detail page. Re-check that row here so
+    // the revocation takes effect on the customer's very next
+    // request — no token-blacklisting machinery required.
+    if (decoded.via === 'customer' && decoded.customerId) {
+      const assignment = await withRetry(async () => {
+        return await db('event_customer_assignments')
+          .where({
+            event_id: event.id,
+            customer_account_id: decoded.customerId,
+          })
+          .first();
+      });
+      if (!assignment) {
+        logger.info('[verifyGalleryAccess] Customer assignment revoked, rejecting token', {
+          customerId: decoded.customerId,
+          eventId: event.id,
+        });
+        return res.status(403).json({
+          error: 'Access to this gallery has been revoked',
+          code: 'CUSTOMER_ASSIGNMENT_REVOKED',
+        });
+      }
+    }
+
     logger.debug('[verifyGalleryAccess] Event located', { eventId: event.id, slug: event.slug });
     req.event = event;
     req.accessLevel = decoded.accessLevel || 'guest';

@@ -1,11 +1,11 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Calendar, Clock, Download, LogOut } from 'lucide-react';
+import { Calendar, Clock, Download, LogOut, Facebook, Instagram, Twitter, Youtube, MessageCircle } from 'lucide-react';
 import { parseISO } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
-import { Button } from '../common';
+import { Button, MarkdownContent } from '../common';
 import { DynamicFavicon } from '../common/DynamicFavicon';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
@@ -19,6 +19,11 @@ interface GalleryLayoutProps {
     event_type?: string;
     event_date?: string | null;
     expires_at?: string | null;
+    // Per-event promotional override (#440). 'inherit' uses the global
+    // branding_promo_markdown; 'custom' renders promo_markdown below;
+    // 'off' hides the promo slot entirely for this event.
+    promo_mode?: 'inherit' | 'custom' | 'off';
+    promo_markdown?: string | null;
   };
   brandingSettings?: {
     company_name?: string;
@@ -34,6 +39,17 @@ interface GalleryLayoutProps {
     logo_display_hero?: boolean;
     logo_display_mode?: 'logo_only' | 'text_only' | 'logo_and_text';
     hide_powered_by?: boolean;
+    // Footer overhaul (#441 + #440). Empty strings hide each socials icon.
+    facebook_url?: string;
+    instagram_url?: string;
+    whatsapp_url?: string;
+    twitter_url?: string;
+    youtube_url?: string;
+    promo_markdown?: string;
+    promo_position?: 'above_footer' | 'below_footer';
+    // Horizontal alignment for the promo content (#482). Defaults
+    // to 'center' so the banner aligns with the footer.
+    promo_alignment?: 'left' | 'center' | 'right';
   };
   showLogout?: boolean;
   onLogout?: () => void;
@@ -188,7 +204,73 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
 
   const headerLogoSize = getLogoDimensions('header');
   const heroLogoSize = getLogoDimensions('hero');
-  
+
+  // Footer overhaul (#441 + #440). All five socials are independent;
+  // empty string = hide just that icon. Per-event promo override:
+  //   - off: never render the promo slot for this event
+  //   - custom: render event.promo_markdown (falls back to global if blank)
+  //   - inherit (default): render branding_promo_markdown
+  const socialLinks: Array<{ key: string; href: string; label: string; Icon: React.ComponentType<{ className?: string }> }> = [
+    { key: 'facebook', href: brandingSettings?.facebook_url || '', label: 'Facebook', Icon: Facebook },
+    { key: 'instagram', href: brandingSettings?.instagram_url || '', label: 'Instagram', Icon: Instagram },
+    { key: 'whatsapp', href: brandingSettings?.whatsapp_url || '', label: 'WhatsApp', Icon: MessageCircle },
+    { key: 'twitter', href: brandingSettings?.twitter_url || '', label: 'X / Twitter', Icon: Twitter },
+    { key: 'youtube', href: brandingSettings?.youtube_url || '', label: 'YouTube', Icon: Youtube },
+  ].filter(link => link.href.trim().length > 0);
+
+  const promoMode = event.promo_mode || 'inherit';
+  const promoMarkdown = (() => {
+    if (promoMode === 'off') return '';
+    if (promoMode === 'custom') {
+      const eventMd = (event.promo_markdown || '').trim();
+      return eventMd || (brandingSettings?.promo_markdown || '');
+    }
+    return brandingSettings?.promo_markdown || '';
+  })().trim();
+  const promoPosition: 'above_footer' | 'below_footer' = brandingSettings?.promo_position === 'below_footer' ? 'below_footer' : 'above_footer';
+
+  // Promo alignment (#482). Defaults to 'center' to match the gallery
+  // footer's `text-center px-4` so the banner reads as part of the
+  // same composition as the footer beneath it. Admin can flip to
+  // 'left' or 'right' from Settings → Branding.
+  const promoAlignment: 'left' | 'center' | 'right' =
+    brandingSettings?.promo_alignment === 'left' ? 'left'
+      : brandingSettings?.promo_alignment === 'right' ? 'right'
+      : 'center';
+  const promoTextAlignClass =
+    promoAlignment === 'left' ? 'text-left'
+      : promoAlignment === 'right' ? 'text-right'
+      : 'text-center';
+
+  const promoSlot = promoMarkdown ? (
+    <div className="gallery-promo border-t border-surface bg-surface/50">
+      {/*
+       * Inner block uses .container (matches the footer's container
+       * width) + the alignment class. We deliberately drop the
+       * previous max-w-3xl wrapper — it created a narrower column
+       * that read as visually offset from the full-width footer
+       * (#482, reported by Rekoo-PS). The `prose` class is needed
+       * for the prose-a:text-accent modifier to actually take effect
+       * (modifiers without an outer .prose are no-ops in Tailwind
+       * Typography).
+       */}
+      <div className={`container py-4 sm:py-6 px-4 ${promoTextAlignClass}`}>
+        <MarkdownContent
+          source={promoMarkdown}
+          className={`prose prose-sm max-w-none mx-auto text-sm text-theme prose-a:text-accent ${promoTextAlignClass}`}
+        />
+      </div>
+    </div>
+  ) : null;
+
+  // Legal links per #441: each CMS page has show_in_footer (default true).
+  // When BOTH are hidden we still render the surrounding row only if
+  // there's a guest "Forget me" button or socials to show.
+  const showImpressum = impressumPage?.show_in_footer !== false;
+  const showDatenschutz = datenschutzPage?.show_in_footer !== false;
+  const hasLegalLinks = showImpressum || showDatenschutz;
+  const hasFooterRow = hasLegalLinks || socialLinks.length > 0 || !!guestIdentity?.identity;
+
   return (
     <div className="gallery-page min-h-screen" style={{ backgroundColor: 'var(--color-background)' }}>
       {/* Dynamic Favicon */}
@@ -573,13 +655,17 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
       {/* Main Content */}
       <main className="container">{children}</main>
 
+      {/* Promotional banner (#440) — rendered above the footer when
+          branding_promo_position = 'above_footer' (the default). */}
+      {promoPosition === 'above_footer' && promoSlot}
+
       {/* Footer */}
       <footer className="gallery-footer mt-8 sm:mt-12 py-6 sm:py-8 border-t border-surface">
         <div className="container text-center px-4">
           {brandingSettings?.support_email && (
             <p className="text-xs sm:text-sm text-muted-theme mb-2">
               {t('gallery.needHelp')}{' '}
-              <a 
+              <a
                 href={`mailto:${brandingSettings.support_email}`}
                 className="text-accent hover:opacity-80 break-all"
               >
@@ -598,62 +684,94 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
               {brandingSettings.company_name} - {brandingSettings.company_tagline}
             </p>
           )}
-          {/* Legal Links */}
-          <div className="mt-4 flex items-center justify-center gap-4 flex-wrap">
-            {impressumPage?.use_external_url && impressumPage.external_url ? (
-              <a
-                href={impressumPage.external_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-muted-theme hover:text-theme transition-colors"
-              >
-                {t('legal.impressum')}
-              </a>
-            ) : (
-              <Link
-                to="/impressum"
-                className="text-xs text-muted-theme hover:text-theme transition-colors"
-              >
-                {t('legal.impressum')}
-              </Link>
-            )}
-            <span className="text-xs text-muted-theme">|</span>
-            {datenschutzPage?.use_external_url && datenschutzPage.external_url ? (
-              <a
-                href={datenschutzPage.external_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-muted-theme hover:text-theme transition-colors"
-              >
-                {t('legal.datenschutz')}
-              </a>
-            ) : (
-              <Link
-                to="/datenschutz"
-                className="text-xs text-muted-theme hover:text-theme transition-colors"
-              >
-                {t('legal.datenschutz')}
-              </Link>
-            )}
-            {guestIdentity?.identity && (
-              <>
-                <span className="text-xs text-muted-theme">|</span>
-                <button
-                  type="button"
-                  className="text-xs text-muted-theme hover:text-theme transition-colors"
-                  onClick={async () => {
-                    if (window.confirm(t('gallery.footer.forgetMeConfirm', 'Your name and selections will be removed from this gallery.'))) {
-                      await guestIdentity.forget();
-                    }
-                  }}
+
+          {/* Socials row (#441) — only rendered when at least one URL is set. */}
+          {socialLinks.length > 0 && (
+            <div className="mt-4 flex items-center justify-center gap-3 flex-wrap" aria-label={t('gallery.footer.socials', 'Social media')}>
+              {socialLinks.map(({ key, href, label, Icon }) => (
+                <a
+                  key={key}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={label}
+                  className="text-muted-theme hover:text-accent transition-colors"
                 >
-                  {t('gallery.footer.forgetMe', 'Forget me ({{name}})', { name: guestIdentity.identity.name })}
-                </button>
-              </>
-            )}
-          </div>
+                  <Icon className="w-5 h-5" />
+                </a>
+              ))}
+            </div>
+          )}
+
+          {/* Legal Links (#441) — each CMS page has show_in_footer.
+              Only renders the row if there's something to put in it. */}
+          {hasFooterRow && (
+            <div className="mt-4 flex items-center justify-center gap-4 flex-wrap">
+              {showImpressum && (
+                impressumPage?.use_external_url && impressumPage.external_url ? (
+                  <a
+                    href={impressumPage.external_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-theme hover:text-theme transition-colors"
+                  >
+                    {t('legal.impressum')}
+                  </a>
+                ) : (
+                  <Link
+                    to="/impressum"
+                    className="text-xs text-muted-theme hover:text-theme transition-colors"
+                  >
+                    {t('legal.impressum')}
+                  </Link>
+                )
+              )}
+              {showImpressum && showDatenschutz && (
+                <span className="text-xs text-muted-theme">|</span>
+              )}
+              {showDatenschutz && (
+                datenschutzPage?.use_external_url && datenschutzPage.external_url ? (
+                  <a
+                    href={datenschutzPage.external_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-theme hover:text-theme transition-colors"
+                  >
+                    {t('legal.datenschutz')}
+                  </a>
+                ) : (
+                  <Link
+                    to="/datenschutz"
+                    className="text-xs text-muted-theme hover:text-theme transition-colors"
+                  >
+                    {t('legal.datenschutz')}
+                  </Link>
+                )
+              )}
+              {guestIdentity?.identity && (
+                <>
+                  {hasLegalLinks && <span className="text-xs text-muted-theme">|</span>}
+                  <button
+                    type="button"
+                    className="text-xs text-muted-theme hover:text-theme transition-colors"
+                    onClick={async () => {
+                      if (window.confirm(t('gallery.footer.forgetMeConfirm', 'Your name and selections will be removed from this gallery.'))) {
+                        await guestIdentity.forget();
+                      }
+                    }}
+                  >
+                    {t('gallery.footer.forgetMe', 'Forget me ({{name}})', { name: guestIdentity.identity.name })}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </footer>
+
+      {/* Promotional banner (#440) — rendered below the footer when
+          branding_promo_position = 'below_footer'. */}
+      {promoPosition === 'below_footer' && promoSlot}
     </div>
   );
 };

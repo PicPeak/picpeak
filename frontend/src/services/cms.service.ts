@@ -10,6 +10,8 @@ export interface CMSPage {
   logo_url: string | null;
   use_external_url: boolean;
   external_url: string | null;
+  // Footer visibility (#441). True = link rendered in the gallery footer.
+  show_in_footer?: boolean;
   updated_at: string;
 }
 
@@ -20,6 +22,7 @@ export interface PublicCMSPage {
   logo_url: string | null;
   use_external_url: boolean;
   external_url: string | null;
+  show_in_footer?: boolean;
   updated_at: string;
 }
 

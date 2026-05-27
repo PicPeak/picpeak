@@ -31,11 +31,11 @@ services:
       - ADMIN_URL=${ADMIN_URL:-http://localhost:3001}
       - TZ=${TZ:-UTC}
       - STORAGE_PATH=/app/storage
-      # Optional: run container as matching host user to avoid bind mount permission issues
-      - PUID=${PUID:-1001}
-      - PGID=${PGID:-1001}
-    # Use host-matching user ID/GID so bind-mounted folders are writable
-    user: "${PUID:-1001}:${PGID:-1001}"
+    # No `user:` directive — as of #484, the container starts as root,
+    # chowns the bind mounts to nodejs (UID 1001), then drops privileges
+    # via su-exec. PUID/PGID env vars are no longer read; if you need
+    # a different runtime UID, pre-chown the host dirs and pin
+    # `user: "<uid>:<gid>"` here.
     volumes:
       - ./events:/app/events
       - ./data:/app/data
@@ -121,6 +121,10 @@ services:
     restart: unless-stopped
     environment:
       - NODE_ENV=${NODE_ENV:-production}
+      # Static social-preview brand (#521) — substituted into
+      # index.html at container start; see frontend/docker-entrypoint.sh.
+      - BRAND_TITLE=${BRAND_TITLE:-PicPeak}
+      - BRAND_DESCRIPTION=${BRAND_DESCRIPTION:-Photo gallery shared with PicPeak.}
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:

@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import {
+  ToggleRight,
   Sliders,
   CalendarPlus,
   Activity,
@@ -9,16 +11,22 @@ import {
   Image as ImageIcon,
   Search,
   Tags,
+  Tag,
   BarChart3,
   Flag,
   Code,
   KeyRound,
   Webhook,
+  Mail,
+  Palette,
+  FileText,
+  HardDrive,
   type LucideIcon,
 } from 'lucide-react';
 import { Loading } from '../../components/common';
 import {
   useSettingsState,
+  FeaturesTab,
   GeneralTab,
   EventsTab,
   StatusTab,
@@ -33,8 +41,34 @@ import {
   ApiTokensTab,
   WebhooksTab,
 } from '../../features/settings';
+import { EmailConfigPage } from './EmailConfigPage';
+import { BrandingPage } from './BrandingPage';
+import { EventTypesPage } from './EventTypesPage';
+import { BackupManagement } from './BackupManagement';
+import { CMSPage } from './CMSPage';
 
-type TabType = 'general' | 'events' | 'status' | 'security' | 'imageSecurity' | 'thumbnails' | 'categories' | 'seo' | 'analytics' | 'moderation' | 'styling' | 'apiTokens' | 'webhooks';
+// Tab keys driving the inner-nav. Must include every key used in
+// `navGroups` below and in the switch at the bottom of the component.
+type TabType =
+  | 'features'
+  | 'general'
+  | 'events'
+  | 'eventTypes'
+  | 'branding'
+  | 'categories'
+  | 'thumbnails'
+  | 'styling'
+  | 'cms'
+  | 'email'
+  | 'moderation'
+  | 'security'
+  | 'imageSecurity'
+  | 'seo'
+  | 'apiTokens'
+  | 'webhooks'
+  | 'status'
+  | 'analytics'
+  | 'backup';
 
 interface NavItem {
   key: TabType;
@@ -47,9 +81,49 @@ interface NavGroup {
   items: NavItem[];
 }
 
+const ALL_TAB_KEYS: TabType[] = [
+  'features', 'general', 'events', 'eventTypes',
+  'branding', 'categories', 'thumbnails', 'styling', 'cms',
+  'email', 'moderation',
+  'security', 'imageSecurity', 'seo',
+  'apiTokens', 'webhooks',
+  'status', 'analytics', 'backup',
+];
+
+function isValidTab(value: string | null): value is TabType {
+  return value !== null && (ALL_TAB_KEYS as string[]).includes(value);
+}
+
 export const SettingsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<TabType>('general');
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Read ?tab=… on mount; default to Features per the redesign.
+  const initialTab: TabType = isValidTab(searchParams.get('tab'))
+    ? (searchParams.get('tab') as TabType)
+    : 'features';
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
+
+  // Keep URL in sync when the user clicks tabs (so deep-link / back-button
+  // works and copy-paste of the URL lands the recipient on the same tab).
+  useEffect(() => {
+    const current = searchParams.get('tab');
+    if (current === activeTab) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', activeTab);
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Reflect external URL changes (e.g. back/forward, redirect-to-tab) back
+  // into local state.
+  useEffect(() => {
+    const urlTab = searchParams.get('tab');
+    if (isValidTab(urlTab) && urlTab !== activeTab) {
+      setActiveTab(urlTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const {
     isLoading,
@@ -98,53 +172,71 @@ export const SettingsPage: React.FC = () => {
     );
   }
 
-  // Grouped nav: replaces the previous flat 13-tab horizontal bar that
-  // overflowed even on 1440px viewports. Categories follow the macOS
-  // System Settings / Stripe / GitHub pattern — scales to N tabs without
-  // horizontal scroll, gives visual taxonomy, and surfaces every option.
+  // Six-group inner nav. Items that previously lived as top-level admin
+  // routes (Email Settings, Branding, Event Types, Backup, CMS Pages) now
+  // appear inside their thematic group. The old top-level routes still
+  // resolve via redirects (App.tsx) so existing bookmarks keep working.
   const navGroups: NavGroup[] = [
     {
       label: t('settings.groups.general', 'General'),
       items: [
-        { key: 'general', label: t('settings.general.title'), icon: Sliders },
-        { key: 'events', label: t('settings.events.title', 'Event Creation'), icon: CalendarPlus },
+        { key: 'features',   label: t('settings.features.title',   'Features'),       icon: ToggleRight },
+        { key: 'general',    label: t('settings.general.title'),                       icon: Sliders },
+        { key: 'events',     label: t('settings.events.title',     'Event Creation'),  icon: CalendarPlus },
+        { key: 'eventTypes', label: t('settings.eventTypes.title', 'Event Types'),     icon: Tag },
       ],
     },
     {
-      label: t('settings.groups.display', 'Display'),
+      label: t('settings.groups.appearance', 'Content & Appearance'),
       items: [
-        { key: 'categories', label: t('settings.categories.title'), icon: Tags },
-        { key: 'thumbnails', label: t('settings.thumbnails.title', 'Thumbnails'), icon: ImageIcon },
-        { key: 'styling', label: t('settings.styling.title', 'Custom CSS'), icon: Code },
+        { key: 'branding',   label: t('settings.branding.title',   'Branding'),    icon: Palette },
+        { key: 'categories', label: t('settings.categories.title'),                 icon: Tags },
+        { key: 'thumbnails', label: t('settings.thumbnails.title', 'Thumbnails'),  icon: ImageIcon },
+        { key: 'styling',    label: t('settings.styling.title',    'Custom CSS'),  icon: Code },
+        { key: 'cms',        label: t('settings.cms.title',        'CMS Pages'),   icon: FileText },
+      ],
+    },
+    {
+      label: t('settings.groups.communication', 'Communication'),
+      items: [
+        { key: 'email',      label: t('settings.email.title',      'Email Settings'), icon: Mail },
+        { key: 'moderation', label: t('settings.moderation.title', 'Moderation'),     icon: Flag },
       ],
     },
     {
       label: t('settings.groups.privacySecurity', 'Privacy & Security'),
       items: [
-        { key: 'security', label: t('settings.security.title'), icon: Lock },
+        { key: 'security',      label: t('settings.security.title'),                   icon: Lock },
         { key: 'imageSecurity', label: t('settings.imageSecurity.title', 'Image Protection'), icon: Shield },
-        { key: 'seo', label: t('settings.seo.title', 'SEO & Robots'), icon: Search },
-        { key: 'moderation', label: t('settings.moderation.title', 'Moderation'), icon: Flag },
+        { key: 'seo',           label: t('settings.seo.title',           'SEO & Robots'), icon: Search },
       ],
     },
     {
       label: t('settings.groups.integrations', 'Integrations'),
       items: [
         { key: 'apiTokens', label: t('settings.apiTokens.title', 'API Tokens'), icon: KeyRound },
-        { key: 'webhooks', label: t('settings.webhooks.title', 'Webhooks'), icon: Webhook },
+        { key: 'webhooks',  label: t('settings.webhooks.title',  'Webhooks'),   icon: Webhook },
       ],
     },
     {
       label: t('settings.groups.system', 'System'),
       items: [
-        { key: 'status', label: t('settings.systemStatus.title'), icon: Activity },
-        { key: 'analytics', label: t('settings.analytics.title'), icon: BarChart3 },
+        { key: 'status',    label: t('settings.systemStatus.title'),               icon: Activity },
+        { key: 'analytics', label: t('settings.analytics.title'),                  icon: BarChart3 },
+        { key: 'backup',    label: t('settings.backup.title',   'Backup'),         icon: HardDrive },
       ],
     },
   ];
 
   const allItems = navGroups.flatMap((g) => g.items);
   const activeItem = allItems.find((i) => i.key === activeTab) ?? allItems[0];
+
+  // For tabs that mount existing top-level pages OR bring their own
+  // header (FeaturesTab has its own icon+title+description block), skip
+  // the Settings shell's section heading so the layout doesn't double
+  // up.
+  const TABS_WITH_OWN_HEADER: TabType[] = ['features', 'email', 'branding', 'eventTypes', 'backup', 'cms'];
+  const showSectionHeading = !TABS_WITH_OWN_HEADER.includes(activeTab);
 
   return (
     <div>
@@ -154,8 +246,7 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr] gap-6 lg:gap-8">
-        {/* Mobile: native select dropdown — keeps every option reachable
-           in one tap on touch devices, no horizontal scroll. */}
+        {/* Mobile: native select dropdown */}
         <div className="lg:hidden">
           <label htmlFor="settings-section" className="sr-only">
             {t('settings.sectionLabel', 'Settings section')}
@@ -178,8 +269,7 @@ export const SettingsPage: React.FC = () => {
           </select>
         </div>
 
-        {/* Desktop: grouped left rail. Sticky so the nav stays visible
-           while the right pane scrolls through long forms. */}
+        {/* Desktop: grouped left rail. */}
         <aside className="hidden lg:block">
           <nav
             aria-label={t('settings.navAriaLabel', 'Settings navigation')}
@@ -206,10 +296,14 @@ export const SettingsPage: React.FC = () => {
                               : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
                           }`}
                         >
+                          {/* Active-state icon paints white to sit on the
+                              accent-dark pill (matches the label colour
+                              and avoids the accent-on-accent low-contrast
+                              that the prior `text-accent` produced). */}
                           <Icon
                             className={`w-4 h-4 flex-shrink-0 ${
                               isActive
-                                ? 'text-accent'
+                                ? 'text-white'
                                 : 'text-neutral-500 dark:text-neutral-400 group-hover:text-neutral-700 dark:group-hover:text-neutral-200'
                             }`}
                           />
@@ -225,96 +319,103 @@ export const SettingsPage: React.FC = () => {
         </aside>
 
         <div className="min-w-0">
-          {/* Section heading echoes the active nav item — anchors the user
-             after they switch, especially after a mobile select change. */}
-          <div className="mb-4 lg:mb-6 pb-3 border-b border-neutral-200 dark:border-neutral-700">
-            <div className="flex items-center gap-2">
-              <activeItem.icon className="w-5 h-5 text-accent" />
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-                {activeItem.label}
-              </h2>
+          {showSectionHeading && (
+            <div className="mb-4 lg:mb-6 pb-3 border-b border-neutral-200 dark:border-neutral-700">
+              <div className="flex items-center gap-2">
+                {/* Section heading icon stays neutral so the Settings
+                    chrome reads as one consistent palette — no stray
+                    accent flecks. The active sidebar pill is the only
+                    place that uses the accent fill. */}
+                <activeItem.icon className="w-5 h-5 text-neutral-700 dark:text-neutral-300" />
+                <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                  {activeItem.label}
+                </h2>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Tab Content */}
-      {activeTab === 'general' && (
-        <GeneralTab
-          generalSettings={generalSettings}
-          setGeneralSettings={setGeneralSettings}
-          saveGeneralMutation={saveGeneralMutation}
-          accountForm={accountForm}
-          accountErrors={accountErrors}
-          handleAccountChange={handleAccountChange}
-          handleAccountSubmit={handleAccountSubmit}
-          updateAdminProfileMutation={updateAdminProfileMutation}
-          adminProfileLoading={adminProfileLoading}
-        />
-      )}
+          {activeTab === 'features' && <FeaturesTab />}
 
-      {activeTab === 'events' && (
-        <EventsTab
-          eventSettings={eventSettings}
-          setEventSettings={setEventSettings}
-          saveEventSettingsMutation={saveEventSettingsMutation}
-        />
-      )}
+          {activeTab === 'general' && (
+            <GeneralTab
+              generalSettings={generalSettings}
+              setGeneralSettings={setGeneralSettings}
+              saveGeneralMutation={saveGeneralMutation}
+              accountForm={accountForm}
+              accountErrors={accountErrors}
+              handleAccountChange={handleAccountChange}
+              handleAccountSubmit={handleAccountSubmit}
+              updateAdminProfileMutation={updateAdminProfileMutation}
+              adminProfileLoading={adminProfileLoading}
+            />
+          )}
 
-      {activeTab === 'status' && (
-        <StatusTab
-          isActive={activeTab === 'status'}
-          handleSaveSoftLimit={handleSaveSoftLimit}
-          handleSaveCapacityOverride={handleSaveCapacityOverride}
-          saveSoftLimitMutation={saveSoftLimitMutation}
-          saveCapacityOverrideMutation={saveCapacityOverrideMutation}
-          softLimitGb={softLimitGb}
-          setSoftLimitGb={setSoftLimitGb}
-          softLimitDirty={softLimitDirty}
-          setSoftLimitDirty={setSoftLimitDirty}
-          capacityOverrideGb={capacityOverrideGb}
-          setCapacityOverrideGb={setCapacityOverrideGb}
-          availableOverrideGb={availableOverrideGb}
-          setAvailableOverrideGb={setAvailableOverrideGb}
-          overrideDirty={overrideDirty}
-          setOverrideDirty={setOverrideDirty}
-        />
-      )}
+          {activeTab === 'events' && (
+            <EventsTab
+              eventSettings={eventSettings}
+              setEventSettings={setEventSettings}
+              saveEventSettingsMutation={saveEventSettingsMutation}
+            />
+          )}
 
-      {activeTab === 'security' && (
-        <SecurityTab
-          securitySettings={securitySettings}
-          setSecuritySettings={setSecuritySettings}
-          saveSecurityMutation={saveSecurityMutation}
-        />
-      )}
+          {activeTab === 'eventTypes' && <EventTypesPage />}
+          {activeTab === 'branding' && <BrandingPage />}
+          {activeTab === 'cms' && <CMSPage />}
+          {activeTab === 'email' && <EmailConfigPage />}
+          {activeTab === 'backup' && <BackupManagement />}
 
-      {activeTab === 'seo' && (
-        <SEOTab
-          seoSettings={seoSettings}
-          setSeoSettings={setSeoSettings}
-          saveSeoMutation={saveSeoMutation}
-        />
-      )}
+          {activeTab === 'status' && (
+            <StatusTab
+              isActive={activeTab === 'status'}
+              handleSaveSoftLimit={handleSaveSoftLimit}
+              handleSaveCapacityOverride={handleSaveCapacityOverride}
+              saveSoftLimitMutation={saveSoftLimitMutation}
+              saveCapacityOverrideMutation={saveCapacityOverrideMutation}
+              softLimitGb={softLimitGb}
+              setSoftLimitGb={setSoftLimitGb}
+              softLimitDirty={softLimitDirty}
+              setSoftLimitDirty={setSoftLimitDirty}
+              capacityOverrideGb={capacityOverrideGb}
+              setCapacityOverrideGb={setCapacityOverrideGb}
+              availableOverrideGb={availableOverrideGb}
+              setAvailableOverrideGb={setAvailableOverrideGb}
+              overrideDirty={overrideDirty}
+              setOverrideDirty={setOverrideDirty}
+            />
+          )}
 
-      {activeTab === 'imageSecurity' && <ImageSecurityTab />}
+          {activeTab === 'security' && (
+            <SecurityTab
+              securitySettings={securitySettings}
+              setSecuritySettings={setSecuritySettings}
+              saveSecurityMutation={saveSecurityMutation}
+            />
+          )}
 
-      {activeTab === 'thumbnails' && <ThumbnailsTab />}
+          {activeTab === 'seo' && (
+            <SEOTab
+              seoSettings={seoSettings}
+              setSeoSettings={setSeoSettings}
+              saveSeoMutation={saveSeoMutation}
+            />
+          )}
 
-      {activeTab === 'categories' && <CategoriesTab />}
+          {activeTab === 'imageSecurity' && <ImageSecurityTab />}
+          {activeTab === 'thumbnails' && <ThumbnailsTab />}
+          {activeTab === 'categories' && <CategoriesTab />}
 
-      {activeTab === 'analytics' && (
-        <AnalyticsTab
-          analyticsSettings={analyticsSettings}
-          setAnalyticsSettings={setAnalyticsSettings}
-          saveAnalyticsMutation={saveAnalyticsMutation}
-        />
-      )}
+          {activeTab === 'analytics' && (
+            <AnalyticsTab
+              analyticsSettings={analyticsSettings}
+              setAnalyticsSettings={setAnalyticsSettings}
+              saveAnalyticsMutation={saveAnalyticsMutation}
+            />
+          )}
 
-      {activeTab === 'moderation' && <ModerationTab />}
-
-      {activeTab === 'styling' && <StylingTab />}
-
-      {activeTab === 'apiTokens' && <ApiTokensTab />}
-      {activeTab === 'webhooks' && <WebhooksTab />}
+          {activeTab === 'moderation' && <ModerationTab />}
+          {activeTab === 'styling' && <StylingTab />}
+          {activeTab === 'apiTokens' && <ApiTokensTab />}
+          {activeTab === 'webhooks' && <WebhooksTab />}
         </div>
       </div>
     </div>

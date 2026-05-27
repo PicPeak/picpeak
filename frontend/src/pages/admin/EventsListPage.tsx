@@ -48,7 +48,6 @@ export const EventsListPage: React.FC = () => {
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
   const [showBulkArchiveModal, setShowBulkArchiveModal] = useState(false);
   const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
-  const [bulkDeletePasswordError, setBulkDeletePasswordError] = useState<string | null>(null);
   const [copiedEventId, setCopiedEventId] = useState<number | null>(null);
 
   const copyShareLink = async (event: Event) => {
@@ -147,6 +146,20 @@ export const EventsListPage: React.FC = () => {
     placeholderData: (prev) => prev,
   });
 
+  // Clamp the active page when the result count shrinks (#442 — bulk
+  // delete of an entire page would leave the user on a now-empty
+  // page=N where N > totalPages, with no auto-correction). Triggers
+  // after each successful refetch when totalPages drops below the
+  // current page (bulk delete, individual delete, archive, anything).
+  // Must live AFTER the useQuery above so `data` is in scope — the
+  // original placement at the top of the component caused a TDZ
+  // ReferenceError on /admin/events that crashed the page (#454).
+  useEffect(() => {
+    if (data?.pagination && page > data.pagination.totalPages) {
+      setPage(Math.max(1, data.pagination.totalPages));
+    }
+  }, [data?.pagination, page]);
+
   // Aggregate counters come from the dashboard stats endpoint so the cards
   // and the "All (N)" filter button always reflect global totals, not the
   // currently visible page.
@@ -201,18 +214,15 @@ export const EventsListPage: React.FC = () => {
     },
   });
 
-  // Bulk delete mutation. The 401 INVALID_PASSWORD response surfaces inline
-  // on the modal's password field rather than as a toast, since it's a
-  // recoverable input error (the user can retry without losing context).
+  // Bulk delete mutation. Confirmation is handled client-side by the modal's
+  // typed-DELETE gate (#417); server still enforces auth + permission.
   const bulkDeleteMutation = useMutation({
-    mutationFn: ({ eventIds, password }: { eventIds: number[]; password: string }) =>
-      eventsService.bulkDeleteEvents(eventIds, password),
+    mutationFn: (eventIds: number[]) => eventsService.bulkDeleteEvents(eventIds),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['admin-events'] });
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
       setSelectedEvents([]);
       setShowBulkDeleteModal(false);
-      setBulkDeletePasswordError(null);
 
       if (data.results.failed.length === 0) {
         toast.success(t('events.bulkDelete.successAll', { count: data.results.successful.length }));
@@ -220,14 +230,9 @@ export const EventsListPage: React.FC = () => {
         toast.warning(t('events.bulkDelete.successPartial', { success: data.results.successful.length, failed: data.results.failed.length }));
       }
     },
-    onError: (error: unknown) => {
-      const e = error as { response?: { status?: number; data?: { code?: string; error?: string } } };
-      if (e?.response?.status === 401 && e.response.data?.code === 'INVALID_PASSWORD') {
-        setBulkDeletePasswordError(t('events.bulkDelete.incorrectPassword'));
-      } else {
-        toast.error(t('events.bulkDelete.errorGeneric'));
-        setShowBulkDeleteModal(false);
-      }
+    onError: () => {
+      toast.error(t('events.bulkDelete.errorGeneric'));
+      setShowBulkDeleteModal(false);
     },
   });
 
@@ -441,10 +446,7 @@ export const EventsListPage: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setBulkDeletePasswordError(null);
-                  setShowBulkDeleteModal(true);
-                }}
+                onClick={() => setShowBulkDeleteModal(true)}
                 className="border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
               >
                 {t('events.deleteSelected', 'Delete Selected')}
@@ -766,17 +768,12 @@ export const EventsListPage: React.FC = () => {
       {/* Bulk Delete Modal */}
       <BulkDeleteModal
         isOpen={showBulkDeleteModal}
-        onClose={() => {
-          setShowBulkDeleteModal(false);
-          setBulkDeletePasswordError(null);
-        }}
-        onConfirm={async (password) => {
-          await bulkDeleteMutation.mutateAsync({ eventIds: selectedEvents, password });
+        onClose={() => setShowBulkDeleteModal(false)}
+        onConfirm={async () => {
+          await bulkDeleteMutation.mutateAsync(selectedEvents);
         }}
         selectedEvents={events.filter(e => selectedEvents.includes(e.id))}
         isLoading={bulkDeleteMutation.isPending}
-        passwordError={bulkDeletePasswordError}
-        onPasswordErrorClear={() => setBulkDeletePasswordError(null)}
       />
       </div>
     </ErrorBoundary>

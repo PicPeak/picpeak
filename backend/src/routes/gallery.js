@@ -13,8 +13,14 @@ const { resolvePhotoFilePath } = require('../services/photoResolver');
 const { getEventShareToken, resolveShareIdentifier, buildShareLinkVariants } = require('../services/shareLinkService');
 const { handleAsync } = require('../utils/routeHelpers');
 const { NotFoundError } = require('../utils/errors');
-const { ensureThumbnail, ensureHeroImage } = require('../services/imageProcessor');
+const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../services/imageProcessor');
 const downloadZipService = require('../services/downloadZipService');
+const {
+  getUseOriginalFilenames,
+  pickRawDownloadName,
+  getZipEntryNames,
+} = require('../services/downloadFilenameService');
+const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const { getStorage } = require('../services/storage');
 const fs = require('fs');
 
@@ -127,7 +133,12 @@ router.get('/:slug/info', async (req, res) => {
         'hero_divider_style',
         'hero_image_anchor',
         'is_draft',
-        'default_photo_sort'
+        'default_photo_sort',
+        // Per-event promotional override (#440). Resolution into a
+        // ready-to-render markdown string happens below so the
+        // frontend doesn't have to know about modes.
+        'promo_mode',
+        'promo_markdown'
       )
       .first();
 
@@ -187,7 +198,11 @@ router.get('/:slug/info', async (req, res) => {
       header_style: event.header_style || 'standard',
       hero_divider_style: event.hero_divider_style || 'wave',
       hero_image_anchor: event.hero_image_anchor || 'center',
-      default_photo_sort: event.default_photo_sort || 'upload_date_desc'
+      default_photo_sort: event.default_photo_sort || 'upload_date_desc',
+      // Per-event promotional override (#440). Frontend resolves
+      // 'inherit' against branding_promo_markdown from public settings.
+      promo_mode: event.promo_mode || 'inherit',
+      promo_markdown: event.promo_markdown || null
     });
   } catch (error) {
     console.error('Error fetching gallery info:', error);
@@ -390,6 +405,38 @@ router.get('/:slug/photos', verifyGalleryAccess, async (req, res) => {
       fragmentation_level: req.event.fragmentation_level || 3,
       overlay_protection: req.event.overlay_protection !== false
     };
+
+    // Lightbox preview tier (#492). When the admin opts in, the
+    // photos response carries a preview_url alongside url/thumbnail_url
+    // — the lightbox uses preview_url when present and falls back to
+    // url when not, so existing galleries continue working before
+    // any preview has actually been generated.
+    let lightboxPreviewEnabled = false;
+    try {
+      const setting = await db('app_settings')
+        .where('setting_key', 'lightbox_preview_enabled')
+        .first();
+      if (setting) {
+        const raw = setting.setting_value;
+        // setting_value is JSON-stringified per migration 104; tolerate
+        // raw boolean/string for forward-compat.
+        const parsed = typeof raw === 'string' ? (() => {
+          try { return JSON.parse(raw); } catch { return raw; }
+        })() : raw;
+        lightboxPreviewEnabled = parsed === true || parsed === 'true' || parsed === 1;
+      }
+    } catch (e) {
+      // Setting missing / DB blip → fall back to off so the lightbox
+      // keeps working with the original. logger.debug to avoid noise.
+      logger.debug('lightbox_preview_enabled lookup failed, treating as off', { error: e?.message });
+    }
+
+    // #508: when the admin has flipped the "use original camera filenames"
+    // toggle (#493), the lightbox surfaces each photo's original_filename
+    // alongside the position counter so the photographer can map a guest's
+    // selection back to source files. Tied to the same toggle as downloads —
+    // one switch controls both surfaces.
+    const useOriginalFilenames = await getUseOriginalFilenames();
     
 
     res.json({
@@ -418,6 +465,9 @@ router.get('/:slug/photos', verifyGalleryAccess, async (req, res) => {
         hero_image_anchor: req.event.hero_image_anchor || 'center',
         default_photo_sort: req.event.default_photo_sort || 'upload_date_desc',
         download_zip_ready: !!(req.event.download_zip_path && req.event.download_zip_generated_at),
+        // Mirror of the admin-side toggle so the lightbox can decide
+        // whether to surface original camera filenames (#508).
+        use_original_filenames: useOriginalFilenames,
         ...protectionSettings
       },
       categories: categories,
@@ -432,10 +482,24 @@ router.get('/:slug/photos', verifyGalleryAccess, async (req, res) => {
         return {
           id: photo.id,
           filename: photo.filename,
+          // Raw camera filename (or null for pre-migration-062 uploads).
+          // The lightbox renders it when `use_original_filenames` is on.
+          original_filename: photo.original_filename || null,
           url: photoUrl,
           thumbnail_url: photo.thumbnail_path ? `/api/gallery/${req.params.slug}/thumbnail/${photo.id}${wmQuery}` : null,
           // Hero-optimized image URL (1920x1080) for full-width hero sections
           hero_url: `/api/gallery/${req.params.slug}/hero/${photo.id}${wmQuery}`,
+          // Lightbox preview URL (#492). Only emitted when the admin
+          // has flipped lightbox_preview_enabled — the frontend
+          // lightbox reads preview_url with a fallback to url so
+          // installs that haven't opted in keep loading the original
+          // (current behaviour). Skipped for videos since they don't
+          // get a preview tier; lightbox will use the original .url.
+          preview_url: lightboxPreviewEnabled
+            && photo.media_type !== 'video'
+            && (!photo.mime_type || !photo.mime_type.startsWith('video/'))
+            ? `/api/gallery/${req.params.slug}/preview/${photo.id}${wmQuery}`
+            : null,
           secure_url_template: `/api/secure-images/${req.params.slug}/secure/${photo.id}/{{token}}`,
           download_url_template: `/api/secure-images/${req.params.slug}/secure-download/${photo.id}/{{token}}`,
           type: photo.type,
@@ -587,6 +651,13 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, async (req, res) => 
     const eventWatermarkEnabled = req.event.watermark_downloads === true || req.event.watermark_downloads === 1;
     const shouldApplyWatermark = (watermarkSettings && watermarkSettings.enabled) || eventWatermarkEnabled;
 
+    // #493: if the admin enabled "use original filenames", surface the
+    // pre-rename camera filename in Content-Disposition. Storage path is
+    // unchanged — only the user-visible download name is swapped.
+    const useOriginal = await getUseOriginalFilenames();
+    const downloadName = pickRawDownloadName(photo, useOriginal);
+    const contentDisposition = buildContentDisposition(downloadName);
+
     if (shouldApplyWatermark) {
       // Apply watermark and send
       // Use event watermark text if available, otherwise fall back to global settings
@@ -599,14 +670,21 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, async (req, res) => 
 
       res.set({
         'Content-Type': photo.mime_type || 'image/jpeg',
-        'Content-Disposition': `attachment; filename="${photo.filename}"`,
+        'Content-Disposition': contentDisposition,
         'Content-Length': watermarkedBuffer.length
       });
 
       res.send(watermarkedBuffer);
     } else {
-      // Send original file
-      res.download(filePath, photo.filename, (downloadError) => {
+      // res.download() builds Content-Disposition itself but doesn't emit the
+      // RFC 5987 filename* parameter, so unicode camera filenames would lose
+      // their bytes on download. Set the header explicitly and stream the
+      // file with res.sendFile-equivalent semantics.
+      res.set({
+        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Content-Disposition': contentDisposition,
+      });
+      res.sendFile(filePath, (downloadError) => {
         if (downloadError) {
           logger.error('Error streaming gallery download', {
             slug: req.params.slug,
@@ -728,14 +806,20 @@ router.get('/:slug/download-all', verifyGalleryAccess, async (req, res) => {
     // Add photos to archive — managed photos via storage backend, external via local path.
     const { resolvePhotoStorageKey } = require('../services/photoResolver');
     const storage = getStorage();
-    for (const photo of photos) {
+    // #493: resolve a unique display filename per photo up-front so collisions
+    // get a deterministic `_1` suffix before the entries hit the archive.
+    const useOriginalBulk = await getUseOriginalFilenames();
+    const bulkEntryNames = getZipEntryNames(photos, useOriginalBulk);
+    for (let i = 0; i < photos.length; i += 1) {
+      const photo = photos[i];
       const storageKey = resolvePhotoStorageKey(req.event, photo);
+      const entryName = bulkEntryNames[i];
       let archiveName;
       if (hasMultipleTypes) {
         const folderName = photo.type === 'individual' ? 'Individual Photos' : 'Collages';
-        archiveName = path.join(folderName, photo.filename);
+        archiveName = path.join(folderName, entryName);
       } else {
-        archiveName = photo.filename;
+        archiveName = entryName;
       }
 
       try {
@@ -749,8 +833,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, async (req, res) => {
 
           const watermarkedBuffer = storageKey
             ? await withLocalCopy(storageKey, (localPath) =>
-                watermarkService.applyWatermark(localPath, effectiveSettings)
-              )
+              watermarkService.applyWatermark(localPath, effectiveSettings)
+            )
             : await watermarkService.applyWatermark(sourceForWatermark, effectiveSettings);
 
           archive.append(watermarkedBuffer, { name: archiveName });
@@ -856,15 +940,19 @@ router.post('/:slug/download-selected', verifyGalleryAccess, async (req, res) =>
     const { resolvePhotoStorageKey: resolveSelectedKey } = require('../services/photoResolver');
     const { withLocalCopy: withSelectedLocalCopy } = require('../services/imageProcessor');
     const selectedStorage = getStorage();
-    for (const photo of photos) {
-      const name = photo.filename || `photo-${photo.id}.jpg`;
+    // #493: same display-name resolution as bulk download, with dedup.
+    const useOriginalSelected = await getUseOriginalFilenames();
+    const selectedEntryNames = getZipEntryNames(photos, useOriginalSelected);
+    for (let i = 0; i < photos.length; i += 1) {
+      const photo = photos[i];
+      const name = selectedEntryNames[i] || `photo-${photo.id}.jpg`;
       const storageKey = resolveSelectedKey(req.event, photo);
       try {
         if (shouldApplyWatermark && effectiveSettings) {
           const buf = storageKey
             ? await withSelectedLocalCopy(storageKey, (lp) =>
-                watermarkService.applyWatermark(lp, effectiveSettings)
-              )
+              watermarkService.applyWatermark(lp, effectiveSettings)
+            )
             : await watermarkService.applyWatermark(resolvePhotoFilePath(req.event, photo), effectiveSettings);
           archive.append(buf, { name });
         } else if (storageKey) {
@@ -937,58 +1025,83 @@ router.get('/:slug/photo/:photoId',
         });
       }
 
-      // Resolve the absolute file path for this photo, supporting both managed and external reference modes
-      const { resolvePhotoFilePath } = require('../services/photoResolver');
-      const fs = require('fs');
+      // Resolve where to read the photo bytes from. For external/reference
+      // photos the source is always a local mount path. For managed photos
+      // we go through the storage abstraction so S3 deployments work too
+      // (#432 — previously this route did fs.* directly and 500'd in S3
+      // mode because the file wasn't on the container's local fs).
+      const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../services/photoResolver');
+      const storage = getStorage();
+      const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+      const useStorageBackend = !isExternal;
 
-      let filePath;
-      try {
-        filePath = resolvePhotoFilePath(req.event, photo);
-      } catch (resolveError) {
-        logger.error('Failed to resolve photo path', {
-          slug: req.params.slug,
-          photoId,
-          eventId: req.event.id,
-          error: resolveError.message,
-          photoPath: photo.path,
-          photoFilename: photo.filename
-        });
-        return res.status(404).json({ error: 'Photo file not found' });
+      let filePath = null;     // Local fs path (external photos OR LocalFs storage)
+      let storageKey = null;   // Relative storage key (managed photos via storage abstraction)
+      let stat;
+      let fileSize;
+
+      if (useStorageBackend) {
+        try {
+          storageKey = resolvePhotoStorageKey(req.event, photo);
+        } catch (resolveError) {
+          logger.error('Failed to resolve photo storage key', {
+            slug: req.params.slug,
+            photoId,
+            eventId: req.event.id,
+            error: resolveError.message,
+            photoPath: photo.path,
+            photoFilename: photo.filename
+          });
+          return res.status(404).json({ error: 'Photo file not found' });
+        }
+        stat = await storage.stat(storageKey);
+        if (!stat) {
+          logger.error('Photo not found in storage backend', {
+            slug: req.params.slug,
+            photoId,
+            eventId: req.event.id,
+            storageKey
+          });
+          return res.status(404).json({ error: 'Photo file not found' });
+        }
+        fileSize = stat.size;
+      } else {
+        try {
+          filePath = resolvePhotoFilePath(req.event, photo);
+        } catch (resolveError) {
+          logger.error('Failed to resolve photo path', {
+            slug: req.params.slug,
+            photoId,
+            eventId: req.event.id,
+            error: resolveError.message,
+            photoPath: photo.path,
+            photoFilename: photo.filename
+          });
+          return res.status(404).json({ error: 'Photo file not found' });
+        }
+        if (!fs.existsSync(filePath)) {
+          logger.error('Photo file does not exist at resolved path', {
+            slug: req.params.slug,
+            photoId,
+            eventId: req.event.id,
+            resolvedPath: filePath,
+            photoPath: photo.path
+          });
+          return res.status(404).json({ error: 'Photo file not found' });
+        }
+        stat = fs.statSync(filePath);
+        fileSize = stat.size;
       }
-
-      // Verify file exists before attempting to serve
-      if (!fs.existsSync(filePath)) {
-        logger.error('Photo file does not exist at resolved path', {
-          slug: req.params.slug,
-          photoId,
-          eventId: req.event.id,
-          resolvedPath: filePath,
-          photoPath: photo.path
-        });
-        return res.status(404).json({ error: 'Photo file not found' });
-      }
-
-      // Log access - temporarily disabled for debugging
-      // await secureImageService.logImageAccess(
-      //   photoId,
-      //   req.event.id,
-      //   req.clientInfo,
-      //   'view_basic'
-      // );
 
       // Handle video streaming with range requests
       if (isVideo) {
-        const stat = fs.statSync(filePath);
-        const fileSize = stat.size;
         const range = req.headers.range;
 
         if (range) {
-          // Parse range header
           const parts = range.replace(/bytes=/, '').split('-');
           const start = parseInt(parts[0], 10);
           const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
           const chunksize = (end - start) + 1;
-          const file = fs.createReadStream(filePath, { start, end });
 
           res.writeHead(206, {
             'Content-Range': `bytes ${start}-${end}/${fileSize}`,
@@ -999,9 +1112,11 @@ router.get('/:slug/photo/:photoId',
             'X-Protection-Level': 'basic'
           });
 
+          const file = useStorageBackend
+            ? await storage.getRange(storageKey, start, end)
+            : fs.createReadStream(filePath, { start, end });
           file.pipe(res);
         } else {
-          // No range request, send entire file
           res.writeHead(200, {
             'Content-Length': fileSize,
             'Content-Type': photo.mime_type || 'video/mp4',
@@ -1009,53 +1124,69 @@ router.get('/:slug/photo/:photoId',
             'Cache-Control': 'private, max-age=1800',
             'X-Protection-Level': 'basic'
           });
-
-          fs.createReadStream(filePath).pipe(res);
+          const file = useStorageBackend
+            ? await storage.get(storageKey)
+            : fs.createReadStream(filePath);
+          file.pipe(res);
         }
         return;
       }
 
-      // Handle images (existing logic)
-      // Get watermark settings
+      // Image path
       const watermarkSettings = await watermarkService.getWatermarkSettings();
 
-      // Generate ETag based on photo id, modification time, and watermark settings
-      // This ensures cache invalidation when watermark settings change
-      const stat = fs.statSync(filePath);
+      const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
       const watermarkHash = watermarkSettings?.enabled
         ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
         : '-nowm';
-      const etag = `"${photoId}-${stat.mtime.getTime()}${watermarkHash}"`;
+      const etag = `"${photoId}-${mtimeMs}${watermarkHash}"`;
 
-      // Check if client has valid cached version
       if (req.headers['if-none-match'] === etag) {
         return res.status(304).end();
       }
 
       if (watermarkSettings && watermarkSettings.enabled) {
-        // Try to serve pre-generated watermarked file for instant loading
+        // Pre-generated watermarked file: served via the storage backend
+        // (managed) or directly from local fs (external).
         if (photo.watermark_path) {
-          const watermarkFilePath = path.join(getStoragePath(), photo.watermark_path);
           try {
-            // Check if pre-generated watermark file exists
-            if (fs.existsSync(watermarkFilePath)) {
-              res.set({
-                'Content-Type': photo.mime_type || 'image/jpeg',
-                'Cache-Control': 'private, max-age=1800',
-                'ETag': etag,
-                'X-Protection-Level': 'basic'
-              });
-              return res.sendFile(watermarkFilePath);
+            if (useStorageBackend) {
+              const wmStat = await storage.stat(photo.watermark_path);
+              if (wmStat) {
+                res.set({
+                  'Content-Type': photo.mime_type || 'image/jpeg',
+                  'Content-Length': wmStat.size,
+                  'Cache-Control': 'private, max-age=1800',
+                  'ETag': etag,
+                  'X-Protection-Level': 'basic'
+                });
+                const wmStream = await storage.get(photo.watermark_path);
+                return wmStream.pipe(res);
+              }
+            } else {
+              const watermarkFilePath = path.join(getStoragePath(), photo.watermark_path);
+              if (fs.existsSync(watermarkFilePath)) {
+                res.set({
+                  'Content-Type': photo.mime_type || 'image/jpeg',
+                  'Cache-Control': 'private, max-age=1800',
+                  'ETag': etag,
+                  'X-Protection-Level': 'basic'
+                });
+                return res.sendFile(watermarkFilePath);
+              }
             }
           } catch (err) {
-            // File doesn't exist or error, fall through to on-the-fly generation
             logger.warn(`Pre-generated watermark not found for photo ${photoId}, falling back to on-the-fly`);
           }
         }
 
-        // Fallback: Apply watermark on-the-fly (slower, but ensures image is served)
-        // Also queue regeneration for next time
-        const watermarkedBuffer = await watermarkService.applyWatermark(filePath, watermarkSettings);
+        // Fallback: apply watermark on-the-fly. applyWatermark needs a
+        // local file path (sharp + fs.readFile) — for managed photos in
+        // S3 mode, withLocalCopy materializes to a tmp file and cleans up.
+        const watermarkedBuffer = useStorageBackend
+          ? await withLocalCopy(storageKey, (localPath) =>
+            watermarkService.applyWatermark(localPath, watermarkSettings))
+          : await watermarkService.applyWatermark(filePath, watermarkSettings);
 
         // Queue watermark generation in background for next request
         watermarkGeneratorService.generateForPhoto(photo.id)
@@ -1063,22 +1194,27 @@ router.get('/:slug/photo/:photoId',
 
         res.set({
           'Content-Type': photo.mime_type || 'image/jpeg',
-          'Cache-Control': 'private, max-age=1800', // Cache for 30 minutes
+          'Cache-Control': 'private, max-age=1800',
           'ETag': etag,
           'X-Protection-Level': 'basic'
         });
 
         res.send(watermarkedBuffer);
       } else {
-        // Send original file with basic protection headers
         res.set({
           'Cache-Control': 'private, max-age=1800',
           'ETag': etag,
           'X-Protection-Level': 'basic'
         });
-        // Ensure absolute path for res.sendFile
-        const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(filePath);
-        res.sendFile(absolutePath);
+        if (useStorageBackend) {
+          res.set('Content-Length', stat.size);
+          if (photo.mime_type) res.set('Content-Type', photo.mime_type);
+          const stream = await storage.get(storageKey);
+          stream.pipe(res);
+        } else {
+          const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(filePath);
+          res.sendFile(absolutePath);
+        }
       }
     } catch (error) {
       logger.error('Error serving photo:', {
@@ -1120,7 +1256,16 @@ router.get('/:slug/thumbnail/:photoId',
         return res.status(404).json({ error: 'Thumbnail generation failed' });
       }
 
-      const thumbPath = path.join(getStoragePath(), thumbnailPath);
+      // Read thumbnail metadata via the storage abstraction so we work in
+      // both LocalFs and S3 modes (#432). The previous fs.statSync on the
+      // resolved local path 500'd in S3 deployments because the thumbnail
+      // only exists in the bucket, not on the container's local fs.
+      const storage = getStorage();
+      const stat = await storage.stat(thumbnailPath);
+      if (!stat) {
+        logger.error(`Thumbnail not found in storage backend for photo ${photoId}`, { thumbnailPath });
+        return res.status(404).json({ error: 'Thumbnail not found' });
+      }
 
       // Log thumbnail access
       await secureImageService.logImageAccess(
@@ -1133,13 +1278,12 @@ router.get('/:slug/thumbnail/:photoId',
       // Check if watermarks are enabled and apply to thumbnail
       const watermarkSettings = await watermarkService.getWatermarkSettings();
 
-      // Generate ETag based on photo id, thumbnail modification time, and watermark settings
-      const fs = require('fs');
-      const stat = fs.statSync(thumbPath);
+      // ETag uses storage stat mtime + photo id + watermark hash.
+      const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
       const watermarkHash = watermarkSettings?.enabled
         ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
         : '-nowm';
-      const etag = `"thumb-${photoId}-${stat.mtime.getTime()}${watermarkHash}"`;
+      const etag = `"thumb-${photoId}-${mtimeMs}${watermarkHash}"`;
 
       // Check if client has valid cached version
       if (req.headers['if-none-match'] === etag) {
@@ -1157,12 +1301,17 @@ router.get('/:slug/thumbnail/:photoId',
       });
 
       if (watermarkSettings && watermarkSettings.enabled) {
-        // Apply watermark to thumbnail
-        const watermarkedBuffer = await watermarkService.applyWatermark(thumbPath, watermarkSettings);
+        // Watermarking needs a local file path (sharp + fs.readFile).
+        // Materialize via withLocalCopy — no-op in local mode, downloads
+        // to a tmp file then cleans up in S3 mode.
+        const watermarkedBuffer = await withLocalCopy(thumbnailPath, (localPath) =>
+          watermarkService.applyWatermark(localPath, watermarkSettings)
+        );
         res.send(watermarkedBuffer);
       } else {
-        // Send file without watermark
-        res.sendFile(path.resolve(thumbPath));
+        res.setHeader('Content-Length', stat.size);
+        const stream = await storage.get(thumbnailPath);
+        stream.pipe(res);
       }
     } catch (error) {
       logger.error('Error serving thumbnail:', {
@@ -1211,30 +1360,27 @@ router.get('/:slug/hero/:photoId',
         return res.redirect(`/api/gallery/${req.params.slug}/photo/${photoId}`);
       }
 
-      const heroFullPath = path.join(getStoragePath(), heroPath);
-      const fs = require('fs');
-
-      // Verify file exists before attempting to serve
-      if (!fs.existsSync(heroFullPath)) {
-        logger.error('Hero image file does not exist at resolved path', {
+      // Hero images are always written via the storage abstraction (see
+      // imageProcessor.generateHeroImage), so they're a managed-storage
+      // key in both LocalFs and S3 modes (#432). Read via storage.
+      const storage = getStorage();
+      const stat = await storage.stat(heroPath);
+      if (!stat) {
+        logger.error('Hero image file does not exist in storage backend', {
           slug: req.params.slug,
           photoId,
           eventId: req.event.id,
-          resolvedPath: heroFullPath
+          heroPath
         });
         return res.redirect(`/api/gallery/${req.params.slug}/photo/${photoId}`);
       }
 
-      // Get file stats for ETag
-      const stat = fs.statSync(heroFullPath);
-      const etag = `"hero-${photoId}-${stat.mtime.getTime()}"`;
-
-      // Check if client has valid cached version
+      const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
+      const etag = `"hero-${photoId}-${mtimeMs}"`;
       if (req.headers['if-none-match'] === etag) {
         return res.status(304).end();
       }
 
-      // Check if watermarks should be applied
       const watermarkSettings = await watermarkService.getWatermarkSettings();
 
       res.set({
@@ -1247,12 +1393,16 @@ router.get('/:slug/hero/:photoId',
       });
 
       if (watermarkSettings && watermarkSettings.enabled) {
-        // Apply watermark to hero image
-        const watermarkedBuffer = await watermarkService.applyWatermark(heroFullPath, watermarkSettings);
+        // applyWatermark needs a local file path; materialize via
+        // withLocalCopy so this works in S3 mode too.
+        const watermarkedBuffer = await withLocalCopy(heroPath, (localPath) =>
+          watermarkService.applyWatermark(localPath, watermarkSettings)
+        );
         res.send(watermarkedBuffer);
       } else {
-        // Send hero image without watermark
-        res.sendFile(path.resolve(heroFullPath));
+        res.setHeader('Content-Length', stat.size);
+        const stream = await storage.get(heroPath);
+        stream.pipe(res);
       }
     } catch (error) {
       logger.error('Error serving hero image:', {
@@ -1261,6 +1411,101 @@ router.get('/:slug/hero/:photoId',
         eventId: req.event?.id
       });
       // Fall back to original photo on any error
+      res.redirect(`/api/gallery/${req.params.slug}/photo/${req.params.photoId}`);
+    }
+  }
+);
+
+// Lightbox preview tier (#492). Aspect-preserved JPEG capped at 1920px
+// long edge — admin-controlled opt-in via app_settings.lightbox_preview_enabled.
+// Mirrors the hero route shape: same auth, ETag from preview mtime,
+// fall back to original on any failure so the lightbox never shows a
+// broken image. The watermark application path is preserved so a
+// preview surfaced in the lightbox carries the same protection a
+// guest would see on the full original.
+router.get('/:slug/preview/:photoId',
+  verifyGalleryAccess,
+  async (req, res) => {
+    try {
+      const { photoId } = req.params;
+
+      const photo = await db('photos')
+        .where({ id: photoId, event_id: req.event.id })
+        .first();
+
+      if (!photo) {
+        return res.status(404).json({ error: 'Photo not found' });
+      }
+
+      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+        return res.status(403).json({ error: 'Photo not available' });
+      }
+
+      // Videos don't get a preview tier — fall through to the regular
+      // photo endpoint (which serves the source). The frontend should
+      // already be checking media_type before requesting /preview but
+      // belt-and-braces in case a stale tab does.
+      const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
+      if (isVideo) {
+        return res.redirect(`/api/gallery/${req.params.slug}/photo/${photoId}`);
+      }
+
+      // Lazy generation: ensurePreviewImage returns null on any
+      // failure (corrupt source, sharp OOM, storage unavailable, …).
+      // Fall back to the original so the lightbox always renders.
+      const previewPath = await ensurePreviewImage(photo);
+      if (!previewPath) {
+        logger.warn(`Failed to generate preview for photo ${photoId}, falling back to original`);
+        return res.redirect(`/api/gallery/${req.params.slug}/photo/${photoId}`);
+      }
+
+      const storage = getStorage();
+      const stat = await storage.stat(previewPath);
+      if (!stat) {
+        logger.error('Preview file does not exist in storage backend', {
+          slug: req.params.slug, photoId, eventId: req.event.id, previewPath,
+        });
+        return res.redirect(`/api/gallery/${req.params.slug}/photo/${photoId}`);
+      }
+
+      const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
+      const watermarkSettings = await watermarkService.getWatermarkSettings();
+      const watermarkHash = watermarkSettings?.enabled
+        ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
+        : '-nowm';
+      const etag = `"preview-${photoId}-${mtimeMs}${watermarkHash}"`;
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
+
+      res.set({
+        'Content-Type': 'image/jpeg',
+        // Cache aggressively — preview only changes on photo
+        // re-upload (which generates a new preview key) or settings
+        // regenerate (which writes a new mtime + ETag).
+        'Cache-Control': 'private, max-age=3600',
+        'Cross-Origin-Resource-Policy': 'cross-origin',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Preview-Image': 'true',
+        'ETag': etag,
+      });
+
+      if (watermarkSettings && watermarkSettings.enabled) {
+        const watermarkedBuffer = await withLocalCopy(previewPath, (localPath) =>
+          watermarkService.applyWatermark(localPath, watermarkSettings)
+        );
+        res.send(watermarkedBuffer);
+      } else {
+        res.setHeader('Content-Length', stat.size);
+        const stream = await storage.get(previewPath);
+        stream.pipe(res);
+      }
+    } catch (error) {
+      logger.error('Error serving preview image:', {
+        error: error.message,
+        photoId: req.params.photoId,
+        eventId: req.event?.id,
+      });
       res.redirect(`/api/gallery/${req.params.slug}/photo/${req.params.photoId}`);
     }
   }

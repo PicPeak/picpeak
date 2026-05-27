@@ -7,6 +7,7 @@ const { list, resolveExternalPath, getExternalMediaRoot } = require('../services
 const { db, logActivity } = require('../database/db');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
+const { generateThumbnail } = require('../services/imageProcessor');
 
 const router = express.Router();
 
@@ -93,6 +94,8 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
     }
 
     let imported = 0;
+    let thumbnailsGenerated = 0;
+    let thumbnailsFailed = 0;
 
     // Insert photos
     for (const f of dedupeMap.values()) {
@@ -137,6 +140,34 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
           })
           .returning('id');
 
+        const photoId = Array.isArray(inserted) && inserted.length
+          ? (typeof inserted[0] === 'object' ? inserted[0].id : inserted[0])
+          : null;
+
+        // Generate the thumbnail right away so the gallery grid can use the
+        // managed thumbnail endpoint instead of falling back to the full
+        // NAS-streamed original (#423). Best-effort: a single failure logs
+        // a warning and leaves thumbnail_path=null — the gallery's
+        // ensureThumbnail will retry lazily on first view. The cost of
+        // doing this synchronously is ~100-300ms per image; for the
+        // worst-case 1000-photo import that's still under the 5-minute
+        // request timeout typical of the import flow.
+        if (photoId != null) {
+          try {
+            const outputBasename = `ext${photoId}_${path.basename(f.rel)}`;
+            const thumbnailPath = await generateThumbnail(f.full, { outputBasename });
+            if (thumbnailPath) {
+              await db('photos').where({ id: photoId }).update({ thumbnail_path: thumbnailPath });
+              thumbnailsGenerated++;
+            } else {
+              thumbnailsFailed++;
+            }
+          } catch (thumbErr) {
+            thumbnailsFailed++;
+            logger.warn(`Thumbnail generation failed for external photo ${photoId} (${f.rel}): ${thumbErr.message}`);
+          }
+        }
+
         imported += (inserted?.length ? 1 : 0);
       } catch (e) {
         skipped++;
@@ -146,10 +177,14 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
     // Update event fields
     await db('events').where('id', eventId).update({ source_mode: 'reference', external_path });
 
-    // Queue thumbnail generation lazily by reading thumbnails via ensure endpoint as needed
-    await logActivity('external_import_completed', { event_id: eventId, imported, skipped, external_path }, eventId, { type: 'admin' });
+    await logActivity(
+      'external_import_completed',
+      { event_id: eventId, imported, skipped, thumbnailsGenerated, thumbnailsFailed, external_path },
+      eventId,
+      { type: 'admin' }
+    );
 
-    res.json({ imported, skipped, thumbnailsQueued: 0 });
+    res.json({ imported, skipped, thumbnailsGenerated, thumbnailsFailed });
   } catch (error) {
     logger.error('External media import failed', {
       eventId: req.params.id,

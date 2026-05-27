@@ -12,6 +12,8 @@ interface ThumbnailSettings {
   quality: number;
   fit: string;
   format: string;
+  // Lightbox preview tier (#492). Off by default; admin opts in.
+  lightbox_preview_enabled: boolean;
 }
 
 const defaultSettings: ThumbnailSettings = {
@@ -20,12 +22,24 @@ const defaultSettings: ThumbnailSettings = {
   quality: 85,
   fit: 'cover',
   format: 'jpeg',
+  lightbox_preview_enabled: false,
 };
+
+// Backend returns the lightbox toggle as a JSON-stringified boolean
+// per migration 104. Tolerate raw boolean / "true" / "false" / "1" /
+// "0" coming back so the form mirrors whatever shape lands.
+function parseLightboxFlag(raw: unknown): boolean {
+  if (raw === true || raw === 1) return true;
+  if (typeof raw !== 'string') return false;
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed === 'true' || trimmed === '"true"' || trimmed === '1') return true;
+  return false;
+}
 
 interface FetchedSettings {
   settings: Record<string, { value: string; description: string }>;
-  fitOptions: string[];
-  formatOptions: string[];
+  fitOptions: Array<'cover' | 'contain' | 'fill' | 'inside' | 'outside'>;
+  formatOptions: Array<'jpeg' | 'png' | 'webp'>;
 }
 
 export const ThumbnailsTab: React.FC = () => {
@@ -51,6 +65,7 @@ export const ThumbnailsTab: React.FC = () => {
         quality: parseInt(s.thumbnail_quality?.value) || defaultSettings.quality,
         fit: s.thumbnail_fit?.value || defaultSettings.fit,
         format: s.thumbnail_format?.value || defaultSettings.format,
+        lightbox_preview_enabled: parseLightboxFlag(s.lightbox_preview_enabled?.value),
       });
     }
   }, [fetchedData]);
@@ -83,6 +98,23 @@ export const ThumbnailsTab: React.FC = () => {
     },
   });
 
+  // Lightbox preview tier (#492). Eager regeneration counterpart to
+  // ensurePreviewImage's lazy on-first-open generation. Useful after
+  // flipping the toggle on so guests don't pay the lazy-cost on the
+  // very first lightbox open per gallery.
+  const regeneratePreviewsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/admin/thumbnails/regenerate-previews');
+      return response.data;
+    },
+    onSuccess: (data) => {
+      toast.success(data.message || t('settings.thumbnails.previewsRegenerateStarted', 'Lightbox preview regeneration started'));
+    },
+    onError: () => {
+      toast.error(t('settings.thumbnails.previewsRegenerateError', 'Failed to start preview regeneration'));
+    },
+  });
+
   const handleChange = <K extends keyof ThumbnailSettings>(
     key: K,
     value: ThumbnailSettings[K]
@@ -104,6 +136,7 @@ export const ThumbnailsTab: React.FC = () => {
         quality: parseInt(s.thumbnail_quality?.value) || defaultSettings.quality,
         fit: s.thumbnail_fit?.value || defaultSettings.fit,
         format: s.thumbnail_format?.value || defaultSettings.format,
+        lightbox_preview_enabled: parseLightboxFlag(s.lightbox_preview_enabled?.value),
       });
       setIsDirty(false);
     }
@@ -229,6 +262,9 @@ export const ThumbnailsTab: React.FC = () => {
           <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
             {t('settings.thumbnails.fitHelp', 'How images are resized to fit the thumbnail dimensions. "Cover" crops to fill, "Contain" fits within bounds.')}
           </p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
+            {t('settings.thumbnails.fitRecommendation', 'Recommendation: use "Inside" for masonry / mosaic / justified layouts (preserves aspect ratio); "Cover" for uniform 1:1 grid tiles.')}
+          </p>
         </div>
       </Card>
 
@@ -249,6 +285,51 @@ export const ThumbnailsTab: React.FC = () => {
           leftIcon={regenerateMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
         >
           {t('settings.thumbnails.regenerateButton', 'Regenerate All Thumbnails')}
+        </Button>
+      </Card>
+
+      {/* Lightbox preview tier (#492). Independent opt-in from the
+          thumbnail size/quality settings above — costs disk but
+          dramatically speeds up lightbox open on mobile / slow
+          connections by serving an aspect-preserved ~1920px JPEG
+          instead of the multi-megabyte original. */}
+      <Card padding="md">
+        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1 flex items-center gap-2">
+          <Image className="w-5 h-5 text-primary-600" />
+          {t('settings.thumbnails.lightboxTitle', 'Lightbox Preview Tier')}
+        </h2>
+        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+          {t('settings.thumbnails.lightboxHelp', 'When enabled, the lightbox loads an aspect-preserved ~1920px JPEG (typically 200–500 KB) instead of the full original (often 5–12 MB). Originals are still served when guests click Download. Costs roughly one extra preview file per photo on disk; previews are generated lazily on first open and stored in /previews.')}
+        </p>
+
+        <label className="flex items-start gap-3 cursor-pointer mb-4">
+          <input
+            type="checkbox"
+            className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+            checked={settings.lightbox_preview_enabled}
+            onChange={(e) => handleChange('lightbox_preview_enabled', e.target.checked)}
+          />
+          <span className="text-sm">
+            <span className="font-medium text-neutral-900 dark:text-neutral-100">
+              {t('settings.thumbnails.lightboxToggle', 'Use medium-resolution previews in the lightbox')}
+            </span>
+            <span className="block text-xs text-neutral-600 dark:text-neutral-400 mt-0.5">
+              {t('settings.thumbnails.lightboxToggleHelp', 'Off by default. Flip on after deciding the perceived-perf win is worth the extra disk usage.')}
+            </span>
+          </span>
+        </label>
+
+        {/* Eager regeneration so guests don't pay the lazy first-open
+            cost. Only useful after the toggle is on; gated so admins
+            don't accidentally kick off a job that won't be visible. */}
+        <Button
+          variant="outline"
+          onClick={() => regeneratePreviewsMutation.mutate()}
+          isLoading={regeneratePreviewsMutation.isPending}
+          disabled={!settings.lightbox_preview_enabled}
+          leftIcon={regeneratePreviewsMutation.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
+        >
+          {t('settings.thumbnails.regeneratePreviewsButton', 'Regenerate All Previews')}
         </Button>
       </Card>
 
