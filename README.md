@@ -378,17 +378,21 @@ See our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ## 📊 Comparison with Alternatives
 
-| Feature | PicPeak | PicDrop | Scrapbook.de |
-|---------|---------|---------|--------------|
-| Self-Hosted | ✅ | ❌ | ❌ |
-| Custom Branding | ✅ Full | Limited | Limited |
-| Monthly Cost | $0 | $29-199 | €19-99 |
-| Storage Limit | Unlimited* | 50-500GB | 100-1000GB |
-| Client Uploads | ✅ | ✅ | ✅ |
-| API Access | ✅ | Paid | ❌ |
-| Open Source | ✅ | ❌ | ❌ |
+| Feature | PicPeak | PicDrop | Scrapbook.de | Pixieset |
+|---------|---------|---------|--------------|----------|
+| Self-Hosted | ✅ | ❌ | ❌ | ❌ |
+| Custom Branding | ✅ Full | Limited | Limited | ✅ (paid) |
+| Monthly Cost | $0 | $29-199 | €19-99 | $0–50 |
+| Storage Limit | Unlimited* | 50-500GB | 100-1000GB | 3GB–Unlimited |
+| Client Uploads | ✅ | ✅ | ✅ | Limited |
+| API Access | ✅ | Paid | ❌ | ❌ |
+| Open Source | ✅ | ❌ | ❌ | ❌ |
+| Customer Accounts | ✅ | ❌ | ❌ | ✅ |
+| Quotes / Contracts / Invoices | 🧪 Beta | ❌ | ❌ | ✅ |
+| Incoming Invoices & Accounting | 🧪 Beta | ❌ | ❌ | ❌ |
 
-*Limited only by your server storage
+*Limited only by your server storage.
+🧪 Beta = built but feature-flagged off by default (see [Beta Features](#-beta-features-use-at-your-own-risk)). picdrop and Scrapbook.de are gallery/delivery tools (no client billing or accounting). Pixieset's client CRM, contracts and invoices live in its paid **Studio Manager**, but it has no inbound supplier-invoice capture or bookkeeping/accountant-export module.
 
 ## 🛡️ Security
 
@@ -484,6 +488,7 @@ PicPeak is inspired by the best features of commercial platforms while remaining
 
 A huge thank you to the people whose code, reports, and feedback have shaped PicPeak:
 
+- [**@the-luap**](https://github.com/the-luap) — creator and lead maintainer. Started the project and built PicPeak's foundation and the entire gallery experience (events, galleries, uploads, sharing, download protection, templates), plus backup & restore, analytics, system health, branding/theming, and WhatsApp notifications — and the architecture every later feature builds on.
 - [**@Luca-Timo**](https://github.com/Luca-Timo) — native Apple Silicon multi-arch images, external-URL toggle for legal CMS pages, the lazy-loaded folder tree picker, the admin-email picker on event creation, the data-driven self-hosted webfont system, the gallery header/banner decoupling, several typed-API refactors, and the CRM + accounting suite (quotes/contracts/invoices, hours logging, calendar, tax report, inbound supplier-invoice capture, expenses, and the Treuhänder/Banana export). Consistently raises the bar with thoughtful PRs.
 - [**@Rekoo-PS**](https://github.com/Rekoo-PS) — sharp-eyed bug reporter and product feedback. Filed the issues that drove the login-loop fix, the gallery-loading skeleton work, the redirection cleanup, the mobile-lightbox overhaul, the admin-events search-counter fix, the photo-count column, and the bulk-delete workflow. Also a [BuyMeACoffee](https://buymeacoffee.com/theluap) supporter — the kind of feedback loop that keeps the project useful for real deployments.
 
