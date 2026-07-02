@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.79.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.79.0-beta.0...v3.79.1-beta.0) (2026-07-02)
+
+
+### Bug Fixes
+
+* **settings:** remove duplicate Mail import that broke the dev server ([5b535f8](https://github.com/PicPeak/picpeak/commit/5b535f86580275eda768fa2d85a8c94bd701f832))
+* **settings:** remove duplicate Mail import that crashes the dev server ([4aa6583](https://github.com/PicPeak/picpeak/commit/4aa6583baef55e2c12e9cde7d391156436de518f))
+
 ## [3.79.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.78.0-beta.0...v3.79.0-beta.0) (2026-07-02)
 
 
