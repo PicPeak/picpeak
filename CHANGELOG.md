@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.78.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.77.3-beta.0...v3.78.0-beta.0) (2026-07-02)
+
+
+### Features
+
+* zero-config first run — in-browser admin bootstrap + auto-generated secrets ([bafc96f](https://github.com/PicPeak/picpeak/commit/bafc96f468e3b5cca2ec3291e7b568886755099d))
+
+
+### Bug Fixes
+
+* **ci:** enable release-PR auto-merge with the PAT, not GITHUB_TOKEN ([e08a33d](https://github.com/PicPeak/picpeak/commit/e08a33d9ea273dc18877743f71f59d64bfc3dfb5))
+* enable release-PR auto-merge with the PAT so releases actually publish ([97b9853](https://github.com/PicPeak/picpeak/commit/97b9853709fb59a900d70bb2a6bf365d98ae4f86))
+
 ## [3.77.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.77.2-beta.0...v3.77.3-beta.0) (2026-07-02)
 
 
