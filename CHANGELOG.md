@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.79.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.78.0-beta.0...v3.79.0-beta.0) (2026-07-02)
+
+
+### Features
+
+* setup wizard + argument-driven unattended install ([681619f](https://github.com/PicPeak/picpeak/commit/681619f0a14070309342a9f908a5bbc8a57d47d8))
+* **setup:** step-by-step wizard + argument-driven unattended install ([d35c413](https://github.com/PicPeak/picpeak/commit/d35c413651bc10f177a683a8057ad92c03b1cf00))
+
 ## [3.78.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.77.3-beta.0...v3.78.0-beta.0) (2026-07-02)
 
 
