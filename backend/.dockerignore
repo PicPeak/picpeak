@@ -1,0 +1,14 @@
+node_modules
+npm-debug.log
+.env
+storage/events/active/*
+storage/events/archived/*
+storage/thumbnails/*
+data/*.db
+logs/*
+coverage
+.git
+.gitignore
+README.md
+.eslintrc.js
+jest.config.js
