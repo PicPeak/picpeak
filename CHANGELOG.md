@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.82.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.81.0-beta.0...v3.82.0-beta.0) (2026-07-03)
+
+
+### Features
+
+* **setup:** final community step ([#732](https://github.com/PicPeak/picpeak/issues/732)) + fix create-admin button overflow ([#730](https://github.com/PicPeak/picpeak/issues/730)) ([a5f49e3](https://github.com/PicPeak/picpeak/commit/a5f49e32350564ee4d3894f33e9611e9244cc994))
+* **setup:** final community/thank-you step ([#732](https://github.com/PicPeak/picpeak/issues/732)); fix create-admin button overflow ([#730](https://github.com/PicPeak/picpeak/issues/730)) ([dadaaee](https://github.com/PicPeak/picpeak/commit/dadaaeea7781cb62811256b512003e5c4d6ad95e))
+
 ## [3.81.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.80.0-beta.0...v3.81.0-beta.0) (2026-07-03)
 
 
