@@ -1,0 +1,134 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Docker override file
+docker-compose.override.yml
+
+# Security - Never commit credentials
+ADMIN_CREDENTIALS.txt
+ADMIN_PASSWORD_RESET.txt
+*_CREDENTIALS.txt
+*_PASSWORD_RESET.txt
+
+# Storage and data
+storage/events/active/*
+storage/events/archived/*
+storage/thumbnails/*
+data/*.db
+data/*.db-journal
+logs/*
+
+# Build outputs
+build/
+dist/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Backup and test directories
+backups/
+test-archiver/
+
+# Keep directory structure
+!storage/events/active/.gitkeep
+!storage/events/archived/.gitkeep
+!storage/thumbnails/.gitkeep
+!data/.gitkeep
+!logs/.gitkeep
+
+# development files
+backend/.swarm/
+.claudedocs/
+backend/data/
+backend/docs/
+backend/logs/
+logs/
+# Anchored to repo root: matches the top-level runtime storage dir,
+# NOT backend/src/services/storage/ (the storage backend abstraction code).
+/storage/
+data/
+certbot/
+
+# Ignore local contributor guide copy
+AGENTS.md
+CLAUDE.md
+
+# Working/planning documents (not for release)
+BUGS_AND_FEATURES.md
+frontend/TEST_PLAN.md
+docs/REFACTORING_PLAN.md
+docs/MULTIPLE_ADMINISTRATORS_PLAN.md
+docs/*_PLAN.md
+docs/test-*.md
+docs/feature-*.md
+
+# Scaffolding documentation (local development reference)
+docs/DATABASE_SCHEMA.md
+docs/BACKEND_SERVICES.md
+docs/API_ROUTES.md
+docs/FRONTEND_ARCHITECTURE.md
+docs/DEVELOPER_ONBOARDING.md
+docs/ENVIRONMENT_VARIABLES.md
+
+# Build artifact: OpenAPI spec generated locally + synced into the
+# picpeak-docs repo. Never tracked here — the docs site at
+# docs.picpeak.app is the source of truth.
+docs/openapi.json
+docs/openapi.yaml
+
+# Local backup directory (from testing)
+backup/
+
+# Local artifacts from browser tooling
+.playwright-mcp/
+
+# Local-only E2E suite (never pushed; runs as pre-push gate on this machine)
+tests/e2e/local/
+playwright-local-results/
+e2e-test.log
+scripts/e2e-local.sh
+
+# Local SQLite files in backend
+backend/*.sqlite*
+backend/*.db
+
+# Test files and artifacts
+test-images/
+test-logo*.jpg
+test-logo*.png
+test-results/
+
+# Development docker compose
+docker-compose.dev.yml
+
+# New layout development files
+new-layouts/
+
+# Generated CRM/accounting documents (runtime) — never commit
+backend/storage/business-docs/
