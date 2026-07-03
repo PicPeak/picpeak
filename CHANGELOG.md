@@ -5,6 +5,22 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.80.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.79.1-beta.0...v3.80.0-beta.0) (2026-07-03)
+
+
+### Features
+
+* **backup:** fold .picpeak restore into the Restore wizard's Upload source ([86324e7](https://github.com/PicPeak/picpeak/commit/86324e7da75069e61686b1b77495f02c33b12e1a))
+* first-run setup wizard (feature selection + config) and portable .picpeak backup roundtrip ([e513e83](https://github.com/PicPeak/picpeak/commit/e513e8345b73e37ebedc9c9ec09665ffc5773e23))
+* **setup:** add restore-from-backup branch to the first-run wizard ([a95ee47](https://github.com/PicPeak/picpeak/commit/a95ee473ae7fb2bf3c94c610724476701145d113))
+* **setup:** per-feature config step after feature selection ([07b450a](https://github.com/PicPeak/picpeak/commit/07b450a954a53781d23a71749552e4101c637777))
+
+
+### Bug Fixes
+
+* **backup:** address .picpeak review — table filter, superuser guard, tests ([fa7665c](https://github.com/PicPeak/picpeak/commit/fa7665c5b1ad18a4db4f0b59eb4c197a3c9a36e2))
+* **setup:** keep the first-run wizard light regardless of dark mode ([d4b143f](https://github.com/PicPeak/picpeak/commit/d4b143f313d00f2a30abcbc1a880c140d7455e7b))
+
 ## [3.79.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.79.0-beta.0...v3.79.1-beta.0) (2026-07-02)
 
 
