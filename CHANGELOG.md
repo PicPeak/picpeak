@@ -5,6 +5,22 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.81.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.80.0-beta.0...v3.81.0-beta.0) (2026-07-03)
+
+
+### Features
+
+* admin two-factor authentication (TOTP) with recovery codes + CLI reset ([cf07361](https://github.com/PicPeak/picpeak/commit/cf073615effa8a91e19374ad3e9924e6e7322950))
+* **admin-ui:** TOTP MFA enrollment + two-step login; remove stub 2FA toggle ([96e3c68](https://github.com/PicPeak/picpeak/commit/96e3c68b9d6b35a82abcad664a6da7b19150b4fd))
+* **auth:** admin TOTP MFA — enrollment, login challenge, recovery, CLI reset ([72e2ef6](https://github.com/PicPeak/picpeak/commit/72e2ef6721b0572ed34455de901aa357eacd8c76))
+
+
+### Bug Fixes
+
+* event creation 500s on PostgreSQL (NaN slideshow seed) + stray "0" boolean renders ([b187f58](https://github.com/PicPeak/picpeak/commit/b187f588b4d12af7a7849f8558c0085573d4af76))
+* **security:** close cross-event thumbnail leak, bulk-op ownership bypass, + hardening ([081f3ed](https://github.com/PicPeak/picpeak/commit/081f3edcdffc65a77000cc638e364ea9dc03767f))
+* **security:** cross-event thumbnail leak, bulk-op ownership bypass + auth hardening ([b732974](https://github.com/PicPeak/picpeak/commit/b732974779803b67097c81ae6bce2de0f2910794))
+
 ## [3.80.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.79.1-beta.0...v3.80.0-beta.0) (2026-07-03)
 
 
