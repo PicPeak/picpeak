@@ -1,0 +1,70 @@
+name: Bypass size gate
+
+# Caps how large a PR a "review-bypass" collaborator (e.g. @Luca-Timo) can
+# self-merge without a maintainer review. The branch-protection bypass list
+# alone is binary — once a user is on it they can merge anything without
+# review. This workflow reports a REQUIRED status check that fails when a
+# bypass user's PR exceeds the configured size threshold, which blocks the
+# merge even with bypass enabled. Other contributors are unaffected (the
+# check reports success for them so the required-check gate doesn't trip).
+#
+# To tune: edit LINE_LIMIT or BYPASS_USERS below.
+#
+# Trigger note: uses `pull_request_target` so the workflow has the elevated
+# permissions of the base repo's GITHUB_TOKEN (read PR metadata, write
+# checks). The script never executes code FROM the PR — it only reads
+# metadata via the API — so this is safe against fork-PR attacks.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  pull-requests: read
+  checks: write
+
+jobs:
+  size-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute PR size and report check status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Tune these two constants if the policy shifts.
+            const LINE_LIMIT = 300;
+            const BYPASS_USERS = ['Luca-Timo'];
+
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+            const linesChanged = pr.additions + pr.deletions;
+            const filesChanged = pr.changed_files;
+
+            let conclusion, title, summary;
+
+            if (!BYPASS_USERS.includes(author)) {
+              // Not a bypass user — this gate doesn't apply to them. They
+              // go through normal review. Report success so the required
+              // check doesn't block their merge.
+              conclusion = 'success';
+              title = 'Not applicable';
+              summary = `This gate only restricts review-bypass for: ${BYPASS_USERS.join(', ')}. PRs from other authors (${author} here) go through the normal review path and are unaffected.`;
+            } else if (linesChanged <= LINE_LIMIT) {
+              conclusion = 'success';
+              title = `OK — within bypass limit (${linesChanged} lines)`;
+              summary = `Small PR: ${linesChanged} lines changed across ${filesChanged} file(s). Within the ${LINE_LIMIT}-line self-merge limit for @${author}. Can be merged without a maintainer review.`;
+            } else {
+              conclusion = 'failure';
+              title = `Too large for bypass (${linesChanged} lines)`;
+              summary = `Large PR: ${linesChanged} lines changed across ${filesChanged} file(s). Exceeds the ${LINE_LIMIT}-line self-merge limit for @${author} — needs an approving review from a maintainer before merge. Split into smaller PRs or wait for review.`;
+            }
+
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'bypass-size-gate',
+              head_sha: pr.head.sha,
+              status: 'completed',
+              conclusion,
+              output: { title, summary }
+            });

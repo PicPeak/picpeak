@@ -1,0 +1,110 @@
+/* Prose overrides for CMS content */
+
+/* Preserve line breaks in prose content */
+.prose br {
+  display: block !important;
+  content: "" !important;
+  margin: 0.5em 0 !important;
+}
+
+/* Hard breaks should create visible line breaks */
+.prose .hard-break {
+  display: block !important;
+  height: 0.5em !important;
+}
+
+/* Ensure paragraphs have proper spacing */
+.prose p {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+.prose p:first-child {
+  margin-top: 0;
+}
+
+.prose p:last-child {
+  margin-bottom: 0;
+}
+
+/*
+ * Code block styling — uses the 8-token CI palette so blocks read against
+ * both light and dark surfaces. The variables fall back to the previous
+ * #f5f5f5 if a host page hasn't loaded the theme yet.
+ */
+.prose pre {
+  background-color: var(--color-elevated, #f5f5f5);
+  border: 1px solid var(--color-surface-border, #e5e5e5);
+  border-radius: 0.375rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1.5em 0;
+}
+
+.prose pre code {
+  background-color: transparent;
+  padding: 0;
+  font-size: 0.875em;
+  color: inherit;
+}
+
+/* Inline code styling */
+.prose code {
+  background-color: var(--color-elevated, #f5f5f5);
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-weight: 400;
+}
+
+/* Blockquote styling — themed left rule that flips with dark mode. */
+.prose blockquote {
+  border-left: 3px solid var(--color-accent, #017C7C);
+  padding-left: 1rem;
+  color: var(--color-muted-text, #737373);
+}
+
+/* Text alignment classes */
+.prose .text-left {
+  text-align: left !important;
+}
+
+.prose .text-center {
+  text-align: center !important;
+}
+
+.prose .text-right {
+  text-align: right !important;
+}
+
+.prose .text-justify {
+  text-align: justify !important;
+}
+
+/* Syntax highlighting for code blocks */
+.prose .hljs {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* Basic syntax highlighting colors */
+.hljs-keyword { color: #a626a4; }
+.hljs-string { color: #50a14f; }
+.hljs-comment { color: #a0a1a7; font-style: italic; }
+.hljs-number { color: #e45649; }
+.hljs-function { color: #4078f2; }
+.hljs-tag { color: #e45649; }
+.hljs-attribute { color: #986801; }
+.hljs-selector-class { color: #986801; }
+.hljs-selector-id { color: #986801; }
+
+/* Preserve whitespace in content */
+.prose-preserve-whitespace {
+  white-space: pre-wrap;
+}
+
+/* Ensure empty paragraphs with only line breaks are visible */
+.prose p:empty::before {
+  content: "\200B"; /* Zero-width space */
+  display: inline;
+}

@@ -1,0 +1,37 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Upgrade all packages to fix security vulnerabilities (BusyBox CVEs)
+RUN apk upgrade --no-cache
+
+# Install dumb-init for proper signal handling and ffmpeg for video uploads.
+# Alpine's ffmpeg ships both ffmpeg + ffprobe built natively against musl;
+# the npm-bundled binary doesn't run reliably on Alpine. Match production.
+RUN apk add --no-cache dumb-init ffmpeg
+
+# Copy package files
+COPY package*.json ./
+
+# Install all dependencies (including dev)
+RUN npm install
+
+# Copy application files
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p storage/events/active storage/events/archived storage/thumbnails data logs
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
+RUN chown -R nodejs:nodejs /app
+
+USER nodejs
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["npm", "run", "dev"]

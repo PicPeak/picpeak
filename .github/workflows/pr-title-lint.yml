@@ -1,0 +1,36 @@
+name: PR Title Lint
+
+# Release Please derives version bumps and the changelog from Conventional
+# Commit prefixes (feat:, fix:, ...). PRs whose title/commits use other
+# conventions (e.g. gitmoji) are silently ignored, so their changes ship
+# without a version bump or a changelog entry. This check fails a PR whose
+# title is not a valid Conventional Commit so the release stays automated.
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  lint-pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate PR title is a Conventional Commit
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            revert
+            docs
+            style
+            chore
+            refactor
+            test
+            build
+            ci
