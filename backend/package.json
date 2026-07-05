@@ -1,6 +1,6 @@
 {
   "name": "picpeak-backend",
-  "version": "3.82.1-beta.0",
+  "version": "3.82.2-beta.0",
   "description": "Backend for PicPeak event photo sharing platform",
   "main": "server.js",
   "scripts": {

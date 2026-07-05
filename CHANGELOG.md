@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.82.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.1-beta.0...v3.82.2-beta.0) (2026-07-05)
+
+
+### Bug Fixes
+
+* **og:** broaden social-crawler coverage (Bluesky Cardyb, WeChat-scraper, fediverse, etc.) ([a0a28a4](https://github.com/PicPeak/picpeak/commit/a0a28a47777db9ca9e60a5134c8d86503c060e79))
+* **og:** route branded short URLs + slideshow links to OG, add Viber ([#699](https://github.com/PicPeak/picpeak/issues/699)) ([0dffe0c](https://github.com/PicPeak/picpeak/commit/0dffe0ce92339e0608b3ef660e84c31a62f4a98c))
+* **og:** route branded short URLs + slideshow to OG handler, add Viber ([#699](https://github.com/PicPeak/picpeak/issues/699)) ([a87ad77](https://github.com/PicPeak/picpeak/commit/a87ad77d8d5215c88f5d95cc7aebaa1769938ec0))
+
 ## [3.82.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.0-beta.0...v3.82.1-beta.0) (2026-07-05)
 
 
