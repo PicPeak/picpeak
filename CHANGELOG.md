@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.82.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.0-beta.0...v3.82.1-beta.0) (2026-07-05)
+
+
+### Bug Fixes
+
+* **invoices:** correct payment-check email template key so dunning email sends ([9a76333](https://github.com/PicPeak/picpeak/commit/9a763337b658299aae0d7c985071c4a775000f99))
+* **invoices:** correct payment-check email template key so dunning email sends ([3682de1](https://github.com/PicPeak/picpeak/commit/3682de195b46eae692db3ff4a1476b00d3a6e216))
+
 ## [3.82.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.81.0-beta.0...v3.82.0-beta.0) (2026-07-03)
 
 
