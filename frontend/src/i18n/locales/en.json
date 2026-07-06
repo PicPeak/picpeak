@@ -4071,7 +4071,7 @@
       "noEvents": "Not assigned to any events yet. Add this customer to an event from the event form.",
       "email": "Email",
       "preferredLanguage": "Preferred language",
-      "preferredLanguageHint": "Drives portal UI and quote/invoice PDF locale. New customers default to the business-profile language ({{lang}}); override here per customer.",
+      "preferredLanguageHint": "Drives portal UI, quote/invoice PDFs, and billing emails (reminders/dunning). New customers default to the business-profile language ({{lang}}); override here per customer.",
       "salutation": "Salutation",
       "salutationNone": "—",
       "firstName": "First name",

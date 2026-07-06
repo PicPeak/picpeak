@@ -726,9 +726,12 @@ async function sendTemplateEmail(to, templateKey, variables) {
       throw new Error('Email configuration not found');
     }
 
-    // Determine recipient language (pass eventId if available in variables)
-    const language = await getRecipientLanguage(to, variables.eventId || null);
-    
+    // Determine recipient language. An explicit `__language` in the email data
+    // wins (CRM/billing emails set it to the customer/invoice language so a
+    // gallery event's language can't override a dunning notice — see #760);
+    // otherwise fall back to the event-first recipient resolution.
+    const language = variables.__language || await getRecipientLanguage(to, variables.eventId || null);
+
     // Process template with variables
     const { subject, htmlBody, textBody } = await processTemplate(template, variables, language);
 
@@ -783,7 +786,7 @@ async function sendTemplateEmail(to, templateKey, variables) {
 async function renderQueuedEmail(templateKey, variables = {}, to = '') {
   const template = await db('email_templates').where('template_key', templateKey).first();
   if (!template) return null;
-  const language = await getRecipientLanguage(to, variables.eventId || null);
+  const language = variables.__language || await getRecipientLanguage(to, variables.eventId || null);
   const { subject, htmlBody } = await processTemplate(template, variables, language);
   return { subject, html: htmlBody };
 }

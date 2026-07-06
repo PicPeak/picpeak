@@ -373,15 +373,18 @@ const ResultBox: React.FC<{
         <div
           className="rounded-lg border p-6"
           style={{
-            borderColor: '#bbf7d0',
-            backgroundColor: 'color-mix(in srgb, #dcfce7 50%, var(--color-surface))',
+            // Theme-adaptive success card — a light-green tint on light surfaces,
+            // a dark-green tint on dark ones (was a hardcoded light-green mix +
+            // dark-green title that went unreadable in dark mode, #759).
+            borderColor: 'color-mix(in srgb, #16a34a 35%, var(--color-surface))',
+            backgroundColor: 'color-mix(in srgb, #16a34a 12%, var(--color-surface))',
           }}
         >
           <CheckCircle2 className="w-10 h-10 mb-3" style={{ color: '#16a34a' }} />
-          <h1 className="text-lg font-bold mb-1" style={{ color: '#166534' }}>
+          <h1 className="text-lg font-bold mb-1" style={{ color: 'var(--color-text)' }}>
             {t('paymentCheck.result.title', 'Action recorded')}
           </h1>
-          <p className="text-sm">
+          <p className="text-sm" style={{ color: 'var(--color-text)' }}>
             {result.applied === 'paid_full' && t('paymentCheck.result.paid',
               'Invoice {{n}} marked as paid in full.', { n: inv.invoiceNumber })}
             {result.applied === 'paid_with_skonto' && t('paymentCheck.result.paidSkonto',

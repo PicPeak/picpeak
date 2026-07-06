@@ -141,7 +141,7 @@ async function applyReminder(invoice, lineItems, level, adminId) {
   const rawDaysOverdue = Math.floor((Date.now() - new Date(invoice.due_date).getTime()) / 86400000);
   const daysOverdue = Math.max(1, rawDaysOverdue);
   const templateKey = level === 1 ? 'invoice_reminder_first' : 'invoice_reminder_second';
-  const locale = ctx.locale || invoice.language || 'de';
+  const locale = ctx.locale || customer.preferred_language || invoice.language || 'de';
   const outstandingMinor = Math.max(0, newTotal - Number(invoice.paid_amount_minor || 0));
 
   // Attach the (unchanged) original invoice PDF + the new Mahnung.
@@ -154,6 +154,8 @@ async function applyReminder(invoice, lineItems, level, adminId) {
   const { to: reminderTo, cc: reminderCc } = resolveBillingRecipients(customer, invoice.cc_pdf_email);
   try {
     await emailProcessor.queueEmail(invoice.event_id || null, reminderTo, templateKey, {
+      // Render in the customer/invoice language, not the gallery event's (#760).
+      __language: locale,
       invoice_number: invoice.invoice_number,
       customer_name: customer.display_name || customer.first_name || customer.email.split('@')[0],
       total_amount: formatMajor(invoice.total_amount_minor, invoice.currency, locale),

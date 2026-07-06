@@ -4071,7 +4071,7 @@
       "noEvents": "Noch keinem Event zugewiesen. Fügen Sie diesen Kunden über das Event-Formular hinzu.",
       "email": "E-Mail",
       "preferredLanguage": "Bevorzugte Sprache",
-      "preferredLanguageHint": "Steuert die Portal-Sprache sowie die Sprache von Angebots- und Rechnungs-PDFs. Neue Kunden erben standardmässig die Sprache aus dem Geschäftsprofil ({{lang}}); hier kann pro Kunde überschrieben werden.",
+      "preferredLanguageHint": "Steuert die Portal-Sprache, Angebots-/Rechnungs-PDFs sowie Rechnungs-E-Mails (Erinnerungen/Mahnungen). Neue Kunden erben standardmässig die Sprache aus dem Geschäftsprofil ({{lang}}); hier kann pro Kunde überschrieben werden.",
       "salutation": "Anrede",
       "salutationNone": "—",
       "firstName": "Vorname",

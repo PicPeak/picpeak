@@ -360,7 +360,7 @@ export const CustomerDetailPage: React.FC = () => {
             </select>
             <p className="text-xs text-neutral-500 mt-1">
               {t('customers.detail.preferredLanguageHint',
-                'Drives portal UI and quote/invoice PDF locale. New customers default to the business-profile language ({{lang}}); override here per customer.',
+                'Drives portal UI, quote/invoice PDFs, and billing emails (reminders/dunning). New customers default to the business-profile language ({{lang}}); override here per customer.',
                 { lang: LOCALE_LABELS[profileDefaultLocale] || profileDefaultLocale.toUpperCase() })}
             </p>
           </div>
