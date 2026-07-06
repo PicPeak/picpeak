@@ -1,0 +1,33 @@
+# Force linux/amd64 for the PicPeak backend and frontend images.
+#
+# When you need this:
+#   You're on an ARM64 host (Apple Silicon Mac, Raspberry Pi, AWS Graviton,
+#   Ampere, etc.) AND the image tag you're pulling does NOT yet have a
+#   linux/arm64 variant — for example, an older :latest or a pre-multi-arch
+#   :stable still cached locally.
+#
+# When you do NOT need this:
+#   Once you're on a release whose backend/frontend manifests include both
+#   linux/amd64 and linux/arm64, Docker selects the native arm64 image
+#   automatically. Drop this override.
+#
+# Usage:
+#
+#   docker compose \
+#     -f docker-compose.production.yml \
+#     -f docker-compose.amd64.override.yml \
+#     up -d
+#
+# Performance note: forcing amd64 on an ARM64 Linux host invokes qemu-user
+# emulation, which is significantly slower (especially for the backend's
+# Node.js workloads). Apple Silicon uses Rosetta 2, which is faster but still
+# slower than native arm64. Prefer pulling a multi-arch tag whenever possible.
+#
+# postgres + redis are intentionally omitted — their upstream images are
+# already multi-arch and pull natively on every supported architecture.
+
+services:
+  backend:
+    platform: linux/amd64
+  frontend:
+    platform: linux/amd64

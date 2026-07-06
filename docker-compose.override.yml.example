@@ -1,0 +1,51 @@
+# docker-compose.override.yml.example
+# 
+# Copy this file to docker-compose.override.yml for local production customizations
+# docker-compose.override.yml is git-ignored and will be automatically loaded by Docker Compose
+#
+# Example customizations:
+
+version: '3.8'
+
+services:
+  # Example: Expose backend port for debugging
+  # backend:
+  #   ports:
+  #     - "3001:3001"
+
+  # Example: Expose database port for local tools
+  # db:
+  #   ports:
+  #     - "5432:5432"
+
+  # Example: Custom nginx ports
+  # nginx:
+  #   ports:
+  #     - "8080:80"
+  #     - "8443:443"
+
+  # Example: Enable Umami web interface
+  # umami:
+  #   ports:
+  #     - "3000:3000"
+
+  # Example: Use different storage paths
+  # backend:
+  #   volumes:
+  #     - /mnt/photos:/app/storage
+  #     - /mnt/data:/app/data
+
+  # Example: Development-like setup with code mounting
+  # backend:
+  #   volumes:
+  #     - ./backend:/app
+  #     - /app/node_modules
+  #   command: npm run dev
+
+  # Example: Add Mailhog for email testing
+  # mailhog:
+  #   image: mailhog/mailhog:latest
+  #   ports:
+  #     - "1025:1025"
+  #     - "8025:8025"
+  #   restart: unless-stopped
