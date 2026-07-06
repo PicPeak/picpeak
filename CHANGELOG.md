@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.82.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.2-beta.0...v3.82.3-beta.0) (2026-07-06)
+
+
+### Bug Fixes
+
+* **branding:** make 'Show logo in hero' a true global toggle with per-event override ([#756](https://github.com/PicPeak/picpeak/issues/756)) ([a88da99](https://github.com/PicPeak/picpeak/commit/a88da99c8d35c0c7cb7f96a235e984edad74ac7c))
+* **branding:** make 'Show logo in hero' a true global toggle with per-event override ([#756](https://github.com/PicPeak/picpeak/issues/756)) ([96fe478](https://github.com/PicPeak/picpeak/commit/96fe478bf87a3350185206b3d6f15133138b995d))
+* **branding:** unify hero logo SIZE the same way as visibility ([#756](https://github.com/PicPeak/picpeak/issues/756)) ([60b03b1](https://github.com/PicPeak/picpeak/commit/60b03b17287539b3ad5e5d32f4eda8622f0575e4))
+
 ## [3.82.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.1-beta.0...v3.82.2-beta.0) (2026-07-05)
 
 
