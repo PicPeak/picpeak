@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.82.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.4-beta.0...v3.82.5-beta.0) (2026-07-07)
+
+
+### Bug Fixes
+
+* **admin:** stop the event-date field crashing the page on backspace ([760a201](https://github.com/PicPeak/picpeak/commit/760a201b6070a4edfe8192bcddce948c5f0c3fec))
+
 ## [3.82.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.3-beta.0...v3.82.4-beta.0) (2026-07-07)
 
 
