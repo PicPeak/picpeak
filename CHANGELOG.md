@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.82.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.3-beta.0...v3.82.4-beta.0) (2026-07-07)
+
+
+### Bug Fixes
+
+* **email,ui:** billing emails follow customer language + readable payment-check confirmation ([0c2d319](https://github.com/PicPeak/picpeak/commit/0c2d319fc1ed67843cc60afdcaea5807ea49226f))
+* **email,ui:** billing emails follow customer language + readable payment-check confirmation ([fcc3e91](https://github.com/PicPeak/picpeak/commit/fcc3e9195d6f63b2dffddfa72a867a3e32325e81))
+* **email:** sibling billing emails follow customer language too ([c0008be](https://github.com/PicPeak/picpeak/commit/c0008be39bc8a9d354e48ce8d6bd89662bc53ebb))
+
 ## [3.82.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.2-beta.0...v3.82.3-beta.0) (2026-07-06)
 
 
