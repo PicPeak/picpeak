@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.82.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.5-beta.0...v3.82.6-beta.0) (2026-07-07)
+
+
+### Bug Fixes
+
+* **workflows:** backfill existing invoices + anchor dunning grace to due date when enabled ([#750](https://github.com/PicPeak/picpeak/issues/750)) ([9596342](https://github.com/PicPeak/picpeak/commit/9596342d6a9ef107193cfc123487a8061f4a91ca))
+* **workflows:** scope dunning backfill to its own flow via targetWorkflowId ([da3a77d](https://github.com/PicPeak/picpeak/commit/da3a77dac40a892158167aec939a1458d488a951))
+
 ## [3.82.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.4-beta.0...v3.82.5-beta.0) (2026-07-07)
 
 
