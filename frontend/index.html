@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Point the favicon at the backend's dynamic /favicon.ico route so the
+         admin-configured branding favicon is used from the very first paint,
+         in every browser. CRITICAL: a hardcoded href here (e.g. the bundled
+         /favicon-32x32.png) makes the browser use THAT and never request
+         /favicon.ico — Safari then shows the default and ignores the JS that
+         DynamicFavicon uses to swap it. No type/sizes so the byte stream
+         (png/ico/svg) is honoured via the response content-type. -->
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!--
+      Static fallback title + Open Graph defaults (#521).
+
+      The runtime SPA updates these once React loads, and social-crawler
+      User-Agents hitting /gallery/<slug> get a per-event rich preview
+      served by backend's galleryOgService instead of this static shell.
+
+      But the third path — link previews fetched by WhatsApp Business
+      API, Twilio, LinkPreview, or any service that caches metadata
+      with a non-crawler UA — gets *this* HTML as-is. Defaulting the
+      title to "PicPeak - Photo Sharing Platform" left every such
+      preview looking unbranded for self-hosted installs.
+
+      ${BRAND_TITLE} / ${BRAND_DESCRIPTION} are replaced at *container
+      start* by the frontend image's docker-entrypoint.sh (envsubst on
+      an index.html.tpl snapshot taken at image build). That keeps the
+      tokens working even for self-hosters running the pre-built GHCR
+      image — set BRAND_TITLE in compose env and the next container
+      restart picks it up. No frontend rebuild needed.
+
+      Vite dev server doesn't run the entrypoint, so dev mode shows the
+      literal tokens in the tab title — acceptable since dev sessions
+      don't care about social previews.
+    -->
+    <title>${BRAND_TITLE}</title>
+    <meta name="description" content="${BRAND_DESCRIPTION}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="${BRAND_TITLE}" />
+    <meta property="og:title" content="${BRAND_TITLE}" />
+    <meta property="og:description" content="${BRAND_DESCRIPTION}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${BRAND_TITLE}" />
+    <meta name="twitter:description" content="${BRAND_DESCRIPTION}" />
+
+    <!-- Pre-React theme bootstrap (#358).
+         The browser may paint the very first frame before the bootstrap
+         <script> below fetches and runs, so we set OS-preference defaults
+         via CSS here in <head> — that gets applied before any paint. The
+         script then layers a per-gallery cache hit on top when one is
+         available. Without this CSS, the very first frame on first-
+         visit dark-OS devices flashed white briefly (see Rekoo-PS's
+         frame f1 in the issue). -->
+    <style>
+      html, body { background-color: #fafafa; }
+      @media (prefers-color-scheme: dark) {
+        html, body { background-color: #171717; }
+      }
+      /* Smooth out the cache → API theme transition for the rare case
+         where the cached colour drifts from the freshly fetched theme. */
+      html { transition: background-color 200ms ease; }
+    </style>
+
+    <!-- Pre-React theme bootstrap (#358). External rather than inline so a
+         strict CSP without 'unsafe-inline' / hash / nonce — like the one
+         Caddy puts in front of demo.picpeak.app — doesn't block it (#564).
+         No defer/async: must run before <body> paints. -->
+    <script src="/bootstrap.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

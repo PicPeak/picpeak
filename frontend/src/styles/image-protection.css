@@ -1,0 +1,355 @@
+/* Image Protection CSS */
+
+/* Base protection for all protected images */
+.protected-image,
+.protected-image img,
+.protected-image canvas {
+  /* Disable text selection */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  
+  /* Disable drag and drop */
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+  
+  /* Disable touch callout on mobile */
+  -webkit-touch-callout: none;
+  
+  /* Disable context menu */
+  -webkit-context-menu: none;
+  
+  /* Disable outline */
+  outline: none;
+  
+  /* Disable appearance */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  
+  /* Make images non-draggable */
+  draggable: false;
+}
+
+/* Standard protection level */
+.protection-standard {
+  position: relative;
+}
+
+.protection-standard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Enhanced protection level */
+.protection-enhanced {
+  position: relative;
+  overflow: hidden;
+}
+
+.protection-enhanced::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    45deg,
+    transparent 49%,
+    rgba(255, 255, 255, 0.01) 50%,
+    transparent 51%
+  );
+  background-size: 20px 20px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.protection-enhanced::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  right: -50%;
+  bottom: -50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 89deg,
+    rgba(255, 255, 255, 0.005) 90deg,
+    rgba(255, 255, 255, 0.005) 91deg
+  );
+  z-index: 3;
+  pointer-events: none;
+  animation: rotate-protection 60s linear infinite;
+}
+
+/* Maximum protection level */
+.protection-maximum {
+  position: relative;
+  overflow: hidden;
+  filter: blur(0.1px); /* Subtle blur to defeat pixel-perfect copying */
+}
+
+.protection-maximum::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    radial-gradient(circle at 75% 75%, rgba(0, 0, 0, 0.01) 1px, transparent 1px),
+    linear-gradient(45deg, transparent 49%, rgba(255, 255, 255, 0.008) 50%, transparent 51%);
+  background-size: 15px 15px, 25px 25px, 10px 10px;
+  z-index: 4;
+  pointer-events: none;
+  animation: shimmer-protection 10s ease-in-out infinite alternate;
+}
+
+.protection-maximum::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 1px,
+      rgba(255, 255, 255, 0.003) 1px,
+      rgba(255, 255, 255, 0.003) 2px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 1px,
+      rgba(0, 0, 0, 0.002) 1px,
+      rgba(0, 0, 0, 0.002) 2px
+    );
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* Animation keyframes */
+@keyframes rotate-protection {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes shimmer-protection {
+  0% { opacity: 0.3; }
+  100% { opacity: 0.7; }
+}
+
+/* Anti-screenshot protection */
+.anti-screenshot {
+  position: relative;
+}
+
+.anti-screenshot::before {
+  content: 'PROTECTED';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 2rem;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.1);
+  text-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+/* Hide scrollbars in maximum protection to prevent indirect access */
+.protection-maximum,
+.protection-maximum * {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+}
+
+.protection-maximum::-webkit-scrollbar,
+.protection-maximum *::-webkit-scrollbar {
+  display: none; /* WebKit */
+}
+
+/* Print protection */
+@media print {
+  .protected-image,
+  .protected-image img,
+  .protected-image canvas {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+  
+  .protected-image::before {
+    content: 'Image printing is not allowed';
+    display: block !important;
+    font-size: 14px;
+    color: #666;
+    text-align: center;
+    padding: 20px;
+    border: 1px solid #ddd;
+  }
+}
+
+/* Screen reader protection - hide from screen readers in maximum protection */
+.protection-maximum img,
+.protection-maximum canvas {
+  aria-hidden: true;
+}
+
+/* Mobile-specific protection */
+@media (max-width: 768px) {
+  .protected-image img,
+  .protected-image canvas {
+    /* Disable long-press context menu on mobile */
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    
+    /* Disable tap highlight */
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* High contrast mode adjustments */
+@media (prefers-contrast: high) {
+  .protection-enhanced::before,
+  .protection-enhanced::after,
+  .protection-maximum::before,
+  .protection-maximum::after {
+    opacity: 0.1;
+  }
+}
+
+/* Reduced motion accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .protection-enhanced::after,
+  .protection-maximum::before {
+    animation: none;
+  }
+}
+
+/* DevTools detection styles */
+.devtools-detected {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #000;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+  font-size: 2rem;
+  text-align: center;
+}
+
+.devtools-detected::before {
+  content: '⚠️ Developer Tools Detected';
+  animation: pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+/* Overlay protection for canvas elements */
+.canvas-overlay-protection {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
+  z-index: 999;
+  cursor: default;
+}
+
+/* Watermark styles */
+.watermark-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 100;
+  background: 
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 50px,
+      rgba(255, 255, 255, 0.05) 50px,
+      rgba(255, 255, 255, 0.05) 60px
+    );
+}
+
+.watermark-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  font-size: clamp(1rem, 5vw, 3rem);
+  color: rgba(255, 255, 255, 0.1);
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+  font-weight: bold;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Loading states for protected images */
+.protected-image-loading {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: loading-shimmer 2s infinite;
+}
+
+@keyframes loading-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Error states */
+.protected-image-error {
+  border: 2px dashed #dc2626;
+  background: #fee2e2;
+}
+
+/* Focus management for accessibility */
+.protected-image:focus-within {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* High DPI display optimizations */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .protection-enhanced::before,
+  .protection-maximum::before {
+    background-size: 10px 10px, 12px 12px, 5px 5px;
+  }
+}
