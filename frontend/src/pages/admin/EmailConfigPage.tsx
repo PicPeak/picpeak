@@ -18,8 +18,13 @@ import { toast } from 'react-toastify';
 import { Button, Input, Card, Loading } from '../../components/common';
 import { EmailPreviewModal } from '../../components/admin/EmailPreviewModal';
 import { EmailTemplateEditor } from '../../components/admin/EmailTemplateEditor';
+import { SentEmailsPanel } from '../../components/admin/SentEmailsPanel';
+import { ReceivedEmailsPanel } from '../../components/admin/ReceivedEmailsPanel';
+import { IncomingMailConfigCard } from '../../components/admin/IncomingMailConfigCard';
+import { CustomerMailboxCard } from '../../components/admin/CustomerMailboxCard';
 import { Palette, RefreshCw, Info } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useModal, useMutationWithToast } from '../../hooks';
 import { emailService, type EmailConfig, type EmailTemplate, type EmailTemplateTranslation } from '../../services/email.service';
 import { settingsService } from '../../services/settings.service';
 import { useTranslation } from 'react-i18next';
@@ -39,6 +44,13 @@ const CATEGORY_ORDER: readonly string[] = [
   'customers',
   'calendar',
   'quotes',
+  // 'contracts' sits between quotes and billing — matches the
+  // quote → contract → invoice document flow + the order of the
+  // Admin → Clients sub-nav so admins find the right bucket at a
+  // glance. Migration 130 seeds rows with category='contracts';
+  // before this entry existed they fell through to 'core' via the
+  // unknown-category fallback below.
+  'contracts',
   'billing',
 ] as const;
 
@@ -122,13 +134,13 @@ The Photo Sharing Team`,
 
 export const EmailConfigPage: React.FC = () => {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'smtp' | 'templates'>('smtp');
+  const [activeTab, setActiveTab] = useState<'smtp' | 'templates' | 'sent' | 'received'>('smtp');
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('gallery_created');
   const [editedTemplate, setEditedTemplate] = useState<Partial<EmailTemplate>>({});
   const [editingLang, setEditingLang] = useState<string>('en');
   const [showPassword, setShowPassword] = useState(false);
   const [testEmail, setTestEmail] = useState('');
-  const [showPreview, setShowPreview] = useState(false);
+  const previewModal = useModal();
   const [previewData, setPreviewData] = useState<{ subject: string; htmlContent: string; textContent?: string }>({
     subject: '',
     htmlContent: '',
@@ -147,7 +159,6 @@ export const EmailConfigPage: React.FC = () => {
   const [emailBodyTextColor, setEmailBodyTextColor] = useState('#333333');
   const [emailMutedTextColor, setEmailMutedTextColor] = useState('#666666');
   const [emailButtonTextColor, setEmailButtonTextColor] = useState('#ffffff');
-  const queryClient = useQueryClient();
   const { flags: featureFlags } = useFeatureFlags();
 
   // SMTP Configuration state
@@ -220,50 +231,56 @@ export const EmailConfigPage: React.FC = () => {
   }, [selectedTemplate]);
 
   // Mutations
-  const saveConfigMutation = useMutation({
+  // Surface the actual backend error (SMTP auth/connection failure, masked
+  // password, private-host rejection, …) instead of a generic toast — for
+  // email config these messages are the whole diagnosis.
+  const errMsg = (e: any, fallback: string): string =>
+    e?.response?.data?.error
+    || e?.response?.data?.details
+    || e?.message
+    || fallback;
+
+  const saveConfigMutation = useMutationWithToast({
     mutationFn: (config: EmailConfig) => emailService.updateConfig(config),
-    onSuccess: () => {
-      toast.success(t('toast.emailConfigSaved'));
-      queryClient.invalidateQueries({ queryKey: ['email-config'] });
-    },
-    onError: () => {
-      toast.error(t('toast.saveError'));
-    }
+    successMessage: t('toast.emailConfigSaved'),
+    invalidateKeys: [['email-config']],
+    errorMessage: (e: any) => errMsg(e, t('toast.saveError')),
   });
 
-  const testEmailMutation = useMutation({
+  const testEmailMutation = useMutationWithToast({
     mutationFn: (email: string) => emailService.testEmail(email),
-    onSuccess: () => {
-      toast.success(t('email.testEmailSuccess'));
+    successMessage: t('email.testEmailSuccess'),
+    errorMessage: (e: any) => errMsg(e, t('toast.saveError')),
+  });
+
+  const flushQueueMutation = useMutation({
+    mutationFn: () => emailService.flushQueue(),
+    onSuccess: (summary) => {
+      if (summary.processed === 0) {
+        toast.info(t('email.flushQueue.empty'));
+      } else {
+        toast.success(t('email.flushQueue.success', { sent: summary.sent, failed: summary.failed }));
+      }
     },
-    onError: () => {
-      toast.error(t('toast.saveError'));
+    onError: (e: any) => {
+      toast.error(errMsg(e, t('toast.saveError')));
     }
   });
 
-  const saveTemplateMutation = useMutation({
+  const saveTemplateMutation = useMutationWithToast({
     mutationFn: ({ key, translations }: { key: string; translations: Record<string, EmailTemplateTranslation> }) =>
       emailService.updateTemplate(key, { translations }),
-    onSuccess: () => {
-      toast.success(t('toast.saveSuccess'));
-      queryClient.invalidateQueries({ queryKey: ['email-templates'] });
-      queryClient.invalidateQueries({ queryKey: ['email-template', selectedTemplateKey] });
-    },
-    onError: () => {
-      toast.error(t('toast.saveError'));
-    }
+    successMessage: t('toast.saveSuccess'),
+    invalidateKeys: [['email-templates'], ['email-template', selectedTemplateKey]],
+    errorMessage: () => t('toast.saveError'),
   });
 
-  const saveEmailColorsMutation = useMutation({
+  const saveEmailColorsMutation = useMutationWithToast({
     mutationFn: (colors: Record<string, string>) =>
       settingsService.updateSettings(colors),
-    onSuccess: () => {
-      toast.success(t('toast.saveSuccess'));
-      queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
-    },
-    onError: () => {
-      toast.error(t('toast.saveError'));
-    }
+    successMessage: t('toast.saveSuccess'),
+    invalidateKeys: [['admin-settings']],
+    errorMessage: () => t('toast.saveError'),
   });
 
   const handleSaveEmailColors = () => {
@@ -398,7 +415,7 @@ export const EmailConfigPage: React.FC = () => {
         htmlContent: preview.body_html,
         textContent: preview.body_text
       });
-      setShowPreview(true);
+      previewModal.open();
     } catch (error) {
       toast.error(t('toast.saveError'));
     }
@@ -455,8 +472,36 @@ export const EmailConfigPage: React.FC = () => {
           >
             {t('email.emailTemplates')}
           </button>
+          <button
+            onClick={() => setActiveTab('sent')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+              activeTab === 'sent'
+                ? 'border-accent text-accent'
+                : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
+            }`}
+          >
+            {t('email.sentEmails.tab', 'Sent emails')}
+          </button>
+          {featureFlags.incomingMail && (
+            <button
+              onClick={() => setActiveTab('received')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'received'
+                  ? 'border-accent text-accent'
+                  : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
+              }`}
+            >
+              {t('email.received.tab', 'Received emails')}
+            </button>
+          )}
         </nav>
       </div>
+
+      {/* Sent emails Tab */}
+      {activeTab === 'sent' && <SentEmailsPanel />}
+
+      {/* Received emails Tab */}
+      {activeTab === 'received' && <ReceivedEmailsPanel />}
 
       {/* SMTP Settings Tab */}
       {activeTab === 'smtp' && (
@@ -658,6 +703,20 @@ export const EmailConfigPage: React.FC = () => {
               </div>
             </div>
           </Card>
+
+          <Card padding="md">
+            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-2">{t('email.flushQueue.title')}</h2>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">{t('email.flushQueue.help')}</p>
+            <Button
+              variant="outline"
+              onClick={() => flushQueueMutation.mutate()}
+              isLoading={flushQueueMutation.isPending}
+              leftIcon={<Send className="w-5 h-5" />}
+              className="w-full"
+            >
+              {t('email.flushQueue.button')}
+            </Button>
+          </Card>
         </div>
       )}
 
@@ -742,6 +801,10 @@ export const EmailConfigPage: React.FC = () => {
       )}
 
       {/* Email Templates Tab */}
+      {/* Incoming mail (IMAP) — a second block under SMTP, flag-gated. */}
+      {activeTab === 'smtp' && featureFlags.incomingMail && <IncomingMailConfigCard />}
+      {activeTab === 'smtp' && featureFlags.messaging && <CustomerMailboxCard />}
+
       {activeTab === 'templates' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card padding="sm">
@@ -979,8 +1042,8 @@ export const EmailConfigPage: React.FC = () => {
 
       {/* Email Preview Modal */}
       <EmailPreviewModal
-        isOpen={showPreview}
-        onClose={() => setShowPreview(false)}
+        isOpen={previewModal.isOpen}
+        onClose={previewModal.close}
         subject={previewData.subject}
         htmlContent={previewData.htmlContent}
         textContent={previewData.textContent}

@@ -34,7 +34,29 @@ const SOCIAL_CRAWLER_PATTERNS = [
   // messaging stacks (Twilio, LinkPreview.net, etc.). Match the
   // canonical lowercase substring; the /i flag handles case.
   /LinkPreview/i,
-  /Slack-ImgProxy/i
+  /Slack-ImgProxy/i,
+  // Viber's link-preview fetcher — was never detected, so shared links
+  // showed no rich preview in Viber (#699 follow-up). Keep in sync with the
+  // UA list in frontend/nginx.conf.
+  /Viber/i,
+  // Broader crawler coverage (#699 follow-up, from alexvaltchev's field list).
+  // IMPORTANT: only CRAWLER-EXCLUSIVE tokens are added here. Our OG response is
+  // meta-only (no client redirect), so a UA shared with a real human in-app
+  // browser would serve that human the bare stub. That rules out WeChat
+  // (MicroMessenger), LINE (Line/), Zalo, and generic strings like
+  // "InAppBrowser"/"preview"/"unfurl" — deliberately NOT added.
+  /Cardyb/i, // Bluesky's link-card service (the actual fetcher UA)
+  /facebookcatalog/i, // Facebook catalog crawler
+  /Signal/i, // Signal link preview
+  /Misskey/i, // fediverse (server-side preview fetch)
+  /Pleroma/i, // fediverse
+  /Synapse/i, // Matrix homeserver URL preview
+  /Nextcloud/i, // Nextcloud Talk/News link crawler
+  /Rocket\.Chat/i, // Rocket.Chat server preview
+  /kakaotalk-scrap/i, // KakaoTalk's scraper (NOT the in-app browser UA)
+  /Google-PageRenderer/i, // Google Chat previews (not Search)
+  /OdklBot/i, // Odnoklassniki
+  /ZoomBot/i // Zoom Team Chat
 ];
 
 function isSocialCrawler(userAgent) {
@@ -91,7 +113,19 @@ async function resolveSlug(slug) {
       event = await db('events').where('slug', redirect.new_slug).first();
     }
   }
-  return event || null;
+  if (event) return event;
+  // Fall back to share-token lookup (#699). Operators share both
+  // forms — the slug-based URL (`/gallery/<slug>` after #525's
+  // short-URLs option strips the slug into the token-only form) AND
+  // the historical token URL (`/gallery/<32-hex>`). The token URL
+  // would otherwise route here with `slug=<token>`, fail the slug
+  // lookup, and serve the fallback site-wide OG — which is what
+  // alex hit when he ran the Cloudflare Worker as a workaround.
+  if (/^[a-f0-9]{32}$/i.test(slug)) {
+    event = await db('events').where('share_token', slug).first();
+    if (event) return event;
+  }
+  return null;
 }
 
 function escapeHtml(value) {
@@ -118,12 +152,17 @@ function frontendBase() {
   return (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
 }
 
-function formatEventDate(value) {
+// Render the event date for the OG preview card respecting the
+// admin-configured `general_date_format` (defaults to DD.MM.YYYY when
+// unset). Previously hardcoded en-US "May 20, 2026" which ignored the
+// operator's locale.
+async function formatEventDate(value) {
   if (!value) return null;
   try {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const { formatDate } = require('../utils/dateFormatter');
+    return await formatDate(d);
   } catch {
     return null;
   }
@@ -147,7 +186,7 @@ async function buildOgMetadata(slug, requestPath) {
   }
 
   const eventName = event.event_name || 'Photo Gallery';
-  const eventDate = formatEventDate(event.event_date);
+  const eventDate = await formatEventDate(event.event_date);
   const titleParts = [eventName];
   if (siteName && siteName !== eventName) titleParts.push(siteName);
   const title = titleParts.join(' — ');

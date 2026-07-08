@@ -211,6 +211,38 @@ function parseJsonField(value, fallback) {
 }
 
 /**
+ * Enqueue a delivery for ONE specific active webhook subscription, bypassing the
+ * event-type subscription matching that `fire` does. Used by the workflow engine
+ * `webhook` action: the flow author picks a configured webhook (which carries
+ * the URL + signing secret + create-time URL validation), and the delivery then
+ * rides the SAME worker pipeline as every other webhook — per-delivery SSRF
+ * re-validation, HMAC signing, retries/backoff and the audit log, all for free.
+ * Never throws. Returns { enqueued, reason?, deliveryId? }.
+ */
+async function enqueueForWebhook(webhookId, eventType, data) {
+  try {
+    const w = await db('webhooks').where({ id: webhookId, active: true }).first();
+    if (!w) return { enqueued: false, reason: 'webhook not found or inactive' };
+    const now = new Date();
+    const deliveryUuid = crypto.randomUUID();
+    const envelope = { id: deliveryUuid, type: eventType, created_at: now.toISOString(), data };
+    await db('webhook_deliveries').insert({
+      webhook_id: w.id,
+      event_type: String(eventType).slice(0, 64),
+      payload: JSON.stringify(envelope),
+      attempt_count: 0,
+      status: 'pending',
+      next_retry_at: now,
+      created_at: now,
+    });
+    return { enqueued: true, webhookId: w.id, deliveryId: deliveryUuid };
+  } catch (err) {
+    logger.error(`[webhookService.enqueueForWebhook] failed for #${webhookId}: ${err.message}`);
+    return { enqueued: false, reason: err.message };
+  }
+}
+
+/**
  * Canonical event sub-object for outbound webhooks (#341). Always returns
  * the full key set so receivers don't have to handle "field missing vs
  * field null" — pass whatever the caller has in scope, missing fields
@@ -235,6 +267,7 @@ function buildEventSubject(input = {}) {
 
 module.exports = {
   fire,
+  enqueueForWebhook,
   generateSecret,
   signPayload,
   verifySignature,

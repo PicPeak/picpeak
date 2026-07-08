@@ -212,14 +212,19 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         if (sessionResponse.data?.valid && sessionResponse.data.type === 'gallery' && sessionResponse.data.eventSlug === currentSlug) {
           setIsAuthenticated(true);
 
-          if (!storedEvent) {
-            const galleryData = await galleryService.getGalleryPhotos(currentSlug);
-            if (galleryData?.event) {
-              const normalizedEvent = normalizeEvent(galleryData.event);
-              setEvent(normalizedEvent);
-              if (normalizedEvent) {
-                sessionStorage.setItem(`gallery_event_${currentSlug}`, JSON.stringify(normalizedEvent));
-              }
+          // Always refresh from the server — the stored event from sessionStorage
+          // is shown above as an instant placeholder for perceived perf, but it
+          // must NOT win permanently: admin edits to welcome_message / event_name /
+          // hero_logo / colour theme need to land on the next page load for
+          // returning guests. sessionStorage survives Cmd+Shift+R, so without
+          // this refresh the cache could only be cleared by closing the tab or
+          // wiping site data manually (#625).
+          const galleryData = await galleryService.getGalleryPhotos(currentSlug);
+          if (galleryData?.event) {
+            const normalizedEvent = normalizeEvent(galleryData.event);
+            setEvent(normalizedEvent);
+            if (normalizedEvent) {
+              sessionStorage.setItem(`gallery_event_${currentSlug}`, JSON.stringify(normalizedEvent));
             }
           }
 

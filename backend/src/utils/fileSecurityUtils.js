@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs').promises;
+const logger = require('./logger');
 
 /**
  * Secure file security utilities to prevent path traversal and validate file types
@@ -174,7 +175,7 @@ async function validateFileContent(filePath, expectedMimeType) {
       return true;
     });
   } catch (error) {
-    console.error('Error validating file content:', error);
+    logger.error('Error validating file content:', error);
     return false;
   }
 }
@@ -239,7 +240,7 @@ function createFileUploadValidator(options = {}) {
             try {
               await fs.unlink(file.path);
             } catch (err) {
-              console.error('Error removing invalid file:', err);
+              logger.error('Error removing invalid file:', err);
             }
             return res.status(400).json({ 
               error: `File content does not match declared type: ${file.originalname}` 
@@ -250,7 +251,7 @@ function createFileUploadValidator(options = {}) {
       
       next();
     } catch (error) {
-      console.error('File validation error:', error);
+      logger.error('File validation error:', error);
       res.status(500).json({ error: 'File validation failed' });
     }
   };

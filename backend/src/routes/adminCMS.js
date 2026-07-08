@@ -7,6 +7,7 @@ const { db, logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { validateFileType } = require('../utils/fileSecurityUtils');
+const logger = require('../utils/logger');
 const router = express.Router();
 
 const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
@@ -43,7 +44,7 @@ router.get('/pages', adminAuth, requirePermission('cms.view'), async (req, res) 
     const pages = await db('cms_pages').select('*').orderBy('slug', 'asc');
     res.json(pages);
   } catch (error) {
-    console.error('Error fetching CMS pages:', error);
+    logger.error('Error fetching CMS pages:', error);
     res.status(500).json({ error: 'Failed to fetch pages' });
   }
 });
@@ -60,7 +61,7 @@ router.get('/pages/:slug', adminAuth, requirePermission('cms.view'), async (req,
 
     res.json(page);
   } catch (error) {
-    console.error('Error fetching CMS page:', error);
+    logger.error('Error fetching CMS page:', error);
     res.status(500).json({ error: 'Failed to fetch page' });
   }
 });
@@ -144,7 +145,7 @@ router.put('/pages/:slug', adminAuth, requirePermission('cms.edit'), [
 
     res.json(updated);
   } catch (error) {
-    console.error('Error updating CMS page:', error);
+    logger.error('Error updating CMS page:', error);
     res.status(500).json({ error: 'Failed to update page' });
   }
 });
@@ -184,7 +185,7 @@ router.post(
 
       res.json({ logo_url: logoUrl });
     } catch (error) {
-      console.error('Error uploading CMS page logo:', error);
+      logger.error('Error uploading CMS page logo:', error);
       res.status(500).json({ error: 'Failed to upload logo' });
     }
   }
@@ -208,7 +209,7 @@ router.delete(
 
       res.json({ logo_url: null });
     } catch (error) {
-      console.error('Error clearing CMS page logo:', error);
+      logger.error('Error clearing CMS page logo:', error);
       res.status(500).json({ error: 'Failed to clear logo' });
     }
   }

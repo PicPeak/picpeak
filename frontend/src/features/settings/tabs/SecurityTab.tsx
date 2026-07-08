@@ -1,5 +1,5 @@
 import React from 'react';
-import { Save, Key, AlertCircle } from 'lucide-react';
+import { Save, Key, AlertCircle, ShieldCheck } from 'lucide-react';
 import { Button, Card, Input } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
 import type { SecuritySettings } from '../hooks/useSettingsState';
@@ -124,15 +124,15 @@ export const SecurityTab: React.FC<SecurityTabProps> = ({
             </div>
           </div>
 
-          <label className="flex items-center">
-            <input
-              type="checkbox"
-              checked={securitySettings.enable_2fa}
-              onChange={(e) => setSecuritySettings(prev => ({ ...prev, enable_2fa: e.target.checked }))}
-              className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-            />
-            <span className="ml-2 text-sm text-neutral-700 dark:text-neutral-300">{t('settings.security.enable2FA')}</span>
-          </label>
+          <div className="p-4 bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700 rounded-lg">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-primary-600 dark:text-primary-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-neutral-700 dark:text-neutral-300">
+                <p className="font-medium text-neutral-900 dark:text-neutral-100">{t('settings.security.twoFactorTitle')}</p>
+                <p className="mt-1">{t('settings.security.twoFactorNote')}</p>
+              </div>
+            </div>
+          </div>
         </div>
       </Card>
 

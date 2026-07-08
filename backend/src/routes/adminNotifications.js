@@ -2,6 +2,7 @@ const express = require('express');
 const { db, logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
+const logger = require('../utils/logger');
 const router = express.Router();
 
 // Get notifications (unread activity logs)
@@ -39,7 +40,7 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
           if (typeof notification.metadata === 'object') return notification.metadata;
           return JSON.parse(notification.metadata);
         } catch (e) {
-          console.warn('Failed to parse metadata for notification:', notification.id, e.message);
+          logger.warn('Failed to parse metadata for notification:', notification.id, e.message);
           return {};
         }
       })(),
@@ -59,7 +60,7 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
       unreadCount: unreadCount.count || 0
     });
   } catch (error) {
-    console.error('Notifications fetch error:', error);
+    logger.error('Notifications fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch notifications' });
   }
 });
@@ -77,7 +78,7 @@ router.put('/:id/read', adminAuth, requirePermission('settings.edit'), async (re
 
     res.json({ message: 'Notification marked as read' });
   } catch (error) {
-    console.error('Mark notification read error:', error);
+    logger.error('Mark notification read error:', error);
     res.status(500).json({ error: 'Failed to mark notification as read' });
   }
 });
@@ -93,67 +94,27 @@ router.put('/read-all', adminAuth, requirePermission('settings.edit'), async (re
 
     res.json({ message: 'All notifications marked as read' });
   } catch (error) {
-    console.error('Mark all notifications read error:', error);
+    logger.error('Mark all notifications read error:', error);
     res.status(500).json({ error: 'Failed to mark all notifications as read' });
   }
 });
 
-// Delete old notifications (older than 30 days and read)
-router.delete('/clear-old', adminAuth, requirePermission('settings.edit'), async (req, res) => {
+// Clear all notifications (#597).
+//
+// The frontend AdminHeader "Clear All" button hits this — its service
+// at `notifications.service.ts` does DELETE /admin/notifications/clear-all.
+// The previous /clear-old route was named for an "older than 30 days
+// and read" semantic but had a fallback that deleted EVERYTHING when
+// nothing matched the date filter, so it was effectively a confusingly
+// named Clear All anyway. Drop the rename and the branching, return
+// the simple deletedCount the existing test (and frontend toast) expect.
+router.delete('/clear-all', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
-    // Use database-agnostic date calculation
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    let deletedCount = 0;
-    const client = db?.client?.config?.client;
-
-    if (client === 'pg') {
-      const primaryResult = await db.raw(
-        `
-          WITH deleted AS (
-            DELETE FROM activity_logs
-            WHERE read_at IS NOT NULL OR created_at < ?
-            RETURNING id
-          )
-          SELECT COUNT(*)::int AS count FROM deleted
-        `,
-        [thirtyDaysAgo.toISOString()]
-      );
-      deletedCount = primaryResult.rows?.[0]?.count || 0;
-
-      if (deletedCount === 0) {
-        const fallbackResult = await db.raw(
-          `
-            WITH deleted AS (
-              DELETE FROM activity_logs
-              RETURNING id
-            )
-            SELECT COUNT(*)::int AS count FROM deleted
-          `
-        );
-        deletedCount = fallbackResult.rows?.[0]?.count || 0;
-      }
-    } else {
-      deletedCount = await db('activity_logs')
-        .where(function () {
-          this.whereNotNull('read_at')
-            .orWhere('created_at', '<', thirtyDaysAgo);
-        })
-        .delete();
-
-      if (deletedCount === 0) {
-        deletedCount = await db('activity_logs').delete();
-      }
-    }
-
-    res.json({ 
-      message: deletedCount > 0 ? 'Old notifications cleared' : 'No notifications to clear',
-      deletedCount 
-    });
+    const deletedCount = await db('activity_logs').delete();
+    res.json({ message: 'All notifications cleared', deletedCount });
   } catch (error) {
-    console.error('Clear old notifications error:', error);
-    res.status(500).json({ error: 'Failed to clear old notifications' });
+    logger.error('Clear notifications error:', error);
+    res.status(500).json({ error: 'Failed to clear notifications' });
   }
 });
 

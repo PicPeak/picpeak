@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
-import { format } from 'date-fns';
 import { toast } from 'react-toastify';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { AdminPhoto } from '../../services/photos.service';
 import { photosService } from '../../services/photos.service';
@@ -10,6 +9,8 @@ import { feedbackService, type PhotoFeedback, type FeedbackSummary } from '../..
 import { Button } from '../common';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { AdminAuthenticatedVideo } from './AdminAuthenticatedVideo';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { useMutationWithToast, useModal } from '../../hooks';
 
 type AdminFeedbackResponse = {
   feedback: PhotoFeedback[];
@@ -35,9 +36,10 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
-  const [expandedComments, setExpandedComments] = useState(false);
+  const categoryMenuModal = useModal();
+  const commentsModal = useModal();
   const queryClient = useQueryClient();
+  const { formatDateTime: fmtDateTime } = useLocalizedDate();
   
   const currentPhoto = photos[currentIndex];
   const isVideo = currentPhoto
@@ -114,7 +116,7 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
     try {
       await photosService.updatePhotoCategory(eventId, currentPhoto.id, categoryId);
       toast.success('Category updated');
-      setShowCategoryMenu(false);
+      categoryMenuModal.close();
       // Invalidate photos query to refresh data
       await queryClient.invalidateQueries({ queryKey: ['admin-event-photos', eventId.toString()] });
       await queryClient.invalidateQueries({ queryKey: ['admin-event-photos', eventId] });
@@ -126,27 +128,19 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
   };
 
   // Mutations for feedback moderation
-  const moderateFeedbackMutation = useMutation({
+  const moderateFeedbackMutation = useMutationWithToast({
     mutationFn: ({ feedbackId, action }: { feedbackId: string; action: 'approve' | 'hide' | 'reject' }) =>
       feedbackService.moderateFeedback(feedbackId, action),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-photo-feedback', eventId, currentPhoto?.id] });
-      toast.success('Feedback moderated successfully');
-    },
-    onError: () => {
-      toast.error('Failed to moderate feedback');
-    }
+    invalidateKeys: [['admin-photo-feedback', eventId, currentPhoto?.id]],
+    successMessage: 'Feedback moderated successfully',
+    errorMessage: () => 'Failed to moderate feedback'
   });
 
-  const deleteFeedbackMutation = useMutation({
+  const deleteFeedbackMutation = useMutationWithToast({
     mutationFn: (feedbackId: string) => feedbackService.deleteFeedback(feedbackId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-photo-feedback', eventId, currentPhoto?.id] });
-      toast.success('Feedback deleted successfully');
-    },
-    onError: () => {
-      toast.error('Failed to delete feedback');
-    }
+    invalidateKeys: [['admin-photo-feedback', eventId, currentPhoto?.id]],
+    successMessage: 'Feedback deleted successfully',
+    errorMessage: () => 'Failed to delete feedback'
   });
 
   React.useEffect(() => {
@@ -265,7 +259,7 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
                 Category
               </span>
               <button
-                onClick={() => setShowCategoryMenu(!showCategoryMenu)}
+                onClick={categoryMenuModal.toggle}
                 className="text-xs text-accent hover:text-accent-dark"
               >
                 Change
@@ -275,7 +269,7 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
               {currentPhoto.category_name || 'Uncategorized'}
             </p>
             
-            {showCategoryMenu && (
+            {categoryMenuModal.isOpen && (
               <div className="mt-2 bg-neutral-800 rounded-lg p-2">
                 <button
                   onClick={() => handleCategoryChange(null)}
@@ -312,7 +306,7 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
                 Uploaded
               </span>
               <p className="text-white">
-                {format(new Date(currentPhoto.uploaded_at), 'MMM d, yyyy h:mm a')}
+                {fmtDateTime(currentPhoto.uploaded_at)}
               </p>
             </div>
 
@@ -392,13 +386,13 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
               {comments.length > 0 && (
                 <div className="space-y-2">
                   <button
-                    onClick={() => setExpandedComments(!expandedComments)}
+                    onClick={commentsModal.toggle}
                     className="text-xs text-accent hover:text-accent-dark mb-2"
                   >
-                    {expandedComments ? 'Hide' : 'Show'} Comments ({comments.length})
+                    {commentsModal.isOpen ? 'Hide' : 'Show'} Comments ({comments.length})
                   </button>
-                  
-                  {expandedComments && (
+
+                  {commentsModal.isOpen && (
                     <div className="space-y-3 max-h-64 overflow-y-auto">
                       {comments.map((comment) => (
                           <div key={comment.id} className="bg-neutral-800 rounded-lg p-3">
@@ -408,7 +402,7 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
                                   {comment.guest_name || 'Anonymous'}
                                 </p>
                                 <p className="text-xs text-neutral-400">
-                                  {format(new Date(comment.created_at), 'MMM d, yyyy h:mm a')}
+                                  {fmtDateTime(comment.created_at)}
                                 </p>
                               </div>
                               

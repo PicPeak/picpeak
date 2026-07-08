@@ -62,6 +62,22 @@ const ESFlag: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => 
   </svg>
 );
 
+const SLFlag: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
+  <svg className={className} viewBox="0 0 640 480" xmlns="http://www.w3.org/2000/svg">
+    <path fill="#fff" d="M0 0h640v160H0z"/>
+    <path fill="#005DA4" d="M0 160h640v160H0z"/>
+    <path fill="#ED1C24" d="M0 320h640v160H0z"/>
+    <path fill="#005DA4" d="M160 80h120v120c0 60-60 90-60 90s-60-30-60-90V80z"/>
+    <path fill="#fff" d="M172 96h96v100c0 36-28 61-48 74-20-13-48-38-48-74V96z"/>
+    <path fill="#005DA4" d="M184 108h72v82c0 26-18 46-36 59-18-13-36-33-36-59v-82z"/>
+    <path fill="#fff" d="m198 178 22-36 22 36h-44z"/>
+    <path fill="#ED1C24" d="M184 202h72c-6 21-24 37-36 45-12-8-30-24-36-45z"/>
+    <circle fill="#FFD700" cx="198" cy="122" r="5"/>
+    <circle fill="#FFD700" cx="220" cy="116" r="5"/>
+    <circle fill="#FFD700" cx="242" cy="122" r="5"/>
+  </svg>
+);
+
 export const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', Flag: GBFlag },
   { code: 'de', name: 'Deutsch', Flag: DEFlag },
@@ -70,6 +86,7 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'nl', name: 'Nederlands', Flag: NLFlag },
   { code: 'fr', name: 'Français', Flag: FRFlag },
   { code: 'es', name: 'Español', Flag: ESFlag },
+  { code: 'sl', name: 'Slovenščina', Flag: SLFlag },
 ];
 
 export const LanguageSelector: React.FC = () => {

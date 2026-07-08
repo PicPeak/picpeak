@@ -6,4 +6,5 @@ export { CustomerProfilePage } from './CustomerProfilePage';
 export { CustomerCalendarPage } from './CustomerCalendarPage';
 export { CustomerQuotesPage } from './CustomerQuotesPage';
 export { CustomerBillsPage } from './CustomerBillsPage';
+export { CustomerContractsPage } from './CustomerContractsPage';
 export { CustomerResetPasswordPage } from './CustomerResetPasswordPage';

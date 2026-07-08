@@ -7,6 +7,7 @@ import { Card, CardContent, Input, Button, Loading } from '../components/common'
 import { useGalleryAuth } from '../contexts';
 import { useGalleryInfo } from '../hooks/useGallery';
 import { usePublicSettings } from '../hooks/usePublicSettings';
+import { usePublicDarkMode } from '../hooks/usePublicDarkMode';
 import { buildResourceUrl } from '../utils/url';
 
 export const ClientAccessPage: React.FC = () => {
@@ -22,6 +23,13 @@ export const ClientAccessPage: React.FC = () => {
   const { data: galleryInfo, isLoading: isLoadingInfo, error: infoError } = useGalleryInfo(slug);
 
   const { data: settingsData } = usePublicSettings();
+  // Theme-aware logo: the page background follows the themed
+  // --color-background (dark when branding_force_color_mode / OS is dark),
+  // so pick the dark logo variant accordingly.
+  const { isDark } = usePublicDarkMode();
+  const lightLogo = settingsData?.branding_logo_url?.trim();
+  const darkLogo = settingsData?.branding_logo_url_dark?.trim();
+  const brandLogo = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
 
   // If already authenticated as client, redirect to gallery
   React.useEffect(() => {
@@ -76,10 +84,10 @@ export const ClientAccessPage: React.FC = () => {
     return (
       <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #fafafa)' }}>
         <div className="min-h-screen flex flex-col">
-          {settingsData?.branding_logo_url && (
+          {brandLogo && (
             <div className="p-8 text-center">
               <img
-                src={buildResourceUrl(settingsData.branding_logo_url)}
+                src={buildResourceUrl(brandLogo)}
                 alt={settingsData.branding_company_name || 'Company Logo'}
                 className="h-16 w-auto object-contain mx-auto"
               />
@@ -103,10 +111,10 @@ export const ClientAccessPage: React.FC = () => {
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #fafafa)' }}>
       <div className="min-h-screen flex flex-col">
         {/* Logo */}
-        {settingsData?.branding_logo_url && (
+        {brandLogo && (
           <div className="p-8 text-center">
             <img
-              src={buildResourceUrl(settingsData.branding_logo_url)}
+              src={buildResourceUrl(brandLogo)}
               alt={settingsData.branding_company_name || 'Company Logo'}
               className="h-16 w-auto object-contain mx-auto"
             />

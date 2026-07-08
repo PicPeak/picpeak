@@ -28,7 +28,7 @@ import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Lock, Save, User as UserIcon, MapPin, Phone, Mail } from 'lucide-react';
 
-import { Button, Input, Loading } from '../../components/common';
+import { Button, Input, Loading, CountrySelect } from '../../components/common';
 
 /**
  * Inline tile wrapper used in place of <Card> on this page.
@@ -415,7 +415,7 @@ export const CustomerProfilePage: React.FC = () => {
               />
             </div>
 
-            <div className="sm:col-span-3">
+            <div className="sm:col-span-4">
               <label className="block text-sm font-medium text-theme mb-1" htmlFor="profile-city">
                 {t('customer.profile.field.city', 'City')}
               </label>
@@ -425,21 +425,6 @@ export const CustomerProfilePage: React.FC = () => {
                 autoComplete="billing address-level2"
                 value={form.city || ''}
                 onChange={(e) => updateField('city', e.target.value)}
-              />
-            </div>
-
-            <div className="sm:col-span-1">
-              <label className="block text-sm font-medium text-theme mb-1" htmlFor="profile-country">
-                {t('customer.profile.field.countryCode', 'Country')}
-              </label>
-              <Input
-                id="profile-country"
-                name="country"
-                autoComplete="billing country"
-                placeholder="DE"
-                maxLength={2}
-                value={form.countryCode || ''}
-                onChange={(e) => updateField('countryCode', e.target.value.toUpperCase().slice(0, 2))}
               />
             </div>
 
@@ -453,6 +438,17 @@ export const CustomerProfilePage: React.FC = () => {
                 autoComplete="billing address-level1"
                 value={form.state || ''}
                 onChange={(e) => updateField('state', e.target.value)}
+              />
+            </div>
+
+            <div className="sm:col-span-3">
+              {/* Country picker (ISO code) — dropdown, mirroring the admin
+                  customer / business-profile forms, placed after State /
+                  region. Replaces the old free-text 2-char input. */}
+              <CountrySelect
+                label={t('customer.profile.field.countryCode', 'Country') as string}
+                value={form.countryCode || ''}
+                onChange={(code) => updateField('countryCode', code)}
               />
             </div>
           </div>

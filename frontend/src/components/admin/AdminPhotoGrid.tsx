@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Download, Trash2, Eye, EyeOff, Package, MessageSquare, Star, Video, FolderOpen, Cog, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Check, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, Cog, AlertTriangle, RefreshCw, LayoutGrid, List } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -7,6 +7,8 @@ import { useTranslation } from 'react-i18next';
 import { AdminPhoto } from '../../services/photos.service';
 import { photosService } from '../../services/photos.service';
 import { uploadsService } from '../../services/uploads.service';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { getPhotoViewMode, setPhotoViewMode, type PhotoViewMode } from '../../utils/photoViewPrefs';
 import { Button } from '../common';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { BulkCategoryModal } from './BulkCategoryModal';
@@ -34,6 +36,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   categories = []
 }) => {
   const { t } = useTranslation();
+  const { format: formatDate } = useLocalizedDate();
   const queryClient = useQueryClient();
   const [selectedPhotos, setSelectedPhotos] = useState<Set<number>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -41,6 +44,16 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   const [deletingPhotos, setDeletingPhotos] = useState<Set<number>>(new Set());
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isUpdatingCategory, setIsUpdatingCategory] = useState(false);
+  // Layout toggle (Grid / List) persisted per admin via localStorage.
+  const [viewMode, setViewMode] = useState<PhotoViewMode>(() => getPhotoViewMode());
+
+  // Persist on user action only — writing in an effect would re-save the
+  // value on every mount (i.e. each time the Photos tab is opened), even
+  // when the user never touched the toggle.
+  const selectView = (mode: PhotoViewMode) => {
+    setViewMode(mode);
+    setPhotoViewMode(mode);
+  };
 
   const handlePhotoSelect = (photoId: number, e?: React.MouseEvent) => {
     if (e) {
@@ -246,12 +259,47 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
           )}
         </div>
         
-        <div className="text-sm text-neutral-600 dark:text-neutral-400">
-          {t('gallery.photosCount', { count: photos.length })}
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-neutral-600 dark:text-neutral-400">
+            {t('gallery.photosCount', { count: photos.length })}
+          </div>
+          {/* Layout toggle: Grid / List — radiogroup so a screen reader
+              announces the two options as one mutually-exclusive set. */}
+          <div className="inline-flex rounded-lg border border-neutral-300 dark:border-neutral-600 overflow-hidden" role="radiogroup" aria-label={t('admin.photos.viewMode', 'View mode')}>
+            <button
+              type="button"
+              role="radio"
+              onClick={() => selectView('grid')}
+              aria-checked={viewMode === 'grid'}
+              title={t('admin.photos.gridView', 'Grid view')}
+              className={`p-1.5 transition-colors ${
+                viewMode === 'grid'
+                  ? 'bg-primary-500 text-white'
+                  : 'bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700'
+              }`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              role="radio"
+              onClick={() => selectView('list')}
+              aria-checked={viewMode === 'list'}
+              title={t('admin.photos.listView', 'List view')}
+              className={`p-1.5 transition-colors border-l border-neutral-300 dark:border-neutral-600 ${
+                viewMode === 'list'
+                  ? 'bg-primary-500 text-white'
+                  : 'bg-white dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-700'
+              }`}
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Photo Grid */}
+      {viewMode === 'grid' && (
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {photos.map((photo, index) => {
           const isDeleting = deletingPhotos.has(photo.id);
@@ -429,6 +477,220 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
           );
         })}
       </div>
+      )}
+
+      {/* Photo List */}
+      {viewMode === 'list' && (
+      <div className="overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-700">
+        <table className="w-full">
+          <thead className="bg-neutral-50 dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700">
+            <tr>
+              <th className="w-8 px-3 py-2" />
+              <th className="px-3 py-2 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                {t('admin.photos.columns.photo', 'Photo')}
+              </th>
+              <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                {t('admin.photos.columns.category', 'Category')}
+              </th>
+              <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                {t('admin.photos.columns.uploaded', 'Uploaded')}
+              </th>
+              <th className="hidden xl:table-cell px-3 py-2 text-right text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                {t('admin.photos.columns.engagement', 'Engagement')}
+              </th>
+              <th className="hidden sm:table-cell px-3 py-2 text-right text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                {t('admin.photos.columns.feedback', 'Feedback')}
+              </th>
+              <th className="px-3 py-2 text-right text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                {t('admin.photos.columns.size', 'Size')}
+              </th>
+              <th className="w-px px-3 py-2 text-right text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                {t('admin.photos.columns.actions', 'Actions')}
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white dark:bg-neutral-800 divide-y divide-neutral-200 dark:divide-neutral-700">
+            {photos.map((photo, index) => {
+              const isRowDeleting = deletingPhotos.has(photo.id);
+              const commentCount = photo.comment_count ?? 0;
+              const averageRating = photo.average_rating ?? 0;
+              const viewCount = photo.view_count ?? 0;
+              const downloadCount = photo.download_count ?? 0;
+              const likeCount = photo.like_count ?? 0;
+              const isSelected = selectedPhotos.has(photo.id);
+              const isVideo = (photo.media_type === 'video') ||
+                (photo.mime_type && photo.mime_type.startsWith('video/')) ||
+                photo.type === 'video';
+              const isHidden = (photo as any).visibility === 'hidden';
+              const status = (photo as any).processing_status;
+              return (
+                <tr
+                  key={photo.id}
+                  data-testid={`admin-photo-row-${photo.id}`}
+                  className={`group cursor-pointer transition-colors ${
+                    isSelected ? 'bg-primary-50 dark:bg-primary-900/20' : 'hover:bg-neutral-50 dark:hover:bg-neutral-700/50'
+                  } ${isRowDeleting ? 'opacity-50' : ''}`}
+                  onClick={() => !isRowDeleting && onPhotoClick(photo, index)}
+                >
+                  {/* Selection checkbox */}
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      aria-label={`Select ${photo.filename}`}
+                      role="checkbox"
+                      aria-checked={isSelected}
+                      data-testid={`admin-photo-row-checkbox-${photo.id}`}
+                      onClick={(e) => handlePhotoSelect(photo.id, e)}
+                    >
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                        isSelected
+                          ? 'bg-accent-dark border-accent-dark'
+                          : 'border-neutral-300 dark:border-neutral-500 group-hover:border-neutral-400'
+                      }`}>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                      </div>
+                    </button>
+                  </td>
+
+                  {/* Thumbnail + filename + badges */}
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex-shrink-0 w-10 h-10 rounded overflow-hidden bg-neutral-100 dark:bg-neutral-700">
+                        {status === 'pending' || status === 'processing' ? (
+                          <div className="w-full h-full flex items-center justify-center text-amber-600 dark:text-amber-300">
+                            <Cog className="w-4 h-4 animate-spin" />
+                          </div>
+                        ) : status === 'failed' ? (
+                          <div className="w-full h-full flex items-center justify-center text-red-600 dark:text-red-300">
+                            <AlertTriangle className="w-4 h-4" />
+                          </div>
+                        ) : photo.thumbnail_url ? (
+                          <AdminAuthenticatedImage
+                            src={photo.thumbnail_url}
+                            alt={photo.filename}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            fallback={
+                              <div className="w-full h-full flex items-center justify-center text-neutral-400">
+                                <Eye className="w-4 h-4" />
+                              </div>
+                            }
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-neutral-400">
+                            <Eye className="w-4 h-4" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                            {photo.filename}
+                          </p>
+                          {isVideo && (
+                            <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-neutral-200 dark:bg-neutral-600 text-neutral-700 dark:text-neutral-200 text-[10px] font-medium">
+                              <Video className="w-3 h-3" />
+                              {t('common.video', 'Video')}
+                            </span>
+                          )}
+                          {isHidden && (
+                            <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-[10px] font-medium">
+                              <EyeOff className="w-3 h-3" />
+                              {t('admin.photos.hidden', 'Hidden')}
+                            </span>
+                          )}
+                        </div>
+                        {photo.original_filename && photo.original_filename !== photo.filename && (
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
+                            {photo.original_filename}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Category */}
+                  <td className="hidden lg:table-cell px-3 py-2 max-w-[12rem] truncate text-sm text-neutral-600 dark:text-neutral-400">
+                    {photo.category_name || '—'}
+                  </td>
+
+                  {/* Uploaded date */}
+                  <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-400">
+                    {photo.uploaded_at ? formatDate(photo.uploaded_at) : '—'}
+                  </td>
+
+                  {/* Engagement: views / downloads / likes */}
+                  <td className="hidden xl:table-cell px-3 py-2 text-right text-xs text-neutral-500 dark:text-neutral-400 tabular-nums">
+                    <div className="flex items-center justify-end gap-3">
+                      <span className="inline-flex items-center gap-1" title={t('admin.photos.columns.views', 'Views')}>
+                        <Eye className="w-3.5 h-3.5" />
+                        {viewCount}
+                      </span>
+                      <span className="inline-flex items-center gap-1" title={t('admin.photos.columns.downloads', 'Downloads')}>
+                        <Download className="w-3.5 h-3.5" />
+                        {downloadCount}
+                      </span>
+                      <span className="inline-flex items-center gap-1" title={t('admin.photos.columns.likes', 'Likes')}>
+                        <Heart className="w-3.5 h-3.5" />
+                        {likeCount}
+                      </span>
+                    </div>
+                  </td>
+
+                  {/* Feedback: rating + comments */}
+                  <td className="hidden sm:table-cell px-3 py-2 text-right text-xs text-neutral-600 dark:text-neutral-400">
+                    {averageRating > 0 || commentCount > 0 ? (
+                      <div className="flex items-center justify-end gap-2">
+                        {averageRating > 0 && (
+                          <span className="inline-flex items-center gap-0.5" title={`Rating: ${Number(averageRating).toFixed(1)}`}>
+                            <Star className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" />
+                            {Number(averageRating).toFixed(1)}
+                          </span>
+                        )}
+                        {commentCount > 0 && (
+                          <span className="inline-flex items-center gap-0.5" title={`${commentCount} comments`}>
+                            <MessageSquare className="w-3.5 h-3.5 text-accent" fill="currentColor" />
+                            {commentCount}
+                          </span>
+                        )}
+                      </div>
+                    ) : '—'}
+                  </td>
+
+                  {/* Size */}
+                  <td className="px-3 py-2 text-right text-sm text-neutral-500 dark:text-neutral-400 whitespace-nowrap tabular-nums">
+                    {photosService.formatBytes(photo.size)}
+                  </td>
+
+                  {/* Actions */}
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    {!isSelectionMode && (
+                      <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => handleDownload(photo, e)}
+                          className="p-1.5 text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-600 rounded"
+                          title={t('common.download', 'Download')}
+                        >
+                          <Download className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteSingle(photo, e)}
+                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded disabled:opacity-50"
+                          disabled={isRowDeleting}
+                          title={t('common.delete', 'Delete')}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      )}
 
       {photos.length === 0 && (
         <div className="text-center py-12">

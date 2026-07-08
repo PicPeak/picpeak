@@ -5,6 +5,7 @@
 
 // Note: Requiring db here creates circular dependency
 // db should be passed as parameter or required where needed
+const logger = require('./logger');
 
 /**
  * Get database client type
@@ -91,7 +92,7 @@ async function getDatabaseSize(db, dbName) {
       const stats = await fs.stat(dbPath);
       return stats.size;
     } catch (error) {
-      console.error('Error getting SQLite database size:', error);
+      logger.error('Error getting SQLite database size:', error);
       return 0;
     }
   }

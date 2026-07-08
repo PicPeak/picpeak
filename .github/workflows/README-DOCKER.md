@@ -42,16 +42,16 @@ Once published, images can be pulled using:
 
 ```bash
 # Pull backend image
-docker pull ghcr.io/the-luap/picpeak/backend:latest
+docker pull ghcr.io/picpeak/picpeak/backend:latest
 
 # Pull frontend image
-docker pull ghcr.io/the-luap/picpeak/frontend:latest
+docker pull ghcr.io/picpeak/picpeak/frontend:latest
 
 # Pull specific version
-docker pull ghcr.io/the-luap/picpeak/backend:v1.0.0
+docker pull ghcr.io/picpeak/picpeak/backend:v1.0.0
 
 # Pull for specific architecture
-docker pull --platform linux/arm64 ghcr.io/the-luap/picpeak/backend:latest
+docker pull --platform linux/arm64 ghcr.io/picpeak/picpeak/backend:latest
 ```
 
 ### Using in Docker Compose
@@ -61,14 +61,14 @@ version: '3.8'
 
 services:
   backend:
-    image: ghcr.io/the-luap/picpeak/backend:latest
+    image: ghcr.io/picpeak/picpeak/backend:latest
     environment:
       - NODE_ENV=production
     ports:
       - "3001:3000"
 
   frontend:
-    image: ghcr.io/the-luap/picpeak/frontend:latest
+    image: ghcr.io/picpeak/picpeak/frontend:latest
     ports:
       - "80:80"
 ```
@@ -86,7 +86,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: ghcr.io/the-luap/picpeak/backend:latest
+        image: ghcr.io/picpeak/picpeak/backend:latest
         imagePullPolicy: Always
 ```
 
@@ -149,8 +149,8 @@ If images aren't visible after successful push:
 ### View Packages
 
 Your Docker images are available at:
-- Backend: `https://github.com/users/the-luap/packages/container/package/picpeak%2Fbackend`
-- Frontend: `https://github.com/users/the-luap/packages/container/package/picpeak%2Ffrontend`
+- Backend: `https://github.com/orgs/PicPeak/packages/container/package/picpeak%2Fbackend`
+- Frontend: `https://github.com/orgs/PicPeak/packages/container/package/picpeak%2Ffrontend`
 
 ### Delete Old Versions
 

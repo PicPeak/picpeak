@@ -25,6 +25,7 @@ import {
   LogOut,
   Menu,
   Receipt,
+  ScrollText,
   User as UserIcon,
   X,
 } from 'lucide-react';
@@ -44,14 +45,15 @@ interface NavItem {
    * Galleries + Profile are always visible; Calendar/Quotes/Bills are
    * gated.
    */
-  feature?: 'calendar' | 'quotes' | 'bills';
+  feature?: 'calendar' | 'quotes' | 'bills' | 'contracts';
 }
 
 const NAV: NavItem[] = [
   { to: '/customer/dashboard', labelKey: 'customer.nav.galleries', fallback: 'Galleries', icon: ImageIcon },
   { to: '/customer/calendar', labelKey: 'customer.nav.calendar', fallback: 'Calendar', icon: Calendar, feature: 'calendar' },
   { to: '/customer/quotes', labelKey: 'customer.nav.quotes', fallback: 'Quotes', icon: FileText, feature: 'quotes' },
-  { to: '/customer/bills', labelKey: 'customer.nav.bills', fallback: 'Bills', icon: Receipt, feature: 'bills' },
+  { to: '/customer/contracts', labelKey: 'customer.nav.contracts', fallback: 'Contracts', icon: ScrollText, feature: 'contracts' },
+  { to: '/customer/bills', labelKey: 'customer.nav.bills', fallback: 'Invoices', icon: Receipt, feature: 'bills' },
   { to: '/customer/profile', labelKey: 'customer.nav.profile', fallback: 'Profile', icon: UserIcon },
 ];
 
@@ -63,7 +65,16 @@ export const CustomerLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const companyName = settingsData?.branding_company_name?.trim() || 'PicPeak';
-  const logoUrl = settingsData?.branding_logo_url?.trim();
+  // Theme-aware logo: the customer surface follows branding_force_color_mode
+  // ('auto' → OS preference). Symmetric fallback so a single uploaded logo
+  // serves both modes.
+  const forceMode = settingsData?.branding_force_color_mode;
+  const customerIsDark = forceMode === 'dark'
+    || (forceMode === 'auto' && typeof window !== 'undefined'
+        && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+  const lightLogo = settingsData?.branding_logo_url?.trim();
+  const darkLogo = settingsData?.branding_logo_url_dark?.trim();
+  const logoUrl = customerIsDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
   const resolvedLogoUrl = logoUrl || '/picpeak-logo-transparent.png';
 
   // Filter out feature-gated entries the customer can't see. Galleries +
@@ -178,36 +189,35 @@ export const CustomerLayout: React.FC = () => {
                   className={`flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
                     isActive
                       ? 'bg-accent-dark text-white'
-                      : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-100'
+                      // Hover uses the theme `--color-elevated` token
+                      // (light mode = #f5f5f5, dark mode = #1f1f1f) —
+                      // mirrors the admin sidebar's subtle grey hover.
+                      // Tailwind's bare `hover:bg-neutral-100 dark:
+                      // hover:bg-neutral-800` doesn't work here because
+                      // the customer portal toggles palette via CSS
+                      // variables, not the `.dark` class, so the
+                      // light-mode value was always winning and the
+                      // hover read as near-white.
+                      : 'hover:bg-[var(--color-elevated)]'
                   }`}
+                  // Non-active items take their colour from the theme
+                  // variable the admin chose in the colour pickers
+                  // (`--color-text`). The Tailwind dark:text-white
+                  // approach didn't apply because the customer
+                  // portal toggles the palette via CSS variables, not
+                  // the `.dark` class — so the previous styling
+                  // resolved to the body's inherited muted colour.
+                  style={isActive ? undefined : { color: 'var(--color-text)' }}
                 >
                   {/* Mirrors AdminSidebar's active state exactly: solid
                       accent-dark pill, white icon and label, no extra
                       flex grow on the label so the pill width matches
                       what the admin chrome renders. */}
                   <Icon
-                    className={`w-5 h-5 mr-3 ${
-                      isActive ? 'text-white' : 'text-neutral-400'
-                    }`}
+                    className="w-5 h-5 mr-3"
+                    style={isActive ? undefined : { color: 'var(--color-text)' }}
                   />
                   {t(item.labelKey, item.fallback)}
-                  {/* Coming-soon pill for the gated entries. Pushed to
-                      the right of the label with ml-auto so it doesn't
-                      add the flex-1 stretching that was throwing off
-                      the active-pill visual. */}
-                  {item.feature && (
-                    <span
-                      className={`ml-auto text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded font-semibold ${
-                        isActive ? 'bg-white/20 text-white' : ''
-                      }`}
-                      style={isActive ? undefined : {
-                        backgroundColor: 'color-mix(in srgb, var(--color-accent) 14%, transparent)',
-                        color: 'var(--color-accent)',
-                      }}
-                    >
-                      {t('customer.nav.soon', 'Soon')}
-                    </span>
-                  )}
                 </NavLink>
               );
             })}

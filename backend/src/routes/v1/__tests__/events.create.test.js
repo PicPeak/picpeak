@@ -18,12 +18,17 @@
 const request = require('supertest');
 const express = require('express');
 
-const buildChain = ({ firstResult, insertResult, returningResult } = {}) => {
+const buildChain = ({ firstResult, insertResult, returningResult, selectResult } = {}) => {
   const chain = {
     where: jest.fn().mockReturnThis(),
+    whereIn: jest.fn().mockReturnThis(),
     andWhere: jest.fn().mockReturnThis(),
     orWhere: jest.fn().mockReturnThis(),
-    select: jest.fn().mockReturnThis(),
+    // `select` resolves to an array so `await db(...).whereIn(...).select(...)`
+    // gives an iterable result (used by the branding-defaults probe added in
+    // #592 follow-up). Tests that don't need it leave selectResult undefined
+    // and get `[]`, which is a safe no-op for any caller that iterates.
+    select: jest.fn().mockResolvedValue(selectResult ?? []),
     first: jest.fn().mockResolvedValue(firstResult),
     insert: jest.fn().mockReturnThis(),
     returning: jest.fn().mockResolvedValue(returningResult ?? insertResult ?? [{ id: 1 }]),
@@ -92,23 +97,28 @@ const BASE_BODY = {
   require_password: false,
 };
 
+// db() call sequence for BASE_BODY (no feedback / devtools provided,
+// require_password supplied so its probe is skipped, no customer_phone,
+// no slug collision):
+//   1. app_settings.where('event_default_feedback_enabled').first()       (#550)
+//   2. app_settings.where('enable_devtools_protection').first()           (#592)
+//   3. app_settings.whereIn([branding_logo_display_hero,...]).select(...) (#592 follow-up)
+// Then slug probe, events insert, optional feedback insert.
+const baseSettingsChains = () => [
+  buildChain({ firstResult: null }), // feedback default
+  buildChain({ firstResult: null }), // devtools default
+  buildChain({ selectResult: [] }),  // branding whereIn → empty rows
+];
+
 describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it('persists color_theme to the events row when provided', async () => {
-    // db() call sequence for this body (feedback_enabled omitted, no
-    // customer_phone, no slug collision):
-    //   1. app_settings.where('event_default_feedback_enabled').first()
-    //   2. events.where({ slug }).first()   ← uniqueness probe
-    //   3. events.insert(...).returning('id')
-    // No event_feedback_settings insert because the global setting
-    // returns nothing (feedback stays off) — covered separately below.
-    const settingChain = buildChain({ firstResult: null });
     const slugChain = buildChain({ firstResult: null });
     const insertChain = buildChain({ returningResult: [{ id: 42 }] });
-    db.__setImplementations(settingChain, slugChain, insertChain);
+    db.__setImplementations(...baseSettingsChains(), slugChain, insertChain);
 
     await request(buildApp())
       .post('/events')
@@ -123,11 +133,9 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
   });
 
   it('accepts a JSON-encoded theme string and persists it verbatim', async () => {
-    db.__setImplementations(
-      buildChain({ firstResult: null }),
-      buildChain({ firstResult: null }),
-      buildChain({ returningResult: [{ id: 43 }] }),
-    );
+    const slugChain = buildChain({ firstResult: null });
+    const insertChain = buildChain({ returningResult: [{ id: 43 }] });
+    db.__setImplementations(...baseSettingsChains(), slugChain, insertChain);
 
     const customTheme = JSON.stringify({ primaryColor: '#ff0066' });
     await request(buildApp())
@@ -135,26 +143,30 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
       .send({ ...BASE_BODY, color_theme: customTheme })
       .expect(201);
 
-    const insertedRow = db.mock.results[2].value.insert.mock.calls[0][0];
+    const insertedRow = insertChain.insert.mock.calls[0][0];
     expect(insertedRow.color_theme).toBe(customTheme);
   });
 
   it('creates event_feedback_settings row when feedback_enabled=true is sent', async () => {
-    // 3 db() calls when feedback_enabled is sent explicitly (the
-    // settings probe is skipped because feedbackEnabledInput !== undefined):
-    //   1. slug probe, 2. events insert, 3. feedback insert
+    // feedback_enabled provided → feedback probe SKIPPED. Sequence:
+    //   1. devtools probe
+    //   2. branding probe (whereIn → select)
+    //   3. slug probe
+    //   4. events insert
+    //   5. event_feedback_settings insert
+    const devtoolsChain = buildChain({ firstResult: null });
+    const brandingChain = buildChain({ selectResult: [] });
     const slugChain = buildChain({ firstResult: null });
     const insertChain = buildChain({ returningResult: [{ id: 50 }] });
     const feedbackInsertChain = buildChain();
-    db.__setImplementations(slugChain, insertChain, feedbackInsertChain);
+    db.__setImplementations(devtoolsChain, brandingChain, slugChain, insertChain, feedbackInsertChain);
 
     await request(buildApp())
       .post('/events')
       .send({ ...BASE_BODY, feedback_enabled: true })
       .expect(201);
 
-    // db('event_feedback_settings') is the 3rd invocation.
-    expect(db).toHaveBeenNthCalledWith(3, 'event_feedback_settings');
+    expect(db).toHaveBeenNthCalledWith(5, 'event_feedback_settings');
 
     const feedbackRow = feedbackInsertChain.insert.mock.calls[0][0];
     expect(feedbackRow).toMatchObject({ event_id: 50 });
@@ -172,39 +184,43 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
   });
 
   it('honours the event_default_feedback_enabled global when body omits feedback_enabled', async () => {
-    // settings probe returns a serialized "true" — fallback should kick
-    // in and the feedback row should still be written.
-    const settingChain = buildChain({
+    // Feedback probe returns serialized "true" → fallback kicks in and
+    // the feedback insert runs. Sequence: feedback probe, devtools probe,
+    // branding probe, slug, insert, feedback insert (6 calls total).
+    const feedbackProbe = buildChain({
       firstResult: { setting_key: 'event_default_feedback_enabled', setting_value: 'true' },
     });
+    const devtoolsChain = buildChain({ firstResult: null });
+    const brandingChain = buildChain({ selectResult: [] });
     const slugChain = buildChain({ firstResult: null });
     const insertChain = buildChain({ returningResult: [{ id: 51 }] });
     const feedbackInsertChain = buildChain();
-    db.__setImplementations(settingChain, slugChain, insertChain, feedbackInsertChain);
+    db.__setImplementations(
+      feedbackProbe, devtoolsChain, brandingChain, slugChain, insertChain, feedbackInsertChain
+    );
 
     await request(buildApp())
       .post('/events')
       .send(BASE_BODY)
       .expect(201);
 
-    expect(db).toHaveBeenNthCalledWith(4, 'event_feedback_settings');
+    expect(db).toHaveBeenNthCalledWith(6, 'event_feedback_settings');
     expect(feedbackInsertChain.insert).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT create a feedback row when global setting is unset and body omits feedback_enabled', async () => {
-    const settingChain = buildChain({ firstResult: null });
     const slugChain = buildChain({ firstResult: null });
     const insertChain = buildChain({ returningResult: [{ id: 52 }] });
-    db.__setImplementations(settingChain, slugChain, insertChain);
+    db.__setImplementations(...baseSettingsChains(), slugChain, insertChain);
 
     await request(buildApp())
       .post('/events')
       .send(BASE_BODY)
       .expect(201);
 
-    // Only 3 db() calls — the event_feedback_settings table is never
-    // touched because feedback_enabled resolved to false.
-    expect(db).toHaveBeenCalledTimes(3);
+    // 5 db() calls: feedback + devtools + branding probes, slug, insert.
+    // event_feedback_settings is never touched.
+    expect(db).toHaveBeenCalledTimes(5);
     expect(db).not.toHaveBeenCalledWith('event_feedback_settings');
   });
 

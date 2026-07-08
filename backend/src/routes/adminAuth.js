@@ -9,6 +9,8 @@ const { validatePasswordStrength } = require('../utils/passwordGenerator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
 const { setAdminAuthCookie } = require('../utils/tokenUtils');
+const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
+const mfaService = require('../services/mfaService');
 const router = express.Router();
 
 // Get admin profile
@@ -36,7 +38,7 @@ router.put('/profile', [
     .trim()
     .isEmail()
     .withMessage('A valid email address is required')
-    .normalizeEmail()
+    .normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL)
 ], handleAsync(async (req, res) => {
   validateRequest(req);
 
@@ -181,6 +183,177 @@ router.post('/logout', adminAuth, handleAsync(async (req, res) => {
   );
 
   successResponse(res, { message: 'Logged out successfully' });
+}));
+
+// ---------------------------------------------------------------------------
+// Multi-factor authentication (TOTP) — issue #738.
+//
+// All endpoints operate on the AUTHENTICATED admin's own account
+// (req.admin.id) — enrollment is per-user and works for every role,
+// super_admin included (closes #735). The TOTP secret is stored encrypted
+// at rest and recovery codes are hashed; see services/mfaService.js.
+// ---------------------------------------------------------------------------
+
+const isMfaEnabled = mfaService.isEnrolled;
+
+// Current MFA state for the logged-in admin.
+router.get('/mfa/status', adminAuth, handleAsync(async (req, res) => {
+  const admin = await db('admin_users').where('id', req.admin.id).first();
+  if (!admin) throw new NotFoundError('Admin user');
+  const enabled = isMfaEnabled(admin);
+  res.json({
+    enabled,
+    enrolledAt: enabled ? admin.two_factor_enrolled_at || null : null,
+    recoveryCodesRemaining: enabled
+      ? mfaService.parseRecoveryCodes(admin.two_factor_recovery_codes).length
+      : 0
+  });
+}));
+
+// Begin enrollment: mint a provisional secret, store it encrypted (NOT yet
+// enabled), and return the otpauth URI + QR for the authenticator app. Calling
+// this again before /enable simply regenerates the provisional secret.
+router.post('/mfa/setup', adminAuth, handleAsync(async (req, res) => {
+  const admin = await db('admin_users').where('id', req.admin.id).first();
+  if (!admin) throw new NotFoundError('Admin user');
+  if (isMfaEnabled(admin)) {
+    throw new ConflictError('Two-factor authentication is already enabled');
+  }
+
+  const secret = mfaService.generateSecret();
+  await db('admin_users').where('id', admin.id).update({
+    two_factor_secret: mfaService.encryptSecret(secret),
+    two_factor_enabled: false,
+    two_factor_recovery_codes: null,
+    two_factor_enrolled_at: null,
+    updated_at: new Date()
+  });
+
+  const accountName = admin.email || admin.username;
+  const otpauthUri = mfaService.buildOtpauthUri(accountName, secret);
+  const qr = await mfaService.buildQrDataUrl(otpauthUri);
+
+  res.json({
+    // `secret` is returned for manual entry when a QR can't be scanned.
+    secret,
+    otpauthUri,
+    qr,
+    issuer: mfaService.ISSUER,
+    account: accountName
+  });
+}));
+
+// Complete enrollment: verify a code against the provisional secret, enable
+// MFA, and return one-time recovery codes (shown exactly once).
+router.post('/mfa/enable', [
+  adminAuth,
+  body('code').notEmpty().withMessage('Verification code is required')
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const admin = await db('admin_users').where('id', req.admin.id).first();
+  if (!admin) throw new NotFoundError('Admin user');
+  if (isMfaEnabled(admin)) {
+    throw new ConflictError('Two-factor authentication is already enabled');
+  }
+  if (!admin.two_factor_secret) {
+    throw new ValidationError('Start setup before enabling two-factor authentication');
+  }
+  if (!mfaService.verifyTotpEncrypted(req.body.code, admin.two_factor_secret)) {
+    throw new ValidationError('Invalid verification code');
+  }
+
+  const { plain, hashed } = await mfaService.generateRecoveryCodes();
+  await db('admin_users').where('id', admin.id).update({
+    two_factor_enabled: true,
+    two_factor_enrolled_at: new Date(),
+    two_factor_recovery_codes: JSON.stringify(hashed),
+    updated_at: new Date()
+  });
+
+  await logActivity('admin_mfa_enabled',
+    { admin_id: admin.id },
+    null,
+    { type: 'admin', id: admin.id, name: admin.username }
+  );
+
+  successResponse(res, {
+    message: 'Two-factor authentication enabled',
+    recoveryCodes: plain
+  });
+}));
+
+// Disable MFA. Requires a fresh TOTP or recovery code so a hijacked session
+// can't silently strip the second factor.
+router.post('/mfa/disable', [
+  adminAuth,
+  body('code').notEmpty().withMessage('A current code is required to disable 2FA')
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const admin = await db('admin_users').where('id', req.admin.id).first();
+  if (!admin) throw new NotFoundError('Admin user');
+  if (!isMfaEnabled(admin)) {
+    throw new ValidationError('Two-factor authentication is not enabled');
+  }
+
+  const totpOk = mfaService.verifyTotpEncrypted(req.body.code, admin.two_factor_secret);
+  let recoveryOk = false;
+  if (!totpOk) {
+    const stored = mfaService.parseRecoveryCodes(admin.two_factor_recovery_codes);
+    recoveryOk = (await mfaService.consumeRecoveryCode(req.body.code, stored)).matched;
+  }
+  if (!totpOk && !recoveryOk) {
+    throw new ValidationError('Invalid verification code');
+  }
+
+  await db('admin_users').where('id', admin.id).update({
+    two_factor_enabled: false,
+    two_factor_secret: null,
+    two_factor_recovery_codes: null,
+    two_factor_enrolled_at: null,
+    updated_at: new Date()
+  });
+
+  await logActivity('admin_mfa_disabled',
+    { admin_id: admin.id },
+    null,
+    { type: 'admin', id: admin.id, name: admin.username }
+  );
+
+  successResponse(res, { message: 'Two-factor authentication disabled' });
+}));
+
+// Regenerate recovery codes (invalidates the old set). Requires a fresh TOTP
+// code. Returns the new codes once.
+router.post('/mfa/recovery-codes', [
+  adminAuth,
+  body('code').notEmpty().withMessage('A current authenticator code is required')
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const admin = await db('admin_users').where('id', req.admin.id).first();
+  if (!admin) throw new NotFoundError('Admin user');
+  if (!isMfaEnabled(admin)) {
+    throw new ValidationError('Two-factor authentication is not enabled');
+  }
+  if (!mfaService.verifyTotpEncrypted(req.body.code, admin.two_factor_secret)) {
+    throw new ValidationError('Invalid verification code');
+  }
+
+  const { plain, hashed } = await mfaService.generateRecoveryCodes();
+  await db('admin_users').where('id', admin.id).update({
+    two_factor_recovery_codes: JSON.stringify(hashed),
+    updated_at: new Date()
+  });
+
+  await logActivity('admin_mfa_recovery_regenerated',
+    { admin_id: admin.id },
+    null,
+    { type: 'admin', id: admin.id, name: admin.username }
+  );
+
+  successResponse(res, {
+    message: 'Recovery codes regenerated',
+    recoveryCodes: plain
+  });
 }));
 
 module.exports = router;

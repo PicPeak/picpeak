@@ -2,7 +2,7 @@ name: Release Please (Beta)
 
 on:
   push:
-    branches: [beta]
+    branches: [main]
 
 permissions:
   contents: write
@@ -20,10 +20,48 @@ jobs:
         uses: googleapis/release-please-action@v4
         id: release
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # A dedicated token (fine-grained PAT) makes the release PR run CI
+          # automatically (no "workflows awaiting approval") and lets it be
+          # merged without a manual review. Falls back to GITHUB_TOKEN so the
+          # workflow still works before the secret is added (#719).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config-beta.json
           manifest-file: .release-please-manifest-beta.json
-          target-branch: beta
+          target-branch: main
+
+      # Auto-approve + enable auto-merge on the open release PR so betas publish
+      # with no manual clicks. Approval uses GITHUB_TOKEN (github-actions[bot]) —
+      # a different identity than the PR author (RELEASE_PLEASE_TOKEN) — so it is
+      # a valid review (requires the org's "Allow GitHub Actions to approve pull
+      # requests" + the repo's "Allow auto-merge"). Only meaningful when a PAT is
+      # set: without it the PR is bot-authored and can't be self-approved, so we
+      # skip and leave today's manual flow. Best-effort — never blocks the run.
+      - name: Auto-approve and enable auto-merge on the release PR
+        if: ${{ steps.release.outputs.release_created != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PAT: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # This job has no checkout, so gh can't infer the repo from a git
+          # remote — set it explicitly (same pattern as whatsnew, 2a5f0a8).
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$RELEASE_PAT" ]; then
+            echo "RELEASE_PLEASE_TOKEN not set — skipping auto-merge (manual review still required)."
+            exit 0
+          fi
+          pr=$(gh pr list --head release-please--branches--main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            # Approve as github-actions[bot] (GITHUB_TOKEN) — a different identity
+            # than the PR author (the PAT) — so it counts as a valid review.
+            gh pr review "$pr" --approve --body "Automated approval — release-please version bump + changelog (#719)." || true
+            # Enable auto-merge as the PAT so the eventual merge commit is
+            # attributed to a real identity. If enabled via GITHUB_TOKEN the merge
+            # push is suppressed by recursion prevention and the follow-up run that
+            # cuts the tag/release never fires (#719).
+            GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto || true
+          else
+            echo "No open release PR to auto-merge."
+          fi
 
       - name: Output Release Info
         if: ${{ steps.release.outputs.release_created }}
@@ -34,4 +72,17 @@ jobs:
           echo "**Version:** ${{ steps.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Docker images will be built and tagged with this beta version." >> $GITHUB_STEP_SUMMARY
+
+  # Best-effort "What's New" highlights on the freshly-created release. Runs in
+  # this same workflow run (not a `release:` trigger) because release-please
+  # creates the release with GITHUB_TOKEN, which never starts new workflow runs.
+  whatsnew:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    permissions:
+      contents: write   # edit the release body
+      models: read       # GitHub Models (free tier)
+    uses: ./.github/workflows/whatsnew-highlights.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
 

@@ -5,6 +5,7 @@
 
 const { validationResult } = require('express-validator');
 const { ValidationError } = require('./errors');
+const logger = require('./logger');
 
 /**
  * Wraps an async route handler to catch errors and pass them to the error handler.
@@ -69,25 +70,26 @@ const successResponse = (res, data, statusCode = 200, message = null) => {
 };
 
 /**
- * Sends a standardized error response.
- * Note: Prefer throwing custom errors and letting the error handler format the response.
+ * Logs an error and sends a standardized error response of shape `{ error: <string> }`.
  *
  * @param {Response} res - Express response object
- * @param {string} message - Error message
+ * @param {Error|*} error - The caught error (logged, never sent to the client)
  * @param {number} [statusCode=500] - HTTP status code
- * @param {string} [code] - Optional error code
- * @param {*} [details] - Optional additional error details
+ * @param {string} [publicMessage] - Message sent to the client; falls back to the error's message
  *
  * @example
- * errorResponse(res, 'Invalid input', 400, 'VALIDATION_ERROR', { field: 'email' });
+ * } catch (error) {
+ *   errorResponse(res, error, 500, 'Failed to fetch events');
+ * }
  */
-const errorResponse = (res, message, statusCode = 500, code = null, details = null) => {
-  const response = {
-    error: message,
-    ...(code && { code }),
-    ...(details && { details })
-  };
-  res.status(statusCode).json(response);
+const errorResponse = (res, error, statusCode = 500, publicMessage) => {
+  const message = publicMessage || (error instanceof Error ? error.message : String(error));
+  const route = res.req ? `${res.req.method} ${res.req.originalUrl}` : null;
+  logger.error(route ? `${route} - ${message}` : message, {
+    error: error instanceof Error ? error.message : error,
+    stack: error instanceof Error ? error.stack : undefined
+  });
+  res.status(statusCode).json({ error: message });
 };
 
 /**

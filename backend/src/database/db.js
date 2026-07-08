@@ -24,8 +24,73 @@ try {
   try { logger.warn('SQLite directory ensure failed', { error: e.message }); } catch (_) {}
 }
 
-// Create database connection with built-in retry logic
-const db = knex(knexConfig);
+// Create database connection with built-in retry logic.
+//
+// The underlying knex instance is held in `_db` and reachable through a
+// Proxy `db` that forwards every call to the current instance. This
+// indirection exists so `reinitPool()` below can swap the live pool
+// without breaking the thousands of existing `const { db } = require(...)`
+// imports — they capture the Proxy once, and every subsequent
+// `db('table')` / `db.schema.hasTable(...)` lookup goes through the
+// Proxy to whatever `_db` currently points at.
+//
+// Used by the restore service after DROP/CREATE DATABASE: the old pool
+// is destroyed during the drop (to release PG connections so the DROP
+// can succeed), then `reinitPool()` opens a fresh pool against the
+// recreated DB. Without this, every query in the process after a
+// restore failed with "Unable to acquire a connection" until the
+// container was manually restarted — exactly the footgun Ralf hit
+// repeatedly on 2026-05-30.
+let _db = knex(knexConfig);
+
+const db = new Proxy(function knexCall() {}, {
+  // db('tableName') — knex's query builder entry point
+  apply(_target, _thisArg, args) {
+    return _db(...args);
+  },
+  // db.schema, db.raw, db.migrate, etc.
+  get(_target, prop) {
+    const v = _db[prop];
+    return typeof v === 'function' ? v.bind(_db) : v;
+  },
+  // Defensive: future code that does `if ('schema' in db)` works.
+  has(_target, prop) { return prop in _db; },
+});
+
+/**
+ * Tear down the current knex pool and open a fresh one.
+ *
+ * Idempotent — calling it twice in a row just destroys + recreates
+ * twice, no error. Throws if the new pool can't establish a
+ * connection (which surfaces a clear error rather than letting the
+ * caller proceed with a half-broken pool).
+ *
+ * Used by restoreService after the DROP/CREATE DATABASE pair.
+ */
+async function reinitPool() {
+  const prev = _db;
+  try {
+    await prev.destroy();
+  } catch (err) {
+    logger.warn(`Old pool destroy failed (continuing with reinit): ${err.message}`);
+  }
+  _db = knex(knexConfig);
+  // Probe the new pool with a no-op query so we fail loudly here if
+  // the new pool can't connect — better than silently handing the
+  // caller a broken pool and surfacing the error on the next admin
+  // request.
+  try {
+    if (knexConfig.client === 'pg') {
+      await _db.raw('SELECT 1');
+    } else {
+      await _db.raw('SELECT 1');
+    }
+  } catch (probeErr) {
+    logger.error('New pool failed health-check after reinit', { error: probeErr.message });
+    throw probeErr;
+  }
+  logger.info('knex pool re-initialized successfully');
+}
 
 // Connection retry configuration
 const MAX_RETRIES = 3;
@@ -580,8 +645,14 @@ async function ensureGlobalCategories() {
 }
 
 // Helper function to log activities
-async function logActivity(activityType, metadata = {}, eventId = null, actor = null) {
+async function logActivity(activityType, metadata = {}, eventId = null, actor = null, executor = null) {
   try {
+    // Callers issuing the log from inside a knex transaction must pass that
+    // trx as `executor`, otherwise the global-`db` insert tries to grab a
+    // second connection from the single-connection SQLite pool while the
+    // trx still holds it → deadlock. Defaults to the global db for the
+    // common after-commit / outside-trx callers.
+    const conn = executor || db;
     // actor_id is integer-typed; some legacy callers pass a hex-string
     // identifier (e.g. a 16-char guest fingerprint) which makes Postgres
     // throw "invalid input syntax for type integer" and drop the entire
@@ -594,7 +665,7 @@ async function logActivity(activityType, metadata = {}, eventId = null, actor = 
     const actorName = actor?.name
       || (actorIdInt === null && rawId !== undefined && rawId !== null ? String(rawId) : null);
 
-    await db('activity_logs').insert({
+    await conn('activity_logs').insert({
       activity_type: activityType,
       actor_type: actor?.type || 'system',
       actor_id: actorIdInt,
@@ -607,4 +678,4 @@ async function logActivity(activityType, metadata = {}, eventId = null, actor = 
   }
 }
 
-module.exports = { db, initializeDatabase, logActivity, withRetry };
+module.exports = { db, initializeDatabase, logActivity, withRetry, reinitPool };

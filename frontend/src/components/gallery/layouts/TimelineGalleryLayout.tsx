@@ -1,13 +1,13 @@
-import React, { useMemo, useState } from 'react';
-import { Download, Maximize2, Check, Calendar, Heart, MessageSquare } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Calendar, Heart } from 'lucide-react';
 import { format, parseISO, startOfDay, startOfWeek, startOfMonth } from 'date-fns';
 import { useTheme } from '../../../contexts/ThemeContext';
-import { AuthenticatedImage } from '../../common';
+import { PhotoCard } from '../PhotoCard';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
-import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
+import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 
 export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   photos,
@@ -23,11 +23,19 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   feedbackOptions
 }) => {
   const { theme } = useTheme();
+  const { formatTime: fmtTime } = useLocalizedDate();
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
+  // Seed from server is_liked on first non-empty payload (#590 follow-up).
+  // Mount-only so refetches don't clobber in-session optimistic toggles.
+  const likedSeededRef = useRef(false);
+  useEffect(() => {
+    if (likedSeededRef.current || photos.length === 0) return;
+    setLikedIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
+    likedSeededRef.current = true;
+  }, [photos]);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<null | { type: 'like'; photoId: number }>(null);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
-  const guestIdentity = useGuestIdentityOptional();
   const gallerySettings = theme.gallerySettings || {};
   const grouping = gallerySettings.timelineGrouping || 'day';
   const showDates = gallerySettings.timelineShowDates !== false;
@@ -100,129 +108,59 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
               {group.photos.map((photo) => {
                 const actualIndex = photos.findIndex(p => p.id === photo.id);
                 return (
-                  <div
+                  <PhotoCard
                     key={photo.id}
-                    className="photo-card relative group cursor-pointer aspect-square"
+                    photo={photo}
+                    isSelected={selectedPhotos.has(photo.id)}
+                    isSelectionMode={isSelectionMode}
                     onClick={() => onPhotoClick(actualIndex)}
-                  >
-                    <AuthenticatedImage
-                      src={photo.thumbnail_url || photo.url}
-                      alt={photo.filename}
-                      className="w-full h-full object-cover rounded-lg"
-                      loading="lazy"
-                      isGallery={true}
-                      protectFromDownload={!allowDownloads}
-                    />
-                    
-                    {/* Time label */}
-                    <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded">
-                      {format(parseISO(photo.uploaded_at), 'h:mm a')}
-                    </div>
-                    
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2">
-                      {!isSelectionMode && (
-                        <>
-                          <button
-                            className="p-2 bg-white/90 rounded-full hover:bg-white transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onPhotoClick(actualIndex);
-                            }}
-                            aria-label="View full size"
-                          >
-                            <Maximize2 className="w-5 h-5 text-neutral-800" />
-                          </button>
-                          {allowDownloads && (
-                            <button
-                              className="p-2 bg-white/90 rounded-full hover:bg-white transition-colors"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDownload(photo, e);
-                              }}
-                              aria-label="Download photo"
-                            >
-                              <Download className="w-5 h-5 text-neutral-800" />
-                            </button>
-                          )}
-                          {feedbackEnabled && feedbackOptions?.allowLikes && (
-                            <button
-                              className={`p-2 rounded-full transition-colors ${likedIds.has(photo.id) ? 'bg-red-500/90 hover:bg-red-500' : 'bg-white/90 hover:bg-white'}`}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (guestIdentity?.identityMode === 'guest') {
-                                  try {
-                                    await guestIdentity.ensureIdentity();
-                                  } catch {
-                                    return;
-                                  }
-                                  setLikedIds(prev => new Set(prev).add(photo.id));
-                                  try {
-                                    await feedbackService.submitFeedback(slug!, String(photo.id), {
-                                      feedback_type: 'like',
-                                    });
-                                  } catch (_) {}
-                                  return;
-                                }
-                                if (feedbackOptions?.requireNameEmail && !savedIdentity) {
-                                  setPendingAction({ type: 'like', photoId: photo.id });
-                                  setShowIdentityModal(true);
-                                  return;
-                                }
-                                setLikedIds(prev => new Set(prev).add(photo.id));
-                                try {
-                                  await feedbackService.submitFeedback(slug!, String(photo.id), {
-                                    feedback_type: 'like',
-                                    guest_name: savedIdentity?.name,
-                                    guest_email: savedIdentity?.email,
-                                  });
-                                } catch (_) {}
-                              }}
-                              aria-label="Like photo"
-                              aria-pressed={likedIds.has(photo.id)}
-                              title="Like"
-                            >
-                              <Heart className={`w-5 h-5 ${likedIds.has(photo.id) ? 'text-white fill-white' : 'text-neutral-800'}`} />
-                            </button>
-                          )}
-                          {canQuickComment && (
-                            <button
-                              className="p-2 bg-white/90 rounded-full hover:bg-white transition-colors"
-                              onClick={(e) => { e.stopPropagation(); onOpenPhotoWithFeedback?.(actualIndex); }}
-                              aria-label="Comment on photo"
-                              title="Comment"
-                            >
-                              <MessageSquare className="w-5 h-5 text-neutral-800" />
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                    {((photo.like_count ?? 0) > 0 || likedIds.has(photo.id)) && (
+                    onDownload={(e) => onDownload(photo, e)}
+                    onToggleSelect={() => onPhotoSelect && onPhotoSelect(photo.id)}
+                    className="photo-card relative group cursor-pointer aspect-square"
+                    imageProps={{
+                      src: photo.thumbnail_url || photo.url,
+                      alt: photo.filename,
+                      className: 'w-full h-full object-cover rounded-lg',
+                      loading: 'lazy',
+                      isGallery: true,
+                      protectFromDownload: !allowDownloads,
+                    }}
+                    overlayBaseClassName="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
+                    allowDownloads={allowDownloads}
+                    feedbackEnabled={feedbackEnabled}
+                    feedbackOptions={feedbackOptions}
+                    slug={slug}
+                    onQuickComment={canQuickComment ? () => onOpenPhotoWithFeedback?.(actualIndex) : undefined}
+                    liked={likedIds.has(photo.id)}
+                    onLikeSuccess={() => {
+                      // Toggle — server /feedback like is a toggle (#590).
+                      setLikedIds(prev => {
+                        const next = new Set(prev);
+                        if (next.has(photo.id)) next.delete(photo.id);
+                        else next.add(photo.id);
+                        return next;
+                      });
+                    }}
+                    savedIdentity={savedIdentity}
+                    onRequireIdentity={(action, photoId) => {
+                      setPendingAction({ type: action, photoId });
+                      setShowIdentityModal(true);
+                    }}
+                    likeBeforeComment
+                    checkboxTestId
+                    beforeOverlay={
+                      <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded">
+                        {fmtTime(photo.uploaded_at)}
+                      </div>
+                    }
+                    afterOverlay={((photo.like_count ?? 0) > 0 || likedIds.has(photo.id)) ? (
                       <div className={`absolute ${photo.type === 'collage' ? 'bottom-8' : 'bottom-2'} left-2 z-10`}>
                         <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-white/90 backdrop-blur-sm" title="Liked">
                           <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
                         </span>
                       </div>
-                    )}
-
-                    {/* Selection Checkbox (visible on hover or when selected) */}
-                    <button
-                      type="button"
-                      aria-label={`Select ${photo.filename}`}
-                      role="checkbox"
-                      aria-checked={selectedPhotos.has(photo.id)}
-                      data-testid={`gallery-photo-checkbox-${photo.id}`}
-                      className={`absolute top-2 right-2 z-20 transition-opacity ${
-                        selectedPhotos.has(photo.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                      }`}
-                      onClick={(e) => { e.stopPropagation(); onPhotoSelect && onPhotoSelect(photo.id); }}
-                    >
-                      <div className={`w-6 h-6 rounded-full border-2 ${selectedPhotos.has(photo.id) ? 'bg-accent-dark border-accent-dark' : 'bg-white/90 border-white'} flex items-center justify-center transition-colors`}>
-                        {selectedPhotos.has(photo.id) && <Check className="w-4 h-4 text-white" />}
-                      </div>
-                    </button>
-                  </div>
+                    ) : undefined}
+                  />
                 );
               })}
             </div>

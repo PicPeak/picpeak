@@ -2,7 +2,7 @@
  * Customer Accounts Service
  *
  * Recurring user logins (the third user tier alongside admin and guest).
- * See discussion the-luap/picpeak#354 and migration 087 for context.
+ * See discussion PicPeak/picpeak#354 and migration 087 for context.
  *
  * Mirrors userManagementService.js for invitation lifecycle but operates
  * on customer_accounts / customer_invitations / event_customer_assignments
@@ -21,6 +21,23 @@ const logger = require('../utils/logger');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days, matches admin invites
+
+/**
+ * Fire customer.created for the workflow engine, from every creation path
+ * (direct add + invitation accept). Best-effort / fail-closed; never throws
+ * into the caller.
+ */
+async function emitCustomerCreated(id, email) {
+  try {
+    await require('./workflows').emitWorkflowEvent('customer.created', {
+      entityType: 'customer',
+      entityId: id,
+      payload: { customerAccountId: id, customerEmail: email || null },
+    });
+  } catch (err) {
+    logger.warn('Failed to emit customer.created workflow event', { customerId: id, error: err.message });
+  }
+}
 
 /**
  * Whitelist of customer profile fields the admin is allowed to pre-fill on
@@ -42,6 +59,12 @@ const PREFILLABLE_FIELDS = [
   'city',
   'state',
   'country_code',
+  'country_name',
+  // Locale used for portal UI AND for quote/invoice PDF rendering.
+  // Admin can pre-set this on the invitation so a German customer
+  // gets German documents from the very first invoice, without
+  // waiting for them to log in and pick their language.
+  'preferred_language',
 ];
 
 /**
@@ -101,9 +124,14 @@ async function createInvitation({ email, invitedById, prefill }) {
   const existingCustomer = await db('customer_accounts')
     .where('email', normalisedEmail)
     .first();
-  if (existingCustomer) {
+  if (existingCustomer && existingCustomer.password_hash) {
+    // Already-active customer with this email — duplicate, reject.
     throw new ConflictError('A customer account with this email already exists', 'email');
   }
+  // If the existing customer is PASSIVE (password_hash IS NULL), this
+  // is the "promote to active" path: the admin clicked "Send portal
+  // invitation" on a passive customer. Allow the invitation through —
+  // acceptInvitation handles the UPSERT into the existing row.
 
   const pendingInvite = await db('customer_invitations')
     .where('email', normalisedEmail)
@@ -159,6 +187,93 @@ async function createInvitation({ email, invitedById, prefill }) {
 }
 
 /**
+ * Create a "passive" customer directly — no invitation, no email.
+ *
+ * Used for two flows:
+ *   1. Admin opens the quote/invoice editor, clicks "+ Create new
+ *      customer", fills out the form, hits "Save as passive customer".
+ *      The customer becomes available immediately as the recipient of
+ *      the document the admin is working on.
+ *   2. Admin opens the same form and hits "Save & send portal
+ *      invitation". The editor calls createDirect first to mint the
+ *      customer id, then calls the send-invite route to fire the
+ *      onboarding email. (Two separate API calls — easier to reason
+ *      about than an atomic endpoint.)
+ *
+ * A passive customer is identified by `password_hash IS NULL`. The
+ * customerAuth middleware already rejects login for those (bcrypt
+ * compare against null returns false), so we don't need a separate
+ * "is_passive" column or an extra gate.
+ *
+ * Race-guarded against duplicate emails the same way createInvitation
+ * is — a real duplicate throws ConflictError.
+ *
+ * @param {{ email, prefill, createdByAdminId }} args
+ * @returns {Promise<{ id }>} The new customer's id.
+ */
+async function createDirect({ email, prefill, createdByAdminId }) {
+  const normalisedEmail = String(email || '').trim().toLowerCase();
+  if (!normalisedEmail) throw new ValidationError('Email is required');
+
+  const existing = await db('customer_accounts')
+    .where('email', normalisedEmail)
+    .first();
+  if (existing) {
+    throw new ConflictError('A customer account with this email already exists', 'email');
+  }
+
+  // Same default-locale resolution as acceptInvitation so German
+  // shops get German customers automatically.
+  let defaultPreferredLanguage = 'en';
+  try {
+    // eslint-disable-next-line global-require
+    const businessProfileService = require('./businessProfileService');
+    const { profile: bp } = await businessProfileService.getProfile();
+    if (bp && bp.default_locale) defaultPreferredLanguage = bp.default_locale;
+  } catch (_) { /* keep 'en' fallback */ }
+
+  const sanitised = sanitisePrefill(prefill) || {};
+  const preferredLanguage = sanitised.preferred_language || defaultPreferredLanguage;
+
+  const [inserted] = await db('customer_accounts').insert({
+    email: normalisedEmail,
+    salutation: sanitised.salutation || null,
+    first_name: sanitised.first_name || null,
+    last_name: sanitised.last_name || null,
+    display_name: sanitised.display_name || null,
+    phone: sanitised.phone || null,
+    company_name: sanitised.company_name || null,
+    vat_id: sanitised.vat_id || null,
+    address_line1: sanitised.address_line1 || null,
+    address_line2: sanitised.address_line2 || null,
+    postal_code: sanitised.postal_code || null,
+    city: sanitised.city || null,
+    state: sanitised.state || null,
+    country_code: sanitised.country_code || null,
+    country_name: sanitised.country_name || null,
+    preferred_language: preferredLanguage,
+    password_hash: null,
+    is_active: formatBoolean(true),
+    must_change_password: formatBoolean(false),
+    password_changed_at: null,
+    created_by_admin_id: createdByAdminId || null,
+    created_at: new Date(),
+    updated_at: new Date(),
+  }).returning('id');
+  const id = inserted?.id || inserted;
+
+  await logActivity('customer_created_passive',
+    { customerId: id, email: normalisedEmail },
+    null,
+    { type: 'admin', id: createdByAdminId || null, name: 'system' }
+  );
+
+  logger.info('Passive customer created', { id, email: normalisedEmail, createdByAdminId });
+  await emitCustomerCreated(id, normalisedEmail);
+  return { id };
+}
+
+/**
  * Accept an invitation. Creates the customer_accounts row in a transaction
  * and marks the invitation accepted, so a partial failure can't leave a
  * dangling account or a re-usable token.
@@ -174,14 +289,23 @@ async function acceptInvitation({ token, name, password, profile }) {
     throw new ValidationError('Invalid or expired invitation');
   }
 
-  // Race-condition guard: an admin may have created the customer manually
-  // (future flow) between the invite link being generated and clicked.
+  // Race-condition guard: an admin may have created the customer
+  // manually (passive customer flow, migration-119-era and later)
+  // between the invite link being generated and clicked.
+  //
+  // Two cases:
+  //   - existing.password_hash IS NOT NULL → real duplicate, 409
+  //   - existing.password_hash IS NULL    → passive customer being
+  //     promoted to active. Branch to the UPSERT path further down so
+  //     the customer's id (and all the rows that reference it —
+  //     invoices, quotes, gallery assignments) survive promotion.
   const existing = await db('customer_accounts')
     .where('email', invitation.email)
     .first();
-  if (existing) {
+  if (existing && existing.password_hash) {
     throw new ConflictError('Email already registered', 'email');
   }
+  const promoting = !!existing && !existing.password_hash;
 
   const passwordHash = await bcrypt.hash(password, getBcryptRounds());
 
@@ -200,47 +324,105 @@ async function acceptInvitation({ token, name, password, profile }) {
     merged.display_name = String(name).trim();
   }
 
+  // Default the customer's preferred_language to the business profile's
+  // default_locale. Migration 090 sets the schema default to 'en' which
+  // is a poor fit for a Swiss/DE business — by pulling from the
+  // configured profile we make sure German shops issue German quotes
+  // and invoices to their new customers automatically. Customer-typed
+  // value still wins (if the accept form ever exposes the picker), and
+  // the admin can always override later on the customer detail page.
+  // Lazy require to avoid a service-cycle with businessProfileService.
+  let defaultPreferredLanguage = 'en';
+  try {
+    // eslint-disable-next-line global-require
+    const businessProfileService = require('./businessProfileService');
+    const { profile: bp } = await businessProfileService.getProfile();
+    if (bp && bp.default_locale) defaultPreferredLanguage = bp.default_locale;
+  } catch (_) { /* keep 'en' fallback */ }
+  const preferredLanguage = merged.preferred_language || defaultPreferredLanguage;
+
   const customerId = await db.transaction(async (trx) => {
-    const [inserted] = await trx('customer_accounts').insert({
-      email: invitation.email,
-      // Profile fields land directly on the customer row. Anything the user
-      // didn't set stays null.
-      salutation: merged.salutation || null,
-      first_name: merged.first_name || null,
-      last_name: merged.last_name || null,
-      display_name: merged.display_name || null,
-      phone: merged.phone || null,
-      company_name: merged.company_name || null,
-      vat_id: merged.vat_id || null,
-      address_line1: merged.address_line1 || null,
-      address_line2: merged.address_line2 || null,
-      postal_code: merged.postal_code || null,
-      city: merged.city || null,
-      state: merged.state || null,
-      country_code: merged.country_code || null,
-      password_hash: passwordHash,
-      is_active: formatBoolean(true),
-      // must_change_password is decorative today — accept-invite always
-      // sets a customer-chosen password, so this flag is never true and
-      // customerAuth doesn't read it. TODO when we ship an "admin
-      // pre-loads a temporary password" flow: surface a code in the
-      // login response (mirroring adminAuth's MUST_CHANGE_PASSWORD) and
-      // add a /change-password gate to customerAuth.
-      must_change_password: formatBoolean(false),
-      // Leave password_changed_at NULL on initial accept. Setting it here
-      // creates a millisecond/second-rounding race with the JWT issued
-      // by the immediate /login call: stored timestamp X.500ms can floor
-      // to X+1 in postgres while the JWT's iat lands at X, causing the
-      // customerAuth middleware's `iat < password_changed_at` check to
-      // reject perfectly valid tokens on the very next page reload. We
-      // populate password_changed_at only when an actual password change
-      // happens later (deactivate / reset flows).
-      password_changed_at: null,
-      created_by_admin_id: invitation.invited_by,
-      created_at: new Date(),
-      updated_at: new Date(),
-    }).returning('id');
-    const id = inserted?.id || inserted;
+    let id;
+    if (promoting) {
+      // Promotion path: passive customer being claimed by the
+      // customer themselves via the invitation link. UPDATE the
+      // existing row (preserving id + all foreign-key relationships)
+      // instead of inserting. We merge the profile fields: anything
+      // the customer typed on the accept form wins; values they
+      // didn't touch leave the existing row untouched.
+      id = existing.id;
+      const updates = {
+        password_hash: passwordHash,
+        password_changed_at: null,
+        is_active: formatBoolean(true),
+        must_change_password: formatBoolean(false),
+        updated_at: new Date(),
+      };
+      // Only overwrite profile fields when the merged payload
+      // actually carries a value — never blank out existing data
+      // (the customer might have left a field empty because the
+      // admin had pre-filled it correctly).
+      const overwriteIfSet = (key, col = key) => {
+        if (merged[key] != null && merged[key] !== '') updates[col] = merged[key];
+      };
+      overwriteIfSet('salutation');
+      overwriteIfSet('first_name');
+      overwriteIfSet('last_name');
+      overwriteIfSet('display_name');
+      overwriteIfSet('phone');
+      overwriteIfSet('company_name');
+      overwriteIfSet('vat_id');
+      overwriteIfSet('address_line1');
+      overwriteIfSet('address_line2');
+      overwriteIfSet('postal_code');
+      overwriteIfSet('city');
+      overwriteIfSet('state');
+      overwriteIfSet('country_code');
+      if (merged.preferred_language) updates.preferred_language = merged.preferred_language;
+      await trx('customer_accounts').where('id', id).update(updates);
+    } else {
+      const [inserted] = await trx('customer_accounts').insert({
+        email: invitation.email,
+        // Profile fields land directly on the customer row. Anything the user
+        // didn't set stays null.
+        salutation: merged.salutation || null,
+        first_name: merged.first_name || null,
+        last_name: merged.last_name || null,
+        display_name: merged.display_name || null,
+        phone: merged.phone || null,
+        company_name: merged.company_name || null,
+        vat_id: merged.vat_id || null,
+        address_line1: merged.address_line1 || null,
+        address_line2: merged.address_line2 || null,
+        postal_code: merged.postal_code || null,
+        city: merged.city || null,
+        state: merged.state || null,
+        country_code: merged.country_code || null,
+        preferred_language: preferredLanguage,
+        password_hash: passwordHash,
+        is_active: formatBoolean(true),
+        // must_change_password is decorative today — accept-invite always
+        // sets a customer-chosen password, so this flag is never true and
+        // customerAuth doesn't read it. TODO when we ship an "admin
+        // pre-loads a temporary password" flow: surface a code in the
+        // login response (mirroring adminAuth's MUST_CHANGE_PASSWORD) and
+        // add a /change-password gate to customerAuth.
+        must_change_password: formatBoolean(false),
+        // Leave password_changed_at NULL on initial accept. Setting it here
+        // creates a millisecond/second-rounding race with the JWT issued
+        // by the immediate /login call: stored timestamp X.500ms can floor
+        // to X+1 in postgres while the JWT's iat lands at X, causing the
+        // customerAuth middleware's `iat < password_changed_at` check to
+        // reject perfectly valid tokens on the very next page reload. We
+        // populate password_changed_at only when an actual password change
+        // happens later (deactivate / reset flows).
+        password_changed_at: null,
+        created_by_admin_id: invitation.invited_by,
+        created_at: new Date(),
+        updated_at: new Date(),
+      }).returning('id');
+      id = inserted?.id || inserted;
+    }
 
     await trx('customer_invitations')
       .where('id', invitation.id)
@@ -256,6 +438,7 @@ async function acceptInvitation({ token, name, password, profile }) {
   );
 
   logger.info('Customer invitation accepted', { customerId, email: invitation.email });
+  await emitCustomerCreated(customerId, invitation.email);
   return { customerId, email: invitation.email };
 }
 
@@ -301,6 +484,23 @@ async function listCustomers({ search } = {}) {
       'customer_accounts.salutation',
       'customer_accounts.company_name',
       'customer_accounts.is_active',
+      // Surfaced so the route's transformCustomer can compute the
+      // `isPassive` flag (passwordHash == null). The actual hash
+      // never leaves the API — transformCustomer drops it.
+      'customer_accounts.password_hash',
+      // Per-customer feature flags + hourly rate (migrations 092/129).
+      // Surfaced on the LIST endpoint so the standalone Hours-logging
+      // page can filter the customer dropdown to only customers with
+      // hours logging enabled, and read the default rate without an
+      // N+1 detail fetch. Without these in the SELECT,
+      // transformCustomer evaluates the four feature_* booleans as
+      // false (column absent → undefined → coerce to false).
+      'customer_accounts.feature_calendar',
+      'customer_accounts.feature_quotes',
+      'customer_accounts.feature_bills',
+      'customer_accounts.feature_hours_logging',
+      'customer_accounts.feature_contracts',
+      'customer_accounts.hourly_rate_minor',
       'customer_accounts.last_login',
       'customer_accounts.created_at',
       db.raw('COUNT(event_customer_assignments.id) as event_count')
@@ -364,10 +564,23 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     'email', 'salutation', 'first_name', 'last_name', 'display_name',
     'phone', 'company_name', 'billing_email', 'vat_id',
     'address_line1', 'address_line2', 'postal_code', 'city', 'state',
-    'country_code', 'preferred_language', 'notes',
+    'country_code', 'country_name', 'preferred_language', 'notes',
     // Per-customer feature flags (#354 follow-up). Booleans below are
     // coerced via formatBoolean for SQLite compatibility.
-    'feature_calendar', 'feature_quotes', 'feature_bills',
+    'feature_calendar', 'feature_quotes', 'feature_bills', 'feature_hours_logging',
+    // Per-customer contracts override (migration 131). Defaults TRUE so
+    // existing customers keep their Contracts tab.
+    'feature_contracts',
+    // CRM billing cadence (migration 102). 'per_event' (default) keeps
+    // each invoice firing on its own schedule; monthly/quarterly snap
+    // every scheduled invoice to billing_cycle_day of the next period.
+    'billing_cadence', 'billing_cycle_day',
+    // Hour-logging default rate (migration 129). Minor units; null
+    // means admin must enter a per-entry override on every entry.
+    'hourly_rate_minor',
+    // Per-customer Skonto opt-out (migration 112). Boolean, coerced
+    // via formatBoolean below for SQLite compatibility.
+    'skonto_disabled',
   ];
   for (const f of fields) {
     if (updates[f] !== undefined) {
@@ -377,8 +590,47 @@ async function updateCustomer(id, updates, updatedByAdminId) {
         allowed[f] = String(updates[f] || '').trim().toLowerCase();
       } else if (f === 'country_code' && updates[f]) {
         allowed[f] = String(updates[f]).trim().toUpperCase().slice(0, 2);
-      } else if (f === 'feature_calendar' || f === 'feature_quotes' || f === 'feature_bills') {
+      } else if (
+        f === 'feature_calendar' || f === 'feature_quotes'
+        || f === 'feature_bills' || f === 'feature_hours_logging'
+        || f === 'feature_contracts'
+        || f === 'skonto_disabled'
+      ) {
         allowed[f] = formatBoolean(updates[f]);
+      } else if (f === 'hourly_rate_minor') {
+        // Default hourly rate. Null clears it (forces per-entry
+        // overrides); otherwise coerce to a non-negative bigint-safe
+        // integer. Anything funky → null.
+        if (updates[f] === null || updates[f] === '') {
+          allowed[f] = null;
+        } else {
+          const v = parseInt(updates[f], 10);
+          allowed[f] = Number.isFinite(v) && v >= 0 ? v : null;
+        }
+      } else if (f === 'billing_cadence') {
+        // Whitelist enum. Anything else flips to 'per_event' so we
+        // never persist garbage that the scheduler can't interpret.
+        const v = String(updates[f] || '').toLowerCase();
+        allowed[f] = ['per_event', 'monthly', 'quarterly'].includes(v) ? v : 'per_event';
+      } else if (f === 'billing_cycle_day') {
+        // Sign carries the interpretation:
+        //   positive 1..28  → day-of-month (clamped to month length at
+        //                     schedule time, so cycleDay=28 stays valid
+        //                     in February)
+        //   negative -1..-15 → that many days before end of month
+        //                      (cycleDay=-3 on a 31-day month fires on
+        //                      the 28th; on a 28-day February fires on
+        //                      the 25th)
+        // Zero is meaningless and clamps to 1 so the column never
+        // stores "the 0th of the month".
+        const v = parseInt(updates[f], 10);
+        if (!Number.isFinite(v) || v === 0) {
+          allowed[f] = 1;
+        } else if (v > 0) {
+          allowed[f] = Math.min(28, v);
+        } else {
+          allowed[f] = Math.max(-15, v);
+        }
       } else {
         allowed[f] = updates[f];
       }
@@ -552,6 +804,18 @@ async function eraseCustomer(id, erasedByAdminId) {
 
     // Active reset tokens for this customer should be invalidated.
     await trx('customer_password_resets').where('customer_account_id', id).del();
+
+    // Pending re-bills (incoming invoices, migration 132) attached to this
+    // customer would otherwise stay billable to the now-anonymized account —
+    // return the not-yet-billed ones to the inbox for re-triage so they're not
+    // silently lost or billed to a ghost (PR #636 review #2). Guarded for
+    // schema drift on installs that predate migration 132.
+    if (await trx.schema.hasColumn('inbound_documents', 'customer_account_id')) {
+      await trx('inbound_documents')
+        .where({ customer_account_id: id })
+        .whereNull('billed_invoice_id')
+        .update({ customer_account_id: null, disposition: null, status: 'unsorted', updated_at: new Date() });
+    }
   });
 
   await logActivity('customer_erased',
@@ -579,7 +843,22 @@ async function searchCustomers(query, { limit = 10 } = {}) {
         .orWhereRaw('LOWER(COALESCE(last_name, \'\')) LIKE ?', [term])
         .orWhereRaw('LOWER(COALESCE(company_name, \'\')) LIKE ?', [term]);
     })
-    .select('id', 'email', 'display_name', 'first_name', 'last_name', 'company_name')
+    // password_hash is required by transformCustomer to compute the
+    // isPassive flag (passwordHash == null = passive / admin-only).
+    // Omitting it caused every search result to render as "Passive —
+    // admin only" because `undefined == null` is true. The hash itself
+    // is dropped by the route's transformCustomer before leaving the API.
+    //
+    // G.2 — `feature_hours_logging` is required by the calendar's
+    // drag-create modal (F.6) so the CustomerPicker can render the
+    // "Hour logging disabled" badge. Omitting it from this SELECT
+    // caused the badge to appear on EVERY search result regardless
+    // of the actual per-customer flag, because transformCustomer
+    // coerces undefined → false.
+    .select(
+      'id', 'email', 'display_name', 'first_name', 'last_name', 'company_name',
+      'password_hash', 'feature_hours_logging',
+    )
     .orderBy('email', 'asc')
     .limit(limit);
 }
@@ -970,10 +1249,25 @@ async function getCustomerSurfaceGlobals() {
     }
     map[r.setting_key] = v;
   }
+  // Feature globals:
+  //   - quotes + bills default TRUE — the customer-facing pages are
+  //     fully built and the AND-logic with the per-customer flag is
+  //     the real gate. The earlier hardcoded `false` made it
+  //     impossible to surface the tabs without code changes.
+  //   - calendar defaults FALSE — the customer-side page is still a
+  //     coming-soon stub.
+  // Each is overridable via app_settings (setting_type='customer_surface').
+  const readBool = (key, fallback) => {
+    const v = map[key];
+    if (v === undefined) return fallback;
+    if (v === true || v === 1 || v === '1' || v === 't') return true;
+    if (v === false || v === 0 || v === '0' || v === 'f') return false;
+    return fallback;
+  };
   return {
-    calendarEnabled: false,
-    quotesEnabled: false,
-    billsEnabled: false,
+    calendarEnabled: readBool('customer_feature_calendar_enabled', false),
+    quotesEnabled:   readBool('customer_feature_quotes_enabled',   true),
+    billsEnabled:    readBool('customer_feature_bills_enabled',    true),
     showLogo:        map.customer_show_logo !== false, // default true
     showCompanyName: map.customer_show_company_name !== false, // default true
   };
@@ -994,13 +1288,32 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
     ? await db('customer_accounts').where('id', customerOrId).first()
     : customerOrId;
   if (!customer) {
-    return { calendar: false, quotes: false, bills: false };
+    return { calendar: false, quotes: false, bills: false, hoursLogging: false, contracts: false };
   }
   const globals = await getCustomerSurfaceGlobals();
+  // SQLite returns booleans as 0/1; Postgres returns true/false. The
+  // strict `=== true` check used to falsely return `false` on SQLite,
+  // hiding the sidebar entry even when admin had flipped the per-
+  // customer toggle on. Normalise both shapes here so the Quotes /
+  // Invoices tabs appear consistently.
+  const truthy = (v) => v === true || v === 1 || v === '1' || v === 't';
+  // Hours logging gates on the master feature_flags row (Settings →
+  // Features) AND the per-customer flag. The customer_surface
+  // app_settings layer is admin-side-only here — no portal surface
+  // for hours, so we skip the third gate the bills/quotes use.
+  const hoursMaster = await db('feature_flags').where({ key: 'hoursLogging' }).first();
+  const hoursLoggingMaster = hoursMaster ? Boolean(hoursMaster.value) : true;
+  // Contracts: global feature_flags row AND the per-customer override
+  // (migration 131). feature_contracts defaults TRUE, so existing customers
+  // keep their Contracts tab; an admin can hide it per customer.
+  const contractsMaster = await db('feature_flags').where({ key: 'contracts' }).first();
+  const contractsEnabled = contractsMaster ? Boolean(contractsMaster.value) : false;
   return {
-    calendar: globals.calendarEnabled && customer.feature_calendar === true,
-    quotes:   globals.quotesEnabled   && customer.feature_quotes   === true,
-    bills:    globals.billsEnabled    && customer.feature_bills    === true,
+    calendar: globals.calendarEnabled && truthy(customer.feature_calendar),
+    quotes:   globals.quotesEnabled   && truthy(customer.feature_quotes),
+    bills:    globals.billsEnabled    && truthy(customer.feature_bills),
+    hoursLogging: hoursLoggingMaster && truthy(customer.feature_hours_logging),
+    contracts: contractsEnabled && truthy(customer.feature_contracts),
   };
 }
 
@@ -1130,6 +1443,7 @@ async function applyPasswordReset({ token, password }) {
 
 module.exports = {
   createInvitation,
+  createDirect,
   acceptInvitation,
   validateInvitationToken,
   listCustomers,
@@ -1142,6 +1456,7 @@ module.exports = {
   setAssignmentsForEvent,
   setAssignmentsForCustomer,
   getAssignmentsForEvent,
+  notifyCustomerOfNewAssignments,
   listEventsForCustomer,
   customerHasAccessToEvent,
   getPendingInvitations,

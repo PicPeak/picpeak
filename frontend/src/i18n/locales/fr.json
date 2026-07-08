@@ -1361,6 +1361,12 @@
     "saveTheme": "Enregistrer le thème",
     "previewLayout": "Aperçu de la disposition",
     "livePreview": "Aperçu en direct",
+    "pdfTypography": "Typographie PDF",
+    "pdfTypographyHelp": "Utilisée pour les en-têtes de factures et de devis. Choisissez l'une des polices fournies ou laissez la valeur par défaut pour utiliser Helvetica.",
+    "pdfFontFamily": "Police du corps",
+    "pdfFontFamilyDefault": "Utiliser Helvetica (par défaut)",
+    "pdfFontFamilyMissing": "manquante",
+    "pdfFontSavedToast": "Police PDF enregistrée.",
     "heroPlaceholderText": "La photo d'en-tête de votre événement apparaîtra ici",
     "whiteLabel": "Marque blanche",
     "hidePoweredBy": "Masquer la mention \"Propulsé par PicPeak\"",
@@ -1375,6 +1381,11 @@
     "logoMaxHeight": "Hauteur maximale (pixels)",
     "logoMaxHeightHelp": "Définissez une hauteur maximale personnalisée pour le logo (20-200 pixels)",
     "logoPosition": "Position du logo dans l'en-tête",
+    "positionLeft": "Gauche",
+    "positionCenter": "Centre",
+    "positionRight": "Droite",
+    "positionSidepanel": "Barre latérale",
+    "positionSidepanelHelp": "Le logo apparaît dans la barre latérale admin au lieu de l'en-tête. Lorsque la barre latérale est repliée, la favicon est affichée.",
     "logoDisplayMode": "Mode d'affichage",
     "logoOnly": "Logo uniquement",
     "textOnly": "Nom de l'entreprise uniquement",
@@ -3005,7 +3016,47 @@
       "body": "Activez Comptes (ou une autre sous-fonctionnalité Clients) dans Paramètres → Fonctionnalités pour commencer."
     },
     "subnav": {
-      "accounts": "Comptes"
+      "accounts": "Comptes",
+      "quotes": "Devis",
+      "bills": "Factures",
+      "taxReport": "Fiscalité",
+      "development": "Développement"
+    }
+  },
+  "taxReport": {
+    "title": "Rapport fiscal",
+    "intro": "Liste des revenus sur une période donnée avec ventilation net + TVA groupée par taux de TVA. Les factures annulées restent visibles pour la continuité de la piste d'audit, mais sont exclues des totaux.",
+    "filters": {
+      "period": "Période",
+      "thisYear": "Cette année",
+      "lastYear": "Année dernière",
+      "thisQuarter": "Ce trimestre",
+      "lastQuarter": "Trimestre dernier",
+      "custom": "Plage personnalisée",
+      "from": "Du",
+      "to": "Au",
+      "currency": "Devise"
+    },
+    "exportPdf": "Exporter en PDF",
+    "exportCsv": "Exporter en CSV",
+    "exportFailed": "Échec de l'export. Veuillez réessayer.",
+    "errorTitle": "Impossible de charger le rapport fiscal",
+    "empty": "Aucune facture sur cette période.",
+    "statusCancelled": "Annulée",
+    "totalsByVatRate": "Totaux par taux de TVA",
+    "grandTotalNet": "Total net",
+    "grandTotalVat": "Total TVA",
+    "grandTotalGross": "Total brut",
+    "cancelledFootnote": "{{count}} facture(s) annulée(s) — montants exclus des totaux (affichés pour la continuité de la piste d'audit).",
+    "col": {
+      "date": "Date",
+      "invoice": "Facture",
+      "customer": "Client",
+      "event": "Événement",
+      "vatRate": "TVA %",
+      "net": "Net",
+      "vat": "TVA",
+      "total": "Brut"
     }
   }
 }

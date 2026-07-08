@@ -20,11 +20,17 @@ import {
   RefreshCw,
   Loader2
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
-import { toast } from 'react-toastify';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Button, Card, Input, Loading } from '../common';
 import { api } from '../../config/api';
+import { useMutationWithToast } from '../../hooks';
+// Per [[feedback_respect_general_format_settings]]: route every displayed
+// date/time through useLocalizedDate so the admin's general_date_format +
+// general_time_format settings apply uniformly. Previously the backup
+// History pane used raw date-fns format() with hard-coded 'p' (12-hour
+// AM/PM) and 'PPP' (US-locale long date), which ignored the settings —
+// Ralf 2026-05-31 flagged "11:25 PM" on a 24h-configured install.
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
 const statusIcons = {
   completed: { icon: CheckCircle, color: 'text-green-500' },
@@ -47,7 +53,12 @@ export const BackupHistory = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const queryClient = useQueryClient();
+  // Locale-aware formatters that respect admin's general_date_format +
+  // general_time_format settings. See useLocalizedDate.ts for the full
+  // contract; formatTime gives "HH:mm" (24h) or "h:mm a" (12h) based on
+  // the setting, format(date) honors general_date_format, and
+  // formatDistanceToNow returns "2 minutes ago" in the admin's i18n locale.
+  const { format, formatTime, formatDistanceToNow } = useLocalizedDate();
 
   // Fetch backup history
   const { data, isLoading, refetch } = useQuery({
@@ -65,18 +76,14 @@ export const BackupHistory = () => {
   });
 
   // Delete backup mutation
-  const deleteMutation = useMutation({
+  const deleteMutation = useMutationWithToast({
     mutationFn: async (backupId) => {
       const response = await api.delete(`/admin/backup/runs/${backupId}`);
       return response.data;
     },
-    onSuccess: () => {
-      toast.success('Backup deleted successfully');
-      queryClient.invalidateQueries({ queryKey: ['backup-history'] });
-    },
-    onError: (error) => {
-      toast.error(error.response?.data?.error || 'Failed to delete backup');
-    }
+    successMessage: 'Backup deleted successfully',
+    invalidateKeys: [['backup-history']],
+    errorMessage: 'Failed to delete backup'
   });
 
   const toggleRowExpansion = (id) => {
@@ -90,7 +97,7 @@ export const BackupHistory = () => {
   };
 
   const handleDelete = (backup) => {
-    if (window.confirm(`Are you sure you want to delete this backup from ${format(new Date(backup.created_at), 'PPP')}?`)) {
+    if (window.confirm(`Are you sure you want to delete this backup from ${format(new Date(backup.created_at))}?`)) {
       deleteMutation.mutate(backup.id);
     }
   };
@@ -200,10 +207,10 @@ export const BackupHistory = () => {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
                             <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                              {format(new Date(backup.created_at), 'PPP')}
+                              {format(new Date(backup.created_at))}
                             </p>
                             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                              {format(new Date(backup.created_at), 'p')} • {formatDistanceToNow(new Date(backup.created_at), { addSuffix: true })}
+                              {formatTime(new Date(backup.created_at))} • {formatDistanceToNow(new Date(backup.created_at), { addSuffix: true })}
                             </p>
                           </div>
                         </td>
@@ -236,7 +243,7 @@ export const BackupHistory = () => {
                             </button>
                             {backup.manifest_path && (
                               <button
-                                onClick={() => window.open(`/admin/backup/download/${backup.id}`, '_blank')}
+                                onClick={() => window.open(`/api/admin/backup/download/${backup.id}`, '_blank')}
                                 className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
                                 title={t('backup.actions.download')}
                               >
@@ -270,18 +277,27 @@ export const BackupHistory = () => {
                                   </div>
                                   <div className="flex justify-between">
                                     <span className="text-neutral-500 dark:text-neutral-400">{t('backup.history.details.started')}:</span>
-                                    <span className="text-neutral-900 dark:text-neutral-100">{format(new Date(backup.created_at), 'p')}</span>
+                                    <span className="text-neutral-900 dark:text-neutral-100">{formatTime(new Date(backup.created_at))}</span>
                                   </div>
                                   {backup.completed_at && (
                                     <div className="flex justify-between">
                                       <span className="text-neutral-500 dark:text-neutral-400">{t('backup.history.details.completed')}:</span>
-                                      <span className="text-neutral-900 dark:text-neutral-100">{format(new Date(backup.completed_at), 'p')}</span>
+                                      <span className="text-neutral-900 dark:text-neutral-100">{formatTime(new Date(backup.completed_at))}</span>
                                     </div>
                                   )}
                                 </div>
                               </div>
 
-                              {/* Content Backed Up */}
+                              {/* Content Backed Up
+                                  Two render paths depending on what the backend
+                                  provided:
+                                    - NEW: per_path map { "events/active": {count, size}, ... }
+                                      from Stage B's walker. One row per path,
+                                      ordered by display_order.
+                                    - LEGACY: fall back to Photos + Archives +
+                                      "Other" bucket so the arithmetic still adds
+                                      up when restoring a backup taken before this
+                                      change shipped. */}
                               <div className="space-y-2">
                                 <h4 className="font-medium text-neutral-900 dark:text-neutral-100">{t('backup.history.details.contentBackedUp')}</h4>
                                 <div className="space-y-2">
@@ -289,18 +305,78 @@ export const BackupHistory = () => {
                                     <Database className={`h-4 w-4 ${stats.database_backed_up ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
                                     <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('backup.configuration.whatToBackup.database')}</span>
                                   </div>
-                                  <div className="flex items-center space-x-2">
-                                    <Image className={`h-4 w-4 ${stats.photos_backed_up > 0 ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
-                                    <span className="text-sm text-neutral-700 dark:text-neutral-300">
-                                      Photos ({stats.photos_backed_up || 0} of {stats.total_photos || 0})
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center space-x-2">
-                                    <FileArchive className={`h-4 w-4 ${stats.archives_backed_up > 0 ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
-                                    <span className="text-sm text-neutral-700 dark:text-neutral-300">
-                                      Archives ({stats.archives_backed_up || 0})
-                                    </span>
-                                  </div>
+                                  {(() => {
+                                    // Per-path breakdown when present
+                                    const perPath = stats.per_path || stats.perPath;
+                                    if (perPath && Object.keys(perPath).length > 0) {
+                                      const formatSize = (bytes) => {
+                                        if (!bytes) return '0 B';
+                                        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+                                        const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+                                        return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+                                      };
+                                      // Sort by path string so the order is stable across renders;
+                                      // backend uses backup_paths.display_order to drive the walker
+                                      // but doesn't carry order into per_path map — alphabetic is
+                                      // fine for the display.
+                                      const entries = Object.entries(perPath).sort(([a], [b]) => a.localeCompare(b));
+                                      return (
+                                        <>
+                                          {entries.map(([pathKey, info]) => (
+                                            <div key={pathKey} className="flex items-center space-x-2">
+                                              <FileArchive className={`h-4 w-4 ${info.count > 0 ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
+                                              <span className="text-sm text-neutral-700 dark:text-neutral-300 font-mono">
+                                                {pathKey}
+                                              </span>
+                                              <span className="text-sm text-neutral-500 dark:text-neutral-400 ml-auto">
+                                                {info.count} {info.size ? `(${formatSize(info.size)})` : ''}
+                                              </span>
+                                            </div>
+                                          ))}
+                                          <div className="flex items-center space-x-2 pt-1 border-t border-neutral-200 dark:border-neutral-700">
+                                            <span className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                                              {t('backup.history.details.totalFiles', 'Total files')}: {stats.files_processed || 0}
+                                            </span>
+                                          </div>
+                                        </>
+                                      );
+                                    }
+
+                                    // LEGACY rendering for backups taken before
+                                    // per_path was emitted.
+                                    const total = Number(stats.files_processed) || 0;
+                                    const accounted =
+                                      (Number(stats.photos_backed_up) || 0)
+                                      + (Number(stats.archives_backed_up) || 0);
+                                    const other = Math.max(total - accounted, 0);
+                                    return (
+                                      <>
+                                        <div className="flex items-center space-x-2">
+                                          <Image className={`h-4 w-4 ${stats.photos_backed_up > 0 ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
+                                          <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                                            Photos ({stats.photos_backed_up || 0} of {stats.total_photos || 0})
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <FileArchive className={`h-4 w-4 ${stats.archives_backed_up > 0 ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
+                                          <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                                            Archives ({stats.archives_backed_up || 0})
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <FileArchive className={`h-4 w-4 ${other > 0 ? 'text-green-500' : 'text-neutral-300 dark:text-neutral-600'}`} />
+                                          <span className="text-sm text-neutral-700 dark:text-neutral-300">
+                                            {t('backup.history.details.otherFiles', 'Business documents & other')} ({other})
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center space-x-2 pt-1 border-t border-neutral-200 dark:border-neutral-700">
+                                          <span className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                                            {t('backup.history.details.totalFiles', 'Total files')}: {total}
+                                          </span>
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               </div>
 

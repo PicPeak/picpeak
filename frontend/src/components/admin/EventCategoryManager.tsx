@@ -1,20 +1,19 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, X, Loader2, Image as ImageIcon, Check } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { useQuery } from '@tanstack/react-query';
+import { Plus, X, Loader2, Image as ImageIcon, Check, Download, DownloadCloud } from 'lucide-react';
 import { categoriesService, type PhotoCategory } from '../../services/categories.service';
 import { photosService } from '../../services/photos.service';
 import { Button, Card, AuthenticatedImage } from '../common';
 import { useTranslation } from 'react-i18next';
+import { useMutationWithToast, useModal } from '../../hooks';
 
 interface EventCategoryManagerProps {
   eventId: number;
 }
 
 export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ eventId }) => {
-  const queryClient = useQueryClient();
   const { t } = useTranslation();
-  const [isAdding, setIsAdding] = useState(false);
+  const addingModal = useModal();
   const [newCategoryName, setNewCategoryName] = useState('');
   const [heroPickerCategoryId, setHeroPickerCategoryId] = useState<number | null>(null);
 
@@ -35,48 +34,55 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
   const eventCategories = categories.filter(cat => !cat.is_global);
 
   // Create category mutation
-  const createMutation = useMutation({
+  const createMutation = useMutationWithToast({
     mutationFn: (name: string) =>
       categoriesService.createCategory({
         name,
         is_global: false,
         event_id: eventId
       }),
+    invalidateKeys: [['event-categories', eventId]],
+    successMessage: t('categories.categoryCreatedSuccess'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['event-categories', eventId] });
-      toast.success(t('categories.categoryCreatedSuccess'));
       setNewCategoryName('');
-      setIsAdding(false);
+      addingModal.close();
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || t('categories.failedToCreateCategory'));
-    },
+    errorMessage: t('categories.failedToCreateCategory'),
   });
 
   // Delete category mutation
-  const deleteMutation = useMutation({
+  const deleteMutation = useMutationWithToast({
     mutationFn: categoriesService.deleteCategory,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['event-categories', eventId] });
-      toast.success(t('categories.categoryDeletedSuccess'));
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || t('categories.failedToDeleteCategory'));
-    },
+    invalidateKeys: [['event-categories', eventId]],
+    successMessage: t('categories.categoryDeletedSuccess'),
+    errorMessage: t('categories.failedToDeleteCategory'),
   });
 
   // Set hero photo mutation
-  const heroMutation = useMutation({
+  const heroMutation = useMutationWithToast({
     mutationFn: ({ categoryId, photoId }: { categoryId: number; photoId: number | null }) =>
       categoriesService.setCategoryHeroPhoto(categoryId, photoId),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['event-categories', eventId] });
+    invalidateKeys: [['event-categories', eventId]],
+    successMessage: (_data, variables) =>
+      variables.photoId ? t('categories.coverPhotoSet') : t('categories.coverPhotoRemoved'),
+    onSuccess: () => {
       setHeroPickerCategoryId(null);
-      toast.success(variables.photoId ? t('categories.coverPhotoSet') : t('categories.coverPhotoRemoved'));
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || t('categories.failedToSetCoverPhoto'));
-    },
+    errorMessage: t('categories.failedToSetCoverPhoto'),
+  });
+
+  // Toggle per-category download permission (#640). The backend AND's this
+  // with the event-level `allow_downloads`, so disabling at either level
+  // blocks downloads for this category's photos.
+  const downloadToggleMutation = useMutationWithToast({
+    mutationFn: ({ category, allow }: { category: PhotoCategory; allow: boolean }) =>
+      categoriesService.updateCategory(category.id, category.name, { allow_downloads: allow }),
+    invalidateKeys: [['event-categories', eventId]],
+    successMessage: (_data, variables) =>
+      variables.allow
+        ? t('categories.downloadsEnabled', 'Downloads enabled for this category')
+        : t('categories.downloadsDisabled', 'Downloads disabled for this category'),
+    errorMessage: t('categories.failedToToggleDownloads', 'Failed to update download permission'),
   });
 
   const handleCreate = () => {
@@ -111,11 +117,11 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
     <div className="space-y-3">
       <div className="flex justify-between items-center">
         <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('categories.eventSpecificCategories')}</h3>
-        {!isAdding && (
+        {!addingModal.isOpen && (
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setIsAdding(true)}
+            onClick={addingModal.open}
             leftIcon={<Plus className="w-3 h-3" />}
           >
             {t('common.add')}
@@ -129,7 +135,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
       </p>
 
       {/* Add new category form */}
-      {isAdding && (
+      {addingModal.isOpen && (
         <div className="flex gap-2">
           <input
             type="text"
@@ -156,7 +162,7 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
             variant="outline"
             size="sm"
             onClick={() => {
-              setIsAdding(false);
+              addingModal.close();
               setNewCategoryName('');
             }}
           >
@@ -202,18 +208,49 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                   </button>
                   <span className="text-sm text-neutral-700 dark:text-neutral-300 truncate">{category.name}</span>
                 </div>
-                <button
-                  onClick={() => handleDelete(category)}
-                  className="p-1 text-neutral-400 dark:text-neutral-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                  title={t('categories.deleteCategoryTitle')}
-                  disabled={deleteMutation.isPending}
-                >
-                  {deleteMutation.isPending ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <X className="w-3 h-3" />
-                  )}
-                </button>
+                <div className="flex items-center gap-1">
+                  {/* Per-category downloads toggle (#640). Green DownloadCloud
+                      icon when on, struck-through outline when off. The
+                      event-level `allow_downloads` AND's with this — if the
+                      whole event has downloads off, this toggle is cosmetic. */}
+                  <button
+                    onClick={() => downloadToggleMutation.mutate({
+                      category,
+                      allow: category.allow_downloads === false,
+                    })}
+                    className={`p-1 transition-colors ${
+                      category.allow_downloads === false
+                        ? 'text-neutral-400 dark:text-neutral-500 hover:text-green-600 dark:hover:text-green-400'
+                        : 'text-green-600 dark:text-green-400 hover:text-neutral-400'
+                    }`}
+                    title={
+                      category.allow_downloads === false
+                        ? t('categories.enableDownloadsTitle', 'Click to enable downloads for this category')
+                        : t('categories.disableDownloadsTitle', 'Click to disable downloads for this category')
+                    }
+                    disabled={downloadToggleMutation.isPending}
+                  >
+                    {downloadToggleMutation.isPending ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : category.allow_downloads === false ? (
+                      <Download className="w-3 h-3" />
+                    ) : (
+                      <DownloadCloud className="w-3 h-3" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => handleDelete(category)}
+                    className="p-1 text-neutral-400 dark:text-neutral-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                    title={t('categories.deleteCategoryTitle')}
+                    disabled={deleteMutation.isPending}
+                  >
+                    {deleteMutation.isPending ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <X className="w-3 h-3" />
+                    )}
+                  </button>
+                </div>
               </div>
             );
           })}

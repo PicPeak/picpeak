@@ -8,6 +8,7 @@ interface GalleryPreviewBranding {
   company_name?: string;
   company_tagline?: string;
   logo_url?: string;
+  logo_url_dark?: string;
   logo_display_mode?: 'logo_only' | 'text_only' | 'logo_and_text';
   logo_position?: 'left' | 'center' | 'right';
 }
@@ -82,10 +83,13 @@ export const GalleryPreview: React.FC<GalleryPreviewProps> = ({
   const showText = displayMode === 'text_only' || displayMode === 'logo_and_text';
   const brandName = branding?.company_name?.trim() || 'Your Studio';
   const brandTagline = branding?.company_tagline?.trim() || '';
-  const resolvedLogoUrl = showLogo && branding?.logo_url
-    ? (branding.logo_url.startsWith('http')
-        ? branding.logo_url
-        : buildResourceUrl(branding.logo_url))
+  // Theme-aware logo with symmetric fallback — mirror the live surfaces
+  // so the preview reflects what the gallery will actually show.
+  const previewLogo = theme.colorMode === 'dark'
+    ? (branding?.logo_url_dark || branding?.logo_url)
+    : (branding?.logo_url || branding?.logo_url_dark);
+  const resolvedLogoUrl = showLogo && previewLogo
+    ? (previewLogo.startsWith('http') ? previewLogo : buildResourceUrl(previewLogo))
     : null;
   const logoPosition = branding?.logo_position || 'left';
   const brandFlexClass = logoPosition === 'center'

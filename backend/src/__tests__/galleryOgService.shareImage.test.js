@@ -29,6 +29,14 @@ jest.mock('../services/storage', () => ({
   getStorage: jest.fn(),
 }));
 
+// dateFormatter.formatDate queries `app_settings` for general_date_format,
+// which would add a third unmocked db() call to every buildOgMetadata path.
+// The format itself is irrelevant to the cover-vs-logo contract this file
+// pins — short-circuit it to a stable string so the tests stay focused.
+jest.mock('../utils/dateFormatter', () => ({
+  formatDate: jest.fn().mockResolvedValue('12.06.2026'),
+}));
+
 const { db } = require('../database/db');
 const { ensureThumbnail } = require('../services/imageProcessor');
 const { getStorage } = require('../services/storage');
@@ -200,6 +208,79 @@ function makeRes() {
   return res;
 }
 
+// ---- buildOgMetadata: share-token fallback (#699) ----------------------
+//
+// The public share URL after migration 525's short-URLs option strips the
+// slug down to `/gallery/<32-hex-share-token>`. The OG handler was looking
+// up that token as if it were a slug, finding nothing, and serving the
+// generic site-wide OG instead of the event-specific one (alex's symptom
+// in #699 — Cloudflare Worker had to compensate). resolveSlug now falls
+// back to events.share_token when the slug shape matches a 32-char hex.
+
+describe('buildOgMetadata — share-token fallback', () => {
+  it('resolves a 32-char hex slug via the share_token column when no slug match', async () => {
+    // Obviously-fake 32-hex test fixture — GitGuardian flagged a
+    // real-looking token (copied from the bug report) as a Generic
+    // High Entropy Secret. Using a non-entropy literal sidesteps the
+    // heuristic without changing what the test pins.
+    const token = '00000000000000000000000000000001';
+    const event = {
+      id: 10,
+      slug: 'senior-2026-06-05',
+      share_token: token,
+      event_name: 'Senior Photo Gallery',
+      event_date: '2026-06-05',
+      welcome_message: null,
+      hero_photo_id: null,
+      og_image_share_enabled: false,
+    };
+    // First db() — events.where('slug', token) returns null.
+    db.mockImplementationOnce(() => chain({ first: null }));
+    db.schema = { hasTable: jest.fn().mockResolvedValue(false) };
+    // Second db() — events.where('share_token', token) returns the event.
+    db.mockImplementationOnce(() => chain({ first: event }));
+    mockBranding();
+
+    const meta = await buildOgMetadata(token, `/gallery/${token}`);
+
+    // Rich event-specific OG, not the site-wide fallback.
+    expect(meta.title).toContain('Senior Photo Gallery');
+    expect(meta.eventName).toBe('Senior Photo Gallery');
+    // og:url canonicalises to the slug-based URL even when the share-token
+    // URL was the entry point — keeps social-share canonicals stable.
+    expect(meta.url).toBe('https://gallery.example.com/gallery/senior-2026-06-05');
+  });
+
+  it('returns the site-wide fallback when the 32-hex slug matches NO event at all', async () => {
+    // Defensive: a malformed/expired token shouldn't 500 or leak any
+    // event info — it must look identical to the generic fallback path.
+    const token = '00000000000000000000000000000002';
+    db.mockImplementationOnce(() => chain({ first: null }));
+    db.schema = { hasTable: jest.fn().mockResolvedValue(false) };
+    db.mockImplementationOnce(() => chain({ first: null })); // share_token also misses
+    mockBranding();
+
+    const meta = await buildOgMetadata(token, `/gallery/${token}`);
+
+    expect(meta.title).toBe('PicPeak');
+    expect(meta.eventName).toBeUndefined();
+  });
+
+  it('does NOT attempt the share_token lookup for slugs that don\'t look like a 32-char hex', async () => {
+    // Real slugs are kebab/dot/underscore mixes — never pure 32-hex.
+    // Skipping the extra query keeps the un-needed-DB-hit cost off the
+    // hot path for every legitimate slug.
+    mockResolveSlug(null); // events lookup misses; no redirects table
+    mockBranding();
+
+    await buildOgMetadata('senior-2026-06-05', '/gallery/senior-2026-06-05');
+
+    // Only 2 db() calls — events + app_settings. No share_token
+    // fallback was attempted for a non-hex slug.
+    expect(db).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('handleGalleryOgCover — 404 unless explicitly opted in', () => {
   it('returns 400 on an invalid slug shape', async () => {
     const req = { params: { slug: '../../etc/passwd' }, headers: {} };
@@ -262,9 +343,31 @@ describe('isSocialCrawler — extended bot coverage (#521)', () => {
       // 3rd-party preview services used by business-messaging stacks
       'LinkPreview/1.0',
       'Slack-ImgProxy/1.0',
+      // Viber + broader crawler set (#699 follow-up)
+      'Mozilla/5.0 (compatible; Viber)',
+      'Mozilla/5.0 (compatible; Bluesky Cardyb/1.1)',
+      'facebookcatalog/1.0',
+      'kakaotalk-scrap/1.0',
+      'Mozilla/5.0 (compatible; Synapse/1.98)',
+      'Rocket.Chat/6.0',
     ];
     for (const ua of knownBots) {
       expect(isSocialCrawler(ua)).toBe(true);
+    }
+  });
+
+  it('does NOT match human in-app-browser UAs (our OG response is meta-only, no redirect)', () => {
+    // These share a token with a preview bot but are also sent by real users
+    // browsing inside the app's webview — matching them would serve a human
+    // the bare OG stub. Deliberately excluded; guard against re-adding them.
+    const inAppBrowsers = [
+      'Mozilla/5.0 (iPhone) AppleWebKit MicroMessenger/8.0.0',        // WeChat in-app
+      'Mozilla/5.0 (iPhone) AppleWebKit Line/13.0.0',                // LINE in-app
+      'Mozilla/5.0 (Linux; Android) Zalo',                          // Zalo in-app
+      'Mozilla/5.0 (Macintosh) Chrome/120.0 Safari/537.36 boxing',  // "XING" substring trap
+    ];
+    for (const ua of inAppBrowsers) {
+      expect(isSocialCrawler(ua)).toBe(false);
     }
   });
 

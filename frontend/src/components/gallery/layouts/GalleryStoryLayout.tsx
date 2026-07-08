@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Search, Heart, Menu, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -87,15 +87,16 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Initialize favorites from photo like_counts
+  // Seed favorites from per-viewer is_liked on first non-empty payload
+  // (#590 follow-up). The previous code seeded from like_count > 0 which
+  // marked every photo with ANY likes as "favorited" for the current
+  // viewer — wrong. Also gated by a mount-only ref so refetches don't
+  // clobber the user's in-session toggles.
+  const favoritesSeededRef = useRef(false);
   useEffect(() => {
-    const initialFavorites = new Set<number>();
-    photos.forEach(photo => {
-      if ((photo.like_count ?? 0) > 0) {
-        initialFavorites.add(photo.id);
-      }
-    });
-    setFavorites(initialFavorites);
+    if (favoritesSeededRef.current || photos.length === 0) return;
+    setFavorites(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
+    favoritesSeededRef.current = true;
   }, [photos]);
 
   // Get hero photo
@@ -138,27 +139,23 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
 
   const handleToggleFavorite = useCallback(async (photoId: number) => {
     const newFavorites = new Set(favorites);
-    const isCurrentlyFavorite = newFavorites.has(photoId);
-
-    if (isCurrentlyFavorite) {
-      newFavorites.delete(photoId);
-    } else {
-      newFavorites.add(photoId);
-    }
+    if (newFavorites.has(photoId)) newFavorites.delete(photoId);
+    else newFavorites.add(photoId);
     setFavorites(newFavorites);
 
-    // Only submit like if adding favorite
-    if (!isCurrentlyFavorite) {
-      try {
-        await feedbackService.submitFeedback(slug, String(photoId), {
-          feedback_type: 'like',
-          guest_name: savedIdentity?.name,
-          guest_email: savedIdentity?.email,
-        });
-        onFeedbackChange?.();
-      } catch (err) {
-        console.warn('Like submit failed', err);
-      }
+    // The server /feedback like endpoint is a toggle (#590) — fire on
+    // every click, not only when adding. The previous code skipped the
+    // submit on unlike, so the UI removed the heart but the server
+    // still had the like row.
+    try {
+      await feedbackService.submitFeedback(slug, String(photoId), {
+        feedback_type: 'like',
+        guest_name: savedIdentity?.name,
+        guest_email: savedIdentity?.email,
+      });
+      onFeedbackChange?.();
+    } catch (err) {
+      console.warn('Like submit failed', err);
     }
   }, [favorites, slug, savedIdentity, onFeedbackChange]);
 

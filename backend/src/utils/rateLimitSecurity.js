@@ -32,7 +32,7 @@ function hasValidAdminToken(req) {
     
     // Critical: Verify token is valid before skipping rate limit
     // This prevents invalid tokens from bypassing rate limiting
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     
     // Additional validation
     if (!decoded || typeof decoded !== 'object') {

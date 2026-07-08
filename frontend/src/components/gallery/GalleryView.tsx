@@ -280,6 +280,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         footer_text: settingsData.branding_footer_text || '',
         watermark_enabled: settingsData.branding_watermark_enabled || false,
         logo_url: settingsData.branding_logo_url || null,
+        logo_url_dark: settingsData.branding_logo_url_dark || null,
         logo_size: settingsData.branding_logo_size || 'medium',
         logo_max_height: settingsData.branding_logo_max_height || 48,
         logo_position: settingsData.branding_logo_position || 'left',
@@ -696,6 +697,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   const headerStyle = data?.event?.header_style || theme.headerStyle || 'standard';
   const isHeroHeader = headerStyle === 'hero';
   const showSidebar = theme.controlsStyle === 'sidebar';
+  const filterBarShown = !showSidebar
+    && settingsData?.gallery_show_filter_bar !== false
+    && (data?.photos?.length ?? 0) > 0;
 
   // Full-page layouts (gallery-premium, gallery-story) have their own integrated UI
   // Skip all wrapper elements (header, footer, sidebar, filters) for these layouts
@@ -816,6 +820,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           promo_markdown: (data?.event as { promo_markdown?: string | null })?.promo_markdown,
         }}
         brandingSettings={brandingSettings}
+        heroLogoVisible={data?.event?.hero_logo_visible !== false}
+        heroLogoSize={data?.event?.hero_logo_size || undefined}
         headerStyle={data?.event?.header_style || theme.headerStyle}
         showLogout={true}
         onLogout={logout}
@@ -921,7 +927,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
             filter bar globally, and when the gallery actually has photos
             (avoids the empty "Search photos by filename" row in the screenshot
             from discussion #317). */}
-        {!showSidebar && settingsData?.gallery_show_filter_bar !== false && (data?.photos?.length ?? 0) > 0 ? (
+        {filterBarShown ? (
           <div className="mt-6">
             <PhotoFilterBar
               categories={data.categories}
@@ -944,8 +950,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         </div>
       ) : null}
 
-        {/* Photo Grid */}
-        <div className={showSidebar ? "mt-6" : "mt-6"}>
+        {/* Photo Grid — when the hero header sits directly under the filter
+            bar, double the wrapper margin (mt-12) so the hero's decorative
+            `-mt-6` bleed leaves a visible gap instead of gluing the filter
+            bar to the hero image (issue #624). */}
+        <div className={filterBarShown && isHeroHeader ? "mt-12" : "mt-6"}>
           <PhotoGridWithLayouts 
             photos={filteredPhotos} 
             slug={slug} 

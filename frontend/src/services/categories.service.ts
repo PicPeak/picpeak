@@ -7,6 +7,9 @@ export interface PhotoCategory {
   is_global: boolean;
   event_id: number | null;
   hero_photo_id?: number | null;
+  // Per-category download permission (#640). Defaults true (server-side) so
+  // categories created before migration 135 keep working.
+  allow_downloads?: boolean;
   created_at: string;
 }
 
@@ -36,9 +39,16 @@ export const categoriesService = {
     return response.data;
   },
 
-  // Update a category
-  async updateCategory(id: number, name: string): Promise<PhotoCategory> {
-    const response = await api.put<PhotoCategory>(`/admin/categories/${id}`, { name });
+  // Update a category. `name` is required by the backend validator; the other
+  // fields are optional patches. Per-category `allow_downloads` is the #640
+  // hook so admins can disable downloads for one category while keeping
+  // everything else downloadable.
+  async updateCategory(
+    id: number,
+    name: string,
+    patch?: { allow_downloads?: boolean }
+  ): Promise<PhotoCategory> {
+    const response = await api.put<PhotoCategory>(`/admin/categories/${id}`, { name, ...patch });
     return response.data;
   },
 

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { parseISO, differenceInDays } from 'date-fns';
 import { toast } from 'react-toastify';
+import { useModal, useMutationWithToast } from '../../hooks';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
 import { Button, Input, Card, SkeletonTable, ErrorBoundary } from '../../components/common';
@@ -46,8 +47,8 @@ export const EventsListPage: React.FC = () => {
   // const [showFilters, setShowFilters] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
-  const [showBulkArchiveModal, setShowBulkArchiveModal] = useState(false);
-  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const bulkArchiveModal = useModal();
+  const bulkDeleteModal = useModal();
   const [copiedEventId, setCopiedEventId] = useState<number | null>(null);
 
   const copyShareLink = async (event: Event) => {
@@ -169,29 +170,19 @@ export const EventsListPage: React.FC = () => {
   });
 
   // Archive mutation
-  const archiveMutation = useMutation({
+  const archiveMutation = useMutationWithToast({
     mutationFn: eventsService.archiveEvent,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-events'] });
-      queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
-      toast.success(t('toast.eventArchived'));
-    },
-    onError: () => {
-      toast.error(t('toast.saveError'));
-    },
+    invalidateKeys: [['admin-events'], ['admin-dashboard-stats']],
+    successMessage: t('toast.eventArchived'),
+    errorMessage: () => t('toast.saveError'),
   });
 
   // Delete mutation
-  const deleteMutation = useMutation({
+  const deleteMutation = useMutationWithToast({
     mutationFn: eventsService.deleteEvent,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-events'] });
-      queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
-      toast.success(t('toast.deleteSuccess'));
-    },
-    onError: () => {
-      toast.error(t('toast.deleteError'));
-    },
+    invalidateKeys: [['admin-events'], ['admin-dashboard-stats']],
+    successMessage: t('toast.deleteSuccess'),
+    errorMessage: () => t('toast.deleteError'),
   });
 
   // Bulk archive mutation
@@ -201,7 +192,7 @@ export const EventsListPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin-events'] });
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
       setSelectedEvents([]);
-      setShowBulkArchiveModal(false);
+      bulkArchiveModal.close();
 
       if (data.results.failed.length === 0) {
         toast.success(t('events.bulkArchiveSuccess', { count: data.results.successful.length }));
@@ -222,7 +213,7 @@ export const EventsListPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin-events'] });
       queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
       setSelectedEvents([]);
-      setShowBulkDeleteModal(false);
+      bulkDeleteModal.close();
 
       if (data.results.failed.length === 0) {
         toast.success(t('events.bulkDelete.successAll', { count: data.results.successful.length }));
@@ -232,7 +223,7 @@ export const EventsListPage: React.FC = () => {
     },
     onError: () => {
       toast.error(t('events.bulkDelete.errorGeneric'));
-      setShowBulkDeleteModal(false);
+      bulkDeleteModal.close();
     },
   });
 
@@ -439,14 +430,14 @@ export const EventsListPage: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setShowBulkArchiveModal(true)}
+                onClick={() => bulkArchiveModal.open()}
               >
                 {t('events.archiveSelected')}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setShowBulkDeleteModal(true)}
+                onClick={() => bulkDeleteModal.open()}
                 className="border-red-300 text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/30"
               >
                 {t('events.deleteSelected', 'Delete Selected')}
@@ -758,8 +749,8 @@ export const EventsListPage: React.FC = () => {
 
       {/* Bulk Archive Modal */}
       <BulkArchiveModal
-        isOpen={showBulkArchiveModal}
-        onClose={() => setShowBulkArchiveModal(false)}
+        isOpen={bulkArchiveModal.isOpen}
+        onClose={bulkArchiveModal.close}
         onConfirm={() => bulkArchiveMutation.mutate(selectedEvents)}
         selectedEvents={events.filter(e => selectedEvents.includes(e.id))}
         isLoading={bulkArchiveMutation.isPending}
@@ -767,8 +758,8 @@ export const EventsListPage: React.FC = () => {
 
       {/* Bulk Delete Modal */}
       <BulkDeleteModal
-        isOpen={showBulkDeleteModal}
-        onClose={() => setShowBulkDeleteModal(false)}
+        isOpen={bulkDeleteModal.isOpen}
+        onClose={bulkDeleteModal.close}
         onConfirm={async () => {
           await bulkDeleteMutation.mutateAsync(selectedEvents);
         }}

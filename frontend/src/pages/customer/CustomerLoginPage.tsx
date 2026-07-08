@@ -14,6 +14,7 @@ import { Button, Input, Card, ReCaptcha } from '../../components/common';
 import { useCustomerAuth } from '../../contexts/CustomerAuthContext';
 import { customerService } from '../../services/customer.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
+import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { resolveLoginLogoClasses } from '../../utils/loginLogoSize';
 
 export const CustomerLoginPage: React.FC = () => {
@@ -28,8 +29,17 @@ export const CustomerLoginPage: React.FC = () => {
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
 
   const { data: settingsData } = usePublicSettings();
+  // Customer surface follows branding_force_color_mode (+ OS fallback); isDark
+  // drives the theme-aware logo pick. A framed logo sits on a fixed cream
+  // plate (see render), so the light (dark-ink) logo always reads there;
+  // only the frameless logo sits on the themed (possibly dark) page bg.
+  const { isDark } = usePublicDarkMode();
   const companyName = settingsData?.branding_company_name?.trim() || 'PicPeak';
-  const logoUrl = settingsData?.branding_logo_url?.trim();
+  const lightLogo = settingsData?.branding_logo_url?.trim();
+  const darkLogo = settingsData?.branding_logo_url_dark?.trim();
+  const loginFrameEnabled = settingsData?.branding_login_logo_frame_enabled !== false;
+  const themedLogo = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const logoUrl = loginFrameEnabled ? (lightLogo || darkLogo) : themedLogo;
   const resolvedLogoUrl = logoUrl || '/picpeak-logo-transparent.png';
 
   // After /accept-invite the user is redirected here with ?accepted=1

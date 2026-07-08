@@ -5,6 +5,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { databaseBackupService } = require('../services/databaseBackup');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
+const { getPagination } = require('../utils/routeHelpers');
 
 // All routes require admin authentication
 router.use(adminAuth);
@@ -154,10 +155,8 @@ router.get('/progress', requirePermission('backup.view'), async (req, res) => {
  */
 router.get('/history', requirePermission('backup.view'), async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const offset = (page - 1) * limit;
-    
+    const { page, limit, offset } = getPagination(req);
+
     const [backups, totalCount] = await Promise.all([
       db('database_backup_runs')
         .orderBy('started_at', 'desc')

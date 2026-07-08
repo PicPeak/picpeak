@@ -6,6 +6,7 @@ import { toast } from 'react-toastify';
 import { Webhook as WebhookIcon, Trash2, Copy, AlertTriangle, Activity, CheckCircle2, XCircle } from 'lucide-react';
 import { Button, Card, Input, Loading } from '../../../components/common';
 import { api } from '../../../config/api';
+import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 
 const WEBHOOK_EVENT_TYPES = [
   'event.created',
@@ -39,6 +40,7 @@ interface WebhookRow {
  */
 export const WebhooksTab: React.FC = () => {
   const { t } = useTranslation();
+  const { formatDateTime: fmtDateTime } = useLocalizedDate();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
@@ -65,7 +67,7 @@ export const WebhooksTab: React.FC = () => {
         try {
           parsedFilter = JSON.parse(trimmed);
         } catch {
-          setFilterError('Filter must be valid JSON');
+          setFilterError(t('settings.webhooks.filterError', 'Filter must be valid JSON'));
           throw new Error('Invalid filter JSON');
         }
       }
@@ -87,7 +89,7 @@ export const WebhooksTab: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin-webhooks'] });
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.errors?.[0]?.msg || err?.response?.data?.error || 'Failed to create webhook');
+      toast.error(err?.response?.data?.errors?.[0]?.msg || err?.response?.data?.error || t('settings.webhooks.createError', 'Failed to create webhook'));
     },
   });
 
@@ -95,16 +97,16 @@ export const WebhooksTab: React.FC = () => {
     mutationFn: async ({ id, active }: { id: number; active: boolean }) =>
       api.put(`/admin/webhooks/${id}`, { active }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-webhooks'] }),
-    onError: () => toast.error('Failed to update webhook'),
+    onError: () => toast.error(t('settings.webhooks.updateError', 'Failed to update webhook')),
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => api.delete(`/admin/webhooks/${id}`),
     onSuccess: () => {
-      toast.success('Webhook deleted');
+      toast.success(t('settings.webhooks.deletedToast', 'Webhook deleted'));
       queryClient.invalidateQueries({ queryKey: ['admin-webhooks'] });
     },
-    onError: () => toast.error('Failed to delete webhook'),
+    onError: () => toast.error(t('settings.webhooks.deleteError', 'Failed to delete webhook')),
   });
 
   const toggleEvent = (e: WebhookEventType) => {
@@ -163,16 +165,16 @@ export const WebhooksTab: React.FC = () => {
                     onClick={async () => {
                       try {
                         await navigator.clipboard.writeText(justCreatedSecret);
-                        toast.success('Copied');
+                        toast.success(t('settings.webhooks.copied', 'Copied'));
                       } catch {
-                        toast.error('Copy failed');
+                        toast.error(t('settings.webhooks.copyFailed', 'Copy failed'));
                       }
                     }}
                   >
-                    Copy
+                    {t('settings.webhooks.copyButton', 'Copy')}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setJustCreatedSecret(null)}>
-                    Dismiss
+                    {t('settings.webhooks.dismiss', 'Dismiss')}
                   </Button>
                 </div>
               </div>
@@ -186,13 +188,13 @@ export const WebhooksTab: React.FC = () => {
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
                 {t('settings.webhooks.name', 'Name')}
               </label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. n8n WhatsApp" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('settings.webhooks.namePlaceholder', 'e.g. n8n WhatsApp')} />
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
                 {t('settings.webhooks.url', 'Receiver URL')}
               </label>
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://n8n.example.com/webhook/picpeak" />
+              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('settings.webhooks.urlPlaceholder', 'https://n8n.example.com/webhook/picpeak')} />
             </div>
           </div>
 
@@ -220,7 +222,7 @@ export const WebhooksTab: React.FC = () => {
             onClick={() => setShowAdvanced((prev) => !prev)}
             className="text-sm text-primary-600 dark:text-primary-400 hover:underline self-start"
           >
-            {showAdvanced ? '− Hide advanced (filter, template)' : '+ Advanced (filter, template)'}
+            {showAdvanced ? t('settings.webhooks.hideAdvanced', '− Hide advanced (filter, template)') : t('settings.webhooks.showAdvanced', '+ Advanced (filter, template)')}
           </button>
 
           {showAdvanced && (
@@ -237,7 +239,7 @@ export const WebhooksTab: React.FC = () => {
                   className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 rounded text-sm font-mono"
                 />
                 <p className="text-xs text-neutral-500 mt-1">
-                  Dot-path → expected value. All keys must match (AND). Use an array for "any of": <code>{'{"type": ["event.published", "event.archived"]}'}</code>
+                  {t('settings.webhooks.filterHelp', 'Dot-path → expected value. All keys must match (AND). Use an array for "any of".')} <code>{'{"type": ["event.published", "event.archived"]}'}</code>
                 </p>
                 {filterError && <p className="text-xs text-red-600 mt-1">{filterError}</p>}
               </div>
@@ -249,12 +251,12 @@ export const WebhooksTab: React.FC = () => {
                 <textarea
                   value={template}
                   onChange={(e) => setTemplate(e.target.value)}
-                  placeholder={'New gallery: ${data.event.event_name} → ${data.event.share_url}'}
+                  placeholder={t('settings.webhooks.templatePlaceholder', 'New gallery: ${data.event.event_name} → ${data.event.share_url}')}
                   rows={3}
                   className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-700 dark:bg-neutral-800 rounded text-sm font-mono"
                 />
                 <p className="text-xs text-neutral-500 mt-1">
-                  Replaces the default JSON envelope as the request body. <code>${'{dot.path}'}</code> substitution from the payload only — no logic, no expressions.
+                  {t('settings.webhooks.templateHelp', 'Replaces the default JSON envelope as the request body. ${dot.path} substitution from the payload only — no logic, no expressions.')}
                 </p>
               </div>
             </div>
@@ -280,12 +282,12 @@ export const WebhooksTab: React.FC = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-neutral-500 dark:text-neutral-400 border-b border-neutral-200 dark:border-neutral-700">
-                  <th className="py-2 pr-3">Name</th>
-                  <th className="py-2 pr-3">URL</th>
-                  <th className="py-2 pr-3">Events</th>
-                  <th className="py-2 pr-3">Last delivery</th>
-                  <th className="py-2 pr-3">Status</th>
-                  <th className="py-2 text-right">Actions</th>
+                  <th className="py-2 pr-3">{t('settings.webhooks.colName', 'Name')}</th>
+                  <th className="py-2 pr-3">{t('settings.webhooks.colUrl', 'URL')}</th>
+                  <th className="py-2 pr-3">{t('settings.webhooks.colEvents', 'Events')}</th>
+                  <th className="py-2 pr-3">{t('settings.webhooks.colLastDelivery', 'Last delivery')}</th>
+                  <th className="py-2 pr-3">{t('settings.webhooks.colStatus', 'Status')}</th>
+                  <th className="py-2 text-right">{t('settings.webhooks.colActions', 'Actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -298,19 +300,19 @@ export const WebhooksTab: React.FC = () => {
                       <td className="py-3 pr-3 font-medium">{wh.name}</td>
                       <td className="py-3 pr-3 text-xs font-mono text-neutral-600 dark:text-neutral-400 max-w-xs truncate" title={wh.url}>{wh.url}</td>
                       <td className="py-3 pr-3 text-xs text-neutral-500">
-                        {Array.isArray(wh.events) ? wh.events.length : 0} subscribed
+                        {t('settings.webhooks.eventsSubscribed', { count: Array.isArray(wh.events) ? wh.events.length : 0 })}
                       </td>
                       <td className="py-3 pr-3 text-xs text-neutral-500">
                         {lastEither === 'success' && lastSuccess && (
                           <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
                             <CheckCircle2 className="w-3.5 h-3.5" />
-                            {lastSuccess.toLocaleString()}
+                            {fmtDateTime(lastSuccess)}
                           </span>
                         )}
                         {lastEither === 'failure' && lastFailure && (
                           <span className="flex items-center gap-1 text-red-600 dark:text-red-400">
                             <XCircle className="w-3.5 h-3.5" />
-                            {lastFailure.toLocaleString()}
+                            {fmtDateTime(lastFailure)}
                           </span>
                         )}
                         {lastEither === 'none' && <span className="text-neutral-400">—</span>}
@@ -323,9 +325,9 @@ export const WebhooksTab: React.FC = () => {
                               ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
                               : 'bg-neutral-200 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-400'
                           }`}
-                          title={wh.active ? 'Click to disable' : 'Click to enable'}
+                          title={wh.active ? t('settings.webhooks.toggleToDisable', 'Click to disable') : t('settings.webhooks.toggleToEnable', 'Click to enable')}
                         >
-                          {wh.active ? 'Active' : 'Disabled'}
+                          {wh.active ? t('settings.webhooks.statusActive', 'Active') : t('settings.webhooks.statusDisabled', 'Disabled')}
                         </button>
                       </td>
                       <td className="py-3 text-right">
@@ -335,19 +337,19 @@ export const WebhooksTab: React.FC = () => {
                             className="inline-flex items-center gap-1 px-2 py-1 text-xs text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100"
                           >
                             <Activity className="w-3.5 h-3.5" />
-                            Deliveries
+                            {t('settings.webhooks.deliveriesLink', 'Deliveries')}
                           </Link>
                           <Button
                             size="sm"
                             variant="ghost"
                             leftIcon={<Trash2 className="w-4 h-4" />}
                             onClick={() => {
-                              if (confirm(`Delete "${wh.name}"? Pending deliveries are also removed.`)) {
+                              if (confirm(t('settings.webhooks.confirmDelete', { name: wh.name, defaultValue: `Delete "${wh.name}"? Pending deliveries are also removed.` }))) {
                                 deleteMutation.mutate(wh.id);
                               }
                             }}
                           >
-                            Delete
+                            {t('settings.webhooks.delete', 'Delete')}
                           </Button>
                         </div>
                       </td>

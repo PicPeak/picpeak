@@ -1,4 +1,5 @@
 const { db } = require('../database/db');
+const logger = require('../utils/logger');
 
 const DEFAULT_MAX_FILES_PER_UPLOAD = 500;
 const MAX_ALLOWED_FILES_PER_UPLOAD = 2000;
@@ -87,7 +88,7 @@ const getMaxFilesPerUpload = async () => {
     cacheExpiresAt = Date.now() + CACHE_TTL_MS;
     return parsedValue;
   } catch (error) {
-    console.error('Failed to read max files per upload setting:', error.message);
+    logger.error('Failed to read max files per upload setting:', error.message);
     cachedValue = DEFAULT_MAX_FILES_PER_UPLOAD;
     cacheExpiresAt = Date.now() + CACHE_TTL_MS;
     return DEFAULT_MAX_FILES_PER_UPLOAD;
@@ -147,7 +148,7 @@ const getAllowedMimeTypes = async () => {
     allowedTypesCacheExpiresAt = Date.now() + CACHE_TTL_MS;
     return mimeTypes;
   } catch (error) {
-    console.error('Failed to read allowed file types setting:', error.message);
+    logger.error('Failed to read allowed file types setting:', error.message);
     const fallback = extensionsToMimeTypes(DEFAULT_ALLOWED_FILE_TYPES);
     cachedAllowedTypes = fallback;
     allowedTypesCacheExpiresAt = Date.now() + CACHE_TTL_MS;

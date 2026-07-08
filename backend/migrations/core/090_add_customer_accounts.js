@@ -1,7 +1,7 @@
 /**
  * Migration: Add Customer Accounts (recurring user logins)
  *
- * Implements the customer tier from discussion the-luap/picpeak#354.
+ * Implements the customer tier from discussion PicPeak/picpeak#354.
  *
  * Three new tables:
  *  - customer_accounts        : the user record (email + bcrypt password)

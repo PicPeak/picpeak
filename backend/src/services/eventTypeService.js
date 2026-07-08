@@ -7,6 +7,8 @@
 
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
+const { hasColumnCached } = require('../utils/schemaCache');
+const logger = require('../utils/logger');
 
 /**
  * Get all event types
@@ -201,7 +203,47 @@ const updateEventType = async (id, updates) => {
 
   updateData.updated_at = new Date();
 
-  await db('event_types').where('id', id).update(updateData);
+  // A slug_prefix rename must CASCADE, or it silently orphans everything keyed on
+  // the old slug: existing events/quotes (their event_type), and the per-type
+  // pre-event reminder template (event_reminder_<slug>). Re-point them so a
+  // rename behaves like a rename, not a detach. Atomic.
+  const oldSlug = eventType.slug_prefix;
+  const newSlug = updateData.slug_prefix;
+  const slugChanged = newSlug !== undefined && newSlug !== oldSlug;
+
+  if (!slugChanged) {
+    await db('event_types').where('id', id).update(updateData);
+    return getEventTypeById(id);
+  }
+
+  // Resolve schema lookups BEFORE opening the transaction — hasColumnCached
+  // reads via the global db, and a global read inside a SQLite transaction
+  // (single connection) deadlocks.
+  const quotesHasEventType = await hasColumnCached('quotes', 'event_type');
+
+  await db.transaction(async (trx) => {
+    await trx('event_types').where('id', id).update(updateData);
+    // Re-point existing documents from the old slug to the new one.
+    const evCount = await trx('events').where('event_type', oldSlug).update({ event_type: newSlug });
+    let qCount = 0;
+    if (quotesHasEventType) {
+      qCount = await trx('quotes').where('event_type', oldSlug).update({ event_type: newSlug });
+    }
+    // Carry the authored per-type reminder template along (subject/body follow the
+    // rename). Guard: never clobber an existing target template for the new slug.
+    const oldKey = `event_reminder_${oldSlug}`;
+    const newKey = `event_reminder_${newSlug}`;
+    let tplMoved = false;
+    const src = await trx('email_templates').where({ template_key: oldKey }).first('id');
+    const dst = await trx('email_templates').where({ template_key: newKey }).first('id');
+    if (src && !dst) {
+      await trx('email_templates').where({ template_key: oldKey }).update({ template_key: newKey });
+      tplMoved = true;
+    }
+    logger.info('Event type slug renamed — cascaded references', {
+      id, oldSlug, newSlug, events: evCount, quotes: qCount, reminderTemplateMoved: tplMoved,
+    });
+  });
 
   return getEventTypeById(id);
 };

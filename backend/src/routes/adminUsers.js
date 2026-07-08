@@ -9,6 +9,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission, requireSuperAdmin, getUserPermissions } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const userManagementService = require('../services/userManagementService');
+const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 const router = express.Router();
 
 /**
@@ -137,7 +138,7 @@ router.get('/invitations', adminAuth, requirePermission('users.view'), handleAsy
 router.post('/invite', [
   adminAuth,
   requirePermission('users.create'),
-  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('email').isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL).withMessage('Valid email is required'),
   body('role_id').isInt({ min: 1 }).withMessage('Role ID is required')
 ], handleAsync(async (req, res) => {
   validateRequest(req);
@@ -197,7 +198,7 @@ router.put('/:id', [
   requirePermission('users.edit'),
   param('id').isInt({ min: 1 }).withMessage('Valid user ID is required'),
   body('username').optional().trim().isLength({ min: 3, max: 50 }).withMessage('Username must be 3-50 characters'),
-  body('email').optional().isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('email').optional().isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL).withMessage('Valid email is required'),
   body('role_id').optional().isInt({ min: 1 }).withMessage('Valid role ID is required'),
   body('is_active').optional().isBoolean().withMessage('is_active must be boolean')
 ], handleAsync(async (req, res) => {
@@ -226,6 +227,45 @@ router.post('/:id/deactivate', [
   validateRequest(req);
   await userManagementService.deactivateAdminUser(parseInt(req.params.id), req.admin.id);
   successResponse(res, { message: 'User deactivated successfully' });
+}));
+
+/**
+ * POST /:id/activate
+ * Re-activate a previously deactivated user — symmetric counterpart
+ * to /deactivate. Same permission tier; reverting a deactivation is
+ * the same scope of action as performing one.
+ *
+ * #574 follow-up: before this endpoint existed, deactivation was a
+ * one-way door from the UI.
+ */
+router.post('/:id/activate', [
+  adminAuth,
+  requirePermission('users.delete'),
+  param('id').isInt({ min: 1 }).withMessage('Valid user ID is required')
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  await userManagementService.activateAdminUser(parseInt(req.params.id), req.admin.id);
+  successResponse(res, { message: 'User activated successfully' });
+}));
+
+/**
+ * DELETE /:id
+ * Hard-delete an admin user. Caller should typically deactivate
+ * first; the UI nudges this order. FK rules in core migrations
+ * cascade-delete the user's pending invitations + api_tokens and
+ * SET NULL on created_by_admin_id columns elsewhere.
+ *
+ * Requires: users.delete permission. Self-delete + last-super-admin
+ * are blocked in the service.
+ */
+router.delete('/:id', [
+  adminAuth,
+  requirePermission('users.delete'),
+  param('id').isInt({ min: 1 }).withMessage('Valid user ID is required')
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  await userManagementService.deleteAdminUser(parseInt(req.params.id), req.admin.id);
+  successResponse(res, { message: 'User deleted successfully' });
 }));
 
 /**

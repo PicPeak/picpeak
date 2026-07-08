@@ -2,7 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <!-- Point the favicon at the backend's dynamic /favicon.ico route so the
+         admin-configured branding favicon is used from the very first paint,
+         in every browser. CRITICAL: a hardcoded href here (e.g. the bundled
+         /favicon-32x32.png) makes the browser use THAT and never request
+         /favicon.ico — Safari then shows the default and ignores the JS that
+         DynamicFavicon uses to swap it. No type/sizes so the byte stream
+         (png/ico/svg) is honoured via the response content-type. -->
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!--
       Static fallback title + Open Graph defaults (#521).
@@ -39,9 +47,9 @@
     <meta name="twitter:description" content="${BRAND_DESCRIPTION}" />
 
     <!-- Pre-React theme bootstrap (#358).
-         The browser may paint the very first frame before our inline
-         <script> below runs, so we set OS-preference defaults via CSS
-         here in <head> — that gets applied before any paint. The
+         The browser may paint the very first frame before the bootstrap
+         <script> below fetches and runs, so we set OS-preference defaults
+         via CSS here in <head> — that gets applied before any paint. The
          script then layers a per-gallery cache hit on top when one is
          available. Without this CSS, the very first frame on first-
          visit dark-OS devices flashed white briefly (see Rekoo-PS's
@@ -56,31 +64,11 @@
       html { transition: background-color 200ms ease; }
     </style>
 
-    <script>
-      /*
-       * Pre-React theme bootstrap (#358).
-       *
-       * The CSS @media block above handles the OS-preference default
-       * before paint. This script then applies a per-gallery cached
-       * background (written by ThemeContext on the previous visit) so
-       * revisits land on the exact theme background from frame one.
-       */
-      (function () {
-        try {
-          var m = location.pathname.match(/\/gallery\/([^\/?#]+)/);
-          var bg = null;
-          if (m && m[1]) {
-            bg = localStorage.getItem('gallery-theme-bg-' + decodeURIComponent(m[1]));
-          }
-          if (bg) {
-            var root = document.documentElement;
-            root.style.backgroundColor = bg;
-            document.body && (document.body.style.backgroundColor = bg);
-            root.style.setProperty('--color-background', bg);
-          }
-        } catch (e) { /* never block render on a cache miss */ }
-      })();
-    </script>
+    <!-- Pre-React theme bootstrap (#358). External rather than inline so a
+         strict CSP without 'unsafe-inline' / hash / nonce — like the one
+         Caddy puts in front of demo.picpeak.app — doesn't block it (#564).
+         No defer/async: must run before <body> paints. -->
+    <script src="/bootstrap.js"></script>
   </head>
   <body>
     <div id="root"></div>

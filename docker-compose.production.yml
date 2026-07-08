@@ -1,16 +1,56 @@
 version: '3.8'
 
 services:
+  # Generates machine secrets (JWT/DB/Redis) on first run when they aren't set
+  # in .env, so a fresh install needs zero secret management. Each file is seeded
+  # from the matching env var when provided (backward-compatible), otherwise a
+  # strong random value. Idempotent — never overwrites an existing file, so the
+  # DB password can't drift out from under an already-initialised Postgres volume.
+  secrets-init:
+    image: alpine:3.20
+    container_name: picpeak-secrets-init
+    env_file: .env
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /run/secrets
+        if [ ! -s /run/secrets/jwt_secret ]; then
+          if [ -n "$$JWT_SECRET" ]; then printf '%s' "$$JWT_SECRET" > /run/secrets/jwt_secret;
+          else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/jwt_secret; fi
+        fi
+        if [ ! -s /run/secrets/db_password ]; then
+          if [ -n "$$DB_PASSWORD" ]; then printf '%s' "$$DB_PASSWORD" > /run/secrets/db_password;
+          else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/db_password; fi
+        fi
+        if [ ! -s /run/secrets/redis_password ]; then
+          if [ -n "$$REDIS_PASSWORD" ]; then printf '%s' "$$REDIS_PASSWORD" > /run/secrets/redis_password;
+          else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/redis_password; fi
+        fi
+        # 644: the readers run as three different users (postgres, redis, nodejs),
+        # so a non-root reader must be able to read them. The volume is private to
+        # these containers and never host-exposed.
+        chmod 644 /run/secrets/jwt_secret /run/secrets/db_password /run/secrets/redis_password
+    volumes:
+      - picpeak-secrets:/run/secrets
+    restart: "no"
+
   postgres:
     image: postgres:15-alpine
     container_name: picpeak-postgres
     userns_mode: "host"
     environment:
       POSTGRES_USER: ${DB_USER:-picpeak}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      # Reads the generated (or .env-seeded) password from the shared secrets volume.
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
       POSTGRES_DB: ${DB_NAME:-picpeak}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - picpeak-secrets:/run/secrets:ro
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
     networks:
       - picpeak-network
     restart: unless-stopped
@@ -30,9 +70,14 @@ services:
     image: redis:7-alpine
     container_name: picpeak-redis
     userns_mode: "host"
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    # Reads the generated (or .env-seeded) password from the shared secrets volume.
+    command: sh -c 'exec redis-server --requirepass "$$(cat /run/secrets/redis_password)"'
     volumes:
       - redis-data:/data
+      - picpeak-secrets:/run/secrets:ro
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
     networks:
       - picpeak-network
     restart: unless-stopped
@@ -45,7 +90,7 @@ services:
   backend:
     # Use pre-built image from GitHub Container Registry
     # PICPEAK_CHANNEL: 'stable' (default), 'beta', or specific version like 'v2.3.0'
-    image: ghcr.io/the-luap/picpeak/backend:${PICPEAK_CHANNEL:-stable}
+    image: ghcr.io/picpeak/picpeak/backend:${PICPEAK_CHANNEL:-stable}
     container_name: picpeak-backend
     env_file: .env
     environment:
@@ -59,16 +104,28 @@ services:
       - ${APP_STORAGE}:/app/storage
       - ${LOGS}:/app/logs
       - ${APP_DATA}:/app/data
+      - picpeak-secrets:/run/secrets:ro
     ports:
       - "${BACKEND_PORT:-3001}:3000"
     networks:
       - picpeak-network
     depends_on:
+      secrets-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # Memory cap (optional, recommended on shared / multi-tenant hosts):
+    # uncomment to bound the backend's RSS. Sharp/libvips decodes the full
+    # uncompressed image before resize, so a multi-photo upload batch can
+    # spike memory. With a cap set, the kernel OOM-killer takes the
+    # container instead of the whole host; restart:unless-stopped brings
+    # it back. Match this to the RAM budget you've allocated for picpeak
+    # (`docker stats` shows the live usage).
+    # mem_limit: 3g
+    # memswap_limit: 3g
     healthcheck:
       # Backend exposes /health on internal port 3000.
       # The backend image only ships wget (Alpine base) — using curl
@@ -84,7 +141,7 @@ services:
   frontend:
     # Use pre-built image from GitHub Container Registry
     # Uses same channel as backend for consistency
-    image: ghcr.io/the-luap/picpeak/frontend:${PICPEAK_CHANNEL:-stable}
+    image: ghcr.io/picpeak/picpeak/frontend:${PICPEAK_CHANNEL:-stable}
     container_name: picpeak-frontend
     # Note: Pre-built frontend uses Nginx to proxy /api to backend:3001.
     # Prefer keeping API base as '/api' in builds to avoid CORS.
@@ -134,6 +191,11 @@ volumes:
   postgres-data:
     driver: local
   redis-data:
+    driver: local
+  # Holds the auto-generated machine secrets (jwt_secret, db_password,
+  # redis_password). Keep it — deleting it orphans the DB password from the
+  # Postgres volume. Back it up alongside postgres-data.
+  picpeak-secrets:
     driver: local
 
 networks:

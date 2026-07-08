@@ -4,6 +4,7 @@ const { db } = require('../database/db');
 const watermarkService = require('./watermarkService');
 const path = require('path');
 const fs = require('fs').promises;
+const logger = require('../utils/logger');
 
 class SecureImageService {
   constructor() {
@@ -268,7 +269,7 @@ class SecureImageService {
 
       return buffer;
     } catch (error) {
-      console.error('Error processing protected image:', error);
+      logger.error('Error processing protected image:', error);
       // Return original on error
       return await fs.readFile(imagePath);
     }
@@ -346,7 +347,7 @@ class SecureImageService {
       }
 
     } catch (error) {
-      console.error('Error logging image access:', error);
+      logger.error('Error logging image access:', error);
     }
   }
 
@@ -386,7 +387,7 @@ class SecureImageService {
       }
 
     } catch (error) {
-      console.error('Error checking for rapid access:', error);
+      logger.error('Error checking for rapid access:', error);
     }
   }
 
@@ -417,7 +418,7 @@ class SecureImageService {
         })
       });
 
-      console.warn(`Suspicious activity flagged: ${reason}`, {
+      logger.warn(`Suspicious activity flagged: ${reason}`, {
         clientFingerprint,
         photoId,
         details
@@ -432,12 +433,12 @@ class SecureImageService {
         .first();
 
       if (parseInt(recentSuspicious.count) >= 3) {
-        console.warn(`Client fingerprint flagged for blocking: ${clientFingerprint}`);
+        logger.warn(`Client fingerprint flagged for blocking: ${clientFingerprint}`);
         // This would be handled by the middleware's blocking system
       }
 
     } catch (error) {
-      console.error('Error flagging suspicious activity:', error);
+      logger.error('Error flagging suspicious activity:', error);
     }
   }
 
@@ -457,13 +458,13 @@ class SecureImageService {
       
       // Flag if more than 10 accesses to same photo in 5 minutes
       if (accessCount > 10) {
-        console.warn(`Suspicious activity detected: ${accessCount} accesses to photo ${photoId} from ${clientFingerprint}`);
+        logger.warn(`Suspicious activity detected: ${accessCount} accesses to photo ${photoId} from ${clientFingerprint}`);
         return true;
       }
 
       return false;
     } catch (error) {
-      console.error('Error detecting suspicious activity:', error);
+      logger.error('Error detecting suspicious activity:', error);
       return false;
     }
   }

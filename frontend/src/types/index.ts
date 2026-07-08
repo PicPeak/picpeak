@@ -43,8 +43,8 @@ export interface Event {
   enable_devtools_protection?: boolean;
   use_canvas_rendering?: boolean;
   // Hero logo customization fields
-  hero_logo_visible?: boolean;
-  hero_logo_size?: 'small' | 'medium' | 'large' | 'xlarge';
+  hero_logo_visible?: boolean | null;
+  hero_logo_size?: 'small' | 'medium' | 'large' | 'xlarge' | null;
   hero_logo_position?: 'top' | 'center' | 'bottom';
   hero_logo_url?: string | null;
   // Per-event opt-in for using the hero photo as the social-share
@@ -67,8 +67,24 @@ export interface Event {
   // Client access (#172)
   client_access_enabled?: boolean;
   client_share_token?: string;
+  // Live Slideshow / "Diashow" (migration 138). Token-only fullscreen kiosk
+  // link minted on demand; null token = disabled. Settings drive the running
+  // projector and can be changed live.
+  show_share_token?: string | null;
+  show_interval_ms?: number;
+  show_transition?: 'crossfade' | 'cut' | 'slide' | 'kenburns' | 'dipwhite' | 'dipblack';
+  show_transition_ms?: number;
+  // Watermark MODE only (null=inherit global / true / false). The look lives
+  // globally in Settings → Slideshow, not per event.
+  show_watermark?: boolean | null;
+  show_colorfilter?: 'none' | 'bw' | 'sepia' | 'warm' | 'cool' | 'vignette';
   // Default photo sort order
   default_photo_sort?: string;
+  // Pre-event reminder override (migration 143)
+  event_reminder_disabled?: boolean;
+  event_reminder_offset_days?: number | null;
+  event_reminder_body_override?: string | null;
+  event_reminder_sent_at?: string | null;
 }
 
 export type GalleryAccessLevel = 'guest' | 'client';
@@ -107,6 +123,11 @@ export interface Photo {
   category_id?: number | string | null;
   category_name?: string;
   category_slug?: string;
+  // Per-category download permission (#640). Defaults true for uncategorised
+  // photos and for categories that pre-date migration 135. The frontend hides
+  // the lightbox download button when this is false (event-level allow_downloads
+  // also has to be true — they AND together).
+  category_allow_downloads?: boolean;
   size: number;
   uploaded_at: string;
   captured_at?: string; // EXIF capture date (if available)
@@ -126,6 +147,12 @@ export interface Photo {
   total_ratings?: number;
   comment_count?: number;
   like_count?: number;
+  // Per-viewer flag (#590 follow-up). True when the requesting viewer has
+  // an active like row for this photo, false otherwise. Computed server-side
+  // by gallery.js using the same identity model as galleryFeedback.js
+  // (guest_id when a guest token is present, else IP+UA hash fallback).
+  // Used to seed the lifted likedPhotoIds Set in grid layouts on mount.
+  is_liked?: boolean;
   favorite_count?: number;
 }
 
@@ -161,8 +188,8 @@ export interface GalleryData {
     fragmentation_level?: number;
     overlay_protection?: boolean;
     // Hero logo customization fields
-    hero_logo_visible?: boolean;
-    hero_logo_size?: 'small' | 'medium' | 'large' | 'xlarge';
+    hero_logo_visible?: boolean | null;
+    hero_logo_size?: 'small' | 'medium' | 'large' | 'xlarge' | null;
     hero_logo_position?: 'top' | 'center' | 'bottom';
     hero_logo_url?: string | null;
     // Header style settings (decoupled from layout)
@@ -223,6 +250,20 @@ export interface AdminUser {
 export interface LoginResponse {
   token: string;
   user: AdminUser;
+}
+
+// Two-step admin login: when MFA is enabled, POST /auth/admin/login returns
+// this challenge instead of a session (no cookie yet). The mfaToken is a
+// short-lived (5 min) JWT exchanged at POST /auth/admin/login/mfa.
+export interface MfaChallengeResponse {
+  mfaRequired: true;
+  mfaToken: string;
+}
+
+export type AdminLoginResponse = LoginResponse | MfaChallengeResponse;
+
+export function isMfaChallenge(res: AdminLoginResponse): res is MfaChallengeResponse {
+  return (res as MfaChallengeResponse).mfaRequired === true;
 }
 
 export interface GalleryAuthResponse {

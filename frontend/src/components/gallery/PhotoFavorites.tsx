@@ -6,6 +6,7 @@ import { feedbackService } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
+import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 
 interface PhotoFavoritesProps {
   photoId: string;
@@ -29,6 +30,7 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const guestIdentity = useGuestIdentityOptional();
+  const { modal: limitModal, handleError: handleLimitError } = useFeedbackLimitModal();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
@@ -58,6 +60,8 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
       if (onFavoriteChange) {
         onFavoriteChange(isFavorited);
       }
+      // Per-guest cap reached (#655) — surface the modal instead of a toast.
+      if (handleLimitError(error)) return;
       if (error.response?.status === 429) {
         toast.error(t('feedback.rateLimited', 'Please wait before favoriting again'));
       } else {
@@ -130,6 +134,7 @@ export const PhotoFavorites: React.FC<PhotoFavoritesProps> = ({
         onSubmit={handleIdentitySubmit}
         feedbackType={t('feedback.favorite', 'favorite')}
       />
+      {limitModal}
     </>
   );
 };

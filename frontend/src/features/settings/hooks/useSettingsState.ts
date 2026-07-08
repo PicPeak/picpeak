@@ -25,12 +25,16 @@ export interface GeneralSettings {
   use_original_filenames_for_downloads: boolean;
   default_language: string;
   date_format: { format: string; locale: string };
+  /** '12h' or '24h' — controls how times are RENDERED across admin
+   *  + customer-facing views (formatDateTime / formatTime). The
+   *  underlying storage is always HH:mm (24h); only the visual
+   *  presentation toggles. Default '24h' (operator's locale). */
+  time_format: '12h' | '24h';
 }
 
 export interface SecuritySettings {
   password_min_length: number;
   password_complexity: string;
-  enable_2fa: boolean;
   session_timeout_minutes: number;
   max_login_attempts: number;
   attempt_window_minutes: number;
@@ -40,11 +44,31 @@ export interface SecuritySettings {
   recaptcha_secret_key: string;
 }
 
+export type TrackerProvider = 'none' | 'umami' | 'rybbit' | 'custom';
+
 export interface AnalyticsSettings {
+  // Tracker-provider switch (#663 Phase 1). Drives which provider's
+  // settings panel renders + which tracker script gets injected into the
+  // public gallery. 'none' = no tracker; 'custom' = paste-your-own HTML.
+  tracker_provider: TrackerProvider;
   umami_enabled: boolean;
   umami_url: string;
   umami_website_id: string;
   umami_share_url: string;
+  // API key for Umami's v2 metrics API. Required ONLY for the device
+  // breakdown (#661 Bug C); the rest of the integration (embedded iframe,
+  // tracker script) still works without it. Server masks as `••••••••`
+  // on GET when a value is stored — submit the masked sentinel unchanged
+  // to keep the stored value, or a real key to replace it.
+  umami_api_key: string;
+  // Rybbit native provider (#663 Phase 1). Same shape as Umami.
+  rybbit_url: string;
+  rybbit_website_id: string;
+  rybbit_api_key: string;
+  // Custom-mode HTML snippet (#663). Sanitised server-side on save via
+  // sanitize-html with a tracker-script allowlist. Rendered into the
+  // public gallery <head> as-is on every request.
+  custom_head_html: string;
 }
 
 export interface EventSettings {
@@ -101,14 +125,14 @@ export function useSettingsState() {
     short_gallery_urls: false,
     use_original_filenames_for_downloads: false,
     default_language: 'en',
-    date_format: { format: 'dd/MM/yyyy', locale: 'en-GB' }
+    date_format: { format: 'dd/MM/yyyy', locale: 'en-GB' },
+    time_format: '24h'
   });
 
   // Security settings state
   const [securitySettings, setSecuritySettings] = useState<SecuritySettings>({
     password_min_length: 8,
     password_complexity: 'moderate',
-    enable_2fa: false,
     session_timeout_minutes: 60,
     max_login_attempts: 5,
     attempt_window_minutes: 15,
@@ -120,10 +144,16 @@ export function useSettingsState() {
 
   // Analytics settings state
   const [analyticsSettings, setAnalyticsSettings] = useState<AnalyticsSettings>({
+    tracker_provider: 'none',
     umami_enabled: false,
     umami_url: '',
     umami_website_id: '',
-    umami_share_url: ''
+    umami_share_url: '',
+    umami_api_key: '',
+    rybbit_url: '',
+    rybbit_website_id: '',
+    rybbit_api_key: '',
+    custom_head_html: ''
   });
 
   // Event creation settings state
@@ -192,13 +222,13 @@ export function useSettingsState() {
           ? (typeof settings.general_date_format === 'string'
               ? { format: settings.general_date_format, locale: settings.general_date_format.includes('MM/dd') ? 'en-US' : 'en-GB' }
               : settings.general_date_format)
-          : { format: 'dd/MM/yyyy', locale: 'en-GB' }
+          : { format: 'dd/MM/yyyy', locale: 'en-GB' },
+        time_format: settings.general_time_format === '12h' ? '12h' : '24h'
       });
 
       setSecuritySettings({
         password_min_length: toNumber(settings.security_password_min_length, 8),
         password_complexity: settings.security_password_complexity ?? 'moderate',
-        enable_2fa: toBoolean(settings.security_enable_2fa, false),
         session_timeout_minutes: toNumber(settings.security_session_timeout_minutes, 60),
         max_login_attempts: toNumber(settings.security_max_login_attempts, 5),
         attempt_window_minutes: toNumber(settings.security_attempt_window_minutes, 15),
@@ -208,11 +238,27 @@ export function useSettingsState() {
         recaptcha_secret_key: settings.security_recaptcha_secret_key ?? ''
       });
 
+      // Tracker provider: prefer explicit setting; fall back to legacy
+      // umami_enabled flag for installs that haven't picked yet (#663).
+      const explicitProvider = settings.analytics_tracker_provider;
+      const provider: TrackerProvider = (
+        explicitProvider === 'none' || explicitProvider === 'umami'
+        || explicitProvider === 'rybbit' || explicitProvider === 'custom'
+      )
+        ? explicitProvider
+        : (toBoolean(settings.analytics_umami_enabled, false) ? 'umami' : 'none');
+
       setAnalyticsSettings({
+        tracker_provider: provider,
         umami_enabled: toBoolean(settings.analytics_umami_enabled, false),
         umami_url: settings.analytics_umami_url || '',
         umami_website_id: settings.analytics_umami_website_id || '',
-        umami_share_url: settings.analytics_umami_share_url || ''
+        umami_share_url: settings.analytics_umami_share_url || '',
+        umami_api_key: settings.analytics_umami_api_key || '',
+        rybbit_url: settings.analytics_rybbit_url || '',
+        rybbit_website_id: settings.analytics_rybbit_website_id || '',
+        rybbit_api_key: settings.analytics_rybbit_api_key || '',
+        custom_head_html: settings.analytics_custom_head_html || ''
       });
 
       setEventSettings({
@@ -308,8 +354,16 @@ export function useSettingsState() {
     mutationFn: async () => {
       const settingsData: Record<string, unknown> = {};
       Object.entries(analyticsSettings).forEach(([key, value]) => {
+        // API keys (Umami / Rybbit) are returned masked as `••••••••` on
+        // GET so they don't leak in the response body. Don't re-save the
+        // sentinel — silently preserve whatever's already stored.
+        if ((key === 'umami_api_key' || key === 'rybbit_api_key') && value === '••••••••') return;
         settingsData[`analytics_${key}`] = value;
       });
+      // Keep the legacy `analytics_umami_enabled` flag in sync with the
+      // new `tracker_provider` switch so back-compat consumers (publicSettings
+      // surface, embedded Umami iframe) keep working when provider !== 'umami'.
+      settingsData.analytics_umami_enabled = analyticsSettings.tracker_provider === 'umami';
       return settingsService.updateSettings(settingsData);
     },
     onSuccess: () => {

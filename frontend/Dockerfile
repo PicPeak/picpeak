@@ -1,5 +1,7 @@
-# Build stage
-FROM node:20-alpine AS builder
+# Build stage — node:22-alpine drops npm-bundled CVEs in older Node 20
+# (picomatch, ip-address, brace-expansion, @sigstore/core, tar) since the
+# bundled npm version is newer in 22. Matches the backend Dockerfile base.
+FROM node:22-alpine AS builder
 
 # Add build arguments
 ARG CACHEBUST=1
@@ -8,7 +10,7 @@ ARG VCS_REF
 ARG VERSION
 
 # Add labels for GitHub Container Registry
-LABEL org.opencontainers.image.source="https://github.com/the-luap/picpeak"
+LABEL org.opencontainers.image.source="https://github.com/PicPeak/picpeak"
 LABEL org.opencontainers.image.description="PicPeak Frontend Application"
 LABEL org.opencontainers.image.licenses="MIT"
 
@@ -30,8 +32,11 @@ RUN npm run build
 # Production stage (Alpine 3.23 with OpenSSL 3.5.5, patched libexpat)
 FROM nginx:1.28-alpine
 
-# Upgrade all packages to fix security vulnerabilities (OpenSSL, libexpat, BusyBox CVEs)
-RUN apk upgrade --no-cache
+# Upgrade all Alpine packages for security fixes. The explicit nginx upgrade
+# closes the HTTP/2 + rewrite/charset CVEs (CVE-2026-42055 / -49975 / -9256 /
+# -48142, fixed in nginx 1.28.3-r4) and busts any cached layer still carrying
+# the vulnerable r1 build.
+RUN apk upgrade --no-cache && apk add --no-cache --upgrade nginx
 
 # Install runtime dependencies. `gettext` provides envsubst, used by
 # docker-entrypoint.sh for the BRAND_TITLE / BRAND_DESCRIPTION runtime

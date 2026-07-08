@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Trash2, Eye, Download, UserPlus, Grid3x3, List } from 'lucide-react';
 import { Card, Button, Loading } from '../common';
@@ -8,6 +8,8 @@ import { AdminGuestDetail } from './AdminGuestDetail';
 import { GuestSelectionsAggregate } from './GuestSelectionsAggregate';
 import { GuestInviteDialog } from './GuestInviteDialog';
 import { toast } from 'react-toastify';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { useMutationWithToast, useModal } from '../../hooks';
 
 interface AdminGuestsListProps {
   eventId: number;
@@ -18,37 +20,35 @@ type View = 'list' | 'aggregate';
 
 export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, eventName }) => {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
+  const { format: fmtDate } = useLocalizedDate();
   const [view, setView] = useState<View>('list');
   const [selectedGuest, setSelectedGuest] = useState<AdminGuest | null>(null);
   const [mergeMode, setMergeMode] = useState(false);
   const [mergeSelection, setMergeSelection] = useState<number[]>([]);
-  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const inviteModal = useModal();
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['admin-guests', eventId],
     queryFn: () => guestsService.getEventGuests(eventId),
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useMutationWithToast({
     mutationFn: (guestId: number) => guestsService.deleteGuest(eventId, guestId),
-    onSuccess: () => {
-      toast.success(t('admin.guests.deletedToast', 'Guest removed'));
-      queryClient.invalidateQueries({ queryKey: ['admin-guests', eventId] });
-    },
-    onError: () => toast.error(t('admin.guests.deletedError', 'Failed to remove guest')),
+    successMessage: t('admin.guests.deletedToast', 'Guest removed'),
+    invalidateKeys: [['admin-guests', eventId]],
+    errorMessage: () => t('admin.guests.deletedError', 'Failed to remove guest'),
   });
 
-  const mergeMutation = useMutation({
+  const mergeMutation = useMutationWithToast({
     mutationFn: ({ keepId, mergeIds }: { keepId: number; mergeIds: number[] }) =>
       guestsService.mergeGuests(eventId, keepId, mergeIds),
+    successMessage: t('admin.guests.mergedToast', 'Guests merged'),
+    invalidateKeys: [['admin-guests', eventId]],
     onSuccess: () => {
-      toast.success(t('admin.guests.mergedToast', 'Guests merged'));
       setMergeMode(false);
       setMergeSelection([]);
-      queryClient.invalidateQueries({ queryKey: ['admin-guests', eventId] });
     },
-    onError: () => toast.error(t('admin.guests.mergedError', 'Failed to merge guests')),
+    errorMessage: () => t('admin.guests.mergedError', 'Failed to merge guests'),
   });
 
   const handleDelete = (guest: AdminGuest) => {
@@ -158,7 +158,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                 variant="outline"
                 size="sm"
                 leftIcon={<UserPlus className="w-4 h-4" />}
-                onClick={() => setInviteDialogOpen(true)}
+                onClick={inviteModal.open}
               >
                 {t('admin.guests.createInvite', 'Create invite')}
               </Button>
@@ -271,7 +271,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                       {guest.stats.ratings}
                     </td>
                     <td className="px-4 py-3 text-sm text-neutral-600 dark:text-neutral-400">
-                      {new Date(guest.last_seen_at).toLocaleDateString()}
+                      {fmtDate(guest.last_seen_at)}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -329,12 +329,12 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
         />
       )}
 
-      {inviteDialogOpen && (
+      {inviteModal.isOpen && (
         <GuestInviteDialog
           eventId={eventId}
           eventName={eventName}
           onClose={() => {
-            setInviteDialogOpen(false);
+            inviteModal.close();
             refetch();
           }}
         />

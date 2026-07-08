@@ -16,18 +16,52 @@
  *     is enough for the rare two-process case during dev).
  *
  * Tunables (env, all optional):
- *   UPLOAD_PROCESSOR_CONCURRENCY        default 2
+ *   UPLOAD_PROCESSOR_CONCURRENCY        default 2 on hosts with ≥3GB RAM,
+ *                                       1 on smaller hosts (auto-detected
+ *                                       via os.totalmem() with one-shot
+ *                                       warning, #628). Always honoured
+ *                                       when set explicitly.
  *   UPLOAD_PROCESSOR_POLL_MS            default 1000
  *   UPLOAD_PROCESSOR_STUCK_TIMEOUT_MS   default 600000  (10 minutes)
  *   UPLOAD_PROCESSOR_DISABLED           default false   (set 'true' to opt out, e.g. in CI)
  */
 
+const os = require('os');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { processPhoto } = require('./photoProcessor');
 
 const POLL_INTERVAL_MS = parseInt(process.env.UPLOAD_PROCESSOR_POLL_MS || '1000', 10);
-const CONCURRENCY = Math.max(1, parseInt(process.env.UPLOAD_PROCESSOR_CONCURRENCY || '2', 10));
+
+// Soft default: two worker loops × sharp.concurrency(2) means up to four
+// libvips threads can decode full-resolution photos in parallel. Each decode
+// holds the full uncompressed frame in RAM — a 24MP photo is ~96MB before
+// resize. On a 2GB VPS (the documented but barely-viable minimum) one busy
+// batch is enough to OOM-kill the backend and surface as 503s on thumbnails
+// (#628). When the host reports < 3GB total memory AND the admin hasn't set
+// an explicit override, drop the default to 1 and log a one-shot warning
+// naming the override env var. Explicit env-var setters keep their value.
+//
+// os.totalmem() reports container memory under cgroup v2 (Docker / k8s) and
+// host memory on bare metal — accurate enough for this decision in either
+// deployment shape.
+function pickDefaultConcurrency() {
+  if (process.env.UPLOAD_PROCESSOR_CONCURRENCY !== undefined) {
+    return parseInt(process.env.UPLOAD_PROCESSOR_CONCURRENCY, 10);
+  }
+  const totalRamGB = os.totalmem() / (1024 ** 3);
+  if (totalRamGB < 3) {
+    logger.warn?.(
+      `[backgroundProcessor] Detected ${totalRamGB.toFixed(1)}GB total RAM (< 3GB threshold). ` +
+      'Defaulting UPLOAD_PROCESSOR_CONCURRENCY to 1 to avoid OOM on heavy upload batches. ' +
+      'Set UPLOAD_PROCESSOR_CONCURRENCY=2 (or higher) explicitly to override.',
+    );
+    return 1;
+  }
+  return 2;
+}
+
+const CONCURRENCY = Math.max(1, pickDefaultConcurrency());
 const STUCK_TIMEOUT_MS = parseInt(process.env.UPLOAD_PROCESSOR_STUCK_TIMEOUT_MS || '600000', 10);
 const JANITOR_INTERVAL_MS = 60 * 1000;
 

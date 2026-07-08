@@ -14,7 +14,16 @@ export interface BrandingSettings {
   favicon_url?: string;
   logo_size?: 'small' | 'medium' | 'large' | 'xlarge' | 'custom';
   logo_max_height?: number;
-  logo_position?: 'left' | 'center' | 'right';
+  /**
+   * Logo placement.
+   * - 'left' | 'center' | 'right': position inside the gallery header bar.
+   * - 'sidepanel': moved out of the gallery header into the admin
+   *   sidebar's brand row (replaces the "PicPeak Admin" text; switches
+   *   to the favicon when the sidebar is collapsed). The gallery
+   *   silently falls back to 'left' for its own rendering since it has
+   *   no sidepanel.
+   */
+  logo_position?: 'left' | 'center' | 'right' | 'sidepanel';
   logo_display_header?: boolean;
   logo_display_hero?: boolean;
   logo_display_mode?: 'logo_only' | 'text_only' | 'logo_and_text';
@@ -166,10 +175,28 @@ export const settingsService = {
     return response.data;
   },
 
+  // Get a subset of settings by key. Use this when a caller knows
+  // exactly which keys it needs — saves transferring (and JSON-parsing)
+  // the ~100-row dict. The backend accepts a comma-separated list and
+  // returns the same shape as getAllSettings(), just narrower.
+  async getSettings(keys: string[]): Promise<Record<string, any>> {
+    if (!keys || keys.length === 0) return {};
+    const response = await api.get<Record<string, any>>(
+      '/admin/settings',
+      { params: { keys: keys.join(',') } },
+    );
+    return response.data;
+  },
+
   // Get settings by type
-  async getSettingsByType(type: 'branding' | 'theme' | 'general'): Promise<Record<string, any>> {
+  async getSettingsByType(type: 'branding' | 'theme' | 'general' | 'slideshow'): Promise<Record<string, any>> {
     const response = await api.get<Record<string, any>>(`/admin/settings/${type}`);
     return response.data;
+  },
+
+  // Update global Live Slideshow defaults (watermark)
+  async updateSlideshowDefaults(settings: Record<string, unknown>): Promise<void> {
+    await api.put('/admin/settings/slideshow', settings);
   },
 
   // Update branding settings
@@ -199,13 +226,14 @@ export const settingsService = {
     });
   },
 
-  // Upload logo
-  async uploadLogo(file: File): Promise<string> {
+  // Upload logo. Pass variant='dark' to store the dark-mode logo
+  // (branding_logo_url_dark); default stores the light logo.
+  async uploadLogo(file: File, variant?: 'dark'): Promise<string> {
     const formData = new FormData();
     formData.append('logo', file);
-    
+
     const response = await api.post<{ logoUrl: string }>(
-      '/admin/settings/logo',
+      `/admin/settings/logo${variant === 'dark' ? '?variant=dark' : ''}`,
       formData,
       {
         headers: {
@@ -213,8 +241,13 @@ export const settingsService = {
         }
       }
     );
-    
+
     return response.data.logoUrl;
+  },
+
+  // Remove a logo (variant='dark' clears the dark-mode logo).
+  async removeLogo(variant?: 'dark'): Promise<void> {
+    await api.delete(`/admin/settings/logo${variant === 'dark' ? '?variant=dark' : ''}`);
   },
 
   // Upload favicon

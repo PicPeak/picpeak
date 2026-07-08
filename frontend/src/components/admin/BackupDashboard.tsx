@@ -16,7 +16,10 @@ import {
   AlertTriangle,
   Info
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+// Per [[feedback_respect_general_format_settings]] — route every
+// displayed date/time through useLocalizedDate so general_date_format
+// and general_time_format settings apply uniformly.
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { Card, Button } from '../common';
 
 export type HealthStatus = 'excellent' | 'good' | 'warning' | 'critical';
@@ -38,11 +41,15 @@ interface BackupRecord {
   backup_type: string;
   created_at: string;
   duration_seconds: number;
+  started_at?: string;
+  error_message?: string;
   statistics?: BackupStatistics;
 }
 
 interface BackupStatus {
-  lastBackup?: BackupRecord;
+  lastBackup?: BackupRecord;             // most recent attempt, any status
+  lastSuccessfulBackup?: BackupRecord;   // most recent completed run
+  zombieRuns?: BackupRecord[];           // running > 30min, likely crashed
   totalBackups?: number;
   recentBackups?: BackupRecord[];
 }
@@ -105,18 +112,41 @@ const healthColors: Record<HealthStatus, string> = {
 
 export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config, onRunBackup, isBackupRunning }) => {
   const { t } = useTranslation();
-  const lastBackup = status?.lastBackup;
-  const statistics = lastBackup?.statistics ?? {};
+  const { format, formatTime, formatDateTime, formatDistanceToNow } = useLocalizedDate();
+  const lastBackup = status?.lastBackup;                       // any status
+  const lastSuccessfulBackup = status?.lastSuccessfulBackup;   // status='completed' only
+  const zombieRuns = status?.zombieRuns ?? [];
+  const statistics = lastSuccessfulBackup?.statistics ?? lastBackup?.statistics ?? {};
   const isConfigured = config && config.backup_destination_type;
   const isEnabled = config?.backup_enabled;
 
+  // Use the most recent SUCCESSFUL backup as the "age" reference for
+  // health, so a transient failure doesn't immediately drop the score
+  // — but call out failed/running/zombie attempts explicitly so the
+  // admin sees them at a glance.
   const getHealthScore = (): { score: number; status: HealthStatus; message: string } => {
-    if (!lastBackup) return { score: 0, status: 'critical', message: t('backup.dashboard.healthMessages.noBackups') };
+    if (!lastSuccessfulBackup) {
+      // No successful backup ever recorded.
+      if (lastBackup?.status === 'failed') {
+        return { score: 0, status: 'critical', message: t('backup.dashboard.healthMessages.lastBackupFailed') };
+      }
+      return { score: 0, status: 'critical', message: t('backup.dashboard.healthMessages.noBackups') };
+    }
 
-    const hoursSinceBackup = (Date.now() - new Date(lastBackup.created_at).getTime()) / (1000 * 60 * 60);
+    const hoursSinceBackup = (Date.now() - new Date(lastSuccessfulBackup.created_at).getTime()) / (1000 * 60 * 60);
 
-    if (lastBackup.status === 'failed') {
-      return { score: 0, status: 'critical', message: t('backup.dashboard.healthMessages.lastBackupFailed') };
+    // A successful backup exists. Bias the score on its age, but if
+    // the MOST RECENT attempt failed, downgrade the message so the
+    // admin sees the regression even though older backups are fine.
+    const latestAttemptFailed = lastBackup && lastBackup.id !== lastSuccessfulBackup.id
+      && lastBackup.status === 'failed';
+
+    if (latestAttemptFailed) {
+      return {
+        score: 50,
+        status: 'warning',
+        message: t('backup.dashboard.healthMessages.lastBackupFailed'),
+      };
     }
 
     if (hoursSinceBackup < 24) {
@@ -190,9 +220,43 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
 
           <div className="flex-1">
             <p className="text-neutral-700 dark:text-neutral-300 font-medium">{health.message}</p>
-            {lastBackup && (
+            {/* Show the last successful backup explicitly — previously
+                this read `lastBackup.created_at` which silently rendered
+                a failed/running row as if it were the last success. */}
+            {lastSuccessfulBackup && (
               <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-                Last successful backup: {formatDistanceToNow(new Date(lastBackup.created_at), { addSuffix: true })}
+                {t('backup.dashboard.lastSuccessful', 'Last successful backup')}: {formatDistanceToNow(new Date(lastSuccessfulBackup.created_at), { addSuffix: true })}
+              </p>
+            )}
+            {/* If the most recent attempt is NOT the last successful
+                run, surface it separately so the admin sees the
+                divergence (latest attempt failed or running). */}
+            {lastBackup && lastBackup.id !== lastSuccessfulBackup?.id && (
+              <p className={`text-sm mt-1 ${
+                lastBackup.status === 'failed'
+                  ? 'text-red-600 dark:text-red-400 font-medium'
+                  : lastBackup.status === 'running'
+                    ? 'text-blue-600 dark:text-blue-400'
+                    : 'text-neutral-500 dark:text-neutral-400'
+              }`}>
+                {t('backup.dashboard.lastAttempt', 'Last attempt')}: {formatDistanceToNow(new Date(lastBackup.created_at), { addSuffix: true })}
+                {' · '}
+                {t(`backup.dashboard.status.${lastBackup.status}`, lastBackup.status)}
+                {lastBackup.status === 'failed' && lastBackup.error_message && (
+                  <span className="block text-xs text-red-600 dark:text-red-400 mt-0.5">
+                    {lastBackup.error_message.split('\n')[0].slice(0, 200)}
+                  </span>
+                )}
+              </p>
+            )}
+            {/* Zombie warning — running >30min, almost certainly crashed.
+                Admin needs to know they may be looking at a hung row
+                that won't ever flip to completed. */}
+            {zombieRuns.length > 0 && (
+              <p className="text-sm mt-1 text-amber-700 dark:text-amber-300 font-medium">
+                {t('backup.dashboard.zombieRuns',
+                  '{{count}} backup(s) running >30min — may have crashed without completing',
+                  { count: zombieRuns.length })}
               </p>
             )}
 
@@ -225,7 +289,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
           label={t('backup.dashboard.stats.totalBackups')}
           value={status?.totalBackups || 0}
           color="blue"
-          subtext={lastBackup ? `${t('backup.dashboard.stats.last')}: ${format(new Date(lastBackup.created_at), 'PP')}` : t('backup.dashboard.stats.noBackupsYet')}
+          subtext={lastBackup ? `${t('backup.dashboard.stats.last')}: ${format(new Date(lastBackup.created_at))}` : t('backup.dashboard.stats.noBackupsYet')}
         />
 
         <StatCard
@@ -241,7 +305,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
           label={t('backup.dashboard.stats.lastDuration')}
           value={lastBackup ? `${Math.round(lastBackup.duration_seconds / 60)}m` : 'N/A'}
           color="purple"
-          subtext={lastBackup ? format(new Date(lastBackup.created_at), 'p') : ''}
+          subtext={lastBackup ? formatTime(new Date(lastBackup.created_at)) : ''}
         />
 
         <StatCard
@@ -273,7 +337,7 @@ export const BackupDashboard: React.FC<BackupDashboardProps> = ({ status, config
                       {t('backup.dashboard.backupType', { type: backup.backup_type })}
                     </p>
                     <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                      {format(new Date(backup.created_at), 'PPp')}
+                      {formatDateTime(new Date(backup.created_at))}
                     </p>
                   </div>
                 </div>

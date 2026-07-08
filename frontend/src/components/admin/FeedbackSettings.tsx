@@ -22,6 +22,9 @@ interface FeedbackSettings {
   rate_limit_window_minutes?: number;
   rate_limit_max_requests?: number;
   identity_mode?: 'simple' | 'guest';
+  // Per-guest caps (#655). null/0 = unlimited.
+  max_favorites_per_guest?: number | null;
+  max_likes_per_guest?: number | null;
 }
 
 export const FeedbackSettings: React.FC<FeedbackSettingsProps> = ({
@@ -218,6 +221,69 @@ export const FeedbackSettings: React.FC<FeedbackSettingsProps> = ({
                 </label>
               </div>
             </div>
+
+            {/* Per-guest caps (#655). Two numeric inputs; 0 / empty = unlimited.
+                Only renders when the matching toggle is on — the cap is
+                meaningless if the type itself is disabled. */}
+            {(settings.allow_favorites || settings.allow_likes) && (
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                  {t('feedback.settings.perGuestLimits', 'Per-guest limits')}
+                </h3>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {t(
+                    'feedback.settings.perGuestLimitsDesc',
+                    'Cap how many photos each guest can favorite or like — useful for "pick your top N for the album" workflows. Leave at 0 for no limit. Lowering a cap below an existing guest\'s count keeps their existing rows; only new adds are blocked until they remove some.',
+                  )}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {settings.allow_favorites && (
+                    <div className="p-3 bg-neutral-50 dark:bg-neutral-800 rounded-lg">
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">
+                        {t('feedback.settings.maxFavoritesPerGuest', 'Max favorites per guest')}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10000}
+                        step={1}
+                        value={settings.max_favorites_per_guest ?? 0}
+                        onChange={(e) => onChange({
+                          ...settings,
+                          max_favorites_per_guest: Math.max(0, parseInt(e.target.value, 10) || 0),
+                        })}
+                        className="w-32 px-2 py-1 text-sm border border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                      />
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        {t('feedback.settings.maxFavoritesPerGuestHint', '0 = unlimited')}
+                      </p>
+                    </div>
+                  )}
+                  {settings.allow_likes && (
+                    <div className="p-3 bg-neutral-50 dark:bg-neutral-800 rounded-lg">
+                      <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">
+                        {t('feedback.settings.maxLikesPerGuest', 'Max likes per guest')}
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={10000}
+                        step={1}
+                        value={settings.max_likes_per_guest ?? 0}
+                        onChange={(e) => onChange({
+                          ...settings,
+                          max_likes_per_guest: Math.max(0, parseInt(e.target.value, 10) || 0),
+                        })}
+                        className="w-32 px-2 py-1 text-sm border border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                      />
+                      <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+                        {t('feedback.settings.maxLikesPerGuestHint', '0 = unlimited')}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4" />
 

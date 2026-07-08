@@ -30,20 +30,17 @@ name: Schema drift (#530)
 # the same shape is caught before merge.
 
 on:
+  # No `paths:` filter — branch protection on `main` + `stable` lists
+  # `upgrade-from-bootstrap` as a REQUIRED check. A path-filtered
+  # trigger that skipped on unrelated PRs would leave the required
+  # check "missing" forever, blocking every PR that doesn't touch
+  # migrations. The ~75-second cost on every PR buys an unconditional
+  # safety net. (Branches also updated post-#669 rename: beta → main,
+  # old main → stable.)
   push:
-    branches: [main, beta]
-    paths:
-      - 'backend/migrations/**'
-      - 'backend/src/database/db.js'
-      - 'backend/knexfile.js'
-      - '.github/workflows/schema-drift.yml'
+    branches: [main, stable]
   pull_request:
-    branches: [main, beta]
-    paths:
-      - 'backend/migrations/**'
-      - 'backend/src/database/db.js'
-      - 'backend/knexfile.js'
-      - '.github/workflows/schema-drift.yml'
+    branches: [main, stable]
   workflow_dispatch:
 
 permissions:

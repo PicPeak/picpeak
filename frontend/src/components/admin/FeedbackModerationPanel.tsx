@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -8,13 +8,12 @@ import {
   CheckCircle,
   User
 } from 'lucide-react';
-import { parseISO } from 'date-fns';
-import { toast } from 'react-toastify';
-
 import { Card, Loading, Button } from '../common';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { feedbackService, type FeedbackResponse, type PhotoFeedback } from '../../services/feedback.service';
+import { toast } from 'react-toastify';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { useModal } from '../../hooks';
 
 interface FeedbackModerationPanelProps {
   eventId: number;
@@ -30,9 +29,9 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
   maxItems = 5
 }) => {
   const { t } = useTranslation();
-  const { format } = useLocalizedDate();
+  const { formatDateTime } = useLocalizedDate();
   const queryClient = useQueryClient();
-  const [showAll, setShowAll] = useState(false);
+  const showAllModal = useModal();
 
   // Fetch pending feedback
   const { data: feedbackData, isLoading } = useQuery<FeedbackResponse>({
@@ -40,7 +39,7 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
     queryFn: () => feedbackService.getEventFeedback(eventId.toString(), {
       type: 'comment',
       status: 'pending',
-      limit: showAll ? 100 : maxItems
+      limit: showAllModal.isOpen ? 100 : maxItems
     }),
     refetchInterval: 30000 // Refresh every 30 seconds
   });
@@ -98,7 +97,7 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
           </div>
         ) : (
           <div className="space-y-3">
-            {pendingComments.slice(0, showAll ? undefined : maxItems).map((item) => (
+            {pendingComments.slice(0, showAllModal.isOpen ? undefined : maxItems).map((item) => (
               <div key={item.id} className="border border-neutral-200 dark:border-neutral-700 rounded-lg p-4 hover:bg-neutral-50 dark:hover:bg-neutral-800">
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0">
@@ -116,12 +115,7 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
                           </span>
                           <span className="text-neutral-500 dark:text-neutral-400">•</span>
                           <span className="text-neutral-500 dark:text-neutral-400">
-                            {format(
-                              typeof item.created_at === 'string' 
-                                ? parseISO(item.created_at) 
-                                : new Date(item.created_at), 
-                              'MMM d, h:mm a'
-                            )}
+                            {formatDateTime(item.created_at)}
                           </span>
                         </div>
                         <p className="mt-1 text-sm text-neutral-700">{item.comment_text || item.comment}</p>
@@ -188,9 +182,9 @@ export const FeedbackModerationPanel: React.FC<FeedbackModerationPanelProps> = (
               </div>
             ))}
 
-            {pendingComments.length > maxItems && !showAll && (
+            {pendingComments.length > maxItems && !showAllModal.isOpen && (
               <button
-                onClick={() => setShowAll(true)}
+                onClick={showAllModal.open}
                 className="w-full text-center py-2 text-sm text-accent hover:opacity-80 font-medium"
               >
                 {t('feedback.showAll', 'Show all {{count}} pending comments', { count: pendingComments.length })}

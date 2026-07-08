@@ -201,6 +201,102 @@ export interface Activity {
   createdAt: string;
 }
 
+// Backup-integrity verifier — diagnostic endpoint that walks every
+// CRM document-artefact path column and confirms files exist on disk
+// (plus SHA-256 match where the schema stores one). Mirrors the
+// shape returned by backupIntegrityService.verifyDocumentArtefacts.
+export type BackupIntegrityScope =
+  | 'quote'
+  | 'contract'
+  | 'contract-signature'
+  | 'invoice';
+
+export interface BackupIntegrityMissingRow {
+  table: string;
+  rowId: number;
+  column: string;
+  expectedPath: string;
+}
+
+export interface BackupIntegrityHashMismatchRow extends BackupIntegrityMissingRow {
+  expectedSha: string;
+  actualSha: string;
+}
+
+export interface BackupIntegrityExistsButNoHashRow {
+  table: string;
+  rowId: number;
+  column: string;
+  path: string;
+}
+
+export interface BackupIntegrityReport {
+  scannedAt: string;
+  scopes: BackupIntegrityScope[];
+  summary: {
+    totalRows: number;
+    verifiedOk: number;
+    missingFiles: number;
+    hashMismatches: number;
+    existsButNoHash: number;
+  };
+  missing: BackupIntegrityMissingRow[];
+  hashMismatches: BackupIntegrityHashMismatchRow[];
+  existsButNoHash: BackupIntegrityExistsButNoHashRow[];
+}
+
+// ---- Backup-coverage (Stage C of backup-hardening plan) -----------------
+
+export type BackupPathCoverage =
+  | 'will-scan'
+  | 'skipped-by-toggle'
+  | 'skipped-by-feature-flag'
+  | 'missing-on-disk';
+
+export interface BackupCoveragePath {
+  path: string;
+  includeInDefault: boolean;
+  featureFlag: string | null;
+  featureFlagValue: boolean | null;
+  displayOrder: number;
+  description: string | null;
+  existsOnDisk: boolean;
+  coverage: BackupPathCoverage;
+}
+
+export interface BackupCoverageDatabase {
+  mode: 'inline' | 'scheduled-only';
+  inlineDumpExplicitlyDisabled: boolean;
+  lastDumpAt: string | null;
+  lastDumpType: string | null;
+  lastDumpSizeBytes: number;
+  lastDumpFilePath: string | null;
+  lastDumpAgeMs: number | null;
+  lastDumpStale: boolean | null;
+  ok: boolean;
+}
+
+export interface BackupCoverageReport {
+  generatedAt: string;
+  database: BackupCoverageDatabase;
+  paths: BackupCoveragePath[];
+  drift: {
+    unconfiguredOnDisk: string[];
+    expectedNonBackupDirs: string[];
+  };
+  summary: {
+    configuredCount: number;
+    willScanCount: number;
+    skippedByToggleCount: number;
+    skippedByFeatureFlagCount: number;
+    missingOnDiskCount: number;
+    driftCount: number;
+    tableMissingFallbackInUse: boolean;
+    databaseOk: boolean;
+    overallOk: boolean;
+  };
+}
+
 export interface AdminProfile {
   id: number;
   username: string;
@@ -231,6 +327,34 @@ export interface AnalyticsData {
     mobile: number;
     tablet: number;
   };
+  // Period totals computed via dedicated COUNT queries on the backend
+  // (#661 Bug A). Postgres returns these as strings, so callers should
+  // coerce via Number() before display. Optional on the type because
+  // older backends (pre-#661) didn't always emit it.
+  totals?: {
+    views: number | string;
+    downloads: number | string;
+    uniqueVisitors: number | string;
+  };
+  // Source of the device breakdown — `umami` when API-key auth succeeded,
+  // `access_logs` for the local user-agent heuristic fallback (#661 Bug C).
+  devicesSource?: 'umami' | 'access_logs';
+}
+
+export interface WhatsNewVersion {
+  version: string;
+  name: string;
+  htmlUrl: string;
+  publishedAt: string;
+  bullets: string[];
+}
+
+export interface WhatsNewResponse {
+  enabled: boolean;
+  hasNews: boolean;
+  fromVersion?: string;
+  toVersion?: string;
+  versions?: WhatsNewVersion[];
 }
 
 export const adminService = {
@@ -260,6 +384,39 @@ export const adminService = {
   async getSystemHealth(): Promise<SystemHealth> {
     const response = await api.get<SystemHealth>('/admin/dashboard/health');
     return response.data;
+  },
+
+  // After-update "What's New" highlights (per-instance acknowledgement).
+  async getWhatsNew(): Promise<WhatsNewResponse> {
+    const response = await api.get<WhatsNewResponse>('/admin/system/updates/whatsnew');
+    return response.data;
+  },
+
+  async markWhatsNewSeen(): Promise<void> {
+    await api.post('/admin/system/updates/whatsnew/seen');
+  },
+
+  // Backup-integrity verifier (read-only diagnostic). `scope` filters
+  // which document classes to walk; omit for a full scan.
+  async getBackupIntegrity(
+    scope?: BackupIntegrityScope[],
+  ): Promise<BackupIntegrityReport> {
+    const params = scope && scope.length > 0 ? { scope: scope.join(',') } : undefined;
+    const response = await api.get<{ report: BackupIntegrityReport }>(
+      '/admin/system-health/backup-integrity',
+      { params },
+    );
+    return response.data.report;
+  },
+
+  // Backup-coverage diagnostic (Stage C). Answers "what will the
+  // next backup actually include / skip / silently miss?" — read-only,
+  // no parameters. See backupCoverageService.js for the full report shape.
+  async getBackupCoverage(): Promise<BackupCoverageReport> {
+    const response = await api.get<{ report: BackupCoverageReport }>(
+      '/admin/system-health/backup-coverage',
+    );
+    return response.data.report;
   },
 
   // Format activity message
@@ -326,6 +483,78 @@ export const adminService = {
       'event_type_updated': `Event type updated: ${md.name || ''}`,
       'event_type_deleted': `Event type deleted: ${md.name || ''}`,
       'event_types_reordered': 'Event types reordered',
+      // CRM — Contracts.
+      'contract_created': `Contract created: ${md.contractNumber || ''}`,
+      'contract_created_from_quote': `Contract created from quote: ${md.contractNumber || ''}`,
+      'contract_updated': `Contract updated: ${md.contractNumber || ''}`,
+      'contract_sent': `Contract sent: ${md.contractNumber || ''}`,
+      'contract_resent_signed': `Signed contract resent: ${md.contractNumber || ''}`,
+      'contract_signed_by_customer': `Contract signed by customer: ${md.contractNumber || ''}`,
+      'contract_signed_pdf_uploaded': `Signed contract PDF uploaded: ${md.contractNumber || ''}`,
+      'contract_signatures_restamped': `Contract signatures re-stamped: ${md.contractNumber || ''}`,
+      'contract_cancelled': `Contract cancelled: ${md.contractNumber || ''}`,
+      'contract_converted_to_event': `Contract converted to event: ${md.contractNumber || ''}`,
+      'contract_converted_to_empty_event': `Contract converted to empty event: ${md.contractNumber || ''}`,
+      'contract_converted_to_invoices': `Contract converted to invoices: ${md.contractNumber || ''}`,
+      'contract_converted_to_empty_invoice': `Contract converted to empty invoice: ${md.contractNumber || ''}`,
+      // CRM — Quotes.
+      'quote_created': `Quote created: ${md.quoteNumber || ''}`,
+      'quote_sent': `Quote sent: ${md.quoteNumber || ''}`,
+      'quote_updated': `Quote updated: ${md.quoteNumber || ''}`,
+      'quote_accepted_by_admin': `Quote accepted: ${md.quoteNumber || ''}`,
+      'quote_declined_by_admin': `Quote declined: ${md.quoteNumber || ''}`,
+      'quote_converted': `Quote converted: ${md.quoteNumber || ''}`,
+      'quote_converted_invoices_only': `Quote converted to invoices: ${md.quoteNumber || ''}`,
+      // CRM — Invoices / Storno.
+      'invoice_created': `Invoice created: ${md.invoiceNumber || ''}`,
+      'invoice_sent': `Invoice sent: ${md.invoiceNumber || ''}`,
+      'invoice_scheduled': `Invoice scheduled: ${md.invoiceNumber || ''}`,
+      'invoice_cancelled': `Invoice cancelled: ${md.invoiceNumber || ''}`,
+      'invoice_cancelled_via_storno': `Invoice cancelled via Storno: ${md.invoiceNumber || ''}`,
+      'invoice_reissued': `Invoice reissued: ${md.invoiceNumber || ''}`,
+      'invoice_paid_admin_notified': `Invoice marked paid: ${md.invoiceNumber || ''}`,
+      'invoice_payment_check_recorded': `Payment-check recorded for invoice: ${md.invoiceNumber || ''}`,
+      'invoice_payment_check_sent': `Payment-check sent for invoice: ${md.invoiceNumber || ''}`,
+      'invoice_released_for_delivery': `Invoice released for delivery: ${md.invoiceNumber || ''}`,
+      'invoice_reminder_sent': `Invoice reminder sent: ${md.invoiceNumber || ''}`,
+      'storno_sent': `Storno sent: ${md.invoiceNumber || ''}`,
+      // CRM — Monthly billing.
+      'monthly_bill_issued': 'Monthly bill issued for customer',
+      'monthly_bill_skipped_empty': 'Monthly bill skipped (no entries)',
+      'monthly_bill_triggered_manually': 'Monthly bill triggered manually',
+      'monthly_billing_items_queued': 'Monthly billing items queued',
+      'installment_plan_updated': 'Installment plan updated',
+      // Accounting — Expenses + Hours + Incoming invoices.
+      'expense_created': 'Expense created',
+      'expense_updated': 'Expense updated',
+      'expense_paid': 'Expense marked paid',
+      'expense_invoiced': 'Expense invoiced',
+      'hour_entry_logged': 'Hour entry logged',
+      'hour_entry_updated': 'Hour entry updated',
+      'hour_entry_deleted': 'Hour entry deleted',
+      'hour_entry_logged_to_monthly_draft': 'Hour entry logged to monthly draft',
+      'hour_entries_billed': 'Hour entries billed to customer',
+      'incoming_invoice_captured': 'Incoming invoice captured',
+      'incoming_invoice_categorized': 'Incoming invoice categorised',
+      'incoming_invoice_updated': 'Incoming invoice updated',
+      'incoming_invoice_rebilled': 'Incoming invoice re-billed to customer',
+      'incoming_invoice_supplier_payment': 'Supplier payment recorded',
+      'incoming_mail_config_updated': 'Incoming mail configuration updated',
+      // Customers + Admin user mgmt.
+      'customer_created_passive': `Passive customer created: ${md.email || ''}`,
+      'admin_user_activated': `Admin user activated: ${md.username || ''}`,
+      'admin_user_deleted': `Admin user deleted: ${md.username || ''}`,
+      'admin_password_reset': `Admin password reset: ${md.username || ''}`,
+      // Misc / legacy.
+      'bulk_archive_completed': `Bulk archive completed: ${md.count || 0} events archived`,
+      'email_queue_flushed': 'Email queue flushed',
+      'email_resent': `Creation email resent for ${activity.eventName || ''}`,
+      'email_template_created': `Email template created: ${md.template_key || ''}`,
+      'event_duplicated': `Event duplicated from ${md.source_event_name || ''}`,
+      'feedback_deleted': 'Feedback deleted',
+      'feedback_moderated': 'Feedback moderated',
+      'feedback_settings_updated': `Feedback settings updated for ${activity.eventName || ''}`,
+      'word_filter_added': `Word filter added: ${md.word || ''}`,
     };
 
     return messages[activity.type] || activity.type;

@@ -1,0 +1,98 @@
+# What's New highlights — GitHub Models release step (reusable)
+#
+# Called by the release-please workflows AFTER a release is created
+# (release-please.yml for `stable`, release-please-beta.yml for `main`). It runs
+# as a job in the SAME workflow run rather than on its own `release: published`
+# trigger, because release-please creates the release with the default
+# GITHUB_TOKEN and GitHub does not start new workflow runs from token-generated
+# events — a standalone `release:` workflow would simply never fire.
+#
+# What it does: condenses the new release's "### Features" into <=8 short
+# bullets via GitHub Models (free tier, `models: read`) and injects a
+# `<!-- whatsnew -->` block at the top of the release notes. The app reads that
+# block (backend utils/whatsNew.parseWhatsNew) and falls back to the raw
+# Features list for releases without it — so this is purely a quality upgrade,
+# never a hard dependency. Failure is isolated by `continue-on-error` + the
+# deterministic fallback below, so it can never break a release.
+#
+# GitHub Models is OPTIONAL. If it is disabled/unavailable for the org the AI
+# step fails soft (continue-on-error) and the deterministic fallback produces
+# the bullets instead — the feature works either way, Models just polishes them.
+#
+# Validated end-to-end on a fork (extract -> openai/gpt-4o-mini -> inject into
+# real release notes; app parseWhatsNew() reads the block back).
+
+name: What's New highlights
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to annotate (e.g. v2.3.0)
+        required: true
+        type: string
+
+jobs:
+  highlights:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to edit the release body
+      models: read      # GitHub Models (free tier)
+    # GH_REPO at job scope so every `gh` call targets the right repo without
+    # needing an actions/checkout step. Without this, `gh` falls back to
+    # parsing `.git/config` in the runner's empty workspace and dies with
+    # "fatal: not a git repository" — which hard-fails the whole job before
+    # any continue-on-error can save it.
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Extract Features from the published release
+        id: feat
+        # Belt-and-braces: the job-level comment says "never let highlights
+        # break a release", but the original wiring only marked the AI +
+        # inject steps as continue-on-error. A hiccup here (rate limit,
+        # transient API error) would still hard-fail the job. Match the
+        # design intent and fail soft.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          BODY=$(gh release view "$TAG" --json body -q .body)
+          FEATURES=$(printf '%s\n' "$BODY" | awk '/^#{2,4} +Features/{f=1;next} /^#{1,4} +\S/{f=0} f')
+          { echo "features<<EOF"; printf '%s\n' "$FEATURES"; echo EOF; } >> "$GITHUB_OUTPUT"
+
+      - name: Summarize with GitHub Models
+        if: ${{ steps.feat.outputs.features != '' }}
+        id: ai
+        continue-on-error: true   # Models may be disabled/unavailable for the org; fall back deterministically below
+        uses: actions/ai-inference@v1
+        with:
+          model: openai/gpt-4o-mini   # catalog id (verified present); openai/gpt-4.1-mini or openai/gpt-5-nano also work
+          system-prompt: >
+            You write release highlights for the admins of a self-hosted
+            photo-gallery + CRM app. Given raw changelog "Features" lines, output
+            AT MOST 8 markdown bullets, each 3-4 words, user-facing, no scopes,
+            no jargon, no issue numbers. One bullet per distinct user-visible
+            feature. Output ONLY "- " bullets, nothing else.
+          prompt: ${{ steps.feat.outputs.features }}
+
+      - name: Inject the What's New block
+        if: ${{ steps.feat.outputs.features != '' }}
+        continue-on-error: true   # never let highlights break a release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          AI: ${{ steps.ai.outputs.response }}
+          FEATURES: ${{ steps.feat.outputs.features }}
+        run: |
+          BULLETS="$AI"
+          # Deterministic fallback if the model returned nothing (e.g. Models not yet enabled).
+          if [ -z "$BULLETS" ]; then
+            BULLETS=$(printf '%s\n' "$FEATURES" | head -8 \
+              | sed -E 's/^\* \*\*[^:]+:\*\* */- /; s/ \(\[[^]]*\]\([^)]*\)\)//g')
+          fi
+          BODY=$(gh release view "$TAG" --json body -q .body)
+          # Idempotent: strip any prior block before re-injecting.
+          BODY=$(printf '%s' "$BODY" | perl -0pe 's/<!--\s*whatsnew\s*-->.*?<!--\s*\/whatsnew\s*-->\n*//is')
+          gh release edit "$TAG" --notes "$(printf '<!-- whatsnew -->\n%s\n<!-- /whatsnew -->\n\n%s' "$BULLETS" "$BODY")"

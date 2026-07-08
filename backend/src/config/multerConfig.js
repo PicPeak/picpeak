@@ -9,6 +9,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { validateFileType } = require('../utils/fileSecurityUtils');
+const logger = require('../utils/logger');
 
 /**
  * Get the storage path from environment or default
@@ -220,14 +221,14 @@ const createCustomUploader = (config) => {
 const uploadTimeoutMiddleware = (timeout = 300000) => {
   return (req, res, next) => {
     req.setTimeout(timeout, () => {
-      console.error('Upload request timed out');
+      logger.error('Upload request timed out');
       if (!res.headersSent) {
         res.status(408).json({ error: 'Upload request timed out' });
       }
     });
 
     res.setTimeout(timeout, () => {
-      console.error('Upload response timed out');
+      logger.error('Upload response timed out');
     });
 
     next();

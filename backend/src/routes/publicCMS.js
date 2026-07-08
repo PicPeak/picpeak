@@ -1,5 +1,6 @@
 const express = require('express');
 const { db } = require('../database/db');
+const logger = require('../utils/logger');
 const router = express.Router();
 
 // Get public CMS page
@@ -41,7 +42,7 @@ router.get('/pages/:slug', async (req, res) => {
       updated_at: page.updated_at
     });
   } catch (error) {
-    console.error('Error fetching public CMS page:', error);
+    logger.error('Error fetching public CMS page:', error);
     res.status(500).json({ error: 'Failed to fetch page' });
   }
 });

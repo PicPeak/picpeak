@@ -14,7 +14,7 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Briefcase, UserCog } from 'lucide-react';
+import { Briefcase, UserCog, FileText, Receipt, Wrench, Calculator, Clock, ScrollText, Calendar, FolderKanban } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
 
@@ -40,18 +40,65 @@ export const ClientsLayout: React.FC = () => {
 
   const navItems: NavItem[] = [
     {
+      key: 'overview',
+      to: '/admin/clients/projects',
+      label: t('clients.subnav.overview', 'Overview'),
+      icon: FolderKanban,
+      featureFlag: 'projects',
+    },
+    {
       key: 'accounts',
       to: '/admin/clients/accounts',
       label: t('clients.subnav.accounts', 'Accounts'),
       icon: UserCog,
       featureFlag: 'customerPortal',
     },
-    // Add future sub-features here as they ship:
-    //   { key: 'calendar', to: '/admin/clients/calendar', ... featureFlag: 'calendar' }
-    //   { key: 'quotes',   to: '/admin/clients/quotes',   ... featureFlag: 'quotes'   }
-    //   { key: 'bills',    to: '/admin/clients/bills',    ... featureFlag: 'bills'    }
-    //   etc. The empty-state below disappears automatically once any of
-    //   these is enabled.
+    {
+      key: 'calendar',
+      to: '/admin/clients/calendar',
+      label: t('clients.subnav.calendar', 'Calendar'),
+      icon: Calendar,
+      featureFlag: 'calendar',
+    },
+    {
+      key: 'quotes',
+      to: '/admin/clients/quotes',
+      label: t('clients.subnav.quotes', 'Quotes'),
+      icon: FileText,
+      featureFlag: 'quotes',
+    },
+    {
+      key: 'contracts',
+      to: '/admin/clients/contracts',
+      label: t('clients.subnav.contracts', 'Contracts'),
+      icon: ScrollText,
+      featureFlag: 'contracts',
+    },
+    {
+      key: 'hours',
+      to: '/admin/clients/hours',
+      label: t('clients.subnav.hours', 'Hours'),
+      icon: Clock,
+      featureFlag: 'hoursLogging',
+    },
+    {
+      key: 'bills',
+      to: '/admin/clients/bills',
+      label: t('clients.subnav.bills', 'Invoices'),
+      icon: Receipt,
+      featureFlag: 'bills',
+    },
+    // Tax export moved permanently to the Accounting section (it is no
+    // longer a CRM sub-feature). See AccountingLayout.
+    // Future sub-features:
+    //   { key: 'messaging', ... featureFlag: 'messaging' }
+    {
+      key: 'development',
+      to: '/admin/clients/development',
+      label: t('clients.subnav.development', 'Development'),
+      icon: Wrench,
+      featureFlag: 'crmDevelopment',
+    },
   ];
 
   const enabledItems = navItems.filter((item) => flags[item.featureFlag]);
@@ -64,22 +111,22 @@ export const ClientsLayout: React.FC = () => {
       <div>
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-            {t('clients.title', 'Clients')}
+            {t('clients.title', 'CRM')}
           </h1>
           <p className="text-neutral-600 dark:text-neutral-400 mt-1">
-            {t('clients.subtitle', 'Customer accounts, scheduling, quotes and billing for recurring clients.')}
+            {t('clients.subtitle', 'Customer accounts, scheduling, quotes and billing — everything for recurring clients in one place.')}
           </p>
         </div>
 
         <div className="rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-900 p-8 text-center">
           <Briefcase className="w-10 h-10 mx-auto mb-3 text-neutral-400" />
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
-            {t('clients.empty.title', 'No client features enabled')}
+            {t('clients.empty.title', 'No CRM features enabled')}
           </h2>
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
             {t(
               'clients.empty.body',
-              'Enable Accounts (or another Clients sub-feature) under Settings → Features to get started.',
+              'Enable Accounts (or another CRM sub-feature) under Settings → Features to get started.',
             )}
           </p>
         </div>
@@ -91,10 +138,10 @@ export const ClientsLayout: React.FC = () => {
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-          {t('clients.title', 'Clients')}
+          {t('clients.title', 'CRM')}
         </h1>
         <p className="text-neutral-600 dark:text-neutral-400 mt-1">
-          {t('clients.subtitle', 'Customer accounts, scheduling, quotes and billing for recurring clients.')}
+          {t('clients.subtitle', 'Customer accounts, scheduling, quotes and billing — everything for recurring clients in one place.')}
         </p>
       </div>
 
@@ -103,7 +150,7 @@ export const ClientsLayout: React.FC = () => {
            in one tap on touch devices, no horizontal scroll. */}
         <div className="lg:hidden">
           <label htmlFor="clients-section" className="sr-only">
-            {t('clients.navAriaLabel', 'Clients navigation')}
+            {t('clients.navAriaLabel', 'CRM navigation')}
           </label>
           <select
             id="clients-section"
@@ -120,7 +167,7 @@ export const ClientsLayout: React.FC = () => {
         {/* Desktop: sticky left rail */}
         <aside className="hidden lg:block">
           <nav
-            aria-label={t('clients.navAriaLabel', 'Clients navigation')}
+            aria-label={t('clients.navAriaLabel', 'CRM navigation')}
             className="sticky top-6 space-y-1"
           >
             {enabledItems.map((item) => {

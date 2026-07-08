@@ -41,6 +41,7 @@ const { getClientIp } = require('../utils/requestIp');
 // at least one digit. No special-character or breach-list requirement.
 const customerAccountsService = require('../services/customerAccountsService');
 const { customerAuth } = require('../middleware/customerAuth');
+const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 
 const router = express.Router();
 
@@ -63,7 +64,7 @@ const TOKEN_TTL_SECONDS = 24 * 60 * 60; // mirrors admin tokens
 //     rows, which verifyGalleryAccess re-checks on customer-minted
 //     gallery JWTs (instant per-gallery revocation).
 router.post('/login', [
-  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('email').isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL).withMessage('Valid email is required'),
   body('password').isString().notEmpty(),
 ], async (req, res) => {
   try {

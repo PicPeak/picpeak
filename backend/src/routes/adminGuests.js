@@ -8,6 +8,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
 const feedbackService = require('../services/feedbackService');
 const logger = require('../utils/logger');
+const { errorResponse } = require('../utils/routeHelpers');
 
 const FRONTEND_URL = process.env.FRONTEND_URL || '';
 
@@ -73,10 +74,10 @@ router.get(
           'gallery_guests.created_at',
           'gallery_guests.last_seen_at',
           'gallery_guests.email_verified_at',
-          db.raw("COUNT(CASE WHEN photo_feedback.feedback_type = 'like' THEN 1 END) AS likes"),
-          db.raw("COUNT(CASE WHEN photo_feedback.feedback_type = 'favorite' THEN 1 END) AS favorites"),
-          db.raw("COUNT(CASE WHEN photo_feedback.feedback_type = 'comment' THEN 1 END) AS comments"),
-          db.raw("COUNT(CASE WHEN photo_feedback.feedback_type = 'rating' THEN 1 END) AS ratings"),
+          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'like\' THEN 1 END) AS likes'),
+          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'favorite\' THEN 1 END) AS favorites'),
+          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'comment\' THEN 1 END) AS comments'),
+          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'rating\' THEN 1 END) AS ratings'),
           db.raw('COUNT(DISTINCT photo_feedback.photo_id) AS distinct_photos')
         )
         .orderBy('gallery_guests.created_at', 'desc');
@@ -94,8 +95,7 @@ router.get(
 
       res.json({ guests });
     } catch (error) {
-      logger.error('Error listing guests:', error);
-      res.status(500).json({ error: 'Failed to list guests' });
+      errorResponse(res, error, 500, 'Failed to list guests');
     }
   }
 );
@@ -117,7 +117,7 @@ router.get(
       const photos = await db('photos')
         .leftJoin('photo_feedback', function () {
           this.on('photo_feedback.photo_id', '=', 'photos.id')
-            .andOn(db.raw("photo_feedback.feedback_type IN ('like','favorite')"))
+            .andOn(db.raw('photo_feedback.feedback_type IN (\'like\',\'favorite\')'))
             .andOnNotNull('photo_feedback.guest_id');
         })
         .where('photos.event_id', eventId)
@@ -144,8 +144,7 @@ router.get(
           })),
       });
     } catch (error) {
-      logger.error('Error fetching aggregate view:', error);
-      res.status(500).json({ error: 'Failed to fetch aggregate view' });
+      errorResponse(res, error, 500, 'Failed to fetch aggregate view');
     }
   }
 );
@@ -196,8 +195,7 @@ router.get(
 
       res.json({ invites });
     } catch (error) {
-      logger.error('Error listing invites:', error);
-      res.status(500).json({ error: 'Failed to list invites' });
+      errorResponse(res, error, 500, 'Failed to list invites');
     }
   }
 );
@@ -266,8 +264,7 @@ router.post(
         },
       });
     } catch (error) {
-      logger.error('Error creating invite:', error);
-      res.status(500).json({ error: 'Failed to create invite' });
+      errorResponse(res, error, 500, 'Failed to create invite');
     }
   }
 );
@@ -302,8 +299,7 @@ router.delete(
 
       res.json({ success: true });
     } catch (error) {
-      logger.error('Error revoking invite:', error);
-      res.status(500).json({ error: 'Failed to revoke invite' });
+      errorResponse(res, error, 500, 'Failed to revoke invite');
     }
   }
 );
@@ -457,8 +453,7 @@ router.get(
         selections,
       });
     } catch (error) {
-      logger.error('Error fetching guest detail:', error);
-      res.status(500).json({ error: 'Failed to fetch guest detail' });
+      errorResponse(res, error, 500, 'Failed to fetch guest detail');
     }
   }
 );
@@ -509,8 +504,7 @@ router.get(
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       return res.send(selections.map((s) => s.original_filename || s.filename).join('\n'));
     } catch (error) {
-      logger.error('Error exporting guest:', error);
-      res.status(500).json({ error: 'Failed to export guest' });
+      errorResponse(res, error, 500, 'Failed to export guest');
     }
   }
 );
@@ -548,8 +542,7 @@ router.delete(
 
       res.json({ success: true, ...result });
     } catch (error) {
-      logger.error('Error deleting guest:', error);
-      res.status(500).json({ error: 'Failed to delete guest' });
+      errorResponse(res, error, 500, 'Failed to delete guest');
     }
   }
 );
@@ -600,8 +593,7 @@ router.post(
 
       res.json({ success: true, ...result });
     } catch (error) {
-      logger.error('Error merging guests:', error);
-      res.status(500).json({ error: 'Failed to merge guests' });
+      errorResponse(res, error, 500, 'Failed to merge guests');
     }
   }
 );

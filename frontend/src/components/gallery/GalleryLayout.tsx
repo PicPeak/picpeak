@@ -25,6 +25,15 @@ interface GalleryLayoutProps {
     promo_mode?: 'inherit' | 'custom' | 'off';
     promo_markdown?: string | null;
   };
+  // Effective hero-logo visibility for THIS gallery, already resolved by the
+  // backend (per-event override, else the global branding toggle) (#756).
+  // When provided it wins over brandingSettings.logo_display_hero.
+  heroLogoVisible?: boolean;
+  // Effective hero-logo SIZE, resolved the same way (per-event override, else
+  // the global branding_logo_size) (#756). When provided it wins over
+  // brandingSettings.logo_size for the hero logo — so both render paths
+  // (this layout and the hero-header) size the logo identically.
+  heroLogoSize?: 'small' | 'medium' | 'large' | 'xlarge' | 'custom';
   brandingSettings?: {
     company_name?: string;
     company_tagline?: string;
@@ -32,9 +41,10 @@ interface GalleryLayoutProps {
     footer_text?: string;
     favicon_url?: string;
     logo_url?: string;
+    logo_url_dark?: string;
     logo_size?: 'small' | 'medium' | 'large' | 'xlarge' | 'custom';
     logo_max_height?: number;
-    logo_position?: 'left' | 'center' | 'right';
+    logo_position?: 'left' | 'center' | 'right' | 'sidepanel';
     logo_display_header?: boolean;
     logo_display_hero?: boolean;
     logo_display_mode?: 'logo_only' | 'text_only' | 'logo_and_text';
@@ -107,6 +117,8 @@ const HeaderDownloadButton: React.FC<{
 export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
   event,
   brandingSettings,
+  heroLogoVisible,
+  heroLogoSize,
   showLogout = false,
   onLogout,
   showDownloadAll = false,
@@ -122,6 +134,11 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
   const { theme } = useTheme();
+  // Dark-mode logo variant. Symmetric fallback: a single uploaded logo
+  // serves both modes (dark → dark||light, light → light||dark).
+  const brandLogoUrl = theme.colorMode === 'dark'
+    ? (brandingSettings?.logo_url_dark || brandingSettings?.logo_url)
+    : (brandingSettings?.logo_url || brandingSettings?.logo_url_dark);
   const guestIdentity = useGuestIdentityOptional();
 
   // Footer legal-link config. Cached aggressively because the toggle state
@@ -151,7 +168,10 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
   
   // Calculate logo size classes based on settings
   const getLogoDimensions = (context: 'header' | 'hero'): { className: string; style?: React.CSSProperties } => {
-    const size = brandingSettings?.logo_size || 'medium';
+    // #756: the hero logo uses the backend-resolved per-event size (override,
+    // else global) so it matches the hero-header layout; the header logo keeps
+    // the global size.
+    const size = (context === 'hero' && heroLogoSize) ? heroLogoSize : (brandingSettings?.logo_size || 'medium');
     const maxHeight = brandingSettings?.logo_max_height || 48;
 
     if (size === 'custom') {
@@ -174,9 +194,13 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
     };
   };
   
-  // Determine logo position classes
+  // Determine logo position classes. 'sidepanel' is an admin-chrome
+  // option (logo lives in the admin sidebar) and has no analogue in
+  // the gallery — fall back to 'left' here so customer galleries keep
+  // showing the logo somewhere sensible.
   const getLogoPositionClass = () => {
-    const position = brandingSettings?.logo_position || 'left';
+    const raw = brandingSettings?.logo_position || 'left';
+    const position = raw === 'sidepanel' ? 'left' : raw;
     return {
       left: 'justify-start',
       center: 'justify-center',
@@ -192,6 +216,9 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
     if (context === 'header') {
       return brandingSettings?.logo_display_header !== false;
     } else {
+      // #756: prefer the backend-resolved per-event value (override, else
+      // global); fall back to the global branding toggle if not provided.
+      if (heroLogoVisible !== undefined) return heroLogoVisible;
       return brandingSettings?.logo_display_hero !== false;
     }
   };
@@ -203,7 +230,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
   };
 
   const headerLogoSize = getLogoDimensions('header');
-  const heroLogoSize = getLogoDimensions('hero');
+  const heroLogoDimensions = getLogoDimensions('hero');
 
   // Footer overhaul (#441 + #440). All five socials are independent;
   // empty string = hide just that icon. Per-event promo override:
@@ -300,8 +327,8 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                 {shouldShowLogo('header') && (
                   <div className={`gallery-logo-wrapper flex-shrink-0 flex items-center gap-2 ${brandingSettings?.logo_position === 'center' ? 'flex-1' : ''} ${getLogoPositionClass()}`}>
                     <img
-                      src={brandingSettings?.logo_url ?
-                        buildResourceUrl(brandingSettings.logo_url) :
+                      src={brandLogoUrl ?
+                        buildResourceUrl(brandLogoUrl) :
                         '/picpeak-logo-transparent.png'
                       }
                       alt={brandingSettings?.company_name || 'PicPeak'}
@@ -583,17 +610,17 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
               {/* Logo - Show custom logo or fallback to PicPeak logo */}
               {shouldShowLogo('hero') && (
                 <div className="mb-6">
-                  <img 
-                    src={brandingSettings?.logo_url ? 
-                      buildResourceUrl(brandingSettings.logo_url) : 
+                  <img
+                    src={brandLogoUrl ?
+                      buildResourceUrl(brandLogoUrl) :
                       '/picpeak-logo-transparent.png'
-                    } 
+                    }
                     alt={brandingSettings?.company_name || 'PicPeak'}
-                    className={`${heroLogoSize.className} w-auto object-contain mx-auto`}
+                    className={`${heroLogoDimensions.className} w-auto object-contain mx-auto`}
                     style={{
-                      ...(heroLogoSize.style || {}),
+                      ...(heroLogoDimensions.style || {}),
                       // Only apply brightness/invert filter to default logo; custom logos display as-is
-                      filter: brandingSettings?.logo_url
+                      filter: brandLogoUrl
                         ? 'drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))'
                         : 'brightness(0) invert(1) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3))'
                     }}

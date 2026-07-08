@@ -15,6 +15,7 @@ import {
 import { toast } from 'react-toastify';
 import { Card, Button, Input, Loading } from '../common';
 import { feedbackService } from '../../services/feedback.service';
+import { useMutationWithToast } from '../../hooks';
 
 interface WordFilter {
   id: number;
@@ -62,29 +63,23 @@ export const WordFilterManager: React.FC = () => {
   });
 
   // Update word filter mutation
-  const updateMutation = useMutation({
+  const updateMutation = useMutationWithToast({
     mutationFn: ({ id, updates }: { id: number; updates: Partial<WordFilter> }) =>
       feedbackService.updateWordFilter(id, updates),
+    invalidateKeys: [['word-filters']],
+    successMessage: t('settings.moderation.filterUpdated', 'Word filter updated successfully'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['word-filters'] });
-      toast.success(t('settings.moderation.filterUpdated', 'Word filter updated successfully'));
       setEditingId(null);
     },
-    onError: () => {
-      toast.error(t('settings.moderation.updateError', 'Failed to update word filter'));
-    }
+    errorMessage: () => t('settings.moderation.updateError', 'Failed to update word filter')
   });
 
   // Delete word filter mutation
-  const deleteMutation = useMutation({
+  const deleteMutation = useMutationWithToast({
     mutationFn: (id: number) => feedbackService.deleteWordFilter(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['word-filters'] });
-      toast.success(t('settings.moderation.filterDeleted', 'Word filter deleted successfully'));
-    },
-    onError: () => {
-      toast.error(t('settings.moderation.deleteError', 'Failed to delete word filter'));
-    }
+    invalidateKeys: [['word-filters']],
+    successMessage: t('settings.moderation.filterDeleted', 'Word filter deleted successfully'),
+    errorMessage: () => t('settings.moderation.deleteError', 'Failed to delete word filter')
   });
 
   const handleAdd = () => {

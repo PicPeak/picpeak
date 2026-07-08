@@ -32,6 +32,17 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
 
   const { data: publicSettings } = usePublicSettings();
 
+  // #613 — guest upload UI was hardcoded to behave as if the limit was
+  // unlimited (no client-side guard) and the fileRequirements hint
+  // rendered `{{limit}}` literally because t() was called with no
+  // interpolation argument. publicSettings now surfaces
+  // general_max_files_per_upload (default 500 from publicSettings.js)
+  // so we can render a real number and refuse oversized batches before
+  // they hit the backend. Backend route enforces the same value too.
+  const maxFilesPerUpload = Number.isFinite(Number(publicSettings?.general_max_files_per_upload))
+    ? Number(publicSettings?.general_max_files_per_upload)
+    : 500;
+
   const allowedMimeTypes = useMemo(
     () => extensionsToMimeTypes(publicSettings?.allowed_file_types),
     [publicSettings?.allowed_file_types]
@@ -57,6 +68,20 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
       return true;
     });
     if (validFiles.length === 0) return;
+
+    // #613 — per-batch file count guard. Mirrors what the admin's
+    // PhotoUpload component does. Backend also enforces, so this is
+    // purely UX (saves a multi-MB POST when the user clearly went over).
+    const remaining = Math.max(0, maxFilesPerUpload - files.length);
+    if (remaining === 0) {
+      toast.error(t('upload.limitReached', { limit: maxFilesPerUpload }));
+      return;
+    }
+    if (validFiles.length > remaining) {
+      toast.warning(t('upload.someFilesSkipped', { allowed: remaining, limit: maxFilesPerUpload }));
+      setFiles((prev) => [...prev, ...validFiles.slice(0, remaining)]);
+      return;
+    }
     setFiles((prev) => [...prev, ...validFiles]);
   };
 
@@ -200,7 +225,10 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
                     {t('upload.clickToUpload')}
                   </p>
                   <p className="text-xs text-muted-theme">
-                    {t('upload.fileRequirements')}
+                    {/* #613 — pass { limit } so `{{limit}}` interpolates
+                        with the real number from settings instead of
+                        rendering literally. */}
+                    {t('upload.fileRequirements', { limit: maxFilesPerUpload })}
                   </p>
                   <input
                     type="file"

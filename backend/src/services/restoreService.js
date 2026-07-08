@@ -12,6 +12,7 @@ const backupManifest = require('./backupManifest');
 const S3StorageAdapter = require('./storage/s3Storage');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
+const { formatBytes } = require('../utils/formatBytes');
 const os = require('os');
 
 /**
@@ -39,6 +40,12 @@ class RestoreService {
     this.currentProgress = null;
     this.restoreLog = [];
     this.preRestoreBackupPath = null;
+    // Snapshot of operator-meta settings (e.g. `restore_allow_force`)
+    // captured by performDatabaseRestore BEFORE the DROP DATABASE.
+    // Drained by restore() AFTER post-restore verification passes so
+    // the replay doesn't inflate the row-count check. Reset per run
+    // via beforeRestore() to keep state from leaking across calls.
+    this.preservedMetaSnapshot = [];
     this.dbType = knexConfig.client === 'pg' ? 'postgresql' : 'sqlite';
     this.tempDir = path.join(os.tmpdir(), 'picpeak-restore');
   }
@@ -64,6 +71,7 @@ class RestoreService {
 
     this.isRunning = true;
     this.restoreLog = [];
+    this.preservedMetaSnapshot = [];  // reset per run
     const startTime = new Date();
     let restoreRun = null;
 
@@ -154,9 +162,37 @@ class RestoreService {
         this.log('warn', 'Pre-restore backup skipped at user request');
       }
 
-      // Step 5: Download backup if from S3
+      // Step 5: Download backup if from S3, or resolve the local root.
+      //
+      // The wizard passes `options.source = 'local'` (the SOURCE TYPE
+      // string) — not a path. The old code assigned that string to
+      // `localBackupPath` verbatim and every downstream `path.join(...)`
+      // ended up with junk like `local/database/<file>.sql.gz`. Caused
+      // the disaster-recovery restore flow to fail with
+      // `Database backup file not found: local/database/...` even when
+      // the manifest recorded the correct absolute path AND the file
+      // existed at exactly that path on disk.
+      //
+      // Resolve `'local'` to the configured backup destination root by
+      // reading `backup_destination_path` from app_settings. That's the
+      // same root the file-backup walker writes to, so every relative
+      // `file.path` in the manifest resolves correctly via
+      // `path.join(localBackupPath, file.path)` further down.
       let localBackupPath = options.source;
-      if (options.source.startsWith('s3://')) {
+      if (options.source === 'local') {
+        try {
+          const row = await db('app_settings')
+            .where('setting_key', 'backup_destination_path')
+            .first();
+          if (row?.setting_value) {
+            let parsed;
+            try { parsed = JSON.parse(row.setting_value); } catch (_) { parsed = row.setting_value; }
+            if (parsed) localBackupPath = parsed;
+          }
+        } catch (err) {
+          this.log('warn', `Could not resolve backup_destination_path: ${err.message}`);
+        }
+      } else if (options.source.startsWith('s3://')) {
         this.updateProgress('Downloading backup from S3...');
         localBackupPath = await this.downloadFromS3(options.source, manifest, options);
       }
@@ -164,20 +200,20 @@ class RestoreService {
       // Step 6: Perform the actual restore based on type
       let restoreResult;
       switch (options.restoreType) {
-        case 'full':
-          restoreResult = await this.performFullRestore(localBackupPath, manifest, options);
-          break;
-        case 'database':
-          restoreResult = await this.performDatabaseRestore(localBackupPath, manifest, options);
-          break;
-        case 'files':
-          restoreResult = await this.performFilesRestore(localBackupPath, manifest, options);
-          break;
-        case 'selective':
-          restoreResult = await this.performSelectiveRestore(localBackupPath, manifest, options);
-          break;
-        default:
-          throw new Error(`Unknown restore type: ${options.restoreType}`);
+      case 'full':
+        restoreResult = await this.performFullRestore(localBackupPath, manifest, options);
+        break;
+      case 'database':
+        restoreResult = await this.performDatabaseRestore(localBackupPath, manifest, options);
+        break;
+      case 'files':
+        restoreResult = await this.performFilesRestore(localBackupPath, manifest, options);
+        break;
+      case 'selective':
+        restoreResult = await this.performSelectiveRestore(localBackupPath, manifest, options);
+        break;
+      default:
+        throw new Error(`Unknown restore type: ${options.restoreType}`);
       }
 
       // Step 7: Post-restore verification
@@ -191,6 +227,89 @@ class RestoreService {
           await this.attemptRollback(this.preRestoreBackupPath);
         }
         throw new Error(`Post-restore verification failed: ${verification.errors.join(', ')}`);
+      }
+
+      // Step 7b: Replay operator-meta settings AFTER verification.
+      //
+      // `performDatabaseRestore` stashed the pre-DROP snapshot of
+      // operator-meta keys on `this.preservedMetaSnapshot`. We drain
+      // it here, AFTER verification has already confirmed the
+      // restored DB matches the backup's row counts. Running this
+      // upsert sequence here instead of inside performDatabaseRestore
+      // (where it used to live) prevents the replay from inflating
+      // the post-restore row count and tripping the verification
+      // check — see the round-3 PR #596 notes for the full story.
+      //
+      // UPSERT by setting_key: if the backup had the same key with a
+      // different value, we overwrite; if the row doesn't exist in
+      // the backup, we insert. Either way the operator's pre-restore
+      // policy survives. SQLite branch leaves the snapshot empty so
+      // this block is a no-op there.
+      if (this.preservedMetaSnapshot && this.preservedMetaSnapshot.length > 0) {
+        try {
+          for (const row of this.preservedMetaSnapshot) {
+            await db('app_settings')
+              .insert({
+                setting_key: row.setting_key,
+                setting_value: row.setting_value,
+                setting_type: row.setting_type || 'restore',
+                updated_at: new Date(),
+              })
+              .onConflict('setting_key')
+              .merge({
+                setting_value: row.setting_value,
+                updated_at: new Date(),
+              });
+          }
+          this.log('info', `Replayed ${this.preservedMetaSnapshot.length} restore-meta setting(s) post-verification`);
+        } catch (err) {
+          this.log('warn', `Could not replay restore-meta settings (admin may need to re-set them): ${err.message}`);
+        }
+      }
+
+      // Step 7c: Apply any post-backup migrations to the restored DB.
+      //
+      // The backup carries the schema state of whatever migrations had
+      // been applied at backup time. If the running image is NEWER —
+      // because the admin upgraded picpeak between when the backup
+      // was taken and when they restored — the restored DB ends up
+      // mismatched against the running code: queries fail, new
+      // columns are missing, new tables don't exist.
+      //
+      // Previously the comment said "deferred to next container
+      // restart" — but that left the running process serving a
+      // mismatched schema until the operator manually restarted.
+      // Not acceptable per the "backup must restore completely even
+      // when new features have been added in the meantime" contract.
+      //
+      // Implementation: shell out to `npm run migrate:safe`, which is
+      // the EXACT script wait-for-db.sh runs on boot. Running it as a
+      // subprocess means no risk to our reinit'd pool (subprocess gets
+      // its own knex instance, destroys it on exit; our parent pool
+      // is untouched). Idempotent — migrations already applied are
+      // tracked in the restored `migrations` table and get skipped.
+      //
+      // Failure is non-fatal: the restore data itself is in place,
+      // and the next container restart's wait-for-db.sh will retry.
+      // Surfacing the error gives the operator a chance to investigate
+      // proactively rather than discovering it on the next 500 from
+      // a missing column.
+      try {
+        this.log('info', 'Applying post-restore migrations to restored database...');
+        this.updateProgress('Applying any post-backup migrations...');
+        const backendRoot = path.join(__dirname, '..', '..');
+        const { stderr } = await spawnAsync('npm', ['run', 'migrate:safe'], {
+          cwd: backendRoot,
+          env: { ...process.env },
+        });
+        if (stderr && stderr.trim()) {
+          this.log('info', `Post-restore migrate:safe stderr: ${stderr.slice(0, 500)}`);
+        }
+        this.log('info', 'Post-restore migrations applied');
+      } catch (migErr) {
+        this.log('warn',
+          'Post-restore migrate:safe failed — restore data is in place but the schema may lag the running image. ' +
+          `A container restart will retry via wait-for-db.sh. Error: ${migErr.message}`);
       }
 
       // Step 8: Clean up temporary files
@@ -208,6 +327,15 @@ class RestoreService {
       await db('restore_runs').where('id', runId).update({
         completed_at: endTime,
         status: 'completed',
+        // Default for the column is `false`. Without this line, every
+        // SUCCESSFUL restore ends up with `status='completed',
+        // was_successful=false` — which the BackupDashboard "last
+        // successful restore" widget then filters out, and any future
+        // audit query that gates on was_successful misses the row
+        // entirely. Cosmetic but enough to mislead an operator
+        // scanning restore history. Catches Ralf 2026-06-01 + maintainer
+        // PR #596 review note about the cosmetic.
+        was_successful: true,
         duration_seconds: durationSeconds,
         pre_restore_backup_path: this.preRestoreBackupPath,
         statistics: JSON.stringify({
@@ -242,12 +370,53 @@ class RestoreService {
     } catch (error) {
       this.log('error', 'Restore failed', { error: error.message, stack: error.stack });
 
-      // Update restore run record
+      // Always attempt rollback when a pre-restore backup exists.
+      // Historically rollback was only triggered when post-restore
+      // verification failed (inside the try block) — anything that
+      // threw earlier (path-resolution bugs, pg_restore failure, file
+      // copy errors) left the destination half-clobbered and forced
+      // the admin to do another reset-from-volume cycle before the
+      // next attempt could be honest. Fixing the rollback here closes
+      // the "every failed restore makes the next one worse" footgun.
+      let rollbackAttempted = false;
+      let rollbackSucceeded = false;
+      let rollbackError = null;
+      if (this.preRestoreBackupPath) {
+        rollbackAttempted = true;
+        try {
+          this.log('info', 'Attempting rollback from pre-restore safety backup', {
+            path: this.preRestoreBackupPath,
+          });
+          await this.attemptRollback(this.preRestoreBackupPath);
+          rollbackSucceeded = true;
+          this.log('info', 'Rollback completed');
+        } catch (rbErr) {
+          rollbackError = rbErr.message;
+          this.log('error', 'Rollback FAILED — install may be in a partial state',
+            { error: rbErr.message, stack: rbErr.stack });
+        }
+      } else {
+        this.log('warn', 'No pre-restore backup available — cannot auto-rollback. ' +
+          'Destination may be in a partial state. Verify business-docs/ and the DB before retrying.');
+      }
+
+      // Update restore run record. We persist BOTH the original
+      // restore failure AND the rollback status so the admin can tell
+      // from a single SQL query which scenario they're in:
+      //   - rollback succeeded → destination is back to pre-restore state, safe to retry
+      //   - rollback failed   → partial state, admin must inspect before next attempt
+      //   - rollback skipped  → user opted out via skipPreBackup; same as above
       if (restoreRun) {
+        const failureMessage = rollbackAttempted
+          ? (rollbackSucceeded
+            ? `${error.message} (rolled back successfully to pre-restore state)`
+            : `${error.message} | ROLLBACK ALSO FAILED: ${rollbackError} — destination is in a partial state, inspect before retrying`)
+          : `${error.message} (no pre-restore backup available — destination may be partial)`;
         await db('restore_runs').where('id', restoreRun.id).update({
           completed_at: new Date(),
           status: 'failed',
-          error_message: error.message,
+          error_message: failureMessage,
+          was_rollback_attempted: rollbackAttempted,
           restore_log: JSON.stringify(this.restoreLog)
         });
       }
@@ -255,7 +424,9 @@ class RestoreService {
       // Send failure notification
       await this.sendRestoreNotification('failure', {
         error: error.message,
-        restoreType: options.restoreType
+        restoreType: options.restoreType,
+        rollbackAttempted,
+        rollbackSucceeded,
       });
 
       throw error;
@@ -371,21 +542,32 @@ class RestoreService {
         }
       }
 
-      // Check if restoring would overwrite existing data
+      // Check if restoring would overwrite existing data.
+      //
+      // NOTE: pg-driver returns `count('* as count')` as a STRING (it
+      // serialises `bigint` to string to avoid JS precision loss for
+      // huge counts) — see PR #596 review for the `bigint`-as-string
+      // discussion. Both blocks below coerce to `Number` before
+      // comparing AND before interpolating into the warning text, so
+      // the count renders as `5` not `"5"` regardless of DB driver.
+      // Don't drop the `Number()` calls without also re-auditing the
+      // strict-equality call sites flagged in the same review.
       if (options.restoreType === 'full' || options.restoreType === 'database') {
         const eventCount = await db('events').count('* as count').first();
-        if (eventCount && eventCount.count > 0) {
-          validation.warnings.push(`Database contains ${eventCount.count} existing events that will be overwritten`);
+        const eventCountN = Number(eventCount?.count || 0);
+        if (eventCountN > 0) {
+          validation.warnings.push(`Database contains ${eventCountN} existing events that will be overwritten`);
         }
       }
 
-      // Check for active users
+      // Check for active users (same coercion contract as above).
       const activeUsers = await db('admin_users')
         .where('is_active', formatBoolean(true))
         .count('* as count')
         .first();
-      if (activeUsers && activeUsers.count > 0) {
-        validation.warnings.push(`There are ${activeUsers.count} active admin users`);
+      const activeUsersN = Number(activeUsers?.count || 0);
+      if (activeUsersN > 0) {
+        validation.warnings.push(`There are ${activeUsersN} active admin users`);
       }
 
     } catch (error) {
@@ -661,13 +843,55 @@ class RestoreService {
       throw new Error('No database backup file found in manifest');
     }
 
-    const dbBackupPath = path.join(backupPath, 'database', path.basename(dbBackupFile));
-    
-    // Check if backup file exists
-    try {
-      await fs.access(dbBackupPath);
-    } catch (error) {
-      throw new Error(`Database backup file not found: ${dbBackupPath}`);
+    // Layered resolution for the database dump path:
+    //
+    //   1. Manifest stores the absolute path the dumper wrote to
+    //      (e.g. `/backup/database/picpeak-db-postgresql-<ts>.sql.gz`).
+    //      That's the truth — try it first.
+    //   2. Some older manifests store a path RELATIVE to the file-backup
+    //      destination root (`database/<file>.sql.gz`). Reconstruct that
+    //      way as a fallback.
+    //   3. Final fallback: `<backupPath>/database/<basename>`, the
+    //      historical reconstruction used before this fix. Preserved so
+    //      no existing valid path breaks.
+    //
+    // The original code used (3) exclusively, which meant the restore
+    // service ignored the absolute path the manifest recorded and
+    // looked under a synthetic `<backupPath>/database/<file>` root —
+    // which on Ralf's install became `local/database/<file>` because
+    // `backupPath` was the source type string, not a directory. Caused
+    // the canonical disaster-recovery flow to fail with
+    // `Database backup file not found: local/database/...sql.gz`
+    // even though the file existed at exactly the path the manifest
+    // recorded.
+    const candidates = [
+      // (1) Honour absolute paths recorded by the dumper.
+      path.isAbsolute(dbBackupFile) ? dbBackupFile : null,
+      // (2) Relative-to-backupPath as-stored (no basename munging).
+      path.join(backupPath, dbBackupFile),
+      // (3) Legacy reconstruct.
+      path.join(backupPath, 'database', path.basename(dbBackupFile)),
+    ].filter(Boolean);
+
+    let dbBackupPath = null;
+    for (const candidate of candidates) {
+      try {
+        await fs.access(candidate);
+        dbBackupPath = candidate;
+        break;
+      } catch (_) {
+        // try next candidate
+      }
+    }
+
+    if (!dbBackupPath) {
+      throw new Error(
+        `Database backup file not found. Tried: ${candidates.join(', ')}. ` +
+        `Manifest recorded path: ${dbBackupFile}. ` +
+        'Hint: this usually means the manifest\'s database.backup_file path no longer ' +
+        'exists on disk (deleted? moved? volume not mounted?). Check ' +
+        '~/<your-compose-dir>/backup/database/ on the host.'
+      );
     }
 
     // Decompress if needed
@@ -678,6 +902,31 @@ class RestoreService {
       await this.decompressFile(dbBackupPath, decompressedPath);
       restoreFile = decompressedPath;
     }
+
+    // Snapshot of operator-meta keys captured BEFORE the DROP.
+    // Stashed onto `this.preservedMetaSnapshot` so the parent
+    // `restore()` method can drain + apply it AFTER post-restore
+    // verification passes. Order matters here:
+    //
+    //   - PR #596 round 1: lifted the declaration above the
+    //     SQLite/PG split to fix a ReferenceError when the replay
+    //     was inline at the bottom of this method.
+    //   - PR #596 round 3: moved the REPLAY itself out of here and
+    //     into restore(), because the round-1 in-method replay ran
+    //     BEFORE post-restore verification — which then counted the
+    //     replayed row and flagged
+    //       Table app_settings row count mismatch: expected 190, got 191
+    //     as a verification failure even though both Stage A and
+    //     the replay had succeeded. Verification now sees the
+    //     as-restored DB (matches the backup exactly), replay layers
+    //     on top after verification has signed off.
+    //
+    // SQLite branch leaves `preservedMetaSnapshot` empty — verification
+    // and replay both no-op for it, unchanged behaviour.
+    const PRESERVED_META_KEYS = [
+      'restore_allow_force',
+      'restore_allow_force_auto_upgraded',
+    ];
 
     try {
       if (this.dbType === 'sqlite') {
@@ -715,24 +964,210 @@ class RestoreService {
         // PostgreSQL restore
         const { host, port, user, password, database } = knexConfig.connection;
         const env = { ...process.env, PGPASSWORD: password };
-        
+
+        // Snapshot operator-meta settings BEFORE the DROP so we can
+        // restore them after the psql load. These keys are about how
+        // the operator wants the install to behave (force-restore
+        // permission, auto-upgrade tracking), not user-facing state —
+        // they should NOT be overwritten by whatever values the backup
+        // happens to contain.
+        //
+        // Chicken-and-egg this closes: `restore_allow_force` defaults
+        // to true (post tonight's migration 032 edit), but every
+        // restore would overwrite it with whatever the backup carried.
+        // Admin sets it to true → restores → wakes up with the row
+        // back to whatever was in the backup. Two consecutive restores
+        // needed the SQL workaround again. With this snapshot/replay,
+        // the operator's policy persists across restores.
+        //
+        // PRESERVED_META_KEYS is declared above the SQLite/PG split
+        // (~L820). The snapshot READ happens here in the PG branch
+        // (must run before DROP), but is stashed on
+        // `this.preservedMetaSnapshot` for the parent `restore()`
+        // method to consume AFTER verification — see the round-3
+        // notes there.
+        try {
+          this.preservedMetaSnapshot = await db('app_settings')
+            .whereIn('setting_key', PRESERVED_META_KEYS)
+            .select('setting_key', 'setting_value', 'setting_type');
+          this.log('info', `Snapshotted ${this.preservedMetaSnapshot.length} restore-meta setting(s) for post-restore replay`, {
+            keys: this.preservedMetaSnapshot.map(r => r.setting_key),
+          });
+        } catch (err) {
+          this.log('warn', `Could not snapshot restore-meta settings (continuing): ${err.message}`);
+        }
+
+        // `psql` with no `-d` defaults to a database whose name matches
+        // the connecting user, NOT a maintenance DB. So on installs
+        // where the user's home DB doesn't exist (e.g. user=`picpeak`,
+        // target DB=`picpeak_prod`, no `picpeak` DB), the next two
+        // statements failed with:
+        //   FATAL: database "picpeak" does not exist
+        // even though the actual target DB was alive and connectable.
+        //
+        // Fix: explicitly connect to `postgres` (the maintenance DB
+        // every PG cluster ships with) for the DROP/CREATE. We can't
+        // connect to the target DB itself anyway — DROP DATABASE
+        // refuses to run while a connection is open to it.
+        //
+        // Use `DB_CHECK_DB` env var as an override hook (matches the
+        // pattern wait-for-db.sh already exposes) for installs where
+        // the `postgres` DB is restricted to superusers.
+        const maintenanceDb = process.env.DB_CHECK_DB || 'postgres';
+
+        // The backend's own knex pool holds N active connections to
+        // the target database (default 5-25 per knexfile.js). PostgreSQL
+        // refuses DROP DATABASE while any session is connected:
+        //   ERROR: database "X" is being accessed by other users
+        //   DETAIL: There are N other sessions using the database.
+        // We have to evict those sessions ourselves before issuing the
+        // DROP. Two-step approach:
+        //   1. Close knex's own pool so we don't fight ourselves.
+        //   2. pg_terminate_backend() the rest (other server replicas,
+        //      pg_stat_activity stragglers, leftover idle txns).
+        //
+        // After CREATE DATABASE, knex will lazily re-open the pool on
+        // the next query — handled by db.js's connection retry logic.
+        this.log('warn', 'Closing knex pool before dropping target database...');
+        try { await db.destroy(); } catch (poolErr) {
+          this.log('warn', `Pool destroy threw (continuing): ${poolErr.message}`);
+        }
+
+        this.log('warn', 'Terminating any remaining sessions on target database...', {
+          target: database,
+        });
+        // pg_terminate_backend takes a pid. Kill every session against
+        // the target DB except our own connection (which is to the
+        // maintenance DB anyway). Wrapped in `SELECT ... FROM ... WHERE`
+        // so we get one psql round-trip instead of N.
+        await spawnAsync('psql', [
+          '-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb,
+          '-c',
+          'SELECT pg_terminate_backend(pid) FROM pg_stat_activity ' +
+          `WHERE datname = '${database.replace(/'/g, '\'\'')}' AND pid <> pg_backend_pid()`,
+        ], { env });
+
         // Drop and recreate database (extremely dangerous!)
-        this.log('warn', 'Dropping and recreating PostgreSQL database...');
-        
-        await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-c', `DROP DATABASE IF EXISTS ${database}`], { env });
+        this.log('warn', 'Dropping and recreating PostgreSQL database...', {
+          target: database, via: maintenanceDb,
+        });
 
-        await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-c', `CREATE DATABASE ${database}`], { env });
+        // WITH (FORCE) on Postgres 13+ kills any remaining connections
+        // atomically with the DROP. On older Postgres the FORCE option
+        // doesn't exist, so we fall back to plain DROP IF EXISTS — by
+        // which point pg_terminate_backend should have cleared the
+        // table. Try FORCE first, fall back to plain on syntax error.
+        try {
+          await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb,
+            '-c', `DROP DATABASE IF EXISTS "${database}" WITH (FORCE)`], { env });
+        } catch (forceErr) {
+          // PG < 13: WITH (FORCE) is a syntax error. Plain DROP after
+          // our pg_terminate_backend pass should now succeed.
+          this.log('info', 'DROP DATABASE WITH (FORCE) not supported — falling back to plain DROP', {
+            error: forceErr.message,
+          });
+          await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb,
+            '-c', `DROP DATABASE IF EXISTS "${database}"`], { env });
+        }
 
-        // Restore from backup
+        await spawnAsync('psql', ['-h', host, '-p', String(port), '-U', user, '-d', maintenanceDb, '-c', `CREATE DATABASE "${database}"`], { env });
+
+        // Restore from backup — this one DOES connect to the target DB.
         await spawnFromFile('psql', ['-h', host, '-p', String(port), '-U', user, '-d', database], restoreFile, { env });
+
+        // Re-sync every SERIAL / IDENTITY sequence in the public schema
+        // to MAX(id)+1 of its owning table. pg_dump emits setval()
+        // statements, but they don't always land cleanly when:
+        //   - the dump has `--clean` (the setval may execute before
+        //     the rebuilt rows, depending on dump ordering)
+        //   - the in-process knex pool had a cached sequence value
+        //     before db.destroy() (already mitigated, but defensive)
+        //   - rows were inserted mid-restore (the pre-restore safety
+        //     backup creates a database_backup_runs row before DROP)
+        // Result if skipped: every subsequent INSERT into a serial-id
+        // table fails with `duplicate key value violates unique
+        // constraint "<table>_pkey"`. Surfaced on Ralf's install as
+        // "A record with this value already exists" on every CRUD
+        // action AND `database_backup_runs_pkey` violation on the
+        // next Run Backup Now. Fix is a single DO block that walks
+        // pg_class + pg_attribute and setval()s each sequence to
+        // GREATEST(MAX(<col>), 1). Cheap (a few ms even on large
+        // schemas), safe (doesn't touch row data), idempotent.
+        this.log('info', 'Re-syncing PostgreSQL sequences to MAX(id) of each table...');
+        await spawnAsync('psql', [
+          '-h', host, '-p', String(port), '-U', user, '-d', database,
+          '-c',
+          `DO $$
+DECLARE
+  r RECORD;
+  max_id BIGINT;
+BEGIN
+  FOR r IN
+    SELECT n.nspname AS schema_name, t.relname AS table_name, a.attname AS column_name,
+           pg_get_serial_sequence(quote_ident(n.nspname) || '.' || quote_ident(t.relname), a.attname) AS seq_name
+    FROM pg_class t
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    JOIN pg_attribute a ON a.attrelid = t.oid
+    WHERE n.nspname = 'public'
+      AND t.relkind = 'r'
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+      AND pg_get_serial_sequence(quote_ident(n.nspname) || '.' || quote_ident(t.relname), a.attname) IS NOT NULL
+  LOOP
+    EXECUTE format('SELECT COALESCE(MAX(%I), 0) FROM %I.%I', r.column_name, r.schema_name, r.table_name) INTO max_id;
+    EXECUTE format('SELECT setval(%L, %s, true)', r.seq_name, GREATEST(max_id, 1));
+  END LOOP;
+END $$;`
+        ], { env });
+        this.log('info', 'Sequence resync completed');
       }
 
-      // Re-initialize database connection
-      const { db: newDb } = require('../database/db');
-      
-      // Run migrations to ensure schema is up to date
-      this.log('info', 'Running database migrations...');
-      await newDb.migrate.latest();
+      // Re-initialize the in-process knex pool. The DROP/CREATE
+      // DATABASE pair above destroyed our connections and the recreated
+      // database has a different pg_database OID — any pooled
+      // connection from before would either be dead or pointed at a
+      // ghost. Without explicit reinit, every query in the process
+      // after restore returns `Error: Unable to acquire a connection`
+      // until the container is manually restarted (and admin sees
+      // "An error occurred" on the login screen even after the restore
+      // technically succeeded). reinitPool destroys + rebuilds the
+      // pool and probes the new one with `SELECT 1` so failures here
+      // surface immediately instead of polluting the next request.
+      const { reinitPool } = require('../database/db');
+      this.log('info', 'Re-initializing knex pool against the restored database...');
+      await reinitPool();
+      this.log('info', 'Knex pool re-initialized');
+
+      // NOTE: we deliberately do NOT call `db.migrate.latest()` here.
+      //
+      // The picpeak migrations directory contains `helpers.js` (a
+      // shared helper module, not a migration), plus `core/` and
+      // `legacy/` subdirectories. Knex's built-in migrator scans the
+      // top-level directory and rejects any file without `up`/`down`
+      // exports — so `db.migrate.latest()` throws
+      //   Invalid migration: helpers.js must have both an up and down function
+      // every time it runs in this codebase. The production code path
+      // uses `npm run migrate:safe` (run-migrations-safe.js) which
+      // knows to skip helpers.js + walks core/ explicitly.
+      //
+      // The safe runner gets invoked AFTER verification in restore()
+      // (see step 7c) to apply any post-backup migrations to the
+      // restored DB. This closes the contract "backup must restore
+      // completely even when new features have been added in the
+      // meantime" — without this step, restoring an old backup on a
+      // newer image would leave the running process serving a
+      // mismatched schema until the next container restart.
+      this.log('info', 'Schema migrations deferred to restore() step 7c (npm run migrate:safe subprocess)');
+
+      // NOTE: operator-meta REPLAY does NOT happen here any more.
+      // PR #596 round 3: if the replay runs inside performDatabaseRestore,
+      // it lands BEFORE post-restore verification — and verification
+      // then counts the replayed row as a mismatch (e.g. "expected 190,
+      // got 191" because the fresh-install seeded
+      // `restore_allow_force_auto_upgraded` that wasn't in the backup).
+      // Replay is now drained by the parent `restore()` method AFTER
+      // verification passes. Snapshot lives on
+      // `this.preservedMetaSnapshot` for that drain.
 
       return { success: true };
 
@@ -905,9 +1340,20 @@ class RestoreService {
           for (const [table, expected] of Object.entries(manifest.database.row_counts)) {
             try {
               const result = await db(table).count('* as count').first();
-              if (result.count !== expected.rowCount) {
+              // pg-driver serialises `bigint` as string to preserve
+              // precision for huge counts, so `result.count` on PG is
+              // e.g. `"16"` while the manifest's `expected.rowCount`
+              // is the JS number `16`. Strict `!==` flagged every
+              // match as a mismatch on PG. Caught on PR #596 review:
+              //   `Table activity_logs row count mismatch:
+              //    expected 16, got 16`
+              // every table, all "matching". Coerce both sides to
+              // Number to compare reliably across SQLite (number) and
+              // PG (string).
+              const actual = Number(result.count);
+              if (actual !== expected.rowCount) {
                 verification.errors.push(
-                  `Table ${table} row count mismatch: expected ${expected.rowCount}, got ${result.count}`
+                  `Table ${table} row count mismatch: expected ${expected.rowCount}, got ${actual}`
                 );
               }
             } catch (error) {
@@ -1083,15 +1529,7 @@ class RestoreService {
    * Format bytes to human readable
    */
   formatBytes(bytes, decimals = 2) {
-    if (bytes === 0) return '0 Bytes';
-    
-    const k = 1024;
-    const dm = decimals < 0 ? 0 : decimals;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-    
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+    return formatBytes(bytes, decimals);
   }
 
   /**

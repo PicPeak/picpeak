@@ -6,6 +6,7 @@ import { Loading } from '../common';
 import { guestsService, AdminGuest } from '../../services/guests.service';
 import { AuthenticatedImage } from '../common/AuthenticatedImage';
 import { buildResourceUrl } from '../../utils/url';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
 interface AdminGuestDetailProps {
   eventId: number;
@@ -17,6 +18,7 @@ type Tab = 'all' | 'liked' | 'favorited' | 'rated' | 'commented';
 
 export const AdminGuestDetail: React.FC<AdminGuestDetailProps> = ({ eventId, guest, onClose }) => {
   const { t } = useTranslation();
+  const { formatDateTime: fmtDateTime } = useLocalizedDate();
   const [tab, setTab] = useState<Tab>('all');
 
   const { data, isLoading } = useQuery({
@@ -159,7 +161,7 @@ export const AdminGuestDetail: React.FC<AdminGuestDetailProps> = ({ eventId, gue
                       />
                       <div className="flex-1">
                         <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                          {c.photo.filename} · {new Date(c.created_at).toLocaleString()}
+                          {c.photo.filename} · {fmtDateTime(c.created_at)}
                         </div>
                         <p className="text-sm text-neutral-900 dark:text-neutral-100 mt-1">{c.comment}</p>
                       </div>

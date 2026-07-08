@@ -6,20 +6,33 @@ import {
   Archive,
   BarChart3,
   Settings,
+  Activity,
   X,
   Users,
   Briefcase,
+  Landmark,
+  Mail,
+  Workflow,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { settingsService } from '../../services/settings.service';
 import { VersionInfo } from './VersionInfo';
 import { usePermissions } from '../../contexts/PermissionsContext';
+import { useAdminDarkMode } from '../../contexts/AdminDarkModeContext';
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
+import { usePublicSettings } from '../../hooks/usePublicSettings';
+import { buildResourceUrl } from '../../utils/url';
 
 interface AdminSidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Desktop-only: collapse to icon-rail when true. Persisted by parent. */
+  collapsed?: boolean;
+  /** Desktop-only: toggle for the collapse button rendered in the title bar. */
+  onToggleCollapse?: () => void;
 }
 
 interface NavItem {
@@ -52,8 +65,10 @@ const navigation: NavItem[] = [
   { nameKey: 'navigation.dashboard', href: '/admin/dashboard', icon: LayoutDashboard, permission: false },
   { nameKey: 'navigation.events',    href: '/admin/events',    icon: Calendar,        permission: 'events.view' },
   { nameKey: 'navigation.archives',  href: '/admin/archives',  icon: Archive,         permission: 'archives.view' },
+  { nameKey: 'navigation.messages',  href: '/admin/messages', icon: Mail,             permission: 'email.view',     featureFlag: 'messaging' },
   { nameKey: 'admin.analytics',      href: '/admin/analytics', icon: BarChart3,       permission: 'analytics.view', featureFlag: 'analytics' },
   { nameKey: 'navigation.settings',  href: '/admin/settings',  icon: Settings,        permission: 'settings.view' },
+  { nameKey: 'navigation.systemHealth', href: '/admin/system-health', icon: Activity,  permission: 'settings.view' },
   { nameKey: 'navigation.users',     href: '/admin/users',     icon: Users,           permission: 'users.view',     featureFlag: 'userManagement' },
   // Clients section (#354 follow-up) — admin-side surface for the
   // CRM-area sub-features. Today this entry leads to /admin/clients
@@ -74,18 +89,68 @@ const navigation: NavItem[] = [
     permission: 'customers.view',
     featureFlag: 'clients',
     // Hide the entry when the parent is on but no sub-feature is —
-    // there's nothing inside ClientsLayout to link to. Add future
-    // sub-flags (calendar, quotes, bills, messaging) here as they
-    // ship; the entry reappears the moment any of them is enabled.
-    featureFlagsAny: ['customerPortal'],
+    // there's nothing inside ClientsLayout to link to. Mirror the same
+    // set used to derive the parent `clients` flag in
+    // FeatureFlagsContext (see clientsDependsOn) so the two checks
+    // can't disagree: any sub-feature on lights up the entry, all off
+    // hides it. Future siblings (e.g. `messaging`) get appended here
+    // AND in the context derivation.
+    // taxReport intentionally excluded — Tax moved to the Accounting section
+    // and is not a Clients sub-nav item, so it must not reveal Clients (would
+    // open an empty ClientsLayout). Mirrors the context's `clients` derivation.
+    featureFlagsAny: [
+      'customerPortal', 'crmDevelopment', 'quotes', 'bills',
+      'hoursLogging', 'contracts', 'calendar', 'projects',
+    ],
+  },
+  // Accounting section (migration 122) — inbound supplier invoices,
+  // expenses + re-bill, and the tax report (which relocates here from
+  // the CRM sub-nav when `accounting` is on). Gated by the `accounting`
+  // master flag; the sub-pages inside AccountingLayout are each
+  // independently feature-gated.
+  {
+    nameKey: 'navigation.accounting', href: '/admin/accounting', icon: Landmark,
+    permission: 'accounting.view',
+    featureFlag: 'accounting',
+  },
+  // Workflows (automation engine) — top-level, gated by the `workflows` flag.
+  {
+    nameKey: 'navigation.workflows', href: '/admin/workflows', icon: Workflow,
+    permission: 'workflows.view',
+    featureFlag: 'workflows',
   },
 ];
 
-export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose }) => {
+export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, collapsed = false, onToggleCollapse }) => {
   const location = useLocation();
   const { t } = useTranslation();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const { flags } = useFeatureFlags();
+  // Branding lookup for the "logo_position = sidepanel" mode — when
+  // chosen, the logo replaces the "PicPeak Admin" text in the brand
+  // row, and the favicon takes over in the collapsed icon rail.
+  const { data: publicSettings } = usePublicSettings();
+  const { isDark } = useAdminDarkMode();
+  const logoInSidebar = publicSettings?.branding_logo_position === 'sidepanel';
+  // Theme-aware logo with symmetric fallback (one logo serves both modes).
+  const lightLogo = publicSettings?.branding_logo_url?.trim();
+  const darkLogo = publicSettings?.branding_logo_url_dark?.trim();
+  const rawLogoUrl = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const rawFaviconUrl = publicSettings?.branding_favicon_url?.trim();
+  const resolvedLogoUrl = rawLogoUrl
+    ? (rawLogoUrl.startsWith('http') ? rawLogoUrl : buildResourceUrl(rawLogoUrl))
+    : null;
+  const resolvedFaviconUrl = rawFaviconUrl
+    ? (rawFaviconUrl.startsWith('http') ? rawFaviconUrl : buildResourceUrl(rawFaviconUrl))
+    : null;
+  // In collapsed rail, prefer the favicon (it's already a square,
+  // tight crop). Fall back to the logo when no favicon is set, then
+  // to nothing — better an empty rail than a stretched logo.
+  const sidebarBrandImageUrl = collapsed
+    ? (resolvedFaviconUrl || resolvedLogoUrl)
+    : (resolvedLogoUrl || resolvedFaviconUrl);
+  const showLogoBrand = logoInSidebar && !!sidebarBrandImageUrl;
+  const brandAlt = publicSettings?.branding_company_name?.trim() || t('admin.title');
 
   const filteredNavigation = navigation.filter((item) => {
     if (item.permission && !hasPermission(item.permission as string)) return false;
@@ -101,38 +166,99 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose }) =
     return true;
   });
 
+  // Desktop width: full nav (w-64) vs icon rail (w-16). Mobile is always
+  // w-64 since the collapse affordance only applies on lg+ viewports.
+  const widthClasses = collapsed ? 'w-64 lg:w-16' : 'w-64';
+  const showLabels = !collapsed;
+
   return (
     <div
-      className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-700 transform transition-transform duration-200 ease-in-out lg:relative lg:translate-x-0 lg:h-screen ${
+      // Right edge drawn via box-shadow rather than `border-r` so the
+      // brand row's `border-b` can extend to the sidebar's full width
+      // and meet the header's `border-b` cleanly at the L-junction. A
+      // 1px border-r would shrink the brand row's content by 1px and
+      // leave a visible step in the horizontal divider where the
+      // sidebar meets the main column. Shadow uses the same neutral
+      // border colors so it looks identical to the previous border.
+      className={`fixed inset-y-0 left-0 z-50 ${widthClasses} bg-white dark:bg-neutral-900 shadow-[1px_0_0_0_theme(colors.neutral.200)] dark:shadow-[1px_0_0_0_theme(colors.neutral.700)] transform transition-all duration-200 ease-in-out lg:relative lg:translate-x-0 lg:h-screen ${
         isOpen ? 'translate-x-0' : '-translate-x-full'
       }`}
     >
       <div className="flex flex-col h-screen lg:h-full">
-        {/* Brand */}
-        <div className="flex items-center justify-between h-16 px-6 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0">
-          <div className="flex items-center">
-            <span className="text-xl font-bold text-neutral-900 dark:text-neutral-100">{t('admin.title')}</span>
+        {/* Brand row: title on the left, mobile close (X) on the
+            right. The desktop collapse toggle used to live here but
+            was moved down next to the version / storage widgets so
+            it sits in admins' muscle-memory zone for chrome controls.
+            When collapsed on desktop the title hides and the row
+            becomes an empty spacer (no rail-width fight). */}
+        <div className={`flex items-center h-16 border-b border-neutral-200 dark:border-neutral-700 flex-shrink-0 ${
+          collapsed ? 'lg:justify-center lg:px-2 px-6 justify-between' : 'justify-between px-6'
+        }`}>
+          <div className="flex items-center gap-2 min-w-0">
+            {showLogoBrand ? (
+              <>
+                {/* Logo brand variant — fed by Branding > Logo
+                    Position = "Sidebar". On the collapsed rail, only
+                    the favicon (or logo as fallback) is shown — sized
+                    to fit the 64px-wide rail. Expanded shows the full
+                    logo at the same h-8 the admin header uses for
+                    visual continuity. */}
+                <img
+                  src={sidebarBrandImageUrl!}
+                  alt={brandAlt}
+                  className={collapsed ? 'h-8 w-8 object-contain lg:h-9 lg:w-9' : 'h-8 w-auto object-contain max-w-full'}
+                />
+                {/* On mobile the rail-narrow style only applies at
+                    lg+, so when collapsed=true the mobile view still
+                    has the regular w-64 width — show the company name
+                    next to the logo so the brand row doesn't feel
+                    empty there. */}
+                {collapsed && (
+                  <span className="text-xl font-bold text-neutral-900 dark:text-neutral-100 lg:hidden truncate">
+                    {brandAlt}
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                {showLabels && (
+                  <span className="text-xl font-bold text-neutral-900 dark:text-neutral-100">{t('admin.title')}</span>
+                )}
+                {/* When collapsed on desktop the title is hidden; on mobile we
+                    always show it because the rail-narrow style only applies at lg+ */}
+                {collapsed && (
+                  <span className="text-xl font-bold text-neutral-900 dark:text-neutral-100 lg:hidden">{t('admin.title')}</span>
+                )}
+              </>
+            )}
           </div>
           <button
             onClick={onClose}
             className="lg:hidden text-neutral-400 hover:text-neutral-600"
+            aria-label="Close sidebar"
           >
             <X className="w-6 h-6" />
           </button>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto min-h-0">
+        <nav className={`flex-1 py-4 space-y-1 overflow-y-auto overflow-x-hidden min-h-0 ${
+          collapsed ? 'px-4 lg:px-2' : 'px-4'
+        }`}>
           {filteredNavigation.map((item) => {
-            const isActive = location.pathname === item.href || 
+            const isActive = location.pathname === item.href ||
                            (item.href !== '/admin/dashboard' && location.pathname.startsWith(item.href));
-            
+            const label = t(item.nameKey);
+
             return (
               <NavLink
                 key={item.nameKey}
                 to={item.href}
                 onClick={() => onClose()}
-                className={`flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                title={collapsed ? label : undefined}
+                className={`flex items-center py-2 text-sm font-medium rounded-lg transition-colors ${
+                  collapsed ? 'px-3 lg:px-0 lg:justify-center' : 'px-3'
+                } ${
                   isActive
                     ? 'bg-accent-dark text-white'
                     : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:text-neutral-900 dark:hover:text-neutral-100'
@@ -143,18 +269,56 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose }) =
                     .tile-selected pattern used in the customizer. The accent
                     -dark token defaults to the legacy primary green so users
                     who haven't set CI colours yet see no migration regression. */}
-                <item.icon className={`w-5 h-5 mr-3 ${
+                <item.icon className={`w-5 h-5 flex-shrink-0 ${
+                  collapsed ? 'mr-3 lg:mr-0' : 'mr-3'
+                } ${
                   isActive ? 'text-white' : 'text-neutral-400'
                 }`} />
-                {t(item.nameKey)}
+                <span className={collapsed ? 'lg:hidden' : ''}>{label}</span>
               </NavLink>
             );
           })}
         </nav>
 
-        {/* Bottom section - sticky to bottom (only for users with settings.view permission) */}
-        {hasPermission('settings.view') && (
-          <div className="flex-shrink-0">
+        {/* Desktop collapse / expand toggle.
+            Lives directly above the version + storage widgets — sits
+            in admins' muscle-memory zone for chrome controls and
+            stays visible even when the sidebar is collapsed so the
+            rail can always be re-expanded. Hidden on mobile (the X
+            in the brand row already closes the sheet there). */}
+        {onToggleCollapse && (
+          <div className={`hidden lg:flex flex-shrink-0 border-t border-neutral-200 dark:border-neutral-700 py-2 ${
+            collapsed ? 'justify-center px-2' : 'justify-end px-4'
+          }`}>
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="inline-flex items-center justify-center w-9 h-9 rounded-md text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+              aria-label={collapsed ? t('admin.expandSidebar', 'Expand sidebar') : t('admin.collapseSidebar', 'Collapse sidebar')}
+              title={collapsed ? t('admin.expandSidebar', 'Expand sidebar') : t('admin.collapseSidebar', 'Collapse sidebar')}
+            >
+              {collapsed
+                ? <PanelLeftOpen className="w-5 h-5" />
+                : <PanelLeftClose className="w-5 h-5" />}
+            </button>
+          </div>
+        )}
+
+        {/* Bottom section - sticky to bottom (only for users with settings.view permission).
+            Hidden on desktop when collapsed since these widgets don't fit in the icon rail;
+            mobile keeps them visible because mobile width is always w-64.
+
+            #523 follow-up 2: render OPTIMISTICALLY while permissions are
+            still hydrating from the auth context (Rekoo-PS's 3.60.3-beta.0
+            screenshot showed the whole bottom block missing on first paint
+            right after a deploy — `hasPermission` returns false during the
+            ~hundreds-of-ms hydration window, the widgets vanish entirely,
+            then re-appear). Only HIDE the block when we definitively know
+            the user lacks the permission. VersionInfo + StorageInfo each
+            have their own loading states so admins see "—" / a spinner
+            instead of nothing during the actual data fetch. */}
+        {(permissionsLoading || hasPermission('settings.view')) && (
+          <div className={`flex-shrink-0 ${collapsed ? 'lg:hidden' : ''}`}>
             {/* Version Info */}
             <VersionInfo />
 

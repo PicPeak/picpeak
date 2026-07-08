@@ -1,7 +1,6 @@
 export { AdminLayout } from './AdminLayout';
 export { AdminSidebar } from './AdminSidebar';
 export { AdminHeader } from './AdminHeader';
-export { ThemeCustomizer } from './ThemeCustomizer';
 export { PasswordChangeModal } from './PasswordChangeModal';
 export { AdminAuthWrapper } from './AdminAuthWrapper';
 export { PhotoUpload } from './PhotoUpload';
@@ -17,6 +16,9 @@ export { AdminPhotoGrid } from './AdminPhotoGrid';
 export { AdminPhotoViewer } from './AdminPhotoViewer';
 export { PhotoFilters } from './PhotoFilters';
 export { PasswordResetModal } from './PasswordResetModal';
+export { PublishGalleryDialog } from './PublishGalleryDialog';
+export { DuplicateEventDialog } from './DuplicateEventDialog';
+export { ExportPreviewModal } from './ExportPreviewModal';
 export { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 export { AdminAuthenticatedVideo } from './AdminAuthenticatedVideo';
 export { ThemeCustomizerEnhanced } from './ThemeCustomizerEnhanced';

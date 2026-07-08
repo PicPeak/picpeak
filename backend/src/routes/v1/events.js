@@ -86,11 +86,15 @@ const photoUpload = multer({
  *               customer_email: { type: string, format: email, nullable: true }
  *               customer_phone: { type: string, nullable: true, description: "Only persisted when the global phone-field setting is enabled." }
  *               admin_email: { type: string, format: email, nullable: true }
- *               require_password: { type: boolean, default: true }
- *               password: { type: string, nullable: true, description: "Required when require_password is true." }
+ *               require_password: { type: boolean, nullable: true, description: "When omitted, falls back to the global event_default_require_password setting." }
+ *               password: { type: string, nullable: true, description: "Required when require_password resolves to true." }
  *               expires_at: { type: string, format: date-time, nullable: true }
  *               color_theme: { type: string, nullable: true, description: "Preset name (e.g. 'default') or JSON-encoded ThemeConfig. Persisted as-is on the event row." }
  *               feedback_enabled: { type: boolean, nullable: true, description: "Enable guest feedback for this gallery. When omitted, falls back to the global event_default_feedback_enabled setting." }
+ *               enable_devtools_protection: { type: boolean, nullable: true, description: "Block right-click / devtools shortcuts in the gallery. When omitted, falls back to the global enable_devtools_protection setting." }
+ *               hero_logo_visible: { type: boolean, nullable: true, description: "Show event logo in the hero block. When omitted, falls back to the global branding_logo_display_hero setting." }
+ *               hero_logo_size: { type: string, nullable: true, enum: [small, medium, large, xlarge], description: "Hero logo size. When omitted, falls back to the global branding_logo_size setting." }
+ *               hero_logo_position: { type: string, nullable: true, enum: [top, center, bottom], description: "Hero logo position. Defaults to 'top' (not settings-backed — see migration 084)." }
  *     responses:
  *       201:
  *         description: Event created
@@ -123,7 +127,11 @@ router.post(
     body('password').optional({ nullable: true }).isString().isLength({ min: 6 }),
     body('expires_at').optional({ nullable: true, checkFalsy: true }).isISO8601(),
     body('color_theme').optional({ nullable: true }).isString().trim(),
-    body('feedback_enabled').optional().isBoolean()
+    body('feedback_enabled').optional().isBoolean(),
+    body('enable_devtools_protection').optional().isBoolean(),
+    body('hero_logo_visible').optional().isBoolean(),
+    body('hero_logo_size').optional().isIn(['small', 'medium', 'large', 'xlarge']),
+    body('hero_logo_position').optional().isIn(['top', 'center', 'bottom'])
   ],
   async (req, res) => {
     try {
@@ -132,10 +140,16 @@ router.post(
       const {
         event_name, event_type, event_date,
         customer_name = null, customer_email = null, customer_phone = null,
-        admin_email = null, require_password = true, password,
+        admin_email = null,
+        require_password: requirePasswordInput,
+        password,
         expires_at = null,
         color_theme = null,
-        feedback_enabled: feedbackEnabledInput
+        feedback_enabled: feedbackEnabledInput,
+        enable_devtools_protection: devtoolsInput,
+        hero_logo_visible: heroLogoVisibleInput,
+        hero_logo_size: heroLogoSizeInput,
+        hero_logo_position: heroLogoPositionInput
       } = req.body;
 
       // Issue #550 — mirror the admin POST path so API-created events
@@ -154,6 +168,60 @@ router.post(
         }
       }
       const feedback_enabled = parseBooleanInput(feedbackEnabledInput, feedbackEnabledFallback);
+
+      // Issue #592 — same shape as the feedback fallback above. The
+      // events table column default is `true`, so without this an admin
+      // who disabled devtools detection globally still gets it ON for
+      // every API-created gallery. Mirrors adminEvents.js behaviour.
+      let devtoolsFallback = true;
+      if (devtoolsInput === undefined) {
+        const setting = await db('app_settings').where('setting_key', 'enable_devtools_protection').first();
+        if (setting) {
+          try {
+            const parsed = JSON.parse(setting.setting_value);
+            if (typeof parsed === 'boolean') devtoolsFallback = parsed;
+          } catch { /* keep true */ }
+        }
+      }
+      const enable_devtools_protection = parseBooleanInput(devtoolsInput, devtoolsFallback);
+
+      // Same shape as the feedback / devtools fallbacks: honour the global
+      // event_default_require_password toggle (#317). Without this an admin
+      // who disabled "require password by default" globally still got
+      // password-required galleries through the API.
+      let requirePasswordFallback = true;
+      if (requirePasswordInput === undefined) {
+        const setting = await db('app_settings').where('setting_key', 'event_default_require_password').first();
+        if (setting) {
+          try {
+            const parsed = JSON.parse(setting.setting_value);
+            if (typeof parsed === 'boolean') requirePasswordFallback = parsed;
+          } catch { /* keep true */ }
+        }
+      }
+      const require_password = parseBooleanInput(requirePasswordInput, requirePasswordFallback);
+
+      // Branding inheritance (Feature 7) — mirror adminEvents.js
+      // getBrandingDefaults so API-created events inherit the global
+      // hero logo visibility + size. hero_logo_position is intentionally
+      // NOT settings-backed (see migration 084 / #357 — branding_logo_position
+      // is the *header bar*, a different concept than the hero block).
+      let heroLogoVisibleFallback = true;
+      let heroLogoSizeFallback = 'medium';
+      const brandingRows = await db('app_settings')
+        .whereIn('setting_key', ['branding_logo_display_hero', 'branding_logo_size'])
+        .select('setting_key', 'setting_value');
+      for (const row of brandingRows) {
+        let value = row.setting_value;
+        if (typeof value === 'string') {
+          try { value = JSON.parse(value); } catch { /* keep raw */ }
+        }
+        if (row.setting_key === 'branding_logo_display_hero') heroLogoVisibleFallback = value !== false;
+        if (row.setting_key === 'branding_logo_size' && value) heroLogoSizeFallback = value;
+      }
+      const hero_logo_visible = heroLogoVisibleInput !== undefined ? heroLogoVisibleInput : heroLogoVisibleFallback;
+      const hero_logo_size = heroLogoSizeInput || heroLogoSizeFallback;
+      const hero_logo_position = heroLogoPositionInput || 'top';
 
       if (require_password && (!password || password.length < 6)) {
         return res.status(400).json({ error: 'Password is required when require_password is true (min 6 chars)' });
@@ -203,6 +271,13 @@ router.post(
         // admin UI snaps the theme picker to GALLERY_THEME_PRESETS.default
         // and saving overwrites whatever theme was inherited visually.
         color_theme,
+        // Issue #592 — write the resolved devtools setting (input value
+        // or global fallback) so the column default doesn't shadow it.
+        enable_devtools_protection: formatBoolean(enable_devtools_protection),
+        // Branding inheritance — resolved value from body or app_settings.
+        hero_logo_visible: formatBoolean(hero_logo_visible),
+        hero_logo_size,
+        hero_logo_position,
         ...(customer_name ? { customer_name } : {}),
         ...(customer_email ? { customer_email } : {}),
         ...(persistPhone ? { customer_phone: persistPhone } : {})
@@ -232,6 +307,48 @@ router.post(
       await logActivity('event_created', { via: 'api_v1', event_type }, id, {
         type: 'admin', id: req.admin.id, name: req.admin.username
       });
+
+      // Customer notifications (#647 follow-up). v1 events go live in the
+      // same call (not draft-aware), so the gallery_created email + WhatsApp
+      // fire here — mirroring the adminEvents.js create-and-publish path.
+      // Both are best-effort: a queue failure must not block the API response.
+      const expiryIso = expires_at ? new Date(expires_at).toISOString() : null;
+      if (customer_email) {
+        try {
+          const { queueEmail } = require('../../services/emailProcessor');
+          await queueEmail(id, customer_email, 'gallery_created', {
+            customer_name: customer_name || '',
+            customer_email,
+            host_name: customer_name || '',
+            event_name,
+            event_date: event_date || null,
+            gallery_link: shareUrl,
+            gallery_password: require_password ? password : 'No password required',
+            expiry_date: expiryIso,
+            welcome_message: ''
+          });
+        } catch (emailError) {
+          logger.warn('v1 POST /events: failed to queue gallery_created email', { error: emailError.message });
+        }
+      }
+      if (persistPhone) {
+        try {
+          const { queueWhatsapp, getWhatsAppConfig } = require('../../services/whatsappProcessor');
+          const waConfig = await getWhatsAppConfig();
+          if (waConfig && waConfig.enabled) {
+            await queueWhatsapp(id, persistPhone, 'gallery_created', {
+              customer_name: customer_name || '',
+              event_name,
+              gallery_link: shareUrl,
+              gallery_password: require_password ? password : '',
+              expiry_date: expiryIso,
+              language: null,
+            });
+          }
+        } catch (waError) {
+          logger.warn('v1 POST /events: failed to queue WhatsApp notification', { error: waError.message });
+        }
+      }
 
       // Webhook lifecycle (#327). v1 events are not draft-aware, so they're
       // both created AND published in the same call. Canonical event
