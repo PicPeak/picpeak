@@ -5,6 +5,22 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.83.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.6-beta.0...v3.83.0-beta.0) (2026-07-08)
+
+
+### Features
+
+* **messages:** create/select quote, contract, invoice, gallery from a message ([0dbf863](https://github.com/PicPeak/picpeak/commit/0dbf863f60b919560b766f78b107ebac9612bd9d))
+* **messages:** search bar + Archive/Delete with Archived & Deleted folders ([99d5996](https://github.com/PicPeak/picpeak/commit/99d5996561a2dcff2d431692d5bab5c7286d1f6f))
+* **messages:** unified Messages email client (flag-gated, default off) ([a71b9b5](https://github.com/PicPeak/picpeak/commit/a71b9b5ed721df17b61062ae3a2361d448c95cf7))
+
+
+### Bug Fixes
+
+* **messages:** PR [#769](https://github.com/PicPeak/picpeak/issues/769) nits — server-side search, bare-email recipient, DE i18n ([1e08a4f](https://github.com/PicPeak/picpeak/commit/1e08a4fb156d34ee8ddff69b0a7612001aa6d67e))
+* **messages:** PR [#769](https://github.com/PicPeak/picpeak/issues/769) review — escape reply sender (XSS), gate backend routes, exact customer match ([bb235e7](https://github.com/PicPeak/picpeak/commit/bb235e72e58359f55f8aeccf2f22c671584fdbd7))
+* **messages:** show the resolved customer's name in the doc-action modal ([2c5c1d5](https://github.com/PicPeak/picpeak/commit/2c5c1d561bbe567b9d7615e7c2d071d08bb6d63c))
+
 ## [3.82.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.5-beta.0...v3.82.6-beta.0) (2026-07-07)
 
 
