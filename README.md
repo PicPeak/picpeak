@@ -1,4 +1,4 @@
-# PicPeak
+# 📸 PicPeak - Open Source Photo Sharing for Events
 
 > [!IMPORTANT]
 > **PicPeak has moved to its own GitHub organization.**
@@ -10,38 +10,45 @@
 
 <div align="center">
   <img src="docs/picpeak-logo.png" alt="PicPeak Logo" width="300" />
-
-  **Self-hosted photo sharing for event photographers.**
-
+  
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
   [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
   [![Node.js](https://img.shields.io/badge/node.js-6DA55F?style=flat&logo=node.js&logoColor=white)](https://nodejs.org/)
   [![React](https://img.shields.io/badge/react-%2320232a.svg?style=flat&logo=react&logoColor=%2361DAFB)](https://reactjs.org/)
+  [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-theluap-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/theluap)
 
-  [Live Demo](https://demo.picpeak.app) · [Deployment Guide](DEPLOYMENT_GUIDE.md) · [Homepage](https://www.picpeak.app)
+  [Homepage](https://www.picpeak.app) · [Live Demo](https://demo.picpeak.app) · [Documentation](https://docs.picpeak.app) · [Support the project ☕](https://buymeacoffee.com/theluap)
 </div>
 
----
-
-PicPeak lets you create password-protected, time-limited photo galleries for your clients — hosted on your own server. No subscriptions, no storage limits, no third-party access to your photos.
+**PicPeak** is a powerful, self-hosted open-source alternative to commercial photo-sharing platforms like PicDrop.com and Scrapbook.de. Designed specifically for photographers and event organizers, PicPeak makes it simple to share beautiful, time-limited photo galleries with clients while maintaining full control over your data and branding.
 
 ![PicPeak Gallery Preview](docs/screenshot-gallery.png)
 
-## Demo
+## 🎮 Live Demo
 
-Try it out at [demo.picpeak.app](https://demo.picpeak.app).
+Try PicPeak without installing anything:
 
-Admin panel: [demo.picpeak.app/admin](https://demo.picpeak.app/admin) — login with `demo@picpeak.app` / `Demo2026!`
+| | |
+|---|---|
+| **Demo URL** | [demo.picpeak.app](https://demo.picpeak.app) |
+| **Admin Panel** | [demo.picpeak.app/admin](https://demo.picpeak.app/admin) |
+| **Email** | `demo@picpeak.app` |
+| **Password** | `Demo2026!` |
 
-> The demo resets periodically.
+> The demo resets periodically. Uploaded content may be removed without notice.
 
-## Features
+## 🌟 Why Choose PicPeak?
 
-**Gallery Management** — Create galleries, upload photos via drag & drop, set passwords and expiration dates. Galleries auto-archive when they expire. Events start as drafts so you can upload and prepare before notifying the client.
+Unlike expensive SaaS solutions, PicPeak gives you:
 
-**Client Experience** — Responsive galleries that look great on any device. Guests can browse, download individual photos or everything at once. Optional guest uploads and feedback (likes, comments, ratings).
+- **💰 No Monthly Fees** - One-time setup, unlimited galleries
+- **🔒 Complete Data Control** - Your photos stay on your server
+- **🎨 White-Label Ready** - Full branding customization
+- **📱 Mobile-First Design** - Beautiful on all devices
+- **🚀 Lightning Fast** - Optimized performance and caching
+- **🌍 Multi-Language** - Built-in i18n support (EN, DE)
 
-**Themes & Branding** — 11 built-in theme presets, custom CSS templates, configurable colors/fonts/layouts. White-label your admin panel and login page with your own logo and company name.
+## ✨ Key Features
 
 ### For Photographers
 - 📁 **Drag & Drop Upload** - Simply drop photos into folders
@@ -54,9 +61,21 @@ Admin panel: [demo.picpeak.app/admin](https://demo.picpeak.app/admin) — login 
 - 🎨 **Custom Themes** - Match your brand perfectly
 - 🌐 **Public Landing Page** - Publish a curated marketing page when guests visit your root URL
 
-**Photo Protection** — Watermarking, right-click prevention, canvas rendering, DevTools detection. Configurable per gallery.
+### For Clients
+- 🖼️ **Beautiful Galleries** - Clean, modern interface
+- 📱 **Mobile Optimized** - Swipe through photos on any device
+- ⬇️ **Bulk Downloads** - Download all photos with one click
+- 🔍 **Smart Search** - Find photos quickly
+- 📤 **Guest Uploads** - Optional client photo uploads
+- 🛡️ **Download Protection** - Advanced image protection with watermarking and right-click prevention
 
-**External Media** — Reference photos from a mounted folder instead of uploading. PicPeak reads originals in place and generates thumbnails on demand.
+### Technical Excellence
+- 🐳 **Docker Ready** - Deploy in minutes
+- 🔄 **Auto-Processing** - Automatic thumbnail generation
+- 🗂️ **Reference Library Support** - Point PicPeak at `EXTERNAL_MEDIA_ROOT` to reference existing originals, index quickly, and generate thumbnails on demand
+- 💾 **Smart Storage** - Automatic archiving of expired galleries
+- 🛡️ **Security First** - JWT auth, rate limiting, CORS protection
+- 📈 **Scalable** - From small studios to large agencies
 
 ### For Studios — CRM & Accounting (Beta · off by default)
 - 📝 **Quotes → Contracts → Invoices** - One deal lineage; cancel-and-reissue (Storno) keeps issued invoices immutable
@@ -68,13 +87,7 @@ Admin panel: [demo.picpeak.app/admin](https://demo.picpeak.app/admin) — login 
 
 ## 🚀 Quick Start
 
-**Analytics** — Built-in view/download tracking plus optional Umami integration for privacy-focused analytics.
-
-**Video Support** — Upload and stream MP4, WebM, MOV alongside photos. FFmpeg bundled via npm.
-
-**Multiple Admins** — Role-based access control with super admin, admin, and editor roles.
-
-## Quick Start
+Get PicPeak running in under 5 minutes:
 
 ```bash
 # Clone the repository
@@ -89,6 +102,8 @@ cp .env.example .env
 
 # Start with Docker Compose
 docker compose up -d
+
+# Access at http://localhost:3000
 ```
 
 ### First run — create your admin account
@@ -108,75 +123,55 @@ Note on Docker file permissions
 - The backend container starts as root, chowns bind-mounted host directories (`./storage`, `./data`, `./logs`) to UID 1001 (`nodejs`), then drops privileges via `su-exec` before running the app. No host-side setup needed for fresh installs.
 - If you pin `user:` in a compose override (e.g. to map a specific host UID), the self-chown is skipped and you must pre-chown the host directories to that UID — see [docs.picpeak.app/deployment/docker#permissions](https://docs.picpeak.app/deployment/docker#permissions).
 
-> **Permissions:** Set `PUID` and `PGID` in `.env` to match your host user (`id -u` / `id -g`) so Docker volumes are writable.
+**ARM64 (aarch64) systems:** Pre-built images include native `linux/arm64`, no platform flags or emulation needed. If you're on an older image tag that's still amd64-only, see [docker-compose.amd64.override.yml](docker-compose.amd64.override.yml) for a transitional fallback.
 
-See the [Deployment Guide](DEPLOYMENT_GUIDE.md) for reverse proxy setup, SSL, external media, and production configuration.
+## 🔄 Release Channels
 
 PicPeak offers two release channels for different needs. Stable promotions are cut from a known-good beta point every 4–6 weeks — see [RELEASING.md](RELEASING.md) for the maintainer's promotion criteria and cadence policy.
 
-<details>
-<summary>Admin Dashboard</summary>
+### Stable Channel (Recommended)
+- Production-ready releases
+- Thoroughly tested before release
+- Docker tags: `stable`, `latest`, or specific version like `v2.3.0`
 
-<img src="docs/screenshot-dashboard.png" alt="Admin Dashboard" width="800" />
-</details>
+### Beta Channel
+- Early access to new features
+- May contain bugs or incomplete functionality
+- Docker tags: `beta` or specific version like `v2.3.0-beta.1`
 
-<details>
-<summary>Event Management</summary>
+### Switching Channels
 
-<img src="docs/screenshots-events.png" alt="Event Management" width="800" />
-</details>
-
-<details>
-<summary>Analytics</summary>
-
-<img src="docs/screenshot-analytics.png" alt="Analytics" width="800" />
-</details>
-
-## Comparison
-
-| | PicPeak | PicDrop | Scrapbook.de |
-|---|---|---|---|
-| Self-hosted | Yes | No | No |
-| Monthly cost | $0 | $29-199 | 19-99 EUR |
-| Storage | Unlimited | 50-500 GB | 100-1000 GB |
-| Custom branding | Full | Limited | Limited |
-| Open source | Yes | No | No |
-| API | Yes | Paid | No |
-
-## Tech Stack
-
-- **Backend:** Node.js, Express, PostgreSQL (or SQLite)
-- **Frontend:** React, TypeScript, Tailwind CSS
-- **Infrastructure:** Docker, Nginx, Redis
-- **Processing:** Sharp (images), FFmpeg (video)
-
-## Release Channels
-
-**Stable** (`stable` / `latest`) — Production-ready. Use this for real deployments.
-
-**Beta** (`beta`) — Early access to new features. May have rough edges.
+Set the `PICPEAK_CHANNEL` environment variable in your `.env` file:
 
 ```bash
-# Set in .env
-PICPEAK_CHANNEL=stable  # or beta
+# For stable releases (default)
+PICPEAK_CHANNEL=stable
 
-# Update
+# For beta releases
+PICPEAK_CHANNEL=beta
+
+# For a specific version
+PICPEAK_CHANNEL=v2.3.0
+```
+
+Then update your containers:
+
+```bash
 docker compose -f docker-compose.production.yml pull
 docker compose -f docker-compose.production.yml up -d
 ```
 
-The admin dashboard notifies you when updates are available.
+### Update Notifications
 
-## Contributing
+The admin dashboard automatically notifies you when updates are available for your channel. To disable update checks, set:
 
-We welcome contributions — bug fixes, features, translations, documentation. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
+```bash
+UPDATE_CHECK_ENABLED=false
+```
 
-## Documentation
+## 📖 Documentation
 
-- [Deployment Guide](DEPLOYMENT_GUIDE.md) — Installation, configuration, reverse proxy, external media
-- [Admin API (OpenAPI)](docs/picpeak-admin-api.openapi.yaml) — Machine-readable API spec
-- [Admin API Quickstart](docs/admin-api-quickstart.md) — Authentication and testing guide
-- [Security Policy](SECURITY.md)
+Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** — deployment, admin settings reference, API docs, webhooks, archive lifecycle, branding, and everything else. Some quick links:
 
 - 🚀 [**Deployment**](https://docs.picpeak.app/deployment) - Docker, environment variables, reverse proxy, SSL
 - ⚙️ [**Admin Settings**](https://docs.picpeak.app/guides/admin-settings) - Every tab in the Settings panel
@@ -186,15 +181,24 @@ We welcome contributions — bug fixes, features, translations, documentation. S
 - 🔌 [**API Reference**](https://docs.picpeak.app/api) - REST endpoints, OpenAPI spec, webhooks
 - 🪝 [**Webhooks**](https://docs.picpeak.app/features/webhooks) - Event payloads, signing, filters, templates
 
-Thanks to the people whose code, reports, and feedback have shaped PicPeak:
+Project meta:
 
-- [**@Luca-Timo**](https://github.com/Luca-Timo) — native Apple Silicon multi-arch images, external-URL toggle for legal CMS pages, lazy-loaded folder tree picker, admin-email picker, self-hosted webfont system, gallery header/banner decoupling, and several typed-API refactors.
-- [**@Rekoo-PS**](https://github.com/Rekoo-PS) — sharp-eyed bug reporter and product feedback. Filed the issues that drove the login-loop fix, gallery-loading skeleton work, mobile-lightbox overhaul, admin-events search-counter fix, photo-count column, and bulk-delete workflow. Also a [BuyMeACoffee](https://buymeacoffee.com/theluap) supporter.
+- 🤝 [**Contributing**](CONTRIBUTING.md) - How to contribute
+- 📜 [**License**](LICENSE) - MIT License
+- 🔒 [**Security**](SECURITY.md) - Security policies
+- 📋 [**Code of Conduct**](CODE_OF_CONDUCT.md) - Community guidelines
 
-If you've contributed and aren't listed here, please open a PR.
+## 🌐 Public Landing Page
 
+Spotlight your studio with a customizable marketing page at `/`:
 
-## License
+- Head to **Admin → CMS Pages** to enable the public landing page toggle.
+- Edit the provided HTML template (rich sections, hero, testimonials) and optional CSS overrides.
+- The preview renders in a sandboxed iframe so you can iterate safely before publishing.
+- PicPeak sanitizes stored HTML and CSS server-side—scripts, iframes, and unsafe attributes are stripped automatically.
+- Use **Reset to default** anytime to restore the bundled template.
+- The backend caches the rendered landing page for 60 seconds by default; override with `PUBLIC_SITE_CACHE_TTL_MS` if you need a different TTL.
+- When the landing page is disabled PicPeak continues to serve the admin SPA/login exactly as before.
 
 ## 🎯 Use Cases
 
