@@ -19,8 +19,11 @@ const {
   getRawPublicSiteSettings,
 } = require('../services/publicSiteService');
 const { sanitizeCss } = require('../utils/cssSanitizer');
+const { upsertAppSetting } = require('../utils/appSettings');
 const { clearShareLinkSettingsCache } = require('../services/shareLinkService');
 const { resetSecurityConfigCache } = require('../utils/authSecurity');
+const { errorResponse } = require('../utils/routeHelpers');
+const logger = require('../utils/logger');
 const router = express.Router();
 const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD } = require('../services/uploadSettings');
 const watermarkService = require('../services/watermarkService');
@@ -73,10 +76,11 @@ const faviconStorage = multer.diskStorage({
 
 const faviconUpload = multer({
   storage: faviconStorage,
-  limits: { fileSize: 1 * 1024 * 1024 }, // 1MB
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB — roomy enough for a 512×512+ square PNG
   fileFilter: (req, file, cb) => {
     const allowedMimeTypes = ['image/png', 'image/x-icon', 'image/vnd.microsoft.icon'];
-    
+    const name = file.originalname.toLowerCase();
+
     // For ICO files, we can't use the standard validateFileType
     if (file.mimetype === 'image/png') {
       if (validateFileType(file.originalname, file.mimetype, ['image/png'])) {
@@ -84,21 +88,38 @@ const faviconUpload = multer({
       } else {
         cb(new Error('Invalid PNG file'));
       }
-    } else if (allowedMimeTypes.includes(file.mimetype) && 
-               (file.originalname.toLowerCase().endsWith('.ico') || 
-                file.originalname.toLowerCase().endsWith('.png'))) {
+    } else if (file.mimetype === 'image/svg+xml' && name.endsWith('.svg')) {
+      // SVG favicons are supported by modern browsers and are crisp at any
+      // size. Served SVGs are CSP-locked (no script execution) by the
+      // secureStatic middleware, so an admin-uploaded SVG is render-only.
+      cb(null, true);
+    } else if (allowedMimeTypes.includes(file.mimetype) &&
+               (name.endsWith('.ico') || name.endsWith('.png'))) {
       cb(null, true);
     } else {
-      cb(new Error('Favicon must be PNG or ICO format'));
+      cb(new Error('Favicon must be PNG, ICO, or SVG format'));
     }
   }
 });
 
-// Get all settings
+// Get all settings, or a subset when ?keys=k1,k2,… is supplied.
+// Many caller pages only need a handful of keys (e.g. ReminderTemplates
+// reads 2 of the ~100 rows). The keys filter is allowlist-bounded by
+// what's stored, so passing unknown keys just returns them as `null`
+// — no enumeration risk beyond what GET / returned already.
 router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) => {
   try {
-    const settings = await db('app_settings').select('*');
-    
+    const keysParam = typeof req.query.keys === 'string' ? req.query.keys : null;
+    const keysFilter = keysParam
+      ? keysParam.split(',').map((k) => k.trim()).filter(Boolean).slice(0, 100)
+      : null;
+
+    const query = db('app_settings').select('*');
+    if (keysFilter && keysFilter.length > 0) {
+      query.whereIn('setting_key', keysFilter);
+    }
+    const settings = await query;
+
     // Convert to object format
     const settingsObject = {};
     settings.forEach(setting => {
@@ -126,11 +147,20 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
     if (settingsObject.security_recaptcha_secret_key) {
       settingsObject.security_recaptcha_secret_key = '••••••••';
     }
+    // Umami v2 API key (#661 Bug C) — read-write secret that authenticates
+    // outbound calls to the operator's Umami instance for the device
+    // breakdown. Masked on GET, same pattern as the recaptcha secret.
+    if (settingsObject.analytics_umami_api_key) {
+      settingsObject.analytics_umami_api_key = '••••••••';
+    }
+    // Rybbit API key (#663 Phase 1) — same pattern.
+    if (settingsObject.analytics_rybbit_api_key) {
+      settingsObject.analytics_rybbit_api_key = '••••••••';
+    }
 
     res.json(settingsObject);
   } catch (error) {
-    console.error('Settings fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch settings' });
+    errorResponse(res, error, 500, 'Failed to fetch settings');
   }
 });
 
@@ -171,8 +201,7 @@ router.get('/customer-surface', adminAuth, requirePermission('settings.view'), a
 
     res.json(settings);
   } catch (error) {
-    console.error('Customer surface settings fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch customer surface settings' });
+    errorResponse(res, error, 500, 'Failed to fetch customer surface settings');
   }
 });
 
@@ -193,16 +222,7 @@ router.put('/customer-surface', adminAuth, requirePermission('settings.edit'), a
     }
 
     for (const u of updates) {
-      const existing = await db('app_settings').where('setting_key', u.setting_key).first();
-      if (existing) {
-        await db('app_settings').where('setting_key', u.setting_key).update({
-          setting_value: u.setting_value,
-          setting_type: u.setting_type,
-          updated_at: new Date(),
-        });
-      } else {
-        await db('app_settings').insert({ ...u, created_at: new Date(), updated_at: new Date() });
-      }
+      await upsertAppSetting(u.setting_key, u.setting_value, u.setting_type);
     }
 
     // Clear the public-site cache so any consumer relying on it
@@ -211,8 +231,134 @@ router.put('/customer-surface', adminAuth, requirePermission('settings.edit'), a
 
     res.json({ message: 'Customer surface settings updated', updated: updates.map((u) => u.setting_key) });
   } catch (error) {
-    console.error('Customer surface settings save error:', error);
-    res.status(500).json({ error: 'Failed to save customer surface settings' });
+    errorResponse(res, error, 500, 'Failed to save customer surface settings');
+  }
+});
+
+// Accounting settings (km rate, per-diem rate, require-proof). Read via the
+// generic GET /:type ('accounting'); this is the typed write. Rates are
+// integer minor units; verify legal/tax guidance with a Treuhaender.
+router.put('/accounting', adminAuth, requirePermission('settings.edit'), async (req, res) => {
+  try {
+    const updates = [];
+    const setInt = (key) => {
+      if (Object.prototype.hasOwnProperty.call(req.body, key)) {
+        const n = Math.max(0, Math.round(Number(req.body[key]) || 0));
+        updates.push({ setting_key: key, setting_value: JSON.stringify(n), setting_type: 'accounting' });
+      }
+    };
+    setInt('accounting_km_rate_minor');
+    setInt('accounting_per_diem_rate_minor');
+    if (Object.prototype.hasOwnProperty.call(req.body, 'accounting_require_proof')) {
+      updates.push({
+        setting_key: 'accounting_require_proof',
+        setting_value: JSON.stringify(!!req.body.accounting_require_proof),
+        setting_type: 'accounting',
+      });
+    }
+    // VAT registration + reclaim. `registered` drives whether output VAT applies
+    // + whether input VAT is deductible; `reclaim_countries` = the ISO-2 list of
+    // countries whose input VAT can be reclaimed (drives cost tax-treatment +
+    // the report's VAT-payable).
+    if (Object.prototype.hasOwnProperty.call(req.body, 'accounting_vat_registered')) {
+      updates.push({
+        setting_key: 'accounting_vat_registered',
+        setting_value: JSON.stringify(!!req.body.accounting_vat_registered),
+        setting_type: 'accounting',
+      });
+    }
+    // Default OUTPUT VAT code stamped onto NEW invoices/quotes (the editor
+    // seeds its VAT picker from it). Stored as the code string; '' clears it.
+    if (Object.prototype.hasOwnProperty.call(req.body, 'accounting_default_output_vat_code')) {
+      const code = String(req.body.accounting_default_output_vat_code || '').trim().slice(0, 16);
+      updates.push({
+        setting_key: 'accounting_default_output_vat_code',
+        setting_value: JSON.stringify(code),
+        setting_type: 'accounting',
+      });
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'accounting_vat_reclaim_countries')) {
+      const arr = Array.isArray(req.body.accounting_vat_reclaim_countries)
+        ? req.body.accounting_vat_reclaim_countries
+          .map((c) => String(c || '').toUpperCase().trim())
+          .filter((c) => /^[A-Z]{2}$/.test(c))
+        : [];
+      updates.push({
+        setting_key: 'accounting_vat_reclaim_countries',
+        setting_value: JSON.stringify(arr),
+        setting_type: 'accounting',
+      });
+    }
+    for (const u of updates) {
+      await upsertAppSetting(u.setting_key, u.setting_value, u.setting_type);
+    }
+    res.json({ message: 'Accounting settings updated', updated: updates.map((u) => u.setting_key) });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to save accounting settings');
+  }
+});
+
+// Global Live Slideshow defaults (migration 139). The per-event watermark is
+// tri-state (events.show_watermark NULL = inherit these). Read via the generic
+// GET /:type ('slideshow'); this is the typed write.
+router.put('/slideshow', adminAuth, requirePermission('settings.edit'), async (req, res) => {
+  try {
+    const updates = [];
+    const push = (key, value) => updates.push({ setting_key: key, setting_value: JSON.stringify(value), setting_type: 'slideshow' });
+    const has = (k) => Object.prototype.hasOwnProperty.call(req.body, k);
+
+    if (has('slideshow_fit')) {
+      push('slideshow_fit', req.body.slideshow_fit === 'contain' ? 'contain' : 'cover');
+    }
+    // Picpeak-wide display preset (default style new events inherit).
+    if (has('slideshow_interval_ms')) {
+      const n = Math.min(120000, Math.max(1000, Math.round(Number(req.body.slideshow_interval_ms) || 5000)));
+      push('slideshow_interval_ms', n);
+    }
+    if (has('slideshow_transition')) {
+      const allowed = ['crossfade', 'cut', 'slide', 'kenburns', 'dipwhite', 'dipblack'];
+      push('slideshow_transition', allowed.includes(req.body.slideshow_transition) ? req.body.slideshow_transition : 'crossfade');
+    }
+    if (has('slideshow_transition_ms')) {
+      const n = Math.min(5000, Math.max(100, Math.round(Number(req.body.slideshow_transition_ms) || 800)));
+      push('slideshow_transition_ms', n);
+    }
+    if (has('slideshow_colorfilter')) {
+      const allowed = ['none', 'bw', 'sepia', 'warm', 'cool', 'vignette'];
+      push('slideshow_colorfilter', allowed.includes(req.body.slideshow_colorfilter) ? req.body.slideshow_colorfilter : 'none');
+    }
+    if (has('slideshow_watermark_enabled')) push('slideshow_watermark_enabled', !!req.body.slideshow_watermark_enabled);
+    if (has('slideshow_watermark_source')) {
+      const v = ['logo', 'logo_dark', 'favicon', 'event'].includes(req.body.slideshow_watermark_source) ? req.body.slideshow_watermark_source : 'logo';
+      push('slideshow_watermark_source', v);
+    }
+    if (has('slideshow_watermark_position')) {
+      const allowed = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+      const v = allowed.includes(req.body.slideshow_watermark_position) ? req.body.slideshow_watermark_position : 'bottom-right';
+      push('slideshow_watermark_position', v);
+    }
+    if (has('slideshow_watermark_opacity')) {
+      const n = Math.min(100, Math.max(0, Math.round(Number(req.body.slideshow_watermark_opacity) || 0)));
+      push('slideshow_watermark_opacity', n);
+    }
+    if (has('slideshow_watermark_style')) {
+      const v = ['white', 'original'].includes(req.body.slideshow_watermark_style) ? req.body.slideshow_watermark_style : 'white';
+      push('slideshow_watermark_style', v);
+    }
+    if (has('slideshow_watermark_size')) {
+      const n = Math.min(40, Math.max(3, Math.round(Number(req.body.slideshow_watermark_size) || 12)));
+      push('slideshow_watermark_size', n);
+    }
+
+    for (const u of updates) {
+      await upsertAppSetting(u.setting_key, u.setting_value, u.setting_type);
+    }
+    // Drop the slideshow-globals cache so a running projector picks up the
+    // change on its next poll rather than after the 5s TTL.
+    require('../utils/slideshowGlobals').invalidateSlideshowGlobals();
+    res.json({ message: 'Slideshow settings updated', updated: updates.map((u) => u.setting_key) });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to save slideshow settings');
   }
 });
 
@@ -251,11 +397,20 @@ router.get('/:type', adminAuth, requirePermission('settings.view'), async (req, 
     if (settingsObject.security_recaptcha_secret_key) {
       settingsObject.security_recaptcha_secret_key = '••••••••';
     }
+    // Umami v2 API key (#661 Bug C) — read-write secret that authenticates
+    // outbound calls to the operator's Umami instance for the device
+    // breakdown. Masked on GET, same pattern as the recaptcha secret.
+    if (settingsObject.analytics_umami_api_key) {
+      settingsObject.analytics_umami_api_key = '••••••••';
+    }
+    // Rybbit API key (#663 Phase 1) — same pattern.
+    if (settingsObject.analytics_rybbit_api_key) {
+      settingsObject.analytics_rybbit_api_key = '••••••••';
+    }
 
     res.json(settingsObject);
   } catch (error) {
-    console.error('Settings fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch settings' });
+    errorResponse(res, error, 500, 'Failed to fetch settings');
   }
 });
 
@@ -275,8 +430,7 @@ router.get('/password/complexity', adminAuth, requirePermission('settings.view')
       config
     });
   } catch (error) {
-    console.error('Password complexity settings fetch error:', error);
-    res.status(500).json({ error: 'Failed to fetch password complexity settings' });
+    errorResponse(res, error, 500, 'Failed to fetch password complexity settings');
   }
 });
 
@@ -418,9 +572,9 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
           const faviconPath = path.join(getStoragePath(), relativePath);
           try {
             await fs.unlink(faviconPath);
-            console.log('Deleted favicon file:', faviconPath);
+            logger.info('Deleted favicon file:', faviconPath);
           } catch (err) {
-            console.error('Error deleting favicon file:', err);
+            logger.error('Error deleting favicon file:', err);
           }
         }
       }
@@ -449,9 +603,9 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
           const logoPath = path.join(getStoragePath(), relativePath);
           try {
             await fs.unlink(logoPath);
-            console.log('Deleted logo file:', logoPath);
+            logger.info('Deleted logo file:', logoPath);
           } catch (err) {
-            console.error('Error deleting logo file:', err);
+            logger.error('Error deleting logo file:', err);
           }
         }
       }
@@ -497,20 +651,20 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
 
       if (currentSettings && currentSettings.enabled) {
         // Start background regeneration of all watermarks
-        console.log('Watermark settings changed, starting background regeneration');
+        logger.info('Watermark settings changed, starting background regeneration');
         watermarkGeneratorService.regenerateAll()
           .then(result => {
-            console.log(`Watermark regeneration completed: ${result.success}/${result.total} successful`);
+            logger.info(`Watermark regeneration completed: ${result.success}/${result.total} successful`);
           })
           .catch(err => {
-            console.error('Watermark regeneration failed:', err);
+            logger.error('Watermark regeneration failed:', err);
           });
         watermarkRegenerationStarted = true;
       } else {
         // Watermarking was disabled, clear all pre-generated watermarks
-        console.log('Watermarking disabled, clearing pre-generated watermarks');
+        logger.info('Watermarking disabled, clearing pre-generated watermarks');
         watermarkGeneratorService.clearAllWatermarks()
-          .catch(err => console.error('Failed to clear watermarks:', err));
+          .catch(err => logger.error('Failed to clear watermarks:', err));
       }
     }
 
@@ -519,8 +673,7 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
       watermarkRegenerationStarted
     });
   } catch (error) {
-    console.error('Branding update error:', error);
-    res.status(500).json({ error: 'Failed to update branding settings' });
+    errorResponse(res, error, 500, 'Failed to update branding settings');
   }
 });
 
@@ -531,9 +684,16 @@ router.post('/logo', adminAuth, requirePermission('settings.edit'), upload.singl
       return res.status(400).json({ error: 'No logo file uploaded' });
     }
 
+    // ?variant=dark stores a separate dark-mode logo (branding_logo_*_dark);
+    // anything else is the default (light) logo. Consumers pick the dark
+    // variant when the active theme is dark, falling back to the light one.
+    const isDark = req.query.variant === 'dark' || req.body.variant === 'dark';
+    const pathKey = isDark ? 'branding_logo_path_dark' : 'branding_logo_path';
+    const urlKey = isDark ? 'branding_logo_url_dark' : 'branding_logo_url';
+
     // Get old logo to delete
     const oldLogoSetting = await db('app_settings')
-      .where('setting_key', 'branding_logo_path')
+      .where('setting_key', pathKey)
       .first();
 
     if (oldLogoSetting && oldLogoSetting.setting_value) {
@@ -545,7 +705,7 @@ router.post('/logo', adminAuth, requirePermission('settings.edit'), upload.singl
         }
         await fs.unlink(oldPath);
       } catch (error) {
-        console.error('Failed to delete old logo:', error);
+        logger.error('Failed to delete old logo:', error);
       }
     }
 
@@ -555,7 +715,7 @@ router.post('/logo', adminAuth, requirePermission('settings.edit'), upload.singl
 
     await db('app_settings')
       .insert({
-        setting_key: 'branding_logo_path',
+        setting_key: pathKey,
         setting_value: JSON.stringify(logoPath),
         setting_type: 'branding',
         updated_at: new Date()
@@ -569,7 +729,7 @@ router.post('/logo', adminAuth, requirePermission('settings.edit'), upload.singl
     // Save public URL
     await db('app_settings')
       .insert({
-        setting_key: 'branding_logo_url',
+        setting_key: urlKey,
         setting_value: JSON.stringify(publicPath),
         setting_type: 'branding',
         updated_at: new Date()
@@ -585,8 +745,36 @@ router.post('/logo', adminAuth, requirePermission('settings.edit'), upload.singl
       logoUrl: publicPath
     });
   } catch (error) {
-    console.error('Logo upload error:', error);
-    res.status(500).json({ error: 'Failed to upload logo' });
+    errorResponse(res, error, 500, 'Failed to upload logo');
+  }
+});
+
+// Remove a logo. ?variant=dark clears the dark-mode logo
+// (branding_logo_*_dark); otherwise the default logo. Best-effort file
+// unlink, then blanks the url + path settings.
+router.delete('/logo', adminAuth, requirePermission('settings.edit'), async (req, res) => {
+  try {
+    const isDark = req.query.variant === 'dark';
+    const pathKey = isDark ? 'branding_logo_path_dark' : 'branding_logo_path';
+    const urlKey = isDark ? 'branding_logo_url_dark' : 'branding_logo_url';
+
+    const pathSetting = await db('app_settings').where('setting_key', pathKey).first();
+    if (pathSetting && pathSetting.setting_value) {
+      try {
+        let p = pathSetting.setting_value;
+        if (p.startsWith('"')) p = JSON.parse(p);
+        await fs.unlink(p);
+      } catch (error) {
+        logger.error('Failed to delete logo file:', error);
+      }
+    }
+    await db('app_settings')
+      .whereIn('setting_key', [pathKey, urlKey])
+      .update({ setting_value: JSON.stringify(''), updated_at: new Date() });
+
+    res.json({ message: 'Logo removed' });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to remove logo');
   }
 });
 
@@ -616,7 +804,7 @@ router.post('/branding/watermark-logo', adminAuth, requirePermission('settings.e
         try {
           await fs.unlink(oldPath);
         } catch (error) {
-          console.error('Failed to delete old watermark logo:', error);
+          logger.error('Failed to delete old watermark logo:', error);
         }
       }
     }
@@ -658,13 +846,13 @@ router.post('/branding/watermark-logo', adminAuth, requirePermission('settings.e
     let watermarkRegenerationStarted = false;
 
     if (currentSettings && currentSettings.enabled) {
-      console.log('Watermark logo changed, starting background regeneration');
+      logger.info('Watermark logo changed, starting background regeneration');
       watermarkGeneratorService.regenerateAll()
         .then(result => {
-          console.log(`Watermark regeneration completed: ${result.success}/${result.total} successful`);
+          logger.info(`Watermark regeneration completed: ${result.success}/${result.total} successful`);
         })
         .catch(err => {
-          console.error('Watermark regeneration failed:', err);
+          logger.error('Watermark regeneration failed:', err);
         });
       watermarkRegenerationStarted = true;
     }
@@ -675,8 +863,7 @@ router.post('/branding/watermark-logo', adminAuth, requirePermission('settings.e
       watermarkRegenerationStarted
     });
   } catch (error) {
-    console.error('Watermark logo upload error:', error);
-    res.status(500).json({ error: 'Failed to upload watermark logo' });
+    errorResponse(res, error, 500, 'Failed to upload watermark logo');
   }
 });
 
@@ -712,8 +899,7 @@ router.put('/theme', adminAuth, requirePermission('settings.edit'), async (req, 
 
     res.json({ message: 'Theme settings updated successfully' });
   } catch (error) {
-    console.error('Theme update error:', error);
-    res.status(500).json({ error: 'Failed to update theme settings' });
+    errorResponse(res, error, 500, 'Failed to update theme settings');
   }
 });
 
@@ -809,7 +995,7 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
         require('../services/downloadFilenameService').clearCache();
         require('../services/downloadZipService').invalidateAll();
       } catch (e) {
-        console.warn('Failed to invalidate download caches after filename setting change:', e.message);
+        logger.warn('Failed to invalidate download caches after filename setting change:', e.message);
       }
     }
 
@@ -824,8 +1010,7 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
 
     res.json({ message: 'General settings updated successfully' });
   } catch (error) {
-    console.error('General settings update error:', error);
-    res.status(500).json({ error: 'Failed to update general settings' });
+    errorResponse(res, error, 500, 'Failed to update general settings');
   }
 });
 
@@ -863,8 +1048,7 @@ router.put('/security', adminAuth, requirePermission('settings.edit'), async (re
 
     res.json({ message: 'Security settings updated successfully' });
   } catch (error) {
-    console.error('Security settings update error:', error);
-    res.status(500).json({ error: 'Failed to update security settings' });
+    errorResponse(res, error, 500, 'Failed to update security settings');
   }
 });
 
@@ -872,6 +1056,25 @@ router.put('/security', adminAuth, requirePermission('settings.edit'), async (re
 router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (req, res) => {
   try {
     const settings = req.body;
+
+    // Validate the provider switch (#663 Phase 1). Reject unknown values
+    // so the dashboard route's factory doesn't have to defensively guard.
+    if (Object.prototype.hasOwnProperty.call(settings, 'analytics_tracker_provider')) {
+      const valid = ['none', 'umami', 'rybbit', 'custom'];
+      if (!valid.includes(settings.analytics_tracker_provider)) {
+        return res.status(400).json({
+          error: `analytics_tracker_provider must be one of: ${valid.join(', ')}`,
+        });
+      }
+    }
+
+    // Sanitise the custom-mode HTML snippet on save (#663 Phase 1). Stored
+    // pre-sanitised so the publicSettings endpoint surfaces it as-is on
+    // every gallery request — never re-running sanitize-html on the hot path.
+    if (Object.prototype.hasOwnProperty.call(settings, 'analytics_custom_head_html')) {
+      const { sanitizeTrackerSnippet } = require('../services/trackers/customScriptSanitiser');
+      settings.analytics_custom_head_html = sanitizeTrackerSnippet(settings.analytics_custom_head_html);
+    }
 
     // Update or insert each setting
     for (const [key, value] of Object.entries(settings)) {
@@ -900,8 +1103,7 @@ router.put('/analytics', adminAuth, requirePermission('settings.edit'), async (r
 
     res.json({ message: 'Analytics settings updated successfully' });
   } catch (error) {
-    console.error('Analytics settings update error:', error);
-    res.status(500).json({ error: 'Failed to update analytics settings' });
+    errorResponse(res, error, 500, 'Failed to update analytics settings');
   }
 });
 
@@ -964,8 +1166,7 @@ router.put('/seo', adminAuth, requirePermission('settings.edit'), async (req, re
 
     res.json({ message: 'SEO settings updated successfully' });
   } catch (error) {
-    console.error('SEO settings update error:', error);
-    res.status(500).json({ error: 'Failed to update SEO settings' });
+    errorResponse(res, error, 500, 'Failed to update SEO settings');
   }
 });
 
@@ -1001,7 +1202,7 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
           const stats = await fs.stat(fullArchivePath);
           archiveStorage += stats.size;
         } catch (error) {
-          console.error('Archive file not found:', archive.archive_path, error.message);
+          logger.error('Archive file not found:', archive.archive_path, error.message);
         }
       }
     }
@@ -1019,7 +1220,7 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
       rawDiskFree = Number(diskStats.bsize) * Number(diskStats.bfree);
       rawDiskAvailable = Number(diskStats.bsize) * Number(diskStats.bavail);
     } catch (diskError) {
-      console.error('Disk stats error:', diskError.message);
+      logger.error('Disk stats error:', diskError.message);
     }
 
     const clampDiskValue = (value) => {
@@ -1098,27 +1299,27 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
         }
 
         switch (setting.setting_key) {
-          case 'general_storage_soft_limit_bytes':
-            if (typeof parsedValue === 'number' && !Number.isNaN(parsedValue)) {
-              configuredSoftLimit = parsedValue;
-            }
-            break;
-          case 'general_storage_capacity_override_bytes':
-            if (typeof parsedValue === 'number' && !Number.isNaN(parsedValue)) {
-              capacityOverrideDb = parsedValue;
-            }
-            break;
-          case 'general_storage_available_override_bytes':
-            if (typeof parsedValue === 'number' && !Number.isNaN(parsedValue)) {
-              availableOverrideDb = parsedValue;
-            }
-            break;
-          default:
-            break;
+        case 'general_storage_soft_limit_bytes':
+          if (typeof parsedValue === 'number' && !Number.isNaN(parsedValue)) {
+            configuredSoftLimit = parsedValue;
+          }
+          break;
+        case 'general_storage_capacity_override_bytes':
+          if (typeof parsedValue === 'number' && !Number.isNaN(parsedValue)) {
+            capacityOverrideDb = parsedValue;
+          }
+          break;
+        case 'general_storage_available_override_bytes':
+          if (typeof parsedValue === 'number' && !Number.isNaN(parsedValue)) {
+            availableOverrideDb = parsedValue;
+          }
+          break;
+        default:
+          break;
         }
       });
     } catch (error) {
-      console.error('Storage settings read error:', error.message);
+      logger.error('Storage settings read error:', error.message);
     }
 
     const capacityOverrideEnv = parseEnvOverride('STORAGE_CAPACITY_OVERRIDE_BYTES', 'STORAGE_CAPACITY_OVERRIDE_GB');
@@ -1192,8 +1393,7 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
       disk_override_source: overrideSource
     });
   } catch (error) {
-    console.error('Storage info error:', error);
-    res.status(500).json({ error: 'Failed to fetch storage information' });
+    errorResponse(res, error, 500, 'Failed to fetch storage information');
   }
 });
 
@@ -1230,8 +1430,7 @@ router.post('/favicon', adminAuth, requirePermission('settings.edit'), faviconUp
 
     res.json({ faviconUrl });
   } catch (error) {
-    console.error('Error uploading favicon:', error);
-    res.status(500).json({ error: 'Failed to upload favicon' });
+    errorResponse(res, error, 500, 'Failed to upload favicon');
   }
 });
 
@@ -1294,8 +1493,7 @@ router.put('/security/rate-limit', adminAuth, requirePermission('settings.edit')
 
     res.json({ message: 'Rate limit settings updated successfully' });
   } catch (error) {
-    console.error('Rate limit settings update error:', error);
-    res.status(500).json({ error: 'Failed to update rate limit settings' });
+    errorResponse(res, error, 500, 'Failed to update rate limit settings');
   }
 });
 
@@ -1315,8 +1513,7 @@ router.get('/public-site/default', adminAuth, requirePermission('settings.view')
       }
     });
   } catch (error) {
-    console.error('Failed to load public site defaults:', error);
-    res.status(500).json({ error: 'Failed to load defaults' });
+    errorResponse(res, error, 500, 'Failed to load defaults');
   }
 });
 
@@ -1369,8 +1566,7 @@ router.post('/public-site/reset', adminAuth, requirePermission('settings.edit'),
       branding: defaults.branding
     });
   } catch (error) {
-    console.error('Failed to reset public site template:', error);
-    res.status(500).json({ error: 'Failed to reset template' });
+    errorResponse(res, error, 500, 'Failed to reset template');
   }
 });
 

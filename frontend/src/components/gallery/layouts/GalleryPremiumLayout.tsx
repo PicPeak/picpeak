@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { MasonryPhotoAlbum } from 'react-photo-album';
 import 'react-photo-album/masonry.css';
 import Lightbox from 'yet-another-react-lightbox';
@@ -199,6 +199,14 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   const [lightboxIndex, setLightboxIndex] = useState(-1);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
+  // Seed from server is_liked on first non-empty payload (#590 follow-up).
+  // Mount-only so refetches don't clobber in-session optimistic toggles.
+  const likedSeededRef = useRef(false);
+  useEffect(() => {
+    if (likedSeededRef.current || photos.length === 0) return;
+    setLikedPhotoIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
+    likedSeededRef.current = true;
+  }, [photos]);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   const guestIdentity = useGuestIdentityOptional();
   const [showIdentityModal, setShowIdentityModal] = useState(false);
@@ -260,9 +268,11 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       } catch {
         return;
       }
+      // Toggle — server /feedback like is a toggle (#590).
       setLikedPhotoIds(prev => {
         const next = new Set(prev);
-        next.add(photo.id);
+        if (next.has(photo.id)) next.delete(photo.id);
+        else next.add(photo.id);
         return next;
       });
       try {
@@ -282,10 +292,11 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       return;
     }
 
-    // Optimistic update
+    // Optimistic update — toggle, not add (#590).
     setLikedPhotoIds(prev => {
       const next = new Set(prev);
-      next.add(photo.id);
+      if (next.has(photo.id)) next.delete(photo.id);
+      else next.add(photo.id);
       return next;
     });
 
@@ -306,9 +317,14 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     setShowIdentityModal(false);
 
     if (pendingLikePhotoId) {
+      // Toggle — server /feedback like is a toggle (#590). The identity
+      // modal only fires the first time per session, so the user is
+      // intentionally liking a not-yet-liked photo here, but keep the
+      // setter shape consistent with the other paths.
       setLikedPhotoIds(prev => {
         const next = new Set(prev);
-        next.add(pendingLikePhotoId);
+        if (next.has(pendingLikePhotoId)) next.delete(pendingLikePhotoId);
+        else next.add(pendingLikePhotoId);
         return next;
       });
 
@@ -510,7 +526,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                   }}
                   isSelected={selectedPhotos.has(originalPhoto.id)}
                   isSelectionMode={isSelectionMode}
-                  isLiked={likedPhotoIds.has(originalPhoto.id) || (originalPhoto.like_count ?? 0) > 0}
+                  // #590 follow-up: drop the `|| like_count > 0` fallback,
+                  // which treated "anyone liked this" as "I liked it". The
+                  // per-viewer is_liked seed above is the correct source.
+                  isLiked={likedPhotoIds.has(originalPhoto.id)}
                   slug={slug}
                   allowDownloads={allowDownloads}
                   protectionLevel={protectionLevel}

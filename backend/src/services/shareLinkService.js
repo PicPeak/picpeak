@@ -2,6 +2,7 @@ const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { extractShareToken, isPotentialShareToken, buildSharePath } = require('../utils/shareLinkUtils');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
+const logger = require('../utils/logger');
 
 const SETTING_KEY = 'general_short_gallery_urls';
 const CACHE_TTL_MS = 60_000;
@@ -59,7 +60,7 @@ const getRawSettingValue = async () => {
     const setting = await db('app_settings').where({ setting_key: SETTING_KEY }).first();
     return setting?.setting_value ?? null;
   } catch (error) {
-    console.error('Failed to read gallery URL setting:', error.message);
+    logger.error('Failed to read gallery URL setting:', error.message);
     return null;
   }
 };

@@ -201,14 +201,22 @@ describe('DatabaseBackupService', () => {
         delete: jest.fn().mockResolvedValue(1)
       });
       
-      // Mock fs.unlink
-      fs.unlink = jest.fn().mockResolvedValue(undefined);
-      
+      // Stub fs.promises.unlink via jest.spyOn so the original is
+      // restored when the test finishes. The previous form
+      // (`fs.unlink = jest.fn()`) leaked into every test that ran
+      // after this one in the same jest worker — most visibly
+      // integration/storageBackend.test.js, whose LocalFsStorage
+      // delete() became a silent no-op and the subsequent
+      // exists() assertion flipped from false to true. spyOn +
+      // mockRestore in afterEach keeps the stub scoped to this test.
+      const unlinkSpy = jest.spyOn(fs, 'unlink').mockResolvedValue(undefined);
+
       await service.cleanupOldBackups(30);
-      
-      expect(fs.unlink).toHaveBeenCalledTimes(2);
-      expect(fs.unlink).toHaveBeenCalledWith('/backup/old1.sql.gz');
-      expect(fs.unlink).toHaveBeenCalledWith('/backup/old2.sql.gz');
+
+      expect(unlinkSpy).toHaveBeenCalledTimes(2);
+      expect(unlinkSpy).toHaveBeenCalledWith('/backup/old1.sql.gz');
+      expect(unlinkSpy).toHaveBeenCalledWith('/backup/old2.sql.gz');
+      unlinkSpy.mockRestore();
     });
   });
 

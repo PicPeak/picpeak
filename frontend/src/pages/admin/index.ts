@@ -8,6 +8,7 @@ export { ArchivesPage } from './ArchivesPage';
 export { AnalyticsPage } from './AnalyticsPage';
 export { BrandingPage } from './BrandingPage';
 export { SettingsPage } from './SettingsPage';
+export { SystemHealthPage } from './SystemHealthPage';
 export { CMSPage } from './CMSPage';
 export { BackupManagement } from './BackupManagement';
 export { EventFeedbackPage } from './EventFeedbackPage';
@@ -16,3 +17,13 @@ export { CustomerManagementPage } from './CustomerManagementPage';
 export { CustomerDetailPage } from './CustomerDetailPage';
 export { EventTypesPage } from './EventTypesPage';
 export { WebhookDeliveriesPage } from './WebhookDeliveriesPage';
+
+// CRM (Quotes + Invoices) — gated by the `quotes` / `bills` feature flags.
+export { QuotesListPage } from './quotes/QuotesListPage';
+export { QuoteEditorPage } from './quotes/QuoteEditorPage';
+export { QuoteDetailPage } from './quotes/QuoteDetailPage';
+export { BillsListPage } from './bills/BillsListPage';
+export { BillEditorPage } from './bills/BillEditorPage';
+export { BillDetailPage } from './bills/BillDetailPage';
+export { SettingsBusinessProfilePage } from './settings/SettingsBusinessProfilePage';
+export { CrmSettingsPage } from './settings/CrmSettingsPage';

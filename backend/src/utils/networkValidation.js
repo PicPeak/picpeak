@@ -63,16 +63,99 @@ function isPrivateIPv4(ip) {
   return false;
 }
 
+/**
+ * Expand an IPv6 address (including mixed dotted-quad notation) into its
+ * canonical 8-group form, each group a 4-char lowercase hex string. Returns
+ * null on any parse failure so callers can fail closed.
+ */
+function expandIPv6(ip) {
+  if (typeof ip !== 'string' || !net.isIPv6(ip)) return null;
+  let normalized = ip.toLowerCase();
+
+  // Mixed notation: trailing dotted-quad (e.g. ::ffff:192.0.2.1, 64:ff9b::169.254.169.254)
+  if (normalized.includes('.')) {
+    const lastColon = normalized.lastIndexOf(':');
+    const tail = normalized.slice(lastColon + 1);
+    const parts = tail.split('.').map(p => Number(p));
+    if (parts.length !== 4 || parts.some(p => !Number.isInteger(p) || p < 0 || p > 255)) {
+      return null;
+    }
+    const hex1 = ((parts[0] << 8) | parts[1]).toString(16).padStart(4, '0');
+    const hex2 = ((parts[2] << 8) | parts[3]).toString(16).padStart(4, '0');
+    normalized = normalized.slice(0, lastColon + 1) + hex1 + ':' + hex2;
+  }
+
+  let groups;
+  const dcIdx = normalized.indexOf('::');
+  if (dcIdx === -1) {
+    groups = normalized.split(':');
+    if (groups.length !== 8) return null;
+  } else {
+    const left = normalized.slice(0, dcIdx);
+    const right = normalized.slice(dcIdx + 2);
+    const leftGroups = left === '' ? [] : left.split(':');
+    const rightGroups = right === '' ? [] : right.split(':');
+    const missing = 8 - leftGroups.length - rightGroups.length;
+    if (missing < 0) return null;
+    groups = [...leftGroups, ...Array(missing).fill('0'), ...rightGroups];
+  }
+
+  const padded = groups.map(g => (/^[0-9a-f]{1,4}$/.test(g) ? g.padStart(4, '0') : null));
+  if (padded.some(g => g === null)) return null;
+  return padded;
+}
+
+function ipv4FromLow32(g6, g7) {
+  const hi = parseInt(g6, 16);
+  const lo = parseInt(g7, 16);
+  return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+}
+
 function isPrivateIPv6(ip) {
-  const lower = ip.toLowerCase();
-  // ::1 loopback
-  if (lower === '::1' || lower === '0000:0000:0000:0000:0000:0000:0000:0001') return true;
-  // fc00::/7 — unique local
-  if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
-  // fe80::/10 — link-local
-  if (lower.startsWith('fe80')) return true;
+  const groups = expandIPv6(ip);
+  // Fail closed: anything we cannot parse, we treat as private.
+  if (!groups) return true;
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = groups;
+
   // :: unspecified
-  if (lower === '::') return true;
+  if (groups.every(g => g === '0000')) return true;
+  // ::1 loopback
+  if (g0 === '0000' && g1 === '0000' && g2 === '0000' && g3 === '0000'
+    && g4 === '0000' && g5 === '0000' && g6 === '0000' && g7 === '0001') return true;
+
+  // fc00::/7 — unique-local (first byte 0xFC or 0xFD)
+  const firstByte = parseInt(g0.slice(0, 2), 16);
+  if (firstByte === 0xfc || firstByte === 0xfd) return true;
+
+  // fe80::/10 — link-local (first 10 bits cover fe80..febf)
+  const firstShort = parseInt(g0, 16);
+  if (firstShort >= 0xfe80 && firstShort <= 0xfebf) return true;
+
+  // 64:ff9b::/96 — NAT64 well-known prefix (RFC 6052). Translated to IPv4 at
+  // the NAT64 gateway, so a URL like http://[64:ff9b::a9fe:a9fe]/ reaches
+  // 169.254.169.254. Block the whole prefix — no legitimate outbound use.
+  if (g0 === '0064' && g1 === 'ff9b'
+    && g2 === '0000' && g3 === '0000' && g4 === '0000' && g5 === '0000') {
+    return true;
+  }
+
+  // 64:ff9b:1::/48 — NAT64 local-use prefix (RFC 8215). Same reasoning.
+  if (g0 === '0064' && g1 === 'ff9b' && g2 === '0001') return true;
+
+  // ::ffff:0:0/96 — IPv4-mapped IPv6 (RFC 4291). Decode the embedded IPv4
+  // and re-run through the v4 check so `::ffff:127.0.0.1` and the literal
+  // hex form `::ffff:7f00:1` both get caught.
+  if (g0 === '0000' && g1 === '0000' && g2 === '0000' && g3 === '0000'
+    && g4 === '0000' && g5 === 'ffff') {
+    return isPrivateIPv4(ipv4FromLow32(g6, g7));
+  }
+
+  // ::/96 — deprecated IPv4-compatible IPv6. Excludes the all-zero
+  // unspecified address (handled above). Decode + re-check.
+  if (g0 === '0000' && g1 === '0000' && g2 === '0000' && g3 === '0000'
+    && g4 === '0000' && g5 === '0000' && !(g6 === '0000' && g7 === '0000')) {
+    return isPrivateIPv4(ipv4FromLow32(g6, g7));
+  }
 
   return false;
 }

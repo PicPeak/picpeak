@@ -25,7 +25,7 @@ import { useNavigate } from 'react-router-dom';
 import { Calendar, Clock, Download, ExternalLink, ImageIcon, AlertCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
-import { format, parseISO } from 'date-fns';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useQuery } from '@tanstack/react-query';
 
 import { Button, Loading } from '../../components/common';
@@ -51,6 +51,10 @@ const DEFAULT_SORT: SortKey = 'newest';
 export const CustomerDashboardPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Localized date formatting — respects general_date_format + the active UI
+  // language. Previously used raw date-fns `format(parseISO(iso),'PP')` with
+  // no locale, so dates rendered en-US ("May", "Jun") under a German UI.
+  const { format: fmtLocalized } = useLocalizedDate();
 
   const { data: events, isLoading, error } = useQuery({
     queryKey: ['customer-events'],
@@ -125,7 +129,7 @@ export const CustomerDashboardPage: React.FC = () => {
 
   const formatDate = (iso: string | null) => {
     if (!iso) return null;
-    try { return format(parseISO(iso), 'PP'); } catch { return null; }
+    try { return fmtLocalized(iso); } catch { return null; }
   };
 
   return (

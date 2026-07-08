@@ -1,4 +1,5 @@
 const { db } = require('../database/db');
+const logger = require('./logger');
 
 // Default date format settings
 const DEFAULT_FORMAT = {
@@ -19,7 +20,7 @@ async function formatDate(date, language = 'en') {
         try {
           dateConfig = JSON.parse(setting.setting_value);
         } catch (e) {
-          console.warn('Failed to parse date format setting:', e.message);
+          logger.warn('Failed to parse date format setting:', e.message);
           dateConfig = DEFAULT_FORMAT;
         }
       } else {
@@ -46,7 +47,7 @@ async function formatDate(date, language = 'en') {
     
     // Check if date is valid
     if (isNaN(dateObj.getTime())) {
-      console.error('Invalid date provided to formatDate:', date);
+      logger.error('Invalid date provided to formatDate:', date);
       throw new Error('Invalid date');
     }
     
@@ -91,12 +92,33 @@ async function formatDate(date, language = 'en') {
       });
     }
   } catch (error) {
-    console.error('Error formatting date:', error);
+    logger.error('Error formatting date:', error);
     // Fallback to basic formatting
     return date instanceof Date ? date.toLocaleDateString() : new Date(date).toLocaleDateString();
   }
 }
 
+/**
+ * Sync DD.MM.YYYY formatter used by quote / invoice / contract render
+ * contexts. Unlike `formatDate` above, this never consults app_settings
+ * — it's intended for fixed-format use inside templates already rendered
+ * for a specific document type. Three services used to ship a local
+ * copy each; this is the single source.
+ *
+ * - falsy input → empty string (template's {{#if ...}} block hides)
+ * - invalid date → the original value coerced to String (defensive
+ *   passthrough; matches the prior behaviour of the three local copies)
+ */
+function formatShortDate(value) {
+  if (!value) return '';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
+
 module.exports = {
-  formatDate
+  formatDate,
+  formatShortDate,
 };

@@ -81,21 +81,36 @@ class PhotoExportService {
 
   /**
    * Export as plain text filename list
+   *
+   * include_extension defaults to true for backward compatibility with any
+   * direct API consumer. The admin UI sets it to false for the Lightroom
+   * search use case — the gallery JPEGs may correspond to RAW files in the
+   * photographer's catalog, so the search has to match on the stem only.
+   *
+   * The comma separator joins without a space, the form Lightroom's filename
+   * search expects (per issue #623).
    */
   exportAsTxt(photos, options = {}) {
-    const { filename_format = 'original', separator = 'newline' } = options;
+    const {
+      filename_format = 'original',
+      separator = 'newline',
+      include_extension = true,
+    } = options;
 
-    const filenames = photos.map(photo =>
-      filename_format === 'original' ? (photo.original_filename || photo.filename) : photo.filename
-    );
+    const filenames = photos.map(photo => {
+      const name = filename_format === 'original'
+        ? (photo.original_filename || photo.filename)
+        : photo.filename;
+      return include_extension ? name : path.parse(name).name;
+    });
 
     let content;
     switch (separator) {
       case 'comma':
-        content = filenames.join(', ');
+        content = filenames.join(',');
         break;
       case 'semicolon':
-        content = filenames.join('; ');
+        content = filenames.join(';');
         break;
       default:
         content = filenames.join('\n');

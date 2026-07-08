@@ -10,31 +10,38 @@ import {
   Clock,
   Loader2,
   Shield,
+  ShieldCheck,
+  FolderTree,
 } from 'lucide-react';
-import { toast } from 'react-toastify';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Loading } from '../../components/common';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { useMutationWithToast } from '../../hooks';
 import { BackupDashboard } from '../../components/admin/BackupDashboard';
 import { BackupConfiguration } from '../../components/admin/BackupConfiguration';
 import { BackupHistory } from '../../components/admin/BackupHistory';
 import { RestoreWizard } from '../../components/admin/RestoreWizard';
+import { PicpeakExportCard } from '../../components/admin/PicpeakBackupCard';
+import { BackupIntegrityCard } from '../../components/admin/BackupIntegrityCard';
+import { BackupCoverageCard } from '../../components/admin/BackupCoverageCard';
 import { api } from '../../config/api';
 
-type TabId = 'dashboard' | 'configuration' | 'history' | 'restore';
+type TabId = 'dashboard' | 'configuration' | 'history' | 'restore' | 'integrity' | 'coverage';
 
 export const BackupManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
-  const queryClient = useQueryClient();
   const { t } = useTranslation();
+  const { formatDateTime: fmtDateTime } = useLocalizedDate();
 
   const tabs = [
     { id: 'dashboard' as const, label: t('backup.tabs.dashboard'), icon: HardDrive },
     { id: 'configuration' as const, label: t('backup.tabs.configuration'), icon: Settings },
     { id: 'history' as const, label: t('backup.tabs.history'), icon: History },
     { id: 'restore' as const, label: t('backup.tabs.restore'), icon: RefreshCw },
+    { id: 'integrity' as const, label: t('backup.tabs.integrity', 'Integrity'), icon: ShieldCheck },
+    { id: 'coverage' as const, label: t('backup.tabs.coverage', 'Coverage'), icon: FolderTree },
   ];
 
   const { data: backupStatus, isLoading: statusLoading } = useQuery({
@@ -54,34 +61,24 @@ export const BackupManagement: React.FC = () => {
     },
   });
 
-  const manualBackupMutation = useMutation({
+  const manualBackupMutation = useMutationWithToast({
     mutationFn: async () => {
       const response = await api.post('/admin/backup/run');
       return response.data;
     },
-    onSuccess: () => {
-      toast.success(t('backup.messages.backupStarted'));
-      queryClient.invalidateQueries({ queryKey: ['backup-status'] });
-    },
-    onError: (error: any) => {
-      const message = error.response?.data?.error || t('backup.messages.backupFailed');
-      toast.error(message);
-    },
+    successMessage: t('backup.messages.backupStarted'),
+    errorMessage: t('backup.messages.backupFailed'),
+    invalidateKeys: [['backup-status']],
   });
 
-  const updateConfigMutation = useMutation({
+  const updateConfigMutation = useMutationWithToast({
     mutationFn: async (config: unknown) => {
       const response = await api.put('/admin/backup/config', config);
       return response.data;
     },
-    onSuccess: () => {
-      toast.success(t('backup.messages.configUpdated'));
-      queryClient.invalidateQueries({ queryKey: ['backup-config'] });
-    },
-    onError: (error: any) => {
-      const message = error.response?.data?.error || t('backup.messages.configUpdateFailed');
-      toast.error(message);
-    },
+    successMessage: t('backup.messages.configUpdated'),
+    errorMessage: t('backup.messages.configUpdateFailed'),
+    invalidateKeys: [['backup-config']],
   });
 
   if (statusLoading || configLoading) {
@@ -116,7 +113,7 @@ export const BackupManagement: React.FC = () => {
                 <>
                   <CheckCircle className="h-5 w-5 text-green-500" />
                   <span className="text-neutral-700 dark:text-neutral-300">
-                    {t('backup.status.lastBackup')}: {format(new Date(backupStatus.lastBackup.created_at), 'PPp')}
+                    {t('backup.status.lastBackup')}: {fmtDateTime(backupStatus.lastBackup.created_at)}
                   </span>
                 </>
               ) : (
@@ -197,12 +194,15 @@ export const BackupManagement: React.FC = () => {
       {/* Tab Content */}
       <div className="mt-6">
         {activeTab === 'dashboard' && (
-          <BackupDashboard
-            status={backupStatus}
-            config={backupConfig}
-            onRunBackup={() => manualBackupMutation.mutate()}
-            isBackupRunning={backupStatus?.isRunning || manualBackupMutation.isPending}
-          />
+          <div className="space-y-6">
+            <BackupDashboard
+              status={backupStatus}
+              config={backupConfig}
+              onRunBackup={() => manualBackupMutation.mutate()}
+              isBackupRunning={backupStatus?.isRunning || manualBackupMutation.isPending}
+            />
+            <PicpeakExportCard />
+          </div>
         )}
 
         {activeTab === 'configuration' && (
@@ -218,7 +218,15 @@ export const BackupManagement: React.FC = () => {
         )}
 
         {activeTab === 'restore' && (
-          <RestoreWizard />
+          <RestoreWizard onVerifyIntegrity={() => setActiveTab('integrity')} />
+        )}
+
+        {activeTab === 'integrity' && (
+          <BackupIntegrityCard />
+        )}
+
+        {activeTab === 'coverage' && (
+          <BackupCoverageCard />
         )}
       </div>
     </div>

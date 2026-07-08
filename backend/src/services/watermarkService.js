@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
+const logger = require('../utils/logger');
 
 class WatermarkService {
   constructor() {
@@ -44,7 +45,7 @@ class WatermarkService {
         companyName: settingsObj.branding_company_name || 'Photo Gallery'
       };
     } catch (error) {
-      console.error('Error fetching watermark settings:', error);
+      logger.error('Error fetching watermark settings:', error);
       return null;
     }
   }
@@ -138,7 +139,7 @@ class WatermarkService {
 
           watermarkMetadata = { width: targetWidth, height: targetHeight };
         } catch (error) {
-          console.error('Error processing watermark logo:', error);
+          logger.error('Error processing watermark logo:', error);
           watermarkBuffer = null;
         }
       }
@@ -209,7 +210,7 @@ class WatermarkService {
 
       return watermarkedBuffer;
     } catch (error) {
-      console.error('Error applying watermark:', error);
+      logger.error('Error applying watermark:', error);
       // Return original image on error
       return await fs.readFile(imagePath);
     }
@@ -287,7 +288,7 @@ class WatermarkService {
         error: null
       };
     } catch (error) {
-      console.error(`Error generating watermark for photo ${photo.id}:`, error);
+      logger.error(`Error generating watermark for photo ${photo.id}:`, error);
       return {
         success: false,
         watermarkPath: null,
@@ -308,7 +309,7 @@ class WatermarkService {
       await getStorage().delete(watermarkPath);
       return true;
     } catch (error) {
-      console.error('Error deleting watermark file:', error);
+      logger.error('Error deleting watermark file:', error);
       return false;
     }
   }

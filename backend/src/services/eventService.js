@@ -10,11 +10,51 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
+const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
+const { hasColumnCached } = require('../utils/schemaCache');
 const { validatePasswordInContext, getBcryptRounds } = require('../utils/passwordValidation');
 const { buildShareLinkVariants } = require('./shareLinkService');
 const { parseBooleanInput, parseStringInput } = require('../utils/parsers');
 const eventTypeService = require('./eventTypeService');
+const { AppError } = require('../utils/errors');
+
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Coerce + validate the (event_time_start, event_time_end, is_full_day)
+ * triple from a payload. Migration 137 introduced these columns on the
+ * events table. Contract:
+ *   - is_full_day defaults to true when undefined (preserves legacy
+ *     callers that don't know about the new fields).
+ *   - is_full_day=true forces both times to null regardless of what
+ *     was supplied (full-day events never carry HH:MM).
+ *   - is_full_day=false requires both times in HH:MM 24h form, and
+ *     `end > start` lexicographically (string compare is safe for the
+ *     5-char HH:MM format).
+ * Throws AppError 400 on failure. Returns a normalised
+ * { event_time_start, event_time_end, is_full_day } triple suitable
+ * for direct DB write (boolean still coerced via formatBoolean at the
+ * write site).
+ */
+function normaliseEventTimeTriple({ event_time_start, event_time_end, is_full_day }) {
+  const isFullDay = is_full_day === undefined ? true : parseBooleanInput(is_full_day, true);
+  if (isFullDay) {
+    return { event_time_start: null, event_time_end: null, is_full_day: true };
+  }
+  const start = parseStringInput(event_time_start);
+  const end = parseStringInput(event_time_end);
+  if (!start || !TIME_RE.test(start)) {
+    throw new AppError('event_time_start must be HH:MM (24h)', 400, 'EVENT_TIME_INVALID');
+  }
+  if (!end || !TIME_RE.test(end)) {
+    throw new AppError('event_time_end must be HH:MM (24h)', 400, 'EVENT_TIME_INVALID');
+  }
+  if (start >= end) {
+    throw new AppError('event_time_end must be after event_time_start', 400, 'EVENT_TIME_RANGE');
+  }
+  return { event_time_start: start, event_time_end: end, is_full_day: false };
+}
 
 const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
 
@@ -140,11 +180,21 @@ const createEvent = async (eventData) => {
     allow_user_uploads,
     upload_category_id,
     // Photo cap
-    photo_cap
+    photo_cap,
+    // Migration 137 — calendar time fields. Defaults to full-day when
+    // the caller (legacy create-event form) doesn't know about them.
+    event_time_start,
+    event_time_end,
+    is_full_day
   } = eventData;
 
   const requirePassword = parseBooleanInput(require_password, true);
   const customerColumnsAvailable = await hasCustomerContactColumns();
+  // Validate + normalise the calendar time triple up front so we throw
+  // before bcrypt + folder creation if the payload is bad.
+  const timeTriple = normaliseEventTimeTriple({
+    event_time_start, event_time_end, is_full_day,
+  });
 
   // Validate password if required
   if (requirePassword) {
@@ -214,6 +264,15 @@ const createEvent = async (eventData) => {
     photo_cap: photo_cap || null
   };
 
+  // Migration 137 — calendar time fields. Guarded by hasColumnCached so
+  // installs that haven't applied 137 yet skip the columns silently
+  // (per feedback_schema_drift_guards.md / feedback_cache_hasColumn_lookups.md).
+  if (await hasColumnCached('events', 'is_full_day')) {
+    insertData.event_time_start = timeTriple.event_time_start;
+    insertData.event_time_end = timeTriple.event_time_end;
+    insertData.is_full_day = formatBoolean(timeTriple.is_full_day);
+  }
+
   // Remove undefined values
   Object.keys(insertData).forEach(key => {
     if (insertData[key] === undefined) {
@@ -224,6 +283,28 @@ const createEvent = async (eventData) => {
   // Insert into database
   const insertResult = await db('events').insert(insertData).returning('id');
   const eventId = insertResult[0]?.id || insertResult[0];
+
+  // Fire gallery.published — a gallery goes live the moment it's created (active
+  // + share link). Best-effort; emit is fail-closed when the workflows flag is
+  // off and never throws into the create path.
+  try {
+    await require('./workflows').emitWorkflowEvent('gallery.published', {
+      entityType: 'event',
+      entityId: eventId,
+      payload: {
+        eventId,
+        slug,
+        eventName: event_name,
+        eventDate: event_date,
+        customerEmail: customer_email || null,
+        adminEmail: admin_email || null,
+        galleryLink: shareUrl,
+        expiresAt: expires_at,
+      },
+    });
+  } catch (err) {
+    logger.warn('Failed to emit gallery.published workflow event', { eventId, error: err.message });
+  }
 
   return {
     id: eventId,
@@ -360,6 +441,33 @@ const updateEvent = async (id, updates) => {
     delete updates.password;
   }
 
+  // Migration 137 — calendar time fields. We re-normalise the triple
+  // ONLY when at least one of the three fields was supplied; otherwise
+  // leave the row's current values alone. is_full_day=true forces both
+  // times to null regardless of what was supplied.
+  const timeFieldsTouched = (
+    updates.event_time_start !== undefined
+    || updates.event_time_end !== undefined
+    || updates.is_full_day !== undefined
+  );
+  if (timeFieldsTouched) {
+    if (await hasColumnCached('events', 'is_full_day')) {
+      const triple = normaliseEventTimeTriple({
+        event_time_start: updates.event_time_start,
+        event_time_end: updates.event_time_end,
+        is_full_day: updates.is_full_day,
+      });
+      updates.event_time_start = triple.event_time_start;
+      updates.event_time_end = triple.event_time_end;
+      updates.is_full_day = formatBoolean(triple.is_full_day);
+    } else {
+      // Un-migrated install — drop the fields silently.
+      delete updates.event_time_start;
+      delete updates.event_time_end;
+      delete updates.is_full_day;
+    }
+  }
+
   await db('events').where('id', id).update(updates);
 
   return { success: true };
@@ -412,5 +520,9 @@ module.exports = {
   mapEventForApi,
   hasCustomerContactColumns,
   generateUniqueSlug,
-  createEventFolders
+  createEventFolders,
+  // Calendar time triple normaliser (migration 137). Exported so the
+  // inline adminEvents POST/PUT (which doesn't go through createEvent)
+  // can share the validation contract.
+  normaliseEventTimeTriple
 };

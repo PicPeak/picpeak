@@ -1,241 +1,27 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import {
-  ArrowLeft,
-  ExternalLink,
-  Calendar,
-  Download,
-  Archive,
-  Edit2,
-  Save,
-  X,
-  AlertTriangle,
-  Copy,
-  CheckCircle,
-  Upload,
-  Image,
-  Key,
-  Mail,
-  MessageSquare,
-  Lock,
-  Eye,
-  EyeOff,
-  Type,
-  Shield,
-  Monitor,
-  Droplets,
-  MousePointer,
-  Layout,
-  Trash2,
-  Send,
-  ChevronRight,
-  ChevronDown,
-  Folder,
-  FolderOpen,
-  Loader2
-} from 'lucide-react';
-import { parseISO, differenceInDays, isValid } from 'date-fns';
-
-// Helper to safely parse dates that might be strings, Date objects, or timestamps
-const safeParseDate = (dateValue: unknown): Date | null => {
-  if (!dateValue) {
-    return null;
-  }
-  if (dateValue instanceof Date) {
-    return dateValue;
-  }
-  if (typeof dateValue === 'number') {
-    return new Date(dateValue);
-  }
-  if (typeof dateValue === 'string') {
-    const parsed = parseISO(dateValue);
-    return isValid(parsed) ? parsed : new Date(dateValue);
-  }
-  return null;
-};
+import { differenceInDays } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
-import { Button, Input, Card, Loading, MarkdownContent } from '../../components/common';
-import { EventCategoryManager, AdminPhotoGrid, AdminPhotoViewer, PhotoFilters, PasswordResetModal, ThemeCustomizerEnhanced, ThemeDisplay, HeroPhotoSelector, FocalPointPicker, PhotoUploadModal, FeedbackSettings, FeedbackModerationPanel, EventRenameDialog, PhotoFilterPanel, PhotoExportMenu, AdminGuestsList } from '../../components/admin';
-import { CustomerAccountPicker } from '../../components/admin/CustomerAccountPicker';
+import { Loading } from '../../components/common';
+import { PasswordResetModal, PublishGalleryDialog, DuplicateEventDialog, EventRenameDialog, AdminGuestsList } from '../../components/admin';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
-import { api } from '../../config/api';
-import { buildResourceUrl, buildShareLinkUrl } from '../../utils/url';
 import { isGalleryPublic, normalizeRequirePassword } from '../../utils/accessControl';
-import { archiveService } from '../../services/archive.service';
-import { externalMediaService, type ExternalEntry } from '../../services/externalMedia.service';
 import { photosService, AdminPhoto, type PhotoFilters as PhotoFilterParams, type FeedbackFilters } from '../../services/photos.service';
 import { feedbackService, FeedbackSettings as FeedbackSettingsType } from '../../services/feedback.service';
 import { cssTemplatesService, type EnabledTemplate } from '../../services/cssTemplates.service';
 import { ThemeConfig, GALLERY_THEME_PRESETS } from '../../types/theme.types';
-
-const FolderTreeNode: React.FC<{
-  path: string;
-  name: string;
-  depth: number;
-  value: string;
-  onChange: (p: string) => void;
-  expandedPaths: Set<string>;
-  toggleExpand: (p: string) => void;
-}> = ({ path, name, depth, value, onChange, expandedPaths, toggleExpand }) => {
-  const { t } = useTranslation();
-  const isExpanded = expandedPaths.has(path);
-  const isSelected = value === path;
-
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['external-folder-children', path],
-    queryFn: () => externalMediaService.list(path),
-    enabled: isExpanded,
-    staleTime: 30_000
-  });
-
-  const dirs = (data?.entries || []).filter(e => e.type === 'dir');
-  const showEmpty = isExpanded && !isLoading && !isError && dirs.length === 0;
-  const indentStyle = { paddingLeft: depth * 16 + 4 };
-  const childIndentStyle = { paddingLeft: (depth + 1) * 16 + 4 };
-  const rowClass =
-    'flex items-center gap-1 py-1 pr-1 rounded ' +
-    (isSelected
-      ? 'bg-accent-dark/15'
-      : 'hover:bg-neutral-50 dark:hover:bg-neutral-700');
-
-  return (
-    <div>
-      <div className={rowClass} style={indentStyle}>
-        <button
-          type="button"
-          onClick={() => toggleExpand(path)}
-          className="p-0.5 text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200"
-          aria-label={isExpanded ? t('common.collapse', 'Collapse') : t('common.expand', 'Expand')}
-        >
-          {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        </button>
-        <button
-          type="button"
-          onClick={() => onChange(path)}
-          className={
-            'flex items-center gap-1.5 flex-1 min-w-0 text-left text-sm ' +
-            (isSelected
-              ? 'text-accent-dark font-medium'
-              : 'text-neutral-900 dark:text-neutral-100')
-          }
-        >
-          {isExpanded ? (
-            <FolderOpen className="w-4 h-4 flex-shrink-0 text-accent" />
-          ) : (
-            <Folder className="w-4 h-4 flex-shrink-0 text-neutral-500" />
-          )}
-          <span className="truncate">{name}</span>
-        </button>
-      </div>
-      {isExpanded && (
-        <div>
-          {isLoading && (
-            <div
-              className="flex items-center gap-2 py-1 text-xs text-neutral-500 dark:text-neutral-400"
-              style={childIndentStyle}
-            >
-              <Loader2 className="w-3 h-3 animate-spin" />
-              <span>{t('common.loading', 'Loading...')}</span>
-            </div>
-          )}
-          {isError && (
-            <div
-              className="py-1 text-xs text-red-600 dark:text-red-400"
-              style={childIndentStyle}
-            >
-              {t('errors.somethingWentWrong', 'Something went wrong')}
-            </div>
-          )}
-          {showEmpty && (
-            <div
-              className="py-1 text-xs italic text-neutral-500 dark:text-neutral-400"
-              style={childIndentStyle}
-            >
-              {t('events.externalFolderEmpty', 'No subfolders')}
-            </div>
-          )}
-          {dirs.map(d => {
-            const childPath = path ? `${path}/${d.name}` : d.name;
-            return (
-              <FolderTreeNode
-                key={childPath}
-                path={childPath}
-                name={d.name}
-                depth={depth + 1}
-                value={value}
-                onChange={onChange}
-                expandedPaths={expandedPaths}
-                toggleExpand={toggleExpand}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-};
-
-const ExternalFolderPicker: React.FC<{ value: string; onChange: (p: string) => void }> = ({ value, onChange }) => {
-  const { t } = useTranslation();
-
-  // Seed expanded paths so the current selection (and the synthetic root) is visible on mount.
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => {
-    const set = new Set<string>(['']);
-    if (value) {
-      const parts = value.split('/').filter(Boolean);
-      let acc = '';
-      for (const seg of parts) {
-        acc = acc ? `${acc}/${seg}` : seg;
-        set.add(acc);
-      }
-    }
-    return set;
-  });
-
-  const toggleExpand = (p: string) => {
-    setExpandedPaths(prev => {
-      const next = new Set(prev);
-      if (next.has(p)) next.delete(p);
-      else next.add(p);
-      return next;
-    });
-  };
-
-  return (
-    <div className="mt-2 border border-neutral-200 dark:border-neutral-700 rounded-lg p-2">
-      <div className="flex items-center justify-between gap-2 mb-2 px-1">
-        <div className="text-xs text-neutral-600 dark:text-neutral-400 truncate">
-          {t('common.selected', 'Selected')}: /external-media/{value}
-        </div>
-        {value && (
-          <button
-            type="button"
-            className="text-xs underline text-neutral-700 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-neutral-100 flex-shrink-0"
-            onClick={() => onChange('')}
-          >
-            {t('events.clearSelection', 'Clear')}
-          </button>
-        )}
-      </div>
-      <div className="max-h-80 overflow-auto [color-scheme:light] dark:[color-scheme:dark]">
-        <FolderTreeNode
-          path=""
-          name="/external-media"
-          depth={0}
-          value={value}
-          onChange={onChange}
-          expandedPaths={expandedPaths}
-          toggleExpand={toggleExpand}
-        />
-      </div>
-    </div>
-  );
-};
+import { safeParseDate } from './event-details/utils';
+import { INITIAL_EDIT_FORM, type EditFormState, type EventDetailsTab } from './event-details/types';
+import { EventDetailsHeader } from './event-details/EventDetailsHeader';
+import { EventTabs } from './event-details/EventTabs';
+import { OverviewTab } from './event-details/OverviewTab';
+import { PhotosTab } from './event-details/PhotosTab';
+import { CategoriesTab } from './event-details/CategoriesTab';
 
 export const EventDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -243,107 +29,16 @@ export const EventDetailsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
-  
+
   // Validate ID parameter
   React.useEffect(() => {
     if (!id || isNaN(parseInt(id))) {
       navigate('/admin/events');
     }
   }, [id, navigate]);
-  
-  type EditFormState = {
-    welcome_message: string;
-    color_theme: string;
-    css_template_id: number | null;
-    expires_at: string;
-    allow_user_uploads: boolean;
-    upload_category_id: number | null;
-    hero_photo_id: number | null;
-    customer_name: string;
-    customer_email: string;
-    customer_phone: string;
-    source_mode: 'managed' | 'reference';
-    external_path: string;
-    require_password: boolean;
-    new_password: string;
-    confirm_new_password: string;
-    // Download protection settings
-    protection_level: 'basic' | 'standard' | 'enhanced' | 'maximum';
-    disable_right_click: boolean;
-    allow_downloads: boolean;
-    watermark_downloads: boolean;
-    allow_presigned_download: boolean;
-    enable_devtools_protection: boolean;
-    use_canvas_rendering: boolean;
-    // Hero logo settings
-    hero_logo_visible: boolean;
-    hero_logo_size: 'small' | 'medium' | 'large' | 'xlarge';
-    hero_logo_position: 'top' | 'center' | 'bottom';
-    // Hero image anchor position (#162) – keyword or "X% Y%" focal point
-    hero_image_anchor: string;
-    // Photo cap
-    photo_cap: number;
-    // Default photo sort
-    default_photo_sort: string;
-    // Per-event promotional override (#440). Three-way mode:
-    //   inherit → use the global branding_promo_markdown
-    //   custom  → render this event's promo_markdown
-    //   off     → no promo for this event regardless of global
-    promo_mode: 'inherit' | 'custom' | 'off';
-    promo_markdown: string;
-    // Customer accounts assigned to this event (#354). Hydrated from
-    // the GET /admin/events/:id response and sent back as a flat id
-    // array on save.
-    customer_accounts: Array<{ id: number; email: string; displayName: string | null }>;
-    // Per-event opt-in for hero photo as social-share preview (#474).
-    og_image_share_enabled: boolean;
-  };
 
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState<EditFormState>({
-    welcome_message: '',
-    color_theme: '',
-    css_template_id: null,
-    expires_at: '',
-    allow_user_uploads: false,
-    upload_category_id: null,
-    hero_photo_id: null,
-    customer_name: '',
-    customer_email: '',
-    customer_phone: '',
-    source_mode: 'managed',
-    external_path: '',
-    require_password: true,
-    new_password: '',
-    confirm_new_password: '',
-    // Download protection settings
-    protection_level: 'standard',
-    disable_right_click: true,
-    allow_downloads: true,
-    watermark_downloads: false,
-    allow_presigned_download: false,
-    enable_devtools_protection: true,
-    use_canvas_rendering: false,
-    // Hero logo settings
-    hero_logo_visible: true,
-    hero_logo_size: 'medium',
-    hero_logo_position: 'top',
-    // Hero image anchor position (#162)
-    hero_image_anchor: 'center',
-    // Photo cap
-    photo_cap: 0,
-    // Default photo sort
-    default_photo_sort: 'upload_date_desc',
-    // Per-event promotional override (#440)
-    promo_mode: 'inherit',
-    promo_markdown: '',
-    // Customer accounts (#354) — hydrated from event response.
-    customer_accounts: [],
-    // Per-event social-share opt-in (#474). Default false everywhere
-    // so a freshly opened editor never displays "on" against the saved
-    // (off) state.
-    og_image_share_enabled: false,
-  });
+  const [editForm, setEditForm] = useState<EditFormState>(INITIAL_EDIT_FORM);
   const [feedbackSettings, setFeedbackSettings] = useState<FeedbackSettingsType>({
     feedback_enabled: false,
     allow_ratings: true,
@@ -357,19 +52,12 @@ export const EventDetailsPage: React.FC = () => {
     rate_limit_window_minutes: 15,
     rate_limit_max_requests: 10,
   });
-  const [copiedLink, setCopiedLink] = useState(false);
-  const [copiedClientLink, setCopiedClientLink] = useState(false);
-  const [clientPin, setClientPin] = useState('');
-  const [showPhotoUpload, setShowPhotoUpload] = useState(false);
-  const [showExternalImport, setShowExternalImport] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'photos' | 'categories' | 'guests'>('overview');
-  const [externalPath, setExternalPath] = useState<string>('');
-  const [importing, setImporting] = useState<boolean>(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<{ photo: AdminPhoto; index: number } | null>(null);
+  const [activeTab, setActiveTab] = useState<EventDetailsTab>('overview');
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
-  const [logoUploading, setLogoUploading] = useState(false);
+  const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig | null>(null);
   const [currentPresetName, setCurrentPresetName] = useState<string>('default');
   // Tracks whether the admin actually interacted with the theme picker
@@ -405,7 +93,6 @@ export const EventDetailsPage: React.FC = () => {
     hasComments: false,
     logic: 'AND'
   });
-  const [selectedPhotoIds, setSelectedPhotoIds] = useState<number[]>([]);
 
   // Fetch event details
   const { data: event, isLoading: eventLoading, refetch: refetchEvent } = useQuery({
@@ -529,16 +216,41 @@ export const EventDetailsPage: React.FC = () => {
     },
   });
 
-  // Publish mutation (Draft mode)
+  // Publish mutation (Draft mode). Accepts the admin-typed password so the
+  // gallery_created email can carry the real plaintext (#627).
   const publishMutation = useMutation({
-    mutationFn: () => eventsService.publishEvent(parseInt(id!)),
+    mutationFn: (password?: string) =>
+      eventsService.publishEvent(parseInt(id!), password ? { password } : undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
       queryClient.invalidateQueries({ queryKey: ['admin-events'] });
       toast.success(t('events.publishSuccess'));
+      setShowPublishDialog(false);
     },
     onError: () => {
       toast.error(t('errors.somethingWentWrong'));
+    },
+  });
+
+  // Duplicate mutation (#626). Backend creates a draft inheriting branding +
+  // behaviour + categories from the source; we navigate to the new event so
+  // the admin can finish configuring + publish.
+  const duplicateMutation = useMutation({
+    mutationFn: (data: {
+      event_name: string;
+      event_date?: string;
+      customer_name?: string;
+      customer_email?: string;
+    }) => eventsService.duplicateEvent(parseInt(id!), data),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-events'] });
+      toast.success(t('events.duplicateDialog.successToast', 'Gallery duplicated.'));
+      setShowDuplicateDialog(false);
+      navigate(`/admin/events/${result.id}`);
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.errors?.[0]?.msg || err?.response?.data?.error;
+      toast.error(msg || t('errors.somethingWentWrong'));
     },
   });
 
@@ -594,9 +306,11 @@ export const EventDetailsPage: React.FC = () => {
       allow_presigned_download: (event as { allow_presigned_download?: boolean }).allow_presigned_download ?? false,
       enable_devtools_protection: event.enable_devtools_protection ?? true,
       use_canvas_rendering: event.use_canvas_rendering ?? false,
-      // Load hero logo settings from event
-      hero_logo_visible: event.hero_logo_visible ?? true,
-      hero_logo_size: event.hero_logo_size || 'medium',
+      // Load hero logo settings from event. Preserve null = "inherit global"
+      // (#756) — don't collapse it to true, or saving would snapshot an override.
+      hero_logo_visible: event.hero_logo_visible ?? null,
+      // Preserve null = "inherit global size" (#756) — don't collapse to medium.
+      hero_logo_size: event.hero_logo_size ?? null,
       hero_logo_position: event.hero_logo_position || 'top',
       // Hero image anchor position (#162)
       hero_image_anchor: event.hero_image_anchor || 'center',
@@ -619,12 +333,12 @@ export const EventDetailsPage: React.FC = () => {
     });
 
     setShowNewPassword(false);
-    
+
     // Set feedback settings if available
     if (eventFeedbackSettings) {
       setFeedbackSettings(eventFeedbackSettings);
     }
-    
+
     // Parse theme configuration
     if (event.color_theme) {
       try {
@@ -664,38 +378,6 @@ export const EventDetailsPage: React.FC = () => {
     setThemeChanged(false);
 
     setIsEditing(true);
-  };
-
-  const handleEventLogoUpload = async (file: File) => {
-    if (!id) return;
-    setLogoUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('logo', file);
-      await api.post(`/admin/events/${id}/logo`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      toast.success(t('events.eventLogoUploaded', 'Event logo uploaded successfully'));
-      queryClient.invalidateQueries({ queryKey: ['event', id] });
-    } catch (error: any) {
-      toast.error(error?.response?.data?.error || t('events.eventLogoUploadFailed', 'Failed to upload event logo'));
-    } finally {
-      setLogoUploading(false);
-    }
-  };
-
-  const handleEventLogoRemove = async () => {
-    if (!id) return;
-    setLogoUploading(true);
-    try {
-      await api.delete(`/admin/events/${id}/logo`);
-      toast.success(t('events.eventLogoRemoved', 'Event logo removed successfully'));
-      queryClient.invalidateQueries({ queryKey: ['event', id] });
-    } catch (error: any) {
-      toast.error(error?.response?.data?.error || t('events.eventLogoRemoveFailed', 'Failed to remove event logo'));
-    } finally {
-      setLogoUploading(false);
-    }
   };
 
   const handleSaveEdit = async () => {
@@ -776,7 +458,7 @@ export const EventDetailsPage: React.FC = () => {
       // against existing assignments in one transaction.
       customer_account_ids: editForm.customer_accounts.map((c) => c.id),
     };
-    
+
     // Only include fields that have defined values
     if (editForm.welcome_message !== undefined && editForm.welcome_message !== null) {
       updateData.welcome_message = editForm.welcome_message;
@@ -817,19 +499,19 @@ export const EventDetailsPage: React.FC = () => {
     if (editForm.new_password) {
       updateData.password = editForm.new_password;
     }
-    
+
     // Remove any keys with undefined values
     Object.keys(updateData).forEach(key => {
       if (updateData[key] === undefined) {
         delete updateData[key];
       }
     });
-    
+
     // Event update with validation
-    
+
     // Update event details
     updateMutation.mutate(updateData);
-    
+
     // Update feedback settings separately
     try {
       await feedbackService.updateEventFeedbackSettings(id!, feedbackSettings);
@@ -838,1640 +520,90 @@ export const EventDetailsPage: React.FC = () => {
     }
   };
 
-  const handleCopyLink = async () => {
-    try {
-      // Check if share_link exists
-      if (!event.share_link) {
-        toast.error(t('errors.noShareLink', 'No share link available'));
-        return;
-      }
-
-      const shareUrl = buildShareLinkUrl(event.share_link);
-
-      // Try modern clipboard API first
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(shareUrl);
-      } else {
-        // Fallback for non-HTTPS contexts or older browsers
-        const textArea = document.createElement('textarea');
-        textArea.value = shareUrl;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-999999px';
-        textArea.style.top = '-999999px';
-        document.body.appendChild(textArea);
-        textArea.focus();
-        textArea.select();
-        const successful = document.execCommand('copy');
-        document.body.removeChild(textArea);
-        if (!successful) {
-          throw new Error('Copy failed');
-        }
-      }
-      
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
-      toast.success(t('toast.linkCopied'));
-    } catch (err) {
-      console.error('Copy failed:', err);
-      toast.error(t('errors.copyFailed', 'Failed to copy link. Please copy manually.'));
-    }
-  };
-
-
   return (
     <div>
-      {/* Page Header */}
-      <div className="mb-6">
-        <Button
-          variant="outline"
-          size="sm"
-          leftIcon={<ArrowLeft className="w-4 h-4" />}
-          onClick={() => navigate('/admin/events')}
-          className="mb-4"
-        >
-          {t('events.backToEvents')}
-        </Button>
-        
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{event.event_name}</h1>
-            <div className="flex items-center gap-4 mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-              {event.event_date && (
-                <span className="flex items-center">
-                  <Calendar className="w-4 h-4 mr-1" />
-                  {format(safeParseDate(event.event_date)!, 'PPP')}
-                </span>
-              )}
-              <span className="capitalize">{event.event_type}</span>
-              <span
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                  isGalleryPublic(event.require_password)
-                    ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
-                    : 'bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
-                }`}
-              >
-                {isGalleryPublic(event.require_password) ? t('events.publicAccess', 'Public access') : t('events.passwordProtected', 'Password protected')}
-              </span>
-              {event.is_draft ? (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300">
-                  {t('events.draft')}
-                </span>
-              ) : null}
-              {event.is_archived ? (
-                <span className="text-neutral-500 dark:text-neutral-400 flex items-center">
-                  <Archive className="w-4 h-4 mr-1" />
-                  {t('events.archived')}
-                </span>
-              ) : null}
-            </div>
-          </div>
-          
-          <div className="flex gap-2 items-center">
-            {!event.is_archived && (
-              <>
-                {isEditing ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      leftIcon={<X className="w-4 h-4" />}
-                      onClick={() => setIsEditing(false)}
-                    >
-                      {t('common.cancel')}
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      leftIcon={<Save className="w-4 h-4" />}
-                      onClick={handleSaveEdit}
-                      isLoading={updateMutation.isPending}
-                    >
-                      {t('events.saveChanges')}
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      leftIcon={<Edit2 className="w-4 h-4" />}
-                      onClick={handleStartEdit}
-                    >
-                      {t('common.edit')}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      leftIcon={<Type className="w-4 h-4" />}
-                      onClick={() => setShowRenameDialog(true)}
-                    >
-                      {t('events.rename.button', 'Rename')}
-                    </Button>
-                    {feedbackSettings?.feedback_enabled && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        leftIcon={<MessageSquare className="w-4 h-4" />}
-                        onClick={() => navigate(`/admin/events/${id}/feedback`)}
-                      >
-                        {t('feedback.manage', 'Manage Feedback')}
-                      </Button>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-            {event.share_link && !isEditing && (
-              <a
-                href={event.is_draft
-                  ? `${buildShareLinkUrl(event.share_link)}${buildShareLinkUrl(event.share_link).includes('?') ? '&' : '?'}preview=${eventsService.getPreviewToken() || ''}`
-                  : buildShareLinkUrl(event.share_link)
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-accent hover:opacity-80 border border-accent-dark rounded-lg hover:bg-accent-dark/15 transition-colors"
-              >
-                <ExternalLink className="w-4 h-4" />
-                {t('events.viewGallery')}
-              </a>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Draft Banner */}
-      {event.is_draft && !event.is_archived && (
-        <Card className="p-4 mb-6 border-2 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 flex-shrink-0 text-yellow-600 dark:text-yellow-400" />
-            <div className="flex-1">
-              <p className="font-medium text-yellow-900 dark:text-yellow-200">
-                {t('events.draft')}
-              </p>
-              <p className="text-sm mt-1 text-yellow-700 dark:text-yellow-300">
-                {t('events.draftBanner')}
-              </p>
-            </div>
-            <Button
-              variant="primary"
-              size="sm"
-              leftIcon={<Send className="w-4 h-4" />}
-              onClick={() => {
-                if (confirm(t('events.publishConfirm'))) {
-                  publishMutation.mutate();
-                }
-              }}
-              isLoading={publishMutation.isPending}
-            >
-              {t('events.publishAndNotify')}
-            </Button>
-          </div>
-        </Card>
-      )}
-
-      {/* Expiration Warning */}
-      {!event.is_archived && (isExpired || isExpiring) && (
-        <Card className={`p-4 mb-6 border-2 ${isExpired ? 'border-red-500 bg-red-50' : 'border-orange-500 bg-orange-50'}`}>
-          <div className="flex items-start gap-3">
-            <AlertTriangle className={`w-5 h-5 flex-shrink-0 ${isExpired ? 'text-red-600' : 'text-orange-600'}`} />
-            <div className="flex-1">
-              <p className={`font-medium ${isExpired ? 'text-red-900' : 'text-orange-900'}`}>
-                {isExpired 
-                  ? t('events.eventExpiredMessage')
-                  : t('events.eventExpiresIn', { days: daysUntilExpiration })
-                }
-              </p>
-              <p className={`text-sm mt-1 ${isExpired ? 'text-red-700' : 'text-orange-700'}`}>
-                {isExpired
-                  ? t('events.guestsCannotAccessGallery')
-                  : t('events.warningEmailsHaveBeenSent')}
-              </p>
-            </div>
-            {!isExpired && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (confirm(t('events.extendExpiration', { days: 7 }) + '?')) {
-                    extendMutation.mutate(7);
-                  }
-                }}
-              >
-                {t('events.extendSevenDays')}
-              </Button>
-            )}
-          </div>
-        </Card>
-      )}
+      {/* Page Header + Draft Banner + Expiration Warning */}
+      <EventDetailsHeader
+        event={event}
+        id={id}
+        isEditing={isEditing}
+        setIsEditing={setIsEditing}
+        handleStartEdit={handleStartEdit}
+        handleSaveEdit={handleSaveEdit}
+        isSaving={updateMutation.isPending}
+        feedbackSettings={feedbackSettings}
+        setShowRenameDialog={setShowRenameDialog}
+        setShowPublishDialog={setShowPublishDialog}
+        isPublishing={publishMutation.isPending}
+        onExtendExpiration={(days) => extendMutation.mutate(days)}
+        daysUntilExpiration={daysUntilExpiration}
+        isExpired={isExpired}
+        isExpiring={isExpiring}
+      />
 
       {/* Tabs */}
-      <div className="mb-6 border-b border-neutral-200 dark:border-neutral-700">
-        <nav className="-mb-px flex space-x-8">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'overview'
-                ? 'border-accent text-accent'
-                : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 hover:border-neutral-300 dark:hover:border-neutral-600'
-            }`}
-          >
-            {t('events.overview')}
-          </button>
-          <button
-            onClick={() => setActiveTab('photos')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-              activeTab === 'photos'
-                ? 'border-accent text-accent'
-                : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 hover:border-neutral-300 dark:hover:border-neutral-600'
-            }`}
-          >
-            <Image className="w-4 h-4" />
-            <span>{t('events.photos')}</span>
-            {event.photo_count !== undefined && event.photo_count > 0 && (
-              <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-full">
-                {event.photo_count}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('categories')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'categories'
-                ? 'border-accent text-accent'
-                : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 hover:border-neutral-300 dark:hover:border-neutral-600'
-            }`}
-          >
-            {t('events.categories')}
-          </button>
-          {eventFeedbackSettings?.identity_mode === 'guest' && (
-            <button
-              onClick={() => setActiveTab('guests')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'guests'
-                  ? 'border-accent text-accent'
-                  : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300 hover:border-neutral-300 dark:hover:border-neutral-600'
-              }`}
-            >
-              {t('admin.events.tabs.guests', 'Guests')}
-            </button>
-          )}
-        </nav>
-      </div>
+      <EventTabs
+        event={event}
+        eventFeedbackSettings={eventFeedbackSettings}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+      />
 
       {/* Tab Content */}
       {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Left Column - Main Details */}
-        <div className="space-y-6">
-          {/* Event Information */}
-          <Card padding="md">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('events.eventInformation')}</h2>
-            
-            {isEditing ? (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                    {t('events.welcomeMessageLabel')}
-                  </label>
-                  <textarea
-                    value={editForm.welcome_message}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, welcome_message: e.target.value }))}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
-                    rows={3}
-                    placeholder={t('events.welcomeMessage')}
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                    {t('events.hostName')}
-                  </label>
-                  <Input
-                    type="text"
-                    value={editForm.customer_name}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, customer_name: e.target.value }))}
-                    placeholder={t('events.hostNamePlaceholder')}
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                    {t('events.hostEmail')}
-                  </label>
-                  <Input
-                    type="email"
-                    value={editForm.customer_email}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, customer_email: e.target.value }))}
-                    placeholder={t('events.hostEmailPlaceholder')}
-                  />
-                </div>
-
-                {phoneFieldEnabled && (
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                      {t('events.customerPhone', 'Customer Phone')} ({t('common.optional')})
-                    </label>
-                    <Input
-                      type="tel"
-                      value={editForm.customer_phone}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, customer_phone: e.target.value }))}
-                      placeholder={t('events.customerPhonePlaceholder', '+1 555 555 1234')}
-                    />
-                  </div>
-                )}
-
-                {/* Customer accounts (#354). Picker self-hides when the
-                    customerPortal feature flag is off. */}
-                <CustomerAccountPicker
-                  value={editForm.customer_accounts}
-                  onChange={(next) => setEditForm((prev) => ({ ...prev, customer_accounts: next }))}
-                />
-
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                    {t('events.expirationDate')}
-                  </label>
-                  <Input
-                    type="date"
-                    value={editForm.expires_at}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, expires_at: e.target.value }))}
-                    min={format(new Date(), 'yyyy-MM-dd')}
-                  />
-                </div>
-                
-                {/* Hero Photo Selection */}
-                <HeroPhotoSelector
-                  photos={photos || []}
-                  currentHeroPhotoId={editForm.hero_photo_id}
-                  onSelect={(photoId) => setEditForm(prev => ({ ...prev, hero_photo_id: photoId }))}
-                  isEditing={isEditing}
-                />
-
-                {/* Per-event social-share opt-in (#474). Toggle is
-                    disabled when no hero photo is picked — there's
-                    nothing to surface as the cover. The help text
-                    deliberately spells out the public-by-design
-                    consequence so an admin doesn't flip this on for
-                    a sensitive gallery without realising what they're
-                    sharing with link-preview crawlers. */}
-                <div className="ml-6 mt-3">
-                  <label className={`flex items-start gap-2 cursor-pointer ${editForm.hero_photo_id ? '' : 'opacity-60 cursor-not-allowed'}`}>
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
-                      checked={editForm.og_image_share_enabled === true}
-                      disabled={!editForm.hero_photo_id}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, og_image_share_enabled: e.target.checked }))}
-                    />
-                    <span className="text-sm">
-                      <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                        {t('events.ogShare.title', 'Use hero photo as social-share preview')}
-                      </span>
-                      <span className="block text-xs text-neutral-600 dark:text-neutral-400 mt-0.5">
-                        {editForm.hero_photo_id
-                          ? t('events.ogShare.help', 'When this gallery URL is shared on WhatsApp, Facebook, Slack, etc., the link preview will show the hero photo above. The thumbnail is fetched unauthenticated by link-preview crawlers — anyone with the URL effectively makes this image public. Off by default; pick a hero you are comfortable surfacing publicly before enabling.')
-                          : t('events.ogShare.heroRequired', 'Pick a hero photo above first — this option uses it as the WhatsApp / Facebook / Slack preview image.')}
-                      </span>
-                    </span>
-                  </label>
-                </div>
-
-                {/* Hero Image Focal Point Picker (#162) */}
-                {editForm.hero_photo_id && (() => {
-                  const heroPhoto = (photos || []).find((p) => p.id === editForm.hero_photo_id);
-                  const heroImageUrl = heroPhoto?.thumbnail_url || heroPhoto?.url;
-                  if (!heroImageUrl) return null;
-                  return (
-                    <div className="ml-6 mt-2">
-                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                        {t('events.heroImageAnchor', 'Hero Image Crop Position')}
-                      </label>
-                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
-                        {t('events.heroImageAnchorDescription', 'Click on the image to set the focal point for cropping.')}
-                      </p>
-                      <FocalPointPicker
-                        imageUrl={heroImageUrl}
-                        currentValue={editForm.hero_image_anchor}
-                        onChange={(value) => setEditForm(prev => ({ ...prev, hero_image_anchor: value }))}
-                        slug={event.slug}
-                      />
-                    </div>
-                  );
-                })()}
-
-                <div>
-                  <label className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      className="mt-1 w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                      checked={editForm.require_password}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setEditForm(prev => ({
-                          ...prev,
-                          require_password: checked,
-                          new_password: checked ? prev.new_password : '',
-                          confirm_new_password: checked ? prev.confirm_new_password : '',
-                        }));
-                        if (!checked) {
-                          setShowNewPassword(false);
-                        }
-                      }}
-                    />
-                    <div>
-                      <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('events.requirePasswordToggle')}</span>
-                      <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                        {t('events.requirePasswordToggleHelp', 'Disable this if you want to share the gallery without a password. Anyone with the link will be able to view the photos.')}
-                      </p>
-                    </div>
-                  </label>
-
-                  {!editForm.require_password && (
-                    <div className="mt-2 rounded-md border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/30 p-3 text-xs text-orange-800 dark:text-orange-300">
-                      {t('events.publicGalleryWarning', 'Public galleries are accessible to anyone with the link. Consider enabling download watermarks and monitoring activity.')} 
-                    </div>
-                  )}
-                </div>
-
-                {editForm.require_password && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                        {t('events.newPasswordLabel', 'New gallery password')}
-                      </label>
-                      <div className="relative">
-                        <Input
-                          type={showNewPassword ? 'text' : 'password'}
-                          value={editForm.new_password}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, new_password: e.target.value }))}
-                          placeholder={t('events.enterPassword')}
-                          leftIcon={<Lock className="w-5 h-5 text-neutral-400" />}
-                          className="pr-10"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowNewPassword(!showNewPassword)}
-                          className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                        >
-                          {showNewPassword ? (
-                            <EyeOff className="w-5 h-5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300" />
-                          ) : (
-                            <Eye className="w-5 h-5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                        {t('events.confirmPassword')}
-                      </label>
-                      <Input
-                        type={showNewPassword ? 'text' : 'password'}
-                        value={editForm.confirm_new_password}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, confirm_new_password: e.target.value }))}
-                        placeholder={t('events.confirmPasswordPlaceholder')}
-                        leftIcon={<Lock className="w-5 h-5 text-neutral-400" />}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                    {t('events.sourceMode', 'Source Mode')}
-                  </label>
-                  <select
-                    value={editForm.source_mode}
-                    onChange={(e) => {
-                      const mode = e.target.value as 'managed' | 'reference';
-                      setEditForm(prev => ({
-                        ...prev,
-                        source_mode: mode,
-                        external_path: mode === 'reference'
-                          ? (prev.external_path || event.external_path || '')
-                          : ''
-                      }));
-                    }}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
-                  >
-                    <option value="managed">{t('events.sourceModeManaged', 'Managed (upload to PicPeak)')}</option>
-                    <option value="reference">{t('events.sourceModeReference', 'Reference external folder')}</option>
-                  </select>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                    {t('events.sourceModeHelp', 'Use managed mode for direct uploads or reference an external folder that is mounted at /external-media in Docker.')}
-                  </p>
-                </div>
-
-                {editForm.source_mode === 'reference' && (
-                  <div className="mt-3">
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                      {t('events.externalFolder', 'External Folder')}
-                    </label>
-                    <ExternalFolderPicker
-                      value={editForm.external_path || ''}
-                      onChange={(folder) => setEditForm(prev => ({ ...prev, external_path: folder }))}
-                    />
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                      {t('events.externalFolderHint', 'These folders come from the /external-media mount inside the container. Ensure it is accessible to the backend process.')}
-                    </p>
-                  </div>
-                )}
-                
-                {/* Photo Cap */}
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                    {t('events.photoCap', 'Photo Limit')}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={editForm.photo_cap}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, photo_cap: parseInt(e.target.value) || 0 }))}
-                      min={0}
-                      className="w-24 px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
-                    />
-                    <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                      {t('events.photoCapHelp', 'Maximum number of photos allowed. 0 = unlimited')}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Default Photo Sort */}
-                <div>
-                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                    {t('photoSort.defaultSort', 'Default Photo Sort')}
-                  </label>
-                  <select
-                    value={editForm.default_photo_sort}
-                    onChange={(e) => setEditForm(prev => ({ ...prev, default_photo_sort: e.target.value }))}
-                    className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
-                  >
-                    <option value="upload_date_desc">{t('photoSort.uploadDateNewest', 'Upload Date (Newest First)')}</option>
-                    <option value="upload_date_asc">{t('photoSort.uploadDateOldest', 'Upload Date (Oldest First)')}</option>
-                    <option value="capture_date_desc">{t('photoSort.captureDateNewest', 'Date Taken (Newest First)')}</option>
-                    <option value="capture_date_asc">{t('photoSort.captureDateOldest', 'Date Taken (Oldest First)')}</option>
-                    <option value="filename_asc">{t('photoSort.filenameAZ', 'Filename (A-Z)')}</option>
-                    <option value="filename_desc">{t('photoSort.filenameZA', 'Filename (Z-A)')}</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={editForm.allow_user_uploads}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, allow_user_uploads: e.target.checked }))}
-                      className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                    />
-                    <span className="ml-2 text-sm text-neutral-700 dark:text-neutral-300">{t('events.allowUserUploads')}</span>
-                  </label>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 ml-6">
-                    {t('events.allowUserUploadsHelp')}
-                  </p>
-                </div>
-                
-                {editForm.allow_user_uploads && (
-                  <div>
-                    <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                      {t('events.uploadCategory')}
-                    </label>
-                    <select
-                      value={editForm.upload_category_id || ''}
-                      onChange={(e) => setEditForm(prev => ({
-                        ...prev,
-                        upload_category_id: e.target.value ? parseInt(e.target.value) : null
-                      }))}
-                      className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
-                    >
-                      <option value="">{t('events.selectCategory')}</option>
-                      {categories?.map(category => (
-                        <option key={category.id} value={category.id}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                      {t('events.uploadCategoryHelp')}
-                    </p>
-                  </div>
-                )}
-                
-                {/* Feedback Settings */}
-                <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
-                  <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('feedback.settings.title', 'Guest Feedback Settings')}</h3>
-                  <FeedbackSettings
-                    settings={feedbackSettings}
-                    onChange={setFeedbackSettings}
-                  />
-                </div>
-
-                {/* Promotional Banner Override (#440) — three-way: inherit / custom / off */}
-                <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
-                  <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
-                    {t('events.promoBanner.title', 'Promotional Banner')}
-                  </h3>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
-                    {t('events.promoBanner.help', 'Choose how this gallery handles the promotional banner. "Inherit" uses your global default; "Custom" overrides it for this event; "Off" hides it entirely.')}
-                  </p>
-                  <div className="space-y-2">
-                    {(['inherit', 'custom', 'off'] as const).map((mode) => (
-                      <label key={mode} className="flex items-center">
-                        <input
-                          type="radio"
-                          name="promo_mode"
-                          value={mode}
-                          checked={editForm.promo_mode === mode}
-                          onChange={() => setEditForm(prev => ({ ...prev, promo_mode: mode }))}
-                          className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 focus:ring-primary-500"
-                        />
-                        <span className="ml-2 text-sm text-neutral-700 dark:text-neutral-300">
-                          {t(`events.promoBanner.mode_${mode}`, mode === 'inherit' ? 'Inherit global default' : mode === 'custom' ? 'Custom override for this event' : 'Off (hide for this event)')}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                  {editForm.promo_mode === 'custom' && (
-                    <div className="mt-3 space-y-2">
-                      <textarea
-                        value={editForm.promo_markdown}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, promo_markdown: e.target.value }))}
-                        rows={5}
-                        placeholder={t('events.promoBanner.placeholder', 'Markdown content (e.g. **Special offer:** [book your next session](https://example.com))')}
-                        className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark font-mono text-sm"
-                      />
-                      {editForm.promo_markdown.trim() && (
-                        <div className="border border-neutral-200 dark:border-neutral-700 rounded-lg p-3 bg-neutral-50 dark:bg-neutral-900">
-                          <p className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400 mb-2">
-                            {t('events.promoBanner.preview', 'Preview')}
-                          </p>
-                          <MarkdownContent source={editForm.promo_markdown} className="text-sm text-neutral-800 dark:text-neutral-200 prose-sm prose-a:text-primary-600 dark:prose-a:text-primary-400" />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Download Protection Settings */}
-                <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
-                  <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3 flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-accent" />
-                    {t('events.downloadProtection', 'Download Protection')}
-                  </h3>
-
-                  <div className="space-y-3">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={editForm.allow_downloads}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, allow_downloads: e.target.checked }))}
-                        className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                      />
-                      <Download className="w-4 h-4 ml-2 mr-1 text-neutral-500 dark:text-neutral-400" />
-                      <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('events.allowDownloads', 'Allow photo downloads')}</span>
-                    </label>
-
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={editForm.disable_right_click}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, disable_right_click: e.target.checked }))}
-                        className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                      />
-                      <MousePointer className="w-4 h-4 ml-2 mr-1 text-neutral-500 dark:text-neutral-400" />
-                      <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('events.disableRightClick', 'Block right-click menu')}</span>
-                    </label>
-
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={editForm.watermark_downloads}
-                        onChange={(e) => setEditForm(prev => ({
-                          ...prev,
-                          watermark_downloads: e.target.checked,
-                          // Watermarking and presigned URLs are mutually
-                          // exclusive — presigned URLs serve raw bytes from
-                          // S3 without going through the watermark pipeline.
-                          allow_presigned_download: e.target.checked ? false : prev.allow_presigned_download,
-                        }))}
-                        className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                      />
-                      <Droplets className="w-4 h-4 ml-2 mr-1 text-neutral-500 dark:text-neutral-400" />
-                      <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('events.watermarkDownloads', 'Add watermark to downloads')}</span>
-                    </label>
-
-                    <label
-                      className={`flex items-center ${editForm.watermark_downloads ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      title={editForm.watermark_downloads
-                        ? 'Disabled while watermarks are on — presigned URLs bypass the watermark pipeline.'
-                        : 'When the backend uses STORAGE_BACKEND=s3, "Download All" returns a 5-minute presigned S3 URL instead of streaming through the backend. Saves bandwidth on huge galleries; bypasses watermarking.'
-                      }
-                    >
-                      <input
-                        type="checkbox"
-                        checked={!!editForm.allow_presigned_download}
-                        disabled={editForm.watermark_downloads}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, allow_presigned_download: e.target.checked }))}
-                        className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                      />
-                      <Download className="w-4 h-4 ml-2 mr-1 text-neutral-500 dark:text-neutral-400" />
-                      <span className="text-sm text-neutral-700 dark:text-neutral-300">
-                        {t('events.allowPresignedDownload', 'Allow direct S3 download (no watermark, S3 mode only)')}
-                      </span>
-                    </label>
-
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={editForm.enable_devtools_protection}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, enable_devtools_protection: e.target.checked }))}
-                        className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                      />
-                      <Monitor className="w-4 h-4 ml-2 mr-1 text-neutral-500 dark:text-neutral-400" />
-                      <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('events.enableDevtoolsProtection', 'Detect developer tools')}</span>
-                    </label>
-
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={editForm.use_canvas_rendering}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, use_canvas_rendering: e.target.checked }))}
-                        className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                      />
-                      <Image className="w-4 h-4 ml-2 mr-1 text-neutral-500 dark:text-neutral-400" />
-                      <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('events.useCanvasRendering', 'Canvas rendering (advanced protection)')}</span>
-                    </label>
-
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
-                      {t('events.protectionInfo', 'Protection features help prevent unauthorized downloads but cannot block all methods.')}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Hero Logo Settings */}
-                <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
-                  <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3 flex items-center gap-2">
-                    <Layout className="w-4 h-4 text-accent" />
-                    {t('events.heroLogoSettings', 'Hero Logo Settings')}
-                  </h3>
-
-                  <div className="space-y-3">
-                    <label className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={editForm.hero_logo_visible}
-                        onChange={(e) => setEditForm(prev => ({ ...prev, hero_logo_visible: e.target.checked }))}
-                        className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                      />
-                      <Image className="w-4 h-4 ml-2 mr-1 text-neutral-500 dark:text-neutral-400" />
-                      <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('events.heroLogoVisible', 'Display logo in hero section')}</span>
-                    </label>
-
-                    {editForm.hero_logo_visible && (
-                      <>
-                        <div className="ml-6">
-                          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                            {t('events.heroLogoSize', 'Logo Size')}
-                          </label>
-                          <select
-                            value={editForm.hero_logo_size}
-                            onChange={(e) => setEditForm(prev => ({ ...prev, hero_logo_size: e.target.value as 'small' | 'medium' | 'large' | 'xlarge' }))}
-                            className="w-full sm:w-48 px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-md shadow-sm focus:ring-primary-500 focus:border-accent-dark text-sm"
-                          >
-                            <option value="small">{t('events.heroLogoSizeSmall', 'Small')}</option>
-                            <option value="medium">{t('events.heroLogoSizeMedium', 'Medium')}</option>
-                            <option value="large">{t('events.heroLogoSizeLarge', 'Large')}</option>
-                            <option value="xlarge">{t('events.heroLogoSizeXLarge', 'Extra Large')}</option>
-                          </select>
-                        </div>
-
-                        <div className="ml-6">
-                          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                            {t('events.heroLogoPosition', 'Logo Position')}
-                          </label>
-                          <select
-                            value={editForm.hero_logo_position}
-                            onChange={(e) => setEditForm(prev => ({ ...prev, hero_logo_position: e.target.value as 'top' | 'center' | 'bottom' }))}
-                            className="w-full sm:w-48 px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-md shadow-sm focus:ring-primary-500 focus:border-accent-dark text-sm"
-                          >
-                            <option value="top">{t('events.heroLogoPositionTop', 'Top (above title)')}</option>
-                            <option value="center">{t('events.heroLogoPositionCenter', 'Center (between title and dates)')}</option>
-                            <option value="bottom">{t('events.heroLogoPositionBottom', 'Bottom (below dates)')}</option>
-                          </select>
-                        </div>
-
-                        {/* Custom Event Logo Upload */}
-                        <div className="ml-6 mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-700">
-                          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
-                            {t('events.eventCustomLogo', 'Custom Event Logo')}
-                          </label>
-                          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
-                            {t('events.eventCustomLogoDescription', 'Upload a custom logo for this event. This overrides the global branding logo for this gallery only.')}
-                          </p>
-
-                          {event.hero_logo_url ? (
-                            <div className="flex items-center gap-3">
-                              <div className="w-16 h-16 border border-neutral-200 dark:border-neutral-600 rounded-md flex items-center justify-center bg-neutral-50 dark:bg-neutral-700 overflow-hidden">
-                                <img
-                                  src={buildResourceUrl(event.hero_logo_url)}
-                                  alt={t('events.eventCustomLogo', 'Custom Event Logo')}
-                                  className="max-w-full max-h-full object-contain"
-                                />
-                              </div>
-                              <div className="flex flex-col gap-1">
-                                <label className="cursor-pointer inline-flex items-center gap-1 text-xs text-accent hover:opacity-80">
-                                  <Upload className="w-3 h-3" />
-                                  {t('events.replaceLogo', 'Replace')}
-                                  <input
-                                    type="file"
-                                    className="hidden"
-                                    accept="image/png,image/jpeg,image/gif,image/svg+xml"
-                                    disabled={logoUploading}
-                                    onChange={(e) => {
-                                      const file = e.target.files?.[0];
-                                      if (file) handleEventLogoUpload(file);
-                                      e.target.value = '';
-                                    }}
-                                  />
-                                </label>
-                                <button
-                                  type="button"
-                                  onClick={handleEventLogoRemove}
-                                  disabled={logoUploading}
-                                  className="inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-700"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                  {t('events.removeLogo', 'Remove')}
-                                </button>
-                              </div>
-                              {logoUploading && <Loading size="sm" />}
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <label className={`cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 rounded-md hover:bg-neutral-50 dark:hover:bg-neutral-700 ${logoUploading ? 'opacity-50 pointer-events-none' : ''}`}>
-                                <Upload className="w-3.5 h-3.5" />
-                                {t('events.uploadEventLogo', 'Upload Logo')}
-                                <input
-                                  type="file"
-                                  className="hidden"
-                                  accept="image/png,image/jpeg,image/gif,image/svg+xml"
-                                  disabled={logoUploading}
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) handleEventLogoUpload(file);
-                                    e.target.value = '';
-                                  }}
-                                />
-                              </label>
-                              {logoUploading && <Loading size="sm" />}
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
-                      {t('events.heroLogoInfo', 'These settings apply when the gallery uses the Hero layout. You can hide the logo or customize its size and position.')}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <dl className="space-y-4">
-                <div>
-                  <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.sourceMode', 'Source Mode')}</dt>
-                  <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
-                    {event.source_mode === 'reference' ? t('events.sourceModeReference', 'Reference external folder') : t('events.sourceModeManaged', 'Managed (upload to PicPeak)')}
-                    {event.source_mode === 'reference' && event.external_path ? (
-                      <span className="text-neutral-500 dark:text-neutral-400 ml-2">/external-media/{event.external_path}</span>
-                    ) : null}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.welcomeMessage')}</dt>
-                  <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
-                    {event.welcome_message || <span className="text-neutral-400">{t('events.noWelcomeMessageSet')}</span>}
-                  </dd>
-                </div>
-
-                <div>
-                  <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.hostName')}</dt>
-                  <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
-                    {event.customer_name || <span className="text-neutral-400">{t('common.notSet')}</span>}
-                  </dd>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.hostEmail')}</dt>
-                  <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">{event.customer_email}</dd>
-                  </div>
-
-                  <div>
-                    <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.adminEmail')}</dt>
-                    <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">{event.admin_email}</dd>
-                  </div>
-                </div>
-
-                {phoneFieldEnabled && (
-                  <div>
-                    <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
-                      {t('events.customerPhone', 'Customer Phone')}
-                    </dt>
-                    <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
-                      {event.customer_phone || (
-                        <span className="text-neutral-400">{t('common.notSet')}</span>
-                      )}
-                    </dd>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.created')}</dt>
-                    <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
-                      {event.created_at && format(safeParseDate(event.created_at)!, 'PP')}
-                    </dd>
-                  </div>
-
-                  <div>
-                    <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.expires')}</dt>
-                    <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
-                      {event.expires_at ? (
-                        <>
-                          {format(safeParseDate(event.expires_at)!, 'PP')}
-                          {!event.is_archived && daysUntilExpiration !== null && daysUntilExpiration > 0 && (
-                            <span className="text-neutral-500 dark:text-neutral-400 ml-1">
-                              {t('events.daysLeft', { count: daysUntilExpiration })}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span className="text-neutral-500 dark:text-neutral-400">{t('events.neverExpires', 'Never')}</span>
-                      )}
-                    </dd>
-                  </div>
-                </div>
-
-                <div>
-                  <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.heroPhoto')}</dt>
-                  <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
-                    {event.hero_photo_id ? (
-                      <span className="text-accent">{t('events.heroPhotoSelected')}</span>
-                    ) : (
-                      <span className="text-neutral-400">{t('events.noHeroPhotoSelected')}</span>
-                    )}
-                  </dd>
-                </div>
-
-                <div>
-                  <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.userUploads')}</dt>
-                  <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
-                    {event.allow_user_uploads ? (
-                      <div className="space-y-1">
-                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 rounded">
-                          {t('common.yes')}
-                        </span>
-                        {event.upload_category_id && (
-                          <p className="text-xs text-neutral-600 dark:text-neutral-400">
-                            {t('events.uploadCategory')}: {categories.find(c => c.id === event.upload_category_id)?.name || 'N/A'}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-neutral-700 dark:text-neutral-300 bg-neutral-100 dark:bg-neutral-700 rounded">
-                        {t('common.no')}
-                      </span>
-                    )}
-                  </dd>
-                </div>
-
-                {/* Download Protection Display */}
-                <div className="pt-3 mt-3 border-t border-neutral-200 dark:border-neutral-700">
-                  <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400 flex items-center gap-2">
-                    <Shield className="w-4 h-4" />
-                    {t('events.downloadProtection', 'Download Protection')}
-                  </dt>
-                  <dd className="mt-2 text-sm text-neutral-900 dark:text-neutral-100">
-                    <div className="flex flex-wrap gap-2">
-                      <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded ${
-                        event.protection_level === 'maximum' ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300' :
-                        event.protection_level === 'enhanced' ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300' :
-                        event.protection_level === 'standard' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' :
-                        'bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300'
-                      }`}>
-                        {event.protection_level || 'standard'}
-                      </span>
-                      {event.disable_right_click && (
-                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded">
-                          <MousePointer className="w-3 h-3 mr-1" />
-                          {t('events.rightClickBlocked', 'Right-click blocked')}
-                        </span>
-                      )}
-                      {event.enable_devtools_protection && (
-                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded">
-                          <Monitor className="w-3 h-3 mr-1" />
-                          {t('events.devtoolsDetection', 'DevTools detection')}
-                        </span>
-                      )}
-                      {!event.allow_downloads && (
-                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded">
-                          <Download className="w-3 h-3 mr-1" />
-                          {t('events.downloadsDisabled', 'Downloads disabled')}
-                        </span>
-                      )}
-                      {event.watermark_downloads && (
-                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded">
-                          <Droplets className="w-3 h-3 mr-1" />
-                          {t('events.watermarked', 'Watermarked')}
-                        </span>
-                      )}
-                    </div>
-                  </dd>
-                </div>
-
-                {/* Hero Logo Settings Display */}
-                <div className="pt-3 mt-3 border-t border-neutral-200 dark:border-neutral-700">
-                  <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400 flex items-center gap-2">
-                    <Layout className="w-4 h-4" />
-                    {t('events.heroLogoSettings', 'Hero Logo Settings')}
-                  </dt>
-                  <dd className="mt-2 text-sm text-neutral-900 dark:text-neutral-100">
-                    <div className="flex flex-wrap gap-2">
-                      {event.hero_logo_visible !== false ? (
-                        <>
-                          <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded">
-                            <Image className="w-3 h-3 mr-1" />
-                            {t('events.heroLogoVisibleLabel', 'Logo visible')}
-                          </span>
-                          <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded">
-                            {t('events.heroLogoSizeLabel', 'Size')}: {event.hero_logo_size || 'medium'}
-                          </span>
-                          <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded">
-                            {t('events.heroLogoPositionLabel', 'Position')}: {event.hero_logo_position || 'top'}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-300 rounded">
-                          <Image className="w-3 h-3 mr-1" />
-                          {t('events.heroLogoHidden', 'Logo hidden')}
-                        </span>
-                      )}
-                    </div>
-                  </dd>
-                </div>
-              </dl>
-            )}
-          </Card>
-
-          {/* Share Link */}
-          <Card padding="md">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('events.shareLink')}</h2>
-
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={buildShareLinkUrl(event.share_link)}
-                readOnly
-                className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm"
-              />
-              <Button
-                variant="outline"
-                size="md"
-                leftIcon={copiedLink ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                onClick={handleCopyLink}
-              >
-                {copiedLink ? t('events.copied') : t('events.copy')}
-              </Button>
-            </div>
-
-            <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-2">
-              {isGalleryPublic(event.require_password)
-                ? t('events.shareWithGuestsPublic', 'Anyone with this link can view the gallery. No password is required.')
-                : t('events.shareWithGuests')}
-            </p>
-
-            {!event.is_archived && (
-              <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700 space-y-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Key className="w-4 h-4" />}
-                  onClick={() => setShowPasswordReset(true)}
-                  className="w-full justify-center"
-                >
-                  {t('events.resetGalleryPassword')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  leftIcon={<Mail className="w-4 h-4" />}
-                  onClick={async () => {
-                    try {
-                      await eventsService.resendCreationEmail(event.id);
-                      toast.success(t('events.creationEmailResent'));
-                    } catch {
-                      toast.error(t('events.failedToResendEmail'));
-                    }
-                  }}
-                  className="w-full justify-center"
-                >
-                  {t('events.resendCreationEmail')}
-                </Button>
-              </div>
-            )}
-          </Card>
-
-          {/* Client Access (#172) */}
-          <Card padding="md">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
-              <Shield className="w-5 h-5" />
-              {t('clientAccess.adminTitle')}
-            </h2>
-
-            <div className="space-y-4">
-              <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  className="mt-1 w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                  checked={!!event?.client_access_enabled}
-                  onChange={async (e) => {
-                    try {
-                      await eventsService.updateEvent(event.id, { client_access_enabled: e.target.checked });
-                      refetchEvent();
-                    } catch {
-                      toast.error(t('common.error'));
-                    }
-                  }}
-                  disabled={event?.is_archived}
-                />
-                <div>
-                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                    {t('clientAccess.enableToggle')}
-                  </span>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                    {t('clientAccess.enableDescription')}
-                  </p>
-                </div>
-              </label>
-
-              {event?.client_access_enabled && (
-                <>
-                  {/* Set/Change PIN */}
-                  <div className="flex items-end gap-2">
-                    <div className="flex-1">
-                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                        {t('clientAccess.pinLabel')}
-                      </label>
-                      <input
-                        type="text"
-                        value={clientPin}
-                        onChange={(e) => setClientPin(e.target.value)}
-                        placeholder={t('clientAccess.pinPlaceholder')}
-                        className="w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm"
-                      />
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="md"
-                      leftIcon={<Key className="w-4 h-4" />}
-                      onClick={async () => {
-                        if (!clientPin.trim()) return;
-                        try {
-                          await eventsService.updateEvent(event.id, { client_password: clientPin });
-                          setClientPin('');
-                          toast.success(t('clientAccess.pinUpdated'));
-                          refetchEvent();
-                        } catch {
-                          toast.error(t('common.error'));
-                        }
-                      }}
-                      disabled={!clientPin.trim()}
-                    >
-                      {t('clientAccess.setPin')}
-                    </Button>
-                  </div>
-
-                  {/* Client access link */}
-                  {event?.client_share_token && (
-                    <div>
-                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                        {t('clientAccess.linkLabel')}
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={`${window.location.origin}/gallery/${event.slug}/client-access?token=${event.client_share_token}`}
-                          readOnly
-                          className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm"
-                        />
-                        <Button
-                          variant="outline"
-                          size="md"
-                          leftIcon={copiedClientLink ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                          onClick={async () => {
-                            const link = `${window.location.origin}/gallery/${event.slug}/client-access?token=${event.client_share_token}`;
-                            try {
-                              await navigator.clipboard.writeText(link);
-                            } catch {
-                              const textArea = document.createElement('textarea');
-                              textArea.value = link;
-                              document.body.appendChild(textArea);
-                              textArea.select();
-                              document.execCommand('copy');
-                              document.body.removeChild(textArea);
-                            }
-                            setCopiedClientLink(true);
-                            setTimeout(() => setCopiedClientLink(false), 2000);
-                          }}
-                        >
-                          {copiedClientLink ? t('events.copied') : t('events.copy')}
-                        </Button>
-                      </div>
-
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mt-2 text-xs"
-                        onClick={async () => {
-                          try {
-                            await eventsService.updateEvent(event.id, { regenerate_client_token: true });
-                            toast.success(t('clientAccess.tokenRegenerated'));
-                            refetchEvent();
-                          } catch {
-                            toast.error(t('common.error'));
-                          }
-                        }}
-                      >
-                        {t('clientAccess.regenerateToken')}
-                      </Button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </Card>
-
-          {/* Actions */}
-          {!event.is_archived && (
-            <Card padding="md">
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('events.actions')}</h2>
-
-              <div className="space-y-3">
-                {event.is_draft ? (
-                  <>
-                    <Button
-                      variant="primary"
-                      leftIcon={<Send className="w-4 h-4" />}
-                      onClick={() => {
-                        if (confirm(t('events.publishConfirm'))) {
-                          publishMutation.mutate();
-                        }
-                      }}
-                      isLoading={publishMutation.isPending}
-                      className="w-full justify-center"
-                    >
-                      {t('events.publishAndNotify')}
-                    </Button>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center">
-                      {t('events.draftBanner')}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="outline"
-                      leftIcon={<Archive className="w-4 h-4" />}
-                      onClick={() => {
-                        if (confirm(t('events.archiveConfirm'))) {
-                          archiveMutation.mutate();
-                        }
-                      }}
-                      isLoading={archiveMutation.isPending}
-                      className="w-full justify-center"
-                    >
-                      {t('events.archiveEvent')}
-                    </Button>
-                    <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center">
-                      {t('events.archivingInfo')}
-                    </p>
-                  </>
-                )}
-              </div>
-            </Card>
-          )}
-        </div>
-
-        {/* Right Column - Statistics, Theme, and Actions */}
-        <div className="space-y-6">
-          {/* Photo Statistics */}
-          <Card padding="md">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('events.photoStatistics')}</h2>
-
-            <div className="space-y-3">
-              <div className="flex items-center justify-between py-2 px-3 bg-neutral-50 dark:bg-neutral-700 rounded-lg">
-                <span className="text-sm text-neutral-600 dark:text-neutral-400">{t('events.totalPhotos')}</span>
-                <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{event.photo_count || 0}</span>
-              </div>
-
-              <div className="flex items-center justify-between py-2 px-3 bg-neutral-50 dark:bg-neutral-700 rounded-lg">
-                <span className="text-sm text-neutral-600 dark:text-neutral-400">{t('events.totalSize')}</span>
-                <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                  {event.total_size ? `${(event.total_size / (1024 * 1024)).toFixed(1)} MB` : '0 MB'}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between py-2 px-3 bg-neutral-50 dark:bg-neutral-700 rounded-lg">
-                <span className="text-sm text-neutral-600 dark:text-neutral-400">{t('events.categories')}</span>
-                <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{categories.length}</span>
-              </div>
-
-              {event.total_views !== undefined && (
-                <div className="flex items-center justify-between py-2 px-3 bg-neutral-50 dark:bg-neutral-700 rounded-lg">
-                  <span className="text-sm text-neutral-600 dark:text-neutral-400">{t('events.totalViews')}</span>
-                  <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{event.total_views || 0}</span>
-                </div>
-              )}
-
-              {event.total_downloads !== undefined && (
-                <div className="flex items-center justify-between py-2 px-3 bg-neutral-50 dark:bg-neutral-700 rounded-lg">
-                  <span className="text-sm text-neutral-600 dark:text-neutral-400">{t('events.totalDownloads')}</span>
-                  <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{event.total_downloads || 0}</span>
-                </div>
-              )}
-
-              {event.unique_visitors !== undefined && (
-                <div className="flex items-center justify-between py-2 px-3 bg-neutral-50 dark:bg-neutral-700 rounded-lg">
-                  <span className="text-sm text-neutral-600 dark:text-neutral-400">{t('events.uniqueVisitors')}</span>
-                  <span className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{event.unique_visitors || 0}</span>
-                </div>
-              )}
-            </div>
-            
-            <div className="mt-4">
-              <Button
-                variant="outline"
-                size="sm"
-                leftIcon={<Image className="w-4 h-4" />}
-                onClick={() => setActiveTab('photos')}
-                className="w-full justify-center"
-              >
-                {t('events.managePhotos')}
-              </Button>
-            </div>
-          </Card>
-
-          {/* Theme & Style */}
-          {isEditing && !event.is_archived && (
-            <Card padding="md">
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('branding.themeAndStyle')}</h2>
-              <ThemeCustomizerEnhanced
-                value={currentTheme || GALLERY_THEME_PRESETS.default.config}
-                onChange={(theme) => {
-                  setCurrentTheme(theme);
-                  setEditForm(prev => ({ ...prev, color_theme: JSON.stringify(theme) }));
-                  setThemeChanged(true);
-                }}
-                presetName={currentPresetName}
-                onPresetChange={(presetName) => {
-                  setCurrentPresetName(presetName);
-                  setThemeChanged(true);
-                  if (presetName !== 'custom') {
-                    const preset = GALLERY_THEME_PRESETS[presetName];
-                    if (preset) {
-                      setCurrentTheme(preset.config);
-                      setEditForm(prev => ({ ...prev, color_theme: presetName }));
-                    }
-                  }
-                }}
-                onSyncFromBranding={() => {
-                  // Reset only the 8 colour tokens to the site Branding —
-                  // layout, header, typography all stay so the admin doesn't
-                  // lose tweaks made for this specific event.
-                  const branding = publicSettings?.theme_config as ThemeConfig | undefined;
-                  if (!branding) {
-                    toast.error(t('toast.brandingThemeMissing', 'No branding theme has been saved yet.'));
-                    return;
-                  }
-                  const base = currentTheme || GALLERY_THEME_PRESETS.default.config;
-                  const merged: ThemeConfig = {
-                    ...base,
-                    primaryColor: branding.primaryColor,
-                    accentColor: branding.accentColor,
-                    accentDarkColor: branding.accentDarkColor,
-                    backgroundColor: branding.backgroundColor,
-                    surfaceColor: branding.surfaceColor,
-                    elevatedColor: branding.elevatedColor,
-                    surfaceBorderColor: branding.surfaceBorderColor,
-                    textColor: branding.textColor,
-                    mutedTextColor: branding.mutedTextColor,
-                    colorMode: branding.colorMode ?? base.colorMode,
-                  };
-                  setCurrentTheme(merged);
-                  setCurrentPresetName('custom');
-                  setEditForm(prev => ({ ...prev, color_theme: JSON.stringify(merged) }));
-                  setThemeChanged(true);
-                  toast.success(t('toast.brandingPaletteSynced', 'Palette synced from Branding.'));
-                }}
-                isPreviewMode={true}
-                showGalleryLayouts={true}
-                hideActions={true}
-                cssTemplates={cssTemplates}
-                cssTemplateId={editForm.css_template_id}
-                onCssTemplateChange={(templateId) => setEditForm(prev => ({ ...prev, css_template_id: templateId }))}
-              />
-            </Card>
-          )}
-
-          {/* Theme Display (when not editing) */}
-          {!isEditing && !event.is_archived && (
-            <Card padding="md">
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('events.galleryTheme')}</h2>
-              <ThemeDisplay 
-                theme={event.color_theme || GALLERY_THEME_PRESETS.default.config} 
-                presetName={event.color_theme && !event.color_theme.startsWith('{') ? event.color_theme : undefined}
-                showDetails={true}
-              />
-            </Card>
-          )}
-
-          {/* Feedback Moderation Panel */}
-          {!event.is_archived && feedbackSettings?.feedback_enabled && (
-            <FeedbackModerationPanel 
-              eventId={parseInt(id!)} 
-              compact={true}
-              maxItems={3}
-            />
-          )}
-
-          {/* Archive Status */}
-          {event.is_archived ? (
-            <Card padding="md">
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('events.archiveStatusTitle')}</h2>
-
-              <div className="space-y-3">
-                <div>
-                  <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.archivedOn')}</p>
-                  <p className="text-sm text-neutral-900 dark:text-neutral-100">
-                    {event.archived_at && format(safeParseDate(event.archived_at)!, 'PPp')}
-                  </p>
-                </div>
-                
-                {event.archive_path && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    leftIcon={<Download className="w-4 h-4" />}
-                    onClick={async () => {
-                      try {
-                        toast.info(t('events.downloadingArchive', { name: event.event_name }));
-                        await archiveService.downloadArchive(Number(id), `${event.slug}-archive.zip`);
-                        toast.success(t('events.downloadStarted'));
-                      } catch {
-                        toast.error(t('events.failedToDownloadArchive'));
-                      }
-                    }}
-                    className="w-full justify-center"
-                  >
-                    {t('events.downloadArchive')}
-                  </Button>
-                )}
-              </div>
-            </Card>
-          ) : null}
-        </div>
-      </div>
+        <OverviewTab
+          event={event}
+          id={id}
+          isEditing={isEditing}
+          editForm={editForm}
+          setEditForm={setEditForm}
+          showNewPassword={showNewPassword}
+          setShowNewPassword={setShowNewPassword}
+          feedbackSettings={feedbackSettings}
+          setFeedbackSettings={setFeedbackSettings}
+          categories={categories}
+          photos={photos}
+          phoneFieldEnabled={phoneFieldEnabled}
+          daysUntilExpiration={daysUntilExpiration}
+          refetchEvent={refetchEvent}
+          setActiveTab={setActiveTab}
+          setShowPasswordReset={setShowPasswordReset}
+          setShowPublishDialog={setShowPublishDialog}
+          setShowDuplicateDialog={setShowDuplicateDialog}
+          onArchive={() => archiveMutation.mutate()}
+          isArchiving={archiveMutation.isPending}
+          isPublishing={publishMutation.isPending}
+          isDuplicating={duplicateMutation.isPending}
+          currentTheme={currentTheme}
+          setCurrentTheme={setCurrentTheme}
+          currentPresetName={currentPresetName}
+          setCurrentPresetName={setCurrentPresetName}
+          setThemeChanged={setThemeChanged}
+          cssTemplates={cssTemplates}
+        />
       )}
 
       {/* Photos Tab */}
       {activeTab === 'photos' && (
-        <div>
-          {/* Photo Upload Modal */}
-          <PhotoUploadModal
-            isOpen={showPhotoUpload}
-            onClose={() => setShowPhotoUpload(false)}
-            eventId={parseInt(id!)}
-            onUploadComplete={() => {
-              queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
-              queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id] });
-              toast.success(t('toast.uploadSuccess'));
-              refetchPhotos();
-            }}
-          />
-
-          {/* Photo Filters */}
-          <PhotoFilters
-            categories={categories}
-            selectedCategory={photoFilters.category_id}
-            searchTerm={photoFilters.search ?? ''}
-            sortBy={photoFilters.sort ?? 'date'}
-            sortOrder={photoFilters.order ?? 'desc'}
-            onCategoryChange={(categoryId) => setPhotoFilters(prev => ({ ...prev, category_id: categoryId }))}
-            onSearchChange={(search) => setPhotoFilters(prev => ({ ...prev, search }))}
-            onSortChange={(sort, order) => setPhotoFilters(prev => ({ ...prev, sort, order }))}
-            mediaType={photoFilters.media_type || 'all'}
-            onMediaTypeChange={(mediaType) => setPhotoFilters(prev => ({
-              ...prev,
-              media_type: mediaType === 'all' ? undefined : mediaType
-            }))}
-            showMediaFilter={showMediaFilter}
-          />
-
-          {/* Feedback Filter Panel for Export */}
-          <PhotoFilterPanel
-            filters={feedbackFilters}
-            onChange={setFeedbackFilters}
-            summary={filterSummary || null}
-            isLoading={photosLoading}
-          />
-
-          {/* Actions Bar */}
-          <div className="mb-4 flex flex-wrap justify-between items-center gap-4">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="primary"
-                size="sm"
-                leftIcon={<Upload className="w-4 h-4" />}
-                onClick={() => setShowPhotoUpload(true)}
-              >
-                {t('events.uploadPhotos')}
-              </Button>
-              {event.source_mode === 'reference' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowExternalImport(true)}
-                >
-                  {t('events.importExternal', 'Import from External Folder')}
-                </Button>
-              )}
-            </div>
-            <PhotoExportMenu
-              eventId={parseInt(id!)}
-              selectedPhotoIds={selectedPhotoIds}
-              filters={feedbackFilters}
-            />
-          </div>
-
-          {/* Photo Grid */}
-          {photosLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loading size="lg" text={t('events.loadingPhotos')} />
-            </div>
-          ) : (
-            <AdminPhotoGrid
-              photos={photos}
-              eventId={parseInt(id!)}
-              onPhotoClick={(photo, index) => setSelectedPhoto({ photo, index })}
-              onPhotosDeleted={() => {
-                refetchPhotos();
-                queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
-              }}
-              onSelectionChange={setSelectedPhotoIds}
-              categories={categories}
-            />
-          )}
-
-          {/* Photo Viewer */}
-          {selectedPhoto && (
-            <AdminPhotoViewer
-              photos={photos}
-              initialIndex={selectedPhoto.index}
-              eventId={parseInt(id!)}
-              onClose={() => setSelectedPhoto(null)}
-              onPhotoDeleted={() => {
-                refetchPhotos();
-                queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
-                setSelectedPhoto(null);
-              }}
-              categories={categories}
-            />
-          )}
-        </div>
+        <PhotosTab
+          event={event}
+          id={id}
+          photos={photos}
+          photosLoading={photosLoading}
+          refetchPhotos={refetchPhotos}
+          categories={categories}
+          photoFilters={photoFilters}
+          setPhotoFilters={setPhotoFilters}
+          feedbackFilters={feedbackFilters}
+          setFeedbackFilters={setFeedbackFilters}
+          filterSummary={filterSummary}
+          showMediaFilter={showMediaFilter}
+        />
       )}
 
       {/* Categories Tab */}
       {activeTab === 'categories' && (
-        <div>
-          <Card padding="md">
-            <div className="mb-6">
-              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-2">{t('events.photoCategories')}</h2>
-              <p className="text-sm text-neutral-600 dark:text-neutral-400">
-                {t('events.organizeCategoriesInfo')}
-              </p>
-            </div>
-
-            <EventCategoryManager
-              eventId={parseInt(id!)}
-            />
-
-            <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-              <p className="text-sm text-blue-800 dark:text-blue-300">
-                {t('events.categoriesTip')}
-              </p>
-            </div>
-          </Card>
-        </div>
+        <CategoriesTab id={id} />
       )}
 
       {/* Guests Tab (only visible when identity_mode === 'guest') */}
@@ -2493,59 +625,6 @@ export const EventDetailsPage: React.FC = () => {
         />
       )}
 
-      {/* External Import Modal */}
-      {showExternalImport && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="max-w-2xl w-full">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">{t('events.importExternal', 'Import from External Folder')}</h2>
-              <button onClick={() => setShowExternalImport(false)} className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="mb-3 text-sm text-neutral-700 dark:text-neutral-300">
-              {t('events.externalImportInfo', 'All pictures from the selected folder will be imported.')}
-            </div>
-            <div className="mb-2 text-sm text-neutral-700 dark:text-neutral-300">
-              {t('events.selectExternalFolder', 'Select external folder under /external-media')}
-            </div>
-            <ExternalFolderPicker value={externalPath || event.external_path || ''} onChange={setExternalPath} />
-
-            <div className="mt-4 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowExternalImport(false)}>
-                {t('common.cancel')}
-              </Button>
-              <Button
-                variant="primary"
-                isLoading={importing}
-                onClick={async () => {
-                  try {
-                    setImporting(true);
-                    const selected = externalPath || event.external_path || '';
-                    if (!selected) {
-                      toast.error(t('errors.somethingWentWrong', 'Something went wrong'));
-                      return;
-                    }
-                    await externalMediaService.importEvent(parseInt(id!), selected, { recursive: true });
-                    toast.success(t('toast.saveSuccess'));
-                    queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
-                    queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id] });
-                    setShowExternalImport(false);
-                  } catch (e: any) {
-                    toast.error(e?.response?.data?.error || 'Import failed');
-                  } finally {
-                    setImporting(false);
-                  }
-                }}
-              >
-                {t('events.importFromSelectedFolder', 'Import from selected folder')}
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
-
       {/* Event Rename Dialog */}
       <EventRenameDialog
         isOpen={showRenameDialog}
@@ -2564,6 +643,36 @@ export const EventDetailsPage: React.FC = () => {
         }}
         onValidate={(newName) => eventsService.validateRename(event.id, newName)}
       />
+
+      {/* Publish Gallery Dialog (#627) — prompts for the password so the
+          gallery_created email carries the real plaintext, not the sentinel. */}
+      {showPublishDialog && (
+        <PublishGalleryDialog
+          eventName={event.event_name}
+          requirePassword={isGalleryPublic(event) ? false : true}
+          customerEmail={event.customer_email}
+          assignedCustomerCount={((event as { customer_accounts?: Array<{ id: number }> }).customer_accounts || []).length}
+          isPublishing={publishMutation.isPending}
+          onConfirm={(password) => publishMutation.mutate(password)}
+          onClose={() => {
+            if (!publishMutation.isPending) setShowPublishDialog(false);
+          }}
+        />
+      )}
+
+      {/* Duplicate Event Dialog (#626) — admin types a new event name/date
+          (+ optional customer); backend clones the source gallery's config
+          and we navigate to the new draft. */}
+      {showDuplicateDialog && (
+        <DuplicateEventDialog
+          sourceEventName={event.event_name}
+          isDuplicating={duplicateMutation.isPending}
+          onConfirm={(data) => duplicateMutation.mutate(data)}
+          onClose={() => {
+            if (!duplicateMutation.isPending) setShowDuplicateDialog(false);
+          }}
+        />
+      )}
 
     </div>
   );

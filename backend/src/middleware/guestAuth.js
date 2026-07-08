@@ -23,6 +23,7 @@ async function resolveGuest(req, res, next) {
     let decoded;
     try {
       const verified = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ['HS256'],
         issuer: 'picpeak-auth',
         complete: true,
       });

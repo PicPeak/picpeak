@@ -13,10 +13,30 @@ const router = express.Router();
 const { buildShareLinkVariants } = require('../services/shareLinkService');
 const { parseBooleanInput, parseStringInput } = require('../utils/parsers');
 const eventTypeService = require('../services/eventTypeService');
+const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
+const logger = require('../utils/logger');
 
 // Use parseStringInput from shared parsers for customer data extraction
 const getCustomerNameFromPayload = (payload = {}) => parseStringInput(payload.customer_name);
 const getCustomerEmailFromPayload = (payload = {}) => parseStringInput(payload.customer_email);
+const getCustomerPhoneFromPayload = (payload = {}) => parseStringInput(payload.customer_phone);
+
+// Whether the global "phone field" toggle (#322) is enabled. Same shape as
+// the helper in adminEvents.js — kept local so this route doesn't import
+// from a sibling route file.
+const isPhoneFieldEnabled = async () => {
+  try {
+    const row = await db('app_settings').where('setting_key', 'event_phone_field_enabled').first();
+    if (!row) return false;
+    let value = row.setting_value;
+    if (typeof value === 'string') {
+      try { value = JSON.parse(value); } catch { /* keep raw */ }
+    }
+    return value === true;
+  } catch {
+    return false;
+  }
+};
 
 const mapEventForApi = (event) => {
   if (!event || typeof event !== 'object') {
@@ -67,7 +87,10 @@ router.post('/', adminAuth, [
   body('event_name').notEmpty(),
   body('event_date').isDate(),
   body('customer_name').notEmpty().trim(),
-  body('customer_email').isEmail().normalizeEmail(),
+  body('customer_email').isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
+  body('customer_phone').optional({ nullable: true, checkFalsy: true })
+    .isString().trim()
+    .isLength({ max: 32 }).withMessage('Phone number must be at most 32 characters'),
   body('admin_email').isEmail(),
   body('require_password').optional().isBoolean(),
   body('password').optional().isString().custom((value, { req }) => {
@@ -108,6 +131,8 @@ router.post('/', adminAuth, [
     }
 
     const customerColumnsAvailable = await hasCustomerContactColumns();
+    const phoneEnabled = await isPhoneFieldEnabled();
+    const customerPhone = phoneEnabled ? getCustomerPhoneFromPayload(req.body) : null;
 
     const requirePassword = parseBooleanInput(requirePasswordInput, true);
 
@@ -162,6 +187,7 @@ router.post('/', adminAuth, [
       event_name,
       event_date,
       ...(customerColumnsAvailable ? { customer_name: customerName, customer_email: customerEmail } : {}),
+      ...(customerPhone ? { customer_phone: customerPhone } : {}),
       host_name: customerName,
       host_email: customerEmail,
       admin_email,
@@ -191,6 +217,29 @@ router.post('/', adminAuth, [
       welcome_message: welcome_message || ''
     });
 
+    // WhatsApp gallery_ready notification (#647 follow-up). Mirrors the
+    // adminEvents.js path: fires when the customer supplied a phone, the
+    // feature is enabled, and a config exists. Non-fatal — a queue failure
+    // must never block gallery creation.
+    if (customerPhone) {
+      try {
+        const { queueWhatsapp, getWhatsAppConfig } = require('../services/whatsappProcessor');
+        const waConfig = await getWhatsAppConfig();
+        if (waConfig && waConfig.enabled) {
+          await queueWhatsapp(eventId, customerPhone, 'gallery_created', {
+            customer_name: customerName || '',
+            event_name,
+            gallery_link: shareUrl,
+            gallery_password: requirePassword ? password : '',
+            expiry_date: expires_at ? expires_at.toISOString() : null,
+            language: null,
+          });
+        }
+      } catch (waError) {
+        logger.warn('Failed to queue WhatsApp notification on create', waError.message);
+      }
+    }
+
     // Webhook lifecycle (#327). Legacy public endpoint — events go live
     // immediately so created + published fire together. Payload uses the
     // canonical event subject (#341) — every event.* webhook now includes
@@ -207,6 +256,7 @@ router.post('/', adminAuth, [
         share_token: shareToken,
         customer_name: customerName,
         customer_email: customerEmail,
+        customer_phone: customerPhone,
       });
       await webhookService.fire('event.created', { event: eventSubject });
       await webhookService.fire('event.published', { event: eventSubject });
@@ -222,7 +272,7 @@ router.post('/', adminAuth, [
       customer_email: customerEmail
     });
   } catch (error) {
-    console.error(error);
+    logger.error(error);
     res.status(500).json({ error: 'Failed to create event' });
   }
 });
@@ -257,7 +307,7 @@ router.get('/', adminAuth, async (req, res) => {
 // Update event
 router.put('/:id', adminAuth, [
   body('customer_name').optional().trim().notEmpty(),
-  body('customer_email').optional().isEmail().normalizeEmail(),
+  body('customer_email').optional().isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL),
   body('require_password').optional().isBoolean()
 ], async (req, res) => {
   try {

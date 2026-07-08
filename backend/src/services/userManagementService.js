@@ -346,6 +346,108 @@ async function deactivateAdminUser(id, deactivatedById) {
 }
 
 /**
+ * Re-activate a previously deactivated admin user. Symmetric counterpart
+ * to deactivateAdminUser — flips is_active back to true so the account
+ * can log in again.
+ *
+ * Reported in #574 follow-up: once an admin was deactivated, the UI
+ * lost the only affordance to manage that record (no Reactivate, no
+ * Delete). This is the Reactivate half.
+ *
+ * @param {number} id - User ID to activate
+ * @param {number} activatedById - ID of the admin performing the action
+ */
+async function activateAdminUser(id, activatedById) {
+  const user = await db('admin_users').where('id', id).first();
+  if (!user) {
+    throw new NotFoundError('Admin user', id);
+  }
+
+  // No "last super admin" guard needed — activate only ever ADDS an
+  // active super_admin, never removes one. No "can't activate
+  // yourself" guard either — by definition the actor is already
+  // logged in and active, so this can never be a self-activation.
+
+  if (user.is_active === true || user.is_active === 1) {
+    // Already active — short-circuit so the caller's UI doesn't have
+    // to special-case "no change" responses.
+    return;
+  }
+
+  await db('admin_users').where('id', id).update({
+    is_active: formatBoolean(true),
+    updated_at: new Date()
+  });
+
+  await logActivity('admin_user_activated',
+    { userId: id, username: user.username },
+    null,
+    { type: 'admin', id: activatedById, name: 'system' }
+  );
+
+  logger.info('Admin user activated', { userId: id, activatedById });
+}
+
+/**
+ * Permanently delete an admin user from the database. Use only on
+ * already-deactivated accounts (the UI nudges admins toward this
+ * order). All FK references to admin_users use ON DELETE SET NULL
+ * (created_by, recorded_by_admin_id, etc.) or ON DELETE CASCADE
+ * (api_tokens, pending invitations) — see migration audit in the
+ * #574-follow-up PR description for the full list.
+ *
+ * @param {number} id - User ID to delete
+ * @param {number} deletedById - ID of the admin performing the deletion
+ */
+async function deleteAdminUser(id, deletedById) {
+  const user = await db('admin_users').where('id', id).first();
+  if (!user) {
+    throw new NotFoundError('Admin user', id);
+  }
+
+  // Self-delete would lock the actor out of their own session at the
+  // moment of commit. Refuse — same shape as the deactivate guard.
+  if (id === deletedById) {
+    throw new ValidationError('Cannot delete your own account');
+  }
+
+  // Last-super-admin guard — same logic as deactivate. Even if the
+  // target is currently is_active=false, deleting them would close
+  // the door on a super_admin role recovery (they could otherwise
+  // be reactivated). Counts ACTIVE super_admins so a deactivated
+  // user being deleted while one active super_admin exists is fine.
+  const superAdminRole = await db('roles').where('name', 'super_admin').first();
+  if (user.role_id === superAdminRole?.id) {
+    const activeSuperAdminCount = await db('admin_users')
+      .where('role_id', superAdminRole.id)
+      .where('is_active', formatBoolean(true))
+      .whereNot('id', id)
+      .count('id as count')
+      .first();
+
+    if (Number(activeSuperAdminCount?.count) < 1) {
+      throw new ValidationError('Cannot delete the last Super Admin');
+    }
+  }
+
+  // Hard delete. FK ON DELETE rules in core migrations handle cascade:
+  //   SET NULL on created_by_admin_id everywhere (events, photos,
+  //     quotes, invoices, contracts, etc.)
+  //   CASCADE on api_tokens.user_id, admin_invitations.invited_by,
+  //     customer_invitations.invited_by (drops pending tokens + invites
+  //     this user issued)
+  await db('admin_users').where('id', id).del();
+
+  await logActivity('admin_user_deleted',
+    { userId: id, username: user.username, email: user.email },
+    null,
+    { type: 'admin', id: deletedById, name: 'system' }
+  );
+
+  logger.info('Admin user deleted', { userId: id, deletedById });
+}
+
+/**
  * Reset admin user password (generates new password)
  * @param {number} id - User ID
  * @param {number} resetById - ID of user performing reset
@@ -465,6 +567,8 @@ module.exports = {
   getAdminUserById,
   updateAdminUser,
   deactivateAdminUser,
+  activateAdminUser,
+  deleteAdminUser,
   resetAdminPassword,
   getAllRoles,
   getPendingInvitations,

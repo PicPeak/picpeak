@@ -22,6 +22,8 @@ const downloadZipService = require('../services/downloadZipService');
 const { findReplacementCandidate, replacePhoto } = require('../services/photoReplacementService');
 const { requireEventOwnership } = require('../middleware/ownership');
 const { getStorage } = require('../services/storage');
+const { errorResponse } = require('../utils/routeHelpers');
+const logger = require('../utils/logger');
 const router = express.Router();
 
 // Get storage path from environment or default
@@ -31,7 +33,7 @@ const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '.
 // IMPORTANT: Using synchronous functions to prevent file corruption
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    console.log('Multer destination called for file:', file.originalname);
+    logger.info('Multer destination called for file:', file.originalname);
     const { eventId } = req.params;
     
     // We'll validate the event exists in the route handler
@@ -40,7 +42,7 @@ const storage = multer.diskStorage({
     
     // Create directory synchronously
     require('fs').mkdirSync(tempPath, { recursive: true });
-    console.log('Temp destination path:', tempPath);
+    logger.info('Temp destination path:', tempPath);
     
     // Store temp path for cleanup
     req.tempUploadPath = tempPath;
@@ -48,10 +50,10 @@ const storage = multer.diskStorage({
     cb(null, tempPath);
   },
   filename: (req, file, cb) => {
-    console.log('Multer filename called for file:', file.originalname);
+    logger.info('Multer filename called for file:', file.originalname);
     // Use a simple temporary filename
     const tempName = `temp_${Date.now()}_${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
-    console.log('Temp filename:', tempName);
+    logger.info('Temp filename:', tempName);
     cb(null, tempName);
   }
 });
@@ -89,7 +91,7 @@ const resolveAllowedTypes = async (req, res, next) => {
   try {
     req.allowedMimeTypes = await getAllowedMimeTypes();
   } catch (error) {
-    console.error('Failed to resolve allowed MIME types:', error);
+    logger.error('Failed to resolve allowed MIME types:', error);
     req.allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
   }
   next();
@@ -111,7 +113,7 @@ const uploadTimeout = (timeout = 300000) => { // 5 minutes default
   return (req, res, next) => {
     // Set timeout for the request
     req.setTimeout(timeout, () => {
-      console.error('Upload request timed out');
+      logger.error('Upload request timed out');
       if (!res.headersSent) {
         res.status(408).json({ error: 'Upload request timed out' });
       }
@@ -119,7 +121,7 @@ const uploadTimeout = (timeout = 300000) => { // 5 minutes default
     
     // Set response timeout as well
     res.setTimeout(timeout, () => {
-      console.error('Upload response timed out');
+      logger.error('Upload response timed out');
     });
     
     next();
@@ -133,13 +135,12 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
   try {
     maxFilesPerUpload = await getMaxFilesPerUpload();
   } catch (error) {
-    console.error('Failed to resolve max files per upload:', error);
-    return res.status(500).json({ error: 'Unable to determine upload limits' });
+    return errorResponse(res, error, 500, 'Unable to determine upload limits');
   }
 
   upload.array('photos', maxFilesPerUpload)(req, res, (err) => {
     if (err) {
-      console.error('Multer error:', err);
+      logger.error('Multer error:', err);
       if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
           return res.status(400).json({ error: 'File too large. Maximum size is 10GB per file.' });
@@ -166,7 +167,7 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     try {
       await fs.rm(req.tempUploadPath, { recursive: true, force: true });
     } catch (e) {
-      console.error('Failed to clean up temp upload directory:', e);
+      logger.error('Failed to clean up temp upload directory:', e);
     }
   };
   res.on('finish', cleanupTempDir);
@@ -177,16 +178,16 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     const { category_id, replace_by_name } = req.body;
     const replaceByName = replace_by_name === 'true' || replace_by_name === true;
 
-    console.log('Upload request received for event:', eventId);
-    console.log('Body:', req.body);
-    console.log('Files:', req.files ? req.files.length : 'none');
-    console.log('File details:', req.files?.map(f => ({ name: f.originalname, size: f.size, mimetype: f.mimetype })));
-    console.log('Category ID received:', category_id);
+    logger.info('Upload request received for event:', eventId);
+    logger.info('Body:', req.body);
+    logger.info('Files:', req.files ? req.files.length : 'none');
+    logger.info('File details:', req.files?.map(f => ({ name: f.originalname, size: f.size, mimetype: f.mimetype })));
+    logger.info('Category ID received:', category_id);
 
     // Verify event exists and admin has access
     const event = await db('events').where({ id: eventId }).first();
     if (!event) {
-      console.error('Event not found:', eventId);
+      logger.error('Event not found:', eventId);
       return res.status(404).json({ error: 'Event not found' });
     }
 
@@ -213,8 +214,8 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     }
 
     if (!req.files || req.files.length === 0) {
-      console.error('No files in request. req.files:', req.files);
-      console.error('Request body keys:', Object.keys(req.body));
+      logger.error('No files in request. req.files:', req.files);
+      logger.error('Request body keys:', Object.keys(req.body));
       return res.status(400).json({ error: 'No files uploaded' });
     }
     
@@ -389,7 +390,7 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
           category_id: parsedCategoryId,
         });
       } catch (err) {
-        console.error(`Error queuing file ${file.originalname}:`, err);
+        logger.error(`Error queuing file ${file.originalname}:`, err);
         errors.push({ filename: file.originalname, error: err.message });
       }
     }
@@ -451,10 +452,9 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     // 202 Accepted — files stored, processing happens in background.
     res.status(202).json(response);
   } catch (error) {
-    console.error('Error uploading photos:', error);
     // Temp directory cleanup is handled by the response finish/close
     // listeners above, regardless of which exit path fires.
-    res.status(500).json({ error: 'Failed to upload photos' });
+    errorResponse(res, error, 500, 'Failed to upload photos');
   }
 });
 
@@ -523,8 +523,7 @@ router.get(
         ...summariseUpload(group.photos),
       });
     } catch (error) {
-      console.error('Error reading upload status:', error);
-      res.status(500).json({ error: 'Failed to read upload status' });
+      errorResponse(res, error, 500, 'Failed to read upload status');
     }
   }
 );
@@ -575,7 +574,7 @@ router.get(
           return;
         }
       } catch (e) {
-        console.error('Upload stream poll error:', e);
+        logger.error('Upload stream poll error:', e);
       }
     };
 
@@ -601,12 +600,18 @@ router.post(
       const photo = await db('photos').where({ id: req.params.photoId }).first();
       if (!photo) return res.status(404).json({ error: 'Photo not found' });
 
-      // Editor role: only allow retry on photos in events they own.
-      if (req.admin.roleName === 'editor') {
+      // Ownership scope: any non-super_admin may only retry photos in events
+      // they own — matching requireEventOwnership (which scopes both the
+      // admin and editor roles; only super_admin bypasses). Previously this
+      // checked the editor role alone, leaving admin-role users able to
+      // reprocess another admin's photos.
+      if (req.admin.roleName !== 'super_admin') {
         const event = await db('events')
-          .where({ id: photo.event_id, created_by: req.admin.id })
+          .where({ id: photo.event_id })
           .first();
-        if (!event) return res.status(404).json({ error: 'Photo not found' });
+        if (event && event.created_by && event.created_by !== req.admin.id) {
+          return res.status(404).json({ error: 'Photo not found' });
+        }
       }
 
       if (photo.processing_status !== 'failed') {
@@ -622,8 +627,7 @@ router.post(
       });
       res.json({ id: photo.id, status: 'pending' });
     } catch (error) {
-      console.error('Error retrying photo processing:', error);
-      res.status(500).json({ error: 'Failed to retry photo processing' });
+      errorResponse(res, error, 500, 'Failed to retry photo processing');
     }
   }
 );
@@ -651,7 +655,7 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
       const originalKey = resolvePhotoStorageKey(event, photo);
       if (originalKey) await storage.delete(originalKey);
     } catch (error) {
-      console.error('Error deleting photo file:', error);
+      logger.error('Error deleting photo file:', error);
     }
 
     // photo.thumbnail_path is stored as the canonical storage key
@@ -660,7 +664,7 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
       try {
         await storage.delete(photo.thumbnail_path);
       } catch (error) {
-        console.error('Error deleting thumbnail:', error);
+        logger.error('Error deleting thumbnail:', error);
       }
     }
     if (photo.hero_path) {
@@ -700,8 +704,7 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     downloadZipService.invalidate(parseInt(eventId));
     res.json({ message: 'Photo deleted successfully' });
   } catch (error) {
-    console.error('Error deleting photo:', error);
-    res.status(500).json({ error: 'Failed to delete photo' });
+    errorResponse(res, error, 500, 'Failed to delete photo');
   }
 });
 
@@ -763,8 +766,7 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
       photo: updatedPhoto
     });
   } catch (error) {
-    console.error('Error updating photo:', error);
-    res.status(500).json({ error: 'Failed to update photo' });
+    errorResponse(res, error, 500, 'Failed to update photo');
   }
 });
 
@@ -797,7 +799,7 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
         const originalKey = resolvePhotoStorageKey(event, photo);
         if (originalKey) await storage.delete(originalKey);
       } catch (error) {
-        console.error('Error deleting photo file:', error);
+        logger.error('Error deleting photo file:', error);
       }
 
       if (photo.thumbnail_path) {
@@ -842,8 +844,7 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
     downloadZipService.invalidate(parseInt(eventId));
     res.json({ message: `${photos.length} photos deleted successfully` });
   } catch (error) {
-    console.error('Error bulk deleting photos:', error);
-    res.status(500).json({ error: 'Failed to delete photos' });
+    errorResponse(res, error, 500, 'Failed to delete photos');
   }
 });
 
@@ -905,8 +906,7 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
 
     res.json({ message: `${photoIds.length} photos updated successfully` });
   } catch (error) {
-    console.error('Error bulk updating photos:', error);
-    res.status(500).json({ error: 'Failed to update photos' });
+    errorResponse(res, error, 500, 'Failed to update photos');
   }
 });
 
@@ -961,8 +961,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
     });
     res.sendFile(filePath);
   } catch (error) {
-    console.error('Error downloading photo:', error);
-    res.status(500).json({ error: 'Failed to download photo' });
+    errorResponse(res, error, 500, 'Failed to download photo');
   }
 });
 
@@ -1096,8 +1095,7 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       }))
     });
   } catch (error) {
-    console.error('Error fetching photos:', error);
-    res.status(500).json({ error: 'Failed to fetch photos' });
+    errorResponse(res, error, 500, 'Failed to fetch photos');
   }
 });
 
@@ -1153,8 +1151,7 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     }
     res.sendFile(path.resolve(filePath));
   } catch (error) {
-    console.error('Error serving photo:', error);
-    res.status(500).json({ error: 'Failed to serve photo' });
+    errorResponse(res, error, 500, 'Failed to serve photo');
   }
 });
 
@@ -1168,7 +1165,7 @@ router.get('/:eventId/thumbnail/:photoId', adminAuth, requirePermission('photos.
       .first();
 
     if (!photo) {
-      console.error(`Photo not found: ${photoId}, event ${eventId}`);
+      logger.error(`Photo not found: ${photoId}, event ${eventId}`);
       return res.status(404).json({ error: 'Photo not found' });
     }
 
@@ -1192,7 +1189,7 @@ router.get('/:eventId/thumbnail/:photoId', adminAuth, requirePermission('photos.
     const thumbnailPath = await ensureThumbnail(photo);
 
     if (!thumbnailPath) {
-      console.error(`Failed to generate thumbnail for photo ${photoId}`);
+      logger.error(`Failed to generate thumbnail for photo ${photoId}`);
       return res.status(404).json({ error: 'Thumbnail generation failed' });
     }
 
@@ -1209,10 +1206,9 @@ router.get('/:eventId/thumbnail/:photoId', adminAuth, requirePermission('photos.
     const stream = await storage.get(thumbnailPath);
     stream.pipe(res);
   } catch (error) {
-    console.error('Error serving thumbnail:', error);
-    console.error('Photo ID:', req.params.photoId);
-    console.error('Event ID:', req.params.eventId);
-    res.status(500).json({ error: 'Failed to serve thumbnail' });
+    logger.error('Error serving thumbnail:', error);
+    logger.error('Photo ID:', req.params.photoId);
+    errorResponse(res, error, 500, 'Failed to serve thumbnail');
   }
 });
 
@@ -1232,8 +1228,7 @@ router.get('/:eventId/debug', adminAuth, requirePermission('photos.view'), requi
       storagePath: getStoragePath()
     });
   } catch (error) {
-    console.error('Error fetching admin photo debug data:', error);
-    res.status(500).json({ error: 'Failed to fetch photo debug data' });
+    errorResponse(res, error, 500, 'Failed to fetch photo debug data');
   }
 });
 
@@ -1262,7 +1257,7 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
     // Validate file size (max 10GB)
     const maxSize = 10 * 1024 * 1024 * 1024;
     if (fileSize > maxSize) {
-      return res.status(400).json({ error: `File too large. Maximum size is 10GB.` });
+      return res.status(400).json({ error: 'File too large. Maximum size is 10GB.' });
     }
 
     const result = await chunkedUpload.initializeUpload({
@@ -1275,8 +1270,7 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
 
     res.json(result);
   } catch (error) {
-    console.error('Error initializing chunked upload:', error);
-    res.status(500).json({ error: 'Failed to initialize upload' });
+    errorResponse(res, error, 500, 'Failed to initialize upload');
   }
 });
 
@@ -1296,7 +1290,7 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
 
     res.json(result);
   } catch (error) {
-    console.error('Error uploading chunk:', error);
+    logger.error('Error uploading chunk:', error);
     res.status(500).json({ error: error.message || 'Failed to upload chunk' });
   }
 });
@@ -1329,7 +1323,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
     try {
       await fs.rm(mergedFile.tempDir, { recursive: true, force: true });
     } catch (cleanupErr) {
-      console.warn('Failed to clean up temp directory:', cleanupErr.message);
+      logger.warn('Failed to clean up temp directory:', cleanupErr.message);
     }
 
     res.json({
@@ -1338,7 +1332,7 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       photos: uploadedPhotos
     });
   } catch (error) {
-    console.error('Error completing chunked upload:', error);
+    logger.error('Error completing chunked upload:', error);
     res.status(500).json({ error: error.message || 'Failed to complete upload' });
   }
 });
@@ -1356,8 +1350,7 @@ router.get('/:eventId/chunked-upload/:uploadId/status', adminAuth, requirePermis
 
     res.json(status);
   } catch (error) {
-    console.error('Error getting upload status:', error);
-    res.status(500).json({ error: 'Failed to get upload status' });
+    errorResponse(res, error, 500, 'Failed to get upload status');
   }
 });
 
@@ -1370,8 +1363,7 @@ router.delete('/:eventId/chunked-upload/:uploadId', adminAuth, requirePermission
 
     res.json({ success: true, message: 'Upload aborted' });
   } catch (error) {
-    console.error('Error aborting upload:', error);
-    res.status(500).json({ error: 'Failed to abort upload' });
+    errorResponse(res, error, 500, 'Failed to abort upload');
   }
 });
 

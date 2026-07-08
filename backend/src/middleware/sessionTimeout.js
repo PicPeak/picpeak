@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { db } = require('../database/db');
 const { getAdminTokenFromRequest } = require('../utils/tokenUtils');
+const logger = require('../utils/logger');
 
 // In-memory session tracking (in production, use Redis)
 const sessions = new Map();
@@ -13,7 +14,18 @@ let cachedTimeout = null;
 let cacheExpiry = 0;
 const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes - reduced DB queries
 
-// Clean up expired sessions every 5 minutes
+// Clean up expired sessions every 5 minutes.
+//
+// `.unref()` so this timer doesn't keep the event loop alive on its
+// own — without it, every jest worker that requires this module
+// (directly or transitively via server.js / a middleware-importing
+// route file) gets stuck and either prints the "worker failed to
+// exit gracefully" warning or, under high CI load, force-kills mid-
+// test and takes an unrelated suite down with it (we hit this with
+// integration/storageBackend.test.js on PR #555). Production
+// behaviour is unchanged: the timer fires every 5 min as long as
+// the server has anything else keeping the loop alive (HTTP server,
+// other intervals), which is always.
 setInterval(() => {
   const now = Date.now();
   for (const [token, lastActivity] of sessions.entries()) {
@@ -21,7 +33,7 @@ setInterval(() => {
       sessions.delete(token);
     }
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 async function getSessionTimeout() {
   const now = Date.now();
@@ -58,7 +70,7 @@ async function getSessionTimeout() {
   } catch (error) {
     // Only log if it's not a connection error (to avoid spam)
     if (error.code !== 'ECONNRESET' && !error.message?.includes('Connection terminated')) {
-      console.error('Error getting session timeout:', error.message);
+      logger.error('Error getting session timeout:', error.message);
     }
   }
   
@@ -75,7 +87,7 @@ async function sessionTimeoutMiddleware(req, res, next) {
   
   try {
     // Verify token is valid
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     
     // Check if this is an admin token
     if (!decoded.id) {
@@ -116,7 +128,7 @@ async function sessionTimeoutMiddleware(req, res, next) {
     for (const [oldToken, _] of sessions.entries()) {
       if (oldToken !== token) {
         try {
-          const oldDecoded = jwt.verify(oldToken, process.env.JWT_SECRET);
+          const oldDecoded = jwt.verify(oldToken, process.env.JWT_SECRET, { algorithms: ['HS256'] });
           if (oldDecoded.id === userId) {
             sessions.delete(oldToken);
           }

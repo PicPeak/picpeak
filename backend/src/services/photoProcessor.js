@@ -11,14 +11,14 @@ const logger = require('../utils/logger');
 function normalizeFiles(files) {
   // Handle null, undefined, or falsy values
   if (!files) {
-    console.log('[normalizeFiles] No files provided');
+    logger.info('[normalizeFiles] No files provided');
     return [];
   }
 
   // Handle arrays
   if (Array.isArray(files)) {
     const validFiles = files.filter(Boolean);
-    console.log(`[normalizeFiles] Normalized ${validFiles.length} files from array`);
+    logger.info(`[normalizeFiles] Normalized ${validFiles.length} files from array`);
     return validFiles;
   }
 
@@ -26,11 +26,11 @@ function normalizeFiles(files) {
   try {
     if (typeof files === 'object' && typeof files[Symbol.iterator] === 'function') {
       const validFiles = Array.from(files).filter(Boolean);
-      console.log(`[normalizeFiles] Normalized ${validFiles.length} files from iterable`);
+      logger.info(`[normalizeFiles] Normalized ${validFiles.length} files from iterable`);
       return validFiles;
     }
   } catch (err) {
-    console.warn('[normalizeFiles] Failed to iterate files object:', err.message);
+    logger.warn('[normalizeFiles] Failed to iterate files object:', err.message);
   }
 
   // Handle plain objects (multer fieldname mapping)
@@ -39,16 +39,16 @@ function normalizeFiles(files) {
       const validFiles = Object.values(files)
         .flatMap((value) => (Array.isArray(value) ? value : [value]))
         .filter(Boolean);
-      console.log(`[normalizeFiles] Normalized ${validFiles.length} files from object`);
+      logger.info(`[normalizeFiles] Normalized ${validFiles.length} files from object`);
       return validFiles;
     } catch (err) {
-      console.warn('[normalizeFiles] Failed to process files object:', err.message);
+      logger.warn('[normalizeFiles] Failed to process files object:', err.message);
       return [];
     }
   }
 
   // Unexpected type
-  console.warn('[normalizeFiles] Unexpected files type:', typeof files);
+  logger.warn('[normalizeFiles] Unexpected files type:', typeof files);
   return [];
 }
 
@@ -115,7 +115,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       try {
         await fs.access(tempPath);
       } catch (accessErr) {
-        console.error(`Temp file not accessible: ${tempPath}`, {
+        logger.error(`Temp file not accessible: ${tempPath}`, {
           originalname: file?.originalname,
           error: accessErr.message
         });
@@ -156,7 +156,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
             };
           }
         } catch (metadataError) {
-          console.warn(`Could not extract image dimensions for ${file.originalname}:`, metadataError.message);
+          logger.warn(`Could not extract image dimensions for ${file.originalname}:`, metadataError.message);
         }
       }
 
@@ -167,14 +167,14 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
           contentType: file.mimetype,
         });
       } catch (uploadErr) {
-        console.error(`Failed to upload ${file.originalname} → ${finalKey}:`, uploadErr);
+        logger.error(`Failed to upload ${file.originalname} → ${finalKey}:`, uploadErr);
         throw new Error(`Failed to upload to storage: ${uploadErr.message}`);
       } finally {
         try {
           await fs.unlink(tempPath);
         } catch (unlinkErr) {
           if (unlinkErr?.code !== 'ENOENT') {
-            console.warn(`Failed to clean up temp upload ${tempPath}:`, {
+            logger.warn(`Failed to clean up temp upload ${tempPath}:`, {
               error: unlinkErr.message,
               code: unlinkErr.code
             });
@@ -262,9 +262,9 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         type: photoType
       });
 
-      console.log(`Successfully processed file ${file.originalname} (ID: ${photoId})`);
+      logger.info(`Successfully processed file ${file.originalname} (ID: ${photoId})`);
     } catch (error) {
-      console.error(`Error processing file ${file.originalname}:`, {
+      logger.error(`Error processing file ${file.originalname}:`, {
         error: error.message,
         stack: error.stack,
         originalname: file.originalname,
@@ -277,7 +277,7 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         try {
           await trx.rollback();
         } catch (rollbackErr) {
-          console.error('Failed to rollback transaction:', rollbackErr);
+          logger.error('Failed to rollback transaction:', rollbackErr);
         }
       }
 

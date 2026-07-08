@@ -11,6 +11,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { sanitizeCSS, validateCSS, MAX_CSS_SIZE } = require('../utils/cssSanitizer');
 const { DEFAULT_CSS_TEMPLATE } = require('../../migrations/core/052_add_css_templates');
+const logger = require('../utils/logger');
 
 /**
  * GET /admin/css-templates
@@ -23,7 +24,7 @@ router.get('/', adminAuth, requirePermission('branding.view'), async (req, res) 
     );
     res.json({ success: true, templates });
   } catch (error) {
-    console.error('Get CSS templates error:', error);
+    logger.error('Get CSS templates error:', error);
     res.status(500).json({ error: 'Failed to fetch templates' });
   }
 });
@@ -42,7 +43,7 @@ router.get('/enabled', adminAuth, requirePermission('branding.view'), async (req
     );
     res.json({ success: true, templates });
   } catch (error) {
-    console.error('Get enabled templates error:', error);
+    logger.error('Get enabled templates error:', error);
     res.status(500).json({ error: 'Failed to fetch templates' });
   }
 });
@@ -73,7 +74,7 @@ router.get('/:slotNumber', adminAuth, requirePermission('branding.view'), [
 
     res.json({ success: true, template });
   } catch (error) {
-    console.error('Get template error:', error);
+    logger.error('Get template error:', error);
     res.status(500).json({ error: 'Failed to fetch template' });
   }
 });
@@ -150,7 +151,7 @@ router.put('/:slotNumber', adminAuth, requirePermission('branding.edit'), [
       sanitization_warnings: warnings
     });
   } catch (error) {
-    console.error('Update template error:', error);
+    logger.error('Update template error:', error);
     res.status(500).json({ error: 'Failed to update template' });
   }
 });
@@ -187,7 +188,7 @@ router.post('/:slotNumber/reset', adminAuth, requirePermission('branding.edit'),
 
     res.json({ success: true, template });
   } catch (error) {
-    console.error('Reset template error:', error);
+    logger.error('Reset template error:', error);
     res.status(500).json({ error: 'Failed to reset template' });
   }
 });

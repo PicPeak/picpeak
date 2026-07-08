@@ -12,9 +12,15 @@ export interface PublicSettings {
   branding_watermark_size: number;
   branding_favicon_url: string;
   branding_logo_url: string;
+  branding_logo_url_dark?: string;
   branding_logo_size?: string;
   branding_logo_max_height?: number;
-  branding_logo_position?: 'left' | 'center' | 'right';
+  /**
+   * Logo placement. 'left' | 'center' | 'right' = inside the gallery
+   * header. 'sidepanel' = moved into the admin sidebar's brand row
+   * (admin chrome only — gallery falls back to 'left').
+   */
+  branding_logo_position?: 'left' | 'center' | 'right' | 'sidepanel';
   branding_logo_display_mode?: 'logo_only' | 'text_only' | 'logo_and_text';
   branding_logo_display_header?: boolean;
   branding_logo_display_hero?: boolean;
@@ -46,6 +52,15 @@ export interface PublicSettings {
   default_language: string;
   enable_analytics: boolean;
   general_date_format: string | { format: string; locale: string };
+  /** '12h' or '24h' — controls how times are rendered in admin +
+   *  customer views. Storage is always 24h; only display toggles. */
+  general_time_format?: '12h' | '24h';
+  /** Dashboard CRM-overview tile visibility. All default true; only
+   *  explicit false hides the matching tile. */
+  crm_overview_show_revenue?: boolean;
+  crm_overview_show_outstanding?: boolean;
+  crm_overview_show_quotes?: boolean;
+  crm_overview_show_invoices?: boolean;
   enable_recaptcha: boolean;
   recaptcha_site_key: string | null;
   maintenance_mode: boolean;
@@ -53,8 +68,20 @@ export interface PublicSettings {
   umami_url: string | null;
   umami_website_id: string | null;
   umami_share_url: string | null;
+  // Pluggable trackers (#663 Phase 1). The backend always surfaces these;
+  // missing fields fall back via the existing umami_* shape so older
+  // builds keep working.
+  analytics_tracker_provider?: 'none' | 'umami' | 'rybbit' | 'custom';
+  rybbit_url?: string | null;
+  rybbit_website_id?: string | null;
+  // Custom-mode HTML snippet, already sanitised server-side.
+  analytics_custom_head_html?: string;
   // Upload settings
   allowed_file_types?: string;
+  // #613 — per-batch file count limit, surfaced so the guest UserPhotoUpload
+  // modal can render the real number in `upload.fileRequirements` and refuse
+  // oversized batches client-side. Backend enforces the same value too.
+  general_max_files_per_upload?: number;
   // Event field requirements
   event_require_customer_name?: boolean;
   event_require_customer_email?: boolean;

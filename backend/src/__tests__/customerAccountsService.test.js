@@ -66,7 +66,11 @@ beforeEach(() => {
 describe('createInvitation', () => {
   it('rejects when a customer with the email already exists', async () => {
     const svc = require('../services/customerAccountsService');
-    db.mockImplementationOnce(() => chain({ first: { id: 1, email: 'taken@example.com' } }));
+    // Service only rejects when the existing row has a password_hash —
+    // a passive (password_hash = null) row is the "promote to portal"
+    // path and is allowed through. Pin the rejection contract by mocking
+    // an active row.
+    db.mockImplementationOnce(() => chain({ first: { id: 1, email: 'taken@example.com', password_hash: 'hash' } }));
     await expect(
       svc.createInvitation({ email: 'taken@example.com', invitedById: 9 })
     ).rejects.toThrow(/already exists/i);

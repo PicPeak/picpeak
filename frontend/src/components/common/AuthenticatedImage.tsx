@@ -137,18 +137,26 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         throw new Error('No URL provided');
       }
 
-      // Build full URL for the image
+      // Build full URL for the image. Only relative paths are app-owned;
+      // an absolute URL is passed through untouched.
+      const isRelative = rawUrl.startsWith('/');
       const fullImageUrl = rawUrl.startsWith('/admin')
         ? buildResourceUrl(`/api${rawUrl}`)
-        : rawUrl.startsWith('/')
+        : isRelative
           ? buildResourceUrl(rawUrl)
           : rawUrl;
 
       const headers: Record<string, string> = {};
-      const slugForRequest = resolveSlug(rawUrl);
-      const token = getGalleryToken(slugForRequest);
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
+      // Attach the gallery bearer token ONLY to relative (same-app) image
+      // paths. Never send it to an absolute/external URL — that would leak
+      // gallery credentials cross-origin. AuthenticatedImage does not
+      // support external URLs by design.
+      if (isRelative) {
+        const slugForRequest = resolveSlug(rawUrl);
+        const token = getGalleryToken(slugForRequest);
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
       }
 
       const response = await fetch(fullImageUrl, {

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { GeneralSettings } from '../hooks/useSettingsState';
 import { MAX_FILES_PER_UPLOAD_LIMIT } from '../hooks/useSettingsState';
 import { SUPPORTED_LANGUAGES } from "../../../components/common/LanguageSelector.tsx";
+import { MfaSettingsCard } from '../components/MfaSettingsCard';
 
 interface GeneralTabProps {
   generalSettings: GeneralSettings;
@@ -93,6 +94,10 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
           </form>
         )}
       </Card>
+
+      {/* Per-user two-factor authentication (issue #738) — lives beside the
+          admin's own account details rather than the admin-wide Security tab. */}
+      <MfaSettingsCard />
 
       <Card padding="md">
         <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('settings.general.siteConfiguration')}</h2>
@@ -320,6 +325,27 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
             </select>
             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
               {t('settings.general.dateFormatHelp')}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+              {t('settings.general.timeFormat', 'Time format')}
+            </label>
+            <select
+              value={generalSettings.time_format || '24h'}
+              onChange={(e) => {
+                const time_format = e.target.value === '12h' ? '12h' : '24h';
+                setGeneralSettings(prev => ({ ...prev, time_format }));
+              }}
+              className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            >
+              <option value="24h">{t('settings.general.timeFormat24h', '24-hour (14:30)')}</option>
+              <option value="12h">{t('settings.general.timeFormat12h', '12-hour (2:30 PM)')}</option>
+            </select>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              {t('settings.general.timeFormatHelp',
+                'Controls how times render across admin views, customer-facing pages, and PDFs. Storage stays 24-hour (HH:mm); only the display switches.')}
             </p>
           </div>
         </div>

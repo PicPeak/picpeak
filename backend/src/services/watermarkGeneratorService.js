@@ -12,6 +12,7 @@ const { db } = require('../database/db');
 const watermarkService = require('./watermarkService');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { withLocalCopy } = require('./imageProcessor');
+const logger = require('../utils/logger');
 
 class WatermarkGeneratorService {
   constructor() {
@@ -63,8 +64,8 @@ class WatermarkGeneratorService {
       const storageKey = resolvePhotoStorageKey(event, photo);
       const result = storageKey
         ? await withLocalCopy(storageKey, (lp) =>
-            watermarkService.generateAndSaveWatermark(photo, lp, settings)
-          )
+          watermarkService.generateAndSaveWatermark(photo, lp, settings)
+        )
         : await watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), settings);
 
       if (result.success) {
@@ -79,7 +80,7 @@ class WatermarkGeneratorService {
 
       return result;
     } catch (error) {
-      console.error(`Error generating watermark for photo ${photoId}:`, error);
+      logger.error(`Error generating watermark for photo ${photoId}:`, error);
       return { success: false, error: error.message };
     }
   }
@@ -155,7 +156,7 @@ class WatermarkGeneratorService {
 
       return results;
     } catch (error) {
-      console.error(`Error generating watermarks for event ${eventId}:`, error);
+      logger.error(`Error generating watermarks for event ${eventId}:`, error);
       return { ...results, errors: [...results.errors, error.message] };
     }
   }
@@ -169,8 +170,8 @@ class WatermarkGeneratorService {
       const storageKey = resolvePhotoStorageKey(event, photo);
       const result = storageKey
         ? await withLocalCopy(storageKey, (lp) =>
-            watermarkService.generateAndSaveWatermark(photo, lp, settings)
-          )
+          watermarkService.generateAndSaveWatermark(photo, lp, settings)
+        )
         : await watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), settings);
 
       if (result.success) {
@@ -232,7 +233,7 @@ class WatermarkGeneratorService {
         return results;
       }
 
-      console.log(`Starting watermark regeneration for ${photos.length} photos`);
+      logger.info(`Starting watermark regeneration for ${photos.length} photos`);
 
       // Process in batches
       for (let i = 0; i < photos.length; i += this.batchSize) {
@@ -281,11 +282,11 @@ class WatermarkGeneratorService {
       }
 
       results.status = 'completed';
-      console.log(`Watermark regeneration completed: ${results.success}/${results.total} successful`);
+      logger.info(`Watermark regeneration completed: ${results.success}/${results.total} successful`);
 
       return results;
     } catch (error) {
-      console.error('Error during watermark regeneration:', error);
+      logger.error('Error during watermark regeneration:', error);
       results.status = 'failed';
       results.errors.push(error.message);
       return results;
@@ -320,10 +321,10 @@ class WatermarkGeneratorService {
           watermark_generated_at: null
         });
 
-      console.log(`Cleared ${photos.length} watermarks`);
+      logger.info(`Cleared ${photos.length} watermarks`);
       return { success: true, cleared: photos.length };
     } catch (error) {
-      console.error('Error clearing watermarks:', error);
+      logger.error('Error clearing watermarks:', error);
       return { success: false, error: error.message };
     }
   }
@@ -350,7 +351,7 @@ class WatermarkGeneratorService {
 
       return { success: true };
     } catch (error) {
-      console.error(`Error deleting watermark for photo ${photoId}:`, error);
+      logger.error(`Error deleting watermark for photo ${photoId}:`, error);
       return { success: false, error: error.message };
     }
   }

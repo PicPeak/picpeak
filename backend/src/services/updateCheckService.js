@@ -94,7 +94,7 @@ async function fetchAvailableVersions() {
   try {
     // Use GitHub Releases API (public, no auth required)
     const response = await axios.get(
-      'https://api.github.com/repos/the-luap/picpeak/releases',
+      'https://api.github.com/repos/PicPeak/picpeak/releases',
       {
         headers: {
           'Accept': 'application/vnd.github+json',
@@ -105,7 +105,10 @@ async function fetchAvailableVersions() {
       }
     );
 
-    // Extract version tags from releases
+    // Extract version tags from releases. We keep the full release
+    // object (name, body, publishedAt, htmlUrl) so the changelog modal
+    // (#567) can render the release notes without a second GitHub API
+    // round-trip per modal open.
     const versions = {
       stable: [],
       beta: []
@@ -118,18 +121,25 @@ async function fetchAvailableVersions() {
       // Remove 'v' prefix if present
       const version = tag.startsWith('v') ? tag.substring(1) : tag;
 
+      const entry = {
+        version,
+        tag,
+        name: release.name || tag,
+        body: release.body || '',
+        publishedAt: release.published_at || null,
+        htmlUrl: release.html_url || null,
+      };
+
       if (version.match(/^\d+\.\d+\.\d+$/)) {
-        // Stable version
-        versions.stable.push(version);
+        versions.stable.push(entry);
       } else if (version.match(/^\d+\.\d+\.\d+-beta\.\d+$/)) {
-        // Beta version
-        versions.beta.push(version);
+        versions.beta.push(entry);
       }
     }
 
     // Sort versions descending (newest first)
-    versions.stable.sort((a, b) => compareVersions(b, a));
-    versions.beta.sort((a, b) => compareVersions(b, a));
+    versions.stable.sort((a, b) => compareVersions(b.version, a.version));
+    versions.beta.sort((a, b) => compareVersions(b.version, a.version));
 
     return versions;
   } catch (error) {
@@ -162,9 +172,12 @@ async function checkForUpdates(forceRefresh = false) {
     };
   }
 
-  // Determine latest version for current channel
-  const latestStable = availableVersions.stable[0] || currentVersion;
-  const latestBeta = availableVersions.beta[0] || currentVersion;
+  // Determine latest version for current channel. Entry shape is
+  // `{version, tag, name, body, publishedAt, htmlUrl}` since the rich
+  // changelog work (#567); fall back to current when GitHub returned
+  // nothing (e.g. brand-new install before any releases exist).
+  const latestStable = availableVersions.stable[0]?.version || currentVersion;
+  const latestBeta = availableVersions.beta[0]?.version || currentVersion;
   const latestForChannel = currentChannel === 'beta' ? latestBeta : latestStable;
 
   const updateAvailable = compareVersions(latestForChannel, currentVersion) > 0;
@@ -195,6 +208,24 @@ async function checkForUpdates(forceRefresh = false) {
 }
 
 /**
+ * Get the list of releases newer than the running version, filtered to
+ * the user's channel. Powers the changelog modal (#567) so the admin
+ * sees release notes for every version between current and latest,
+ * not just the latest.
+ *
+ * @returns {Promise<Array<{version, tag, name, body, publishedAt, htmlUrl}>>}
+ *   Releases sorted newest-first. Empty array when no update available
+ *   or when the GitHub fetch failed.
+ */
+async function getReleasesSince(currentVersion, channel) {
+  const availableVersions = await fetchAvailableVersions();
+  if (!availableVersions) return [];
+
+  const list = channel === 'beta' ? availableVersions.beta : availableVersions.stable;
+  return list.filter((entry) => compareVersions(entry.version, currentVersion) > 0);
+}
+
+/**
  * Clear the version cache (useful for testing)
  */
 function clearCache() {
@@ -206,6 +237,7 @@ module.exports = {
   checkForUpdates,
   getCurrentVersion,
   getCurrentChannel,
+  getReleasesSince,
   compareVersions,
   parseVersion,
   clearCache

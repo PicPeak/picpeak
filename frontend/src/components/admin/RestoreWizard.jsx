@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PicpeakRestoreCard } from './PicpeakBackupCard';
 import {
   RefreshCw,
   AlertTriangle,
@@ -21,16 +22,18 @@ import {
   Eye,
   Calendar,
   Clock,
-  AlertCircle
+  AlertCircle,
+  ShieldCheck
 } from 'lucide-react';
-import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button, Card, Input, Loading } from '../common';
 import { api } from '../../config/api';
+import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
-export const RestoreWizard = () => {
+export const RestoreWizard = ({ onVerifyIntegrity } = {}) => {
   const { t } = useTranslation();
+  const { format: fmtDate, formatTime: fmtTime, formatDateTime: fmtDateTime } = useLocalizedDate();
   const [currentStep, setCurrentStep] = useState(0);
   
   const steps = [
@@ -281,12 +284,47 @@ export const RestoreWizard = () => {
       )}
 
       {restoreData.source === 'upload' && (
-        <Card className="p-4">
-          <div className="text-center py-8">
-            <Upload className="h-12 w-12 mx-auto mb-3 text-neutral-400" />
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('backup.restore.source.upload.comingSoon')}</p>
+        <div className="space-y-4">
+          {/* Two upload kinds: the working portable .picpeak restore, and the
+              legacy manifest+files upload (still a stub). */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button
+              onClick={() => setRestoreData(prev => ({ ...prev, uploadType: 'picpeak' }))}
+              className={`p-6 rounded-lg border-2 transition-all ${
+                restoreData.uploadType === 'picpeak'
+                  ? 'border-primary bg-accent-dark/15'
+                  : 'border-neutral-200 dark:border-neutral-600 hover:border-neutral-300 dark:hover:border-neutral-500'
+              }`}
+            >
+              <FileArchive className={`h-10 w-10 mb-2 mx-auto ${restoreData.uploadType === 'picpeak' ? 'text-primary' : 'text-neutral-400'}`} />
+              <h4 className="font-medium text-neutral-900 dark:text-neutral-100">{t('backup.restore.source.upload.picpeak.name', '.picpeak backup')}</h4>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('backup.restore.source.upload.picpeak.description', 'Portable full backup — restores everything (full override, keeps your current account).')}</p>
+            </button>
+            <button
+              onClick={() => setRestoreData(prev => ({ ...prev, uploadType: 'manifest' }))}
+              className={`p-6 rounded-lg border-2 transition-all ${
+                restoreData.uploadType === 'manifest'
+                  ? 'border-primary bg-accent-dark/15'
+                  : 'border-neutral-200 dark:border-neutral-600 hover:border-neutral-300 dark:hover:border-neutral-500'
+              }`}
+            >
+              <Upload className={`h-10 w-10 mb-2 mx-auto ${restoreData.uploadType === 'manifest' ? 'text-primary' : 'text-neutral-400'}`} />
+              <h4 className="font-medium text-neutral-900 dark:text-neutral-100">{t('backup.restore.source.upload.manifest.name', 'Manifest + files')}</h4>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('backup.restore.source.upload.manifest.description', 'Upload a manifest and its backup files (legacy format).')}</p>
+            </button>
           </div>
-        </Card>
+
+          {restoreData.uploadType === 'picpeak' && <PicpeakRestoreCard />}
+
+          {restoreData.uploadType === 'manifest' && (
+            <Card className="p-4">
+              <div className="text-center py-8">
+                <Upload className="h-12 w-12 mx-auto mb-3 text-neutral-400" />
+                <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('backup.restore.source.upload.manifestComingSoon', 'Manifest Upload functionality coming soon')}</p>
+              </div>
+            </Card>
+          )}
+        </div>
       )}
     </div>
   );
@@ -330,20 +368,73 @@ export const RestoreWizard = () => {
                   </div>
                   <div>
                     <p className="font-medium text-neutral-900 dark:text-neutral-100">
-                      {format(new Date(backup.created_at), 'PPP')} {t('backup.restore.backup.at')} {format(new Date(backup.created_at), 'p')}
+                      {fmtDate(backup.created_at)} {t('backup.restore.backup.at')} {fmtTime(backup.created_at)}
                     </p>
                     <p className="text-sm text-neutral-500 dark:text-neutral-400">
                       {t('backup.dashboard.backupType', { type: backup.backup_type })} • {formatBytes(backup.total_size || 0)}
                     </p>
                   </div>
                 </div>
-                {backup.encrypted && (
-                  <Shield className="h-5 w-5 text-neutral-400" />
-                )}
+                <div className="flex items-center space-x-2">
+                  {/* Files-only warning — backend's /list-backups now
+                      returns `database_included: boolean` parsed from
+                      the manifest's database.backup_file field. A row
+                      where this is false is exactly the data-loss
+                      scenario the Stage A guard prevents going forward:
+                      a manifest written without an inline DB dump.
+                      Restoring it would NOT bring CRM data back. */}
+                  {backup.database_included === false && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700"
+                      title={t('backup.restore.backup.filesOnlyHint',
+                        'This backup has no database dump — restoring it will NOT recover the database (CRM data, customers, quotes, invoices, contracts will be empty after restore).')}
+                    >
+                      <AlertCircle className="h-3 w-3" />
+                      {t('backup.restore.backup.filesOnlyBadge', 'No DB')}
+                    </span>
+                  )}
+                  {backup.corrupt && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700"
+                      title={t('backup.restore.backup.corruptHint',
+                        'The manifest file is unreadable — the backup may be incomplete or damaged.')}
+                    >
+                      <AlertCircle className="h-3 w-3" />
+                      {t('backup.restore.backup.corruptBadge', 'Corrupt')}
+                    </span>
+                  )}
+                  {backup.encrypted && (
+                    <Shield className="h-5 w-5 text-neutral-400" />
+                  )}
+                </div>
               </div>
             </Card>
           ))}
         </div>
+      )}
+
+      {/* Files-only callout below the selected card. Reinforces the
+          badge with a longer explanation + reminds the admin that
+          restoring this WILL still proceed — they just won't get the
+          DB back. Stops the silent-failure class that originally
+          caused Ralf's 2026-05-29 data loss (four files-only manifests
+          mistaken for full backups). */}
+      {restoreData.selectedBackup && restoreData.selectedBackup.database_included === false && (
+        <Card className="p-4 bg-red-50 dark:bg-red-900/30 border-red-300 dark:border-red-700">
+          <div className="flex items-start space-x-3">
+            <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-red-800 dark:text-red-200">
+                {t('backup.restore.backup.filesOnlyWarning.title',
+                  'Selected backup has no database dump')}
+              </p>
+              <p className="mt-1 text-sm text-red-700 dark:text-red-300">
+                {t('backup.restore.backup.filesOnlyWarning.message',
+                  'Restoring this backup will recover files (photos, PDFs) but the database — including admin users, customers, quotes, invoices, contracts, and settings — will NOT come back. Pick a different backup if you have one with a database dump, or proceed only if files-only is what you want.')}
+              </p>
+            </div>
+          </div>
+        </Card>
       )}
 
       {restoreData.selectedBackup?.encrypted && (
@@ -532,7 +623,7 @@ export const RestoreWizard = () => {
               <div className="flex justify-between">
                 <dt className="text-neutral-600 dark:text-neutral-400">{t('backup.restore.confirmation.summary.backupDate')}:</dt>
                 <dd className="font-medium text-neutral-900 dark:text-neutral-100">
-                  {format(new Date(restoreData.selectedBackup.created_at), 'PPp')}
+                  {fmtDateTime(restoreData.selectedBackup.created_at)}
                 </dd>
               </div>
               <div className="flex justify-between">
@@ -573,15 +664,62 @@ export const RestoreWizard = () => {
   const renderProgress = () => {
     const progress = restoreStatus?.currentProgress || {};
     const isRunning = restoreStatus?.isRunning;
+    // Pull the most recent restore_runs row from history so we can
+    // tell whether the "not running" state means success, failure, or
+    // never-started. The history endpoint already returns rows newest
+    // first.
+    const lastRun = restoreStatus?.history?.[0];
+    const lastRunFailed =
+      !isRunning && lastRun && (lastRun.status === 'failed' || lastRun.was_successful === false);
+    const lastRunSucceeded =
+      !isRunning && lastRun && lastRun.status === 'completed' && lastRun.was_successful === true;
+    // Strip the noisy stack-trace tail from the error message so the
+    // user sees the actionable line first.
+    const lastRunError = lastRun?.error_message
+      ? lastRun.error_message.split('\n')[0].slice(0, 500)
+      : null;
+    const subtitle = isRunning
+      ? t('backup.restore.progress.inProgress')
+      : lastRunFailed
+        ? t('backup.restore.progress.failedSubtitle', 'Restore failed — see error below. Destination has been rolled back to its pre-restore state.')
+        : lastRunSucceeded
+          ? t('backup.restore.progress.completed')
+          : t('backup.restore.progress.idle', 'No restore in progress.');
 
     return (
       <div className="space-y-6">
         <div>
           <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-2">{t('backup.restore.progress.title')}</h3>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            {isRunning ? t('backup.restore.progress.inProgress') : t('backup.restore.progress.completed')}
+          <p className={`text-sm ${
+            lastRunFailed
+              ? 'text-red-700 dark:text-red-300 font-medium'
+              : 'text-neutral-600 dark:text-neutral-400'
+          }`}>
+            {subtitle}
           </p>
         </div>
+
+        {lastRunFailed && (
+          <div className="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <XCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <h4 className="text-sm font-semibold text-red-800 dark:text-red-200 mb-1">
+                  {t('backup.restore.progress.errorTitle', 'Restore did not complete')}
+                </h4>
+                <p className="text-sm text-red-700 dark:text-red-300 font-mono break-all">
+                  {lastRunError || t('backup.restore.progress.errorUnknown', 'No error message recorded.')}
+                </p>
+                {lastRun.was_rollback_attempted && (
+                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">
+                    {t('backup.restore.progress.rolledBack',
+                      'Pre-restore safety backup was used to roll back. Destination is in its pre-restore state — safe to retry once the issue above is resolved.')}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Progress Bar */}
         <Card className="p-6">
@@ -645,18 +783,41 @@ export const RestoreWizard = () => {
           </Card>
         )}
 
-        {/* Completion Actions */}
-        {!isRunning && progress.status === 'completed' && (
+        {/* Completion Actions — only when the most recent run actually
+            succeeded. Previously this gated on `progress.status` which
+            could be null between runs, so the green "Restore completed
+            successfully" banner could render alongside a silent failure. */}
+        {lastRunSucceeded && (
           <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded-lg p-4">
             <div className="flex">
               <CheckCircle className="h-5 w-5 text-green-400 mt-0.5" />
-              <div className="ml-3">
+              <div className="ml-3 flex-1">
                 <h3 className="text-sm font-medium text-green-800 dark:text-green-200">
                   {t('backup.restore.progress.success.title')}
                 </h3>
                 <p className="mt-1 text-sm text-green-700 dark:text-green-300">
                   {t('backup.restore.progress.success.message')}
                 </p>
+                {/* Post-restore CTA: jump to the integrity check (D2). The
+                    audit trail captured at sign / issue time is worth
+                    nothing if the documents it refers to are missing
+                    from the restored copy — verifier surfaces that
+                    drift in one click before the admin trusts the
+                    restored state. */}
+                {onVerifyIntegrity && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={onVerifyIntegrity}
+                    leftIcon={<ShieldCheck className="w-4 h-4" />}
+                  >
+                    {t(
+                      'backup.restore.progress.success.verifyIntegrity',
+                      'Verify document integrity now',
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
           </div>

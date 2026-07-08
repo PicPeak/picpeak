@@ -4,16 +4,23 @@ import { toast } from 'react-toastify';
 import { Button, Card, Input, ErrorBoundary, Loading, MarkdownContent } from '../../components/common';
 import { ThemeCustomizerEnhanced, GalleryPreview } from '../../components/admin';
 import { useTheme, type ThemeConfig, GALLERY_THEME_PRESETS } from '../../contexts/ThemeContext';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { settingsService, type BrandingSettings } from '../../services/settings.service';
+import { businessProfileService } from '../../services/businessProfile.service';
 import { useTranslation } from 'react-i18next';
 import { buildResourceUrl } from '../../utils/url';
-import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
+import { useFeatureEnabled, useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { CustomerDashboardBrandingCard } from '../../components/admin/CustomerDashboardBrandingCard';
+import { PdfTypographyCard } from '../../components/admin/PdfTypographyCard';
+import { usePublicSettings } from '../../hooks/usePublicSettings';
+import { useMutationWithToast } from '../../hooks';
 
 export const BrandingPage: React.FC = () => {
   const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
+  // Used to gate the PDF typography card — when no PDF-producing
+  // feature is enabled the setting has no surface to apply to.
+  const { flags } = useFeatureFlags();
   const [brandingSettings, setBrandingSettings] = useState<BrandingSettings>({
     company_name: '',
     company_tagline: '',
@@ -49,6 +56,11 @@ export const BrandingPage: React.FC = () => {
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(theme);
   const [currentThemeName, setCurrentThemeName] = useState('default');
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  // PDF body font selection (migration 121). Lives on this page so the
+  // top-level Save button can persist it together with branding +
+  // theme — no card-local save button. Null = "no preference,
+  // fall back to Helvetica" — same encoding the column uses.
+  const [pdfFontFamily, setPdfFontFamily] = useState<string | null>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch current settings
@@ -63,36 +75,37 @@ export const BrandingPage: React.FC = () => {
     queryFn: () => settingsService.getSettingsByType('theme'),
   });
 
+  // Fetch business profile snapshot — needed to hydrate the PDF
+  // typography card with the saved pdfFontFamily value. The PDF
+  // typography card is rendered only when a PDF-producing feature is
+  // enabled, but the query is cheap and the page already issues other
+  // settings queries on mount, so we always fetch.
+  const { data: businessProfileSnapshot } = useQuery({
+    queryKey: ['business-profile-snapshot'],
+    queryFn: () => businessProfileService.get(),
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Update branding mutation
   const queryClient = useQueryClient();
   
-  const brandingMutation = useMutation({
+  const brandingMutation = useMutationWithToast({
     mutationFn: settingsService.updateBranding,
-    onSuccess: () => {
-      toast.success(t('toast.brandingUpdated'));
-      // Invalidate all settings queries to refresh data
-      queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
-      queryClient.invalidateQueries({ queryKey: ['public-settings'] });
-    },
-    onError: () => {
-      toast.error(t('toast.saveError'));
-    },
+    successMessage: t('toast.brandingUpdated'),
+    errorMessage: () => t('toast.saveError'),
+    // Invalidate all settings queries to refresh data
+    invalidateKeys: [['admin-settings'], ['public-settings']],
   });
 
   // Update theme mutation
-  const themeMutation = useMutation({
+  const themeMutation = useMutationWithToast({
     mutationFn: settingsService.updateTheme,
-    onSuccess: () => {
-      toast.success(t('toast.themeUpdated'));
-      // Refresh both the admin settings cache (which the page reads from) and
-      // the public-settings cache (which the gallery reads from) so the saved
-      // theme is reflected without a manual reload (#317).
-      queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
-      queryClient.invalidateQueries({ queryKey: ['public-settings'] });
-    },
-    onError: () => {
-      toast.error(t('toast.saveError'));
-    },
+    successMessage: t('toast.themeUpdated'),
+    errorMessage: () => t('toast.saveError'),
+    // Refresh both the admin settings cache (which the page reads from) and
+    // the public-settings cache (which the gallery reads from) so the saved
+    // theme is reflected without a manual reload (#317).
+    invalidateKeys: [['admin-settings'], ['public-settings']],
   });
 
   // Initialize settings from database
@@ -103,6 +116,13 @@ export const BrandingPage: React.FC = () => {
       setBrandingSettings(prev => ({ ...prev, ...formatted }));
     }
   }, [settings]);
+
+  // Hydrate the PDF font selection once the business profile arrives.
+  useEffect(() => {
+    if (businessProfileSnapshot?.profile) {
+      setPdfFontFamily(businessProfileSnapshot.profile.pdfFontFamily || null);
+    }
+  }, [businessProfileSnapshot?.profile?.pdfFontFamily]);
 
   // Initialize theme from database
   useEffect(() => {
@@ -157,12 +177,14 @@ export const BrandingPage: React.FC = () => {
   };
 
   const handleThemeChange = (newTheme: ThemeConfig) => {
-    // Preset configs don't carry a logoUrl, so a preset change inside the
-    // customizer arrives here with newTheme.logoUrl=undefined. Keep the
-    // existing logo instead of wiping branding_logo_url on save (#317).
+    // Preset configs don't carry a logoUrl or customCss, so a preset change
+    // inside the customizer arrives here with those fields undefined. Keep
+    // the existing values instead of wiping the persisted ones on save
+    // (#317 for logoUrl, #645 for customCss).
     const mergedTheme: ThemeConfig = {
       ...newTheme,
-      logoUrl: newTheme.logoUrl ?? currentTheme.logoUrl
+      logoUrl: newTheme.logoUrl ?? currentTheme.logoUrl,
+      customCss: newTheme.customCss ?? currentTheme.customCss
     };
     setCurrentTheme(mergedTheme);
     if (newTheme.logoUrl !== undefined && newTheme.logoUrl !== currentTheme.logoUrl) {
@@ -178,10 +200,20 @@ export const BrandingPage: React.FC = () => {
     // Get the preset theme config
     const preset = GALLERY_THEME_PRESETS[presetName];
     if (preset) {
-      // Preserve the existing logo when switching presets (#317).
-      setCurrentTheme(prev => ({ ...preset.config, logoUrl: prev.logoUrl }));
+      // Preserve the existing logo + custom CSS when switching presets
+      // (#317 for logo, #645 for customCss). Presets define a look; they
+      // shouldn't silently drop the admin's persisted styling extras.
+      setCurrentTheme(prev => ({
+        ...preset.config,
+        logoUrl: prev.logoUrl,
+        customCss: prev.customCss
+      }));
       if (isPreviewMode) {
-        setTheme({ ...preset.config, logoUrl: currentTheme.logoUrl });
+        setTheme({
+          ...preset.config,
+          logoUrl: currentTheme.logoUrl,
+          customCss: currentTheme.customCss
+        });
       }
     }
   };
@@ -232,6 +264,47 @@ export const BrandingPage: React.FC = () => {
     });
   };
 
+  // Dark-mode logo — self-contained (the upload endpoint persists
+  // branding_logo_url_dark directly; not part of the theme payload).
+  // Consumers (admin header, gallery) pick it when the theme is dark.
+  const { data: pubSettings } = usePublicSettings();
+  const [logoDarkUrl, setLogoDarkUrl] = useState('');
+  useEffect(() => {
+    if (pubSettings?.branding_logo_url_dark !== undefined) {
+      setLogoDarkUrl(pubSettings.branding_logo_url_dark || '');
+    }
+  }, [pubSettings?.branding_logo_url_dark]);
+
+  const refreshSettings = () => {
+    queryClient.invalidateQueries({ queryKey: ['public-settings'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-settings'] });
+  };
+
+  const handleDarkLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const url = await settingsService.uploadLogo(file, 'dark');
+      setLogoDarkUrl(url);
+      refreshSettings();
+      toast.success(t('toast.uploadSuccess'));
+    } catch (error) {
+      console.error('Failed to upload dark logo:', error);
+      toast.error(t('toast.uploadError'));
+    }
+  };
+
+  const handleRemoveDarkLogo = async () => {
+    try {
+      await settingsService.removeLogo('dark');
+      setLogoDarkUrl('');
+      refreshSettings();
+    } catch (error) {
+      console.error('Failed to remove dark logo:', error);
+      toast.error(t('toast.saveError'));
+    }
+  };
+
   const handleWatermarkLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -255,16 +328,27 @@ export const BrandingPage: React.FC = () => {
         ...brandingSettings,
         logo_url: currentTheme.logoUrl || brandingSettings.logo_url || ''
       };
-      
+
       // Save branding settings to database
       await brandingMutation.mutateAsync(updatedBrandingSettings);
-      
+
       // Save theme settings to database
       await themeMutation.mutateAsync(currentTheme);
-      
+
+      // Persist PDF font family if it changed. Skipped when the value
+      // matches the snapshot to avoid touching business_profile on
+      // every Branding save (the row carries unrelated settings).
+      const savedPdfFontFamily = businessProfileSnapshot?.profile?.pdfFontFamily || null;
+      if (savedPdfFontFamily !== pdfFontFamily) {
+        await businessProfileService.update({
+          pdfFontFamily: pdfFontFamily ? pdfFontFamily : null,
+        });
+        queryClient.invalidateQueries({ queryKey: ['business-profile-snapshot'] });
+      }
+
       // Apply theme globally
       setTheme(currentTheme);
-      
+
       // Update local state to reflect saved values
       setBrandingSettings(updatedBrandingSettings);
     } catch (error) {
@@ -582,6 +666,50 @@ export const BrandingPage: React.FC = () => {
                   {t('branding.logoHelp', 'PNG, JPG or SVG format, recommended width: 200px')}
                 </p>
               </div>
+              {/* Dark-mode logo */}
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  {t('branding.logoDark', 'Dark-mode logo')}
+                </label>
+                <div className="flex items-center gap-4">
+                  {logoDarkUrl && (
+                    <div className="relative">
+                      <img
+                        src={logoDarkUrl.startsWith('http') ? logoDarkUrl : buildResourceUrl(logoDarkUrl)}
+                        alt="Dark logo"
+                        className="h-16 object-contain bg-neutral-800 rounded p-2"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleRemoveDarkLogo}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  )}
+                  <div>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/svg+xml"
+                      onChange={handleDarkLogoUpload}
+                      className="hidden"
+                      id="logo-dark-upload"
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => document.getElementById('logo-dark-upload')?.click()}
+                      leftIcon={<Upload className="w-4 h-4" />}
+                    >
+                      {logoDarkUrl ? t('branding.changeLogo', 'Change Logo') : t('branding.uploadLogo', 'Upload Logo')}
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+                  {t('branding.logoDarkHelp', 'Optional. Shown on dark themes / dark mode; falls back to the main logo when unset.')}
+                </p>
+              </div>
               {/* Logo Size */}
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
@@ -620,13 +748,19 @@ export const BrandingPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Logo Position */}
+              {/* Logo Position
+                  - left / center / right: position inside the gallery header bar.
+                  - sidepanel: moves the logo out of the gallery header
+                    and into the admin sidebar's brand row (replaces the
+                    "PicPeak Admin" text; the favicon takes over when
+                    the sidebar is collapsed). The gallery falls back
+                    to 'left' for its own rendering. */}
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
                   {t('branding.logoPosition', 'Logo Position in Header')}
                 </label>
-                <div className="flex gap-2">
-                  {(['left', 'center', 'right'] as const).map((position) => (
+                <div className="flex flex-wrap gap-2">
+                  {(['sidepanel', 'left', 'center', 'right'] as const).map((position) => (
                     <button
                       key={position}
                       type="button"
@@ -641,6 +775,12 @@ export const BrandingPage: React.FC = () => {
                     </button>
                   ))}
                 </div>
+                {brandingSettings.logo_position === 'sidepanel' && (
+                  <p className="text-xs text-neutral-600 dark:text-neutral-400 mt-2">
+                    {t('branding.positionSidepanelHelp',
+                      'The logo appears in the admin sidebar instead of the header. When the sidebar is collapsed, the favicon is shown.')}
+                  </p>
+                )}
               </div>
 
               {/* Display Mode */}
@@ -953,7 +1093,14 @@ export const BrandingPage: React.FC = () => {
             </label>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left side - Theme Customizer */}
+            {/* Left side - Theme Customizer.
+                The PDF typography card is injected via the
+                customizer's `slotBeforeCustomCss` so it sits
+                immediately after the web Typography & Style section
+                and before the (often bulky) Custom CSS editor —
+                keeps all typography choices visually grouped.
+                Hidden when no PDF-producing feature is on; persisted
+                via the top-level Save button (handleSave). */}
             <div>
               <ThemeCustomizerEnhanced
                 value={currentTheme}
@@ -964,19 +1111,24 @@ export const BrandingPage: React.FC = () => {
                 hideActions={true}
                 forceColorMode={brandingSettings.force_color_mode ?? null}
                 onForceColorModeChange={handleForceColorModeChange}
+                slotBeforeCustomCss={
+                  (flags.quotes || flags.bills || flags.taxReport)
+                    ? <PdfTypographyCard value={pdfFontFamily} onChange={setPdfFontFamily} />
+                    : null
+                }
               />
             </div>
-            
+
             {/* Right side - Gallery Preview */}
             <div className="lg:sticky lg:top-4 lg:h-fit">
               <Card className="p-4">
                 <h3 className="text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-3">
                   {t('branding.livePreview')}
                 </h3>
-                <GalleryPreview 
+                <GalleryPreview
                   theme={currentTheme}
-                  branding={brandingSettings}
-                  className="shadow-lg" 
+                  branding={{ ...brandingSettings, logo_url_dark: logoDarkUrl }}
+                  className="shadow-lg"
                 />
               </Card>
             </div>

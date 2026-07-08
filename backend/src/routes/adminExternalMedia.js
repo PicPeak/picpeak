@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
+const { requireEventOwnership } = require('../middleware/ownership');
 const { list, resolveExternalPath, getExternalMediaRoot } = require('../services/externalMediaService');
 const { db, logActivity } = require('../database/db');
 const sharp = require('sharp');
@@ -48,7 +49,7 @@ async function walkDir(dir, baseDir) {
 
 // POST /api/admin/events/:id/import-external
 // Body: { external_path: string, recursive?: boolean, map?: { individual?: string, collages?: string } }
-router.post('/events/:id/import-external', adminAuth, requirePermission('photos.upload'), async (req, res) => {
+router.post('/events/:id/import-external', adminAuth, requirePermission('photos.upload'), requireEventOwnership, async (req, res) => {
   try {
     const eventId = parseInt(req.params.id);
     const { external_path, recursive = true, map = { individual: 'individual', collages: 'collages' } } = req.body || {};

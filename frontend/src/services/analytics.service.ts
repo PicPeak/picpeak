@@ -1,13 +1,46 @@
-// Umami Analytics Service
-// Provides integration with Umami for tracking page views and events
+// Pluggable analytics service (#663 Phase 1).
+//
+// Routes initialization to the right tracker based on the operator's chosen
+// provider in Settings → Analytics, and dispatches `track()` calls to the
+// tracker's runtime API when one is loaded.
+//
+//   None    → no script, no-op tracking.
+//   Umami   → inject Umami script tag; `window.umami.track(name, data)`.
+//   Rybbit  → inject Rybbit script tag; `window.rybbit.event(name, data)`.
+//   Custom  → render admin-pasted HTML (sanitised server-side) into <head>;
+//             no runtime API hook — `track()` becomes a no-op.
 
-interface UmamiConfig {
-  websiteId?: string;
-  hostUrl?: string;
+export type TrackerProvider = 'none' | 'umami' | 'rybbit' | 'custom';
+
+interface BaseInitConfig {
+  provider: TrackerProvider;
   autoTrack?: boolean;
   doNotTrack?: boolean;
+}
+
+interface UmamiInitConfig extends BaseInitConfig {
+  provider: 'umami';
+  websiteId: string;
+  hostUrl: string;
   domains?: string[];
 }
+
+interface RybbitInitConfig extends BaseInitConfig {
+  provider: 'rybbit';
+  websiteId: string;
+  hostUrl: string;
+}
+
+interface CustomInitConfig extends BaseInitConfig {
+  provider: 'custom';
+  customHeadHtml: string;
+}
+
+interface NoneInitConfig extends BaseInitConfig {
+  provider: 'none';
+}
+
+type InitConfig = UmamiInitConfig | RybbitInitConfig | CustomInitConfig | NoneInitConfig;
 
 declare global {
   interface Window {
@@ -21,74 +54,107 @@ declare global {
         websiteId?: string
       ) => void;
     };
+    rybbit?: {
+      event: (eventName: string, eventData?: any) => void;
+      pageview?: () => void;
+    };
   }
 }
 
 class AnalyticsService {
   private initialized = false;
+  private provider: TrackerProvider = 'none';
   private websiteId: string | null = null;
-  // private hostUrl: string | null = null;
 
-  initialize(config: UmamiConfig) {
+  initialize(config: InitConfig) {
     if (this.initialized) return;
-
-    const { websiteId, hostUrl, autoTrack = true, doNotTrack = true } = config;
-
-    if (!websiteId || !hostUrl) {
-      console.warn('Umami Analytics: Missing websiteId or hostUrl');
+    if (config.provider === 'none') {
+      this.initialized = true;
+      this.provider = 'none';
       return;
     }
 
-    this.websiteId = websiteId;
-    // this.hostUrl = hostUrl;
-
-    // Create and inject Umami script
-    const script = document.createElement('script');
-    script.async = true;
-    script.defer = true;
-    script.src = `${hostUrl}/script.js`;
-    script.setAttribute('data-website-id', websiteId);
-    
-    if (!autoTrack) {
-      script.setAttribute('data-auto-track', 'false');
+    if (config.provider === 'umami') {
+      if (!config.websiteId || !config.hostUrl) {
+        console.warn('Umami: missing websiteId or hostUrl');
+        return;
+      }
+      this.websiteId = config.websiteId;
+      const script = document.createElement('script');
+      script.async = true;
+      script.defer = true;
+      script.src = `${config.hostUrl.replace(/\/+$/, '')}/script.js`;
+      script.setAttribute('data-website-id', config.websiteId);
+      if (config.autoTrack === false) script.setAttribute('data-auto-track', 'false');
+      if (config.doNotTrack !== false) script.setAttribute('data-do-not-track', 'true');
+      if (config.domains?.length) script.setAttribute('data-domains', config.domains.join(','));
+      document.head.appendChild(script);
+    } else if (config.provider === 'rybbit') {
+      if (!config.websiteId || !config.hostUrl) {
+        console.warn('Rybbit: missing websiteId or hostUrl');
+        return;
+      }
+      this.websiteId = config.websiteId;
+      const script = document.createElement('script');
+      script.async = true;
+      script.defer = true;
+      script.src = `${config.hostUrl.replace(/\/+$/, '')}/api/script.js`;
+      script.setAttribute('data-site-id', config.websiteId);
+      document.head.appendChild(script);
+    } else if (config.provider === 'custom') {
+      // The admin-pasted HTML is sanitised server-side (see
+      // backend `customScriptSanitiser.js`). We render it via a wrapper
+      // <div> and move each child node into <head> so <script> tags
+      // execute. Using innerHTML on a <head> directly is also fine
+      // here — the child nodes get parsed and inserted in order.
+      const html = (config.customHeadHtml || '').trim();
+      if (html) {
+        const container = document.createElement('div');
+        container.innerHTML = html;
+        // Re-create <script> elements so the browser actually evaluates
+        // them — assigning innerHTML to a parent inserts the nodes but
+        // doesn't trigger script execution per the HTML spec.
+        Array.from(container.childNodes).forEach((node) => {
+          if (node.nodeName === 'SCRIPT') {
+            const orig = node as HTMLScriptElement;
+            const fresh = document.createElement('script');
+            Array.from(orig.attributes).forEach((attr) => fresh.setAttribute(attr.name, attr.value));
+            if (orig.textContent) fresh.textContent = orig.textContent;
+            document.head.appendChild(fresh);
+          } else {
+            document.head.appendChild(node);
+          }
+        });
+      }
     }
-    
-    if (doNotTrack) {
-      script.setAttribute('data-do-not-track', 'true');
-    }
 
-    if (config.domains && config.domains.length > 0) {
-      script.setAttribute('data-domains', config.domains.join(','));
-    }
-
-    document.head.appendChild(script);
+    this.provider = config.provider;
     this.initialized = true;
   }
 
-  // Check if analytics is initialized
   isInitialized() {
     return this.initialized;
   }
 
-  // Track custom events
+  // Track custom events. Dispatched to whichever tracker is loaded; custom
+  // mode no-ops (we don't know the operator's tracker's runtime API).
   track(eventName: string, eventData?: Record<string, any>) {
-    if (!this.initialized || !window.umami) {
-      // Silently ignore if not initialized
-      return;
+    if (!this.initialized) return;
+    if (this.provider === 'umami' && typeof window !== 'undefined' && window.umami) {
+      window.umami.track(eventName, eventData);
+    } else if (this.provider === 'rybbit' && typeof window !== 'undefined' && window.rybbit) {
+      window.rybbit.event(eventName, eventData);
     }
-
-    // Umami expects flat event data
-    window.umami.track(eventName, eventData);
+    // 'none' / 'custom' / unloaded → silently ignore.
   }
 
-  // Track page views manually
   trackPageView(url?: string, referrer?: string) {
-    if (!this.initialized || !window.umami) {
-      // Silently ignore if not initialized
-      return;
+    if (!this.initialized) return;
+    if (this.provider === 'umami' && typeof window !== 'undefined' && window.umami) {
+      window.umami.trackView(url, referrer, this.websiteId || undefined);
+    } else if (this.provider === 'rybbit' && typeof window !== 'undefined' && window.rybbit?.pageview) {
+      window.rybbit.pageview();
     }
-
-    window.umami.trackView(url, referrer, this.websiteId || undefined);
   }
 
   // Gallery-specific tracking events
@@ -96,12 +162,10 @@ class AnalyticsService {
     this.track(`gallery_${eventType}`, data);
   }
 
-  // Admin-specific tracking events
   trackAdminEvent(eventType: 'login' | 'event_created' | 'event_archived' | 'event_deleted' | 'settings_updated', data?: any) {
     this.track(`admin_${eventType}`, data);
   }
 
-  // Track download events with more context
   trackDownload(photoId: string | number, gallerySlug: string, isBulk: boolean = false) {
     this.track('photo_download', {
       photo_id: photoId,
@@ -111,7 +175,6 @@ class AnalyticsService {
     });
   }
 
-  // Track expiration warning views
   trackExpirationWarning(gallerySlug: string, daysRemaining: number) {
     this.track('expiration_warning_viewed', {
       gallery: gallerySlug,
@@ -120,7 +183,6 @@ class AnalyticsService {
     });
   }
 
-  // Track search usage
   trackSearch(query: string, resultsCount: number, context: 'gallery' | 'admin') {
     this.track('search_performed', {
       query_length: query.length,

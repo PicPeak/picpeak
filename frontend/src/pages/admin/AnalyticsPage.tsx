@@ -82,21 +82,19 @@ export const AnalyticsPage: React.FC = () => {
   useEffect(() => {
     const fetchUmamiConfig = async () => {
       try {
-        // Use admin API endpoint with auth token since we're in admin area
+        // `/admin/settings` returns a key/value object (see backend
+        // `adminSettings.js:108`), NOT an array (#661 Bug B). The old
+        // `.reduce()` path threw `data.reduce is not a function` and the
+        // catch block silently rendered the "Umami Not Configured" banner
+        // even on perfectly-configured installs. Read keys directly.
         const response = await api.get('/admin/settings');
-        const settings = response.data;
-        
-        // Transform the settings array to object
-        const settingsMap = settings.reduce((acc: any, setting: any) => {
-          acc[setting.key] = setting.value;
-          return acc;
-        }, {});
-        
+        const settings = response.data ?? {};
+
         // Check if Umami is enabled in admin settings
-        if (settingsMap.analytics_umami_enabled && settingsMap.analytics_umami_url && settingsMap.analytics_umami_website_id) {
+        if (settings.analytics_umami_enabled && settings.analytics_umami_url && settings.analytics_umami_website_id) {
           setUmamiConfig({
-            url: settingsMap.analytics_umami_url,
-            shareUrl: settingsMap.analytics_umami_share_url,
+            url: settings.analytics_umami_url,
+            shareUrl: settings.analytics_umami_share_url,
             enabled: true
           });
         } else {
@@ -139,10 +137,14 @@ export const AnalyticsPage: React.FC = () => {
   const analytics: ComponentAnalyticsData | undefined = React.useMemo(() => {
     if (!apiData) return undefined;
 
-    // Calculate totals from chart data
-    const totalViews = apiData.chartData.reduce((sum, day) => sum + day.views, 0);
-    const totalVisitors = apiData.chartData.reduce((sum, day) => sum + day.uniqueVisitors, 0);
-    const totalDownloads = apiData.chartData.reduce((sum, day) => sum + day.downloads, 0);
+    // Headline totals come from the dedicated `totals` object that the
+    // backend computes via separate COUNT queries (#661 Bug A). The old
+    // sum-the-chartData path returned 0 on Postgres installs because the
+    // backend's date-string merge into chartData failed there. Postgres'
+    // pg driver returns COUNT(...) as strings, so coerce via Number().
+    const totalViews = Number(apiData.totals?.views ?? 0);
+    const totalVisitors = Number(apiData.totals?.uniqueVisitors ?? 0);
+    const totalDownloads = Number(apiData.totals?.downloads ?? 0);
 
     // Calculate trends (comparing last half to first half)
     const halfPoint = Math.floor(apiData.chartData.length / 2);

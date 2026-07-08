@@ -315,15 +315,21 @@ router.get('/events/:eventId/feedback/export',
   async (req, res) => {
     try {
       const { eventId } = req.params;
-      const { format = 'json' } = req.query;
-      
-      const feedback = await feedbackService.exportEventFeedback(eventId);
-      
+      const { format = 'json', shape = 'long' } = req.query;
+
+      // shape='long' (default, backward-compat) → one row per individual
+      // feedback action. shape='pivot' (#640 part #6) → one row per
+      // (photo, guest) with is_favorited / is_liked / star_rating / comment.
+      const isPivot = String(shape).toLowerCase() === 'pivot';
+      const feedback = isPivot
+        ? await feedbackService.exportEventFeedbackPivoted(eventId)
+        : await feedbackService.exportEventFeedback(eventId);
+
       if (format === 'csv') {
-        // Convert to CSV
         const csv = convertToCSV(feedback);
+        const fileSuffix = isPivot ? 'pivot' : 'long';
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename="feedback-${eventId}.csv"`);
+        res.setHeader('Content-Disposition', `attachment; filename="feedback-${fileSuffix}-${eventId}.csv"`);
         res.send(csv);
       } else {
         res.json(feedback);
@@ -428,24 +434,30 @@ router.delete('/word-filters/:id',
   }
 );
 
-// Helper function to convert JSON to CSV
+// Helper function to convert JSON to CSV. Improvements over the original
+// (#640 part #6): handles booleans (rendered yes/no for spreadsheet
+// readability), nulls/undefined (rendered as empty), and escapes strings
+// containing newlines as well as commas/quotes — comments with line breaks
+// were silently breaking the CSV row count before this.
 function convertToCSV(data) {
   if (!data || data.length === 0) return '';
-  
+
   const headers = Object.keys(data[0]);
   const csvHeaders = headers.join(',');
-  
+
   const csvRows = data.map(row => {
     return headers.map(header => {
       const value = row[header];
-      // Escape quotes and wrap in quotes if contains comma
-      if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+      if (value === null || value === undefined) return '';
+      if (typeof value === 'boolean') return value ? 'yes' : 'no';
+      if (typeof value === 'string'
+        && (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r'))) {
         return `"${value.replace(/"/g, '""')}"`;
       }
-      return value || '';
+      return value;
     }).join(',');
   });
-  
+
   return [csvHeaders, ...csvRows].join('\n');
 }
 

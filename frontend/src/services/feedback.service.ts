@@ -15,6 +15,13 @@ export interface FeedbackSettings {
   rate_limit_window_minutes?: number;
   rate_limit_max_requests?: number;
   identity_mode?: IdentityMode;
+  // Per-guest caps (#655). null or 0 = unlimited (preserves current
+  // behaviour for installs that haven't enabled the cap). Positive
+  // integers are enforced server-side — adds beyond the cap return a
+  // structured 403 with `code: 'FAVORITE_LIMIT_REACHED'` /
+  // `'LIKE_LIMIT_REACHED'`, surfaced to the guest as a modal.
+  max_favorites_per_guest?: number | null;
+  max_likes_per_guest?: number | null;
 }
 
 export interface PhotoFeedback {
@@ -136,9 +143,18 @@ class FeedbackService {
     return response.data;
   }
 
-  async exportEventFeedback(eventId: string, format: 'json' | 'csv' = 'json') {
+  // `shape` defaults to 'long' (one row per feedback action) for backward
+  // compatibility with anyone scripting against this endpoint. 'pivot' (per
+  // #640 #6) returns one row per (photo, guest_identifier) with boolean
+  // is_favorited / is_liked plus star_rating + comment. Hidden-by-moderator
+  // rows are excluded from the pivot.
+  async exportEventFeedback(
+    eventId: string,
+    format: 'json' | 'csv' = 'json',
+    shape: 'long' | 'pivot' = 'long',
+  ) {
     const response = await api.get(`/admin/feedback/events/${eventId}/feedback/export`, {
-      params: { format },
+      params: { format, shape },
       responseType: format === 'csv' ? 'blob' : 'json'
     });
     return response.data;

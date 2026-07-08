@@ -1,5 +1,6 @@
 const express = require('express');
 const { db, withRetry } = require('../database/db');
+const logger = require('../utils/logger');
 const router = express.Router();
 
 // Get public settings (branding and theme)
@@ -18,7 +19,15 @@ router.get('/', async (req, res) => {
               'event_default_require_password',
               'event_default_feedback_enabled',
               'gallery_show_filter_bar',
-              'event_phone_field_enabled'
+              'event_phone_field_enabled',
+              // #613 — guest upload UI needs to know the per-batch file
+              // count limit so it can render a real number in the
+              // "fileRequirements" hint (`{{limit}}` was showing literal)
+              // and short-circuit before posting too many files. The
+              // backend route also enforces it via getMaxFilesPerUpload,
+              // but a client-side guard saves a 4MB+ round-trip when the
+              // limit is small.
+              'general_max_files_per_upload'
             ]);
         })
         .select('setting_key', 'setting_value');
@@ -59,6 +68,7 @@ router.get('/', async (req, res) => {
       branding_watermark_size: settingsObject.branding_watermark_size || 15,
       branding_favicon_url: settingsObject.branding_favicon_url || '',
       branding_logo_url: settingsObject.branding_logo_url || '',
+      branding_logo_url_dark: settingsObject.branding_logo_url_dark || '',
       branding_logo_size: settingsObject.branding_logo_size || 'medium',
       branding_logo_max_height: settingsObject.branding_logo_max_height || 48,
       branding_logo_position: settingsObject.branding_logo_position || 'left',
@@ -105,14 +115,60 @@ router.get('/', async (req, res) => {
       default_language: settingsObject.general_default_language || 'en',
       enable_analytics: settingsObject.general_enable_analytics !== false,
       general_date_format: settingsObject.general_date_format || 'PPP',
+      // '12h' / '24h' — controls how times are rendered in admin +
+      // customer views via the useLocalizedDate hook. The underlying
+      // storage is always HH:mm (24h); only the displayed form toggles.
+      // Default '24h' to match the operator's CH/DE locale.
+      general_time_format: settingsObject.general_time_format === '12h' ? '12h' : '24h',
+      // CRM overview tile visibility (admin-only — these are surfaced
+      // via the public-settings endpoint because the dashboard reads
+      // them on mount and the value never depends on auth state. All
+      // four default ON; only explicit false hides the tile.
+      crm_overview_show_revenue: settingsObject.crm_overview_show_revenue !== false,
+      crm_overview_show_outstanding: settingsObject.crm_overview_show_outstanding !== false,
+      crm_overview_show_quotes: settingsObject.crm_overview_show_quotes !== false,
+      crm_overview_show_invoices: settingsObject.crm_overview_show_invoices !== false,
       enable_recaptcha: settingsObject.security_enable_recaptcha === true || settingsObject.security_enable_recaptcha === 'true',
       recaptcha_site_key: settingsObject.security_recaptcha_site_key || null,
       maintenance_mode: settingsObject.general_maintenance_mode === true || settingsObject.general_maintenance_mode === 'true',
-      // Umami analytics configuration (only if enabled)
+      // Umami analytics configuration (only if enabled). Kept for
+      // back-compat: pre-#663 installs without `analytics_tracker_provider`
+      // still surface Umami settings under their original keys so the
+      // frontend tracker script switches over cleanly.
       umami_enabled: settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true',
       umami_url: (settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true') ? (settingsObject.analytics_umami_url || null) : null,
       umami_website_id: (settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true') ? (settingsObject.analytics_umami_website_id || null) : null,
       umami_share_url: (settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true') ? (settingsObject.analytics_umami_share_url || null) : null,
+      // Tracker-provider switch (#663 Phase 1). Drives which provider's
+      // script gets injected into the gallery <head>. 'none' / unset =
+      // no tracker. The frontend tracker service picks the right shape
+      // from the (provider, *_url, *_website_id) tuple below.
+      analytics_tracker_provider: (() => {
+        const explicit = settingsObject.analytics_tracker_provider;
+        if (typeof explicit === 'string' && ['none', 'umami', 'rybbit', 'custom'].includes(explicit)) {
+          return explicit;
+        }
+        // Back-compat with installs that haven't picked yet.
+        return (settingsObject.analytics_umami_enabled === true || settingsObject.analytics_umami_enabled === 'true')
+          ? 'umami'
+          : 'none';
+      })(),
+      // Rybbit native provider (#663). Only exposed when actively chosen
+      // — otherwise hidden so the front-end never tries to inject a
+      // stale tracker.
+      rybbit_url: settingsObject.analytics_tracker_provider === 'rybbit'
+        ? (settingsObject.analytics_rybbit_url || null)
+        : null,
+      rybbit_website_id: settingsObject.analytics_tracker_provider === 'rybbit'
+        ? (settingsObject.analytics_rybbit_website_id || null)
+        : null,
+      // Custom-mode pre-sanitised HTML snippet (#663). Sanitised at save
+      // time via customScriptSanitiser; surfaced as-is here so the
+      // gallery <head> can render it without re-sanitising on every
+      // request.
+      analytics_custom_head_html: settingsObject.analytics_tracker_provider === 'custom'
+        ? (settingsObject.analytics_custom_head_html || '')
+        : '',
       // Event field requirements
       event_require_customer_name: settingsObject.event_require_customer_name !== false,
       event_require_customer_email: settingsObject.event_require_customer_email !== false,
@@ -131,6 +187,17 @@ router.get('/', async (req, res) => {
       gallery_show_filter_bar: settingsObject.gallery_show_filter_bar !== false,
       // Upload settings (safe to expose - needed for client-side validation)
       allowed_file_types: settingsObject.general_allowed_file_types || 'jpg,jpeg,png,webp',
+      // #613 — per-batch file count limit. The guest UserPhotoUpload modal
+      // reads this both to render the "{{limit}} files per upload" hint
+      // (showed `{{limit}}` literal before this) and to refuse a batch
+      // before posting it. Backend route enforces the same value via
+      // getMaxFilesPerUpload(), so the client-side check is purely a UX
+      // optimisation. Default mirrors uploadSettings.js
+      // DEFAULT_MAX_FILES_PER_UPLOAD so the UI shows a sensible number
+      // even on installs that have never explicitly set the value.
+      general_max_files_per_upload: Number.isFinite(Number(settingsObject.general_max_files_per_upload))
+        ? Number(settingsObject.general_max_files_per_upload)
+        : 500,
       // SEO meta tag flags (safe to expose - these are intended for crawlers)
       seo_meta_noindex: settingsObject.seo_meta_noindex === true,
       seo_meta_nofollow: settingsObject.seo_meta_nofollow === true,
@@ -139,7 +206,7 @@ router.get('/', async (req, res) => {
 
     res.json(publicSettings);
   } catch (error) {
-    console.error('Public settings fetch error:', error);
+    logger.error('Public settings fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch settings' });
   }
 });

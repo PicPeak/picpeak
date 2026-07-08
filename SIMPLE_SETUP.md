@@ -8,7 +8,7 @@ This guide provides easy installation instructions for PicPeak on Linux servers 
 
 ```bash
 # Download and run the unified setup script
-curl -fsSL https://raw.githubusercontent.com/the-luap/picpeak/main/scripts/picpeak-setup.sh -o picpeak-setup.sh && \
+curl -fsSL https://raw.githubusercontent.com/PicPeak/picpeak/main/scripts/picpeak-setup.sh -o picpeak-setup.sh && \
 chmod +x picpeak-setup.sh && \
 sudo ./picpeak-setup.sh
 ```
@@ -162,6 +162,19 @@ sudo ./picpeak-setup.sh --native --unattended \
 - `picpeak-backend` - Main application
 - `picpeak-workers` - Background workers
 - `caddy` - Web server (optional)
+
+## 🔑 First Login — Create Your Admin
+
+If you installed with `picpeak-setup.sh` and gave an `--admin-password`, your admin account already exists — log in at `/admin` with that email and password.
+
+If you started PicPeak **without** setting `ADMIN_PASSWORD` (e.g. a plain `docker compose up`), there's **no admin yet** and you create it in the browser:
+
+1. Open `http://your-server:3000/admin` — you'll land on a setup screen.
+2. Get the **one-time setup token** from the backend logs (also saved to `data/SETUP_TOKEN`):
+   ```bash
+   docker compose logs backend | grep -i "setup token"
+   ```
+3. Paste it, set your admin email + password. The token is single-use and the screen closes once an admin exists.
 
 ## 🌐 Access Methods
 
@@ -472,7 +485,7 @@ sudo -u picpeak node scripts/reset-admin-password.js
    - [Deployment Guide](https://docs.picpeak.app/deployment)
 
 3. **Support:**
-   - [GitHub Issues](https://github.com/the-luap/picpeak/issues)
+   - [GitHub Issues](https://github.com/PicPeak/picpeak/issues)
    - Include: Error messages, system info (`uname -a`), installation method
 
 ## 🔒 Security Best Practices
@@ -550,4 +563,4 @@ sudo ./picpeak-setup.sh --native \
 
 ---
 
-**PicPeak Setup v1.0** | [Documentation](https://github.com/the-luap/picpeak) | [Support](https://github.com/the-luap/picpeak/issues)
+**PicPeak Setup v1.0** | [Documentation](https://github.com/PicPeak/picpeak) | [Support](https://github.com/PicPeak/picpeak/issues)

@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { db } = require('../database/db');
+const logger = require('../utils/logger');
 
 async function verifyRecaptcha(token) {
   // Check if reCAPTCHA is enabled
@@ -32,7 +33,7 @@ async function verifyRecaptcha(token) {
   
   // If no secret key configured, fail closed
   if (!secretKey) {
-    console.warn('reCAPTCHA enabled but no secret key configured — blocking request');
+    logger.warn('reCAPTCHA enabled but no secret key configured — blocking request');
     return false;
   }
   
@@ -50,7 +51,7 @@ async function verifyRecaptcha(token) {
     
     return response.data.success === true;
   } catch (error) {
-    console.error('reCAPTCHA verification error:', error);
+    logger.error('reCAPTCHA verification error:', error);
     return false;
   }
 }

@@ -26,6 +26,36 @@ async function archiveEvent(event) {
   const tmpArchive = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}-${archiveName}`);
 
   try {
+    // Photos manifest — the gallery filenames are renamed on upload, so
+    // `original_filename` (and category linkage) can't be derived from the
+    // extracted files alone. Persisting a manifest inside the archive lets a
+    // future restore round-trip recover those fields. Falls back to bare
+    // filename for archives produced before this lands (see restore path).
+    let photosManifestEntry = null;
+    try {
+      const manifestRows = await db('photos')
+        .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
+        .where('photos.event_id', event.id)
+        .select(
+          'photos.filename',
+          'photos.original_filename',
+          'photos.type',
+          'photos.uploaded_at',
+          'photo_categories.name as category_name',
+        );
+      if (manifestRows.length > 0) {
+        photosManifestEntry = {
+          name: 'photos_manifest.json',
+          buffer: Buffer.from(JSON.stringify(manifestRows, null, 2), 'utf8'),
+        };
+        logger.info(`Photos manifest prepared: ${manifestRows.length} entries`);
+      }
+    } catch (error) {
+      logger.error(`Error building photos manifest for event ${event.slug}:`, error);
+      // Non-fatal — restore will fall back to filename as original_filename
+      // for events archived without a manifest, same as the legacy behaviour.
+    }
+
     // Collect feedback data first so it can be included as in-memory entries.
     const feedbackEntries = [];
     const feedbackSettings = await feedbackService.getEventFeedbackSettings(event.id);
@@ -115,6 +145,9 @@ async function archiveEvent(event) {
         }
         for (const f of feedbackEntries) {
           archive.append(f.buffer, { name: f.name });
+        }
+        if (photosManifestEntry) {
+          archive.append(photosManifestEntry.buffer, { name: photosManifestEntry.name });
         }
         archive.finalize();
       };

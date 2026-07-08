@@ -4,6 +4,7 @@ const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
+const logger = require('../utils/logger');
 const router = express.Router();
 
 // Get all global categories
@@ -15,7 +16,7 @@ router.get('/global', adminAuth, requirePermission('settings.view'), async (req,
     
     res.json(categories);
   } catch (error) {
-    console.error('Error fetching categories:', error);
+    logger.error('Error fetching categories:', error);
     res.status(500).json({ error: 'Failed to fetch categories' });
   }
 });
@@ -35,7 +36,7 @@ router.get('/event/:eventId', adminAuth, requirePermission('settings.view'), asy
     
     res.json(categories);
   } catch (error) {
-    console.error('Error fetching event categories:', error);
+    logger.error('Error fetching event categories:', error);
     res.status(500).json({ error: 'Failed to fetch categories' });
   }
 });
@@ -101,7 +102,7 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
     
     res.json(category);
   } catch (error) {
-    console.error('Error creating category:', error);
+    logger.error('Error creating category:', error);
     res.status(500).json({ error: 'Failed to create category' });
   }
 });
@@ -112,7 +113,8 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
   body('hero_photo_id').optional({ nullable: true }).custom((value) => {
     if (value === null || value === undefined) return true;
     return Number.isInteger(Number(value));
-  }).withMessage('hero_photo_id must be an integer or null')
+  }).withMessage('hero_photo_id must be an integer or null'),
+  body('allow_downloads').optional().isBoolean()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -144,6 +146,11 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
       updateData.hero_photo_id = hero_photo_id || null;
     }
 
+    // Per-category download permission (#640). AND with event-level allow_downloads.
+    if (Object.prototype.hasOwnProperty.call(req.body, 'allow_downloads')) {
+      updateData.allow_downloads = req.body.allow_downloads;
+    }
+
     await db('photo_categories')
       .where('id', id)
       .update(updateData);
@@ -159,7 +166,7 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
 
     res.json(updated);
   } catch (error) {
-    console.error('Error updating category:', error);
+    logger.error('Error updating category:', error);
     res.status(500).json({ error: 'Failed to update category' });
   }
 });
@@ -208,7 +215,7 @@ router.put('/:id/hero', adminAuth, requirePermission('settings.edit'), [
 
     res.json(updated);
   } catch (error) {
-    console.error('Error updating category hero:', error);
+    logger.error('Error updating category hero:', error);
     res.status(500).json({ error: 'Failed to update category hero' });
   }
 });
@@ -242,7 +249,7 @@ router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req,
     
     res.json({ message: 'Category deleted successfully' });
   } catch (error) {
-    console.error('Error deleting category:', error);
+    logger.error('Error deleting category:', error);
     res.status(500).json({ error: 'Failed to delete category' });
   }
 });

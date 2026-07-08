@@ -295,6 +295,35 @@ class PhotosService {
     window.URL.revokeObjectURL(url);
   }
 
+  // Same endpoint as `exportPhotos` but returns the text content + filename
+  // instead of triggering a download. Used by the ExportPreviewModal (#631)
+  // for TXT / CSV formats where the admin wants to paste rather than save.
+  // XMP (ZIP archive) and JSON keep using exportPhotos — a textarea is the
+  // wrong UI for binary archives and structured tool input.
+  async exportPhotosAsText(
+    eventId: number,
+    options: ExportOptions
+  ): Promise<{ content: string; filename: string }> {
+    const response = await api.post(
+      `/admin/photo-export/${eventId}/export`,
+      options,
+      { responseType: 'blob' }
+    );
+
+    const contentDisposition = response.headers['content-disposition'];
+    let filename = `export_${Date.now()}`;
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/);
+      if (filenameMatch) {
+        filename = filenameMatch[1];
+      }
+    }
+
+    const blob = response.data as Blob;
+    const content = await blob.text();
+    return { content, filename };
+  }
+
   async getExportFormats(): Promise<ExportFormat[]> {
     const response = await api.get('/admin/photo-export/export-formats');
     return response.data.data;
@@ -345,6 +374,7 @@ export interface ExportOptions {
   options?: {
     filename_format?: 'original' | 'picpeak';
     separator?: 'newline' | 'comma' | 'semicolon';
+    include_extension?: boolean;
     include_rating?: boolean;
     include_label?: boolean;
     include_description?: boolean;

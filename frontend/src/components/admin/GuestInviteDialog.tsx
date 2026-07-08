@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Copy, Check, Trash2 } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Button, Input, Loading } from '../common';
 import { guestsService, GuestInvite } from '../../services/guests.service';
-import { toast } from 'react-toastify';
+import { useMutationWithToast } from '../../hooks';
 
 interface GuestInviteDialogProps {
   eventId: number;
@@ -19,7 +19,6 @@ interface GuestInviteDialogProps {
  */
 export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, onClose }) => {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -29,25 +28,22 @@ export const GuestInviteDialog: React.FC<GuestInviteDialogProps> = ({ eventId, o
     queryFn: () => guestsService.listInvites(eventId),
   });
 
-  const createMutation = useMutation({
+  const createMutation = useMutationWithToast({
     mutationFn: () => guestsService.createInvite(eventId, { name, email: email || undefined }),
+    successMessage: t('admin.guests.inviteCreated', 'Invite created'),
+    invalidateKeys: [['admin-guest-invites', eventId], ['admin-guests', eventId]],
     onSuccess: () => {
       setName('');
       setEmail('');
-      toast.success(t('admin.guests.inviteCreated', 'Invite created'));
-      queryClient.invalidateQueries({ queryKey: ['admin-guest-invites', eventId] });
-      queryClient.invalidateQueries({ queryKey: ['admin-guests', eventId] });
     },
-    onError: () => toast.error(t('admin.guests.inviteCreateError', 'Failed to create invite')),
+    errorMessage: () => t('admin.guests.inviteCreateError', 'Failed to create invite'),
   });
 
-  const revokeMutation = useMutation({
+  const revokeMutation = useMutationWithToast({
     mutationFn: (inviteId: number) => guestsService.revokeInvite(eventId, inviteId),
-    onSuccess: () => {
-      toast.success(t('admin.guests.inviteRevoked', 'Invite revoked'));
-      queryClient.invalidateQueries({ queryKey: ['admin-guest-invites', eventId] });
-    },
-    onError: () => toast.error(t('admin.guests.inviteRevokeError', 'Failed to revoke invite')),
+    successMessage: t('admin.guests.inviteRevoked', 'Invite revoked'),
+    invalidateKeys: [['admin-guest-invites', eventId]],
+    errorMessage: () => t('admin.guests.inviteRevokeError', 'Failed to revoke invite'),
   });
 
   const copy = (invite: GuestInvite) => {

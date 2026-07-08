@@ -28,6 +28,13 @@ jest.mock('../../middleware/auth', () => ({
   adminAuth: (_req, _res, next) => next(),
 }));
 
+// requirePermission is its own module — without this mock the real
+// implementation runs, queries role_permissions on the mocked db, and
+// 403s before we ever reach the handler.
+jest.mock('../../middleware/permissions', () => ({
+  requirePermission: () => (_req, _res, next) => next(),
+}));
+
 const { db } = require('../../database/db');
 const notificationsRouter = require('../adminNotifications');
 

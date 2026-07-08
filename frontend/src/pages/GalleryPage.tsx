@@ -16,6 +16,7 @@ import { galleryService } from '../services';
 import { GALLERY_THEME_PRESETS } from '../types/theme.types';
 import { buildResourceUrl } from '../utils/url';
 import { isGalleryPublic, normalizeRequirePassword } from '../utils/accessControl';
+import { detectInAppBrowser } from '../utils/inAppBrowser';
 
 export const GalleryPage: React.FC = () => {
   const { slug: rawSlug, token: rawToken } = useParams<{ slug: string; token?: string }>();
@@ -28,6 +29,9 @@ export const GalleryPage: React.FC = () => {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
   const [autoLoginAttempted, setAutoLoginAttempted] = useState(false);
+  // Evaluate once per mount — UA doesn't change at runtime, and using useMemo
+  // avoids re-running detection on every render of the form.
+  const iabDetection = React.useMemo(() => detectInAppBrowser(), []);
   const [resolvedSlug, setResolvedSlug] = useState<string | null>(() => {
     if (rawSlug && !rawToken && /^[0-9a-fA-F]{32}$/.test(rawSlug)) {
       return null;
@@ -212,7 +216,14 @@ export const GalleryPage: React.FC = () => {
         return;
       }
 
-      await login(resolvedSlug, requiresPassword ? password : '', recaptchaToken);
+      // Trim the password before sending. The Instagram in-app browser's
+      // predictive-text keyboard frequently appends a trailing space when the
+      // user taps the submit button, which then fails byte-exact bcrypt
+      // compare on the backend with no visible cause (#654). Event-gallery
+      // passwords don't legitimately carry leading/trailing whitespace, so
+      // trimming silently is safe.
+      const submittedPassword = requiresPassword ? password.trim() : '';
+      await login(resolvedSlug, submittedPassword, recaptchaToken);
       
       if (requiresPassword) {
         analyticsService.trackGalleryEvent('password_entry', {
@@ -385,6 +396,33 @@ export const GalleryPage: React.FC = () => {
             <CardContent className="p-4 sm:p-6">
               <h2 className="text-base sm:text-lg lg:text-xl font-semibold mb-4">{t('auth.enterPassword')}</h2>
 
+              {/* Instagram in-app browser warning (#654). The IAB's keyboard
+                  bridge silently mangles password inputs (autocaps overrides,
+                  predictive-text-appended trailing spaces, stale autofill).
+                  Detect it and surface a "open in your normal browser" hint
+                  so the user can self-rescue. */}
+              {iabDetection.app === 'instagram' && (
+                <div
+                  role="alert"
+                  className="mb-4 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-900 dark:text-amber-100"
+                >
+                  <p className="font-medium">
+                    {t('auth.iab.instagram.title', 'Open this link in your browser')}
+                  </p>
+                  <p className="mt-1 text-xs">
+                    {iabDetection.platform === 'ios'
+                      ? t(
+                        'auth.iab.instagram.ios',
+                        "Instagram's built-in browser sometimes blocks the password login. Tap the ⋯ menu in the top right, then \"Open in external browser\" (or copy the link and paste into Safari).",
+                      )
+                      : t(
+                        'auth.iab.instagram.android',
+                        "Instagram's built-in browser sometimes blocks the password login. Tap the ⋮ menu in the top right, then \"Open in external browser\" (or copy the link and paste into Chrome).",
+                      )}
+                  </p>
+                </div>
+              )}
+
               <form onSubmit={handleLogin} className="space-y-4">
                 <Input
                   type="password"
@@ -394,6 +432,17 @@ export const GalleryPage: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   error={loginError || undefined}
                   autoFocus
+                  // Defend against in-app-browser keyboard mangling (#654):
+                  //   - autoCapitalize: stop iOS autocaps turning `wedding2026`
+                  //     into `Wedding2026` inside IAB WKWebViews
+                  //   - autoCorrect / spellCheck: stop predictive-text rewrites
+                  //   - autoComplete: tell password managers this is the
+                  //     current-password slot so they autofill the right value
+                  //     (vs the IAB's older saved-password store)
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  autoComplete="current-password"
                   className="text-sm sm:text-base"
                 />
 

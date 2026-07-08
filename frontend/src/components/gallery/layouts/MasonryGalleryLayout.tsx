@@ -1,10 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Download, Maximize2, Check, MessageSquare, Star, Heart } from 'lucide-react';
+import { MessageSquare, Star, Heart } from 'lucide-react';
 import { useTheme } from '../../../contexts/ThemeContext';
-import { AuthenticatedImage } from '../../common';
-import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
-import { feedbackService } from '../../../services/feedback.service';
-import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
+import { PhotoCard } from '../PhotoCard';
 import {
   calculateJustifiedLayout,
   createJustifiedPhotos,
@@ -14,6 +11,36 @@ import {
 import justifiedLayout from 'justified-layout';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
+
+// Count-style feedback indicators shared by all masonry modes (top-left).
+// `withTitles` matches the columns-mode markup, which carries title attributes.
+const FeedbackCountIndicators: React.FC<{ photo: Photo; withTitles?: boolean }> = ({ photo, withTitles = false }) => {
+  if (!((photo.comment_count ?? 0) > 0 || (photo.average_rating ?? 0) > 0 || (photo.like_count ?? 0) > 0)) {
+    return null;
+  }
+  return (
+    <div className="absolute top-2 left-2 flex gap-1 z-10">
+      {(photo.comment_count ?? 0) > 0 && (
+        <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={withTitles ? `${photo.comment_count ?? 0} comments` : undefined}>
+          <MessageSquare className="w-3.5 h-3.5 text-accent" fill="currentColor" />
+          <span className="text-xs font-medium text-neutral-700">{photo.comment_count ?? 0}</span>
+        </div>
+      )}
+      {(photo.average_rating ?? 0) > 0 && (
+        <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={withTitles ? `Rating: ${Number(photo.average_rating ?? 0).toFixed(1)}` : undefined}>
+          <Star className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" />
+          <span className="text-xs font-medium text-neutral-700">{Number(photo.average_rating ?? 0).toFixed(1)}</span>
+        </div>
+      )}
+      {(photo.like_count ?? 0) > 0 && (
+        <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={withTitles ? `${photo.like_count ?? 0} likes` : undefined}>
+          <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
+          <span className="text-xs font-medium text-neutral-700">{photo.like_count ?? 0}</span>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface MasonryPhotoProps {
   photo: Photo;
@@ -56,11 +83,6 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
   liked = false,
   onLikeSuccess,
 }) => {
-  const [showIdentityModal, setShowIdentityModal] = useState(false);
-  const [pendingAction, setPendingAction] = useState<null | { type: 'like'; photoId: number }>(null);
-  const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
-  const guestIdentity = useGuestIdentityOptional();
-
   // Calculate height based on actual photo aspect ratio
   // This preserves the photo's natural proportions in the masonry layout
   const imageHeight = useMemo(() => {
@@ -79,177 +101,40 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
   }, [photo.width, photo.height, columnWidth]);
 
   return (
-    <div
-      className="photo-card relative group cursor-pointer transition-all duration-300 hover:scale-[1.02]"
+    <PhotoCard
+      photo={photo}
+      isSelected={isSelected}
+      isSelectionMode={isSelectionMode}
       onClick={onClick}
+      onDownload={onDownload}
+      onToggleSelect={onToggleSelect}
+      className="photo-card relative group cursor-pointer transition-all duration-300 hover:scale-[1.02]"
       style={{
         ...style,
         height: `${imageHeight}px`,
         breakInside: 'avoid'
       }}
+      imageProps={{
+        src: photo.thumbnail_url || photo.url,
+        alt: photo.filename,
+        className: 'w-full h-full object-cover rounded-lg',
+        loading: 'lazy',
+        isGallery: true,
+        protectFromDownload: !allowDownloads,
+      }}
+      overlayBaseClassName="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
+      allowDownloads={allowDownloads}
+      feedbackEnabled={feedbackEnabled}
+      feedbackOptions={feedbackOptions}
+      slug={slug}
+      onQuickComment={onQuickComment}
+      liked={liked}
+      onLikeSuccess={onLikeSuccess}
+      identityMode="self"
+      likeToggleLabels
+      checkboxTestId
+      beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} withTitles /> : undefined}
     >
-      <AuthenticatedImage
-        src={photo.thumbnail_url || photo.url}
-        alt={photo.filename}
-        className="w-full h-full object-cover rounded-lg"
-        loading="lazy"
-        isGallery={true}
-        protectFromDownload={!allowDownloads}
-      />
-      
-      {/* Feedback Indicators */}
-      {feedbackEnabled && ((photo.comment_count ?? 0) > 0 || (photo.average_rating ?? 0) > 0 || (photo.like_count ?? 0) > 0) && (
-        <div className="absolute top-2 left-2 flex gap-1 z-10">
-          {(photo.comment_count ?? 0) > 0 && (
-            <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={`${photo.comment_count ?? 0} comments`}>
-              <MessageSquare className="w-3.5 h-3.5 text-accent" fill="currentColor" />
-              <span className="text-xs font-medium text-neutral-700">{photo.comment_count ?? 0}</span>
-            </div>
-          )}
-          {(photo.average_rating ?? 0) > 0 && (
-            <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={`Rating: ${Number(photo.average_rating ?? 0).toFixed(1)}`}>
-              <Star className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" />
-              <span className="text-xs font-medium text-neutral-700">{Number(photo.average_rating ?? 0).toFixed(1)}</span>
-            </div>
-          )}
-          {(photo.like_count ?? 0) > 0 && (
-            <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1" title={`${photo.like_count ?? 0} likes`}>
-              <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
-              <span className="text-xs font-medium text-neutral-700">{photo.like_count ?? 0}</span>
-            </div>
-          )}
-        </div>
-      )}
-      
-      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2">
-        {!isSelectionMode && (
-          <>
-            <button
-              className="p-2 bg-white/90 rounded-full hover:bg-white transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                onClick(e);
-              }}
-              aria-label="View full size"
-            >
-              <Maximize2 className="w-5 h-5 text-neutral-800" />
-            </button>
-            {allowDownloads && (
-              <button
-                className="p-2 bg-white/90 rounded-full hover:bg-white transition-colors"
-                onClick={onDownload}
-                aria-label="Download photo"
-              >
-                <Download className="w-5 h-5 text-neutral-800" />
-              </button>
-            )}
-            {feedbackEnabled && feedbackOptions?.allowComments && onQuickComment && (
-              <button
-                className="p-2 bg-white/90 rounded-full hover:bg-white transition-colors"
-                onClick={(e) => { e.stopPropagation(); onQuickComment(); }}
-                aria-label="Comment on photo"
-                title="Comment"
-              >
-                <MessageSquare className="w-5 h-5 text-neutral-800" />
-              </button>
-            )}
-            {feedbackEnabled && feedbackOptions?.allowLikes && (
-              <button
-                className={`p-2 rounded-full transition-colors ${
-                  liked
-                    ? 'bg-red-500/90 hover:bg-red-500'
-                    : 'bg-white/90 hover:bg-white'
-                }`}
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  if (guestIdentity?.identityMode === 'guest') {
-                    try {
-                      await guestIdentity.ensureIdentity();
-                    } catch {
-                      return;
-                    }
-                    // Optimistic UI: mark as liked immediately
-                    if (onLikeSuccess) onLikeSuccess();
-                    try {
-                      await feedbackService.submitFeedback(slug!, String(photo.id), {
-                        feedback_type: 'like',
-                      });
-                    } catch (err) {
-                      // eslint-disable-next-line no-console
-                      console.warn('Like submit failed, keeping optimistic UI', err);
-                    }
-                    return;
-                  }
-                  if (feedbackOptions?.requireNameEmail && !savedIdentity) {
-                    setPendingAction({ type: 'like', photoId: photo.id });
-                    setShowIdentityModal(true);
-                    return;
-                  }
-                  // Optimistic UI: mark as liked immediately
-                  if (onLikeSuccess) onLikeSuccess();
-                  try {
-                    await feedbackService.submitFeedback(slug!, String(photo.id), {
-                      feedback_type: 'like',
-                      guest_name: savedIdentity?.name,
-                      guest_email: savedIdentity?.email,
-                    });
-                  } catch (err) {
-                    // eslint-disable-next-line no-console
-                    console.warn('Like submit failed, keeping optimistic UI', err);
-                  }
-                }}
-                aria-label={liked ? 'Unlike photo' : 'Like photo'}
-                aria-pressed={liked}
-                title={liked ? 'Unlike' : 'Like'}
-              >
-                <Heart
-                  className={`w-5 h-5 ${liked ? 'text-white fill-white' : 'text-neutral-800'}`}
-                />
-              </button>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Identity Modal */}
-      <FeedbackIdentityModal
-        isOpen={showIdentityModal}
-        onClose={() => { setShowIdentityModal(false); setPendingAction(null); }}
-        onSubmit={async (name, email) => {
-          setSavedIdentity({ name, email });
-          setShowIdentityModal(false);
-          if (pendingAction) {
-            if (pendingAction.type === 'like' && onLikeSuccess) {
-              onLikeSuccess();
-            }
-            await feedbackService.submitFeedback(slug!, String(pendingAction.photoId), {
-              feedback_type: pendingAction.type,
-              guest_name: name,
-              guest_email: email,
-            });
-            setPendingAction(null);
-          }
-        }}
-        feedbackType="like"
-      />
-
-      {/* Selection Checkbox (visible on hover or when selected) */}
-      <button
-        type="button"
-        aria-label={`Select ${photo.filename}`}
-        role="checkbox"
-        aria-checked={isSelected}
-        data-testid={`gallery-photo-checkbox-${photo.id}`}
-        className={`absolute top-2 right-2 z-20 transition-opacity ${
-          isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-        }`}
-        onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
-      >
-        <div className={`w-6 h-6 rounded-full border-2 ${isSelected ? 'bg-accent-dark border-accent-dark' : 'bg-white/90 border-white'} flex items-center justify-center transition-colors`}>
-          {isSelected && <Check className="w-4 h-4 text-white" />}
-        </div>
-      </button>
-
       {photo.type === 'collage' && (
         <div className="absolute bottom-2 left-2">
           <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">
@@ -257,7 +142,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
           </span>
         </div>
       )}
-    </div>
+    </PhotoCard>
   );
 };
 
@@ -281,6 +166,15 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   // Optimistic "I liked this" state — lifted here so it survives re-renders
   // of individual MasonryPhoto components during layout reflow/resize.
   const [likedPhotoIds, setLikedPhotoIds] = useState<Set<number>>(new Set());
+  // Seed from server is_liked on first non-empty photos payload (#590
+  // follow-up). Mount-only: subsequent refetches don't clobber in-session
+  // optimistic toggles, only the first arrival of photos initializes.
+  const likedSeededRef = useRef(false);
+  useEffect(() => {
+    if (likedSeededRef.current || photos.length === 0) return;
+    setLikedPhotoIds(new Set(photos.filter(p => p.is_liked).map(p => p.id)));
+    likedSeededRef.current = true;
+  }, [photos]);
   const gallerySettings = theme.gallerySettings || {};
   const gutter = gallerySettings.masonryGutter || 16;
   const mode = gallerySettings.masonryMode || 'columns';
@@ -461,8 +355,14 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           if (!layoutItem) return null;
 
           return (
-            <div
+            <PhotoCard
               key={photo.id}
+              photo={photo}
+              isSelected={selectedPhotos.has(photo.id)}
+              isSelectionMode={isSelectionMode}
+              onClick={() => onPhotoClick(index)}
+              onDownload={(e) => onDownload(photo, e)}
+              onToggleSelect={() => onPhotoSelect && onPhotoSelect(photo.id)}
               className="photo-card absolute group cursor-pointer transition-all duration-300 hover:z-10"
               style={{
                 left: layoutItem.x,
@@ -470,83 +370,19 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 width: layoutItem.width,
                 height: layoutItem.height,
               }}
-              onClick={() => onPhotoClick(index)}
-            >
-              <AuthenticatedImage
-                src={photo.thumbnail_url || photo.url}
-                alt={photo.filename}
-                className="w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]"
-                loading="lazy"
-                isGallery={true}
-                protectFromDownload={!allowDownloads}
-              />
-
-              {/* Feedback Indicators */}
-              {feedbackEnabled && ((photo.comment_count ?? 0) > 0 || (photo.average_rating ?? 0) > 0 || (photo.like_count ?? 0) > 0) && (
-                <div className="absolute top-2 left-2 flex gap-1 z-10">
-                  {(photo.comment_count ?? 0) > 0 && (
-                    <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
-                      <MessageSquare className="w-3.5 h-3.5 text-accent" fill="currentColor" />
-                      <span className="text-xs font-medium text-neutral-700">{photo.comment_count ?? 0}</span>
-                    </div>
-                  )}
-                  {(photo.average_rating ?? 0) > 0 && (
-                    <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
-                      <Star className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" />
-                      <span className="text-xs font-medium text-neutral-700">{Number(photo.average_rating ?? 0).toFixed(1)}</span>
-                    </div>
-                  )}
-                  {(photo.like_count ?? 0) > 0 && (
-                    <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
-                      <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
-                      <span className="text-xs font-medium text-neutral-700">{photo.like_count ?? 0}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Hover overlay with actions */}
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2">
-                {!isSelectionMode && (
-                  <>
-                    <button
-                      type="button"
-                      aria-label="View full size"
-                      className="p-2 bg-white/20 hover:bg-white/40 rounded-full transition-colors"
-                      onClick={(e) => { e.stopPropagation(); onPhotoClick(index); }}
-                    >
-                      <Maximize2 className="w-5 h-5 text-white" />
-                    </button>
-                    {allowDownloads && (
-                      <button
-                        type="button"
-                        aria-label="Download photo"
-                        className="p-2 bg-white/20 hover:bg-white/40 rounded-full transition-colors"
-                        onClick={(e) => { e.stopPropagation(); onDownload(photo, e); }}
-                      >
-                        <Download className="w-5 h-5 text-white" />
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Selection Checkbox */}
-              <button
-                type="button"
-                aria-label={`Select ${photo.filename}`}
-                role="checkbox"
-                aria-checked={selectedPhotos.has(photo.id)}
-                className={`absolute top-2 right-2 z-20 transition-opacity ${
-                  selectedPhotos.has(photo.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                }`}
-                onClick={(e) => { e.stopPropagation(); onPhotoSelect && onPhotoSelect(photo.id); }}
-              >
-                <div className={`w-6 h-6 rounded-full border-2 ${selectedPhotos.has(photo.id) ? 'bg-accent-dark border-accent-dark' : 'bg-white/90 border-white'} flex items-center justify-center transition-colors`}>
-                  {selectedPhotos.has(photo.id) && <Check className="w-4 h-4 text-white" />}
-                </div>
-              </button>
-            </div>
+              imageProps={{
+                src: photo.thumbnail_url || photo.url,
+                alt: photo.filename,
+                className: 'w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]',
+                loading: 'lazy',
+                isGallery: true,
+                protectFromDownload: !allowDownloads,
+              }}
+              overlayBaseClassName="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
+              actionVariant="dark"
+              allowDownloads={allowDownloads}
+              beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
+            />
           );
         })}
       </div>
@@ -577,8 +413,14 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           if (!box) return null;
 
           return (
-            <div
+            <PhotoCard
               key={photo.id}
+              photo={photo}
+              isSelected={selectedPhotos.has(photo.id)}
+              isSelectionMode={isSelectionMode}
+              onClick={() => onPhotoClick(index)}
+              onDownload={(e) => onDownload(photo, e)}
+              onToggleSelect={() => onPhotoSelect && onPhotoSelect(photo.id)}
               className="photo-card absolute group cursor-pointer transition-all duration-300 hover:z-10"
               style={{
                 left: box.left,
@@ -586,89 +428,25 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 width: box.width,
                 height: box.height,
               }}
-              onClick={() => onPhotoClick(index)}
+              imageProps={{
+                src: photo.thumbnail_url || photo.url,
+                alt: photo.filename,
+                className: 'w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]',
+                loading: 'lazy',
+                isGallery: true,
+                protectFromDownload: !allowDownloads,
+              }}
+              overlayBaseClassName="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
+              actionVariant="dark"
+              allowDownloads={allowDownloads}
+              beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
             >
-              <AuthenticatedImage
-                src={photo.thumbnail_url || photo.url}
-                alt={photo.filename}
-                className="w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]"
-                loading="lazy"
-                isGallery={true}
-                protectFromDownload={!allowDownloads}
-              />
-
-              {/* Feedback Indicators */}
-              {feedbackEnabled && ((photo.comment_count ?? 0) > 0 || (photo.average_rating ?? 0) > 0 || (photo.like_count ?? 0) > 0) && (
-                <div className="absolute top-2 left-2 flex gap-1 z-10">
-                  {(photo.comment_count ?? 0) > 0 && (
-                    <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
-                      <MessageSquare className="w-3.5 h-3.5 text-accent" fill="currentColor" />
-                      <span className="text-xs font-medium text-neutral-700">{photo.comment_count ?? 0}</span>
-                    </div>
-                  )}
-                  {(photo.average_rating ?? 0) > 0 && (
-                    <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
-                      <Star className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" />
-                      <span className="text-xs font-medium text-neutral-700">{Number(photo.average_rating ?? 0).toFixed(1)}</span>
-                    </div>
-                  )}
-                  {(photo.like_count ?? 0) > 0 && (
-                    <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
-                      <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
-                      <span className="text-xs font-medium text-neutral-700">{photo.like_count ?? 0}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Hover overlay with actions */}
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2">
-                {!isSelectionMode && (
-                  <>
-                    <button
-                      type="button"
-                      aria-label="View full size"
-                      className="p-2 bg-white/20 hover:bg-white/40 rounded-full transition-colors"
-                      onClick={(e) => { e.stopPropagation(); onPhotoClick(index); }}
-                    >
-                      <Maximize2 className="w-5 h-5 text-white" />
-                    </button>
-                    {allowDownloads && (
-                      <button
-                        type="button"
-                        aria-label="Download photo"
-                        className="p-2 bg-white/20 hover:bg-white/40 rounded-full transition-colors"
-                        onClick={(e) => { e.stopPropagation(); onDownload(photo, e); }}
-                      >
-                        <Download className="w-5 h-5 text-white" />
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Selection Checkbox */}
-              <button
-                type="button"
-                aria-label={`Select ${photo.filename}`}
-                role="checkbox"
-                aria-checked={selectedPhotos.has(photo.id)}
-                className={`absolute top-2 right-2 z-20 transition-opacity ${
-                  selectedPhotos.has(photo.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                }`}
-                onClick={(e) => { e.stopPropagation(); onPhotoSelect && onPhotoSelect(photo.id); }}
-              >
-                <div className={`w-6 h-6 rounded-full border-2 ${selectedPhotos.has(photo.id) ? 'bg-accent-dark border-accent-dark' : 'bg-white/90 border-white'} flex items-center justify-center transition-colors`}>
-                  {selectedPhotos.has(photo.id) && <Check className="w-4 h-4 text-white" />}
-                </div>
-              </button>
-
               {photo.type === 'collage' && (
                 <div className="absolute bottom-2 left-2">
                   <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">Collage</span>
                 </div>
               )}
-            </div>
+            </PhotoCard>
           );
         })}
       </div>
@@ -708,92 +486,34 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           const spanClasses = getSpanClasses(photo);
 
           return (
-            <div
+            <PhotoCard
               key={photo.id}
-              className={`photo-card group cursor-pointer relative overflow-hidden rounded-lg bg-neutral-100 ${spanClasses}`}
+              photo={photo}
+              isSelected={selectedPhotos.has(photo.id)}
+              isSelectionMode={isSelectionMode}
               onClick={() => onPhotoClick(index)}
+              onDownload={(e) => onDownload(photo, e)}
+              onToggleSelect={() => onPhotoSelect && onPhotoSelect(photo.id)}
+              className={`photo-card group cursor-pointer relative overflow-hidden rounded-lg bg-neutral-100 ${spanClasses}`}
+              imageProps={{
+                src: photo.thumbnail_url || photo.url,
+                alt: photo.filename,
+                className: 'w-full h-full object-cover transition-transform duration-300 group-hover:scale-105',
+                loading: 'lazy',
+                isGallery: true,
+                protectFromDownload: !allowDownloads,
+              }}
+              overlayBaseClassName="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2"
+              actionVariant="dark"
+              allowDownloads={allowDownloads}
+              beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
             >
-              <AuthenticatedImage
-                src={photo.thumbnail_url || photo.url}
-                alt={photo.filename}
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                loading="lazy"
-                isGallery={true}
-                protectFromDownload={!allowDownloads}
-              />
-
-              {/* Feedback Indicators */}
-              {feedbackEnabled && ((photo.comment_count ?? 0) > 0 || (photo.average_rating ?? 0) > 0 || (photo.like_count ?? 0) > 0) && (
-                <div className="absolute top-2 left-2 flex gap-1 z-10">
-                  {(photo.comment_count ?? 0) > 0 && (
-                    <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
-                      <MessageSquare className="w-3.5 h-3.5 text-accent" fill="currentColor" />
-                      <span className="text-xs font-medium text-neutral-700">{photo.comment_count ?? 0}</span>
-                    </div>
-                  )}
-                  {(photo.average_rating ?? 0) > 0 && (
-                    <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
-                      <Star className="w-3.5 h-3.5 text-yellow-500" fill="currentColor" />
-                      <span className="text-xs font-medium text-neutral-700">{Number(photo.average_rating ?? 0).toFixed(1)}</span>
-                    </div>
-                  )}
-                  {(photo.like_count ?? 0) > 0 && (
-                    <div className="bg-white/90 backdrop-blur-sm rounded-full px-2 py-1 flex items-center gap-1">
-                      <Heart className="w-3.5 h-3.5 text-red-500" fill="currentColor" />
-                      <span className="text-xs font-medium text-neutral-700">{photo.like_count ?? 0}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Hover overlay with actions */}
-              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2">
-                {!isSelectionMode && (
-                  <>
-                    <button
-                      type="button"
-                      aria-label="View full size"
-                      className="p-2 bg-white/20 hover:bg-white/40 rounded-full transition-colors"
-                      onClick={(e) => { e.stopPropagation(); onPhotoClick(index); }}
-                    >
-                      <Maximize2 className="w-5 h-5 text-white" />
-                    </button>
-                    {allowDownloads && (
-                      <button
-                        type="button"
-                        aria-label="Download photo"
-                        className="p-2 bg-white/20 hover:bg-white/40 rounded-full transition-colors"
-                        onClick={(e) => { e.stopPropagation(); onDownload(photo, e); }}
-                      >
-                        <Download className="w-5 h-5 text-white" />
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Selection Checkbox */}
-              <button
-                type="button"
-                aria-label={`Select ${photo.filename}`}
-                role="checkbox"
-                aria-checked={selectedPhotos.has(photo.id)}
-                className={`absolute top-2 right-2 z-20 transition-opacity ${
-                  selectedPhotos.has(photo.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                }`}
-                onClick={(e) => { e.stopPropagation(); onPhotoSelect && onPhotoSelect(photo.id); }}
-              >
-                <div className={`w-6 h-6 rounded-full border-2 ${selectedPhotos.has(photo.id) ? 'bg-accent-dark border-accent-dark' : 'bg-white/90 border-white'} flex items-center justify-center transition-colors`}>
-                  {selectedPhotos.has(photo.id) && <Check className="w-4 h-4 text-white" />}
-                </div>
-              </button>
-
               {photo.type === 'collage' && (
                 <div className="absolute bottom-2 left-2">
                   <span className="px-2 py-1 bg-black/60 text-white text-xs rounded">Collage</span>
                 </div>
               )}
-            </div>
+            </PhotoCard>
           );
         })}
       </div>
@@ -832,9 +552,13 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 columnWidth={columnWidth}
                 liked={likedPhotoIds.has(photo.id)}
                 onLikeSuccess={() => {
+                  // Toggle, not add — the /feedback like endpoint toggles
+                  // server-side, so click 2 on a liked photo unlikes it;
+                  // the optimistic UI must follow suit (#590).
                   setLikedPhotoIds((prev) => {
                     const next = new Set(prev);
-                    next.add(photo.id);
+                    if (next.has(photo.id)) next.delete(photo.id);
+                    else next.add(photo.id);
                     return next;
                   });
                 }}

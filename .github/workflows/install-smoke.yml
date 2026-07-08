@@ -16,24 +16,17 @@ name: Fresh-install smoke
 # don't pay the build cost.
 
 on:
+  # No `paths:` filter — branch protection on `main` + `stable` lists
+  # `fresh-install` as a REQUIRED check, and a path-filtered trigger
+  # that skipped on unrelated PRs (e.g. frontend-only) would leave the
+  # required check "missing" forever and block the merge. Better to
+  # pay the boot cost on every PR than maintain a per-path allowlist
+  # that drifts as the install surface evolves. (Branches also updated
+  # post-#669 rename: beta → main, old main → stable.)
   push:
-    branches: [main, beta]
-    paths:
-      - 'backend/Dockerfile'
-      - 'backend/wait-for-db.sh'
-      - 'backend/migrations/**'
-      - 'backend/package*.json'
-      - 'docker-compose.production.yml'
-      - '.github/workflows/install-smoke.yml'
+    branches: [main, stable]
   pull_request:
-    branches: [main, beta]
-    paths:
-      - 'backend/Dockerfile'
-      - 'backend/wait-for-db.sh'
-      - 'backend/migrations/**'
-      - 'backend/package*.json'
-      - 'docker-compose.production.yml'
-      - '.github/workflows/install-smoke.yml'
+    branches: [main, stable]
   workflow_dispatch:
 
 permissions:
@@ -61,7 +54,8 @@ jobs:
           load: true
           tags: picpeak-backend:smoke
           cache-from: type=gha,scope=install-smoke
-          cache-to: type=gha,mode=max,scope=install-smoke
+          # ignore-error: a flaky GHA cache write must not fail the build.
+          cache-to: type=gha,mode=max,scope=install-smoke,ignore-error=true
 
       - name: Create Docker network
         run: docker network create picpeak-smoke

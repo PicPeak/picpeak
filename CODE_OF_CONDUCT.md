@@ -20,7 +20,7 @@ We are committed to providing a welcoming and inspiring community for all photog
 
 ## Enforcement
 
-Instances of unacceptable behavior may be reported by [opening an issue](https://github.com/the-luap/picpeak/issues/new?labels=conduct) on GitHub. All complaints will be reviewed and investigated promptly and fairly.
+Instances of unacceptable behavior may be reported by [opening an issue](https://github.com/PicPeak/picpeak/issues/new?labels=conduct) on GitHub. All complaints will be reviewed and investigated promptly and fairly.
 
 ## Attribution
 

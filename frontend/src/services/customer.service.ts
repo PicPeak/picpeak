@@ -244,4 +244,131 @@ export const customerService = {
     );
     return response.data;
   },
+
+  // ---- CRM (customer-side, read-only) ----
+  async listQuotes(): Promise<CustomerQuote[]> {
+    const response = await api.get<{ quotes: CustomerQuote[] }>('/customer/quotes');
+    return response.data.quotes;
+  },
+
+  async listInvoices(): Promise<CustomerInvoice[]> {
+    const response = await api.get<{ invoices: CustomerInvoice[] }>('/customer/invoices');
+    return response.data.invoices;
+  },
+
+  /** Returns a blob URL ready for window.open(). */
+  async invoicePdfUrl(id: number): Promise<string> {
+    const res = await api.get(`/customer/invoices/${id}/pdf`, { responseType: 'blob' });
+    return URL.createObjectURL(res.data);
+  },
+
+  /** Returns a blob URL for the quote PDF (customer-side). */
+  async quotePdfUrl(id: number): Promise<string> {
+    const res = await api.get(`/customer/quotes/${id}/pdf`, { responseType: 'blob' });
+    return URL.createObjectURL(res.data);
+  },
+
+  // ---- Contracts (customer-side) ----
+  async listContracts(): Promise<CustomerContract[]> {
+    const response = await api.get<{ contracts: CustomerContract[] }>('/customer/contracts');
+    return response.data.contracts;
+  },
+
+  /** Streams the signed PDF when available, otherwise the system-
+   *  rendered PDF. The backend handles the fallback so the frontend
+   *  just opens whatever it gets back. */
+  async contractPdfUrl(id: number): Promise<string> {
+    const res = await api.get(`/customer/contracts/${id}/pdf`, { responseType: 'blob' });
+    return URL.createObjectURL(res.data);
+  },
 };
+
+export interface CustomerQuote {
+  id: number;
+  quoteNumber: string;
+  status: 'draft' | 'sent' | 'accepted' | 'declined' | 'expired' | 'converted';
+  currency: string;
+  issueDate: string;
+  validUntil: string | null;
+  eventName: string | null;
+  eventDate: string | null;
+  netAmountMinor: number;
+  vatRate: number | null;
+  vatAmountMinor: number;
+  shippingAmountMinor: number;
+  totalAmountMinor: number;
+  introText: string | null;
+  outroText: string | null;
+  sentAt: string | null;
+  respondedAt: string | null;
+  responseLockedAt: string | null;
+  acceptedAt: string | null;
+  declinedAt: string | null;
+  /** Token to open the public response page from the customer
+   *  dashboard. null when expired/used. */
+  responseToken: string | null;
+}
+
+export interface CustomerInvoice {
+  id: number;
+  /** Document discriminator. 'invoice' is the default; 'storno' rows
+   *  are Stornorechnungen (cancellation invoices) and render with a
+   *  distinct badge + lineage banner. */
+  kind: 'invoice' | 'storno';
+  invoiceNumber: string;
+  /** `cancelled` only appears on the customer side for invoices that
+   *  were formally reversed via Stornorechnung (cancellation_storno_id
+   *  IS NOT NULL). Soft-cancelled drafts stay hidden server-side. */
+  status: 'sent' | 'paid' | 'overdue' | 'cancelled';
+  currency: string;
+  issueDate: string;
+  dueDate: string;
+  installmentIndex: number;
+  installmentTotal: number;
+  installmentLabel: string | null;
+  netAmountMinor: number;
+  vatRate: number | null;
+  vatAmountMinor: number;
+  shippingAmountMinor: number;
+  totalAmountMinor: number;
+  paidAmountMinor: number;
+  paidAt: string | null;
+  lateFeeAmountMinor: number;
+  reminderLevel: number;
+  sentAt: string | null;
+  /** On a Storno row (kind='storno') → id of the invoice it reverses. */
+  cancelsInvoiceId: number | null;
+  /** Human invoice_number of the row referenced by `cancelsInvoiceId`,
+   *  joined server-side so the customer view can show the actual
+   *  invoice number instead of the bare row id. */
+  cancelsInvoiceNumber: string | null;
+  /** On a cancelled invoice → id of the Storno that cancelled it. */
+  cancellationStornoId: number | null;
+  /** Human invoice_number of the Storno referenced by
+   *  `cancellationStornoId`. */
+  cancellationStornoNumber: string | null;
+  /** Inline event snapshot (migration 123) — rendered next to the
+   *  invoice number on the customer portal bills list. */
+  eventName: string | null;
+  eventDate: string | null;
+}
+
+export interface CustomerContract {
+  id: number;
+  contractNumber: string;
+  status: 'sent' | 'signed_by_customer' | 'signed_by_admin' | 'fully_signed' | 'cancelled';
+  language: string;
+  issueDate: string;
+  validUntil: string | null;
+  title: string | null;
+  sentAt: string | null;
+  signedByCustomerAt: string | null;
+  signedByAdminAt: string | null;
+  signedCustomerName: string | null;
+  signedAdminName: string | null;
+  hasPdf: boolean;
+  hasSignedPdf: boolean;
+  /** Live signing-link token for `sent` contracts so the dashboard can
+   *  deep-link the public sign page when the customer lost the email. */
+  responseToken: string | null;
+}

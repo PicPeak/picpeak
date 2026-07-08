@@ -56,11 +56,19 @@ api.interceptors.request.use(
 
       const pathname = rawPath.startsWith('/') ? rawPath : `/${rawPath}`;
 
-      const isGalleryEndpoint = /^\/gallery\//.test(pathname)
-        || /^\/secure-images\//.test(pathname)
-        || /^\/auth\/gallery\//.test(pathname);
+      // Never attach the gallery token to an absolute URL. Requests to the
+      // app's own API use relative paths (axios prepends baseURL); an
+      // absolute URL could point at any origin, and extracting its
+      // `/gallery/...` pathname would otherwise match below and leak the
+      // bearer token cross-origin.
+      const isAbsoluteUrl = /^https?:\/\//i.test(config.url || '');
 
-      const isGallerySessionCheck = pathname === '/auth/session'
+      const isGalleryEndpoint = !isAbsoluteUrl && (
+        /^\/gallery\//.test(pathname)
+        || /^\/secure-images\//.test(pathname)
+        || /^\/auth\/gallery\//.test(pathname));
+
+      const isGallerySessionCheck = !isAbsoluteUrl && pathname === '/auth/session'
         && (!!paramSlug || window.location.pathname.startsWith('/gallery/'));
 
       if (isGalleryEndpoint || isGallerySessionCheck) {

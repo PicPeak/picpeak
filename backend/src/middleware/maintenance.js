@@ -1,4 +1,5 @@
 const { db } = require('../database/db');
+const logger = require('../utils/logger');
 
 // Cache maintenance mode status to avoid DB queries on every request
 let maintenanceMode = false;
@@ -26,7 +27,7 @@ async function queryWithRetry(queryFn, retries = MAX_RETRIES) {
         error.code === 'ECONNRESET';
       
       if (isConnectionError) {
-        console.warn(`Database connection error, retrying in ${RETRY_DELAY}ms... (attempt ${i + 1}/${retries})`);
+        logger.warn(`Database connection error, retrying in ${RETRY_DELAY}ms... (attempt ${i + 1}/${retries})`);
         await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
       } else {
         throw error; // Don't retry non-connection errors
@@ -56,7 +57,7 @@ async function checkMaintenanceMode() {
     
     return maintenanceMode;
   } catch (error) {
-    console.error('Error checking maintenance mode after retries:', error.message);
+    logger.error('Error checking maintenance mode after retries:', error.message);
     // Return cached value or false if no cache
     return maintenanceMode;
   }
@@ -64,10 +65,15 @@ async function checkMaintenanceMode() {
 
 // Middleware to enforce maintenance mode
 async function maintenanceMiddleware(req, res, next) {
-  // Skip maintenance check for certain paths
+  // Skip maintenance check for certain paths. Admin auth MUST work during
+  // maintenance — otherwise enabling it locks every admin out, including
+  // already-logged-in ones (their /auth/session check would 503 and read as
+  // logged-out). These are the REAL endpoints: the admin login + session
+  // routes live under /api/auth, NOT /api/admin (the old /api/admin/login
+  // entries here matched nothing, which is exactly why the lockout happened).
   const skipPaths = [
-    '/api/admin/login',
-    '/api/admin/auth/login',
+    '/api/auth/admin/login',
+    '/api/auth/session',
     '/api/public/settings',
     '/health'
   ];
@@ -97,7 +103,7 @@ async function maintenanceMiddleware(req, res, next) {
     }
   } catch (error) {
     // If we can't check maintenance mode, allow the request to proceed
-    console.error('Failed to check maintenance mode, allowing request:', error.message);
+    logger.error('Failed to check maintenance mode, allowing request:', error.message);
   }
   
   next();

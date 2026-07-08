@@ -8,13 +8,23 @@ const path = require('path');
  */
 function sanitizeFilename(str, maxLength = 50) {
   if (!str) return 'unnamed';
-  
+
   // Convert to string and trim
   let sanitized = String(str).trim();
-  
+
+  // NFD-normalize so accented characters split into a base letter + combining
+  // mark, then strip the combining-mark range (U+0300–U+036F) so the ASCII
+  // base survives the next regex pass. Without this, the `[^a-zA-Z0-9_\-\.]`
+  // strip below drops the WHOLE grapheme (`Ä` → '', `Decoração` → `Decorao`).
+  // The URL slug pipeline in utils/slug.js already does the right thing;
+  // matching here keeps the photo filename and the event URL slug consistent
+  // (#607 — patchingfailed reported `Ägypten` → `gypten` on download, while
+  // the URL slug correctly showed `Agypten`).
+  sanitized = sanitized.normalize('NFD').replace(/[̀-ͯ]/g, '');
+
   // Replace spaces with underscores
   sanitized = sanitized.replace(/\s+/g, '_');
-  
+
   // Remove special characters except hyphens, underscores, and dots
   sanitized = sanitized.replace(/[^a-zA-Z0-9_\-\.]/g, '');
   

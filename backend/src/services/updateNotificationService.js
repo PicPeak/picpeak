@@ -129,7 +129,7 @@ async function checkAndNotifyUpdates() {
 
     // Send email to each recipient
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const releaseNotesUrl = `https://github.com/the-luap/picpeak/releases/tag/v${newVersion}`;
+    const releaseNotesUrl = `https://github.com/PicPeak/picpeak/releases/tag/v${newVersion}`;
     const channelLabel = updateInfo.channel === 'beta' ? 'Beta' : 'Stable';
 
     let successCount = 0;

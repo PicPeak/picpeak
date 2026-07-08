@@ -9,8 +9,11 @@ const { body, query, validationResult } = require('express-validator');
 const { db, withRetry } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
+const { requireEventOwnership } = require('../middleware/ownership');
 const { PhotoFilterBuilder } = require('../utils/photoFilterBuilder');
+const { getPagination } = require('../utils/routeHelpers');
 const { PhotoExportService } = require('../services/photoExportService');
+const logger = require('../utils/logger');
 
 const exportService = new PhotoExportService();
 
@@ -18,7 +21,7 @@ const exportService = new PhotoExportService();
  * GET /admin/photos/:eventId/filtered
  * Get filtered photos with pagination
  */
-router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), [
+router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), requireEventOwnership, [
   query('min_rating').optional().isFloat({ min: 0, max: 5 }),
   query('max_rating').optional().isFloat({ min: 0, max: 5 }),
   query('has_likes').optional().isBoolean(),
@@ -65,8 +68,7 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), [
 
     const sort = req.query.sort || 'date';
     const order = req.query.order || 'desc';
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
+    const { page, limit } = getPagination(req, { limit: 50 });
 
     // Build filtered query
     const filterBuilder = new PhotoFilterBuilder(
@@ -123,7 +125,7 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), [
       }
     });
   } catch (error) {
-    console.error('Filter photos error:', error);
+    logger.error('Filter photos error:', error);
     res.status(500).json({ error: 'Failed to filter photos' });
   }
 });
@@ -132,7 +134,7 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), [
  * GET /admin/photos/:eventId/filter-summary
  * Get just the summary counts for filter UI
  */
-router.get('/:eventId/filter-summary', adminAuth, requirePermission('photos.view'), async (req, res) => {
+router.get('/:eventId/filter-summary', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId);
 
@@ -145,7 +147,7 @@ router.get('/:eventId/filter-summary', adminAuth, requirePermission('photos.view
       data: summary
     });
   } catch (error) {
-    console.error('Filter summary error:', error);
+    logger.error('Filter summary error:', error);
     res.status(500).json({ error: 'Failed to get filter summary' });
   }
 });
@@ -154,7 +156,7 @@ router.get('/:eventId/filter-summary', adminAuth, requirePermission('photos.view
  * POST /admin/photos/:eventId/export
  * Export selected or filtered photos
  */
-router.post('/:eventId/export', adminAuth, requirePermission('photos.download'), [
+router.post('/:eventId/export', adminAuth, requirePermission('photos.download'), requireEventOwnership, [
   body('photo_ids').optional().isArray(),
   body('photo_ids.*').optional().isInt(),
   body('filter').optional().isObject(),
@@ -205,7 +207,7 @@ router.post('/:eventId/export', adminAuth, requirePermission('photos.download'),
       res.send(result.content);
     }
   } catch (error) {
-    console.error('Export photos error:', error);
+    logger.error('Export photos error:', error);
     res.status(500).json({ error: error.message || 'Failed to export photos' });
   }
 });

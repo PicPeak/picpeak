@@ -288,12 +288,27 @@ export const notificationsService = {
           slug: notification.metadata.slug,
         });
 
-      default:
-        // Log unknown notification types for debugging
+      default: {
+        // Smart fallback: try to resolve admin.notificationMessages.<camelCase>
+        // directly before giving up to the systemActivity template. Most CRM
+        // and accounting activity types follow a stable shape (a doc number /
+        // customer email / count interpolated into a short sentence), so we
+        // add their translation entries to the locale files and rely on this
+        // default to pick them up — no per-type switch case needed.
+        const camelCase = notification.type.replace(/_(\w)/g, (_match, c) => c.toUpperCase());
+        const key = `admin.notificationMessages.${camelCase}`;
+        const translated = t(key, {
+          eventName: notification.eventName,
+          actorName: notification.actorName,
+          ...notification.metadata,
+        });
+        if (translated && translated !== key) return translated as string;
+        // Truly unknown — log and render the legacy systemActivity template.
         console.warn('Unknown notification type:', notification.type, notification);
         return notification.metadata.message || t('admin.notificationMessages.systemActivity', {
           type: notification.type.replace(/_/g, ' ')
         });
+      }
     }
   },
 

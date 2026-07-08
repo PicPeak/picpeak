@@ -21,11 +21,19 @@ export const PhotoUploadModal: React.FC<PhotoUploadModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Refresh the host's grid, but do NOT close here — closing is decided by
+  // onUploadSettled so a partial-failure upload keeps the modal (and its
+  // failure report) open.
   const handleUploadComplete = () => {
-    if (onUploadComplete) {
-      onUploadComplete();
+    onUploadComplete?.();
+  };
+
+  // Auto-close only on a clean upload; keep the modal open when some files
+  // failed so the report stays visible until the user dismisses it.
+  const handleUploadSettled = ({ hasFailures }: { hasFailures: boolean }) => {
+    if (!hasFailures) {
+      onClose();
     }
-    onClose();
   };
 
   return (
@@ -46,9 +54,10 @@ export const PhotoUploadModal: React.FC<PhotoUploadModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          <PhotoUpload 
-            eventId={eventId} 
+          <PhotoUpload
+            eventId={eventId}
             onUploadComplete={handleUploadComplete}
+            onUploadSettled={handleUploadSettled}
           />
         </div>
       </div>

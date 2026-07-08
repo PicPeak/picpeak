@@ -120,10 +120,10 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
 
   return (
     <div ref={containerRef} className="relative">
-      <label className="block text-sm font-medium text-theme mb-1">
+      <label className="block text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-1">
         {t('events.customerPicker.label', 'Customer accounts')}
       </label>
-      <p className="text-xs text-muted-theme mb-2">{helpText}</p>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">{helpText}</p>
 
       {/* Selected chips */}
       {value.length > 0 && (
@@ -131,16 +131,11 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
           {value.map((c) => (
             <span
               key={c.id}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs"
-              style={{
-                backgroundColor: 'var(--color-elevated, #f5f5f5)',
-                color: 'var(--color-text)',
-                border: '1px solid var(--color-surface-border, #e5e5e5)',
-              }}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 border border-neutral-200 dark:border-neutral-700"
             >
               <span className="font-medium">{c.displayName?.trim() || c.email}</span>
               {c.displayName?.trim() && c.email !== c.displayName && (
-                <span className="text-muted-theme">· {c.email}</span>
+                <span className="text-neutral-500 dark:text-neutral-400">· {c.email}</span>
               )}
               {!disabled && (
                 <button
@@ -174,18 +169,14 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
       {/* Dropdown */}
       {isOpen && query.trim() !== '' && (
         <div
-          className="absolute left-0 right-0 mt-1 z-20 rounded-lg shadow-lg border max-h-72 overflow-y-auto"
-          style={{
-            backgroundColor: 'var(--color-surface, #ffffff)',
-            borderColor: 'var(--color-surface-border, #e5e5e5)',
-          }}
+          className="absolute left-0 right-0 mt-1 z-20 rounded-lg shadow-lg border max-h-72 overflow-y-auto bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-700"
         >
           {isSearching ? (
-            <div className="px-3 py-3 text-sm text-muted-theme">
+            <div className="px-3 py-3 text-sm text-neutral-500 dark:text-neutral-400">
               {t('events.customerPicker.searching', 'Searching…')}
             </div>
           ) : results.length === 0 ? (
-            <div className="px-3 py-3 text-sm text-muted-theme">
+            <div className="px-3 py-3 text-sm text-neutral-500 dark:text-neutral-400">
               {t('events.customerPicker.noResults', 'No matches. Invite this customer from Clients → Accounts first.')}
             </div>
           ) : (
@@ -197,7 +188,7 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
                     onClick={() => select(r)}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-700 flex items-center gap-2"
                   >
-                    <UserPlus className="w-4 h-4 text-muted-theme flex-shrink-0" />
+                    <UserPlus className="w-4 h-4 text-neutral-500 dark:text-neutral-400 flex-shrink-0" />
                     <span className="flex-1 truncate">{labelFor(r)}</span>
                   </button>
                 </li>

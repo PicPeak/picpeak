@@ -100,8 +100,18 @@ exports.up = async function(knex) {
   // Add restore-related settings to app_settings
   const restoreSettings = [
     {
+      // Default ON so fresh installs can recover from disaster
+      // without the catch-22 documented in _restoreSettingsBoot.js
+      // (fresh-install admin user trips the "1 active admin" warning,
+      // which can only be overridden with force=true, which the wizard
+      // refused if this setting was false — exactly the moment an
+      // admin can least afford a SQL incantation). Flipped from false
+      // to true 2026-05-30. Existing installs that ran this migration
+      // with the OLD value will get auto-upgraded once by the boot
+      // self-heal in _restoreSettingsBoot.js — see the
+      // `restore_allow_force_auto_upgraded` guard there.
       setting_key: 'restore_allow_force',
-      setting_value: JSON.stringify(false),
+      setting_value: JSON.stringify(true),
       setting_type: 'restore'
     },
     {

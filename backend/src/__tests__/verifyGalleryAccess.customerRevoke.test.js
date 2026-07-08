@@ -101,6 +101,7 @@ describe('verifyGalleryAccess — customer-minted JWT with active assignment', (
   it('allows access when the event_customer_assignments row exists', async () => {
     getGalleryTokenFromRequest.mockReturnValue('tkn');
     jwt.verify.mockReturnValue({
+      type: 'gallery',
       eventId: 42,
       via: 'customer',
       customerId: 7,
@@ -131,6 +132,7 @@ describe('verifyGalleryAccess — customer-minted JWT after revocation', () => {
   it('returns 403 CUSTOMER_ASSIGNMENT_REVOKED when the junction row is gone', async () => {
     getGalleryTokenFromRequest.mockReturnValue('tkn');
     jwt.verify.mockReturnValue({
+      type: 'gallery',
       eventId: 42,
       via: 'customer',
       customerId: 7,
@@ -160,6 +162,7 @@ describe('verifyGalleryAccess — customer-minted JWT after revocation', () => {
     // and start 403'ing per-event-password sessions.
     getGalleryTokenFromRequest.mockReturnValue('tkn');
     jwt.verify.mockReturnValue({
+      type: 'gallery',
       eventId: 42,
       customerId: 7,
       // intentionally no `via` claim
@@ -191,6 +194,7 @@ describe('verifyGalleryAccess — per-event-password JWT', () => {
   it('does NOT touch event_customer_assignments and passes through', async () => {
     getGalleryTokenFromRequest.mockReturnValue('tkn');
     jwt.verify.mockReturnValue({
+      type: 'gallery',
       eventId: 42,
       // No via, no customerId — this is the legacy per-event-password
       // flow where every guest mints their own JWT after entering the

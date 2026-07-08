@@ -1,5 +1,38 @@
 import { api } from '../config/api';
 
+export type EmailQueueStatus = 'pending' | 'sent' | 'failed';
+
+export interface EmailQueueItem {
+  id: number;
+  recipientEmail: string;
+  emailType: string;
+  status: EmailQueueStatus;
+  createdAt: string;
+  scheduledAt: string | null;
+  sentAt: string | null;
+  errorMessage: string | null;
+  retryCount: number;
+  eventId: number | null;
+  eventName: string | null;
+  eventSlug: string | null;
+  /** 'system' = app-generated (Automated), 'manual' = admin-composed (Customers Sent). */
+  origin?: 'system' | 'manual';
+}
+
+export interface EmailQueueListResponse {
+  items: EmailQueueItem[];
+  pagination: { total: number; page: number; pageSize: number; totalPages: number };
+}
+
+/** Single sent/queued email including its rendered body — Messages reading pane. */
+export interface EmailQueueDetail extends EmailQueueItem {
+  /** Exact HTML that was sent (migration 119); null for pre-migration rows. */
+  renderedHtml: string | null;
+  cc: string | null;
+  /** Attachment filenames only — disk paths are never exposed. */
+  attachments: { filename: string; contentType: string | null }[];
+}
+
 export interface EmailConfig {
   smtp_host: string;
   smtp_port: number;
@@ -57,6 +90,94 @@ export interface EmailPreview {
   body_text: string;
 }
 
+export interface IncomingMailConfig {
+  imap_host: string;
+  imap_port: number;
+  imap_secure: boolean;
+  imap_user: string;
+  imap_pass: string;
+  imap_folder: string;
+}
+
+export interface ImapFolder {
+  path: string;
+  name: string;
+  /** IMAP special-use flag, e.g. '\\Inbox', '\\Sent' — used to auto-select. */
+  specialUse: string | null;
+}
+
+export interface ImapTestResult {
+  ok: boolean;
+  folder: string;
+  messages: number;
+  unseen: number;
+}
+
+export interface ImapRoundTripResult {
+  ok: boolean;
+  seconds?: number;
+  recipient?: string;
+}
+
+export interface ImapPollResult {
+  processed?: number;
+  skipped?: 'disabled' | 'unconfigured' | 'busy';
+}
+
+export interface ReceivedEmail {
+  id: number;
+  message_id: string | null;
+  account_key?: string | null;
+  from_address: string | null;
+  to_address?: string | null;
+  subject: string | null;
+  received_at: string | null;
+  attachment_count: number;
+  status: string;
+  inbound_document_id: number | null;
+  error: string | null;
+}
+
+/** Single received email including its captured, server-sanitized body. */
+export interface ReceivedEmailDetail extends ReceivedEmail {
+  body_html: string | null;
+  body_text: string | null;
+}
+
+export interface ReceivedEmailsResponse {
+  items: ReceivedEmail[];
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
+}
+
+/** An additional inbound mailbox beyond the primary accounting IMAP. */
+export interface MailAccount {
+  id?: number;
+  account_key: string;
+  label?: string | null;
+  imap_host?: string | null;
+  imap_port?: number;
+  imap_secure?: boolean;
+  imap_user?: string | null;
+  imap_pass?: string;
+  imap_folder?: string;
+  // Outgoing (SMTP) identity — replies from this mailbox send from here.
+  smtp_host?: string | null;
+  smtp_port?: number;
+  smtp_secure?: boolean;
+  smtp_user?: string | null;
+  smtp_pass?: string;
+  from_email?: string | null;
+  from_name?: string | null;
+  enabled?: boolean;
+}
+
+/** Resolved sender/mailbox addresses for the Messages sidebar. */
+export interface MailIdentities {
+  automated: string | null;
+  accounting: string | null;
+  customers: string | null;
+}
+
 export const emailService = {
   // Get email configuration
   async getConfig(): Promise<EmailConfig> {
@@ -69,9 +190,112 @@ export const emailService = {
     await api.post('/admin/email/config', config);
   },
 
+  // Incoming mail (IMAP) configuration
+  async getIncomingConfig(): Promise<IncomingMailConfig> {
+    const response = await api.get<IncomingMailConfig>('/admin/email/incoming-config');
+    return response.data;
+  },
+  async updateIncomingConfig(config: IncomingMailConfig): Promise<void> {
+    await api.post('/admin/email/incoming-config', config);
+  },
+  // Auto-detect mailbox folders. Sends the current form values so detection
+  // works before the config is saved (masked password falls back server-side).
+  async listIncomingFolders(config?: Partial<IncomingMailConfig>): Promise<ImapFolder[]> {
+    const response = await api.post<{ folders: ImapFolder[] }>('/admin/email/incoming-config/folders', config || {});
+    return response.data.folders;
+  },
+  // Test the IMAP connection: opens the configured folder, reports counts.
+  async testIncoming(config?: Partial<IncomingMailConfig>): Promise<ImapTestResult> {
+    const response = await api.post<ImapTestResult>('/admin/email/incoming-config/test', config || {});
+    return response.data;
+  },
+  // End-to-end: send via SMTP to the IMAP mailbox and confirm it arrives.
+  // Uses saved config for both sides — no body. May take up to ~30s.
+  async roundTripIncoming(): Promise<ImapRoundTripResult> {
+    const response = await api.post<ImapRoundTripResult>('/admin/email/incoming-config/roundtrip', {});
+    return response.data;
+  },
+  // Run the poller on demand. Returns { processed } or { skipped: '…' }.
+  async pollIncoming(): Promise<ImapPollResult> {
+    const response = await api.post<ImapPollResult>('/admin/email/incoming-config/poll', {});
+    return response.data;
+  },
+  async listReceived(params: { page?: number; pageSize?: number; account?: string; state?: 'active' | 'archived' | 'deleted'; q?: string } = {}): Promise<ReceivedEmailsResponse> {
+    const response = await api.get<ReceivedEmailsResponse>('/admin/email/received', { params });
+    return response.data;
+  },
+  /** Archive / Delete (soft) / Restore an email. kind = 'queue' | 'received'. */
+  async setItemState(kind: 'queue' | 'received', id: number, state: 'active' | 'archived' | 'deleted'): Promise<void> {
+    await api.post(`/admin/email/item/${kind}/${id}/state`, { state });
+  },
+  /** Permanently delete an email (only from the Deleted folder). */
+  async deleteItem(kind: 'queue' | 'received', id: number): Promise<void> {
+    await api.delete(`/admin/email/item/${kind}/${id}`);
+  },
+  async getReceivedItem(id: number): Promise<ReceivedEmailDetail> {
+    const response = await api.get<ReceivedEmailDetail>(`/admin/email/received/${id}`);
+    return response.data;
+  },
+  // Additional inbound mailboxes (e.g. the customer hello@ box).
+  async listMailAccounts(): Promise<MailAccount[]> {
+    const response = await api.get<{ items: MailAccount[] }>('/admin/email/accounts');
+    return response.data.items;
+  },
+  async saveMailAccount(account: MailAccount): Promise<void> {
+    await api.post('/admin/email/accounts', account);
+  },
+  async testMailAccount(account: Partial<MailAccount>): Promise<ImapTestResult> {
+    const response = await api.post<ImapTestResult>('/admin/email/accounts/test', account);
+    return response.data;
+  },
+
   // Test email configuration
   async testEmail(testEmail: string): Promise<void> {
     await api.post('/admin/email/test', { test_email: testEmail });
+  },
+
+  /** Flush the email queue immediately. Sends every pending email now,
+   *  bypassing the business-hours floor — the escape hatch for draining
+   *  the queue before maintenance/updates. */
+  async flushQueue(): Promise<{ processed: number; sent: number; failed: number }> {
+    const response = await api.post<{ processed: number; sent: number; failed: number }>(
+      '/admin/email/flush-queue'
+    );
+    return response.data;
+  },
+
+  /** Read-only "Sent emails" feed — paginated view of the email_queue
+   *  table with filters. email_data is never returned. */
+  async listQueue(params: {
+    status?: EmailQueueStatus;
+    emailType?: string;
+    origin?: 'system' | 'manual';
+    state?: 'active' | 'archived' | 'deleted';
+    q?: string;
+    from?: string;
+    to?: string;
+    page?: number;
+    pageSize?: number;
+  } = {}): Promise<EmailQueueListResponse> {
+    const response = await api.get<EmailQueueListResponse>('/admin/email/queue', { params });
+    return response.data;
+  },
+
+  /** Single sent email with its rendered body + attachment filenames. */
+  async getQueueItem(id: number): Promise<EmailQueueDetail> {
+    const response = await api.get<EmailQueueDetail>(`/admin/email/queue/${id}`);
+    return response.data;
+  },
+
+  /** Send a human-composed (edited) email — reply or document message. */
+  async sendMessage(payload: { to: string; cc?: string; subject: string; html: string; replyToReceivedId?: number; accountKey?: string }): Promise<void> {
+    await api.post('/admin/email/send', payload);
+  },
+
+  /** Resolved sender/mailbox addresses for the Messages sidebar. */
+  async getIdentities(): Promise<MailIdentities> {
+    const response = await api.get<MailIdentities>('/admin/email/identities');
+    return response.data;
   },
 
   // Get all email templates
@@ -89,6 +313,22 @@ export const emailService = {
   // Update email template
   async updateTemplate(key: string, data: { translations: Record<string, EmailTemplateTranslation> }): Promise<void> {
     await api.put(`/admin/email/templates/${key}`, data);
+  },
+
+  /** Create a new email template. Used by ReminderTemplatesPage to
+   *  spawn a per-event-type reminder (e.g. `event_reminder_wedding`)
+   *  initialised with the default catch-all's content. Returns 409 if
+   *  the key already exists. */
+  async createTemplate(payload: {
+    template_key: string;
+    translations: Record<string, EmailTemplateTranslation>;
+    category?: string;
+    subcategory?: string;
+    feature_flag?: string;
+    variables?: string[];
+  }): Promise<{ template_key: string; id: number }> {
+    const response = await api.post<{ template_key: string; id: number }>('/admin/email/templates', payload);
+    return response.data;
   },
 
   // Preview email template

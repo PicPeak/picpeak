@@ -7,16 +7,16 @@ const { slugify } = require('../utils/slug');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const archiver = require('archiver');
-const AdmZip = require('adm-zip');
+const StreamZip = require('node-stream-zip');
 const { requireEventOwnership } = require('../middleware/ownership');
+const logger = require('../utils/logger');
+const { getPagination } = require('../utils/routeHelpers');
 const router = express.Router();
 
 // Get all archived events
 router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = getPagination(req);
 
     // Get total count
     const totalCount = await db('events')
@@ -48,7 +48,7 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
           const stats = await fs.stat(fullArchivePath);
           archiveFileSize = stats.size;
         } catch (error) {
-          console.error(`Archive file not found: ${archive.archive_path}`);
+          logger.error(`Archive file not found: ${archive.archive_path}`);
         }
       }
 
@@ -78,7 +78,7 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
       }
     });
   } catch (error) {
-    console.error('Archives list error:', error);
+    logger.error('Archives list error:', error);
     res.status(500).json({ error: 'Failed to fetch archives' });
   }
 });
@@ -113,7 +113,7 @@ router.get('/:id', adminAuth, requirePermission('archives.view'), requireEventOw
           path: archive.archive_path
         };
       } catch (error) {
-        console.error('Archive file not found:', error);
+        logger.error('Archive file not found:', error);
       }
     }
 
@@ -134,7 +134,7 @@ router.get('/:id', adminAuth, requirePermission('archives.view'), requireEventOw
       archiveFile: archiveFileInfo
     });
   } catch (error) {
-    console.error('Archive details error:', error);
+    logger.error('Archive details error:', error);
     res.status(500).json({ error: 'Failed to fetch archive details' });
   }
 });
@@ -167,32 +167,62 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
 
     // Extract the archive
     try {
-      const zip = new AdmZip(fullArchivePath);
+      // node-stream-zip streams each entry to disk on extract — adm-zip used
+      // to load the whole archive into a Node Buffer up front, which capped
+      // restore at 2 GiB (ERR_FS_FILE_TOO_LARGE). Real-world wedding archives
+      // routinely cross that line. Credit: 8digit/picpeak@69033c6.
+      const zip = new StreamZip.async({ file: fullArchivePath });
       const eventsDir = path.join(storagePath, 'events/active');
       const eventDir = path.join(eventsDir, archive.slug);
-      
+
       // Create event directory if it doesn't exist
       await fs.mkdir(eventDir, { recursive: true });
-      
+
       // Log ZIP contents for debugging
-      console.log(`Extracting archive to: ${eventDir}`);
-      const entries = zip.getEntries();
-      console.log(`Archive contains ${entries.length} entries`);
-      
-      // Extract files to the event directory
-      zip.extractAllTo(eventDir, true);
-      
+      logger.info(`Extracting archive to: ${eventDir}`);
+      const entries = Object.values(await zip.entries());
+      logger.info(`Archive contains ${entries.length} entries`);
+
+      // Stream-extract everything to disk
+      await zip.extract(null, eventDir);
+      await zip.close();
+
+      // Load photos manifest if present. The gallery filenames are renamed on
+      // upload, so `original_filename` (and category linkage) can't be derived
+      // from the extracted files alone — they're only recoverable from the
+      // manifest the archive process writes. Older archives have no manifest;
+      // we fall back to filename for those.
+      const manifestByFilename = new Map();
+      try {
+        const manifestRaw = await fs.readFile(
+          path.join(eventDir, 'photos_manifest.json'), 'utf8',
+        );
+        const parsed = JSON.parse(manifestRaw);
+        if (Array.isArray(parsed)) {
+          for (const m of parsed) {
+            if (m && m.filename) manifestByFilename.set(m.filename, m);
+          }
+        }
+        logger.info(`Loaded photos manifest: ${manifestByFilename.size} entries`);
+      } catch (e) {
+        if (e.code !== 'ENOENT') {
+          logger.warn('Photos manifest present but unreadable; falling back to filenames', e.message);
+        } else {
+          logger.info('No photos manifest in archive (older archive); original_filename falls back to filename');
+        }
+      }
+
       // Get list of extracted files to update database
       const extractedPhotos = [];
-      
+
       // First, collect all category information from the ZIP structure
       const categoriesMap = new Map();
-      
+
       for (const entry of entries) {
-        if (!entry.isDirectory && entry.entryName.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-          const filename = path.basename(entry.entryName);
-          const dirPath = path.dirname(entry.entryName);
-          const actualFilePath = path.join(eventDir, entry.entryName);
+        if (!entry.isDirectory && entry.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
+          const filename = path.basename(entry.name);
+          const dirPath = path.dirname(entry.name);
+          const actualFilePath = path.join(eventDir, entry.name);
           
           try {
             // Check if file was extracted successfully
@@ -239,10 +269,14 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             if (!existingPhoto) {
               // Store relative path from storage root
               const relativePath = path.relative(storagePath, actualFilePath);
+              const manifestEntry = manifestByFilename.get(filename);
               extractedPhotos.push({
                 event_id: archive.id,
                 filename: filename,
-                original_filename: filename,
+                // Recover original_filename from the manifest if present;
+                // legacy archives without a manifest lose nothing (filename
+                // is what they had before).
+                original_filename: manifestEntry?.original_filename || filename,
                 path: relativePath,
                 thumbnail_path: null, // Will be regenerated by thumbnail service
                 type: path.extname(filename).substring(1).toLowerCase(),
@@ -252,9 +286,9 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
               });
             }
           } catch (statError) {
-            console.error(`Failed to stat file: ${actualFilePath}`);
-            console.error(`Entry name was: ${entry.entryName}`);
-            console.error('Error:', statError.message);
+            logger.error(`Failed to stat file: ${actualFilePath}`);
+            logger.error(`Entry name was: ${entry.name}`);
+            logger.error('Error:', statError.message);
             // Skip this file if we can't stat it
             continue;
           }
@@ -267,7 +301,7 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       }
       
     } catch (extractError) {
-      console.error('Archive extraction error:', extractError);
+      logger.error('Archive extraction error:', extractError);
       return res.status(500).json({ error: 'Failed to extract archive: ' + extractError.message });
     }
     
@@ -297,7 +331,7 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
 
     res.json({ message: 'Archive restored successfully' });
   } catch (error) {
-    console.error('Archive restore error:', error);
+    logger.error('Archive restore error:', error);
     res.status(500).json({ error: 'Failed to restore archive' });
   }
 });
@@ -346,7 +380,7 @@ router.get('/:id/download', adminAuth, requirePermission('archives.download'), r
       metadata: JSON.stringify({ event_name: archive.event_name })
     });
   } catch (error) {
-    console.error('Archive download error:', error);
+    logger.error('Archive download error:', error);
     res.status(500).json({ error: 'Failed to download archive' });
   }
 });
@@ -370,7 +404,7 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
         const fullArchivePath = path.join(storagePath, archive.archive_path);
         await fs.unlink(fullArchivePath);
       } catch (error) {
-        console.error('Failed to delete archive file:', error);
+        logger.error('Failed to delete archive file:', error);
       }
     }
 
@@ -406,7 +440,7 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
 
     res.json({ message: 'Archive deleted permanently' });
   } catch (error) {
-    console.error('Archive delete error:', error);
+    logger.error('Archive delete error:', error);
     res.status(500).json({ error: 'Failed to delete archive' });
   }
 });

@@ -1,4 +1,37 @@
 services:
+  # Generates machine secrets (JWT/DB/Redis) on first run when they aren't set
+  # in .env (seeds from the env var when provided, else a random value).
+  # Idempotent — never overwrites an existing file. See docker-compose.production.yml.
+  secrets-init:
+    image: alpine:3.20
+    container_name: picpeak-secrets-init
+    env_file: .env
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /run/secrets
+        if [ ! -s /run/secrets/jwt_secret ]; then
+          if [ -n "$$JWT_SECRET" ]; then printf '%s' "$$JWT_SECRET" > /run/secrets/jwt_secret;
+          else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/jwt_secret; fi
+        fi
+        if [ ! -s /run/secrets/db_password ]; then
+          if [ -n "$$DB_PASSWORD" ]; then printf '%s' "$$DB_PASSWORD" > /run/secrets/db_password;
+          else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/db_password; fi
+        fi
+        if [ ! -s /run/secrets/redis_password ]; then
+          if [ -n "$$REDIS_PASSWORD" ]; then printf '%s' "$$REDIS_PASSWORD" > /run/secrets/redis_password;
+          else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/redis_password; fi
+        fi
+        # 644: the readers run as three different users (postgres, redis, nodejs),
+        # so a non-root reader must be able to read them. The volume is private to
+        # these containers and never host-exposed.
+        chmod 644 /run/secrets/jwt_secret /run/secrets/db_password /run/secrets/redis_password
+    volumes:
+      - picpeak-secrets:/run/secrets
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -8,17 +41,16 @@ services:
     environment:
       - NODE_ENV=${NODE_ENV:-production}
       - PORT=3000
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-}
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - DATABASE_CLIENT=pg
-      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
       - DB_TYPE=postgresql
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_PASSWORD=${DB_PASSWORD:-}
       - DB_NAME=${DB_NAME}
       - EXTERNAL_MEDIA_ROOT=${EXTERNAL_MEDIA_ROOT:-/app/storage/external-media}
       - SMTP_HOST=${SMTP_HOST}
@@ -42,9 +74,12 @@ services:
       - ./logs:/app/logs
       - ./backup:/backup
       - ./storage:/app/storage
+      - picpeak-secrets:/run/secrets:ro
     ports:
       - "${BACKEND_PORT:-3001}:3000"
     depends_on:
+      secrets-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     healthcheck:
@@ -63,12 +98,16 @@ services:
     userns_mode: "host"
     environment:
       - POSTGRES_USER=${DB_USER}
-      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
       - POSTGRES_DB=${DB_NAME}
       - PGDATA=/var/lib/postgresql/data/pgdata
       - TZ=${TZ:-UTC}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - picpeak-secrets:/run/secrets:ro
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:${DB_PORT:-5432}:5432"
     healthcheck:
@@ -85,9 +124,13 @@ services:
     container_name: picpeak-redis
     restart: unless-stopped
     userns_mode: "host"
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-picpeak_redis_pass}
+    command: sh -c 'exec redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)"'
     volumes:
       - redis-data:/data
+      - picpeak-secrets:/run/secrets:ro
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
@@ -141,6 +184,10 @@ volumes:
   postgres-data:
     driver: local
   redis-data:
+    driver: local
+  # Auto-generated machine secrets (jwt/db/redis). Keep it — deleting it orphans
+  # the DB password from the Postgres volume.
+  picpeak-secrets:
     driver: local
 
 networks:

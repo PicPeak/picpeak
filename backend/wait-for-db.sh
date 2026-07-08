@@ -3,6 +3,21 @@
 
 set -e
 
+# Machine secrets (JWT/DB/Redis): if not supplied via the environment, read them
+# from the generated secret files that the compose `secrets-init` service writes
+# to /run/secrets. Explicit env ALWAYS wins, so installs that set
+# JWT_SECRET/DB_PASSWORD/REDIS_PASSWORD in .env are unaffected. Runs before the
+# root -> nodejs re-exec so the exported values survive su-exec.
+for _pair in JWT_SECRET:jwt_secret DB_PASSWORD:db_password REDIS_PASSWORD:redis_password; do
+  _var="${_pair%%:*}"
+  _file="/run/secrets/${_pair##*:}"
+  eval "_cur=\${$_var:-}"
+  if [ -z "$_cur" ] && [ -s "$_file" ]; then
+    export "$_var=$(cat "$_file")"
+  fi
+done
+unset _pair _var _file _cur
+
 # Permission handling (#484): the image starts as root so this script can
 # chown bind-mounted host volumes to UID 1001 (nodejs) before dropping
 # privileges via su-exec. This avoids the fresh-install restart loop where

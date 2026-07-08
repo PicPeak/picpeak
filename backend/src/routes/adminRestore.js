@@ -5,6 +5,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { body, query, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
+const { getPagination } = require('../utils/routeHelpers');
 const { db } = require('../database/db');
 const path = require('path');
 const fs = require('fs').promises;
@@ -48,7 +49,7 @@ function transformS3Config(body) {
  */
 router.get('/status', requirePermission('backup.view'), async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 10;
+    const { limit } = getPagination(req, { limit: 10 });
     const history = await restoreService.getRestoreHistory(limit);
     
     const status = {
@@ -348,51 +349,7 @@ router.get('/run/:id/report', requirePermission('backup.view'), async (req, res)
  */
 router.get('/available-backups', requirePermission('backup.view'), async (req, res) => {
   try {
-    const backups = [];
-    
-    // Get local file backups
-    const backupConfig = await getBackupConfig();
-    if (backupConfig.backup_destination_type === 'local' && backupConfig.backup_destination_path) {
-      try {
-        const files = await fs.readdir(backupConfig.backup_destination_path);
-        for (const file of files) {
-          if (file.endsWith('.json') || file.endsWith('.yaml')) {
-            const filePath = path.join(backupConfig.backup_destination_path, file);
-            const stats = await fs.stat(filePath);
-            backups.push({
-              type: 'local',
-              name: file,
-              path: filePath,
-              size: stats.size,
-              modified: stats.mtime
-            });
-          }
-        }
-      } catch (error) {
-        logger.warn('Failed to list local backups:', error);
-      }
-    }
-    
-    // Get database backups from backup_runs table
-    const backupRuns = await db('backup_runs')
-      .where('status', 'completed')
-      .whereNotNull('manifest_path')
-      .orderBy('completed_at', 'desc')
-      .limit(20);
-    
-    for (const run of backupRuns) {
-      backups.push({
-        type: run.manifest_path.startsWith('s3://') ? 's3' : 'local',
-        name: `Backup ${run.completed_at}`,
-        path: run.manifest_path,
-        manifestId: run.manifest_id,
-        size: run.total_size_bytes,
-        filesCount: run.files_backed_up,
-        duration: run.duration_seconds,
-        completed: run.completed_at
-      });
-    }
-    
+    const backups = await discoverAvailableBackups();
     res.json({
       success: true,
       data: backups
@@ -407,65 +364,271 @@ router.get('/available-backups', requirePermission('backup.view'), async (req, r
 });
 
 /**
+ * Discover restorable backups by walking the configured destination
+ * directory + harvesting the backup_runs table.
+ *
+ * **Why we recurse the disk first, DB second**
+ *
+ * The disk is the source of truth for restore. After a disaster
+ * (`docker compose down -v`, drive corruption, fresh install) the
+ * `backup_runs` table is empty — but the manifest JSONs are exactly
+ * what's left on disk for an admin to recover from. A wizard that
+ * only reads the DB shows "No backups found" precisely when the
+ * admin needs it most. So we walk first, dedupe-by-manifestId
+ * against any surviving DB rows, and present a unified list.
+ *
+ * Discovery rules:
+ *   - Walks `backup_destination_path` AND `backup_manifest_path` if
+ *     they're distinct (manifests can live in a sibling directory).
+ *   - Recurses up to 3 levels deep — enough to find
+ *     `<root>/manifests/backup-manifest-<id>.json` (the default
+ *     layout) without scanning the entire photo tree.
+ *   - Matches manifest files by glob: `backup-manifest-*.json`,
+ *     `backup-manifest-*.yaml`, and the legacy bare `manifest.json`.
+ *   - Parses each manifest to extract real metadata (timestamp,
+ *     size, file count, source type) instead of showing the admin
+ *     a list of opaque filenames.
+ *
+ * Returns: array of `{ type, name, path, manifestId, size,
+ * filesCount, completed, source: 'disk' | 'db' }`.
+ */
+async function discoverAvailableBackups() {
+  const backupConfig = await getBackupConfig();
+  const backups = [];
+  const seenManifestIds = new Set();
+
+  if (backupConfig.backup_destination_type === 'local') {
+    const roots = new Set();
+    if (backupConfig.backup_destination_path) roots.add(backupConfig.backup_destination_path);
+    if (backupConfig.backup_manifest_path)    roots.add(backupConfig.backup_manifest_path);
+
+    for (const root of roots) {
+      try {
+        const manifestPaths = await walkForManifests(root, 3);
+        for (const filePath of manifestPaths) {
+          try {
+            const parsed = await parseManifestMetadata(filePath);
+            if (parsed.manifestId) seenManifestIds.add(parsed.manifestId);
+            backups.push(parsed);
+          } catch (err) {
+            // Don't fail discovery because ONE manifest is corrupt —
+            // surface the file with a note so the admin sees something
+            // is wrong and can investigate.
+            logger.warn(`Manifest unreadable at ${filePath}: ${err.message}`);
+            const stats = await fs.stat(filePath).catch(() => null);
+            backups.push({
+              type: 'local',
+              name: path.basename(filePath),
+              path: filePath,
+              manifestId: null,
+              size: stats?.size || 0,
+              filesCount: null,
+              completed: stats?.mtime || null,
+              source: 'disk',
+              corrupt: true,
+              error: err.message,
+            });
+          }
+        }
+      } catch (err) {
+        logger.warn(`Could not scan backup root ${root}: ${err.message}`);
+      }
+    }
+  }
+
+  // Layer in surviving DB rows, deduping by manifest_id so we don't
+  // show the same backup twice with different shapes.
+  const backupRuns = await db('backup_runs')
+    .where('status', 'completed')
+    .whereNotNull('manifest_path')
+    .orderBy('completed_at', 'desc')
+    .limit(50);
+
+  for (const run of backupRuns) {
+    if (run.manifest_id && seenManifestIds.has(run.manifest_id)) continue;
+    backups.push({
+      type: run.manifest_path.startsWith('s3://') ? 's3' : 'local',
+      name: `Backup ${run.completed_at}`,
+      path: run.manifest_path,
+      manifestId: run.manifest_id,
+      size: run.total_size_bytes,
+      filesCount: run.files_backed_up,
+      duration: run.duration_seconds,
+      completed: run.completed_at,
+      source: 'db',
+    });
+  }
+
+  // Most recent first.
+  backups.sort((a, b) => {
+    const aTime = a.completed ? new Date(a.completed).getTime() : 0;
+    const bTime = b.completed ? new Date(b.completed).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  return backups;
+}
+
+/**
+ * Recursive manifest finder. Depth-limited so we don't enumerate
+ * thousands of photo files. Yields absolute paths.
+ */
+async function walkForManifests(dir, maxDepth, depth = 0) {
+  if (depth > maxDepth) return [];
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if (err.code === 'ENOENT') return [];
+    throw err;
+  }
+
+  const out = [];
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      // Skip obvious noise: photo trees, node_modules, hidden dirs.
+      if (entry.name === 'events' || entry.name === 'business-docs'
+          || entry.name === 'thumbnails' || entry.name === 'previews'
+          || entry.name === 'heroes' || entry.name === 'uploads'
+          || entry.name.startsWith('.')
+          || entry.name === 'node_modules') continue;
+      out.push(...await walkForManifests(full, maxDepth, depth + 1));
+    } else if (entry.isFile() && isManifestFilename(entry.name)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+function isManifestFilename(name) {
+  // Canonical: backup-manifest-<id>.json / .yaml
+  // Legacy:    manifest.json (inside backup-<id>/manifest.json layout)
+  // Be liberal in what we accept — admin may have renamed.
+  if (/^backup-manifest-.+\.(json|ya?ml)$/i.test(name)) return true;
+  if (/^manifest\.(json|ya?ml)$/i.test(name)) return true;
+  return false;
+}
+
+/**
+ * Parse a manifest file and pull out the fields the wizard wants.
+ * Tolerates schema drift across manifest versions (v1, v2) by
+ * checking multiple shapes.
+ */
+async function parseManifestMetadata(filePath) {
+  const raw = await fs.readFile(filePath, 'utf8');
+  let parsed;
+  if (filePath.toLowerCase().endsWith('.json')) {
+    parsed = JSON.parse(raw);
+  } else {
+    // Minimal YAML support — most admins use JSON; only do require()
+    // if a .yaml manifest is actually present.
+    const yaml = require('js-yaml');
+    parsed = yaml.load(raw);
+  }
+
+  const stats = await fs.stat(filePath);
+
+  // v2 shape: { manifest: { id, timestamp }, backup: { ... }, files: [...], database: { ... } }
+  // v1 shape: { backup_id, started_at, files: [...] }  (older)
+  const manifestId =
+    parsed?.manifest?.id
+    || parsed?.backup?.id
+    || parsed?.backup_id
+    || null;
+
+  const completed =
+    parsed?.backup?.completed_at
+    || parsed?.manifest?.timestamp
+    || parsed?.completed_at
+    || stats.mtime;
+
+  const filesCount =
+    (Array.isArray(parsed?.files) ? parsed.files.length : null)
+    ?? parsed?.backup?.total_files
+    ?? null;
+
+  const totalSizeBytes =
+    parsed?.backup?.total_size_bytes
+    ?? parsed?.total_size_bytes
+    ?? null;
+
+  return {
+    type: 'local',
+    name: path.basename(filePath),
+    path: filePath,
+    manifestId,
+    size: totalSizeBytes ?? stats.size,
+    filesCount,
+    completed,
+    source: 'disk',
+    databaseIncluded: Boolean(parsed?.database?.backup_file),
+    // Helpful for the UI: lets it show "This backup has no DB" warning
+    // — exactly the surface that would have caught Ralf's original
+    // four files-only manifests if it had existed.
+    schemaVersion: parsed?.manifest?.version || parsed?.version || '1.0',
+  };
+}
+
+/**
  * List backups for restore (POST version for frontend compatibility)
  * Accepts source type in request body
  */
 router.post('/list-backups', requirePermission('backup.view'), async (req, res) => {
   try {
     const { source } = req.body; // 'local', 's3', or undefined for all
-    const backups = [];
 
-    // Get backup configuration
-    const backupConfig = await getBackupConfig();
+    // Use the same disk-first discovery the GET endpoint uses so that
+    // a fresh post-`docker compose down -v` install (empty backup_runs
+    // table) can still see what's on disk. The whole point of restore
+    // is "the DB is broken, rebuild it from disk" — a wizard that
+    // only queries the DB shows "No backups found" exactly when it's
+    // needed most. See discoverAvailableBackups for the full rationale.
+    const discovered = await discoverAvailableBackups();
 
-    // Get database backups from backup_runs table
-    const backupRuns = await db('backup_runs')
-      .where('status', 'completed')
-      .whereNotNull('manifest_path')
-      .orderBy('completed_at', 'desc')
-      .limit(20);
+    const filtered = source
+      ? discovered.filter((b) => b.type === source)
+      : discovered;
 
-    for (const run of backupRuns) {
-      const isS3 = run.manifest_path.startsWith('s3://');
-      const backupType = isS3 ? 's3' : 'local';
-
-      // Filter by source if specified
-      if (source && source !== backupType) {
-        continue;
-      }
-
-      backups.push({
-        id: run.id,
-        type: backupType,
-        name: `Backup from ${new Date(run.completed_at).toLocaleString()}`,
-        path: run.manifest_path,
-        manifest_path: run.manifest_path,
-        manifestId: run.manifest_id,
-        manifestPath: run.manifest_path,
-        size: parseInt(run.total_size_bytes) || 0,
-        total_size: parseInt(run.total_size_bytes) || 0,
-        total_size_bytes: parseInt(run.total_size_bytes) || 0,
-        filesCount: run.files_backed_up || 0,
-        files_backed_up: run.files_backed_up || 0,
-        duration: run.duration_seconds,
-        duration_seconds: run.duration_seconds,
-        // Frontend expects snake_case date fields
-        created_at: run.completed_at,
-        completed_at: run.completed_at,
-        started_at: run.started_at,
-        // camelCase aliases
-        completedAt: run.completed_at,
-        startedAt: run.started_at,
-        // Backup metadata
-        status: run.status,
-        backup_type: run.backup_type,
-        backupType: run.backup_type,
-        backup_mode: run.backup_mode,
-        backupMode: run.backup_mode,
-        app_version: run.app_version,
-        appVersion: run.app_version
-      });
-    }
+    // Shape for frontend compatibility — preserves every alias the
+    // frontend was already reading (snake_case + camelCase), so the
+    // UI rendering doesn't have to change.
+    const backups = filtered.map((b) => ({
+      id: b.manifestId || null,
+      type: b.type,
+      name: b.completed
+        ? `Backup from ${new Date(b.completed).toLocaleString()}`
+        : b.name,
+      path: b.path,
+      manifest_path: b.path,
+      manifestId: b.manifestId,
+      manifestPath: b.path,
+      size: parseInt(b.size) || 0,
+      total_size: parseInt(b.size) || 0,
+      total_size_bytes: parseInt(b.size) || 0,
+      filesCount: b.filesCount || 0,
+      files_backed_up: b.filesCount || 0,
+      duration: b.duration || null,
+      duration_seconds: b.duration || null,
+      created_at: b.completed,
+      completed_at: b.completed,
+      started_at: b.completed,
+      completedAt: b.completed,
+      startedAt: b.completed,
+      status: 'completed',
+      // Stage A-aware: when the source is a disk-scanned manifest we
+      // can tell the wizard whether the DB dump is present, so the
+      // UI can warn before the admin picks a files-only backup.
+      database_included: b.databaseIncluded,
+      databaseIncluded: b.databaseIncluded,
+      corrupt: b.corrupt || false,
+      // Provenance: 'disk' (manifest read from filesystem) vs 'db'
+      // (backup_runs row that the disk didn't surface) — useful for
+      // debugging which side is missing.
+      source: b.source,
+      schema_version: b.schemaVersion,
+      schemaVersion: b.schemaVersion,
+    }));
 
     res.json({
       success: true,
@@ -556,17 +719,23 @@ async function getRestoreSettings() {
   const settings = await db('app_settings')
     .where('setting_type', 'restore')
     .select('setting_key', 'setting_value');
-  
+
   const result = {};
   settings.forEach(setting => {
-    // Convert boolean strings to actual booleans
-    if (setting.setting_value === '1' || setting.setting_value === '0') {
-      result[setting.setting_key] = setting.setting_value === '1';
+    // Boolean-string normalization. Historically only handled '1'/'0',
+    // but other code paths (boot self-heal, admin UI, direct SQL) write
+    // 'true' / 'false' or JSON-encoded "true" / "false". Accept all four
+    // shapes so `!settings.<key>` evaluates correctly downstream.
+    const raw = setting.setting_value;
+    if (raw === '1' || raw === 'true' || raw === '"true"') {
+      result[setting.setting_key] = true;
+    } else if (raw === '0' || raw === 'false' || raw === '"false"') {
+      result[setting.setting_key] = false;
     } else {
-      result[setting.setting_key] = setting.setting_value;
+      result[setting.setting_key] = raw;
     }
   });
-  
+
   return result;
 }
 

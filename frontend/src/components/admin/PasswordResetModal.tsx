@@ -87,12 +87,12 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="max-w-md w-full">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-neutral-900">
+          <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
             {resultPassword ? t('events.passwordReset.newTitle') : t('events.passwordReset.title')}
           </h2>
           <button
             onClick={onClose}
-            className="text-neutral-400 hover:text-neutral-600"
+            className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
           >
             <X className="w-5 h-5" />
           </button>
@@ -163,12 +163,12 @@ export const PasswordResetModal: React.FC<PasswordResetModalProps> = ({
                   type="checkbox"
                   checked={sendEmail}
                   onChange={(e) => setSendEmail(e.target.checked)}
-                  className="w-4 h-4 text-accent bg-neutral-100 border-neutral-300 rounded focus:ring-primary-500 focus:ring-2"
+                  className="w-4 h-4 text-accent bg-neutral-100 dark:bg-neutral-700 border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500 focus:ring-2"
                 />
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     <Mail className="w-4 h-4 text-neutral-500" />
-                    <span className="text-sm font-medium text-neutral-700">
+                    <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
                       {t('events.passwordReset.sendEmail')}
                     </span>
                   </div>

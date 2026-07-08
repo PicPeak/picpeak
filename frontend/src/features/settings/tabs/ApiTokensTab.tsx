@@ -5,6 +5,7 @@ import { toast } from 'react-toastify';
 import { KeyRound, Trash2, Copy, AlertTriangle } from 'lucide-react';
 import { Button, Card, Input, Loading } from '../../../components/common';
 import { api } from '../../../config/api';
+import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 
 interface ApiTokenRow {
   id: number;
@@ -28,6 +29,7 @@ const ALL_SCOPES: Array<'read' | 'write' | 'admin'> = ['read', 'write', 'admin']
  */
 export const ApiTokensTab: React.FC = () => {
   const { t } = useTranslation();
+  const { formatDateTime: fmtDateTime, format: fmtDate } = useLocalizedDate();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<Array<'read' | 'write' | 'admin'>>(['read']);
@@ -181,7 +183,7 @@ export const ApiTokensTab: React.FC = () => {
                 <tr className="text-left text-neutral-500 dark:text-neutral-400 border-b border-neutral-200 dark:border-neutral-700">
                   <th className="py-2 pr-3">{t('settings.apiTokens.name', 'Name')}</th>
                   <th className="py-2 pr-3">{t('settings.apiTokens.scopes', 'Scopes')}</th>
-                  <th className="py-2 pr-3">Preview</th>
+                  <th className="py-2 pr-3">{t('settings.apiTokens.preview', 'Preview')}</th>
                   <th className="py-2 pr-3">{t('settings.apiTokens.lastUsed', 'Last used')}</th>
                   <th className="py-2 pr-3">{t('settings.apiTokens.created', 'Created')}</th>
                   <th className="py-2 pr-3">{t('settings.apiTokens.status', 'Status')}</th>
@@ -205,10 +207,10 @@ export const ApiTokensTab: React.FC = () => {
                         pp_live_{token.preview || '••••'}…
                       </td>
                       <td className="py-3 pr-3 text-neutral-500">
-                        {token.last_used_at ? new Date(token.last_used_at).toLocaleString() : '—'}
+                        {token.last_used_at ? fmtDateTime(token.last_used_at) : '—'}
                       </td>
                       <td className="py-3 pr-3 text-neutral-500">
-                        {new Date(token.created_at).toLocaleDateString()}
+                        {fmtDate(token.created_at)}
                       </td>
                       <td className="py-3 pr-3">
                         <span className={`text-xs px-2 py-0.5 rounded ${
@@ -226,7 +228,7 @@ export const ApiTokensTab: React.FC = () => {
                             variant="ghost"
                             leftIcon={<Trash2 className="w-4 h-4" />}
                             onClick={() => {
-                              if (confirm(t('settings.apiTokens.confirmRevoke', `Revoke "${token.name}"? Existing integrations using this token will start getting 401.`))) {
+                              if (confirm(t('settings.apiTokens.confirmRevoke', { name: token.name, defaultValue: `Revoke "${token.name}"? Existing integrations using this token will start getting 401.` }))) {
                                 revokeMutation.mutate(token.id);
                               }
                             }}

@@ -138,6 +138,32 @@ export const eventsService = {
     await api.delete(`/admin/events/${id}`);
   },
 
+  // Live Slideshow ("Diashow") — mint/rotate the share token (admin)
+  async generateSlideshowLink(id: number): Promise<{ show_share_token: string; slideshow_url: string }> {
+    const response = await api.post(`/admin/events/${id}/slideshow/generate`);
+    return response.data;
+  },
+
+  // Disable the slideshow link (null the token) (admin)
+  async disableSlideshowLink(id: number): Promise<void> {
+    await api.post(`/admin/events/${id}/slideshow/disable`);
+  },
+
+  // Update live slideshow settings (display time / transition / style) (admin)
+  async updateSlideshowSettings(
+    id: number,
+    settings: {
+      show_interval_ms?: number;
+      show_transition?: string;
+      show_transition_ms?: number;
+      show_watermark?: boolean | null;
+      show_colorfilter?: string;
+    }
+  ): Promise<Record<string, unknown>> {
+    const response = await api.patch(`/admin/events/${id}/slideshow`, settings);
+    return response.data;
+  },
+
   // Force archive event (admin)
   async archiveEvent(id: number): Promise<void> {
     await api.post(`/admin/events/${id}/archive`);
@@ -219,9 +245,32 @@ export const eventsService = {
     return response.data;
   },
 
-  // Publish a draft event
-  async publishEvent(eventId: number): Promise<{ message: string; is_draft: boolean }> {
-    const response = await api.post(`/admin/events/${eventId}/publish`);
+  // Publish a draft event. `password` is optional; when the event is
+  // password-protected, supplying the password here makes the gallery_created
+  // email carry the actual plaintext instead of the "set at creation" sentinel
+  // (#627) — the backend also re-hashes it so the stored hash matches.
+  async publishEvent(
+    eventId: number,
+    options?: { password?: string },
+  ): Promise<{ message: string; is_draft: boolean }> {
+    const body = options?.password ? { password: options.password } : undefined;
+    const response = await api.post(`/admin/events/${eventId}/publish`, body);
+    return response.data;
+  },
+
+  // Duplicate an event (#626). Creates a new draft gallery that inherits the
+  // source event's branding + behaviour + feedback + categories. Photos are
+  // NOT carried over. The returned id/slug are the new draft event.
+  async duplicateEvent(
+    eventId: number,
+    data: {
+      event_name: string;
+      event_date?: string;
+      customer_name?: string;
+      customer_email?: string;
+    },
+  ): Promise<{ message: string; id: number; slug: string; is_draft: boolean }> {
+    const response = await api.post(`/admin/events/${eventId}/duplicate`, data);
     return response.data;
   },
 

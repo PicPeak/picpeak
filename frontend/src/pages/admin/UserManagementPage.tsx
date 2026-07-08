@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'react-toastify';
+import { useQuery } from '@tanstack/react-query';
 import {
   Users,
   Mail,
@@ -9,6 +8,7 @@ import {
   Search,
   Edit,
   UserX,
+  UserCheck,
   X,
   AlertTriangle,
   Clock,
@@ -22,7 +22,7 @@ import { parseISO, isPast } from 'date-fns';
 import { Button, Input, Card, Loading } from '../../components/common';
 import { userManagementService } from '../../services/userManagement.service';
 import type { AdminUser, AdminRole, AdminInvitation } from '../../types';
-import { useLocalizedDate } from "../../hooks";
+import { useLocalizedDate, useModal, useMutationWithToast } from "../../hooks";
 
 type TabType = 'users' | 'invitations';
 
@@ -368,18 +368,17 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
 
 export const UserManagementPage: React.FC = () => {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
   const { formatDistanceToNow } = useLocalizedDate()
 
   // State
   const [activeTab, setActiveTab] = useState<TabType>('users');
   const [searchTerm, setSearchTerm] = useState('');
-  const [showCreateInvitationModal, setShowCreateInvitationModal] = useState(false);
-  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const createInvitationModal = useModal();
+  const editUserModal = useModal();
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
-    type: 'deactivate' | 'cancelInvitation';
+    type: 'deactivate' | 'activate' | 'delete' | 'cancelInvitation';
     id: number;
     name: string;
   } | null>(null);
@@ -412,54 +411,68 @@ export const UserManagementPage: React.FC = () => {
   });
 
   // Mutations
-  const createInvitationMutation = useMutation({
+  const createInvitationMutation = useMutationWithToast({
     mutationFn: ({ email, roleId }: { email: string; roleId: number }) =>
       userManagementService.createInvitation({ email, role_id: roleId }),
+    invalidateKeys: [['admin-invitations']],
+    successMessage: t('userManagement.invitationSent'),
+    errorMessage: (error: Error) => error.message || t('userManagement.invitationError'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-invitations'] });
-      setShowCreateInvitationModal(false);
-      toast.success(t('userManagement.invitationSent'));
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || t('userManagement.invitationError'));
+      createInvitationModal.close();
     },
   });
 
-  const cancelInvitationMutation = useMutation({
+  const cancelInvitationMutation = useMutationWithToast({
     mutationFn: userManagementService.cancelInvitation,
+    invalidateKeys: [['admin-invitations']],
+    successMessage: t('userManagement.invitationCancelled'),
+    errorMessage: () => t('userManagement.cancelInvitationError'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-invitations'] });
       setConfirmDialog(null);
-      toast.success(t('userManagement.invitationCancelled'));
-    },
-    onError: () => {
-      toast.error(t('userManagement.cancelInvitationError'));
     },
   });
 
-  const updateUserMutation = useMutation({
+  const updateUserMutation = useMutationWithToast({
     mutationFn: ({ id, roleId }: { id: number; roleId: number }) =>
       userManagementService.updateUser(id, { roleId }),
+    invalidateKeys: [['admin-users']],
+    successMessage: t('userManagement.userUpdated'),
+    errorMessage: () => t('userManagement.updateUserError'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      setShowEditUserModal(false);
+      editUserModal.close();
       setSelectedUser(null);
-      toast.success(t('userManagement.userUpdated'));
-    },
-    onError: () => {
-      toast.error(t('userManagement.updateUserError'));
     },
   });
 
-  const deactivateUserMutation = useMutation({
+  const deactivateUserMutation = useMutationWithToast({
     mutationFn: userManagementService.deactivateUser,
+    invalidateKeys: [['admin-users']],
+    successMessage: t('userManagement.userDeactivated'),
+    errorMessage: () => t('userManagement.deactivateUserError'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       setConfirmDialog(null);
-      toast.success(t('userManagement.userDeactivated'));
     },
-    onError: () => {
-      toast.error(t('userManagement.deactivateUserError'));
+  });
+
+  // #574 follow-up: reactivate + delete actions for the rows the
+  // deactivate button used to leave unmanageable.
+  const activateUserMutation = useMutationWithToast({
+    mutationFn: userManagementService.activateUser,
+    invalidateKeys: [['admin-users']],
+    successMessage: t('userManagement.userActivated', 'User reactivated successfully'),
+    errorMessage: () => t('userManagement.activateUserError', 'Failed to reactivate user'),
+    onSuccess: () => {
+      setConfirmDialog(null);
+    },
+  });
+
+  const deleteUserMutation = useMutationWithToast({
+    mutationFn: userManagementService.deleteUser,
+    invalidateKeys: [['admin-users']],
+    successMessage: t('userManagement.userDeleted', 'User deleted successfully'),
+    errorMessage: () => t('userManagement.deleteUserError', 'Failed to delete user'),
+    onSuccess: () => {
+      setConfirmDialog(null);
     },
   });
 
@@ -496,7 +509,7 @@ export const UserManagementPage: React.FC = () => {
 
   const handleEditUser = (user: AdminUser) => {
     setSelectedUser(user);
-    setShowEditUserModal(true);
+    editUserModal.open();
   };
 
   const handleUpdateUser = (userId: number, roleId: number) => {
@@ -507,6 +520,24 @@ export const UserManagementPage: React.FC = () => {
     setConfirmDialog({
       isOpen: true,
       type: 'deactivate',
+      id: user.id,
+      name: user.username,
+    });
+  };
+
+  const handleActivateUser = (user: AdminUser) => {
+    setConfirmDialog({
+      isOpen: true,
+      type: 'activate',
+      id: user.id,
+      name: user.username,
+    });
+  };
+
+  const handleDeleteUser = (user: AdminUser) => {
+    setConfirmDialog({
+      isOpen: true,
+      type: 'delete',
       id: user.id,
       name: user.username,
     });
@@ -526,6 +557,10 @@ export const UserManagementPage: React.FC = () => {
 
     if (confirmDialog.type === 'deactivate') {
       deactivateUserMutation.mutate(confirmDialog.id);
+    } else if (confirmDialog.type === 'activate') {
+      activateUserMutation.mutate(confirmDialog.id);
+    } else if (confirmDialog.type === 'delete') {
+      deleteUserMutation.mutate(confirmDialog.id);
     } else if (confirmDialog.type === 'cancelInvitation') {
       cancelInvitationMutation.mutate(confirmDialog.id);
     }
@@ -592,7 +627,7 @@ export const UserManagementPage: React.FC = () => {
         <Button
           variant="primary"
           leftIcon={<Plus className="w-5 h-5" />}
-          onClick={() => setShowCreateInvitationModal(true)}
+          onClick={createInvitationModal.open}
         >
           {t('userManagement.inviteUser')}
         </Button>
@@ -801,7 +836,7 @@ export const UserManagementPage: React.FC = () => {
                           >
                             <Edit className="w-4 h-4" />
                           </button>
-                          {user.isActive && (
+                          {user.isActive ? (
                             <button
                               onClick={() => handleDeactivateUser(user)}
                               className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
@@ -809,6 +844,23 @@ export const UserManagementPage: React.FC = () => {
                             >
                               <UserX className="w-4 h-4" />
                             </button>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => handleActivateUser(user)}
+                                className="p-1.5 text-neutral-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg transition-colors"
+                                title={t('userManagement.activateUser', 'Reactivate user')}
+                              >
+                                <UserCheck className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(user)}
+                                className="p-1.5 text-neutral-400 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                title={t('userManagement.deleteUser', 'Delete user permanently')}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -917,8 +969,8 @@ export const UserManagementPage: React.FC = () => {
 
       {/* Create Invitation Modal */}
       <CreateInvitationModal
-        isOpen={showCreateInvitationModal}
-        onClose={() => setShowCreateInvitationModal(false)}
+        isOpen={createInvitationModal.isOpen}
+        onClose={createInvitationModal.close}
         onSubmit={handleCreateInvitation}
         roles={roles || []}
         isLoading={createInvitationMutation.isPending}
@@ -926,9 +978,9 @@ export const UserManagementPage: React.FC = () => {
 
       {/* Edit User Modal */}
       <EditUserModal
-        isOpen={showEditUserModal}
+        isOpen={editUserModal.isOpen}
         onClose={() => {
-          setShowEditUserModal(false);
+          editUserModal.close();
           setSelectedUser(null);
         }}
         onSubmit={handleUpdateUser}
@@ -944,28 +996,34 @@ export const UserManagementPage: React.FC = () => {
           onClose={() => setConfirmDialog(null)}
           onConfirm={handleConfirmAction}
           title={
-            confirmDialog.type === 'deactivate'
-              ? t('userManagement.confirmDeactivate.title')
-              : t('userManagement.confirmCancelInvitation.title')
+            confirmDialog.type === 'deactivate' ? t('userManagement.confirmDeactivate.title')
+            : confirmDialog.type === 'activate'  ? t('userManagement.confirmActivate.title', 'Reactivate user?')
+            : confirmDialog.type === 'delete'    ? t('userManagement.confirmDelete.title', 'Delete user permanently?')
+            : t('userManagement.confirmCancelInvitation.title')
           }
           message={
-            confirmDialog.type === 'deactivate'
-              ? t('userManagement.confirmDeactivate.message', { name: confirmDialog.name })
-              : t('userManagement.confirmCancelInvitation.message', {
-                  email: confirmDialog.name,
-                })
+            confirmDialog.type === 'deactivate' ? t('userManagement.confirmDeactivate.message', { name: confirmDialog.name })
+            : confirmDialog.type === 'activate'  ? t('userManagement.confirmActivate.message', 'Reactivate {{name}}? They will be able to log in again immediately.', { name: confirmDialog.name })
+            : confirmDialog.type === 'delete'    ? t('userManagement.confirmDelete.message', 'Permanently delete {{name}}? This cannot be undone. Their pending invitations and API tokens will be removed; records they created elsewhere will be kept but de-attributed.', { name: confirmDialog.name })
+            : t('userManagement.confirmCancelInvitation.message', { email: confirmDialog.name })
           }
           confirmText={
-            confirmDialog.type === 'deactivate'
-              ? t('userManagement.deactivate')
-              : t('userManagement.cancel')
+            confirmDialog.type === 'deactivate' ? t('userManagement.deactivate')
+            : confirmDialog.type === 'activate'  ? t('userManagement.activate', 'Reactivate')
+            : confirmDialog.type === 'delete'    ? t('userManagement.delete', 'Delete permanently')
+            : t('userManagement.cancel')
           }
           isLoading={
-            confirmDialog.type === 'deactivate'
-              ? deactivateUserMutation.isPending
-              : cancelInvitationMutation.isPending
+            confirmDialog.type === 'deactivate' ? deactivateUserMutation.isPending
+            : confirmDialog.type === 'activate'  ? activateUserMutation.isPending
+            : confirmDialog.type === 'delete'    ? deleteUserMutation.isPending
+            : cancelInvitationMutation.isPending
           }
-          variant={confirmDialog.type === 'deactivate' ? 'danger' : 'warning'}
+          variant={
+            confirmDialog.type === 'activate' ? 'warning'
+            : confirmDialog.type === 'deactivate' || confirmDialog.type === 'delete' ? 'danger'
+            : 'warning'
+          }
         />
       )}
     </div>

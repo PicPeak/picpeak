@@ -13,7 +13,7 @@ IFS=$'\n\t'
 # Script configuration
 readonly SCRIPT_VERSION="2.1.0"
 readonly APP_NAME="PicPeak"
-readonly REPO_URL="https://github.com/the-luap/picpeak.git"
+readonly REPO_URL="https://github.com/PicPeak/picpeak.git"
 readonly NODE_VERSION="20"
 readonly MIN_RAM_DOCKER=2048
 readonly MIN_RAM_NATIVE=1024
@@ -44,8 +44,13 @@ INSTALL_METHOD=""  # docker or native
 OS_TYPE=""
 OS_VERSION=""
 PACKAGE_MANAGER=""
-ADMIN_EMAIL="admin@example.com"
+ADMIN_EMAIL=""              # empty until set by the wizard, --email, or the unattended default
+ADMIN_PASSWORD=""          # optional. When set, the admin is seeded directly (headless).
+                           # Empty = browser-first: the app prints a one-time /setup token.
 DOMAIN_NAME=""
+INSTALL_DIR=""             # override for the install directory (else per-method default)
+PICPEAK_CHANNEL="stable"   # GHCR image tag for the production compose (stable|beta)
+HTTPS_MODE=""              # caddy | proxy | none — how TLS is terminated
 SMTP_HOST=""
 SMTP_PORT=""
 SMTP_USER=""
@@ -80,19 +85,160 @@ run_as_user() {
     fi
 }
 
-# Prompt for admin email interactively (unless provided or unattended)
-prompt_admin_email() {
-    if [[ -n "$ADMIN_EMAIL" ]]; then
-        return
+# Resolve the Docker install directory (honours --install-dir and sudo).
+docker_default_dir() {
+    if [[ -n "$INSTALL_DIR" ]]; then echo "$INSTALL_DIR"; return; fi
+    if [[ -n "${SUDO_USER:-}" ]]; then echo "/home/$SUDO_USER/picpeak"; else echo "$DOCKER_APP_DIR"; fi
+}
+
+# Best-effort primary IPv4 for building an access URL when there is no domain.
+primary_ip() {
+    hostname -I 2>/dev/null | awk '{print $1}' | grep -E '^[0-9]' || echo "YOUR_HOST_IP"
+}
+
+# The user-facing port (frontend for Docker, backend for native).
+access_port() {
+    if [[ "$INSTALL_METHOD" == "docker" ]]; then
+        echo "${CUSTOM_PORT:-3000}"
+    else
+        echo "${CUSTOM_PORT:-$DEFAULT_PORT}"
     fi
-    if [[ "$UNATTENDED" == "true" ]]; then
-        ADMIN_EMAIL="admin@example.com"
-        return
+}
+
+# The scheme+host users open in a browser. HTTPS when a domain is fronted by
+# Caddy or the operator's own reverse proxy; plain HTTP otherwise.
+base_url() {
+    if [[ -n "$DOMAIN_NAME" ]]; then
+        if [[ "$HTTPS_MODE" == "none" ]]; then echo "http://$DOMAIN_NAME"; else echo "https://$DOMAIN_NAME"; fi
+    else
+        echo "http://$(primary_ip):$(access_port)"
     fi
+}
+
+# --- Interactive wizard -------------------------------------------------------
+
+# Ask how TLS is terminated for the given domain. Caddy auto-HTTPS is only
+# offered for native installs (the Docker path has no built-in cert automation
+# yet — operators front it with their own proxy).
+choose_https_mode() {
     echo
-    echo "Please enter the admin email address (used for the initial admin account):"
-    read -p "Admin email [admin@example.com]: " ADMIN_EMAIL
-    ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+    echo "How should HTTPS be handled for ${DOMAIN_NAME}?"
+    if [[ "$INSTALL_METHOD" == "native" ]]; then
+        echo "  1) Automatic HTTPS via Caddy (installs Caddy + Let's Encrypt)   [recommended]"
+        echo "  2) I run my own reverse proxy (Traefik / nginx / Cloudflare)"
+        echo "  3) Plain HTTP (no TLS)"
+        local c; read -p "Choice [1]: " c; c="${c:-1}"
+        case "$c" in
+            1) HTTPS_MODE="caddy"; ENABLE_SSL=true;;
+            2) HTTPS_MODE="proxy";;
+            *) HTTPS_MODE="none";;
+        esac
+    else
+        echo "  1) I run my own reverse proxy (Traefik / nginx / Cloudflare)     [recommended]"
+        echo "  2) Plain HTTP (no TLS)"
+        echo "     (Built-in Docker HTTPS via a Caddy sidecar is planned separately.)"
+        local c; read -p "Choice [1]: " c; c="${c:-1}"
+        case "$c" in
+            1) HTTPS_MODE="proxy";;
+            *) HTTPS_MODE="none";;
+        esac
+    fi
+}
+
+# Final summary + go/no-go before anything is installed.
+review_and_confirm() {
+    print_header "Review"
+    echo "  Install method : ${INSTALL_METHOD}"
+    echo "  Directory      : $([[ "$INSTALL_METHOD" == "docker" ]] && docker_default_dir || echo "$NATIVE_APP_DIR")"
+    [[ "$INSTALL_METHOD" == "docker" ]] && echo "  Release channel: ${PICPEAK_CHANNEL}"
+    echo "  Domain         : ${DOMAIN_NAME:-（none — local IP over HTTP）}"
+    echo "  HTTPS          : ${HTTPS_MODE}"
+    echo "  Admin email    : ${ADMIN_EMAIL}"
+    echo "  Admin account  : $([[ -n "$ADMIN_PASSWORD" ]] && echo "seeded from --admin-password" || echo "created in browser (one-time /setup token)")"
+    echo "  Email/SMTP     : ${SMTP_HOST:-not configured}"
+    echo "  Access URL     : $(base_url)"
+    echo
+    if ! confirm "Proceed with installation?" "y"; then
+        die "Installation cancelled by user."
+    fi
+}
+
+# Full step-by-step wizard. Only runs in interactive mode; each value already
+# supplied on the command line is respected and its question skipped.
+run_wizard() {
+    print_header "PicPeak Setup Wizard"
+    echo "Answer a few questions and PicPeak configures itself."
+    echo "Press Enter to accept the [default] in brackets."
+
+    # 1) Install method (docker/native) — select_install_method handles the prompt
+    select_install_method
+
+    # 2) Install directory (Docker only; native is fixed at $NATIVE_APP_DIR)
+    if [[ "$INSTALL_METHOD" == "docker" && -z "$INSTALL_DIR" ]]; then
+        local default_dir; default_dir="$(docker_default_dir)"
+        echo
+        read -p "Install directory [$default_dir]: " INSTALL_DIR
+        INSTALL_DIR="${INSTALL_DIR:-$default_dir}"
+    fi
+
+    # 3) Release channel (Docker uses prebuilt images)
+    if [[ "$INSTALL_METHOD" == "docker" ]]; then
+        echo
+        echo "Release channel: 'stable' (recommended) or 'beta' (newest features)."
+        local ch; read -p "Channel [${PICPEAK_CHANNEL}]: " ch
+        PICPEAK_CHANNEL="${ch:-$PICPEAK_CHANNEL}"
+    fi
+
+    # 4) Domain
+    if [[ -z "$DOMAIN_NAME" ]]; then
+        echo
+        echo "Do you have a domain pointed at this server?"
+        echo "Leave blank to run on the local IP over HTTP (you can add a domain later)."
+        read -p "Domain (e.g. photos.example.com) [none]: " DOMAIN_NAME
+    fi
+
+    # 5) HTTPS mode
+    if [[ -n "$DOMAIN_NAME" ]]; then
+        choose_https_mode
+    else
+        HTTPS_MODE="none"
+    fi
+
+    # 6) Admin email (account itself is created in the browser)
+    if [[ -z "$ADMIN_EMAIL" ]]; then
+        echo
+        echo "Your admin account is created in the browser on first visit (no password in a file)."
+        read -p "Admin email [admin@example.com]: " ADMIN_EMAIL
+        ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
+    fi
+
+    # 7) Optional email/SMTP
+    configure_email
+
+    # 8) Review + confirm
+    review_and_confirm
+}
+
+# Non-interactive path: fill defaults and reject impossible combinations so an
+# --unattended run fails fast instead of silently doing the wrong thing.
+validate_unattended() {
+    [[ -z "$INSTALL_METHOD" ]] && INSTALL_METHOD="docker"
+    [[ -z "$ADMIN_EMAIL" ]] && ADMIN_EMAIL="admin@example.com"
+
+    if [[ "$ENABLE_SSL" == "true" && -z "$DOMAIN_NAME" ]]; then
+        die "--enable-ssl requires --domain in unattended mode."
+    fi
+    # Resolve HTTPS mode for unattended runs.
+    if [[ -n "$DOMAIN_NAME" ]]; then
+        if [[ "$ENABLE_SSL" == "true" && "$INSTALL_METHOD" == "native" ]]; then
+            HTTPS_MODE="caddy"
+        else
+            # Docker + domain, or native without --enable-ssl: assume a fronting proxy.
+            HTTPS_MODE="proxy"
+        fi
+    else
+        HTTPS_MODE="none"
+    fi
 }
 
 print_banner() {
@@ -427,8 +573,9 @@ setup_docker_installation() {
         git clone "$REPO_URL" "$app_dir"
     fi
 
-    # Ensure storage layout exists after cloning
-    mkdir -p "$app_dir"/{storage/events/{active,archived},logs,backup,config,data,events}
+    # Ensure storage layout exists after cloning (production compose mounts
+    # ./storage, ./data, ./logs — no separate top-level events dir).
+    mkdir -p "$app_dir"/{storage/events/{active,archived},storage/thumbnails,logs,backup,data}
     
     # Determine host user for container mapping (PUID/PGID)
     local host_uid host_gid
@@ -440,86 +587,80 @@ setup_docker_installation() {
         host_gid=$(id -g 2>/dev/null || echo 1000)
     fi
 
-    # Generate secrets
+    # Generate machine secrets. Written to .env so they are stable across
+    # restarts; once PR #714's secrets-init service is present it reuses these
+    # exact values (explicit env always wins), so this stays correct either way.
     local jwt_secret=$(generate_jwt_secret)
     local db_password=$(generate_password)
     local redis_password=$(generate_password)
-    
-    # Create .env file
+
+    local frontend_port="${CUSTOM_PORT:-3000}"
+    local site_url; site_url="$(base_url)"
+
+    # Create .env for docker-compose.production.yml (prebuilt GHCR images).
     log_step "Creating configuration..."
     cat > "$app_dir/.env" <<EOF
-# PicPeak Docker Configuration
-# Generated: $(date)
+# PicPeak Configuration — generated by picpeak-setup.sh on $(date)
+# Runs docker-compose.production.yml (prebuilt images from GHCR).
 
-# Application
+# Make every 'docker compose' command in this directory use the production file.
+COMPOSE_FILE=docker-compose.production.yml
+
+# Release channel: stable | beta
+PICPEAK_CHANNEL=$PICPEAK_CHANNEL
 NODE_ENV=production
-PORT=3001
+
+# Machine secrets (generated; reused by the compose secrets-init service).
 JWT_SECRET=$jwt_secret
-
-# Admin
-ADMIN_EMAIL=$ADMIN_EMAIL
-
-# Runtime user mapping for Docker bind mounts
-PUID=$host_uid
-PGID=$host_gid
+DB_PASSWORD=$db_password
+REDIS_PASSWORD=$redis_password
 
 # Database
 DB_HOST=postgres
-DB_PORT=5432
 DB_USER=picpeak
-DB_PASSWORD=$db_password
 DB_NAME=picpeak
 
-# Redis
-REDIS_HOST=redis
-REDIS_PORT=6379
-REDIS_PASSWORD=$redis_password
+# Host-published ports (frontend is the user-facing one)
+FRONTEND_PORT=$frontend_port
+BACKEND_PORT=3001
 
-# Storage
-PHOTOS_DIR=/app/storage/events
+# Host bind-mount paths (required by the production compose)
+APP_STORAGE=./storage
+APP_DATA=./data
+LOGS=./logs
 
-# Email
-SMTP_ENABLED=${SMTP_HOST:+true}
+# Admin — the account is created in the browser via a one-time /setup token.
+ADMIN_EMAIL=$ADMIN_EMAIL
+$(if [[ -n "$ADMIN_PASSWORD" ]]; then printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD"; fi)
+# Public URLs
+FRONTEND_URL=$site_url
+ADMIN_URL=$site_url
+
+# Auth cookie behavior — 'auto' emits Secure on HTTPS, omits it on HTTP so a
+# first HTTP install (before a reverse proxy) does not silently fail login (#427).
+COOKIE_SECURE=auto
+
+# Email (optional; can also be configured later in the admin panel)
 SMTP_HOST=$SMTP_HOST
 SMTP_PORT=$SMTP_PORT
 SMTP_USER=$SMTP_USER
 SMTP_PASS=$SMTP_PASS
-SMTP_FROM=${SMTP_USER:-noreply@localhost}
-
-# URLs
-FRONTEND_URL=${DOMAIN_NAME:+https://$DOMAIN_NAME}
-ADMIN_URL=${DOMAIN_NAME:+https://$DOMAIN_NAME}
-
-# Auth cookie behavior — 'auto' emits Secure on HTTPS, omits it on HTTP.
-# Without this, first-time HTTP installs (no reverse proxy yet) silently
-# fail at login because the browser drops Secure cookies over HTTP (#427).
-# On HTTPS via reverse proxy, req.secure is true → Secure flag is still
-# emitted, so this is not a security regression for production deploys.
-COOKIE_SECURE=auto
-
-# Features
-ENABLE_FILE_WATCHER=true
-ENABLE_EXPIRATION_CHECKER=true
-ENABLE_EMAIL_SERVICE=true
-DEFAULT_EXPIRY_DAYS=30
+EMAIL_FROM=${SMTP_USER:-noreply@localhost}
 EOF
 
-    # Ensure bind mounts are writable by mapped user
-    chown -R "$host_uid":"$host_gid" "$app_dir"/storage "$app_dir"/logs "$app_dir"/backup "$app_dir"/data "$app_dir"/events 2>/dev/null || true
+    # Ensure bind mounts are writable by the invoking user (the container
+    # self-heals ownership on boot via wait-for-db.sh, this just lets the
+    # operator manage the files afterwards).
+    chown -R "$host_uid":"$host_gid" "$app_dir"/storage "$app_dir"/logs "$app_dir"/backup "$app_dir"/data 2>/dev/null || true
 
-    # Create docker-compose.yml if it doesn't exist
-    if [[ ! -f "$app_dir/docker-compose.yml" ]]; then
-        log_step "Creating Docker Compose configuration..."
-        create_docker_compose_file "$app_dir"
-    fi
-
-    # Set up SSL if requested
-    if [[ "$ENABLE_SSL" == "true" ]] && [[ -n "$DOMAIN_NAME" ]]; then
-        setup_ssl_docker "$app_dir"
+    # HTTPS for Docker has no built-in cert automation. When a domain is set we
+    # assume the operator terminates TLS with their own reverse proxy.
+    if [[ -n "$DOMAIN_NAME" && "$HTTPS_MODE" == "proxy" ]]; then
+        log_info "Point your reverse proxy at http://127.0.0.1:${frontend_port} and terminate TLS for ${DOMAIN_NAME} there."
     fi
 
     # Clean up the legacy picpeak-workers container from prior installs
-    # (workers are now in-process — see create_docker_compose_file).
+    # (workers are now in-process).
     # Otherwise the leftover container keeps running its own
     # fileWatcher / expirationChecker against the same DB rows the new
     # backend container processes.
@@ -554,145 +695,25 @@ EOF
       sleep 2
     done
 
+    # Admin access. Two paths:
+    #   - Seeded (ADMIN_PASSWORD set, or --force-admin-password-reset): the
+    #     migration/reset script writes ADMIN_CREDENTIALS.txt — copy it to the host.
+    #   - Browser-first (default): the backend writes a one-time /setup token to
+    #     data/SETUP_TOKEN (already on the host via the ./data mount). The final
+    #     instructions are printed by print_success_message.
     if [[ "$FORCE_ADMIN_PASSWORD_RESET" == "true" ]]; then
         log_step "Resetting admin credentials..."
-        if docker compose exec -T backend node scripts/reset-admin-password.js --force --credentials-file data/ADMIN_CREDENTIALS.txt; then
-            docker compose cp backend:/app/data/ADMIN_CREDENTIALS.txt "$app_dir/data/ADMIN_CREDENTIALS.txt" 2>/dev/null || true
-        else
-            log_warn "Automatic admin password reset failed; run reset-admin-password.js inside the backend container."
+        docker compose exec -T backend node scripts/reset-admin-password.js --force --credentials-file data/ADMIN_CREDENTIALS.txt \
+            || log_warn "Automatic admin password reset failed; run reset-admin-password.js inside the backend container."
+    fi
+    if [[ -n "$ADMIN_PASSWORD" || "$FORCE_ADMIN_PASSWORD_RESET" == "true" ]]; then
+        if docker compose cp backend:/app/data/ADMIN_CREDENTIALS.txt "$app_dir/data/ADMIN_CREDENTIALS.txt" 2>/dev/null; then
+            chown "$host_uid":"$host_gid" "$app_dir/data/ADMIN_CREDENTIALS.txt" 2>/dev/null || true
+            chmod 600 "$app_dir/data/ADMIN_CREDENTIALS.txt" 2>/dev/null || true
         fi
     fi
 
-    # Always surface the admin credentials file (#427: iSchumi reported
-    # admins couldn't find the generated password — the migration writes it
-    # to the in-container path and we never copied it to the host unless
-    # --reset-admin-password was used). Best-effort: a missing file just
-    # means the migration ran on a pre-existing DB and didn't generate one.
-    if docker compose cp backend:/app/data/ADMIN_CREDENTIALS.txt "$app_dir/data/ADMIN_CREDENTIALS.txt" 2>/dev/null; then
-        chown "$host_uid":"$host_gid" "$app_dir/data/ADMIN_CREDENTIALS.txt" 2>/dev/null || true
-        chmod 600 "$app_dir/data/ADMIN_CREDENTIALS.txt" 2>/dev/null || true
-        log_step "Admin credentials saved to: $app_dir/data/ADMIN_CREDENTIALS.txt"
-        # Show the password in the install output so the operator can log
-        # in immediately. The file remains as a backup record.
-        echo
-        echo "--------------------------------------------------"
-        grep -E '^Email:|^Password:' "$app_dir/data/ADMIN_CREDENTIALS.txt" 2>/dev/null || true
-        echo "--------------------------------------------------"
-        echo "  Login URL: ${DOMAIN_NAME:+https://$DOMAIN_NAME}${DOMAIN_NAME:-http://YOUR_HOST_IP:3000}/admin"
-        echo "  Full credentials file: $app_dir/data/ADMIN_CREDENTIALS.txt"
-        echo "  Delete the file after recording the password."
-        echo
-    fi
-
     log_success "Docker installation completed!"
-}
-
-create_docker_compose_file() {
-    local app_dir="$1"
-    cat > "$app_dir/docker-compose.yml" <<'EOF'
-version: '3.8'
-
-services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: picpeak-postgres
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      - picpeak-network
-    restart: unless-stopped
-    healthcheck:
-      # `pg_isready -U <user>` without -d defaults to probing a database
-      # whose name matches the user — postgres logs constant `FATAL:
-      # database "<user>" does not exist` even though the actual DB
-      # is `${DB_NAME}`. Pinning -d to DB_NAME silences the noise
-      # that made #484's reporter think the install was broken.
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    container_name: picpeak-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD}
-    volumes:
-      - redis-data:/data
-    networks:
-      - picpeak-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  backend:
-    build: ./backend
-    container_name: picpeak-backend
-    env_file: .env
-    volumes:
-      - ./storage:/app/storage
-      - ./logs:/app/logs
-    ports:
-      - "${PORT:-3001}:3001"
-    networks:
-      - picpeak-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      # backend image only ships wget (Alpine base) — using curl
-      # makes `docker ps` show the container as `unhealthy`
-      # indefinitely even when /api/health responds. Mirrors the
-      # wget-based HEALTHCHECK in backend/Dockerfile.
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Frontend container (#484). Previously absent from the
-  # script-generated compose, which left the script's docker
-  # architecture (backend on host port 3001, no separate frontend)
-  # different from the documented production install
-  # (docker-compose.production.yml: backend internal-only +
-  # frontend nginx serving /api proxy on host port 3000). Aligning
-  # both shapes on the same 3-service shape — postgres + redis +
-  # backend, plus a frontend nginx — eliminates the doc/script
-  # divergence MrGabri flagged.
-  frontend:
-    build: ./frontend
-    container_name: picpeak-frontend
-    ports:
-      - "${FRONTEND_PORT:-3000}:80"
-    networks:
-      - picpeak-network
-    depends_on:
-      - backend
-    restart: unless-stopped
-    healthcheck:
-      # frontend Dockerfile installs curl (apk add --no-cache curl)
-      # — safe to use here unlike the backend.
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-volumes:
-  postgres-data:
-  redis-data:
-
-networks:
-  picpeak-network:
-    driver: bridge
-EOF
 }
 
 ################################################################################
@@ -816,9 +837,11 @@ NODE_ENV=production
 PORT=${CUSTOM_PORT:-$DEFAULT_PORT}
 JWT_SECRET=$jwt_secret
 
-# Admin
+# Admin — created in the browser via a one-time /setup token unless a password
+# is seeded here (--admin-password).
 ADMIN_USERNAME=admin
 ADMIN_EMAIL=$ADMIN_EMAIL
+$(if [[ -n "$ADMIN_PASSWORD" ]]; then printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD"; fi)
 
 # Database (native uses SQLite by default)
 DATABASE_CLIENT=sqlite3
@@ -866,27 +889,18 @@ EOF
     cd "$NATIVE_APP_DIR/app/backend"
     run_as_user "npm run migrate"
 
+    # Seeded-admin path only: reset/secure the credentials file. When no
+    # password was seeded, the admin is created in the browser via the /setup
+    # token (surfaced by print_success_message). The migration only writes
+    # ADMIN_CREDENTIALS.txt when ADMIN_PASSWORD is set.
     if [[ "$FORCE_ADMIN_PASSWORD_RESET" == "true" ]]; then
         log_step "Resetting admin credentials..."
         if ! run_as_user "node scripts/reset-admin-password.js --force --credentials-file data/ADMIN_CREDENTIALS.txt"; then
             log_warn "Automatic admin password reset failed; please run reset-admin-password.js manually."
         fi
     fi
-
-    # Always surface the admin credentials file (#427).
     local creds_path="$NATIVE_APP_DIR/app/backend/data/ADMIN_CREDENTIALS.txt"
-    if [[ -f "$creds_path" ]]; then
-        chmod 600 "$creds_path" 2>/dev/null || true
-        log_step "Admin credentials saved to: $creds_path"
-        echo
-        echo "--------------------------------------------------"
-        grep -E '^Email:|^Password:' "$creds_path" 2>/dev/null || true
-        echo "--------------------------------------------------"
-        echo "  Login URL: ${DOMAIN_NAME:+https://$DOMAIN_NAME}${DOMAIN_NAME:-http://YOUR_HOST_IP:${CUSTOM_PORT:-$DEFAULT_PORT}}/admin"
-        echo "  Full credentials file: $creds_path"
-        echo "  Delete the file after recording the password."
-        echo
-    fi
+    [[ -f "$creds_path" ]] && chmod 600 "$creds_path" 2>/dev/null || true
 
     # Create systemd services
     create_systemd_services
@@ -1069,73 +1083,70 @@ configure_email() {
 }
 
 print_success_message() {
-    local app_dir port manual_reset_hint
-    
+    local app_dir site_url token_file
+    site_url="$(base_url)"
+
     if [[ "$INSTALL_METHOD" == "docker" ]]; then
-        app_dir="$DOCKER_APP_DIR"
-        [[ -n "${SUDO_USER:-}" ]] && app_dir="/home/$SUDO_USER/picpeak"
-        port="${CUSTOM_PORT:-$DEFAULT_PORT}"
-        manual_reset_hint="cd $(printf %q "$app_dir") && docker compose exec -T backend node scripts/reset-admin-password.js --force --credentials-file data/ADMIN_CREDENTIALS.txt"
+        app_dir="$(docker_default_dir)"
+        token_file="$app_dir/data/SETUP_TOKEN"
     else
         app_dir="$NATIVE_APP_DIR"
-        port="${CUSTOM_PORT:-$DEFAULT_PORT}"
-        manual_reset_hint="cd $(printf %q "${NATIVE_APP_DIR}/app/backend") && sudo -H -u $(printf %q "$NATIVE_APP_USER") node scripts/reset-admin-password.js --force --credentials-file data/ADMIN_CREDENTIALS.txt"
+        token_file="$NATIVE_APP_DIR/app/backend/data/SETUP_TOKEN"
     fi
-    
+
     print_header "🎉 Installation Complete!"
-    
+
     echo -e "${GREEN}PicPeak has been successfully installed!${NC}\n"
-    
+
     echo "📍 Access Information:"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    if [[ -n "$DOMAIN_NAME" ]] && [[ "$ENABLE_SSL" == "true" ]]; then
-        echo -e "Admin Panel: ${CYAN}https://$DOMAIN_NAME/admin${NC}"
-        echo -e "Gallery URL: ${CYAN}https://$DOMAIN_NAME${NC}"
-    else
-        echo -e "Admin Panel: ${CYAN}http://$(hostname -I | awk '{print $1}'):$port/admin${NC}"
-        echo -e "Gallery URL: ${CYAN}http://$(hostname -I | awk '{print $1}'):$port${NC}"
-    fi
-    
+    echo -e "Admin Panel: ${CYAN}${site_url}/admin${NC}"
+    echo -e "Gallery URL: ${CYAN}${site_url}${NC}"
+
     echo
-    echo "🔐 Admin Credentials:"
+    echo "🔐 First Login:"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    # Read from ADMIN_CREDENTIALS.txt when available
-    local cred_file email_line pass_line admin_email_val admin_pass_val
-    if [[ "$INSTALL_METHOD" == "docker" ]]; then
-        cred_file="$app_dir/data/ADMIN_CREDENTIALS.txt"
-    else
-        cred_file="$NATIVE_APP_DIR/app/backend/data/ADMIN_CREDENTIALS.txt"
-    fi
-    if [[ -f "$cred_file" ]]; then
+    local cred_file="$app_dir/data/ADMIN_CREDENTIALS.txt"
+    [[ "$INSTALL_METHOD" == "native" ]] && cred_file="$NATIVE_APP_DIR/app/backend/data/ADMIN_CREDENTIALS.txt"
+
+    if [[ -n "$ADMIN_PASSWORD" || "$FORCE_ADMIN_PASSWORD_RESET" == "true" ]] && [[ -f "$cred_file" ]]; then
+        # Seeded-admin path: the credentials file holds email + password.
+        local email_line pass_line
         email_line=$(grep -m1 '^Email:' "$cred_file" || true)
         pass_line=$(grep -m1 '^Password:' "$cred_file" || true)
-        admin_email_val=${email_line#Email: }
-        admin_pass_val=${pass_line#Password: }
-        if [[ -n "$admin_email_val" ]]; then
-          echo -e "Email:    ${CYAN}$admin_email_val${NC}"
+        echo -e "Email:    ${CYAN}${email_line#Email: }${NC}"
+        echo -e "Password: ${CYAN}${pass_line#Password: }${NC}"
+        echo -e "Saved to: ${cred_file} ${YELLOW}(delete after recording)${NC}"
+        echo -e "${YELLOW}⚠️  Change this password on first login.${NC}"
+    else
+        # Browser-first path: create the admin in the browser via a one-time token.
+        local token=""
+        # The token file appears once the backend has booted; wait briefly.
+        for _ in $(seq 1 10); do [[ -s "$token_file" ]] && break; sleep 1; done
+        [[ -s "$token_file" ]] && token=$(tr -d '\r\n' < "$token_file" 2>/dev/null || true)
+        echo "Create your admin account in the browser:"
+        echo -e "  1. Open ${CYAN}${site_url}/admin${NC}"
+        echo "  2. Enter your email and a password."
+        if [[ -n "$token" ]]; then
+            echo "  3. When prompted, paste this one-time setup token:"
+            echo -e "     ${CYAN}${token}${NC}"
+        elif [[ "$INSTALL_METHOD" == "docker" ]]; then
+            echo "  3. Get the one-time setup token from the logs:"
+            echo -e "     ${CYAN}cd $app_dir && docker compose logs backend | grep -i 'setup token'${NC}"
         else
-          echo -e "Email:    ${CYAN}$ADMIN_EMAIL${NC}"
+            echo "  3. Get the one-time setup token from the logs:"
+            echo -e "     ${CYAN}sudo journalctl -u picpeak-backend | grep -i 'setup token'${NC}"
         fi
-        if [[ -n "$admin_pass_val" ]]; then
-          echo -e "Password: ${CYAN}$admin_pass_val${NC}"
-        else
-          echo -e "Password: ${YELLOW}(see $cred_file)${NC}"
-        fi
-      else
-        echo -e "Email:    ${CYAN}$ADMIN_EMAIL${NC}"
-        echo -e "Password: ${YELLOW}(credentials file not found - rerun setup with --force-admin-password-reset or run '${manual_reset_hint}')${NC}"
-      fi
-    echo
-    echo -e "${YELLOW}⚠️  IMPORTANT: Change the admin password on first login!${NC}"
-    
+        echo -e "  (Also saved to ${token_file}.)"
+    fi
+
     echo
     echo "📁 Installation Details:"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "Installation directory: $app_dir"
     echo "Installation method: ${INSTALL_METHOD^}"
     echo "Log file: $LOG_FILE"
-    
+
     if [[ "$INSTALL_METHOD" == "docker" ]]; then
         echo
         echo "🐳 Docker Commands:"
@@ -1143,7 +1154,7 @@ print_success_message() {
         echo "View logs:    cd $app_dir && docker compose logs -f"
         echo "Stop:         cd $app_dir && docker compose down"
         echo "Start:        cd $app_dir && docker compose up -d"
-        echo "Update:       cd $app_dir && git pull && docker compose up -d --build"
+        echo "Update:       cd $app_dir && git pull && docker compose pull && docker compose up -d"
     else
         echo
         echo "🔧 Service Commands:"
@@ -1157,8 +1168,8 @@ print_success_message() {
     echo
     echo "📚 Documentation:"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Setup Guide:  https://github.com/the-luap/picpeak/blob/main/SIMPLE_SETUP.md"
-    echo "Full Docs:    https://github.com/the-luap/picpeak"
+    echo "Setup Guide:  https://github.com/PicPeak/picpeak/blob/main/SIMPLE_SETUP.md"
+    echo "Full Docs:    https://github.com/PicPeak/picpeak"
     echo
     echo -e "${GREEN}✨ Setup complete! Visit the admin panel to start creating galleries.${NC}"
 }
@@ -1208,16 +1219,16 @@ update_docker_installation() {
     # Backup current configuration
     cp .env .env.backup-$(date +%Y%m%d-%H%M%S)
     
-    # Pull latest code
+    # Pull latest code (new compose file / defaults) and refresh the images.
     git pull
 
-    # Rebuild and restart containers
+    # Production compose uses prebuilt GHCR images, so pull rather than build.
+    # COMPOSE_FILE in .env points every command at docker-compose.production.yml.
     docker compose down
-    docker compose build --no-cache
+    docker compose pull
 
     # Clean up the legacy picpeak-workers container if it exists
-    # (workers are now in-process — see comment in
-    # create_docker_compose_file). Best-effort: ignore if absent.
+    # (workers are now in-process). Best-effort: ignore if absent.
     if docker ps -a --format '{{.Names}}' | grep -q '^picpeak-workers$'; then
       log_step "Removing legacy picpeak-workers container (workers now run in-process)..."
       docker stop picpeak-workers >/dev/null 2>&1 || true
@@ -1394,6 +1405,18 @@ parse_arguments() {
                 ADMIN_EMAIL="$2"
                 shift 2
                 ;;
+            --admin-password)
+                ADMIN_PASSWORD="$2"
+                shift 2
+                ;;
+            --install-dir)
+                INSTALL_DIR="$2"
+                shift 2
+                ;;
+            --channel)
+                PICPEAK_CHANNEL="$2"
+                shift 2
+                ;;
             --smtp-host)
                 SMTP_HOST="$2"
                 shift 2
@@ -1451,37 +1474,42 @@ Installation Methods:
   --docker            Use Docker installation (default if unattended)
   --native            Use native installation (systemd)
 
+Run with no options for the interactive step-by-step wizard, or pass
+--unattended plus the options below to install without any prompts.
+
 Options:
-  --unattended        Run without prompts
-  --domain DOMAIN     Set domain name for HTTPS
-  --email EMAIL       Admin email address
+  --unattended        Run without prompts (uses defaults + the flags below)
+  --domain DOMAIN     Domain name (enables HTTPS URLs)
+  --email EMAIL       Admin email address (default: admin@example.com)
+  --admin-password P  Seed the admin account with this password (headless).
+                      Omit to create the admin in the browser via a one-time
+                      /setup token (recommended).
+  --install-dir DIR   Install directory (Docker; default: ~/picpeak)
+  --channel CHANNEL   Image channel for Docker: stable (default) or beta
   --smtp-host HOST    SMTP server hostname
   --smtp-port PORT    SMTP server port
   --smtp-user USER    SMTP username
   --smtp-pass PASS    SMTP password
   --force-admin-password-reset  Regenerate admin credentials after setup
-  --enable-ssl        Enable HTTPS with Let's Encrypt
-  --port PORT         Custom port (native only)
+  --enable-ssl        Native only: provision HTTPS via Caddy (needs --domain)
+  --port PORT         Custom user-facing port
   --update            Update existing installation
   --uninstall         Remove PicPeak installation
   --help              Show this help message
 
 Examples:
-  # Interactive installation
+  # Interactive wizard (asks every question, then confirms)
   sudo $0
 
-  # Docker installation with domain
-  sudo $0 --docker --domain photos.example.com --enable-ssl
+  # Unattended Docker install, admin created in the browser afterwards
+  sudo $0 --docker --unattended --email admin@example.com
 
-  # Native installation for Raspberry Pi
-  sudo $0 --native --port 8080
-
-  # Fully automated Docker setup
+  # Unattended Docker install behind your own reverse proxy, seeded admin
   sudo $0 --docker --unattended --domain photos.example.com \\
-    --email admin@example.com \\
-    --smtp-host smtp.gmail.com --smtp-port 587 \\
-    --smtp-user user@gmail.com --smtp-pass app-password \\
-    --enable-ssl
+    --email admin@example.com --admin-password 'S0me-Str0ng-Pass'
+
+  # Native install on a Raspberry Pi with automatic HTTPS via Caddy
+  sudo $0 --native --domain photos.example.com --enable-ssl
 
 EOF
 }
@@ -1508,29 +1536,27 @@ main() {
     
     # Start installation
     print_banner
-    
+
     # Detect OS
     detect_os
-    
-    # Select installation method
-    select_install_method
-    
-    # Check system requirements
+
+    # Gather configuration: full wizard when interactive, flag-driven otherwise.
+    if [[ "$UNATTENDED" == "true" ]]; then
+        validate_unattended
+    else
+        run_wizard
+    fi
+
+    # Check system requirements (now that the install method is known)
     check_system_requirements
-    
-    # Prompt for admin email (design choice: always ask unless provided)
-    prompt_admin_email
-    
-    # Configure email (optional)
-    configure_email
-    
+
     # Perform installation
     if [[ "$INSTALL_METHOD" == "docker" ]]; then
         setup_docker_installation
     else
         setup_native_installation
     fi
-    
+
     # Show success message
     print_success_message
 }

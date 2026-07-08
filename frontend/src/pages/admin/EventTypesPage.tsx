@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'react-toastify';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   Plus,
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import { Button, Input, Card, Loading } from '../../components/common';
+import { useModal, useMutationWithToast } from '../../hooks';
 import { eventTypesService, EventType, CreateEventTypeData, UpdateEventTypeData } from '../../services/eventTypes.service';
 import { GALLERY_THEME_PRESETS } from '../../types/theme.types';
 
@@ -27,12 +27,11 @@ const EMOJI_OPTIONS = [
 
 export const EventTypesPage: React.FC = () => {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
 
   // State
   const [searchTerm, setSearchTerm] = useState('');
   const [showInactive, setShowInactive] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const createModal = useModal();
   const [editingType, setEditingType] = useState<EventType | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<EventType | null>(null);
 
@@ -43,40 +42,34 @@ export const EventTypesPage: React.FC = () => {
   });
 
   // Mutations
-  const createMutation = useMutation({
+  const createMutation = useMutationWithToast({
     mutationFn: eventTypesService.createEventType,
+    invalidateKeys: [['admin-event-types']],
+    successMessage: t('eventTypes.created', 'Event type created successfully'),
+    errorMessage: t('eventTypes.createError', 'Failed to create event type'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-event-types'] });
-      setShowCreateModal(false);
-      toast.success(t('eventTypes.created', 'Event type created successfully'));
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || t('eventTypes.createError', 'Failed to create event type'));
+      createModal.close();
     }
   });
 
-  const updateMutation = useMutation({
+  const updateMutation = useMutationWithToast({
     mutationFn: ({ id, data }: { id: number; data: UpdateEventTypeData }) =>
       eventTypesService.updateEventType(id, data),
+    invalidateKeys: [['admin-event-types']],
+    successMessage: t('eventTypes.updated', 'Event type updated successfully'),
+    errorMessage: t('eventTypes.updateError', 'Failed to update event type'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-event-types'] });
       setEditingType(null);
-      toast.success(t('eventTypes.updated', 'Event type updated successfully'));
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || t('eventTypes.updateError', 'Failed to update event type'));
     }
   });
 
-  const deleteMutation = useMutation({
+  const deleteMutation = useMutationWithToast({
     mutationFn: eventTypesService.deleteEventType,
+    invalidateKeys: [['admin-event-types']],
+    successMessage: t('eventTypes.deleted', 'Event type deleted successfully'),
+    errorMessage: t('eventTypes.deleteError', 'Failed to delete event type'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-event-types'] });
       setDeleteConfirm(null);
-      toast.success(t('eventTypes.deleted', 'Event type deleted successfully'));
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.error || t('eventTypes.deleteError', 'Failed to delete event type'));
     }
   });
 
@@ -130,7 +123,7 @@ export const EventTypesPage: React.FC = () => {
           <Button
             variant="primary"
             leftIcon={<Plus className="w-4 h-4" />}
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => createModal.open()}
           >
             {t('eventTypes.createNew', 'New Event Type')}
           </Button>
@@ -274,9 +267,9 @@ export const EventTypesPage: React.FC = () => {
       </div>
 
       {/* Create Modal */}
-      {showCreateModal && (
+      {createModal.isOpen && (
         <EventTypeModal
-          onClose={() => setShowCreateModal(false)}
+          onClose={createModal.close}
           onSubmit={(data) => createMutation.mutate(data as CreateEventTypeData)}
           isLoading={createMutation.isPending}
         />
@@ -365,7 +358,7 @@ const EventTypeModal: React.FC<EventTypeModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <Card className="w-full max-w-lg">
+      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">

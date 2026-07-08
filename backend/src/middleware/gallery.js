@@ -66,18 +66,29 @@ async function verifyGalleryAccess(req, res, next) {
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ['HS256'],
         issuer: 'picpeak-auth'
       });
     } catch (error) {
       // If verification fails with issuer, try without issuer (backward compatibility)
       if (error.name === 'JsonWebTokenError' && error.message.includes('jwt issuer invalid')) {
-        decoded = jwt.verify(token, process.env.JWT_SECRET);
+        decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
       } else {
         throw error;
       }
     }
     logger.debug('[verifyGalleryAccess] Token decoded successfully', { eventId: decoded.eventId, slug: requestedSlug });
-    
+
+    // Only gallery-scoped tokens grant gallery access. Every legitimate
+    // path (password login, share link, client access, customer-minted,
+    // slideshow) mints type:'gallery'. Reject anything else — e.g. a guest
+    // identity token (type:'guest', for feedback attribution) that carries a
+    // matching eventId — instead of relying on other token types incidentally
+    // lacking an eventId to fail the id match below.
+    if (decoded.type !== 'gallery') {
+      return res.status(403).json({ error: 'Invalid token type for gallery access' });
+    }
+
     // If we have a slug in the URL params or from pre-middleware, verify it matches
     if (requestedSlug) {
       // Verify by slug and ensure it matches the token's event
@@ -171,7 +182,25 @@ async function verifyGalleryAccess(req, res, next) {
   }
 }
 
+/**
+ * Deny a slideshow-scoped JWT. The Live Slideshow token (accessLevel
+ * 'slideshow') is reused as a `type:'gallery'` token so it can read photos for
+ * the kiosk, which means every verifyGalleryAccess-protected route would
+ * otherwise accept it. A projector URL is meant to be display-only and is
+ * comparatively easy to leak (browser history, venue laptop, USB), so this
+ * gate is placed AFTER verifyGalleryAccess on the write/bulk-download routes to
+ * keep a leaked slideshow link from downloading, uploading, or posting
+ * feedback. (#646 review)
+ */
+function denySlideshowToken(req, res, next) {
+  if (req.accessLevel === 'slideshow') {
+    return res.status(403).json({ error: 'Slideshow tokens are display-only' });
+  }
+  next();
+}
+
 module.exports = {
   verifyGalleryAccess,
+  denySlideshowToken,
   isAdminPreview
 };

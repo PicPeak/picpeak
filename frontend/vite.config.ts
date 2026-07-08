@@ -14,6 +14,17 @@ const config: VitestUserConfig = {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
           'ui-vendor': ['lucide-react', 'react-toastify'],
+          // Migration 137 — admin calendar deps (~200 KB). Carved into
+          // their own chunk so the main bundle isn't penalised on
+          // every page load; the calendar route lazy-loads this chunk
+          // on demand via React.lazy.
+          'fullcalendar': [
+            '@fullcalendar/react',
+            '@fullcalendar/core',
+            '@fullcalendar/daygrid',
+            '@fullcalendar/timegrid',
+            '@fullcalendar/interaction',
+          ],
         },
       },
     },

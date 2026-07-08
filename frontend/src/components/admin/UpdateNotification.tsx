@@ -19,6 +19,8 @@ interface UpdateInfo {
   lastChecked: string;
   error?: string;
   message?: string;
+  /** Top highlights of the target version (pre-update teaser). */
+  latestHighlights?: string[];
 }
 
 async function fetchUpdateInfo(): Promise<UpdateInfo> {
@@ -81,6 +83,16 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onDismis
                 channel: channelLabel
               })}
             </p>
+            {Array.isArray(updateInfo.latestHighlights) && updateInfo.latestHighlights.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs font-medium text-blue-700 dark:text-blue-300">
+                  {t('admin.updates.newFeatures', 'New features include:')}
+                </p>
+                <ul className="text-xs text-blue-700 dark:text-blue-300 mt-0.5 list-disc list-inside">
+                  {updateInfo.latestHighlights.slice(0, 4).map((h, i) => <li key={i}>{h}</li>)}
+                </ul>
+              </div>
+            )}
             <div className="flex items-center gap-3 mt-2">
               <button
                 onClick={() => setShowInstructions(true)}
@@ -90,7 +102,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onDismis
                 {t('admin.updates.updateNow', 'Update Now')}
               </button>
               <a
-                href="https://github.com/the-luap/picpeak/releases"
+                href="https://github.com/PicPeak/picpeak/releases"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"

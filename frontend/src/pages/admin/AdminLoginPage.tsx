@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Lock, Mail, Eye, EyeOff, AlertCircle, ShieldCheck, KeyRound, ArrowLeft } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Input, Card, ReCaptcha } from '../../components/common';
 import { useAdminAuth } from '../../contexts';
 import { authService } from '../../services/auth.service';
+import { isMfaChallenge } from '../../types';
+import { setupService } from '../../services/setup.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
+import { useAdminDarkMode } from '../../contexts/AdminDarkModeContext';
 import { resolveLoginLogoClasses } from '../../utils/loginLogoSize';
 import { api } from '../../config/api';
 
@@ -26,13 +30,29 @@ export const AdminLoginPage: React.FC = () => {
   const [loginSuccess, setLoginSuccess] = useState(false);
   const [recaptchaToken, setRecaptchaToken] = useState<string | null>(null);
 
+  // Two-step MFA challenge state (issue #738). When the first step returns
+  // { mfaRequired, mfaToken } we swap the form to a code entry step.
+  const [step, setStep] = useState<'credentials' | 'mfa'>('credentials');
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState('');
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false);
+  const [mfaError, setMfaError] = useState<string | null>(null);
+
   const { data: settingsData } = usePublicSettings();
+  const { isDark } = useAdminDarkMode();
 
   const companyName = settingsData?.branding_company_name?.trim() || 'PicPeak';
-  const logoUrl = settingsData?.branding_logo_url?.trim();
-  const resolvedLogoUrl = logoUrl
-    ? (logoUrl.startsWith('http') ? logoUrl : logoUrl)
-    : '/picpeak-logo-transparent.png';
+  // Theme-aware logo: the login page honours the admin dark-mode preference
+  // (and any branding_force_color_mode). NOTE the frame nuance — a framed
+  // logo sits on a fixed cream plate (see render), so the light (dark-ink)
+  // logo always reads there; only the frameless logo sits on the themed
+  // (possibly dark) page background and needs the dark variant.
+  const lightLogo = settingsData?.branding_logo_url?.trim();
+  const darkLogo = settingsData?.branding_logo_url_dark?.trim();
+  const loginFrameEnabled = settingsData?.branding_login_logo_frame_enabled !== false;
+  const themedLogo = isDark ? (darkLogo || lightLogo) : (lightLogo || darkLogo);
+  const logoUrl = loginFrameEnabled ? (lightLogo || darkLogo) : themedLogo;
+  const resolvedLogoUrl = logoUrl || '/picpeak-logo-transparent.png';
 
   // Check for session expired message
   useEffect(() => {
@@ -40,6 +60,17 @@ export const AdminLoginPage: React.FC = () => {
       toast.info(t('adminLogin.sessionExpired'));
     }
   }, [searchParams, t]);
+
+  // Fresh instance with no admin yet → send to first-run setup.
+  const { data: setupStatus } = useQuery({
+    queryKey: ['setup-status'],
+    queryFn: setupService.getSetupStatus,
+    retry: false,
+    staleTime: Infinity,
+  });
+  if (setupStatus?.needsAdmin) {
+    return <Navigate to="/setup" replace />;
+  }
 
   // Redirect if already authenticated or login successful
   if (isAuthenticated || loginSuccess) {
@@ -81,6 +112,15 @@ export const AdminLoginPage: React.FC = () => {
         ...formData,
         recaptchaToken
       });
+      // MFA enabled → move to the second step instead of logging in.
+      if (isMfaChallenge(response)) {
+        setMfaToken(response.mfaToken);
+        setMfaCode('');
+        setUseRecoveryCode(false);
+        setMfaError(null);
+        setStep('mfa');
+        return;
+      }
       login(response.token, response.user);
       toast.success(t('adminLogin.loginSuccess'));
       setLoginSuccess(true);
@@ -120,6 +160,62 @@ export const AdminLoginPage: React.FC = () => {
     }
   };
 
+  const backToCredentials = () => {
+    setStep('credentials');
+    setMfaToken(null);
+    setMfaCode('');
+    setMfaError(null);
+    setUseRecoveryCode(false);
+  };
+
+  const handleMfaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    toast.dismiss();
+
+    const code = mfaCode.trim();
+    if (!code) {
+      setMfaError(t('adminLogin.mfa.codeRequired'));
+      return;
+    }
+    if (!mfaToken) {
+      // Token lost somehow — restart the flow.
+      toast.info(t('adminLogin.mfa.sessionExpired'));
+      backToCredentials();
+      return;
+    }
+
+    setIsLoading(true);
+    setMfaError(null);
+
+    try {
+      const response = await authService.adminLoginMfa({ mfaToken, code });
+      login(response.token, response.user);
+      toast.success(t('adminLogin.loginSuccess'));
+      setLoginSuccess(true);
+    } catch (error: any) {
+      const data = error.response?.data;
+      const code = data?.code;
+      if (error.response?.status === 423) {
+        const retryAfter = data?.retryAfter;
+        toast.error(
+          retryAfter
+            ? t('adminLogin.mfa.lockedRetry', { seconds: retryAfter })
+            : t('adminLogin.mfa.locked')
+        );
+        backToCredentials();
+      } else if (code === 'MFA_SESSION_EXPIRED') {
+        toast.info(t('adminLogin.mfa.sessionExpired'));
+        backToCredentials();
+      } else if (code === 'MFA_INVALID') {
+        setMfaError(t('adminLogin.mfa.invalidCode'));
+      } else {
+        setMfaError(data?.error || t('adminLogin.generalError'));
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: 'var(--color-background, #fafafa)' }}>
       <div className="w-full max-w-md">
@@ -155,6 +251,7 @@ export const AdminLoginPage: React.FC = () => {
 
         {/* Login Form */}
         <Card padding="lg">
+          {step === 'credentials' ? (
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Form Error */}
             {errors.form && (
@@ -241,6 +338,81 @@ export const AdminLoginPage: React.FC = () => {
               {t('adminLogin.signIn')}
             </Button>
           </form>
+          ) : (
+          <form onSubmit={handleMfaSubmit} className="space-y-6">
+            <div className="text-center">
+              <div className="mx-auto mb-3 w-12 h-12 rounded-full flex items-center justify-center bg-primary-50 dark:bg-primary-900/30">
+                <ShieldCheck className="w-6 h-6" style={{ color: 'var(--color-primary, #5C8762)' }} />
+              </div>
+              <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text, #171717)' }}>
+                {t('adminLogin.mfa.title')}
+              </h2>
+              <p className="mt-1 text-sm" style={{ color: 'var(--color-text, #171717)', opacity: 0.7 }}>
+                {useRecoveryCode ? t('adminLogin.mfa.recoverySubtitle') : t('adminLogin.mfa.subtitle')}
+              </p>
+            </div>
+
+            {mfaError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-800">{mfaError}</p>
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="mfa-code" className="block text-sm font-medium text-neutral-700 mb-1">
+                {useRecoveryCode ? t('adminLogin.mfa.recoveryCodeLabel') : t('adminLogin.mfa.codeLabel')}
+              </label>
+              <Input
+                id="mfa-code"
+                type="text"
+                value={mfaCode}
+                onChange={(e) => {
+                  setMfaCode(e.target.value);
+                  if (mfaError) setMfaError(null);
+                }}
+                placeholder={useRecoveryCode ? t('adminLogin.mfa.recoveryCodePlaceholder') : t('adminLogin.mfa.codePlaceholder')}
+                leftIcon={<KeyRound className="w-5 h-5 text-neutral-400" />}
+                inputMode={useRecoveryCode ? 'text' : 'numeric'}
+                autoComplete="one-time-code"
+                autoFocus
+              />
+            </div>
+
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              isLoading={isLoading}
+              className="w-full"
+            >
+              {t('adminLogin.mfa.verify')}
+            </Button>
+
+            <div className="flex items-center justify-between text-sm">
+              <button
+                type="button"
+                onClick={backToCredentials}
+                className="inline-flex items-center gap-1 text-neutral-500 hover:text-neutral-700 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                {t('adminLogin.mfa.back')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setUseRecoveryCode((v) => !v);
+                  setMfaCode('');
+                  setMfaError(null);
+                }}
+                className="hover:underline"
+                style={{ color: 'var(--color-primary, #5C8762)' }}
+              >
+                {useRecoveryCode ? t('adminLogin.mfa.useAuthenticator') : t('adminLogin.mfa.useRecoveryCode')}
+              </button>
+            </div>
+          </form>
+          )}
         </Card>
 
         {/* Footer */}

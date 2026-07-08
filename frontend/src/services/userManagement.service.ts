@@ -205,6 +205,24 @@ export const userManagementService = {
   },
 
   /**
+   * Re-activate a previously deactivated admin user. Backend mirrors
+   * the deactivate endpoint exactly — see #574 follow-up.
+   */
+  async activateUser(id: number): Promise<string> {
+    const response = await api.post<DeactivateUserResponse>(`/admin/users/${id}/activate`);
+    return response.data.message;
+  },
+
+  /**
+   * Permanently delete an admin user. UI nudges admins to deactivate
+   * first; backend FK rules cascade or SET NULL as appropriate.
+   */
+  async deleteUser(id: number): Promise<string> {
+    const response = await api.delete<DeactivateUserResponse>(`/admin/users/${id}`);
+    return response.data.message;
+  },
+
+  /**
    * Reset an admin user's password
    */
   async resetPassword(id: number): Promise<ResetPasswordResponse> {

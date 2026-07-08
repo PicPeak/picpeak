@@ -10,6 +10,7 @@ const cron = require('node-cron');
 const { db } = require('../database/db');
 const { queueEmail } = require('./emailProcessor');
 const logger = require('../utils/logger');
+const { formatBytes } = require('../utils/formatBytes');
 const { formatBoolean } = require('../utils/dbCompat');
 const backupManifest = require('./backupManifest');
 const S3StorageAdapter = require('./storage/s3Storage');
@@ -259,6 +260,73 @@ async function hasDatabaseChanged(sinceTime) {
   }
 }
 
+/**
+ * Run an inline database dump (default ON) and then verify a usable dump
+ * is actually on disk before letting the file-backup proceed. Returns the
+ * verified `databaseInfo` so the caller can pass it straight into the
+ * manifest builder without re-querying.
+ *
+ * Why this lives here and not inline in `runBackupInternal`:
+ *   - Encapsulates the "Run Backup Now must include DB" guarantee
+ *     introduced when the silent files-only bug was discovered
+ *     (2026-05-29 — admin lost CRM after `docker compose down -v`)
+ *   - Lets the manifest path share the same `databaseInfo` object
+ *     instead of doing a second `getDatabaseBackupInfo()` round-trip
+ *   - Thrown errors bubble up to `runBackupInternal`'s catch, which
+ *     marks the `backup_runs` row failed and queues the admin email
+ *
+ * Default-ON semantics: `backup_database_inline_dump` is only treated
+ * as disabled when explicitly set to false. `undefined` (the case on
+ * every existing install that predates the setting) falls through to
+ * the safe-default ON branch. `normalizeBoolean(undefined)` returns
+ * false, so a naive `!== false` check would silently disable the
+ * inline dump for every upgrading install.
+ */
+async function ensureDatabaseDumpForBackup(config) {
+  const inlineDumpExplicitlyOff = config.backup_database_inline_dump !== undefined
+    && config.backup_database_inline_dump !== null
+    && normalizeBoolean(config.backup_database_inline_dump) === false;
+
+  if (!inlineDumpExplicitlyOff) {
+    logger.info('Running inline database dump before file backup...');
+    const { databaseBackupService } = require('./databaseBackup');
+    const dumpResult = await databaseBackupService.backup({});
+    logger.info(`Inline database dump completed: ${dumpResult.path} ` +
+      `(${(dumpResult.size / 1024 / 1024).toFixed(2)} MB)`);
+  }
+
+  const databaseInfo = await service.getDatabaseBackupInfo();
+  if (!databaseInfo.backupFile) {
+    throw new Error(
+      'No database backup available to include in this file backup. ' +
+      'Either keep backup_database_inline_dump enabled (default) or configure ' +
+      'backup_database_schedule and let it run at least once first.'
+    );
+  }
+
+  let dumpStat;
+  try {
+    dumpStat = await fs.stat(databaseInfo.backupFile);
+  } catch (statErr) {
+    if (statErr.code === 'ENOENT') {
+      throw new Error(
+        `Database backup file at ${databaseInfo.backupFile} is missing from disk. ` +
+        'Refusing to proceed with file backup; configure backup_database_schedule or ' +
+        'keep backup_database_inline_dump enabled.'
+      );
+    }
+    throw statErr;
+  }
+  if (!dumpStat.size) {
+    throw new Error(
+      `Database backup file at ${databaseInfo.backupFile} is empty (0 bytes). ` +
+      'Refusing to proceed with file backup to avoid shipping a manifest with no DB content.'
+    );
+  }
+
+  return databaseInfo;
+}
+
 async function getDatabaseBackupInfoInternal() {
   try {
     const recent = await db('database_backup_runs')
@@ -350,28 +418,179 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = []) 
   }
 }
 
-async function getFilesToBackupInternal(includeArchived = true) {
+/**
+ * Hard-coded fallback when `backup_paths` is missing/empty. Mirrors
+ * the canonical seed in migration 109 — kept here as defense in depth
+ * so the walker can never silently degrade to "no directories scanned"
+ * because of a seed problem.
+ *
+ * Order matches the legacy behavior of the inlined sequence this
+ * function used to contain.
+ */
+const LEGACY_BACKUP_PATHS = [
+  { path: 'events/active',    feature_flag: null },
+  { path: 'events/archived',  feature_flag: 'backup_include_archived' },
+  { path: 'thumbnails',       feature_flag: null },
+  { path: 'previews',         feature_flag: null },
+  { path: 'heroes',           feature_flag: null },
+  { path: 'uploads',          feature_flag: null },
+  { path: 'business-docs',    feature_flag: null },
+];
+
+/**
+ * Resolve the walker's target subdirectories from `backup_paths`.
+ *
+ * Layered fallback (defense in depth — no scenario where the walker
+ * silently scans nothing):
+ *   1. Read `backup_paths` rows where include_in_default = true,
+ *      ordered by display_order.
+ *   2. If the table is missing OR returns zero rows, fall back to
+ *      LEGACY_BACKUP_PATHS. Logged loudly so the admin sees it.
+ *
+ * Per-row gating: when `feature_flag` is set, the corresponding
+ * config key in `app_settings` must resolve truthy for that path to
+ * be included. Mirrors the historical `includeArchived` parameter,
+ * but now driven by data instead of a hard-coded boolean.
+ *
+ * @param {object} config  resolved backup config (parseSettingValue'd).
+ *                         Used to evaluate feature_flag gates.
+ * @returns {Promise<Array<{ path: string, feature_flag: string|null }>>}
+ */
+async function resolveBackupPaths(config) {
+  let rows;
+  try {
+    if (!(await db.schema.hasTable('backup_paths'))) {
+      logger.warn('backup_paths table missing — falling back to LEGACY_BACKUP_PATHS');
+      rows = LEGACY_BACKUP_PATHS;
+    } else {
+      rows = await db('backup_paths')
+        .where('include_in_default', formatBoolean(true))
+        .orderBy('display_order', 'asc')
+        .select('path', 'feature_flag');
+      if (!rows.length) {
+        logger.warn('backup_paths has no rows with include_in_default=true — falling back to LEGACY_BACKUP_PATHS');
+        rows = LEGACY_BACKUP_PATHS;
+      }
+    }
+  } catch (err) {
+    logger.warn(`Failed to query backup_paths (${err.message}) — falling back to LEGACY_BACKUP_PATHS`);
+    rows = LEGACY_BACKUP_PATHS;
+  }
+
+  // Apply feature_flag gating. A row with feature_flag='backup_include_archived'
+  // requires config.backup_include_archived to be truthy (same semantics as
+  // the historical `includeArchived` parameter).
+  return rows.filter((row) => {
+    if (!row.feature_flag) return true;
+    const flagValue = config ? config[row.feature_flag] : undefined;
+    return normalizeBoolean(flagValue);
+  });
+}
+
+/**
+ * Bucket actually-backed-up files into their owning `backup_paths` row.
+ *
+ * Uses longest-prefix match — e.g. `events/active/E1/photo.jpg` matches
+ * `events/active` (length 13) rather than `events` (length 6, if that
+ * row existed). This handles the case where a future feature ships a
+ * nested backup_paths row that overlaps an existing one.
+ *
+ * @param {string[]} backedUpRelativePaths — paths that actually got
+ *        copied / uploaded (post-incremental-filter). The exact list
+ *        the destination implementation reports back.
+ * @param {Array<{relativePath, size}>} allFiles — the full file
+ *        catalogue from the walker, used as a size lookup table.
+ * @returns {Promise<Record<string, { count: number, size: number }>>}
+ *        keyed by `backup_paths.path` (e.g. 'events/active'). Paths
+ *        with zero matches are omitted to keep the manifest compact.
+ */
+async function computePerPathStats(backedUpRelativePaths, allFiles) {
+  if (!backedUpRelativePaths || backedUpRelativePaths.length === 0) {
+    return {};
+  }
+
+  // Reuse the same source of truth the walker uses, so a row toggled
+  // off by include_in_default doesn't appear in the breakdown either.
+  let configuredPaths;
+  try {
+    if (await db.schema.hasTable('backup_paths')) {
+      configuredPaths = await db('backup_paths')
+        .where('include_in_default', formatBoolean(true))
+        .orderBy('display_order', 'asc')
+        .select('path');
+    }
+  } catch (err) {
+    logger.warn(`Could not load backup_paths for per-path stats — falling back to legacy: ${err.message}`);
+  }
+  if (!configuredPaths || configuredPaths.length === 0) {
+    configuredPaths = LEGACY_BACKUP_PATHS.map((p) => ({ path: p.path }));
+  }
+
+  // Longest-prefix-first so nested paths win over their parents.
+  const sortedPaths = configuredPaths
+    .map((row) => row.path)
+    .sort((a, b) => b.length - a.length);
+
+  // Size lookup. relativePath uses OS path separators in `allFiles`
+  // (whatever scanDirectory built); the backup_paths rows always use
+  // forward slashes. Normalize the lookup key once.
+  const sizeByPath = new Map();
+  for (const f of allFiles || []) {
+    sizeByPath.set(f.relativePath.split(path.sep).join('/'), f.size || 0);
+  }
+
+  const stats = {};
+  for (const relativePath of backedUpRelativePaths) {
+    const norm = relativePath.split(path.sep).join('/');
+    // Find the longest configured path that this file's relativePath starts with.
+    const match = sortedPaths.find(
+      (p) => norm === p || norm.startsWith(`${p}/`)
+    );
+    if (!match) continue; // file outside any configured path (shouldn't happen)
+    if (!stats[match]) stats[match] = { count: 0, size: 0 };
+    stats[match].count += 1;
+    stats[match].size += sizeByPath.get(norm) || 0;
+  }
+
+  return stats;
+}
+
+async function getFilesToBackupInternal(configOrIncludeArchived = true) {
   const files = [];
   const storagePath = getStoragePath();
 
-  await scanDirectory(path.join(storagePath, 'events/active'), files, storagePath);
-
-  if (normalizeBoolean(includeArchived)) {
-    await scanDirectory(path.join(storagePath, 'events/archived'), files, storagePath);
+  // Backward-compatible call signature:
+  //   - Boolean `true|false` → legacy `includeArchived` argument. We
+  //     forge a config-shaped object so the feature-flag gating
+  //     resolves the same way the old code path did.
+  //   - Object             → full resolved backup config (preferred).
+  //   - Anything else      → treated as "include archived" (truthy).
+  let config;
+  if (typeof configOrIncludeArchived === 'object' && configOrIncludeArchived !== null) {
+    config = configOrIncludeArchived;
+  } else {
+    config = { backup_include_archived: normalizeBoolean(configOrIncludeArchived) };
   }
 
-  await scanDirectory(path.join(storagePath, 'thumbnails'), files, storagePath);
-  // Lightbox preview tier (#492). Cheap to back up — typically a few
-  // hundred KB per photo — and saves admins the regenerate cycle on
-  // a restore. Tolerated when missing (admins who never enabled the
-  // feature won't have the folder; scanDirectory short-circuits on
-  // ENOENT cleanly).
-  await scanDirectory(path.join(storagePath, 'previews'), files, storagePath);
-  // Heroes too — same logic; admins who picked a hero photo for the
-  // gallery header had its 1920x1080 file generated and was missed
-  // by the original backup walk before this addition.
-  await scanDirectory(path.join(storagePath, 'heroes'), files, storagePath);
-  await scanDirectory(path.join(storagePath, 'uploads'), files, storagePath);
+  const targets = await resolveBackupPaths(config);
+
+  for (const target of targets) {
+    // CRM document estate is special-cased in the comment block below
+    // because it's the most expensive omission to recover from:
+    //   - business-docs/quote/<year>/*.pdf
+    //   - business-docs/contract/<year>/*.pdf  (system-rendered + wet uploads)
+    //   - business-docs/contract/signatures/<contract_id>/*.{png,jpg}
+    //     (drawn signatures, forensic-preserved per Date.now() filename)
+    //   - business-docs/invoice/<year>/*.pdf  (issued invoices + Storno)
+    //   - business-docs/invoice-imports/<year>/*.pdf  (admin-imported
+    //     historical invoices — irrecoverable if not backed up)
+    // Without this scan, the audit trail (signed_pdf_sha256, signed_*
+    // _ip, accepted_at, etc.) survives the restore but the documents
+    // those values refer to do not, leaving every CRM *_path column a
+    // broken FK. scanDirectory short-circuits on ENOENT so installs
+    // that never used CRM features won't error.
+    await scanDirectory(path.join(storagePath, target.path), files, storagePath);
+  }
 
   return files;
 }
@@ -558,19 +777,6 @@ async function performRsyncBackup(config, files) {
     backedUpFiles,
     backupPath: `${config.backup_rsync_host}:${config.backup_rsync_path}`
   };
-}
-
-function formatBytes(bytes, decimals = 2) {
-  if (!bytes) {
-    return '0 Bytes';
-  }
-
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
 async function performS3Backup(config, files) {
@@ -799,7 +1005,17 @@ async function runBackupInternal(isManual = false) {
     }).returning('id');
     runId = insertResult[0]?.id || insertResult[0];
 
-    const files = await service.getFilesToBackup(config.backup_include_archived);
+    // Inline DB dump + fail-loud verification. The returned `databaseInfo`
+    // is reused at manifest-build time below so we don't pay a second
+    // `getDatabaseBackupInfo()` round-trip — see `ensureDatabaseDumpForBackup`
+    // for the full rationale.
+    const verifiedDatabaseInfo = await ensureDatabaseDumpForBackup(config);
+
+    // Pass the full config so the walker can evaluate any feature_flag
+    // gates declared in the backup_paths table (e.g. `events/archived`
+    // gated by `backup_include_archived`). Boolean signature is still
+    // supported for legacy callers and tests — see getFilesToBackupInternal.
+    const files = await service.getFilesToBackup(config);
     logger.info(`Found ${files.length} files to check for backup`);
 
     let result;
@@ -826,7 +1042,13 @@ async function runBackupInternal(isManual = false) {
 
       const previousBackup = await getPreviousSuccessfulBackup(runId);
       const manifestFiles = buildManifestFiles(result.backedUpFiles, files);
-      const databaseInfo = result.databaseInfo || await service.getDatabaseBackupInfo();
+      // `verifiedDatabaseInfo` came from ensureDatabaseDumpForBackup at the
+      // top of this run — reuse it so manifest building doesn't pay a
+      // second `getDatabaseBackupInfo()` round-trip. The
+      // `result.databaseInfo` branch is kept for destination implementations
+      // (S3, future destinations) that override the local info on the result
+      // object; falls back to the verified copy otherwise.
+      const databaseInfo = result.databaseInfo || verifiedDatabaseInfo;
 
       const manifestOptions = {
         backupType: previousBackup ? 'incremental' : 'full',
@@ -869,6 +1091,18 @@ async function runBackupInternal(isManual = false) {
       logger.error('Failed to generate backup manifest:', error);
     }
 
+    // Per-Stage-B-path stats — bucket the actually-backed-up files
+    // into their owning backup_paths row by longest-prefix match. Lets
+    // the Backup History detail pane render a true breakdown
+    //   events/active: 142 files (3.2 GB)
+    //   business-docs: 17 files (4.5 MB)
+    //   thumbnails: 142 files (12.4 MB)
+    // instead of the legacy "Photos + Archives + Other" categorization
+    // that didn't reflect Stage B's data-driven walker. Falls back to
+    // an empty map if backup_paths is missing (defense in depth — the
+    // walker has the same fallback).
+    const perPath = await computePerPathStats(result.backedUpFiles, files);
+
     await db('backup_runs')
       .where('id', runId)
       .update({
@@ -887,11 +1121,14 @@ async function runBackupInternal(isManual = false) {
           total_files_checked: files.length,
           average_file_size: result.backedUpCount ? Math.round(result.backedUpSize / result.backedUpCount) : 0,
           destination: destinationType,
+          // Per-Stage-B-path breakdown — { [pathKey]: { count, size } }
+          per_path: perPath,
           // Keep camelCase for backward compatibility
           totalFilesChecked: files.length,
           filesBackedUp: result.backedUpCount,
           totalSize: result.backedUpSize,
-          averageFileSize: result.backedUpCount ? Math.round(result.backedUpSize / result.backedUpCount) : 0
+          averageFileSize: result.backedUpCount ? Math.round(result.backedUpSize / result.backedUpCount) : 0,
+          perPath
         })
       });
 
@@ -940,7 +1177,7 @@ async function runBackupInternal(isManual = false) {
 
 async function startBackupService() {
   try {
-  const config = await resolveConfigWithFallback();
+    const config = await resolveConfigWithFallback();
     if (!config || !normalizeBoolean(config.backup_enabled)) {
       if (backupJob) {
         backupJob.stop();
@@ -1071,11 +1308,34 @@ async function getBackupStatus(limit = 10) {
 
     const lastRunWithManifest = lastRun ? { ...lastRun, manifestValid } : null;
 
+    // Separate "most recent attempt" from "most recent SUCCESS" so the
+    // dashboard widget can distinguish:
+    //   - last attempt failed → red, "Last attempt failed at X"
+    //   - last attempt running → blue spinner, "In progress since X"
+    //   - never succeeded → critical, "No successful backup yet"
+    //   - last attempt succeeded → green tick, "Last backup X ago"
+    // Previously the widget showed the most-recent row with a generic
+    // green tick regardless of status, so a crashed run from 5 minutes
+    // ago looked identical to a successful one. Same "silent failure
+    // not surfaced" class Stage A was designed to fight.
+    const lastSuccessful = runs.find(r => r.status === 'completed') || null;
+    // Detect zombie running rows (started >30min ago, never updated)
+    // — these are processes that died without writing a completed_at.
+    // Surface them so the admin can tell at a glance vs a live run.
+    const ZOMBIE_THRESHOLD_MS = 30 * 60 * 1000;
+    const zombieRuns = runs.filter(r =>
+      r.status === 'running'
+      && r.started_at
+      && (Date.now() - new Date(r.started_at).getTime()) > ZOMBIE_THRESHOLD_MS
+    );
+
     return {
       isRunning,
       isHealthy: Boolean(lastRun && lastRun.status === 'completed'),
       lastRun: lastRunWithManifest,
       lastBackup: lastRunWithManifest, // Alias for frontend compatibility
+      lastSuccessfulBackup: lastSuccessful, // NEW — see comment above
+      zombieRuns,                           // NEW — running >30min, likely crashed
       recentRuns: runs,
       recentBackups: runs, // Alias for frontend compatibility
       totalBackups: runs.filter(r => r.status === 'completed').length,
