@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.83.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.83.0-beta.0...v3.83.1-beta.0) (2026-07-09)
+
+
+### Bug Fixes
+
+* **release:** target stable in release-please + undo bogus 2.7.0 bump ([274ef0c](https://github.com/PicPeak/picpeak/commit/274ef0cd731765b057a5d62d5f41c14cb3a1564b))
+* **release:** target stable in release-please.yml + undo the bogus 2.7.0 bump ([65ac6ed](https://github.com/PicPeak/picpeak/commit/65ac6eddacb79857e9a9651d3c869e7bfdd92887))
+
 ## [3.83.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.82.6-beta.0...v3.83.0-beta.0) (2026-07-08)
 
 
