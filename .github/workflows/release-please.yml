@@ -25,6 +25,7 @@ jobs:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          target-branch: stable
 
       # Auto-approve + auto-merge the open stable release PR. See the beta
       # workflow for the full rationale. Skipped on the release-cutting run and
