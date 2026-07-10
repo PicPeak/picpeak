@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.86.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.85.0-beta.0...v3.86.0-beta.0) (2026-07-10)
+
+
+### Features
+
+* **categories:** per-event category ordering — global default + override ([#782](https://github.com/PicPeak/picpeak/issues/782)) ([d51112e](https://github.com/PicPeak/picpeak/commit/d51112e761d2fd83f1939841fbf4c05e625fc34d))
+* **categories:** per-event category ordering — global default + override ([#782](https://github.com/PicPeak/picpeak/issues/782)) ([4698402](https://github.com/PicPeak/picpeak/commit/4698402b5493cfbdb1e2b6d81c6f58829e17a703))
+
+
+### Bug Fixes
+
+* **categories:** address PR [#790](https://github.com/PicPeak/picpeak/issues/790) review — event ownership, migration renumber, nits ([a4b4485](https://github.com/PicPeak/picpeak/commit/a4b4485d322514690c5400ca7ab9a91bc25c3e48))
+
 ## [3.85.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.84.1-beta.0...v3.85.0-beta.0) (2026-07-10)
 
 
