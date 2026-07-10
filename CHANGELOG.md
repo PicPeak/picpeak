@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.85.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.84.1-beta.0...v3.85.0-beta.0) (2026-07-10)
+
+
+### Features
+
+* **slideshow:** per-event play order + category filter ([#202](https://github.com/PicPeak/picpeak/issues/202)) ([5467642](https://github.com/PicPeak/picpeak/commit/54676424f2f7ed50e74cb8e144cbdaa5a96e65c3))
+
 ## [3.84.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.84.0-beta.0...v3.84.1-beta.0) (2026-07-10)
 
 
