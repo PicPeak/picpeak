@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.84.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.84.0-beta.0...v3.84.1-beta.0) (2026-07-10)
+
+
+### Bug Fixes
+
+* **ci:** publish v-prefixed image tags via type=ref,event=tag ([#668](https://github.com/PicPeak/picpeak/issues/668)) ([1f3bc3c](https://github.com/PicPeak/picpeak/commit/1f3bc3c3430414b5b6cb2141d887a8b5855a04af))
+* **ci:** publish v-prefixed image tags via type=ref,event=tag ([#668](https://github.com/PicPeak/picpeak/issues/668)) ([39db7bf](https://github.com/PicPeak/picpeak/commit/39db7bf6cb5c39fcdf71c875a4aaf704f34447fa))
+
 ## [3.84.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.83.1-beta.0...v3.84.0-beta.0) (2026-07-10)
 
 
