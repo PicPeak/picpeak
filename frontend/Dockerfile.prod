@@ -1,0 +1,68 @@
+# Build stage with dynamic API URL
+FROM node:20-alpine AS builder
+
+# Accept build args for API URL
+ARG VITE_API_URL=/api
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --legacy-peer-deps
+
+# Copy source files
+COPY . .
+
+# Set environment variable for build
+ENV VITE_API_URL=$VITE_API_URL
+
+# Build the application
+RUN npm run build
+
+# Production stage (Alpine 3.23 with OpenSSL 3.5.5, patched libexpat)
+FROM nginx:1.28-alpine
+
+# Upgrade all packages to fix security vulnerabilities (OpenSSL, libexpat, BusyBox CVEs)
+RUN apk upgrade --no-cache
+
+# Install runtime dependencies
+RUN apk add --no-cache curl
+
+# Remove default nginx config
+RUN rm -rf /etc/nginx/conf.d/*
+
+# Copy custom nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Copy built application from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Create a script to inject runtime config
+RUN cat > /usr/share/nginx/html/config.js << 'EOF'
+window.__RUNTIME_CONFIG__ = {
+  API_URL: '/api'
+};
+EOF
+
+# Set permissions
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chown -R nginx:nginx /var/cache/nginx && \
+    chown -R nginx:nginx /var/log/nginx && \
+    touch /var/run/nginx.pid && \
+    chown -R nginx:nginx /var/run/nginx.pid
+
+# Expose port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+# Switch to non-root user
+USER nginx
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

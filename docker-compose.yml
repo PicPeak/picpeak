@@ -1,0 +1,195 @@
+services:
+  # Generates machine secrets (JWT/DB/Redis) on first run when they aren't set
+  # in .env (seeds from the env var when provided, else a random value).
+  # Idempotent — never overwrites an existing file. See docker-compose.production.yml.
+  secrets-init:
+    image: alpine:3.20
+    container_name: picpeak-secrets-init
+    env_file: .env
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /run/secrets
+        if [ ! -s /run/secrets/jwt_secret ]; then
+          if [ -n "$$JWT_SECRET" ]; then printf '%s' "$$JWT_SECRET" > /run/secrets/jwt_secret;
+          else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/jwt_secret; fi
+        fi
+        if [ ! -s /run/secrets/db_password ]; then
+          if [ -n "$$DB_PASSWORD" ]; then printf '%s' "$$DB_PASSWORD" > /run/secrets/db_password;
+          else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/db_password; fi
+        fi
+        if [ ! -s /run/secrets/redis_password ]; then
+          if [ -n "$$REDIS_PASSWORD" ]; then printf '%s' "$$REDIS_PASSWORD" > /run/secrets/redis_password;
+          else tr -dc A-Za-z0-9 < /dev/urandom | head -c 48 > /run/secrets/redis_password; fi
+        fi
+        # 644: the readers run as three different users (postgres, redis, nodejs),
+        # so a non-root reader must be able to read them. The volume is private to
+        # these containers and never host-exposed.
+        chmod 644 /run/secrets/jwt_secret /run/secrets/db_password /run/secrets/redis_password
+    volumes:
+      - picpeak-secrets:/run/secrets
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: picpeak-backend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:-}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - DATABASE_CLIENT=pg
+      - DB_TYPE=postgresql
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD:-}
+      - DB_NAME=${DB_NAME}
+      - EXTERNAL_MEDIA_ROOT=${EXTERNAL_MEDIA_ROOT:-/app/storage/external-media}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - EMAIL_FROM=${EMAIL_FROM:-noreply@picpeak.local}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - ADMIN_URL=${ADMIN_URL:-http://localhost:3001}
+      - TZ=${TZ:-UTC}
+      - STORAGE_PATH=/app/storage
+    # No `user:` directive — as of #484, the container starts as root,
+    # chowns the bind mounts to nodejs (UID 1001), then drops privileges
+    # via su-exec. PUID/PGID env vars are no longer read; if you need
+    # a different runtime UID, pre-chown the host dirs and pin
+    # `user: "<uid>:<gid>"` here.
+    volumes:
+      - ./events:/app/events
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./backup:/backup
+      - ./storage:/app/storage
+      - picpeak-secrets:/run/secrets:ro
+    ports:
+      - "${BACKEND_PORT:-3001}:3000"
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - picpeak-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: picpeak-postgres
+    restart: unless-stopped
+    userns_mode: "host"
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+      - POSTGRES_DB=${DB_NAME}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+      - TZ=${TZ:-UTC}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - picpeak-secrets:/run/secrets:ro
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - picpeak-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: picpeak-redis
+    restart: unless-stopped
+    userns_mode: "host"
+    command: sh -c 'exec redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)"'
+    volumes:
+      - redis-data:/data
+      - picpeak-secrets:/run/secrets:ro
+    depends_on:
+      secrets-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - picpeak-network
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: picpeak-mailhog
+    restart: unless-stopped
+    ports:
+      - "${MAILHOG_SMTP_PORT:-1025}:1025"
+      - "${MAILHOG_UI_PORT:-8025}:8025"
+    networks:
+      - picpeak-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-/api}
+        - VITE_UMAMI_URL=${VITE_UMAMI_URL:-}
+        - VITE_UMAMI_WEBSITE_ID=${VITE_UMAMI_WEBSITE_ID:-}
+        - VITE_UMAMI_SHARE_URL=${VITE_UMAMI_SHARE_URL:-}
+    container_name: picpeak-frontend
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      # Static social-preview brand (#521) — substituted into
+      # index.html at container start; see frontend/docker-entrypoint.sh.
+      - BRAND_TITLE=${BRAND_TITLE:-PicPeak}
+      - BRAND_DESCRIPTION=${BRAND_DESCRIPTION:-Photo gallery shared with PicPeak.}
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - picpeak-network
+
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  # Auto-generated machine secrets (jwt/db/redis). Keep it — deleting it orphans
+  # the DB password from the Postgres volume.
+  picpeak-secrets:
+    driver: local
+
+networks:
+  picpeak-network:
+    driver: bridge
