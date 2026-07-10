@@ -1,0 +1,13 @@
+{
+  "name": "picpeak",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "dotenv": "^16.4.5",
+    "puppeteer": "^24.17.0"
+  }
+}

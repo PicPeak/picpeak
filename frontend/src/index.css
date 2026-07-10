@@ -1,0 +1,718 @@
+/*
+ * Self-hosted Inter is bootstrapped here so the very first paint —
+ * before React mounts and runs the dynamic @font-face injector — has
+ * the default body font available. Replaces the previous Google Fonts
+ * @import that leaked visitor IPs to fonts.googleapis.com (LG München
+ * 2022 GDPR ruling). All other families are injected on-demand by
+ * frontend/src/contexts/ThemeContext.tsx based on the active theme.
+ */
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 400; font-display: swap; src: url('/fonts/Inter/400.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 600; font-display: swap; src: url('/fonts/Inter/600.woff2') format('woff2'); }
+@font-face { font-family: 'Inter'; font-style: normal; font-weight: 700; font-display: swap; src: url('/fonts/Inter/700.woff2') format('woff2'); }
+
+/* Import image protection styles */
+@import './styles/image-protection.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /*
+     * Theme CSS Variables — 8-token CI palette.
+     * Token names are kept aligned with frontend/src/types/theme.types.ts
+     * (ThemeConfig). ThemeContext.applyTheme() writes these from the active
+     * theme/branding settings; values here are the "Classic Grid" defaults.
+     */
+    --color-background: #fafafa;        /* page base */
+    --color-surface: #ffffff;           /* cards, nav, alternating sections */
+    --color-elevated: #f5f5f5;          /* raised panels */
+    --color-surface-border: #e5e5e5;    /* dividers, borders (a.k.a. border token) */
+    --color-text: #171717;              /* primary text */
+    --color-muted-text: #737373;        /* secondary text */
+    --color-accent: #22c55e;            /* links, focus rings, hover */
+    --color-accent-dark: #5C8762;       /* primary CTA fill */
+
+    /* Legacy aliases — kept for any consumer that still reads --color-primary.
+     * Both resolve to the accent-dark token (the previous "primary" CTA color). */
+    --color-primary: #5C8762;
+    --color-primary-light: #7aa583;
+    --color-primary-dark: #4a6f4f;
+
+    --font-family: 'Inter', 'Noto Sans', system-ui, -apple-system, sans-serif;
+    --heading-font-family: 'Inter', 'Noto Sans', system-ui, -apple-system, sans-serif;
+    --border-radius: 0.5rem;
+    --font-size-base: 16px;
+    --shadow-default: 0 4px 6px rgba(0,0,0,0.1);
+
+    /* Tailwind RGB values for primary color (legacy, used by primary-* utilities) */
+    --tw-color-primary: 92 135 98;
+    --radius: 0.5rem;
+  }
+
+  /*
+   * Admin dark mode unification.
+   * AdminDarkModeContext toggles `.dark` on <html> without going through
+   * applyTheme(). Previously this only flipped the components that had
+   * explicit `.dark .x` overrides; everything else (cards/inputs/buttons
+   * that now read CSS variables) stayed light. We re-declare the 8-token
+   * defaults under `.dark` so the same variables resolve to a dark palette
+   * whenever the class is present. Gallery applyTheme() still wins because
+   * it writes inline `--color-*` styles on the html element, which beat the
+   * .dark stylesheet rule in the cascade.
+   */
+  .dark {
+    --color-background: #0a0a0a;
+    --color-surface: #171717;
+    --color-elevated: #1f1f1f;
+    --color-surface-border: #262626;
+    --color-text: #f5f5f5;
+    --color-muted-text: #a3a3a3;
+    --color-accent: #22c55e;
+    --color-accent-dark: #5C8762;
+  }
+
+  * {
+    font-family: var(--font-family);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    font-size: var(--font-size-base);
+    @apply antialiased;
+    overflow-x: hidden;
+  }
+  
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: var(--background-pattern);
+    background-size: var(--background-pattern-size);
+    opacity: 1;
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-neutral-100;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-neutral-300 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-neutral-400;
+  }
+
+  .dark ::-webkit-scrollbar-track {
+    @apply bg-neutral-800;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    @apply bg-neutral-600;
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    @apply bg-neutral-500;
+  }
+}
+
+@layer components {
+  /*
+   * Button styles.
+   *
+   * Migration note: .btn-primary now binds to --color-accent-dark instead
+   * of --color-primary. The two tokens are kept in lockstep by the
+   * customizer (handleChange syncs primaryColor → accentDarkColor) and by
+   * the migration helper (legacy themes get accentDarkColor = primaryColor),
+   * so existing instances render identically after upgrade — but new themes
+   * that set only accentDarkColor (the 8-token CI flow) now drive primary
+   * buttons correctly. White text + accent-dark fill matches the rest of
+   * the selected-state visual language (sidebar, tile-selected, segmented
+   * buttons). Hover stays on --color-primary-dark for the auto-darkened
+   * legacy behaviour.
+   */
+  .btn {
+    @apply inline-flex items-center justify-center font-medium whitespace-nowrap transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50;
+    border-radius: var(--border-radius);
+    --tw-ring-color: var(--color-accent);
+    --tw-ring-offset-color: var(--color-background);
+  }
+
+  .btn-primary {
+    background-color: var(--color-accent-dark);
+    color: white;
+    @apply hover:opacity-90;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--color-primary-dark);
+  }
+
+  .btn-alt {
+    background-color: transparent;
+    color: var(--color-text);
+    border: 2px solid var(--color-text);
+  }
+
+  .btn-alt:hover {
+    background-color: var(--color-text);
+    color: var(--color-background);
+  }
+
+  .btn-secondary {
+    background-color: var(--color-surface-border);
+    color: var(--color-text);
+    @apply hover:opacity-80;
+  }
+
+  .btn-outline {
+    border-color: var(--color-surface-border);
+    background-color: transparent;
+    color: var(--color-muted-text);
+    @apply border hover:opacity-80;
+  }
+
+  .btn-sm {
+    @apply h-9 px-3 text-sm;
+  }
+
+  .btn-md {
+    @apply h-10 px-4 py-2;
+  }
+
+  .btn-lg {
+    @apply h-11 px-8 text-lg;
+  }
+
+  /*
+   * Input styles - Admin inputs keep explicit Tailwind colors so the visual
+   * contract is byte-for-byte identical to pre-migration (border-neutral-300
+   * vs the lighter neutral-200/surface-border). Dark mode is handled by the
+   * .dark .input override below. Gallery inputs use .input-themed which
+   * binds to the 8-token palette via CSS variables.
+   */
+  .input {
+    @apply flex h-10 w-full rounded-lg border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply bg-white border-neutral-300 text-neutral-900;
+  }
+
+  .input::placeholder {
+    @apply text-neutral-500;
+  }
+
+  /* Gallery-specific input that uses theme variables */
+  .input-themed {
+    @apply flex h-10 w-full rounded-lg border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+    background-color: var(--color-surface);
+    border-color: var(--color-surface-border);
+    color: var(--color-text);
+  }
+
+  .input-themed::placeholder {
+    color: var(--color-muted-text);
+  }
+
+  /* Card styles - Admin cards keep their explicit Tailwind colors for
+   * migration safety (visible border lightness change otherwise); the
+   * .dark .card override below handles admin dark mode. Gallery uses
+   * .card-themed which binds to the 8-token palette. */
+  .card {
+    @apply rounded-xl border bg-white border-neutral-200;
+    box-shadow: var(--shadow-default);
+  }
+
+  .card-hover {
+    @apply card transition-all duration-200 hover:translate-y-[-2px];
+  }
+
+  /* Gallery-specific card that uses theme variables */
+  .card-themed {
+    @apply rounded-xl border;
+    background-color: var(--color-surface);
+    border-color: var(--color-surface-border);
+    box-shadow: var(--shadow-default);
+  }
+  
+  /* Headings with custom font */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--heading-font-family);
+  }
+
+  /* Container */
+  .container {
+    @apply mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl w-full;
+  }
+
+  /*
+   * Theme-token utility classes — exposed so any component (admin or gallery)
+   * can opt into the 8-token palette without an inline style. The Tailwind
+   * config also exposes these as full color aliases (bg-surface, text-theme,
+   * etc.) but these single-purpose classes are kept for back-compat with
+   * existing call sites.
+   */
+  .bg-background {
+    background-color: var(--color-background);
+  }
+
+  .bg-surface {
+    background-color: var(--color-surface);
+  }
+
+  .bg-elevated {
+    background-color: var(--color-elevated);
+  }
+
+  .bg-accent {
+    background-color: var(--color-accent);
+  }
+
+  .bg-accent-dark {
+    background-color: var(--color-accent-dark);
+  }
+
+  .border-surface {
+    border-color: var(--color-surface-border);
+  }
+
+  .text-theme {
+    color: var(--color-text);
+  }
+
+  .text-muted-theme {
+    color: var(--color-muted-text);
+  }
+
+  .text-accent {
+    color: var(--color-accent);
+  }
+
+  .text-accent-dark {
+    color: var(--color-accent-dark);
+  }
+
+  /*
+   * Low-opacity accent fills used as "icon tile" / "tinted chip"
+   * backgrounds (Features tab feature icons, Sidebar Preview pills,
+   * Customer dashboard branding card header). Picks up the admin's CI
+   * accent automatically — previously these places used Tailwind's
+   * hardcoded `primary-50` palette which stayed green regardless of
+   * branding settings.
+   *
+   * Mix weights bumped from 12% / 28% to 18% / 55% so the tint reads
+   * as "tinted" rather than "barely there" on dark backgrounds. The
+   * pill foreground intentionally falls back to a high-contrast theme
+   * colour rather than the accent itself (.text-accent-dark on an
+   * accent-soft bg disappears because both come from the same
+   * source).
+   *
+   * color-mix is supported on every browser we ship (Chromium 111+,
+   * Safari 16.2+, Firefox 113+ — see baseline). Older browsers fall
+   * back to the var(--color-accent-dark) below.
+   */
+  .bg-accent-soft {
+    background-color: var(--color-accent-dark);
+    background-color: color-mix(in srgb, var(--color-accent-dark) 18%, transparent);
+  }
+  .dark .bg-accent-soft {
+    background-color: var(--color-accent-dark);
+    background-color: color-mix(in srgb, var(--color-accent-dark) 55%, transparent);
+  }
+  .border-accent-soft {
+    border-color: var(--color-accent-dark);
+    border-color: color-mix(in srgb, var(--color-accent-dark) 45%, transparent);
+  }
+  .dark .border-accent-soft {
+    border-color: color-mix(in srgb, var(--color-accent-dark) 70%, transparent);
+  }
+
+  /*
+   * Foreground for content sitting on .bg-accent-soft. Uses the
+   * theme's text token (already high-contrast against both light
+   * backgrounds and dark surfaces) instead of the accent itself —
+   * accent-on-accent-soft was the reason the Sidebar Preview pills
+   * read as "barely visible".
+   */
+  .text-on-accent-soft {
+    color: var(--color-accent-dark);
+  }
+  .dark .text-on-accent-soft {
+    color: #ffffff;
+  }
+
+  /*
+   * Selected-tile state for picker grids (Gallery Layout, Filter Bar Style,
+   * Header Style, Hero Divider, Theme Presets). Used in place of the dim
+   * "border + light tint + accent text" pattern which had poor contrast on
+   * dark themes (accent text on dim accent bg). The full accent-dark fill
+   * with white descendants gives a strong, accessible selection cue and
+   * follows the user's CI palette.
+   */
+  .tile-selected {
+    background-color: var(--color-accent-dark) !important;
+    border-color: var(--color-accent-dark) !important;
+    color: #ffffff !important;
+  }
+
+  .tile-selected *,
+  .tile-selected svg {
+    color: #ffffff !important;
+  }
+
+  /*
+   * Inline hover tooltip used by the colour-picker info icons.
+   * Pure CSS — no library, no JS state. Wrap an `<Info>` icon (or any
+   * trigger) in <span class="info-tooltip" data-tooltip="..."> and a
+   * positioned bubble fades in on hover/focus. The native HTML `title`
+   * attribute has a ~1.5s delay and is suppressed in some browsers, which
+   * is why earlier iterations appeared not to work for users.
+   */
+  .info-tooltip {
+    position: relative;
+    display: inline-flex;
+    cursor: help;
+  }
+
+  .info-tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    min-width: 200px;
+    max-width: 320px;
+    padding: 0.5rem 0.625rem;
+    border-radius: 0.375rem;
+    background-color: #171717;
+    color: #fafafa;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    font-weight: 400;
+    text-align: left;
+    white-space: normal;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease-out;
+  }
+
+  .info-tooltip:hover::after,
+  .info-tooltip:focus-visible::after {
+    opacity: 1;
+  }
+
+  .dark .info-tooltip::after {
+    background-color: #fafafa;
+    color: #171717;
+  }
+
+  /* Image loading skeleton */
+  .skeleton {
+    @apply animate-pulse rounded-lg bg-neutral-200;
+  }
+
+  /* Gallery grid - Mobile optimized */
+  .gallery-grid {
+    @apply grid gap-2 sm:gap-3 md:gap-4 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6;
+  }
+
+  /* Modal overlay */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black/50 backdrop-blur-sm animate-fade-in;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .badge-warning {
+    @apply bg-amber-100 text-amber-800;
+  }
+
+  .badge-danger {
+    @apply bg-red-100 text-red-800;
+  }
+
+  /* Admin dark mode overrides (via Tailwind dark: class on html) */
+  .dark .card {
+    @apply bg-neutral-800 border-neutral-700;
+  }
+
+  .dark .card-themed {
+    @apply bg-neutral-800 border-neutral-700;
+  }
+
+  .dark .input {
+    @apply bg-neutral-800 border-neutral-700 text-neutral-100;
+  }
+
+  .dark .input::placeholder {
+    @apply text-neutral-500;
+  }
+
+  /*
+   * Customer-surface scope (#354): the default .input and .card classes
+   * hard-code bg-white, and the customer surface uses theme variables
+   * rather than the admin's `.dark` class trigger. Overriding here so
+   * every <Input> and <Card> rendered inside the customer surface picks
+   * up var(--color-surface) / var(--color-text) automatically — no
+   * per-page wrapper needed. Same treatment for native <select>
+   * elements which share the .input mental model on the profile and
+   * accept-invite forms.
+   *
+   * The .customer-surface marker is set on the root <div> of every
+   * customer page (CustomerLayout, CustomerLoginPage, CustomerAcceptInvitePage,
+   * CustomerResetPasswordPage). Pages outside this scope (admin, public
+   * gallery) keep their original styling.
+   */
+  .customer-surface .card,
+  .customer-surface .card-hover {
+    background-color: var(--color-surface);
+    border-color: var(--color-surface-border);
+  }
+
+  .customer-surface .input,
+  .customer-surface select.input,
+  .customer-surface input.input {
+    background-color: var(--color-surface);
+    border-color: var(--color-surface-border);
+    color: var(--color-text);
+  }
+
+  .customer-surface .input::placeholder {
+    color: var(--color-muted-text);
+    opacity: 0.7;
+  }
+
+  .customer-surface .input:disabled {
+    background-color: var(--color-elevated, var(--color-surface));
+    color: var(--color-muted-text);
+    opacity: 0.7;
+  }
+
+  .dark .input-themed {
+    @apply bg-neutral-800 border-neutral-700 text-neutral-100;
+  }
+
+  .dark .input-themed::placeholder {
+    @apply text-neutral-500;
+  }
+
+  .dark .skeleton {
+    @apply bg-neutral-700;
+  }
+
+  .dark .badge-success {
+    @apply bg-green-900/40 text-green-300;
+  }
+
+  .dark .badge-warning {
+    @apply bg-amber-900/40 text-amber-300;
+  }
+
+  .dark .badge-danger {
+    @apply bg-red-900/40 text-red-300;
+  }
+
+  /* Secondary and outline buttons for admin dark mode — restore explicit
+   * neutral overrides so existing admin pages render exactly as before. */
+  .dark .btn-secondary {
+    @apply bg-neutral-700 border-neutral-600 text-neutral-100;
+  }
+
+  .dark .btn-outline {
+    @apply border-neutral-600 text-neutral-300;
+  }
+
+  .dark .btn-outline:hover {
+    @apply bg-neutral-800;
+  }
+
+  /* Table styles for admin dark mode */
+  .dark table {
+    @apply bg-neutral-800;
+  }
+
+  .dark thead {
+    @apply bg-neutral-900/50;
+  }
+
+  .dark th {
+    @apply text-neutral-300 border-neutral-700;
+  }
+
+  .dark td {
+    @apply text-neutral-200 border-neutral-700;
+  }
+
+  .dark tbody tr {
+    @apply border-neutral-700;
+  }
+
+  .dark tbody tr:hover {
+    @apply bg-neutral-700/50;
+  }
+
+  /* Select/dropdown for admin dark mode */
+  .dark select {
+    @apply bg-neutral-800 border-neutral-700 text-neutral-100;
+  }
+
+  /* Tag/chip styles for admin dark mode */
+  .dark .tag,
+  .dark [class*="tag-"],
+  .dark .chip {
+    @apply bg-neutral-700 text-neutral-200 border-neutral-600;
+  }
+
+  /* Alert/info boxes for admin dark mode */
+  .dark .alert-info {
+    @apply bg-blue-900/30 border-blue-800 text-blue-200;
+  }
+
+  .dark .alert-warning {
+    @apply bg-amber-900/30 border-amber-800 text-amber-200;
+  }
+
+  .dark .alert-success {
+    @apply bg-green-900/30 border-green-800 text-green-200;
+  }
+
+  .dark .alert-danger {
+    @apply bg-red-900/30 border-red-800 text-red-200;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  /* Text gradient */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-primary-800;
+  }
+
+  /* Smooth scroll */
+  .smooth-scroll {
+    scroll-behavior: smooth;
+  }
+
+  /* Custom range slider styles - Updated */
+  input[type="range"].slider {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    background: #d4d4d4 !important;
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+    position: relative;
+  }
+
+  /* Webkit browsers like Chrome/Safari */
+  input[type="range"].slider::-webkit-slider-track {
+    width: 100%;
+    height: 8px;
+    background: #d4d4d4 !important;
+    border-radius: 4px;
+    border: none;
+  }
+
+  input[type="range"].slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    margin-top: -6px; /* Center the thumb vertically */
+    transition: all 0.2s ease;
+  }
+
+  input[type="range"].slider::-webkit-slider-thumb:hover {
+    background: var(--color-primary-dark);
+    transform: scale(1.1);
+  }
+
+  /* Firefox */
+  input[type="range"].slider::-moz-range-track {
+    width: 100%;
+    height: 8px;
+    background: #d4d4d4 !important;
+    border-radius: 4px;
+    border: none;
+  }
+
+  input[type="range"].slider::-moz-range-thumb {
+    border: none;
+    width: 20px;
+    height: 20px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  input[type="range"].slider::-moz-range-thumb:hover {
+    background: var(--color-primary-dark);
+    transform: scale(1.1);
+  }
+
+  /* IE/Edge */
+  input[type="range"].slider::-ms-track {
+    width: 100%;
+    height: 8px;
+    background: transparent;
+    border-color: transparent;
+    color: transparent;
+  }
+
+  input[type="range"].slider::-ms-fill-lower {
+    background: #d4d4d4;
+    border-radius: 4px;
+  }
+
+  input[type="range"].slider::-ms-fill-upper {
+    background: #d4d4d4;
+    border-radius: 4px;
+  }
+
+  input[type="range"].slider::-ms-thumb {
+    width: 20px;
+    height: 20px;
+    background: var(--color-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    margin-top: 0;
+  }
+}
