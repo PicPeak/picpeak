@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.87.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.86.0-beta.0...v3.87.0-beta.0) (2026-07-11)
+
+
+### Features
+
+* **invoices:** configurable VAT note under MwSt. line + fix multi-page page-number overlap ([#794](https://github.com/PicPeak/picpeak/issues/794)) ([ffd4a7e](https://github.com/PicPeak/picpeak/commit/ffd4a7eee64b6418df1c9cc6843d86dc0f41d2ec))
+* **invoices:** configurable VAT/free-text note + fix multi-page page-number overlap ([#794](https://github.com/PicPeak/picpeak/issues/794)) ([1476884](https://github.com/PicPeak/picpeak/commit/1476884dd04202f5f18d50d458b6176b0535c71b))
+
 ## [3.86.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.85.0-beta.0...v3.86.0-beta.0) (2026-07-10)
 
 
