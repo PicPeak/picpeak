@@ -5,6 +5,23 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.88.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.87.0-beta.0...v3.88.0-beta.0) (2026-07-15)
+
+
+### Features
+
+* **setup:** event-types step in first-run wizard + un-hardcode event type dependencies ([109aba8](https://github.com/PicPeak/picpeak/commit/109aba859820bf80440d056baf183ecf2657fee3))
+* **setup:** event-types step in first-run wizard + un-hardcode event type deps ([#800](https://github.com/PicPeak/picpeak/issues/800)) ([7eb6357](https://github.com/PicPeak/picpeak/commit/7eb6357b4a9bf3914674a63afa386a5fcf8c2161))
+
+
+### Bug Fixes
+
+* **event-types:** harden setup window + catalog validation (codex review) ([f8ba669](https://github.com/PicPeak/picpeak/commit/f8ba6697163b4d9aa0fa0014cb5b0810371c04ae))
+* **event-types:** un-hardcode event type dependencies in v1 API and CRM ([d64eef8](https://github.com/PicPeak/picpeak/commit/d64eef8abf2915230b3cdd38a3bbb8af1a12c6d2))
+* **event-types:** un-hardcode event type dependencies in v1 API and CRM ([#800](https://github.com/PicPeak/picpeak/issues/800)) ([5da1c3a](https://github.com/PicPeak/picpeak/commit/5da1c3a12f603a230091426b1d7be0eac83da22c))
+* **gallery:** show feedback filter chips on desktop for galleries without categories ([0751a08](https://github.com/PicPeak/picpeak/commit/0751a08aa661a430c1609cd8c118347291cbaa14))
+* **gallery:** show feedback filter chips on desktop for galleries without categories ([#802](https://github.com/PicPeak/picpeak/issues/802)) ([b928338](https://github.com/PicPeak/picpeak/commit/b9283386a57431ac8bd395347f9acb9bbdf82e8e))
+
 ## [3.87.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.86.0-beta.0...v3.87.0-beta.0) (2026-07-11)
 
 
