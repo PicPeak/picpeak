@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.1](https://github.com/PicPeak/picpeak/compare/v3.45.0...v3.45.1) (2026-07-16)
+
+
+### Bug Fixes
+
+* **security:** close 4 open security advisories on stable (backup takeover, share-login bypass, ZIP slip, chunked-upload traversal) ([b416bae](https://github.com/PicPeak/picpeak/commit/b416baec5c4d40e8558161a88fb842bbee84d470))
+* **security:** harden .picpeak restore operator-preservation (GHSA-qxfx follow-up) ([b00a161](https://github.com/PicPeak/picpeak/commit/b00a16159eea4815c70dba8a6ebb13be58ef9492))
+* **security:** preserve current admin on .picpeak restore (GHSA-qxfx-4493-4v8f) ([1cf82d8](https://github.com/PicPeak/picpeak/commit/1cf82d81a7935ca106b36521cbf02f63cd2e14b6))
+* **security:** reject ZIP-slip entries in archive/backup restore (GHSA-jfhw-fj23-fx6x) ([cde0b46](https://github.com/PicPeak/picpeak/commit/cde0b465a90169348475c0415d0d96df1cd5cc44))
+* **security:** sanitize chunked-upload filename (GHSA-pc72-jf53-w28j) ([dcfcb67](https://github.com/PicPeak/picpeak/commit/dcfcb67f9b2b6294b1ae033f7d0b707b0749a28a))
+* **security:** share-login must not bypass gallery password (GHSA-9hmx-68vc-qpqw) ([28f69e4](https://github.com/PicPeak/picpeak/commit/28f69e4bf3b1d99748d53eb2671617ab06e4fedb))
+
 ## [3.45.0](https://github.com/PicPeak/picpeak/compare/v3.44.0...v3.45.0) (2026-07-09)
 
 
