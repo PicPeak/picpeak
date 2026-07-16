@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.88.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.88.0-beta.0...v3.88.1-beta.0) (2026-07-16)
+
+
+### Bug Fixes
+
+* **security:** mask backup credentials on read + unblock MFA login during maintenance ([eadf282](https://github.com/PicPeak/picpeak/commit/eadf282755829cb51e6ea37221be31d8c9af41c5))
+* **security:** mask backup credentials on read + unblock MFA login during maintenance ([07f2c90](https://github.com/PicPeak/picpeak/commit/07f2c900556738e993fb63764210b541d7692c9d))
+
 ## [3.88.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.87.0-beta.0...v3.88.0-beta.0) (2026-07-15)
 
 
