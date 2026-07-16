@@ -18,6 +18,7 @@ const fsp = require('fs').promises;
 const path = require('path');
 const os = require('os');
 const StreamZip = require('node-stream-zip');
+const { assertZipEntriesWithin } = require('../utils/safePath');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
 const { getStoragePath } = require('../config/storage');
@@ -232,6 +233,10 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
   try {
     const zip = new StreamZip.async({ file: picpeakPath });
     try {
+      // Reject ZIP-slip entries before extracting — a crafted .picpeak could
+      // otherwise write outside the staging dir via `../` entry names
+      // (same class as GHSA-jfhw-fj23-fx6x).
+      assertZipEntriesWithin(Object.values(await zip.entries()), staging);
       await zip.extract(null, staging);
     } finally {
       await zip.close();
