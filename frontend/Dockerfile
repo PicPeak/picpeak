@@ -29,14 +29,24 @@ COPY . .
 # Build the application
 RUN npm run build
 
-# Production stage (Alpine 3.23 with OpenSSL 3.5.5, patched libexpat)
-FROM nginx:1.28-alpine
+# Production stage (nginx stable 1.30 on Alpine 3.24). The 1.28 base is a
+# dead end for the nginx HTTP/2 + rewrite/charset CVEs (CVE-2026-42055 /
+# -49975 / -9256 / -48142): nginx.org's nginx-module-* packages pin the exact
+# nginx version, so `apk upgrade` can never pull Alpine's patched 1.28.3-r4 —
+# nginx fixes have to come via the base image tag, not apk.
+FROM nginx:1.30-alpine
 
-# Upgrade all Alpine packages for security fixes. The explicit nginx upgrade
-# closes the HTTP/2 + rewrite/charset CVEs (CVE-2026-42055 / -49975 / -9256 /
-# -48142, fixed in nginx 1.28.3-r4) and busts any cached layer still carrying
-# the vulnerable r1 build.
-RUN apk upgrade --no-cache && apk add --no-cache --upgrade nginx
+# Redeclare CACHEBUST — ARGs don't cross stage boundaries, so the builder
+# stage's declaration never reached this stage. Consuming it in the RUN below
+# busts that layer's cache every CI run (CACHEBUST=github.run_number), so the
+# image always picks up current Alpine security updates. Without this, the
+# upgrade layer was cached indefinitely and builds kept shipping curl 8.19.0 /
+# c-ares 1.34.6 for weeks after fixed packages landed in the Alpine repo.
+ARG CACHEBUST=1
+
+# Upgrade all Alpine packages for security fixes (nginx itself is version-
+# pinned by its module packages — see the FROM comment above).
+RUN echo "cachebust=${CACHEBUST}" && apk upgrade --no-cache
 
 # Install runtime dependencies. `gettext` provides envsubst, used by
 # docker-entrypoint.sh for the BRAND_TITLE / BRAND_DESCRIPTION runtime
