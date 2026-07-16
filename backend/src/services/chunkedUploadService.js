@@ -30,6 +30,16 @@ async function initializeUpload(options) {
     totalChunks
   } = options;
 
+  // Strip any directory components from the client-supplied filename. It is
+  // later joined onto the temp merge dir (path.join(tempDir, filename)), and
+  // path.join does NOT neutralise `../` — a filename like `../../uploads/
+  // logos/evil.svg` would escape the temp dir and overwrite arbitrary files
+  // (GHSA-pc72-jf53-w28j). basename() collapses it to the leaf name only.
+  const safeFilename = path.basename(String(filename || ''));
+  if (!safeFilename || safeFilename === '.' || safeFilename === '..') {
+    throw new Error('Invalid filename');
+  }
+
   // Generate unique upload ID
   const uploadId = crypto.randomUUID();
 
@@ -43,7 +53,7 @@ async function initializeUpload(options) {
   // Store upload metadata
   const uploadMeta = {
     uploadId,
-    filename,
+    filename: safeFilename,
     fileSize,
     mimeType,
     eventId,
@@ -59,7 +69,7 @@ async function initializeUpload(options) {
 
   logger.info('Initialized chunked upload', {
     uploadId,
-    filename,
+    filename: safeFilename,
     fileSize,
     expectedChunks,
     eventId
