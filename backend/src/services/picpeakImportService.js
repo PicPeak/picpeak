@@ -81,24 +81,84 @@ function parseNdjson(filePath) {
 }
 
 // Re-insert the operator's account inside the restore transaction so they keep
-// working credentials. If the backup already loaded an admin with the same
-// email, overwrite that row's credentials with the current account's (current
-// creds win); otherwise insert the snapshot with a fresh id.
+// working credentials after the wipe.
+//
+// The operator's login + credentials + MFA must be restored, not just the
+// password. A crafted backup can carry a row with the operator's email whose
+// two_factor_* fields are attacker-chosen — leaving those in place would let
+// the backup strip or hijack the operator's MFA, or (cross-instance) pin a TOTP
+// secret encrypted with the source instance's key the operator can never
+// satisfy. These columns are scalar/text (recovery codes are a JSON string in a
+// TEXT column), so writing them needs no special json handling. Relationship/
+// audit FKs (role_id, created_by) are deliberately NOT forced from the snapshot
+// — see the update branch below.
+//
+// admin_users has UNIQUE constraints on BOTH email and username, and a restored
+// backup can collide with the operator on either — possibly on two DIFFERENT
+// rows (one shares the email, another shares the default `admin` username). We
+// reconcile WITHOUT deleting any restored row: deleting would fire ON DELETE
+// actions (SQLite) or dangle references such as events.created_by (Postgres,
+// where replica mode suppresses cascades). Instead:
+//   - if a row already has the operator's email, overwrite it in place (its id
+//     is preserved, so every FK pointing at the operator stays valid);
+//   - if a DIFFERENT row holds the operator's username, rename that row (id
+//     preserved, its own FKs stay valid) to free the username;
+//   - only when no row has the operator's email do we insert a fresh row.
 async function reinjectCurrentAdmin(trx, currentAdmin) {
   if (!currentAdmin) return;
-  const existing = await trx('admin_users').whereRaw('lower(email) = lower(?)', [currentAdmin.email]).first();
-  if (existing) {
-    await trx('admin_users').where({ id: existing.id }).update({
-      password_hash: currentAdmin.password_hash,
-      is_active: currentAdmin.is_active,
-      must_change_password: currentAdmin.must_change_password,
-    });
+
+  const emailMatch = await trx('admin_users')
+    .whereRaw('lower(email) = lower(?)', [currentAdmin.email])
+    .first();
+
+  // Free the operator's username if a different row holds it (rename, not delete).
+  const usernameHolder = await trx('admin_users')
+    .whereRaw('lower(username) = lower(?)', [currentAdmin.username])
+    .first();
+  if (usernameHolder && (!emailMatch || usernameHolder.id !== emailMatch.id)) {
+    await trx('admin_users')
+      .where({ id: usernameHolder.id })
+      .update({ username: `${usernameHolder.username}__restored_${usernameHolder.id}` });
+  }
+
+  if (emailMatch) {
+    // Update in place — keeps emailMatch.id so restored FKs to the operator
+    // hold. Write only the AUTH-critical columns (login identity + credentials
+    // + MFA), never the relationship/audit FKs (role_id → roles, created_by →
+    // admin_users). Forcing the operator's pre-restore role_id/created_by here
+    // could reference rows absent from a cross-instance backup and dangle the
+    // FK (SQLite rolls back at commit); the row already carries the backup's
+    // own valid values for those. This still closes the MFA-hijack gap — a
+    // crafted backup can't strip or replace the operator's second factor.
+    const authUpdate = {};
+    for (const field of PRESERVED_AUTH_FIELDS) {
+      if (field in currentAdmin) authUpdate[field] = currentAdmin[field];
+    }
+    await trx('admin_users').where({ id: emailMatch.id }).update(authUpdate);
   } else {
-    const row = { ...currentAdmin };
-    delete row.id; // let the engine assign a fresh id to avoid collision
-    await trx('admin_users').insert(row);
+    // The operator's email isn't in the backup, so nothing restored references
+    // their id — a fresh row can't dangle a reference TO the operator. Null the
+    // self-referential created_by (its target admin may be absent from this
+    // backup; ON DELETE SET NULL makes null the correct "unknown inviter"
+    // value) so the insert itself can't dangle. Use an explicit max(id)+1
+    // rather than the identity sequence, which batchInsert left unadvanced on
+    // Postgres (a sequence-based insert could collide with a restored id).
+    const snapshot = { ...currentAdmin };
+    delete snapshot.id;
+    if ('created_by' in snapshot) snapshot.created_by = null;
+    const maxRow = await trx('admin_users').max({ m: 'id' }).first();
+    snapshot.id = (Number(maxRow && maxRow.m) || 0) + 1;
+    await trx('admin_users').insert(snapshot);
   }
 }
+
+// AUTH-critical admin_users columns preserved when overwriting a restored row
+// that shares the operator's email. Deliberately excludes relationship/audit
+// FKs (role_id, created_by) — see reinjectCurrentAdmin for why.
+const PRESERVED_AUTH_FIELDS = [
+  'username', 'email', 'password_hash', 'is_active', 'must_change_password',
+  'two_factor_enabled', 'two_factor_secret', 'two_factor_recovery_codes', 'two_factor_enrolled_at',
+];
 
 // The json/jsonb columns of a table (Postgres only). The pg driver returns
 // jsonb as parsed JS values, so on re-insert they must be serialised back to
@@ -273,4 +333,5 @@ module.exports = {
   importFromPicpeak,
   readManifestFromZip,
   validateManifest,
+  reinjectCurrentAdmin,
 };

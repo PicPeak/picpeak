@@ -2,6 +2,8 @@ const express = require('express');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
+const { clearAdminAuthCookie } = require('../utils/tokenUtils');
+const { revokeToken } = require('../utils/tokenRevocation');
 const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest } = require('../services/backupService');
 const logger = require('../utils/logger');
 const { errorResponse, getPagination } = require('../utils/routeHelpers');
@@ -183,11 +185,38 @@ router.post('/picpeak/import', adminAuth, requirePermission('backup.restore'), p
     // to preserve and the admin_users table was fully replaced by the backup —
     // letting a crafted .picpeak take over every admin account (GHSA-qxfx-4493-4v8f).
     const result = await importFromPicpeak({ picpeakPath, currentAdminId: req.admin && req.admin.id });
+
+    // The restore rewrote admin_users, so ids may have shifted. The operator's
+    // current JWT is bound only to the pre-restore admin id (adminAuth trusts
+    // `decoded.id` — IP is logged, not enforced, and the backup controls
+    // password_changed_at), which could now resolve to a DIFFERENT restored
+    // account and silently grant its permissions. Force a fresh login instead
+    // of trusting the old session: revoke the token and clear the cookie.
+    // Clearing the cookie is the guarantee — it drops the operator's browser
+    // session unconditionally. Revocation is the extra layer that also kills a
+    // Bearer-header copy of the JWT; revokeToken() swallows DB errors and
+    // returns false, so check the result and log loudly if the denylist write
+    // didn't land (the operator should still re-login, which the cookie clear
+    // forces).
+    let tokenRevoked = false;
+    try {
+      if (req.token) {
+        tokenRevoked = await revokeToken(req.token, 'picpeak-import', { adminId: req.admin && req.admin.id });
+      }
+    } catch (revokeErr) {
+      logger.warn('[picpeak-import] failed to revoke session token after restore', { error: revokeErr.message });
+    }
+    if (req.token && !tokenRevoked) {
+      logger.warn('[picpeak-import] session token was NOT added to the revocation denylist after restore; relying on cookie clear to force re-login');
+    }
+    clearAdminAuthCookie(res);
+
     res.json({
       success: true,
       tables: result.tables,
       filesRestored: result.filesRestored,
       usesExternalMedia: result.usesExternalMedia,
+      sessionInvalidated: true,
     });
   } catch (error) {
     const status = error.statusCode || 500;
