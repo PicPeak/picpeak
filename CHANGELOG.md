@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.90.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.89.0-beta.0...v3.90.0-beta.0) (2026-07-16)
+
+
+### Features
+
+* **auth:** OIDC SSO for admin users — phase 1 ([f12606b](https://github.com/PicPeak/picpeak/commit/f12606b4e0d2fbe4f2f57a345b393448063d6614))
+
 ## [3.89.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.88.1-beta.0...v3.89.0-beta.0) (2026-07-16)
 
 
