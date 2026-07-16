@@ -178,7 +178,11 @@ router.post('/picpeak/import', adminAuth, requirePermission('backup.restore'), p
   const picpeakPath = req.file.path;
   try {
     const { importFromPicpeak } = require('../services/picpeakImportService');
-    const result = await importFromPicpeak({ picpeakPath, currentAdminId: req.user && req.user.id });
+    // adminAuth populates req.admin, not req.user. Passing req.user.id here
+    // left currentAdminId undefined, so reinjectCurrentAdmin() had no account
+    // to preserve and the admin_users table was fully replaced by the backup —
+    // letting a crafted .picpeak take over every admin account (GHSA-qxfx-4493-4v8f).
+    const result = await importFromPicpeak({ picpeakPath, currentAdminId: req.admin && req.admin.id });
     res.json({
       success: true,
       tables: result.tables,
