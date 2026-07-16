@@ -27,8 +27,15 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# Redeclare CACHEBUST — ARGs don't cross stage boundaries, so the builder
+# stage's declaration never reached this stage. Consuming it in the RUN below
+# busts that layer's cache every CI run (CACHEBUST=github.run_number), so the
+# image always picks up current Alpine security updates instead of reusing a
+# stale cached upgrade layer.
+ARG CACHEBUST=1
+
 # Upgrade all packages to fix security vulnerabilities (OpenSSL, libexpat, BusyBox CVEs)
-RUN apk upgrade --no-cache
+RUN echo "cachebust=${CACHEBUST}" && apk upgrade --no-cache
 
 # Upgrade the npm CLI in the final image so its bundled deps are patched
 # (sigstore 4.x, tar) — closes CVE-2026-48815 and the older @sigstore/core / tar
