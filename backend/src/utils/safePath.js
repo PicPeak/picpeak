@@ -118,7 +118,41 @@ function assertContractPdfPath(filePath) {
   ]);
 }
 
+/**
+ * ZIP-slip guard. `node-stream-zip`'s `extract(null, root)` writes each entry
+ * to `path.join(root, entry.name)` without neutralising `../` — a crafted
+ * archive with an entry named `../../uploads/logos/evil.svg` escapes `root`
+ * and overwrites arbitrary files (GHSA-jfhw-fj23-fx6x). Call this with the
+ * entry list BEFORE extract() to reject any entry that resolves outside the
+ * target directory.
+ *
+ * Purely lexical (path.resolve, no realpath) because the extraction target
+ * does not exist on disk yet. Absolute entry names (`/etc/passwd`) resolve
+ * away from `root` and are caught too. Throws AppError 400 on the first
+ * offending entry so the whole archive is refused.
+ *
+ * @param {Array<{name?: string}>} entries  node-stream-zip entry objects
+ * @param {string} extractRoot              directory extract() will write into
+ */
+function assertZipEntriesWithin(entries, extractRoot) {
+  const rootResolved = path.resolve(extractRoot);
+  const prefix = rootResolved.endsWith(path.sep) ? rootResolved : rootResolved + path.sep;
+  for (const entry of entries || []) {
+    const name = entry && entry.name;
+    if (!name) continue;
+    const target = path.resolve(rootResolved, name);
+    if (target !== rootResolved && !target.startsWith(prefix)) {
+      throw new AppError(
+        `Archive contains an entry that escapes the extraction directory: ${name}`,
+        400,
+        'ZIP_SLIP'
+      );
+    }
+  }
+}
+
 module.exports = {
   assertPathInside,
   assertContractPdfPath,
+  assertZipEntriesWithin,
 };

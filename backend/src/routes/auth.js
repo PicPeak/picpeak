@@ -543,6 +543,18 @@ router.post('/gallery/share-login', [
       return res.status(401).json({ error: 'Invalid or expired share link' });
     }
 
+    const requiresPassword = !(event.require_password === false || event.require_password === 0 || event.require_password === '0');
+
+    // The share link only proves the holder was given the link — it is NOT the
+    // gallery password. For a password-protected gallery, minting a full
+    // `type:'gallery'` token here would let anyone with the share URL bypass
+    // the password entirely (GHSA-9hmx-68vc-qpqw). Signal that a password is
+    // still required and return WITHOUT a token/cookie; the client then goes
+    // through POST /gallery/verify, which does check the password.
+    if (requiresPassword) {
+      return res.json({ requires_password: true });
+    }
+
     const jwtToken = jwt.sign({
       eventId: event.id,
       eventSlug: event.slug,
@@ -556,8 +568,6 @@ router.post('/gallery/share-login', [
 
     await trackSuccessfulLogin(`gallery:${event.slug}:share`, ipAddress, userAgent);
     setGalleryAuthCookies(res, jwtToken, event.slug);
-
-    const requiresPassword = !(event.require_password === false || event.require_password === 0 || event.require_password === '0');
 
     res.json({
       token: jwtToken,

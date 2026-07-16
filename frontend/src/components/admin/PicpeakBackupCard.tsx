@@ -16,6 +16,7 @@ interface RestoreResult {
   tables: number;
   filesRestored: number;
   usesExternalMedia: boolean;
+  sessionInvalidated?: boolean;
 }
 
 // ── Download half (Dashboard) ────────────────────────────────────────────────
@@ -114,6 +115,13 @@ export const PicpeakRestoreCard: React.FC = () => {
       setResult(res.data);
       setPendingFile(null);
       toast.success(t('backup.picpeak.restoreDone', 'Backup restored.'));
+      // The restore rewrote admin_users and the backend revoked our session
+      // (ids may have shifted). Send the operator to a fresh login rather than
+      // letting the now-stale token resolve to a different restored account.
+      if (res.data?.sessionInvalidated) {
+        toast.success(t('backup.picpeak.reloginRequired', 'Restore complete — please sign in again.'));
+        setTimeout(() => { window.location.href = '/admin/login'; }, 1500);
+      }
     } catch (e: any) {
       const msg = e.response?.data?.error || t('backup.picpeak.restoreFailed', 'Restore failed.');
       toast.error(msg);

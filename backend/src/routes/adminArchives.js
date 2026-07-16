@@ -9,6 +9,7 @@ const { requirePermission } = require('../middleware/permissions');
 const archiver = require('archiver');
 const StreamZip = require('node-stream-zip');
 const { requireEventOwnership } = require('../middleware/ownership');
+const { assertZipEntriesWithin } = require('../utils/safePath');
 const logger = require('../utils/logger');
 const { getPagination } = require('../utils/routeHelpers');
 const router = express.Router();
@@ -182,6 +183,16 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       logger.info(`Extracting archive to: ${eventDir}`);
       const entries = Object.values(await zip.entries());
       logger.info(`Archive contains ${entries.length} entries`);
+
+      // Reject ZIP-slip entries before writing anything to disk — extract()
+      // does not neutralise `../` in entry names (GHSA-jfhw-fj23-fx6x).
+      try {
+        assertZipEntriesWithin(entries, eventDir);
+      } catch (slipErr) {
+        await zip.close();
+        logger.warn(`Refusing archive restore — unsafe entry path: ${slipErr.message}`);
+        return res.status(400).json({ error: 'Archive contains invalid entry paths' });
+      }
 
       // Stream-extract everything to disk
       await zip.extract(null, eventDir);
