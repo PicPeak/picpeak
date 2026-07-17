@@ -180,6 +180,27 @@ describe('admin events CRUD endpoints (smoke)', () => {
       });
       expect(res.status).toBe(404);
     });
+
+    // #822 — hero_logo_visible/position are nullable (null = "inherit the global
+    // branding toggle"), but the validator used .optional() without
+    // { nullable: true }, so an explicit null was rejected with 400.
+    it('accepts hero_logo_visible: null and stores NULL (inherit)', async () => {
+      const id = await insertEvent(db, adminId, { hero_logo_visible: 1 });
+      const res = await auth(request(app).put(`/api/admin/events/${id}`)).send({
+        hero_logo_visible: null,
+      });
+      expect(res.status).toBe(200);
+      const row = await db('events').where({ id }).first();
+      expect(row.hero_logo_visible).toBeNull();
+    });
+
+    it('still rejects a non-boolean hero_logo_visible', async () => {
+      const id = await insertEvent(db, adminId);
+      const res = await auth(request(app).put(`/api/admin/events/${id}`)).send({
+        hero_logo_visible: 'maybe',
+      });
+      expect(res.status).toBe(400);
+    });
   });
 
   describe('DELETE /:id', () => {

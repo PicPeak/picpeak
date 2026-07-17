@@ -94,7 +94,7 @@ module.exports = (router) => {
     body('allow_presigned_download').optional().isBoolean(),
     body('css_template_id').optional({ nullable: true, checkFalsy: true }).isInt(),
     // Hero logo settings
-    body('hero_logo_visible').optional().isBoolean(),
+    body('hero_logo_visible').optional({ nullable: true }).isBoolean(),
     body('hero_logo_size').optional({ nullable: true }).isIn(['small', 'medium', 'large', 'xlarge']),
     body('hero_logo_position').optional().isIn(['top', 'center', 'bottom']),
     // Header style settings (decoupled from layout)
@@ -342,8 +342,10 @@ module.exports = (router) => {
       // hero_logo_visible: store NULL ("inherit") unless the admin explicitly
       // set it, so the global branding_logo_display_hero toggle keeps
       // controlling this gallery afterwards (#756). Only an explicit per-event
-      // choice overrides the global.
-      const effectiveHeroLogoVisible = req.body.hero_logo_visible !== undefined
+      // choice overrides the global. `!= null` treats an explicit null the same
+      // as omitted (both → inherit); otherwise formatBoolean(null) would coerce
+      // to 0/false on SQLite instead of NULL (the PUT handler already does this).
+      const effectiveHeroLogoVisible = req.body.hero_logo_visible != null
         ? formatBoolean(hero_logo_visible)
         : null;
       // NULL = inherit the global branding_logo_size (#756), resolved at read
@@ -1224,7 +1226,7 @@ module.exports = (router) => {
     }),
     body('css_template_id').optional({ nullable: true, checkFalsy: true }).isInt(),
     // Hero logo settings
-    body('hero_logo_visible').optional().isBoolean(),
+    body('hero_logo_visible').optional({ nullable: true }).isBoolean(),
     body('hero_logo_size').optional({ nullable: true }).isIn(['small', 'medium', 'large', 'xlarge']),
     body('hero_logo_position').optional().isIn(['top', 'center', 'bottom']),
     // Header style settings (decoupled from layout)
