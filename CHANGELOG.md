@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.4](https://github.com/PicPeak/picpeak/compare/v3.45.3...v3.45.4) (2026-07-17)
+
+
+### Bug Fixes
+
+* **events:** accept hero_logo_visible: null on create/update ([#822](https://github.com/PicPeak/picpeak/issues/822)) ([8978acd](https://github.com/PicPeak/picpeak/commit/8978acdb492f085fbe92186d9dbddfb35b07b676))
+* **events:** accept hero_logo_visible: null on create/update ([#822](https://github.com/PicPeak/picpeak/issues/822)) (stable) ([1cff576](https://github.com/PicPeak/picpeak/commit/1cff576439bce06536f7d308d4ef6d52bdc9bb12))
+
 ## [3.45.3](https://github.com/PicPeak/picpeak/compare/v3.45.2...v3.45.3) (2026-07-17)
 
 
