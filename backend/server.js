@@ -38,7 +38,6 @@ const {
 
 // Import routes
 const authRoutes = require('./src/routes/auth');
-const eventRoutes = require('./src/routes/events');
 const galleryRoutes = require('./src/routes/gallery');
 const adminRoutes = require('./src/routes/admin');
 const adminAuthRoutes = require('./src/routes/adminAuth');
@@ -695,8 +694,7 @@ app.get('/health', async (req, res) => {
 // Routes
 app.use('/api/setup', setupRoutes); // public first-run bootstrap (self-closes after setup)
 app.use('/api/auth', authRoutes);
-  app.use('/api/events', eventRoutes);
-  app.use('/api/admin/external-media', require('./src/routes/adminExternalMedia'));
+app.use('/api/admin/external-media', require('./src/routes/adminExternalMedia'));
 // Gallery routes - main routes first, then feedback routes
 app.use('/api/gallery', galleryRoutes);
 app.use('/api/gallery', require('./src/routes/galleryFeedback'));

@@ -201,9 +201,10 @@ export const eventsService = {
     return response.data;
   },
 
-  // Extend event expiration (admin)
+  // Extend event expiration (admin). Uses the canonical, ownership-guarded
+  // route; the old /events/:id/extend legacy endpoint was removed (GHSA-4j34).
   async extendExpiration(id: number, days: number): Promise<Event> {
-    const response = await api.post<Event>(`/events/${id}/extend`, {
+    const response = await api.post<Event>(`/admin/events/${id}/extend`, {
       days,
     });
     return response.data;
