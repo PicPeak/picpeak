@@ -1596,4 +1596,51 @@ module.exports = (router) => {
     }
   });
 
+  // Extend a gallery's expiration. Migrated from the legacy /api/events router
+  // (removed — GHSA-4j34-x562-5vfq), now on the canonical mount with the same
+  // permission + ownership guards as every other gallery mutation, so a
+  // non-owning editor/viewer can no longer touch a gallery they don't own.
+  router.post('/:id/extend', adminAuth, requirePermission('events.edit'), requireEventOwnership, [
+    body('days').isInt({ min: 1, max: 365 })
+  ], async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { id } = req.params;
+      const { days } = req.body;
+
+      let eventQuery = db('events').where('id', id);
+      // Editor role can only touch their own events (defence in depth alongside
+      // requireEventOwnership).
+      if (req.admin.roleName === 'editor') {
+        eventQuery = eventQuery.where('created_by', req.admin.id);
+      }
+      const event = await eventQuery.first();
+      if (!event) {
+        return res.status(404).json({ error: 'Event not found' });
+      }
+
+      const newExpiration = new Date(event.expires_at);
+      newExpiration.setDate(newExpiration.getDate() + days);
+
+      await db('events').where('id', id).update({
+        expires_at: newExpiration,
+        is_active: formatBoolean(true) // reactivate if it had expired
+      });
+
+      await logActivity('event_expiration_extended',
+        { eventName: event.event_name, days },
+        id,
+        { type: 'admin', id: req.admin.id, name: req.admin.username }
+      );
+
+      res.json({ expires_at: newExpiration });
+    } catch (error) {
+      errorResponse(res, error, 500, 'Failed to extend expiration');
+    }
+  });
+
 };
