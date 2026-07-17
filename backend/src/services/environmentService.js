@@ -47,11 +47,23 @@ async function detectEnvironment() {
     type = 'standalone';
   }
 
+  // Detect a production compose install. The backend runs INSIDE a container and
+  // cannot see the host's compose files (the image only carries backend/), so we
+  // can't stat docker-compose.production.yml. Instead we key off an env var the
+  // production compose sets in the backend environment (PICPEAK_RELEASE_CHANNEL)
+  // and the default docker-compose.yml does not. When present, the update
+  // instructions must target that file explicitly — bare `docker compose`
+  // operates on docker-compose.yml, a different (build-based) stack that also
+  // starts the dev-only mailhog and leaves the real production containers on the
+  // old version.
+  const isProductionCompose = Boolean(process.env.PICPEAK_RELEASE_CHANNEL);
+
   return {
     type,
     isDocker,
     isGit,
     hasDockerCompose,
+    isProductionCompose,
     platform: process.platform,
     nodeVersion: process.version,
     appVersion
@@ -94,25 +106,36 @@ function generateUpdateInstructions(env, targetVersion) {
 
   if (env.isDocker) {
     instructions.environmentName = 'Docker';
+    // Production installs use docker-compose.production.yml (the file the README
+    // documents and the only one with pinned GHCR images + no dev-only mailhog).
+    // Bare `docker compose` targets docker-compose.yml instead, so a production
+    // user who runs it stays on the old version and gets a stray mailhog. When we
+    // detect a production compose (PICPEAK_RELEASE_CHANNEL set), point every
+    // command at that file with `-f`.
+    const composeFile = env.isProductionCompose ? '-f docker-compose.production.yml ' : '';
     instructions.steps = [
       {
         description: 'Pull latest images',
-        command: 'docker compose pull',
+        command: `docker compose ${composeFile}pull`,
         note: 'Downloads the new version images'
       },
       {
         description: 'Recreate containers with new images',
-        command: 'docker compose up -d',
+        command: `docker compose ${composeFile}up -d`,
         note: 'Restarts containers with new version'
       },
       {
         description: 'Watch logs for startup (optional)',
-        command: 'docker compose logs -f backend',
+        command: `docker compose ${composeFile}logs -f backend`,
         note: 'Press Ctrl+C to exit logs',
         optional: true
       }
     ];
-    instructions.warnings.push('Make sure you are in the directory containing your docker-compose.yml file');
+    if (env.isProductionCompose) {
+      instructions.warnings.push('Run these from the directory containing your docker-compose.production.yml file.');
+    } else {
+      instructions.warnings.push('Make sure you are in the directory containing your compose file. If you installed with docker-compose.production.yml, add `-f docker-compose.production.yml` to each command.');
+    }
   } else if (env.isGit) {
     instructions.environmentName = 'Git (Development)';
     instructions.steps = [
