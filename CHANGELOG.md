@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.2](https://github.com/PicPeak/picpeak/compare/v3.45.1...v3.45.2) (2026-07-17)
+
+
+### Bug Fixes
+
+* **security:** remove unguarded legacy /api/events router (GHSA-4j34-x562-5vfq) ([9ee3ff4](https://github.com/PicPeak/picpeak/commit/9ee3ff45d0b9754ddaf89f63a9e0546d3618fdb8))
+* **security:** remove unguarded legacy /api/events router on stable (GHSA-4j34-x562-5vfq) ([e37d1fa](https://github.com/PicPeak/picpeak/commit/e37d1fac586988d59846f90a5195db129b330a5b))
+
 ## [3.45.1](https://github.com/PicPeak/picpeak/compare/v3.45.0...v3.45.1) (2026-07-16)
 
 
