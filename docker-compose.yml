@@ -141,10 +141,16 @@ services:
     networks:
       - picpeak-network
 
+  # Local mail catcher for development/testing only — never wanted in a real
+  # deployment. Gated behind the `dev` profile so a plain `docker compose up -d`
+  # does NOT start it; opt in with `docker compose --profile dev up -d`. Nothing
+  # depends on it (SMTP_HOST comes from .env), so gating is safe.
   mailhog:
     image: mailhog/mailhog:latest
     container_name: picpeak-mailhog
     restart: unless-stopped
+    profiles:
+      - dev
     ports:
       - "${MAILHOG_SMTP_PORT:-1025}:1025"
       - "${MAILHOG_UI_PORT:-8025}:8025"
