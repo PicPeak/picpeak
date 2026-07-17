@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.3](https://github.com/PicPeak/picpeak/compare/v3.45.2...v3.45.3) (2026-07-17)
+
+
+### Bug Fixes
+
+* **update:** target docker-compose.production.yml in dashboard update steps ([64bcd0a](https://github.com/PicPeak/picpeak/commit/64bcd0ab9f35b207ed21f41cfa05c1499ad4cbae))
+* **update:** target docker-compose.production.yml in dashboard update steps + gate mailhog (stable) ([db1d28a](https://github.com/PicPeak/picpeak/commit/db1d28a75ba9036e5bd5d87930bcac704c83341b))
+
 ## [3.45.2](https://github.com/PicPeak/picpeak/compare/v3.45.1...v3.45.2) (2026-07-17)
 
 
