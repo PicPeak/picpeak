@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.92.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.91.0-beta.0...v3.92.0-beta.0) (2026-07-18)
+
+
+### Features
+
+* **uploads:** DNG / camera-RAW support via embedded-preview extraction ([#821](https://github.com/PicPeak/picpeak/issues/821)) ([8c260c4](https://github.com/PicPeak/picpeak/commit/8c260c4eebedb69f349505d0befbbb5afb182b2c))
+
 ## [3.91.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.90.2-beta.0...v3.91.0-beta.0) (2026-07-18)
 
 
