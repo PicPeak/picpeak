@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.91.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.90.2-beta.0...v3.91.0-beta.0) (2026-07-18)
+
+
+### Features
+
+* **uploads:** HEIC/HEIF support + dynamic format hint on guest upload ([#821](https://github.com/PicPeak/picpeak/issues/821)) ([ee9d2f7](https://github.com/PicPeak/picpeak/commit/ee9d2f70d3342d65edb795a688f0f5f611429964))
+
+
+### Bug Fixes
+
+* **gallery:** serve JPEG preview for non-displayable originals in lightbox (codex review of [#832](https://github.com/PicPeak/picpeak/issues/832)) ([808d305](https://github.com/PicPeak/picpeak/commit/808d3055497bb4e4a372acafa49ef9baf257f008))
+* **uploads:** register HEIC/HEIF with the file validator + fix admin format hint (codex review of [#832](https://github.com/PicPeak/picpeak/issues/832)) ([c9b64d9](https://github.com/PicPeak/picpeak/commit/c9b64d9c1a8744c9ee5e068366a500ae0dab36bc))
+
 ## [3.90.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.90.1-beta.0...v3.90.2-beta.0) (2026-07-17)
 
 
