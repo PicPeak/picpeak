@@ -99,7 +99,12 @@ describe('public Live Slideshow routes', () => {
     await setFlag(db, 'slideshow', true);
   });
 
-  const stateUrl = (token = TOKEN) => `/api/gallery/${SLUG}/show/${token}/state`;
+  // QR overlay: supertest's Host is loopback, and a loopback base is now
+  // suppressed rather than encoded — the kiosk passes its reachable
+  // window.location.origin, so the QR tests do the same.
+  const KIOSK_ORIGIN = 'https://gallery.example.com';
+  const stateUrl = (token = TOKEN) => `/api/gallery/${SLUG}/show/${token}/state?origin=${encodeURIComponent(KIOSK_ORIGIN)}`;
+  const stateUrlNoOrigin = (token = TOKEN) => `/api/gallery/${SLUG}/show/${token}/state`;
 
   describe('resolveSlideshow guards', () => {
     it('200 + per-event display settings on a live link', async () => {
@@ -269,6 +274,14 @@ describe('public Live Slideshow routes', () => {
       expect(res.body.qr.data_url).toMatch(/^data:image\/png;base64,/);
       // Look falls back to the global defaults.
       expect(res.body.qr.position).toBe('bottom-left');
+    });
+
+    it('suppresses the QR when no guest-reachable origin exists (loopback base, no kiosk origin)', async () => {
+      await insertEvent(db, { show_qr: 1 });
+      const res = await request(app).get(stateUrlNoOrigin());
+      // Encoding localhost would send scanning phones to THEIR localhost —
+      // no QR beats a broken QR (codex review of #848, confirmation round).
+      expect(res.body.qr).toBeNull();
     });
   });
 

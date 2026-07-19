@@ -382,7 +382,14 @@ async function slideshowSettings(event, req) {
 // map would grow with every share URL ever displayed (codex review of #848).
 // Insertion-order eviction is enough — concurrently-shown events stay hot.
 const SLIDESHOW_QR_CACHE_MAX = 50;
-const slideshowQrCache = new Map();
+// Keyed by event id (NOT by URL): the origin is caller-influenced when the
+// configured base is loopback, so URL-keyed caching would let a slideshow
+// -link holder force a fresh QRCode.toDataURL per request with unique
+// origins — a cheap CPU-exhaustion path (codex review of #848,
+// confirmation round). Per-event entries + a regeneration throttle bound
+// the encode rate regardless of what the caller sends.
+const SLIDESHOW_QR_REGEN_MS = 60_000;
+const slideshowQrCache = new Map(); // eventId -> { url, dataUrl, at }
 // Localhost/relative guard (codex review of #848): with the compose-default
 // FRONTEND_URL=http://localhost:3000 (or none configured) the QR would send
 // scanning phones to THEIR localhost. The state poll comes from the kiosk
@@ -401,23 +408,34 @@ async function slideshowQrDataUrl(event, req) {
       // Prefer the kiosk's own window.location.origin (?origin=, validated):
       // req.get('host') is NOT the browser origin behind the standard
       // proxies — frontend/nginx.conf forwards $host (port stripped), so a
-      // compose LAN deployment on :3000 would encode port 80 (codex review
-      // of #848 round 3). Host-derived origin stays as second fallback.
-      const queryOrigin = typeof req?.query?.origin === 'string' && QR_ORIGIN_RE.test(req.query.origin)
-        ? req.query.origin.replace(/\/$/, '')
+      // compose LAN deployment on :3000 would encode port 80. A LOOPBACK
+      // kiosk origin is rejected too: it is no more guest-reachable than
+      // the loopback base it would replace (codex review of #848).
+      const rawOrigin = req?.query?.origin;
+      const queryOrigin = typeof rawOrigin === 'string' && QR_ORIGIN_RE.test(rawOrigin) && !QR_LOCAL_BASE_RE.test(rawOrigin)
+        ? rawOrigin.replace(/\/$/, '')
         : null;
       const host = req && req.get ? req.get('host') : null;
+      const hostOrigin = host ? `${req.protocol}://${host}` : null;
       if (queryOrigin) shareUrl = `${queryOrigin}${sharePath}`;
-      else if (host) shareUrl = `${req.protocol}://${host}${sharePath}`;
+      else if (hostOrigin && !QR_LOCAL_BASE_RE.test(hostOrigin)) shareUrl = `${hostOrigin}${sharePath}`;
+      // Still loopback/relative → no reachable URL exists; suppress the
+      // overlay rather than encode a QR that sends phones to localhost.
+      else return null;
     }
-    if (!shareUrl) return null;
-    if (slideshowQrCache.has(shareUrl)) return slideshowQrCache.get(shareUrl);
+
+    const cached = slideshowQrCache.get(event.id);
+    // Serve the cached QR unless the URL changed AND the throttle window
+    // passed — bounds regeneration to once per event per minute.
+    if (cached && (cached.url === shareUrl || Date.now() - cached.at < SLIDESHOW_QR_REGEN_MS)) {
+      return cached.dataUrl;
+    }
     const QRCode = require('qrcode');
-    const dataUrl = await QRCode.toDataURL(shareUrl, { width: 512, margin: 2 });
-    if (slideshowQrCache.size >= SLIDESHOW_QR_CACHE_MAX) {
+    const dataUrl = await QRCode.toDataURL(shareUrl, { width: 512, margin: 4 });
+    if (!slideshowQrCache.has(event.id) && slideshowQrCache.size >= SLIDESHOW_QR_CACHE_MAX) {
       slideshowQrCache.delete(slideshowQrCache.keys().next().value);
     }
-    slideshowQrCache.set(shareUrl, dataUrl);
+    slideshowQrCache.set(event.id, { url: shareUrl, dataUrl, at: Date.now() });
     return dataUrl;
   } catch (e) {
     logger.error('Slideshow QR generation failed:', e);
