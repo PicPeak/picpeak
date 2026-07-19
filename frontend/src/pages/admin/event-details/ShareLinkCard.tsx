@@ -30,17 +30,29 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
   const [qrPreviewUrl, setQrPreviewUrl] = useState<string | null>(null);
 
   // QR preview (#836) — fetched as a blob because the admin API needs the
-  // Bearer token; a plain <img src> would come back 401.
+  // Bearer token; a plain <img src> would come back 401. The `stale` flag
+  // guards the async gap: without it, a response landing after unmount or
+  // an event switch would leak its object URL and could overwrite a newer
+  // event's preview with the previous gallery's QR (codex review of #847).
   useEffect(() => {
     if (!event.share_link) return;
+    let stale = false;
     let objectUrl: string | null = null;
     eventsService.getQrBlob(event.id, 'png', 300)
       .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        setQrPreviewUrl(objectUrl);
+        const url = URL.createObjectURL(blob);
+        if (stale) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        objectUrl = url;
+        setQrPreviewUrl(url);
       })
-      .catch(() => setQrPreviewUrl(null));
+      .catch(() => {
+        if (!stale) setQrPreviewUrl(null);
+      });
     return () => {
+      stale = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [event.id, event.share_link]);

@@ -3,6 +3,7 @@
 // Registered after ./logo in ./index.js — all routes are '/:id/...' literals,
 // so registration order relative to the other sub-modules is not sensitive.
 
+const path = require('path');
 const QRCode = require('qrcode');
 const PDFDocument = require('pdfkit');
 const { db } = require('../../database/db');
@@ -32,12 +33,35 @@ const TEMPLATES = {
   poster: { size: 'A4', qrSize: 360, titleSize: 28, captionSize: 16, urlSize: 10 },
 };
 
-async function loadShareUrl(eventId) {
+// Bundled IBM Plex Sans (Latin + Cyrillic + Greek coverage) — pdfkit's
+// built-in Helvetica is WinAnsi-only and silently drops e.g. Cyrillic
+// event names (codex review of #847).
+const FONT_BOLD = path.join(__dirname, '../../../assets/fonts/IBM-Plex-Sans/700.ttf');
+const FONT_REGULAR = path.join(__dirname, '../../../assets/fonts/IBM-Plex-Sans/400.ttf');
+
+// A same-origin admin GET carries no Origin header, so the frontend passes
+// window.location.origin explicitly. Only accept a plain http(s) origin.
+const ORIGIN_RE = /^https?:\/\/[^\s/]+$/i;
+// Configured FRONTEND_URL defaults to localhost on unconfigured installs —
+// a QR pointing there is unusable on any other device (codex review of #847).
+const LOCAL_BASE_RE = /^https?:\/\/(localhost|127\.|0\.0\.0\.0)/i;
+
+async function loadShareUrl(eventId, requestOrigin) {
   const event = await db('events').where({ id: eventId }).first();
   if (!event) return { event: null, shareUrl: null };
   const shareToken = getEventShareToken(event);
   if (!shareToken) return { event, shareUrl: null };
-  const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken });
+  const { shareUrl, sharePath } = await buildShareLinkVariants({ slug: event.slug, shareToken });
+
+  // Prefer the configured public base; fall back to the admin browser's
+  // origin when the base is missing or localhost — mirrors the frontend's
+  // buildShareLinkUrl so the QR encodes the same URL the card displays.
+  const origin = typeof requestOrigin === 'string' && ORIGIN_RE.test(requestOrigin)
+    ? requestOrigin.replace(/\/$/, '')
+    : null;
+  if (origin && (!/^https?:\/\//i.test(shareUrl) || LOCAL_BASE_RE.test(shareUrl))) {
+    return { event, shareUrl: `${origin}${sharePath}` };
+  }
   return { event, shareUrl };
 }
 
@@ -45,7 +69,7 @@ module.exports = (router) => {
   // QR image for the gallery share link.
   router.get('/:id/qr', adminAuth, requirePermission('events.view'), requireEventOwnership, async (req, res) => {
     try {
-      const { event, shareUrl } = await loadShareUrl(req.params.id);
+      const { event, shareUrl } = await loadShareUrl(req.params.id, req.query.origin);
       if (!event) return errorResponse(res, 'Event not found', 404);
       if (!shareUrl) return errorResponse(res, 'Event has no share link', 409);
 
@@ -74,7 +98,7 @@ module.exports = (router) => {
   // Print-ready PDF (table card / poster) with QR + event name + caption.
   router.get('/:id/qr-print', adminAuth, requirePermission('events.view'), requireEventOwnership, async (req, res) => {
     try {
-      const { event, shareUrl } = await loadShareUrl(req.params.id);
+      const { event, shareUrl } = await loadShareUrl(req.params.id, req.query.origin);
       if (!event) return errorResponse(res, 'Event not found', 404);
       if (!shareUrl) return errorResponse(res, 'Event has no share link', 409);
 
@@ -97,22 +121,33 @@ module.exports = (router) => {
       const pageHeight = doc.page.height;
       const contentTop = pageHeight * 0.12;
 
-      // Helvetica has no Cyrillic glyphs — fall back to English for scripts
-      // pdfkit's built-in fonts can't render.
-      const printableCaption = /^[\u0020-\u024F\u2018-\u201F\u2026]*$/.test(caption) ? caption : PRINT_CAPTIONS.en;
-
-      doc.font('Helvetica-Bold').fontSize(tpl.titleSize).fillColor('#1a1a1a')
-        .text(event.event_name, pageWidth * 0.1, contentTop, { width: pageWidth * 0.8, align: 'center' });
+      // Fixed vertical layout: the title gets a bounded two-line region with
+      // ellipsis so an arbitrarily long event name can't push the QR/caption
+      // over the footer or off the page (codex review of #847). All positions
+      // below derive from constants, never from doc.y.
+      const titleBlockHeight = tpl.titleSize * 2.6;
+      doc.font(FONT_BOLD).fontSize(tpl.titleSize).fillColor('#1a1a1a')
+        .text(event.event_name, pageWidth * 0.1, contentTop, {
+          width: pageWidth * 0.8,
+          align: 'center',
+          height: titleBlockHeight,
+          ellipsis: true,
+        });
 
       const qrX = (pageWidth - tpl.qrSize) / 2;
-      const qrY = doc.y + tpl.titleSize;
+      const qrY = contentTop + titleBlockHeight + tpl.titleSize * 0.5;
       doc.image(qrPng, qrX, qrY, { width: tpl.qrSize, height: tpl.qrSize });
 
-      doc.font('Helvetica').fontSize(tpl.captionSize).fillColor('#333333')
-        .text(printableCaption, pageWidth * 0.1, qrY + tpl.qrSize + tpl.captionSize, { width: pageWidth * 0.8, align: 'center' });
+      doc.font(FONT_REGULAR).fontSize(tpl.captionSize).fillColor('#333333')
+        .text(caption, pageWidth * 0.1, qrY + tpl.qrSize + tpl.captionSize, { width: pageWidth * 0.8, align: 'center' });
 
-      doc.font('Helvetica').fontSize(tpl.urlSize).fillColor('#888888')
-        .text(shareUrl, pageWidth * 0.05, pageHeight - pageHeight * 0.07, { width: pageWidth * 0.9, align: 'center' });
+      doc.font(FONT_REGULAR).fontSize(tpl.urlSize).fillColor('#888888')
+        .text(shareUrl, pageWidth * 0.05, pageHeight - pageHeight * 0.07, {
+          width: pageWidth * 0.9,
+          align: 'center',
+          height: pageHeight * 0.06,
+          ellipsis: true,
+        });
 
       doc.end();
     } catch (error) {
