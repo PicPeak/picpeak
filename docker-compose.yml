@@ -66,6 +66,8 @@ services:
       - ADMIN_URL=${ADMIN_URL:-http://localhost:3001}
       - TZ=${TZ:-UTC}
       - STORAGE_PATH=/app/storage
+      # Watch-folder auto-import: max photos processed in parallel (default 2).
+      - FILE_WATCHER_CONCURRENCY=${FILE_WATCHER_CONCURRENCY:-2}
     # No `user:` directive — as of #484, the container starts as root,
     # chowns the bind mounts to nodejs (UID 1001), then drops privileges
     # via su-exec. PUID/PGID env vars are no longer read; if you need

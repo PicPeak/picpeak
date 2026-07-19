@@ -100,6 +100,8 @@ services:
       - STORAGE_PATH=/app/storage
       - PHOTOS_DIR=/app/storage/events
       - PICPEAK_RELEASE_CHANNEL=${PICPEAK_CHANNEL:-stable}
+      # Watch-folder auto-import: max photos processed in parallel (default 2).
+      - FILE_WATCHER_CONCURRENCY=${FILE_WATCHER_CONCURRENCY:-2}
     volumes:
       - ${APP_STORAGE}:/app/storage
       - ${LOGS}:/app/logs
