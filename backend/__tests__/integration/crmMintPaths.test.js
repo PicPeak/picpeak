@@ -43,6 +43,26 @@ const toMillis = (v) => {
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
+// Count embedded image XObjects per page via pdf-lib — used to prove BOTH
+// signature stamps (customer + admin) made it into the final PDF instead of
+// only asserting file existence/hash (codex review of #850 round 2).
+async function countImagesPerPage(pdfPath) {
+  const { PDFDocument, PDFName, PDFDict } = require('pdf-lib');
+  const doc = await PDFDocument.load(fs.readFileSync(pdfPath));
+  return doc.getPages().map((page) => {
+    const resources = page.node.Resources();
+    const xobjects = resources && resources.lookupMaybe(PDFName.of('XObject'), PDFDict);
+    if (!xobjects) return 0;
+    let images = 0;
+    for (const [, ref] of xobjects.entries()) {
+      const stream = page.doc.context.lookup(ref);
+      const subtype = stream && stream.dict && stream.dict.get(PDFName.of('Subtype'));
+      if (subtype && subtype.toString() === '/Image') images += 1;
+    }
+    return images;
+  });
+}
+
 let db;
 let cleanup;
 let tmpDir;
@@ -353,6 +373,13 @@ describe('POST /api/admin/contracts/:id/countersign', () => {
     expect(fs.existsSync(row.signed_pdf_path)).toBe(true);
     expect(row.signed_pdf_sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(sha256(fs.readFileSync(row.signed_pdf_path))).toBe(row.signed_pdf_sha256);
+
+    // BOTH stamps must be embedded in the final document — a regression
+    // stamping the admin onto the unsigned base PDF would keep every
+    // path/hash assertion above green (codex review of #850 round 2).
+    const imagesPerPage = await countImagesPerPage(row.signed_pdf_path);
+    const maxImagesOnAPage = Math.max(...imagesPerPage);
+    expect(maxImagesOnAPage).toBeGreaterThanOrEqual(2);
 
     // contract_fully_signed email to the customer's primary address,
     // carrying the signed PDF as attachment (plus the audit cert).
