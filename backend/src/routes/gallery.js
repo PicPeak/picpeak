@@ -305,7 +305,7 @@ async function resolveSlideshow(slug, token) {
 // watermark (a white, semi-transparent corner logo). The logo URL is resolved
 // from the chosen source so the kiosk renders it without knowing about
 // branding/event internals; null url = nothing to overlay.
-async function slideshowSettings(event) {
+async function slideshowSettings(event, req) {
   // The global look/fit (Settings → Slideshow) + branding logo URLs come from a
   // short-TTL cached bundle so a 3s projector poll doesn't re-fire ~10 settings
   // reads each time (PR #646 review, concern 2).
@@ -351,7 +351,7 @@ async function slideshowSettings(event) {
   const qrEnabled = qrInherit ? g.qr_enabled : (qrOverride === true || qrOverride === 1 || qrOverride === '1');
   let qr = null;
   if (qrEnabled) {
-    const dataUrl = await slideshowQrDataUrl(event);
+    const dataUrl = await slideshowQrDataUrl(event, req);
     if (dataUrl) {
       qr = {
         data_url: dataUrl,
@@ -383,11 +383,23 @@ async function slideshowSettings(event) {
 // Insertion-order eviction is enough — concurrently-shown events stay hot.
 const SLIDESHOW_QR_CACHE_MAX = 50;
 const slideshowQrCache = new Map();
-async function slideshowQrDataUrl(event) {
+// Localhost/relative guard (codex review of #848): with the compose-default
+// FRONTEND_URL=http://localhost:3000 (or none configured) the QR would send
+// scanning phones to THEIR localhost. The state poll comes from the kiosk
+// browser itself, so its Host header + protocol are exactly the public
+// origin guests can reach — prefer that whenever the configured base is
+// missing or loopback. trust proxy is configured, so req.protocol respects
+// X-Forwarded-Proto behind the standard reverse-proxy setups.
+const QR_LOCAL_BASE_RE = /^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\])/i;
+async function slideshowQrDataUrl(event, req) {
   try {
     const shareToken = getEventShareToken(event);
     if (!shareToken) return null;
-    const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken });
+    let { shareUrl, sharePath } = await buildShareLinkVariants({ slug: event.slug, shareToken });
+    if (!/^https?:\/\//i.test(shareUrl) || QR_LOCAL_BASE_RE.test(shareUrl)) {
+      const host = req && req.get ? req.get('host') : null;
+      if (host) shareUrl = `${req.protocol}://${host}${sharePath}`;
+    }
     if (!shareUrl) return null;
     if (slideshowQrCache.has(shareUrl)) return slideshowQrCache.get(shareUrl);
     const QRCode = require('qrcode');
@@ -439,7 +451,7 @@ router.get('/:slug/show/:token/session', handleAsync(async (req, res) => {
       event_type: event.event_type,
       color_theme: event.color_theme
     },
-    settings: await slideshowSettings(event),
+    settings: await slideshowSettings(event, req),
     photo_count: parseInt(count, 10) || 0,
     expires_at: event.expires_at || null
   });
@@ -459,7 +471,7 @@ router.get('/:slug/show/:token/state', handleAsync(async (req, res) => {
   const [{ count }] = await slideshowPhotosQuery(event.id, event.show_category_id).count('* as count');
 
   res.json({
-    ...(await slideshowSettings(event)),
+    ...(await slideshowSettings(event, req)),
     photo_count: parseInt(count, 10) || 0,
     expires_at: event.expires_at || null
   });
