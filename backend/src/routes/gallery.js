@@ -73,13 +73,19 @@ const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '.
 // notification, and it costs the hot view path zero DB reads.
 const GALLERY_OPENED_DEBOUNCE_MS = 6 * 60 * 60 * 1000; // 6h
 const galleryOpenedNotifiedAt = new Map();
-function notifyGalleryOpened(event) {
+// #746 covers CLIENT activity too — attribute the actor from the session
+// instead of hard-coding 'guest', so a customer opening from the portal
+// isn't mislabeled (codex review of #849 round 3).
+function galleryActor(req) {
+  return { type: req && req.accessLevel === 'client' ? 'customer' : 'guest' };
+}
+function notifyGalleryOpened(event, req) {
   const now = Date.now();
   const last = galleryOpenedNotifiedAt.get(event.id) || 0;
   if (now - last < GALLERY_OPENED_DEBOUNCE_MS) return;
   galleryOpenedNotifiedAt.set(event.id, now);
   // Fire-and-forget — logActivity swallows its own errors.
-  logActivity('gallery_opened', {}, event.id, { type: 'guest' });
+  logActivity('gallery_opened', {}, event.id, galleryActor(req));
 }
 
 // Single-photo saves are frequent (a guest saving 30 photos = 30 route
@@ -89,12 +95,12 @@ function notifyGalleryOpened(event) {
 // signal. Exact per-photo counts remain in access_logs/analytics.
 const SINGLE_DOWNLOAD_DEBOUNCE_MS = 60 * 60 * 1000; // 1h
 const singleDownloadNotifiedAt = new Map();
-function notifySinglePhotoDownload(event) {
+function notifySinglePhotoDownload(event, req) {
   const now = Date.now();
   const last = singleDownloadNotifiedAt.get(event.id) || 0;
   if (now - last < SINGLE_DOWNLOAD_DEBOUNCE_MS) return;
   singleDownloadNotifiedAt.set(event.id, now);
-  logActivity('gallery_downloaded', { scope: 'single' }, event.id, { type: 'guest' });
+  logActivity('gallery_downloaded', { scope: 'single' }, event.id, galleryActor(req));
 }
 
 // Check for slug redirect (for renamed events)
@@ -674,7 +680,7 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         user_agent: req.headers['user-agent'],
         action: 'view'
       });
-      notifyGalleryOpened(req.event);
+      notifyGalleryOpened(req.event, req);
     }
     
     // Include protection settings in response
@@ -936,7 +942,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     // download that then 404s/fails and the debounce would suppress the
     // next real one for an hour (codex review of #849).
     res.on('finish', () => {
-      if (res.statusCode < 400) notifySinglePhotoDownload(req.event);
+      if (res.statusCode < 400) notifySinglePhotoDownload(req.event, req);
     });
     
     let filePath;
@@ -1037,7 +1043,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
             action: 'download_all_presigned'
           }).catch(() => {});
           // Surface in the admin notification bell (#746).
-          logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, { type: 'guest' });
+          logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, galleryActor(req));
           res.redirect(302, url);
           return;
         } catch (err) {
@@ -1061,8 +1067,12 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
         user_agent: req.headers['user-agent'],
         action: 'download_all'
       }).catch(() => {});
-      // Surface in the admin notification bell (#746).
-      logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, { type: 'guest' });
+      // Surface in the admin notification bell (#746) — only once the
+      // stream actually finished; logging at pipe-time would report
+      // downloads that then broke mid-transfer (codex review of #849).
+      res.on('finish', () => {
+        if (res.statusCode < 400) logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, galleryActor(req));
+      });
       return;
     }
 
@@ -1177,7 +1187,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
       action: 'download_all'
     });
     // Surface in the admin notification bell (#746).
-    await logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, { type: 'guest' });
+    await logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, galleryActor(req));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to create download archive');
   }
@@ -1296,7 +1306,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       action: 'download_selected'
     });
     // Surface in the admin notification bell (#746).
-    await logActivity('gallery_downloaded', { scope: 'selected', photo_count: photoIds.length }, req.event.id, { type: 'guest' });
+    await logActivity('gallery_downloaded', { scope: 'selected', photo_count: photoIds.length }, req.event.id, galleryActor(req));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to download selected photos');
   }

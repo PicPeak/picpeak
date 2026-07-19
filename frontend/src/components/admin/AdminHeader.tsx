@@ -10,7 +10,7 @@ import { Menu, User, LogOut, Settings, Bell, Lock, CheckCircle, Trash2, Sun, Moo
 const NOTIFICATION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Bell, Eye, Download, Heart, Calendar, Image, Archive, AlertCircle, Clock, Lock,
   CheckCircle, Database, FileText, Folder, Globe, Key, LogOut, Mail, Settings,
-  Tag, ToggleRight, User, UserCog, Webhook,
+  Tag, ToggleRight, Trash2, User, UserCog, Webhook,
 };
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
