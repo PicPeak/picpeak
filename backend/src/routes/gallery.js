@@ -425,18 +425,34 @@ async function slideshowQrDataUrl(event, req) {
     }
 
     const cached = slideshowQrCache.get(event.id);
-    // Serve the cached QR unless the URL changed AND the throttle window
-    // passed — bounds regeneration to once per event per minute.
-    if (cached && (cached.url === shareUrl || Date.now() - cached.at < SLIDESHOW_QR_REGEN_MS)) {
-      return cached.dataUrl;
+    if (cached && cached.url === shareUrl) return cached.dataUrl;
+    // URL differs from the cached one: NEVER serve the mismatched artifact —
+    // a slideshow-token holder could otherwise poison the projector's QR
+    // with an attacker origin for a whole throttle window (codex review of
+    // #848, final round). Inside the window the overlay is briefly
+    // suppressed instead; regeneration stays bounded per event.
+    if (cached && Date.now() - cached.at < SLIDESHOW_QR_REGEN_MS) {
+      return cached.pending ? cached.dataUrl : null;
     }
+    // Single-flight: concurrent polls on a cold cache must not each
+    // schedule their own 512px encode — reserve the entry with a shared
+    // promise before awaiting.
+    if (cached && cached.pending && cached.url === shareUrl) return cached.pending;
     const QRCode = require('qrcode');
-    const dataUrl = await QRCode.toDataURL(shareUrl, { width: 512, margin: 4 });
+    const entry = { url: shareUrl, dataUrl: null, at: Date.now(), pending: null };
+    entry.pending = QRCode.toDataURL(shareUrl, { width: 512, margin: 4 }).then((dataUrl) => {
+      entry.dataUrl = dataUrl;
+      entry.pending = null;
+      return dataUrl;
+    }).catch((e) => {
+      slideshowQrCache.delete(event.id);
+      throw e;
+    });
     if (!slideshowQrCache.has(event.id) && slideshowQrCache.size >= SLIDESHOW_QR_CACHE_MAX) {
       slideshowQrCache.delete(slideshowQrCache.keys().next().value);
     }
-    slideshowQrCache.set(event.id, { url: shareUrl, dataUrl, at: Date.now() });
-    return dataUrl;
+    slideshowQrCache.set(event.id, entry);
+    return await entry.pending;
   } catch (e) {
     logger.error('Slideshow QR generation failed:', e);
     return null;
