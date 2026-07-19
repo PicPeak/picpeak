@@ -931,8 +931,13 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       action: 'download',
       photo_id: photoId
     });
-    // Surface in the admin notification bell (#746) — debounced.
-    notifySinglePhotoDownload(req.event);
+    // Surface in the admin notification bell (#746) — debounced, and only
+    // once the response actually finished: notifying up-front would log a
+    // download that then 404s/fails and the debounce would suppress the
+    // next real one for an hour (codex review of #849).
+    res.on('finish', () => {
+      if (res.statusCode < 400) notifySinglePhotoDownload(req.event);
+    });
     
     let filePath;
     try {

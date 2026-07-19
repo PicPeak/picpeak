@@ -1,12 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Menu, User, LogOut, Settings, Bell, Lock, CheckCircle, Trash2, Sun, Moon, Globe, ChevronDown, Eye, Download, Heart, Calendar, Image, Archive, AlertCircle, Clock } from 'lucide-react';
+import { Menu, User, LogOut, Settings, Bell, Lock, CheckCircle, Trash2, Sun, Moon, Globe, ChevronDown, Eye, Download, Heart, Calendar, Image, Archive, AlertCircle, Clock, Database, FileText, Folder, Key, Mail, Tag, ToggleRight, UserCog, Webhook } from 'lucide-react';
 
 // getNotificationStyle returns an icon NAME — map the ones we render to
 // components; anything unmapped keeps the Bell (codex review of #849:
 // the styles existed but every row hard-coded <Bell>).
+// Complete over getNotificationStyle's icon names (grep-verified) so every
+// style renders its declared icon (codex review of #849 round 2).
 const NOTIFICATION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Bell, Eye, Download, Heart, Calendar, Image, Archive, AlertCircle, Clock, Lock,
+  CheckCircle, Database, FileText, Folder, Globe, Key, LogOut, Mail, Settings,
+  Tag, ToggleRight, User, UserCog, Webhook,
 };
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
