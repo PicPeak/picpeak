@@ -149,6 +149,25 @@ export const SlideshowStyleFields: React.FC<SlideshowStyleFieldsProps> = ({ valu
           {t('slideshow.watermarkModeHint', 'The logo, position, opacity, style and size are configured under Settings → Slideshow.')}
         </p>
       </div>
+
+      {/* QR overlay (#837) — MODE only, same pattern as the watermark. */}
+      <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
+        <label className={labelClass}>{t('slideshow.qrToggle', 'Gallery QR code')}</label>
+        <select
+          value={value.qr}
+          onChange={(e) => set({ qr: e.target.value as SlideshowStyle['qr'] })}
+          className={inputClass}
+        >
+          {SLIDESHOW_WATERMARK_MODES.map((m) => (
+            <option key={m} value={m}>
+              {t(`slideshow.watermarkMode.${m}`, m === 'inherit' ? 'Use global default' : m === 'on' ? 'On' : 'Off')}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+          {t('slideshow.qrModeHint', 'Position, size and opacity are configured under Settings → Slideshow.')}
+        </p>
+      </div>
     </div>
   );
 };

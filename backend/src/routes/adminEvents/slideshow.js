@@ -105,6 +105,7 @@ module.exports = (router) => {
     body('show_transition').optional().isIn(SLIDESHOW_TRANSITIONS),
     body('show_transition_ms').optional().isInt({ min: 100, max: 5000 }),
     body('show_watermark').optional({ nullable: true }),
+    body('show_qr').optional({ nullable: true }),
     body('show_colorfilter').optional().isIn(SLIDESHOW_COLORFILTERS),
     body('show_order').optional().isIn(SLIDESHOW_ORDERS),
     body('show_category_id').optional({ nullable: true }).isInt({ min: 1 })
@@ -130,6 +131,12 @@ module.exports = (router) => {
         updates.show_watermark = req.body.show_watermark === null
           ? null
           : formatBoolean(parseBooleanInput(req.body.show_watermark, false));
+      }
+      // QR overlay (#837) — same tri-state semantics as show_watermark.
+      if (req.body.show_qr !== undefined) {
+        updates.show_qr = req.body.show_qr === null
+          ? null
+          : formatBoolean(parseBooleanInput(req.body.show_qr, false));
       }
       if (req.body.show_colorfilter !== undefined) updates.show_colorfilter = req.body.show_colorfilter;
       if (req.body.show_order !== undefined) updates.show_order = req.body.show_order;
@@ -160,6 +167,7 @@ module.exports = (router) => {
         show_transition: updates.show_transition ?? event.show_transition ?? 'crossfade',
         show_transition_ms: updates.show_transition_ms ?? event.show_transition_ms ?? 800,
         show_watermark: updates.show_watermark ?? event.show_watermark ?? null,
+        show_qr: 'show_qr' in updates ? updates.show_qr : (event.show_qr ?? null),
         show_colorfilter: updates.show_colorfilter ?? event.show_colorfilter ?? 'none',
         show_order: updates.show_order ?? event.show_order ?? 'chronological',
         show_category_id: 'show_category_id' in updates ? updates.show_category_id : (event.show_category_id ?? null)

@@ -3672,6 +3672,9 @@
     "categoryLabel": "Show only category",
     "categoryAll": "All photos",
     "watermarkToggle": "Show logo watermark",
+    "qrToggle": "Gallery QR code",
+    "qrDescription": "Show the gallery link as a QR code so guests can scan it straight off the screen.",
+    "qrModeHint": "Position, size and opacity are configured under Settings → Slideshow.",
     "watermarkDescription": "Overlay a white, semi-transparent logo in a corner (like a TV station ident).",
     "watermarkSourceLabel": "Logo",
     "watermarkSource": {

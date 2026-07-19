@@ -16,6 +16,7 @@ const DEFAULT_SETTINGS: SlideshowSettings = {
   order: 'chronological',
   fit: 'cover',
   watermark: null,
+  qr: null,
 };
 
 // How often the running show re-checks settings + photo count (tiny payload).
@@ -227,6 +228,7 @@ export function SlideshowPage() {
           colorfilter: state.colorfilter,
           fit: state.fit,
           watermark: state.watermark,
+          qr: state.qr,
         };
         if (JSON.stringify(next) !== JSON.stringify({
           interval_ms: prev.interval_ms,
@@ -235,6 +237,7 @@ export function SlideshowPage() {
           colorfilter: prev.colorfilter,
           fit: prev.fit,
           watermark: prev.watermark,
+          qr: prev.qr,
         })) {
           setSettings(next);
         }
@@ -448,6 +451,27 @@ export function SlideshowPage() {
                 // 'white' recolors the logo white (dark/transparent marks); 'original'
                 // leaves a boxed/colored logo as-is so it doesn't become a white blob.
                 filter: settings.watermark!.style === 'original' ? 'none' : 'brightness(0) invert(1)',
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+
+          {/* Share-link QR overlay (#837): guests scan the gallery straight off
+              the beamer. White padding box keeps the code scannable on any photo. */}
+          {settings.qr && (
+            <img
+              src={settings.qr.data_url}
+              alt=""
+              draggable={false}
+              style={{
+                position: 'absolute',
+                ...watermarkCorner(settings.qr.position),
+                width: `${settings.qr.size ?? 14}vmin`,
+                height: `${settings.qr.size ?? 14}vmin`,
+                opacity: Math.min(1, Math.max(0, (settings.qr.opacity ?? 90) / 100)),
+                background: '#ffffff',
+                padding: '0.6vmin',
+                borderRadius: '1vmin',
                 pointerEvents: 'none',
               }}
             />

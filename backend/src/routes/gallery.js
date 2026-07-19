@@ -342,6 +342,26 @@ async function slideshowSettings(event) {
       };
     }
   }
+  // QR overlay (#837): like the watermark, the LOOK is global-only and the
+  // per-event `show_qr` tri-state (NULL = inherit) decides visibility. The QR
+  // encodes the gallery share URL and ships as a data URI so the public
+  // slideshow client needs no QR library and no extra authenticated endpoint.
+  const qrOverride = event.show_qr;
+  const qrInherit = (qrOverride === null || qrOverride === undefined);
+  const qrEnabled = qrInherit ? g.qr_enabled : (qrOverride === true || qrOverride === 1 || qrOverride === '1');
+  let qr = null;
+  if (qrEnabled) {
+    const dataUrl = await slideshowQrDataUrl(event);
+    if (dataUrl) {
+      qr = {
+        data_url: dataUrl,
+        position: g.qr_position,
+        opacity: g.qr_opacity,
+        size: g.qr_size,
+      };
+    }
+  }
+
   return {
     interval_ms: event.show_interval_ms || 5000,
     transition: event.show_transition || 'crossfade',
@@ -352,7 +372,29 @@ async function slideshowSettings(event) {
     order: event.show_order || 'chronological',
     fit: g.fit,
     watermark,
+    qr,
   };
+}
+
+// The state endpoint is polled every ~3s per projector — cache the generated
+// QR data URI per share URL instead of re-encoding on every poll. Tiny values
+// (~2 KB each); the map only ever holds one entry per concurrently-shown event.
+const slideshowQrCache = new Map();
+async function slideshowQrDataUrl(event) {
+  try {
+    const shareToken = getEventShareToken(event);
+    if (!shareToken) return null;
+    const { shareUrl } = await buildShareLinkVariants({ slug: event.slug, shareToken });
+    if (!shareUrl) return null;
+    if (slideshowQrCache.has(shareUrl)) return slideshowQrCache.get(shareUrl);
+    const QRCode = require('qrcode');
+    const dataUrl = await QRCode.toDataURL(shareUrl, { width: 512, margin: 2 });
+    slideshowQrCache.set(shareUrl, dataUrl);
+    return dataUrl;
+  } catch (e) {
+    logger.error('Slideshow QR generation failed:', e);
+    return null;
+  }
 }
 
 // Open a slideshow session: validate the token and mint a short-lived gallery

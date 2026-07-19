@@ -3520,6 +3520,9 @@
     "categoryLabel": "Nur Kategorie zeigen",
     "categoryAll": "Alle Fotos",
     "watermarkToggle": "Logo-Wasserzeichen anzeigen",
+    "qrToggle": "Galerie-QR-Code",
+    "qrDescription": "Zeigt den Galerie-Link als QR-Code, damit Gäste ihn direkt vom Bildschirm scannen können.",
+    "qrModeHint": "Position, Größe und Deckkraft werden unter Einstellungen → Slideshow konfiguriert.",
     "watermarkDescription": "Blendet ein weißes, halbtransparentes Logo in einer Ecke ein (wie ein Senderlogo im TV).",
     "watermarkSourceLabel": "Logo",
     "watermarkSource": {

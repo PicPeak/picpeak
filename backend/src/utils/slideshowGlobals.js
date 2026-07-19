@@ -21,6 +21,7 @@ async function getSlideshowGlobals() {
   const [
     enabled, source, position, opacity, style, size, fit,
     logo, logoDark, favicon,
+    qrEnabled, qrPosition, qrOpacity, qrSize,
   ] = await Promise.all([
     getAppSetting('slideshow_watermark_enabled', false),
     getAppSetting('slideshow_watermark_source', 'logo'),
@@ -32,6 +33,11 @@ async function getSlideshowGlobals() {
     getAppSetting('branding_logo_url', null),
     getAppSetting('branding_logo_url_dark', null),
     getAppSetting('branding_favicon_url', null),
+    // QR overlay (#837) — guests scan the gallery link straight off the beamer.
+    getAppSetting('slideshow_qr_enabled', false),
+    getAppSetting('slideshow_qr_position', 'bottom-left'),
+    getAppSetting('slideshow_qr_opacity', 90),
+    getAppSetting('slideshow_qr_size', 14),
   ]);
 
   const val = {
@@ -45,6 +51,10 @@ async function getSlideshowGlobals() {
     branding_logo_url: logo || null,
     branding_logo_url_dark: logoDark || null,
     branding_favicon_url: favicon || null,
+    qr_enabled: qrEnabled === true,
+    qr_position: qrPosition || 'bottom-left',
+    qr_opacity: qrOpacity ?? 90,
+    qr_size: qrSize ?? 14,
   };
   cache = { at: now, val };
   return val;

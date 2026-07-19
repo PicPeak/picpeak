@@ -228,6 +228,50 @@ describe('public Live Slideshow routes', () => {
     });
   });
 
+  describe('slideshowSettings — QR overlay cascade (#837)', () => {
+    async function enableGlobalQr() {
+      await setSetting(db, 'slideshow_qr_enabled', true);
+      await setSetting(db, 'slideshow_qr_position', 'top-right');
+      await setSetting(db, 'slideshow_qr_opacity', 80);
+      await setSetting(db, 'slideshow_qr_size', 18);
+    }
+
+    it('inherits the global QR overlay when show_qr is NULL', async () => {
+      await insertEvent(db, { show_qr: null });
+      await enableGlobalQr();
+      const res = await request(app).get(stateUrl());
+      expect(res.body.qr).toMatchObject({
+        position: 'top-right',
+        opacity: 80,
+        size: 18,
+      });
+      // Share-link QR ships as a PNG data URI — no client QR lib needed.
+      expect(res.body.qr.data_url).toMatch(/^data:image\/png;base64,/);
+    });
+
+    it('is null by default (global off, no override)', async () => {
+      await insertEvent(db, { show_qr: null });
+      const res = await request(app).get(stateUrl());
+      expect(res.body.qr).toBeNull();
+    });
+
+    it('per-event OFF override hides the QR even when the global is on', async () => {
+      await insertEvent(db, { show_qr: 0 });
+      await enableGlobalQr();
+      const res = await request(app).get(stateUrl());
+      expect(res.body.qr).toBeNull();
+    });
+
+    it('per-event ON override shows the QR even when the global is off', async () => {
+      await insertEvent(db, { show_qr: 1 });
+      const res = await request(app).get(stateUrl());
+      expect(res.body.qr).not.toBeNull();
+      expect(res.body.qr.data_url).toMatch(/^data:image\/png;base64,/);
+      // Look falls back to the global defaults.
+      expect(res.body.qr.position).toBe('bottom-left');
+    });
+  });
+
   describe('display-only token guards (#646 review concern 1)', () => {
     // Mint a real slideshow JWT, then prove it is denied on the
     // download / upload / feedback routes (display-only contract).

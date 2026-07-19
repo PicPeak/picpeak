@@ -38,6 +38,10 @@ const DEFAULTS: SlideshowGlobalDefaults = {
   slideshow_watermark_opacity: 60,
   slideshow_watermark_style: 'white',
   slideshow_watermark_size: 12,
+  slideshow_qr_enabled: false,
+  slideshow_qr_position: 'bottom-left',
+  slideshow_qr_opacity: 90,
+  slideshow_qr_size: 14,
 };
 
 const inputClass =
@@ -65,6 +69,10 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
         slideshow_watermark_opacity: s.slideshow_watermark_opacity ?? DEFAULTS.slideshow_watermark_opacity,
         slideshow_watermark_style: s.slideshow_watermark_style ?? DEFAULTS.slideshow_watermark_style,
         slideshow_watermark_size: s.slideshow_watermark_size ?? DEFAULTS.slideshow_watermark_size,
+        slideshow_qr_enabled: s.slideshow_qr_enabled ?? DEFAULTS.slideshow_qr_enabled,
+        slideshow_qr_position: s.slideshow_qr_position ?? DEFAULTS.slideshow_qr_position,
+        slideshow_qr_opacity: s.slideshow_qr_opacity ?? DEFAULTS.slideshow_qr_opacity,
+        slideshow_qr_size: s.slideshow_qr_size ?? DEFAULTS.slideshow_qr_size,
       });
     }).catch(() => { /* keep defaults */ });
     return () => { cancelled = true; };
@@ -251,6 +259,69 @@ export const SlideshowGlobalDefaultsCard: React.FC = () => {
                 className={inputClass}
               />
             </div>
+            </div>
+          </div>
+        )}
+        </div>
+
+        {/* Share-link QR overlay (#837) */}
+        <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
+        <label className="flex items-start gap-2">
+          <input
+            type="checkbox"
+            className="mt-1 w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
+            checked={val.slideshow_qr_enabled}
+            onChange={(e) => setVal({ ...val, slideshow_qr_enabled: e.target.checked })}
+          />
+          <div>
+            <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+              {t('slideshow.qrToggle', 'Gallery QR code')}
+            </span>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              {t('slideshow.qrDescription', 'Show the gallery link as a QR code so guests can scan it straight off the screen.')}
+            </p>
+          </div>
+        </label>
+
+        {val.slideshow_qr_enabled && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+            <div>
+              <label className={labelClass}>{t('slideshow.watermarkPositionLabel', 'Position')}</label>
+              <select
+                value={val.slideshow_qr_position}
+                onChange={(e) => setVal({ ...val, slideshow_qr_position: e.target.value as SlideshowGlobalDefaults['slideshow_qr_position'] })}
+                className={inputClass}
+              >
+                {SLIDESHOW_WATERMARK_POSITIONS.map((pos) => (
+                  <option key={pos} value={pos}>
+                    {t(`slideshow.watermarkPosition.${pos}`, pos)}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelClass}>{t('slideshow.watermarkOpacityLabel', 'Opacity (%)')}</label>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={5}
+                value={val.slideshow_qr_opacity}
+                onChange={(e) => setVal({ ...val, slideshow_qr_opacity: Math.min(100, Math.max(0, parseInt(e.target.value, 10) || 0)) })}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>{t('slideshow.watermarkSizeLabel', 'Size (% of screen)')}</label>
+              <input
+                type="number"
+                min={5}
+                max={40}
+                step={1}
+                value={val.slideshow_qr_size}
+                onChange={(e) => setVal({ ...val, slideshow_qr_size: Math.min(40, Math.max(5, parseInt(e.target.value, 10) || 14)) })}
+                className={inputClass}
+              />
             </div>
           </div>
         )}

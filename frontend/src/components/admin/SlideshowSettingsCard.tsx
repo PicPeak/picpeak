@@ -36,6 +36,7 @@ export interface SlideshowSettingsCardProps {
     show_transition?: string;
     show_transition_ms?: number;
     show_watermark?: boolean | null;
+    show_qr?: boolean | null;
     show_colorfilter?: string;
     show_order?: string;
     show_category_id?: number | null;
@@ -55,6 +56,7 @@ function styleFromInitial(initial: SlideshowSettingsCardProps['initial']): Slide
     transition: (initial.show_transition as SlideshowStyle['transition']) ?? DEFAULT_SLIDESHOW_STYLE.transition,
     transition_ms: initial.show_transition_ms ?? DEFAULT_SLIDESHOW_STYLE.transition_ms,
     watermark: watermarkMode(initial.show_watermark),
+    qr: watermarkMode(initial.show_qr),
     colorfilter: (initial.show_colorfilter as SlideshowStyle['colorfilter']) ?? DEFAULT_SLIDESHOW_STYLE.colorfilter,
     order: (initial.show_order as SlideshowStyle['order']) ?? DEFAULT_SLIDESHOW_STYLE.order,
     category_id: initial.show_category_id ?? null,
@@ -142,6 +144,7 @@ export const SlideshowSettingsCard: React.FC<SlideshowSettingsCardProps> = ({
         // Tri-state → null (inherit global) / true / false. The watermark LOOK
         // is global-only (Settings → Slideshow); we only send the mode here.
         show_watermark: style.watermark === 'inherit' ? null : style.watermark === 'on',
+        show_qr: style.qr === 'inherit' ? null : style.qr === 'on',
         show_colorfilter: style.colorfilter,
         show_order: style.order,
         show_category_id: style.category_id,

@@ -383,6 +383,21 @@ router.put('/slideshow', adminAuth, requirePermission('settings.edit'), async (r
       const n = Math.min(40, Math.max(3, Math.round(Number(req.body.slideshow_watermark_size) || 12)));
       push('slideshow_watermark_size', n);
     }
+    // QR overlay (#837) — same option shape as the watermark.
+    if (has('slideshow_qr_enabled')) push('slideshow_qr_enabled', !!req.body.slideshow_qr_enabled);
+    if (has('slideshow_qr_position')) {
+      const allowed = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+      const v = allowed.includes(req.body.slideshow_qr_position) ? req.body.slideshow_qr_position : 'bottom-left';
+      push('slideshow_qr_position', v);
+    }
+    if (has('slideshow_qr_opacity')) {
+      const n = Math.min(100, Math.max(0, Math.round(Number(req.body.slideshow_qr_opacity) || 0)));
+      push('slideshow_qr_opacity', n);
+    }
+    if (has('slideshow_qr_size')) {
+      const n = Math.min(40, Math.max(5, Math.round(Number(req.body.slideshow_qr_size) || 14)));
+      push('slideshow_qr_size', n);
+    }
 
     for (const u of updates) {
       await upsertAppSetting(u.setting_key, u.setting_value, u.setting_type);
