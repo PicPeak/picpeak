@@ -33,18 +33,20 @@ const TEMPLATES = {
   poster: { size: 'A4', qrSize: 360, titleSize: 28, captionSize: 16, urlSize: 10 },
 };
 
-// Bundled IBM Plex Sans (Latin + Cyrillic + Greek coverage) — pdfkit's
-// built-in Helvetica is WinAnsi-only and silently drops e.g. Cyrillic
-// event names (codex review of #847).
-const FONT_BOLD = path.join(__dirname, '../../../assets/fonts/IBM-Plex-Sans/700.ttf');
-const FONT_REGULAR = path.join(__dirname, '../../../assets/fonts/IBM-Plex-Sans/400.ttf');
+// Bundled COMPLETE IBM Plex Sans (1019 glyphs: Latin + Cyrillic + Greek,
+// verified via fontkit cmap) — pdfkit's built-in Helvetica is WinAnsi-only
+// and silently drops e.g. Cyrillic event names, and the pre-existing
+// assets/fonts/IBM-Plex-Sans/ files are 270-glyph Latin subsets with the
+// same gap (codex review of #847). OFL license alongside the files.
+const FONT_BOLD = path.join(__dirname, '../../../assets/fonts/IBM-Plex-Sans-Full/700.ttf');
+const FONT_REGULAR = path.join(__dirname, '../../../assets/fonts/IBM-Plex-Sans-Full/400.ttf');
 
 // A same-origin admin GET carries no Origin header, so the frontend passes
 // window.location.origin explicitly. Only accept a plain http(s) origin.
 const ORIGIN_RE = /^https?:\/\/[^\s/]+$/i;
 // Configured FRONTEND_URL defaults to localhost on unconfigured installs —
 // a QR pointing there is unusable on any other device (codex review of #847).
-const LOCAL_BASE_RE = /^https?:\/\/(localhost|127\.|0\.0\.0\.0)/i;
+const LOCAL_BASE_RE = /^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\])/i;
 
 async function loadShareUrl(eventId, requestOrigin) {
   const event = await db('events').where({ id: eventId }).first();
