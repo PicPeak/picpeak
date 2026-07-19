@@ -54,7 +54,8 @@ async function createInvoice(payload, adminId, trx = db) {
     return { invoiceIds: draft?.id ? [draft.id] : [] };
   }
 
-  const profile = (await businessProfileService.getProfile()).profile;
+  // Route reads through the caller's trx (no-op when trx === db) — see #851.
+  const profile = (await businessProfileService.getProfile(trx)).profile;
   const currency = (payload.currency || profile?.default_currency || 'CHF').toUpperCase();
   const language = payload.language || customer.preferred_language || profile?.default_locale || 'de';
 
@@ -115,7 +116,7 @@ async function createInvoice(payload, adminId, trx = db) {
   // qty × unit arithmetic; the per-line rounding drift is surfaced as a
   // "Rundung" row at render time (storedNet − Σ line totals). Off by
   // default ⇒ net stays the sum of rounded lines, unchanged behaviour.
-  const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
+  const roundTotal = (await getAppSetting('crm_invoice_round_total', false, trx)) === true;
   if (roundTotal) {
     netMinor = cleanNetMinor(items, { parentKey: 'parent_position', positionKey: 'position' });
   }
@@ -136,7 +137,7 @@ async function createInvoice(payload, adminId, trx = db) {
     );
   }
 
-  const bank = await businessProfileService.resolveBankAccountForCurrency(currency, payload.businessBankAccountId);
+  const bank = await businessProfileService.resolveBankAccountForCurrency(currency, payload.businessBankAccountId, trx);
 
   // Snapshot the selected payment-term template (net days / Skonto /
   // installment plan) onto the invoice itself. Mirrors how the quote
@@ -305,7 +306,7 @@ async function createInvoice(payload, adminId, trx = db) {
     await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', invoiceId, items);
   }
 
-  try { await logActivity('invoice_created', { invoiceId, invoiceNumber }, payload.eventId || null, `admin:${adminId}`); } catch (_) {}
+  try { await logActivity('invoice_created', { invoiceId, invoiceNumber }, payload.eventId || null, `admin:${adminId}`, trx); } catch (_) {}
   return { invoiceIds: [invoiceId] };
 }
 

@@ -230,18 +230,21 @@ function sanitiseBankPayload(payload) {
  * Always returns a profile object even if the row is empty — the
  * Settings UI binds straight to this shape.
  */
-async function getProfile() {
+// `conn` lets transaction callers (invoice/create.js) route the reads
+// through their trx — on single-connection SQLite a global-db read
+// inside an open trx deadlocks the pool (codex review of #851).
+async function getProfile(conn = db) {
   return await withRetry(async () => {
-    let profile = await db('business_profile').where({ id: 1 }).first();
+    let profile = await conn('business_profile').where({ id: 1 }).first();
     if (!profile) {
       // Belt-and-braces: migration 102 seeds id=1, but if a fresh install
       // ran an earlier rollback that wiped the row, re-create it so the
       // service never throws.
-      await db('business_profile').insert({ id: 1 });
-      profile = await db('business_profile').where({ id: 1 }).first();
+      await conn('business_profile').insert({ id: 1 });
+      profile = await conn('business_profile').where({ id: 1 }).first();
     }
 
-    const accounts = await db('business_bank_accounts')
+    const accounts = await conn('business_bank_accounts')
       .where({ business_profile_id: 1 })
       .orderBy('display_order', 'asc')
       .orderBy('id', 'asc');
@@ -344,23 +347,23 @@ async function deleteBankAccount(id, adminId) {
  * given currency: explicit override → default for that currency →
  * default for the profile's default_currency → first by display_order.
  */
-async function resolveBankAccountForCurrency(currency, overrideId = null) {
+async function resolveBankAccountForCurrency(currency, overrideId = null, conn = db) {
   return await withRetry(async () => {
     if (overrideId) {
-      const explicit = await db('business_bank_accounts').where({ id: overrideId }).first();
+      const explicit = await conn('business_bank_accounts').where({ id: overrideId }).first();
       if (explicit) return explicit;
     }
     if (currency) {
-      const match = await db('business_bank_accounts')
+      const match = await conn('business_bank_accounts')
         .where({ business_profile_id: 1, currency, is_default: formatBoolean(true) })
         .first();
       if (match) return match;
     }
-    const anyDefault = await db('business_bank_accounts')
+    const anyDefault = await conn('business_bank_accounts')
       .where({ business_profile_id: 1, is_default: formatBoolean(true) })
       .first();
     if (anyDefault) return anyDefault;
-    return await db('business_bank_accounts')
+    return await conn('business_bank_accounts')
       .where({ business_profile_id: 1 })
       .orderBy('display_order', 'asc').orderBy('id', 'asc').first();
   });

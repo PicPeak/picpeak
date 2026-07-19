@@ -101,7 +101,8 @@ async function resolveNetDays(payload, trx = db) {
       .first();
     if (probe && probe.net_days != null) return ensureInt(probe.net_days) || 30;
   }
-  const setting = ensureInt(await getAppSetting('crm_payment_default_net_days'));
+  // Route through the caller's trx — global-db here deadlocks SQLite (#851).
+  const setting = ensureInt(await getAppSetting('crm_payment_default_net_days', null, trx));
   if (setting) return setting;
   return 30;
 }
