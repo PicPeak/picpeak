@@ -123,8 +123,12 @@ async function getPasswordComplexitySettings() {
     
     // Use retry wrapper to handle connection failures
     const settings = await withRetry(async () => {
+      // Key must match what the settings UI writes: `security_` prefix +
+      // `password_complexity` (useSettingsState.ts saveSecurityMutation).
+      // The old `security_password_complexity_level` key is written by
+      // nothing, so the admin's choice was silently ignored.
       return await db('app_settings')
-        .where('setting_key', 'security_password_complexity_level')
+        .where('setting_key', 'security_password_complexity')
         .first();
     });
     
