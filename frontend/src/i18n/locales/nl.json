@@ -387,6 +387,9 @@
     "archived": "Gearchiveerd",
     "totalSize": "Totale grootte",
     "shareLink": "Deellink",
+    "qrCode": "QR-code",
+    "qrTableCard": "Tafelkaart (A6)",
+    "qrPoster": "Poster (A4)",
     "copyLink": "Link kopieren",
     "linkCopied": "Link gekopieerd!",
     "viewGallery": "Galerij bekijken",
@@ -1849,6 +1852,7 @@
     }
   },
   "errors": {
+    "downloadFailed": "Downloaden mislukt",
     "galleryNotFound": "Galerij niet gevonden",
     "galleryNotFoundMessage": "Deze galerij bestaat niet of is verwijderd.",
     "somethingWentWrong": "Er is iets misgegaan",

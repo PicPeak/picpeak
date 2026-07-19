@@ -387,6 +387,9 @@
     "archived": "Arhiviran",
     "totalSize": "Skupna velikost",
     "shareLink": "Povezava za deljenje",
+    "qrCode": "QR-koda",
+    "qrTableCard": "Namizna kartica (A6)",
+    "qrPoster": "Plakat (A4)",
     "copyLink": "Kopiraj povezavo",
     "linkCopied": "Povezava kopirana!",
     "viewGallery": "Ogled galerije",
@@ -1849,6 +1852,7 @@
     }
   },
   "errors": {
+    "downloadFailed": "Prenos ni uspel",
     "galleryNotFound": "Galerija ni najdena",
     "galleryNotFoundMessage": "Ta galerija ne obstaja ali je bila odstranjena.",
     "somethingWentWrong": "Nekaj je šlo narobe",

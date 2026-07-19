@@ -403,6 +403,9 @@
     "archived": "В архиве",
     "totalSize": "Общий размер",
     "shareLink": "Ссылка для доступа",
+    "qrCode": "QR-код",
+    "qrTableCard": "Карточка на стол (A6)",
+    "qrPoster": "Постер (A4)",
     "copyLink": "Копировать ссылку",
     "linkCopied": "Ссылка скопирована!",
     "viewGallery": "Просмотреть галерею",
@@ -1899,6 +1902,7 @@
     }
   },
   "errors": {
+    "downloadFailed": "Ошибка загрузки",
     "galleryNotFound": "Галерея не найдена",
     "galleryNotFoundMessage": "Эта галерея не существует или была удалена.",
     "somethingWentWrong": "Что-то пошло не так",

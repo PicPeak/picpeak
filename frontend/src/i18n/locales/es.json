@@ -393,6 +393,9 @@
     "photoCount": "{{count}} fotos",
     "totalSize": "Tamaño total",
     "shareLink": "Enlace para compartir",
+    "qrCode": "Código QR",
+    "qrTableCard": "Tarjeta de mesa (A6)",
+    "qrPoster": "Póster (A4)",
     "copyLink": "Copiar enlace",
     "linkCopied": "Enlace copiado!",
     "viewGallery": "Ver galería",
@@ -1608,6 +1611,7 @@
     }
   },
   "errors": {
+    "downloadFailed": "Error al descargar",
     "notFound": "No encontrado",
     "galleryNotFound": "Galería no encontrada",
     "galleryNotFoundMessage": "Esta galería no existe o ha sido eliminada.",

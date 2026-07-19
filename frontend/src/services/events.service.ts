@@ -302,4 +302,22 @@ export const eventsService = {
     const response = await api.post(`/admin/events/${eventId}/rename`, { newEventName, resendEmail });
     return response.data;
   },
+
+  // Gallery QR code (#836). Admin API uses Bearer auth, so images are fetched
+  // as blobs — an <img src> would not carry the token.
+  async getQrBlob(eventId: number, format: 'png' | 'svg', size?: number): Promise<Blob> {
+    const { data } = await api.get(`/admin/events/${eventId}/qr`, {
+      params: { format, size },
+      responseType: 'blob',
+    });
+    return data;
+  },
+
+  async getQrPrintBlob(eventId: number, template: 'table-card' | 'poster', lang: string): Promise<Blob> {
+    const { data } = await api.get(`/admin/events/${eventId}/qr-print`, {
+      params: { template, lang },
+      responseType: 'blob',
+    });
+    return data;
+  },
 };

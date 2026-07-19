@@ -543,6 +543,9 @@
     "archived": "Archived",
     "totalSize": "Total Size",
     "shareLink": "Share Link",
+    "qrCode": "QR code",
+    "qrTableCard": "Table card (A6)",
+    "qrPoster": "Poster (A4)",
     "copyLink": "Copy Link",
     "linkCopied": "Link copied!",
     "viewGallery": "View Gallery",
@@ -2506,6 +2509,7 @@
     }
   },
   "errors": {
+    "downloadFailed": "Download failed",
     "galleryNotFound": "Gallery Not Found",
     "galleryNotFoundMessage": "This gallery does not exist or has been removed.",
     "somethingWentWrong": "Something went wrong",

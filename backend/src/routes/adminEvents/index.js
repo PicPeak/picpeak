@@ -13,5 +13,6 @@ require('./slideshow')(router);
 require('./resets')(router);
 require('./archiveBulk')(router);
 require('./logo')(router);
+require('./qr')(router);
 
 module.exports = router;

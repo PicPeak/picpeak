@@ -387,6 +387,9 @@
     "archived": "Archivé",
     "totalSize": "Taille totale",
     "shareLink": "Partager le lien",
+    "qrCode": "Code QR",
+    "qrTableCard": "Carte de table (A6)",
+    "qrPoster": "Affiche (A4)",
     "copyLink": "Copier le lien",
     "linkCopied": "Lien copié !",
     "viewGallery": "Voir la galerie",
@@ -1860,6 +1863,7 @@
     }
   },
   "errors": {
+    "downloadFailed": "Échec du téléchargement",
     "galleryNotFound": "Galerie introuvable",
     "galleryNotFoundMessage": "Cette galerie n'existe pas ou a été supprimée.",
     "somethingWentWrong": "Quelque chose s'est mal passé",
