@@ -80,7 +80,10 @@ async function loadShareUrl(eventId, requestOrigin) {
   if (/^https?:\/\//i.test(link)) {
     try { const u = new URL(link); sharePath = `${u.pathname}${u.search}`; } catch { /* keep as-is */ }
   }
-  if (!sharePath.startsWith('/')) sharePath = `/${sharePath}`;
+  // Bare stored values (quote-/contract-converted events persist the raw
+  // token) resolve as /gallery/<token> — mirroring the frontend's
+  // buildShareLinkUrl exactly (codex review of #847, final round).
+  if (!sharePath.startsWith('/')) sharePath = `/gallery/${sharePath}`;
   if (origin) return { event, shareUrl: `${origin}${sharePath}` };
   const frontendBase = await getFrontendBaseUrl();
   return { event, shareUrl: frontendBase ? `${frontendBase}${sharePath}` : sharePath };
