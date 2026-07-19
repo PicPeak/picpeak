@@ -441,8 +441,18 @@ async function reissueInvoice(id, adminId) {
   // createInvoice so totals are recomputed authoritatively from
   // line items (any rounding drift gets normalised). Self-join
   // carries parent_position so migration-119 sub-items survive.
-  return await db.transaction(async (trx) => {
-    const lineItems = await trx('invoice_line_items as li')
+  //
+  // Deliberately NO wrapping transaction (codex review of #851):
+  // createInvoice internally reads via the global connection
+  // (businessProfileService.getProfile, getAppSetting, bank-account
+  // resolution), so an outer trx deadlocks the single-connection SQLite
+  // pool before the replacement is ever created — with the Storno
+  // already committed and emailed. Every other createInvoice caller
+  // also runs it without a trx. Trade-off: replacement + backlink are
+  // not atomic; a crash between them leaves a visible draft without
+  // replaces_invoice_id, which beats the guaranteed stall.
+  {
+    const lineItems = await db('invoice_line_items as li')
       .leftJoin('invoice_line_items as parent', 'parent.id', 'li.parent_line_item_id')
       .where('li.invoice_id', id)
       .orderBy('li.position', 'asc')
@@ -493,26 +503,24 @@ async function reissueInvoice(id, adminId) {
       // deal_uuid so Storno + replacement + cancelled all group
       // under one deal lineage view.
       dealUuid: original.deal_uuid || null,
-    }, adminId, trx);
+    }, adminId);
     // Reissue always produces a single invoice (no installments
     // forced), so the array length is 1.
     const newId = reissuedIds[0];
 
-    await trx('invoices').where({ id: newId }).update({
+    await db('invoices').where({ id: newId }).update({
       replaces_invoice_id: id,
       updated_at: new Date(),
     });
 
     try {
-      // Pass `trx` so the audit insert rides the transaction's connection;
-      // the global db here deadlocks the single-connection SQLite pool.
       await logActivity('invoice_reissued',
         { originalInvoiceId: id, newInvoiceId: newId, stornoId },
-        original.event_id || null, `admin:${adminId}`, trx);
+        original.event_id || null, `admin:${adminId}`);
     } catch (_) {}
 
     return { id: newId, replaces: id, stornoId };
-  });
+  }
 }
 
 /**

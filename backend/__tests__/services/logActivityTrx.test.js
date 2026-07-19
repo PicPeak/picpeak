@@ -122,4 +122,34 @@ test('cancelInvoice (Storno mint) persists the invoice_cancelled_via_storno audi
   expect(meta.stornoId).toBe(result.stornoId);
 });
 
+test('reissueInvoice completes on SQLite and persists the invoice_reissued audit row', async () => {
+  const { invoiceIds } = await invoiceService.createInvoice({
+    customerAccountId: customerId,
+    currency: 'CHF',
+    vatRate: 0,
+    lineItems: [
+      { position: 1, quantity: 1, description: 'Album', unit_price_minor: 50000, discount_percent: 0 },
+    ],
+  }, adminId);
+  const id = invoiceIds[0];
+  await db('invoices').where({ id }).update({ status: 'sent', sent_at: new Date(), updated_at: new Date() });
+
+  // Pre-fix this stalled inside the wrapping transaction (createInvoice's
+  // global-connection reads vs. the single-connection pool) and aborted
+  // before the replacement existed — with the Storno already committed.
+  const result = await invoiceService.reissueInvoice(id, adminId);
+  expect(result.id).toBeGreaterThan(0);
+  expect(result.replaces).toBe(id);
+
+  const replacement = await db('invoices').where({ id: result.id }).first();
+  expect(replacement.replaces_invoice_id).toBe(id);
+
+  const row = await db('activity_logs')
+    .where({ activity_type: 'invoice_reissued' })
+    .orderBy('id', 'desc')
+    .first();
+  expect(row).toBeTruthy();
+  expect(JSON.parse(row.metadata).newInvoiceId).toBe(result.id);
+});
+
 void path; // referenced for parity with sibling suites
