@@ -82,6 +82,21 @@ function notifyGalleryOpened(event) {
   logActivity('gallery_opened', {}, event.id, { type: 'guest' });
 }
 
+// Single-photo saves are frequent (a guest saving 30 photos = 30 route
+// hits) — debounce like gallery_opened so the bell gets one "guest is
+// downloading photos" signal per event per window instead of a flood
+// (codex review of #849). ZIP downloads stay un-debounced: rare, high
+// signal. Exact per-photo counts remain in access_logs/analytics.
+const SINGLE_DOWNLOAD_DEBOUNCE_MS = 60 * 60 * 1000; // 1h
+const singleDownloadNotifiedAt = new Map();
+function notifySinglePhotoDownload(event) {
+  const now = Date.now();
+  const last = singleDownloadNotifiedAt.get(event.id) || 0;
+  if (now - last < SINGLE_DOWNLOAD_DEBOUNCE_MS) return;
+  singleDownloadNotifiedAt.set(event.id, now);
+  logActivity('gallery_downloaded', { scope: 'single' }, event.id, { type: 'guest' });
+}
+
 // Check for slug redirect (for renamed events)
 async function checkSlugRedirect(slug) {
   try {
@@ -916,6 +931,8 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       action: 'download',
       photo_id: photoId
     });
+    // Surface in the admin notification bell (#746) — debounced.
+    notifySinglePhotoDownload(req.event);
     
     let filePath;
     try {

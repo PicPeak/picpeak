@@ -1,6 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Menu, User, LogOut, Settings, Bell, Lock, CheckCircle, Trash2, Sun, Moon, Globe, ChevronDown } from 'lucide-react';
+import { Menu, User, LogOut, Settings, Bell, Lock, CheckCircle, Trash2, Sun, Moon, Globe, ChevronDown, Eye, Download, Heart, Calendar, Image, Archive, AlertCircle, Clock } from 'lucide-react';
+
+// getNotificationStyle returns an icon NAME — map the ones we render to
+// components; anything unmapped keeps the Bell (codex review of #849:
+// the styles existed but every row hard-coded <Bell>).
+const NOTIFICATION_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  Bell, Eye, Download, Heart, Calendar, Image, Archive, AlertCircle, Clock, Lock,
+};
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -350,7 +357,10 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onMenuClick }) => {
                           >
                             <div className="flex items-start gap-3">
                               <div className={`mt-0.5 ${style.color}`}>
-                                <Bell className="w-4 h-4" />
+                                {(() => {
+                                  const Icon = NOTIFICATION_ICONS[style.icon] || Bell;
+                                  return <Icon className="w-4 h-4" />;
+                                })()}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm text-neutral-900 dark:text-neutral-100">
