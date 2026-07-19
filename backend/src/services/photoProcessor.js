@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
-const { generateThumbnail, extractCaptureDate, withLocalCopy, withProcessableImage } = require('./imageProcessor');
+const { generateThumbnail, generateVideoPlaceholder, extractCaptureDate, withLocalCopy, withProcessableImage } = require('./imageProcessor');
 const { generatePhotoFilename } = require('../utils/filenameSanitizer');
 const { processUploadedVideo, extractVideoMetadata, isVideoMimeType } = require('./videoProcessor');
 const { getStorage } = require('./storage');
@@ -144,19 +144,23 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         // A thumbnail/probe failure must not lose the video: without this
         // guard the whole upload errors here, while the image branch below
         // already survives its thumbnail failures. Fall back to metadata-only
-        // (may itself fail on exotic codecs — then the video just has neither
-        // preview nor duration, but stays downloadable/streamable).
+        // plus the static play-button placeholder — a completed video with a
+        // NULL thumbnail would make the grid fetch the ORIGINAL video file
+        // as an <img> blob (thumbnail_url || url), i.e. a multi-GB download
+        // for a broken tile (codex review of #845).
         try {
           const result = await processUploadedVideo(tempPath, videoThumbnailKey);
           videoMetadata = result.metadata;
           thumbnailPath = result.thumbnailKey;
         } catch (videoErr) {
-          logger.warn(`Video processing failed for ${file.originalname}, keeping video without thumbnail:`, videoErr.message);
+          logger.warn(`Video processing failed for ${file.originalname}, using placeholder thumbnail:`, videoErr.message);
           try {
             videoMetadata = await extractVideoMetadata(tempPath);
           } catch (metaErr) {
             logger.warn(`Video metadata extraction also failed for ${file.originalname}:`, metaErr.message);
           }
+          // ffmpeg-free (sharp-rendered SVG); returns null on failure.
+          thumbnailPath = await generateVideoPlaceholder(newFilename);
         }
       } else {
         // RAW/DNG can't be fed to sharp directly (no raw loader), so extract the
@@ -475,17 +479,23 @@ async function processPhoto(photoId) {
       // marks failed rows 'failed' and the guest gallery only lists 'complete',
       // so the video would become permanently invisible. The image branch below
       // already survives its thumbnail failures — mirror that: fall back to
-      // metadata-only and let the row complete without a preview.
+      // metadata-only plus the static play-button placeholder. A completed
+      // video with a NULL thumbnail would make the grid fetch the ORIGINAL
+      // video file as an <img> blob (thumbnail_url || url) — a multi-GB
+      // download for a broken tile (codex review of #845).
       let videoResult = null;
       try {
         videoResult = await processUploadedVideo(localPath, videoThumbnailKey);
       } catch (videoErr) {
-        logger.warn(`processPhoto: video processing failed for ${photoId}, keeping video without thumbnail`, { error: videoErr.message });
+        logger.warn(`processPhoto: video processing failed for ${photoId}, using placeholder thumbnail`, { error: videoErr.message });
         try {
           videoResult = { metadata: await extractVideoMetadata(localPath) };
         } catch (metaErr) {
           logger.warn(`processPhoto: video metadata extraction also failed for ${photoId}`, { error: metaErr.message });
         }
+        // ffmpeg-free (sharp-rendered SVG); returns null on failure.
+        const placeholderKey = await generateVideoPlaceholder(photo.filename);
+        if (placeholderKey) videoResult = { ...(videoResult || {}), thumbnailKey: placeholderKey };
       }
       if (videoResult?.thumbnailKey) updateData.thumbnail_path = videoResult.thumbnailKey;
       if (videoResult?.metadata) {

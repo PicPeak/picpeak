@@ -71,6 +71,7 @@ jest.mock('../../src/services/imageProcessor', () => {
   const mockExtractCaptureDate = jest.fn();
   return {
     generateThumbnail: mockGenerateThumbnail,
+    generateVideoPlaceholder: jest.fn(async (filename) => `thumbnails/thumb_${filename.replace(/\.[^.]+$/, '')}.jpg`),
     extractCaptureDate: mockExtractCaptureDate,
     withLocalCopy: jest.fn(async (key, fn) =>
       fn(`/tmp/local-copy-${require('path').basename(key)}`)
@@ -213,7 +214,7 @@ describe('photoProcessor.processPhoto', () => {
     expect(watermarkService.generateForPhoto).not.toHaveBeenCalled();
   });
 
-  it('keeps a video complete (metadata-only) when thumbnail generation fails', async () => {
+  it('keeps a video complete with a placeholder thumbnail when ffmpeg fails', async () => {
     dbModule.__setPhoto({
       id: 203,
       event_id: 9,
@@ -243,7 +244,10 @@ describe('photoProcessor.processPhoto', () => {
     const finalUpdate = dbModule.__recorded().updateCalls.pop();
     // The row must complete — 'failed' rows are invisible to guests.
     expect(finalUpdate.data.processing_status).toBe('complete');
-    expect(finalUpdate.data.thumbnail_path).toBeUndefined();
+    // Placeholder instead of NULL: a completed video without thumbnail would
+    // make the grid fetch the original video file for the tile (#845 review).
+    expect(finalUpdate.data.thumbnail_path).toBe('thumbnails/thumb_drone-clip.jpg');
+    expect(imageProcessor.generateVideoPlaceholder).toHaveBeenCalledWith('drone-clip.mp4');
     expect(finalUpdate.data.duration).toBe(42);
     expect(finalUpdate.data.video_codec).toBe('hevc');
   });
