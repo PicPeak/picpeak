@@ -391,14 +391,24 @@ const slideshowQrCache = new Map();
 // missing or loopback. trust proxy is configured, so req.protocol respects
 // X-Forwarded-Proto behind the standard reverse-proxy setups.
 const QR_LOCAL_BASE_RE = /^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\])/i;
+const QR_ORIGIN_RE = /^https?:\/\/[^\s/]+$/i;
 async function slideshowQrDataUrl(event, req) {
   try {
     const shareToken = getEventShareToken(event);
     if (!shareToken) return null;
     let { shareUrl, sharePath } = await buildShareLinkVariants({ slug: event.slug, shareToken });
     if (!/^https?:\/\//i.test(shareUrl) || QR_LOCAL_BASE_RE.test(shareUrl)) {
+      // Prefer the kiosk's own window.location.origin (?origin=, validated):
+      // req.get('host') is NOT the browser origin behind the standard
+      // proxies — frontend/nginx.conf forwards $host (port stripped), so a
+      // compose LAN deployment on :3000 would encode port 80 (codex review
+      // of #848 round 3). Host-derived origin stays as second fallback.
+      const queryOrigin = typeof req?.query?.origin === 'string' && QR_ORIGIN_RE.test(req.query.origin)
+        ? req.query.origin.replace(/\/$/, '')
+        : null;
       const host = req && req.get ? req.get('host') : null;
-      if (host) shareUrl = `${req.protocol}://${host}${sharePath}`;
+      if (queryOrigin) shareUrl = `${queryOrigin}${sharePath}`;
+      else if (host) shareUrl = `${req.protocol}://${host}${sharePath}`;
     }
     if (!shareUrl) return null;
     if (slideshowQrCache.has(shareUrl)) return slideshowQrCache.get(shareUrl);

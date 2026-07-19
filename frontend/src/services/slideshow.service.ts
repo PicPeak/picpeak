@@ -140,12 +140,20 @@ export const slideshowService = {
   // session token + current settings/count. Throws 404 if the link is
   // disabled, rotated, or the gallery isn't live.
   async getSession(slug: string, token: string): Promise<SlideshowSession> {
-    const response = await api.get<SlideshowSession>(`/gallery/${slug}/show/${token}/session`);
+    // origin: the kiosk's own reachable URL — the backend prefers it for the
+    // QR overlay when the configured base is missing/loopback (#848 review;
+    // the proxy strips the port from the Host header, so it can't be
+    // derived server-side).
+    const response = await api.get<SlideshowSession>(`/gallery/${slug}/show/${token}/session`, {
+      params: { origin: window.location.origin },
+    });
     return response.data;
   },
 
   async getState(slug: string, token: string): Promise<SlideshowState> {
-    const response = await api.get<SlideshowState>(`/gallery/${slug}/show/${token}/state`);
+    const response = await api.get<SlideshowState>(`/gallery/${slug}/show/${token}/state`, {
+      params: { origin: window.location.origin },
+    });
     return response.data;
   },
 };
