@@ -1,6 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const { db } = require('../database/db');
+const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getAppSetting } = require('../utils/appSettings');
 const archiver = require('archiver');
@@ -65,6 +65,22 @@ const fs = require('fs');
 
 // Get storage path from environment or default
 const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+
+// "Gallery opened" for the admin notification bell (#746). The photo-list
+// endpoint fires on every gallery page load, so notifying per hit would spam
+// the bell — debounce to at most one notification per event per window. The
+// map is in-memory on purpose: losing it on restart merely allows one extra
+// notification, and it costs the hot view path zero DB reads.
+const GALLERY_OPENED_DEBOUNCE_MS = 6 * 60 * 60 * 1000; // 6h
+const galleryOpenedNotifiedAt = new Map();
+function notifyGalleryOpened(event) {
+  const now = Date.now();
+  const last = galleryOpenedNotifiedAt.get(event.id) || 0;
+  if (now - last < GALLERY_OPENED_DEBOUNCE_MS) return;
+  galleryOpenedNotifiedAt.set(event.id, now);
+  // Fire-and-forget — logActivity swallows its own errors.
+  logActivity('gallery_opened', {}, event.id, { type: 'guest' });
+}
 
 // Check for slug redirect (for renamed events)
 async function checkSlugRedirect(slug) {
@@ -643,6 +659,7 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         user_agent: req.headers['user-agent'],
         action: 'view'
       });
+      notifyGalleryOpened(req.event);
     }
     
     // Include protection settings in response
@@ -997,6 +1014,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
             user_agent: req.headers['user-agent'],
             action: 'download_all_presigned'
           }).catch(() => {});
+          // Surface in the admin notification bell (#746).
+          logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, { type: 'guest' });
           res.redirect(302, url);
           return;
         } catch (err) {
@@ -1020,6 +1039,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
         user_agent: req.headers['user-agent'],
         action: 'download_all'
       }).catch(() => {});
+      // Surface in the admin notification bell (#746).
+      logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, { type: 'guest' });
       return;
     }
 
@@ -1133,6 +1154,8 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
       user_agent: req.headers['user-agent'],
       action: 'download_all'
     });
+    // Surface in the admin notification bell (#746).
+    await logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, { type: 'guest' });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to create download archive');
   }
@@ -1250,6 +1273,8 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       user_agent: req.headers['user-agent'],
       action: 'download_selected'
     });
+    // Surface in the admin notification bell (#746).
+    await logActivity('gallery_downloaded', { scope: 'selected', photo_count: photoIds.length }, req.event.id, { type: 'guest' });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to download selected photos');
   }

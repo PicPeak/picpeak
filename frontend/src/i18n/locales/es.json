@@ -1420,6 +1420,9 @@
       "archiveDownloaded": "Archivo descargado para \"{{eventName}}\"",
       "archiveDeleted": "Archivo eliminado para \"{{eventName}}\"",
       "archiveRestored": "Archivo restaurado para \"{{eventName}}\"",
+      "galleryOpened": "Un invitado abrió la galería «{{eventName}}»",
+      "galleryDownloaded": "Un invitado descargó fotos de «{{eventName}}»",
+      "photoFavorite": "Un invitado marcó como favorita una foto de «{{eventName}}»",
       "systemActivity": "Actividad del sistema: {{type}}",
       "adminProfileUpdated": "Perfil de admin actualizado por {{actorName}}"
     },

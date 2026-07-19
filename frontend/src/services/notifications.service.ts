@@ -425,6 +425,13 @@ export const notificationsService = {
       case 'cms_page_logo_uploaded':
         return { icon: 'FileText', color: 'text-green-600' };
 
+      // Client activity (#746) — guest actions surfaced to the photographer.
+      case 'gallery_opened':
+        return { icon: 'Eye', color: 'text-blue-600' };
+      case 'gallery_downloaded':
+        return { icon: 'Download', color: 'text-green-600' };
+      case 'photo_favorite':
+        return { icon: 'Heart', color: 'text-pink-600' };
       default:
         return { icon: 'Bell', color: 'text-gray-600' };
     }
