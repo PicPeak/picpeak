@@ -108,14 +108,17 @@ async function seedCustomerSignedContract() {
     customerAccountId: customerId,
     title: 'Fotografie-Vertrag',
   }, adminId);
-  // Real send path — renders + persists the base PDF the countersign
-  // stamp builds on.
-  await contractService.sendContract(id, adminId);
-  await db('contracts').where({ id }).update({
-    status: 'signed_by_customer',
-    signed_customer_name: 'Custo Mer',
-    signed_by_customer_at: new Date(),
-    updated_at: new Date(),
+  // Real send + customer-sign flow (codex review of #850): a direct
+  // status UPDATE skipped the customer's signature asset and stamped
+  // PDF, so countersign exercised its unsigned-PDF fallback and a
+  // regression dropping the customer's signature would stay green.
+  const { token } = await contractService.sendContract(id, adminId);
+  await contractService.recordCustomerSignature({
+    token,
+    name: 'Custo Mer',
+    ip: '127.0.0.1',
+    signatureDataUrl: SIGNATURE_DATA_URL,
+    accepted: true,
   });
   return db('contracts').where({ id }).first();
 }
@@ -274,6 +277,17 @@ describe('POST /api/admin/invoices/:id/cancel (Storno mint)', () => {
     const refreshed = await db('invoices').where({ id: original.id }).first();
     expect(refreshed.status).toBe('cancelled');
     expect(refreshed.cancellation_storno_id).toBe(storno.id);
+
+    // sendStorno side effects (codex review of #850): cancelInvoice
+    // swallows a sendStorno failure by design, so without these
+    // assertions a broken render/persist/queue leg would stay green.
+    const sentStorno = await db('invoices').where({ id: storno.id }).first();
+    expect(sentStorno.status).toBe('sent');
+    expect(sentStorno.pdf_path).toBeTruthy();
+    expect(fs.existsSync(sentStorno.pdf_path)).toBe(true);
+    const stornoEmails = await db('email_queue').where({ email_type: 'storno_issued' });
+    expect(stornoEmails.length).toBeGreaterThanOrEqual(1);
+    expect(stornoEmails[0].recipient_email).toBe(CUSTOMER_EMAIL);
   });
 
   test('paid invoice can be cancelled via Storno too (refund document leg)', async () => {
@@ -317,6 +331,12 @@ describe('POST /api/admin/contracts/:id/countersign', () => {
     expect(row.status).toBe('fully_signed');
     expect(row.signed_admin_name).toBe('Admin Tester');
     expect(row.signed_by_admin_at).toBeTruthy();
+
+    // The customer's own signature (from the real sign flow in the seed)
+    // must survive countersigning — layered, not replaced.
+    expect(row.signed_customer_signature_path).toBeTruthy();
+    expect(fs.existsSync(row.signed_customer_signature_path)).toBe(true);
+    expect(row.signed_customer_name).toBe('Custo Mer');
 
     // Admin signature image persisted under the storage root
     expect(row.signed_admin_signature_path).toBeTruthy();
