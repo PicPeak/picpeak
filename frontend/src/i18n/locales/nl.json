@@ -1555,6 +1555,7 @@
       "archiveRestored": "Archief hersteld voor \"{{eventName}}\"",
       "galleryOpened": "Een gast heeft de galerij “{{eventName}}” geopend",
       "galleryDownloaded": "Een gast heeft foto’s uit “{{eventName}}” gedownload",
+      "galleryDownloadedCustomer": "Klant heeft foto’s uit “{{eventName}}” gedownload",
       "photoFavorite": "Een gast heeft een foto in “{{eventName}}” als favoriet gemarkeerd",
       "systemActivity": "Systeemactiviteit: {{type}}",
       "adminProfileUpdated": "Beheerdersprofiel bijgewerkt door {{actorName}}",
@@ -1708,6 +1709,8 @@
     "analytics": "Analyse",
     "activities": {
       "event_created": "Nieuw evenement aangemaakt: {{eventName}}",
+      "gallery_opened": "Galerij “{{eventName}}” is geopend",
+      "gallery_downloaded": "Foto’s uit “{{eventName}}” zijn gedownload",
       "photos_uploaded": "{{count}} foto's geüpload naar {{eventName}}",
       "event_archived": "Evenement gearchiveerd: {{eventName}}",
       "archive_restored": "Archief hersteld: {{eventName}}",

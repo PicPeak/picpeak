@@ -1555,6 +1555,7 @@
       "archiveRestored": "Arhiv obnovljen za »{{eventName}}«",
       "galleryOpened": "Gost je odprl galerijo »{{eventName}}«",
       "galleryDownloaded": "Gost je prenesel fotografije iz »{{eventName}}«",
+      "galleryDownloadedCustomer": "Stranka je prenesla fotografije iz »{{eventName}}«",
       "photoFavorite": "Gost je fotografijo v »{{eventName}}« označil kot priljubljeno",
       "systemActivity": "Sistemska aktivnost: {{type}}",
       "adminProfileUpdated": "Administratorski profil je posodobil {{actorName}}",
@@ -1708,6 +1709,8 @@
     "analytics": "Analitika",
     "activities": {
       "event_created": "Ustvarjen nov dogodek: {{eventName}}",
+      "gallery_opened": "Galerija »{{eventName}}« je bila odprta",
+      "gallery_downloaded": "Fotografije iz »{{eventName}}« so bile prenesene",
       "photos_uploaded": "{{count}} fotografij naloženih v {{eventName}}",
       "event_archived": "Dogodek arhiviran: {{eventName}}",
       "archive_restored": "Arhiv obnovljen: {{eventName}}",

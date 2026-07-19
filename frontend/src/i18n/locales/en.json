@@ -2072,6 +2072,7 @@
       "archiveRestored": "Archive restored for \"{{eventName}}\"",
       "galleryOpened": "A guest opened the gallery “{{eventName}}”",
       "galleryDownloaded": "A guest downloaded photos from “{{eventName}}”",
+      "galleryDownloadedCustomer": "Customer downloaded photos from “{{eventName}}”",
       "photoFavorite": "A guest favorited a photo in “{{eventName}}”",
       "systemActivity": "System activity: {{type}}",
       "adminProfileUpdated": "Admin profile updated by {{actorName}}",
@@ -2306,6 +2307,8 @@
     "analytics": "Analytics",
     "activities": {
       "event_created": "New event created: {{eventName}}",
+      "gallery_opened": "Gallery “{{eventName}}” was opened",
+      "gallery_downloaded": "Photos were downloaded from “{{eventName}}”",
       "photos_uploaded": "{{count}} photos uploaded to {{eventName}}",
       "event_archived": "Event archived: {{eventName}}",
       "archive_restored": "Archive restored: {{eventName}}",

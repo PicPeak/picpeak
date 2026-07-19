@@ -80,6 +80,11 @@ function galleryActor(req) {
   return { type: req && req.accessLevel === 'client' ? 'customer' : 'guest' };
 }
 function notifyGalleryOpened(event, req) {
+  // Customer-portal opens already log `customer_event_access` on the
+  // access-token mint — a second `gallery_opened` per portal click would
+  // double-notify (codex review of #849, confirmation round). Client
+  // sessions therefore only surface via downloads.
+  if (req && req.accessLevel === 'client') return;
   const now = Date.now();
   const last = galleryOpenedNotifiedAt.get(event.id) || 0;
   if (now - last < GALLERY_OPENED_DEBOUNCE_MS) return;
@@ -1177,6 +1182,12 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
       }
     }
 
+    // Notification only after the response actually finished — finalize()
+    // ends Archiver's input, not the HTTP transfer (codex review of #849,
+    // confirmation round). Registered before finalize so it can't be missed.
+    res.on('finish', () => {
+      if (res.statusCode < 400) logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, galleryActor(req));
+    });
     await archive.finalize();
 
     // Log bulk download
@@ -1186,8 +1197,6 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
       user_agent: req.headers['user-agent'],
       action: 'download_all'
     });
-    // Surface in the admin notification bell (#746).
-    await logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, galleryActor(req));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to create download archive');
   }
@@ -1297,6 +1306,10 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       }
     }
 
+    // See download-all: notify only on response 'finish'.
+    res.on('finish', () => {
+      if (res.statusCode < 400) logActivity('gallery_downloaded', { scope: 'selected', photo_count: photoIds.length }, req.event.id, galleryActor(req));
+    });
     await archive.finalize();
 
     await db('access_logs').insert({
@@ -1305,8 +1318,6 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       user_agent: req.headers['user-agent'],
       action: 'download_selected'
     });
-    // Surface in the admin notification bell (#746).
-    await logActivity('gallery_downloaded', { scope: 'selected', photo_count: photoIds.length }, req.event.id, galleryActor(req));
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to download selected photos');
   }

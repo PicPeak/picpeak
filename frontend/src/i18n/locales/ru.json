@@ -1589,6 +1589,7 @@
       "archiveRestored": "Архив восстановлен для «{{eventName}}»",
       "galleryOpened": "Гость открыл галерею «{{eventName}}»",
       "galleryDownloaded": "Гость скачал фотографии из «{{eventName}}»",
+      "galleryDownloadedCustomer": "Клиент скачал фотографии из «{{eventName}}»",
       "photoFavorite": "Гость добавил фото из «{{eventName}}» в избранное",
       "systemActivity": "Системная активность: {{type}}",
       "adminProfileUpdated": "Профиль администратора обновлён пользователем {{actorName}}",
@@ -1758,6 +1759,8 @@
     "analytics": "Аналитика",
     "activities": {
       "event_created": "Новое событие создано: {{eventName}}",
+      "gallery_opened": "Галерея «{{eventName}}» была открыта",
+      "gallery_downloaded": "Фотографии из «{{eventName}}» были скачаны",
       "photos_uploaded": "{{count}} фото загружено в {{eventName}}",
       "event_archived": "Событие архивировано: {{eventName}}",
       "archive_restored": "Архив восстановлен: {{eventName}}",

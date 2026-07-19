@@ -1572,6 +1572,7 @@
       "archiveRestored": "Arquivo restaurado para \"{{eventName}}\"",
       "galleryOpened": "Um convidado abriu a galeria “{{eventName}}”",
       "galleryDownloaded": "Um convidado baixou fotos de “{{eventName}}”",
+      "galleryDownloadedCustomer": "O cliente baixou fotos de “{{eventName}}”",
       "photoFavorite": "Um convidado favoritou uma foto em “{{eventName}}”",
       "systemActivity": "Atividade do sistema: {{type}}",
       "adminProfileUpdated": "Perfil admin atualizado por {{actorName}}",
@@ -1733,6 +1734,8 @@
     "analytics": "Análise",
     "activities": {
       "event_created": "Novo evento criado: {{eventName}}",
+      "gallery_opened": "A galeria “{{eventName}}” foi aberta",
+      "gallery_downloaded": "Fotos de “{{eventName}}” foram baixadas",
       "photos_uploaded": "{{count}} fotos carregadas para {{eventName}}",
       "event_archived": "Evento arquivado: {{eventName}}",
       "archive_restored": "Arquivo restaurado: {{eventName}}",
