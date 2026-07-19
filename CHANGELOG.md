@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.92.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.92.1-beta.0...v3.92.2-beta.0) (2026-07-19)
+
+
+### Bug Fixes
+
+* **file-watcher:** bound concurrent photo processing ([#846](https://github.com/PicPeak/picpeak/issues/846)) ([8337a71](https://github.com/PicPeak/picpeak/commit/8337a716b169e66f8edf8619c64622e6853dae81))
+* **security:** read the password-complexity key the settings UI writes ([#843](https://github.com/PicPeak/picpeak/issues/843)) ([8060fed](https://github.com/PicPeak/picpeak/commit/8060fedf6aaea5359c3bf04696fd00ec8500b51a))
+* **uploads:** keep videos when thumbnail generation fails ([#845](https://github.com/PicPeak/picpeak/issues/845)) ([0310c46](https://github.com/PicPeak/picpeak/commit/0310c46fdd5b03274f761abfb4c8b552e2f8b666))
+
 ## [3.92.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.92.0-beta.0...v3.92.1-beta.0) (2026-07-19)
 
 
