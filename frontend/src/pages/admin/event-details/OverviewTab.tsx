@@ -126,6 +126,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             show_transition: event.show_transition,
             show_transition_ms: event.show_transition_ms,
             show_watermark: event.show_watermark,
+            show_qr: event.show_qr,
             show_colorfilter: event.show_colorfilter,
           }}
           onChanged={() => refetchEvent()}

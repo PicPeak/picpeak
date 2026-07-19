@@ -77,6 +77,8 @@ export interface Event {
   // Watermark MODE only (null=inherit global / true / false). The look lives
   // globally in Settings → Slideshow, not per event.
   show_watermark?: boolean | null;
+  // QR overlay MODE (#837) — same tri-state semantics as show_watermark.
+  show_qr?: boolean | null;
   show_colorfilter?: 'none' | 'bw' | 'sepia' | 'warm' | 'cool' | 'vignette';
   // Default photo sort order
   default_photo_sort?: string;

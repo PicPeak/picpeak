@@ -377,8 +377,11 @@ async function slideshowSettings(event) {
 }
 
 // The state endpoint is polled every ~3s per projector — cache the generated
-// QR data URI per share URL instead of re-encoding on every poll. Tiny values
-// (~2 KB each); the map only ever holds one entry per concurrently-shown event.
+// QR data URI per share URL instead of re-encoding on every poll. Bounded:
+// entries live for past events / rotated tokens too, so without eviction the
+// map would grow with every share URL ever displayed (codex review of #848).
+// Insertion-order eviction is enough — concurrently-shown events stay hot.
+const SLIDESHOW_QR_CACHE_MAX = 50;
 const slideshowQrCache = new Map();
 async function slideshowQrDataUrl(event) {
   try {
@@ -389,6 +392,9 @@ async function slideshowQrDataUrl(event) {
     if (slideshowQrCache.has(shareUrl)) return slideshowQrCache.get(shareUrl);
     const QRCode = require('qrcode');
     const dataUrl = await QRCode.toDataURL(shareUrl, { width: 512, margin: 2 });
+    if (slideshowQrCache.size >= SLIDESHOW_QR_CACHE_MAX) {
+      slideshowQrCache.delete(slideshowQrCache.keys().next().value);
+    }
     slideshowQrCache.set(shareUrl, dataUrl);
     return dataUrl;
   } catch (e) {

@@ -456,27 +456,31 @@ export function SlideshowPage() {
             />
           )}
 
-          {/* Share-link QR overlay (#837): guests scan the gallery straight off
-              the beamer. White padding box keeps the code scannable on any photo. */}
-          {settings.qr && (
-            <img
-              src={settings.qr.data_url}
-              alt=""
-              draggable={false}
-              style={{
-                position: 'absolute',
-                ...watermarkCorner(settings.qr.position),
-                width: `${settings.qr.size ?? 14}vmin`,
-                height: `${settings.qr.size ?? 14}vmin`,
-                opacity: Math.min(1, Math.max(0, (settings.qr.opacity ?? 90) / 100)),
-                background: '#ffffff',
-                padding: '0.6vmin',
-                borderRadius: '1vmin',
-                pointerEvents: 'none',
-              }}
-            />
-          )}
         </>
+      )}
+
+      {/* Share-link QR overlay (#837): guests scan the gallery straight off
+          the beamer. White padding box keeps the code scannable on any photo.
+          Rendered OUTSIDE the photos-gate so an empty/awaiting slideshow still
+          shows the code — the "scan to add the first photos" case (codex
+          review of #848). */}
+      {phase === 'running' && settings.qr && (
+        <img
+          src={settings.qr.data_url}
+          alt=""
+          draggable={false}
+          style={{
+            position: 'absolute',
+            ...watermarkCorner(settings.qr.position),
+            width: `${settings.qr.size ?? 14}vmin`,
+            height: `${settings.qr.size ?? 14}vmin`,
+            opacity: Math.min(1, Math.max(0, (settings.qr.opacity ?? 90) / 100)),
+            background: '#ffffff',
+            padding: '0.6vmin',
+            borderRadius: '1vmin',
+            pointerEvents: 'none',
+          }}
+        />
       )}
 
       {phase === 'ended' && (
