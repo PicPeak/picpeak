@@ -136,19 +136,28 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
           : t('events.shareWithGuests')}
       </p>
 
-      {qrPreviewUrl && (
+      {event.share_link && (
         <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
           <h3 className="text-sm font-medium text-neutral-900 dark:text-neutral-100 mb-3 flex items-center gap-2">
             <QrCode className="w-4 h-4" />
             {t('events.qrCode', 'QR code')}
           </h3>
-          <div className="flex items-start gap-4">
-            <img
-              src={qrPreviewUrl}
-              alt={t('events.qrCode', 'QR code')}
-              className="w-28 h-28 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white p-1"
-            />
-            <div className="flex-1 grid grid-cols-2 gap-2">
+          {/* Stacks on phones; downloads stay available even when the preview
+              request failed — the section keys off share-link availability,
+              not off a successfully loaded preview (codex review of #847). */}
+          <div className="flex flex-col sm:flex-row items-start gap-4">
+            {qrPreviewUrl ? (
+              <img
+                src={qrPreviewUrl}
+                alt={t('events.qrCode', 'QR code')}
+                className="w-28 h-28 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white p-1"
+              />
+            ) : (
+              <div className="w-28 h-28 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-700 flex items-center justify-center">
+                <QrCode className="w-8 h-8 text-neutral-300 dark:text-neutral-500" />
+              </div>
+            )}
+            <div className="flex-1 w-full grid grid-cols-1 sm:grid-cols-2 gap-2">
               <Button variant="outline" size="sm" leftIcon={<Download className="w-4 h-4" />} onClick={() => handleQrDownload('png')}>
                 PNG
               </Button>
