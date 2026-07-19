@@ -11,6 +11,7 @@ const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { requireEventOwnership } = require('../../middleware/ownership');
 const { buildShareLinkVariants, getEventShareToken } = require('../../services/shareLinkService');
+const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const logger = require('../../utils/logger');
 const { errorResponse } = require('../../utils/routeHelpers');
 
@@ -51,20 +52,38 @@ const LOCAL_BASE_RE = /^https?:\/\/(localhost|127\.|0\.0\.0\.0|\[::1\])/i;
 async function loadShareUrl(eventId, requestOrigin) {
   const event = await db('events').where({ id: eventId }).first();
   if (!event) return { event: null, shareUrl: null };
-  const shareToken = getEventShareToken(event);
-  if (!shareToken) return { event, shareUrl: null };
-  const { shareUrl, sharePath } = await buildShareLinkVariants({ slug: event.slug, shareToken });
 
-  // Prefer the configured public base; fall back to the admin browser's
-  // origin when the base is missing or localhost — mirrors the frontend's
-  // buildShareLinkUrl so the QR encodes the same URL the card displays.
+  // Single source of truth is the STORED share_link — exactly what the
+  // ShareLinkCard displays and the admin copies. Rebuilding from the
+  // current slug/token/short-URL setting can diverge for legacy absolute
+  // links or events created under a different short-URL setting, and a
+  // printed QR encoding a different URL than the card is a permanent
+  // mistake (codex review of #847, confirmation round). Only when no
+  // share_link is stored do we fall back to rebuilding it.
+  let link = event.share_link;
+  if (!link) {
+    const shareToken = getEventShareToken(event);
+    if (!shareToken) return { event, shareUrl: null };
+    ({ shareLinkToStore: link } = await buildShareLinkVariants({ slug: event.slug, shareToken }));
+  }
+
   const origin = typeof requestOrigin === 'string' && ORIGIN_RE.test(requestOrigin)
     ? requestOrigin.replace(/\/$/, '')
     : null;
-  if (origin && (!/^https?:\/\//i.test(shareUrl) || LOCAL_BASE_RE.test(shareUrl))) {
-    return { event, shareUrl: `${origin}${sharePath}` };
+
+  // Absolute + reachable → use as-is; loopback-absolute → re-anchor its
+  // path; relative → absolutize. Mirrors the frontend's buildShareLinkUrl.
+  if (/^https?:\/\//i.test(link) && !LOCAL_BASE_RE.test(link)) {
+    return { event, shareUrl: link };
   }
-  return { event, shareUrl };
+  let sharePath = link;
+  if (/^https?:\/\//i.test(link)) {
+    try { const u = new URL(link); sharePath = `${u.pathname}${u.search}`; } catch { /* keep as-is */ }
+  }
+  if (!sharePath.startsWith('/')) sharePath = `/${sharePath}`;
+  if (origin) return { event, shareUrl: `${origin}${sharePath}` };
+  const frontendBase = await getFrontendBaseUrl();
+  return { event, shareUrl: frontendBase ? `${frontendBase}${sharePath}` : sharePath };
 }
 
 module.exports = (router) => {
@@ -80,14 +99,14 @@ module.exports = (router) => {
       const disposition = `${download ? 'attachment' : 'inline'}; filename="qr-${event.slug}.${format}"`;
 
       if (format === 'svg') {
-        const svg = await QRCode.toString(shareUrl, { type: 'svg', margin: 2 });
+        const svg = await QRCode.toString(shareUrl, { type: 'svg', margin: 4 });
         res.set('Content-Type', 'image/svg+xml');
         res.set('Content-Disposition', disposition);
         return res.send(svg);
       }
 
       const width = Math.min(Math.max(parseInt(req.query.size, 10) || 600, 128), 2048);
-      const png = await QRCode.toBuffer(shareUrl, { type: 'png', width, margin: 2 });
+      const png = await QRCode.toBuffer(shareUrl, { type: 'png', width, margin: 4 });
       res.set('Content-Type', 'image/png');
       res.set('Content-Disposition', disposition);
       return res.send(png);
@@ -108,7 +127,7 @@ module.exports = (router) => {
       const tpl = TEMPLATES[templateKey];
       const caption = PRINT_CAPTIONS[req.query.lang] || PRINT_CAPTIONS.en;
 
-      const qrPng = await QRCode.toBuffer(shareUrl, { type: 'png', width: tpl.qrSize * 3, margin: 2 });
+      const qrPng = await QRCode.toBuffer(shareUrl, { type: 'png', width: tpl.qrSize * 3, margin: 4 });
 
       const doc = new PDFDocument({
         size: tpl.size,
