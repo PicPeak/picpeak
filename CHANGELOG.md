@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.93.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.92.2-beta.0...v3.93.0-beta.0) (2026-07-19)
+
+
+### Features
+
+* **events:** gallery QR code + printable table-card/poster PDFs ([#847](https://github.com/PicPeak/picpeak/issues/847)) ([60cdd07](https://github.com/PicPeak/picpeak/commit/60cdd07085c750cee358cbe59420668cbc538473))
+* **notifications:** surface guest activity in the admin bell ([#849](https://github.com/PicPeak/picpeak/issues/849)) ([cb5b319](https://github.com/PicPeak/picpeak/commit/cb5b319f1022655fbc1e442d0d1e6d8337f0e637))
+* **slideshow:** guest-scannable share-link QR overlay ([#848](https://github.com/PicPeak/picpeak/issues/848)) ([e8dad4b](https://github.com/PicPeak/picpeak/commit/e8dad4b40ddb816cc2f9a94be456f793adce20d7))
+
+
+### Bug Fixes
+
+* **crm:** pass trx to logActivity inside transactions — audit rows silently lost on SQLite ([#851](https://github.com/PicPeak/picpeak/issues/851)) ([a6a3c9f](https://github.com/PicPeak/picpeak/commit/a6a3c9f9f8ecb84500d5ac68e90639c362f2461a))
+
 ## [3.92.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.92.1-beta.0...v3.92.2-beta.0) (2026-07-19)
 
 
