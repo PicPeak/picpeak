@@ -2073,7 +2073,7 @@
       "galleryOpened": "A guest opened the gallery “{{eventName}}”",
       "galleryDownloaded": "A guest downloaded photos from “{{eventName}}”",
       "galleryDownloadedCustomer": "Customer downloaded photos from “{{eventName}}”",
-      "photoFavorite": "A guest favorited a photo in “{{eventName}}”",
+      "photoFavorite": "A photo in “{{eventName}}” was favorited",
       "systemActivity": "System activity: {{type}}",
       "adminProfileUpdated": "Admin profile updated by {{actorName}}",
       "photosUploaded_one": "{{count}} photo uploaded to \"{{eventName}}\"",

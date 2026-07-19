@@ -1556,7 +1556,7 @@
       "galleryOpened": "Een gast heeft de galerij “{{eventName}}” geopend",
       "galleryDownloaded": "Een gast heeft foto’s uit “{{eventName}}” gedownload",
       "galleryDownloadedCustomer": "Klant heeft foto’s uit “{{eventName}}” gedownload",
-      "photoFavorite": "Een gast heeft een foto in “{{eventName}}” als favoriet gemarkeerd",
+      "photoFavorite": "Een foto in “{{eventName}}” is als favoriet gemarkeerd",
       "systemActivity": "Systeemactiviteit: {{type}}",
       "adminProfileUpdated": "Beheerdersprofiel bijgewerkt door {{actorName}}",
       "photosUploaded_one": "{{count}} foto geüpload naar \"{{eventName}}\"",

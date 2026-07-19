@@ -1573,7 +1573,7 @@
       "galleryOpened": "Um convidado abriu a galeria “{{eventName}}”",
       "galleryDownloaded": "Um convidado baixou fotos de “{{eventName}}”",
       "galleryDownloadedCustomer": "O cliente baixou fotos de “{{eventName}}”",
-      "photoFavorite": "Um convidado favoritou uma foto em “{{eventName}}”",
+      "photoFavorite": "Uma foto em “{{eventName}}” foi favoritada",
       "systemActivity": "Atividade do sistema: {{type}}",
       "adminProfileUpdated": "Perfil admin atualizado por {{actorName}}",
       "photosUploaded_many": "{{count}} fotos enviadas para \"{{eventName}}\"",

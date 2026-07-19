@@ -2497,7 +2497,7 @@
       "galleryOpened": "Ein Gast hat die Galerie „{{eventName}}“ geöffnet",
       "galleryDownloaded": "Ein Gast hat Fotos aus „{{eventName}}“ heruntergeladen",
       "galleryDownloadedCustomer": "Kunde hat Fotos aus „{{eventName}}“ heruntergeladen",
-      "photoFavorite": "Ein Gast hat ein Foto in „{{eventName}}“ favorisiert",
+      "photoFavorite": "Ein Foto in „{{eventName}}“ wurde favorisiert",
       "systemActivity": "Systemaktivität: {{type}}",
       "adminProfileUpdated": "Admin-Profil aktualisiert von {{actorName}}",
       "photosUploaded_one": "{{count}} Foto in \"{{eventName}}\" hochgeladen",

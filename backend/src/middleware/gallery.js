@@ -164,6 +164,11 @@ async function verifyGalleryAccess(req, res, next) {
     logger.debug('[verifyGalleryAccess] Event located', { eventId: event.id, slug: event.slug });
     req.event = event;
     req.accessLevel = decoded.accessLevel || 'guest';
+    // Customer-portal provenance (#746/#849): portal-minted tokens carry
+    // via:'customer' but NO accessLevel (they default to guest), while
+    // PIN-client logins carry accessLevel:'client' without `via`. Activity
+    // attribution/dedup needs the distinction, so surface it explicitly.
+    req.viaCustomer = decoded.via === 'customer';
     req.sessionID = decoded.sessionId || `gallery_${event.id}_${Date.now()}`;
 
     // Create client info for logging (similar to secureImageMiddleware but simpler)

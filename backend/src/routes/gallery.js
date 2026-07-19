@@ -77,14 +77,20 @@ const galleryOpenedNotifiedAt = new Map();
 // instead of hard-coding 'guest', so a customer opening from the portal
 // isn't mislabeled (codex review of #849 round 3).
 function galleryActor(req) {
-  return { type: req && req.accessLevel === 'client' ? 'customer' : 'guest' };
+  // Portal tokens run as accessLevel 'guest' but carry via:'customer'
+  // (req.viaCustomer); PIN-client logins carry accessLevel 'client'.
+  // Both are customers, not guests (codex review of #849, final round).
+  const isCustomer = !!(req && (req.viaCustomer || req.accessLevel === 'client'));
+  return { type: isCustomer ? 'customer' : 'guest' };
 }
 function notifyGalleryOpened(event, req) {
-  // Customer-portal opens already log `customer_event_access` on the
+  // Customer-PORTAL opens already log `customer_event_access` on the
   // access-token mint — a second `gallery_opened` per portal click would
-  // double-notify (codex review of #849, confirmation round). Client
-  // sessions therefore only surface via downloads.
-  if (req && req.accessLevel === 'client') return;
+  // double-notify. Keyed on the portal provenance (req.viaCustomer), NOT
+  // on accessLevel: PIN-client logins are 'client' without any other
+  // open signal and must keep notifying (codex review of #849, final
+  // round — the previous check had this inverted).
+  if (req && req.viaCustomer) return;
   const now = Date.now();
   const last = galleryOpenedNotifiedAt.get(event.id) || 0;
   if (now - last < GALLERY_OPENED_DEBOUNCE_MS) return;

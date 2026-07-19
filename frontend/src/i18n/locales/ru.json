@@ -1590,7 +1590,7 @@
       "galleryOpened": "Гость открыл галерею «{{eventName}}»",
       "galleryDownloaded": "Гость скачал фотографии из «{{eventName}}»",
       "galleryDownloadedCustomer": "Клиент скачал фотографии из «{{eventName}}»",
-      "photoFavorite": "Гость добавил фото из «{{eventName}}» в избранное",
+      "photoFavorite": "Фото из «{{eventName}}» добавлено в избранное",
       "systemActivity": "Системная активность: {{type}}",
       "adminProfileUpdated": "Профиль администратора обновлён пользователем {{actorName}}",
       "photosUploaded_few": "{{count}} фото загружено в «{{eventName}}»",

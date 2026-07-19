@@ -1423,7 +1423,7 @@
       "galleryOpened": "Un invitado abrió la galería «{{eventName}}»",
       "galleryDownloaded": "Un invitado descargó fotos de «{{eventName}}»",
       "galleryDownloadedCustomer": "El cliente descargó fotos de «{{eventName}}»",
-      "photoFavorite": "Un invitado marcó como favorita una foto de «{{eventName}}»",
+      "photoFavorite": "Se marcó como favorita una foto de «{{eventName}}»",
       "systemActivity": "Actividad del sistema: {{type}}",
       "adminProfileUpdated": "Perfil de admin actualizado por {{actorName}}"
     },

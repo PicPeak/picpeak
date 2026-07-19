@@ -1556,7 +1556,7 @@
       "galleryOpened": "Gost je odprl galerijo »{{eventName}}«",
       "galleryDownloaded": "Gost je prenesel fotografije iz »{{eventName}}«",
       "galleryDownloadedCustomer": "Stranka je prenesla fotografije iz »{{eventName}}«",
-      "photoFavorite": "Gost je fotografijo v »{{eventName}}« označil kot priljubljeno",
+      "photoFavorite": "Fotografija v »{{eventName}}« je bila označena kot priljubljena",
       "systemActivity": "Sistemska aktivnost: {{type}}",
       "adminProfileUpdated": "Administratorski profil je posodobil {{actorName}}",
       "photosUploaded_one": "{{count}} fotografija naložena v »{{eventName}}«",
