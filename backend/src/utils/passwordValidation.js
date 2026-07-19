@@ -135,12 +135,20 @@ async function getPasswordComplexitySettings() {
     if (!settings || !settings.setting_value) {
       return 'moderate'; // Default
     }
-    
-    const value = typeof settings.setting_value === 'string' 
-      ? JSON.parse(settings.setting_value)
-      : settings.setting_value;
-    
-    return value;
+
+    // Parse with fallback, mirroring getAppSetting: on SQLite the TEXT
+    // column returns the JSON-stringified value ('"very_strong"'), but on
+    // Postgres the json column comes back already decoded ('very_strong')
+    // — a bare JSON.parse would throw there and the outer catch would
+    // silently fall back to 'moderate' again.
+    let value = settings.setting_value;
+    if (typeof value === 'string') {
+      try {
+        value = JSON.parse(value);
+      } catch (_) { /* already-decoded plain string — keep as-is */ }
+    }
+
+    return value || 'moderate';
   } catch (error) {
     logger.error('Failed to get password complexity settings:', error);
     return 'moderate'; // Default on error - ensures app continues working
