@@ -171,6 +171,12 @@ async function createContract(payload, adminId) {
   // simply skip these fields (contract still saves successfully).
   const hasEventCols = await hasColumnCached('contracts', 'event_name');
 
+  // Resolve the audit actor BEFORE the transaction — adminActor reads
+  // admin_users via the global db, which inside the trx would grab a
+  // second connection from the single-connection SQLite pool and
+  // deadlock (60s acquire-timeout stall, audit row silently lost).
+  const actor = await adminActor(adminId);
+
   return await db.transaction(async (trx) => {
     // Pass trx so the sequence claim joins our outer transaction —
     // SQLite deadlocks otherwise (1-connection default).
@@ -239,7 +245,9 @@ async function createContract(payload, adminId) {
     }
 
     try {
-      await logActivity('contract_created', { contractId, contractNumber, customerAccountId: payload.customerAccountId }, null, await adminActor(adminId));
+      // Pass `trx` so the audit insert rides the transaction's connection;
+      // the global db here deadlocks the single-connection SQLite pool.
+      await logActivity('contract_created', { contractId, contractNumber, customerAccountId: payload.customerAccountId }, null, actor, trx);
     } catch (_) { /* logging is best-effort */ }
 
     logger.info('Contract created', { adminId, contractId, contractNumber });
@@ -268,6 +276,9 @@ async function updateContract(id, payload, adminId) {
   }
 
   const hasEventCols = await hasColumnCached('contracts', 'event_name');
+
+  // Resolve the audit actor BEFORE the transaction — see createContract.
+  const actor = await adminActor(adminId);
 
   return await db.transaction(async (trx) => {
     const updates = { updated_at: new Date() };
@@ -349,7 +360,9 @@ async function updateContract(id, payload, adminId) {
     }
 
     try {
-      await logActivity('contract_updated', { contractId: id }, null, await adminActor(adminId));
+      // Pass `trx` so the audit insert rides the transaction's connection;
+      // the global db here deadlocks the single-connection SQLite pool.
+      await logActivity('contract_updated', { contractId: id }, null, actor, trx);
     } catch (_) { /* logging is best-effort */ }
     return id;
   });

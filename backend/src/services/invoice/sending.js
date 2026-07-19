@@ -307,9 +307,11 @@ async function createStorno(originalId, adminId, trx = db) {
   });
 
   try {
+    // Pass `trx` so the audit insert rides the transaction's connection;
+    // the global db here deadlocks the single-connection SQLite pool.
     await logActivity('invoice_cancelled_via_storno',
       { invoiceId: originalId, stornoId, stornoNumber },
-      original.event_id || null, `admin:${adminId}`);
+      original.event_id || null, `admin:${adminId}`, trx);
   } catch (_) {}
 
   return stornoId;
@@ -502,9 +504,11 @@ async function reissueInvoice(id, adminId) {
     });
 
     try {
+      // Pass `trx` so the audit insert rides the transaction's connection;
+      // the global db here deadlocks the single-connection SQLite pool.
       await logActivity('invoice_reissued',
         { originalInvoiceId: id, newInvoiceId: newId, stornoId },
-        original.event_id || null, `admin:${adminId}`);
+        original.event_id || null, `admin:${adminId}`, trx);
     } catch (_) {}
 
     return { id: newId, replaces: id, stornoId };
