@@ -243,6 +243,48 @@ describe('OIDC role mapping + login policy (#798 phase 2)', () => {
     expect(await roleOf('mapped@example.com')).toBe('viewer');
   });
 
+  it('never demotes the last LOCAL-password super_admin even when an OIDC-owned super exists', async () => {
+    const superRole = await db('roles').where({ name: 'super_admin' }).first();
+    const viewerRole = await db('roles').where({ name: 'viewer' }).first();
+
+    // A local-password super admin, SSO-linked via verified email so role
+    // sync applies to it.
+    const [localId] = await db('admin_users').insert({
+      username: 'local-super',
+      email: 'local-super@example.com',
+      password_hash: await bcrypt.hash('LocalSuper123', 4),
+      role_id: superRole.id,
+      is_active: 1,
+      auth_provider: 'local',
+      created_at: new Date(),
+      updated_at: new Date(),
+    }).returning('id').then((r) => [r[0]?.id || r[0]]);
+
+    // The only OTHER active super is OIDC-owned (root goes inactive) — the
+    // plain last-super guard would allow the demotion, the break-glass
+    // guard must not.
+    const ssoAdmin = await db('admin_users').where({ email: 'mapped@example.com' }).first();
+    await db('admin_users').where({ id: ssoAdmin.id }).update({ role_id: superRole.id });
+    await db('admin_users').where({ email: 'root@example.com' }).update({ is_active: 0 });
+
+    idp.setNextUser({
+      sub: 'sub-local-super',
+      email: 'local-super@example.com',
+      email_verified: true,
+      realm_access: { roles: ['pp-view'] },
+    });
+    const res = await ssoRoundTrip();
+
+    const row = await db('admin_users').where({ id: localId }).first();
+    // Restore the fixture state before asserting.
+    await db('admin_users').where({ email: 'root@example.com' }).update({ is_active: 1 });
+    await db('admin_users').where({ id: ssoAdmin.id }).update({ role_id: viewerRole.id });
+    await db('admin_users').where({ id: localId }).update({ is_active: 0 });
+
+    expect(res.headers.location).toBe('http://localhost:5199/admin/dashboard');
+    expect(row.role_id).toBe(superRole.id); // kept — it is the break-glass account
+  });
+
   it('treats prototype-property IdP values (constructor/toString) as unmapped, not as an error', async () => {
     idp.setNextUser({
       sub: 'sub-proto',
@@ -299,6 +341,17 @@ describe('OIDC role mapping + login policy (#798 phase 2)', () => {
     await db('app_settings').where({ setting_key: 'oidc_enabled' })
       .update({ setting_value: JSON.stringify(true) });
     expect(await oidcService.isLocalLoginDisabled()).toBe(true);
+    await oidcService.saveOidcSettings({ oidc_disable_local_login: false });
+  });
+
+  it('the policy disarms itself when no active local-password super admin remains', async () => {
+    await oidcService.saveOidcSettings({ oidc_disable_local_login: true });
+    expect(await oidcService.isLocalLoginDisabled()).toBe(true);
+    // The break-glass account disappears (e.g. manual demotion/deactivation
+    // while the policy is on) → local login must re-open by itself.
+    await db('admin_users').where({ email: 'root@example.com' }).update({ auth_provider: 'oidc' });
+    expect(await oidcService.isLocalLoginDisabled()).toBe(false);
+    await db('admin_users').where({ email: 'root@example.com' }).update({ auth_provider: 'local' });
     await oidcService.saveOidcSettings({ oidc_disable_local_login: false });
   });
 

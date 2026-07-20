@@ -206,6 +206,14 @@ router.post('/admin/login/mfa', [
     const ipAddress = getClientIp(req);
     const userAgent = req.headers['user-agent'] || '';
 
+    // Same SSO policy gate as /admin/login (#798 phase 2): an mfa_pending
+    // token minted moments before the policy flipped must not complete into
+    // a local session through this second step.
+    if (await require('../services/oidcService').isLocalLoginDisabled()) {
+      logger.warn('Local admin MFA completion refused — disabled by SSO policy', { ipAddress });
+      return res.status(403).json({ error: 'Local login is disabled — sign in through SSO', code: 'LOCAL_LOGIN_DISABLED' });
+    }
+
     let decoded;
     try {
       decoded = jwt.verify(mfaToken, process.env.JWT_SECRET, {

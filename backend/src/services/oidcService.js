@@ -137,17 +137,44 @@ async function getOidcConfig() {
   };
 }
 
+/** auth_provider values that can use the password route ('local' or legacy NULL). */
+function isLocalProvider(authProvider) {
+  return authProvider !== 'oidc';
+}
+
+/**
+ * Break-glass viability: an ACTIVE super_admin with a usable local password.
+ * OIDC_BREAK_GLASS only re-opens the password route — OIDC-owned accounts
+ * are refused there and carry unusable random hashes, and settings.edit is
+ * super_admin-only, so this is the one account shape that can repair a
+ * broken SSO config.
+ */
+async function hasActiveLocalSuperAdmin(conn = db) {
+  const superAdminRole = await conn('roles').where('name', 'super_admin').first();
+  if (!superAdminRole) return false;
+  const row = await conn('admin_users')
+    .where('role_id', superAdminRole.id)
+    .where('is_active', formatBoolean(true))
+    .where((qb) => qb.whereNot('auth_provider', 'oidc').orWhereNull('auth_provider'))
+    .first();
+  return Boolean(row);
+}
+
 /**
  * Whether the local password login must be refused (#798 phase 2 policy).
  * Only effective while SSO is actually usable (enabled + fully configured) —
  * a half-torn-down config must never lock the instance. OIDC_BREAK_GLASS=true
  * re-enables local login unconditionally so an IdP outage or a role-mapping
- * misconfig always has a documented way back in.
+ * misconfig always has a documented way back in. The policy also disarms
+ * itself when no active local-password super_admin remains (however that
+ * happened — manual demotion, deactivation, deletion): break-glass would
+ * otherwise re-open a password route no usable account can take.
  */
 async function isLocalLoginDisabled() {
   if (process.env.OIDC_BREAK_GLASS === 'true') return false;
   const cfg = await getOidcConfig();
-  return cfg.enabled && cfg.disableLocalLogin && isConfigured(cfg);
+  if (!(cfg.enabled && cfg.disableLocalLogin && isConfigured(cfg))) return false;
+  return hasActiveLocalSuperAdmin();
 }
 
 // Short-TTL cache of the flag for the UNAUTHENTICATED public-settings
@@ -382,9 +409,17 @@ async function syncAdminRole(admin, mappedRole) {
       const activeSupers = await trx('admin_users')
         .where('role_id', superAdminRole.id)
         .where('is_active', formatBoolean(true))
-        .select('id')
+        .select('id', 'auth_provider')
         .forUpdate();
-      if (!activeSupers.some((row) => row.id !== admin.id)) return; // last one — keep
+      const others = activeSupers.filter((row) => row.id !== admin.id);
+      if (others.length === 0) return; // last active super_admin — keep
+      // A LOCAL-password super is also the break-glass account for SSO-only
+      // mode: demoting the last one would leave only OIDC-owned supers,
+      // which the password route refuses — keep it regardless of what the
+      // IdP asserts.
+      if (isLocalProvider(admin.auth_provider) && !others.some((row) => isLocalProvider(row.auth_provider))) {
+        return;
+      }
       await trx('admin_users').where('id', admin.id).update({
         role_id: mappedRole.id,
         updated_at: new Date(),
@@ -392,7 +427,7 @@ async function syncAdminRole(admin, mappedRole) {
       demoted = true;
     });
     if (!demoted) {
-      logger.warn('OIDC role sync would demote the last active super_admin — keeping super_admin', {
+      logger.warn('OIDC role sync would demote the last active (local-password) super_admin — keeping super_admin', {
         adminId: admin.id,
         mappedRole: mappedRole.name,
       });
@@ -615,6 +650,7 @@ module.exports = {
   isConfigured,
   isLocalLoginDisabled,
   isLocalLoginDisabledCached,
+  hasActiveLocalSuperAdmin,
   extractRolesFromClaims,
   resolveMappedRole,
   getRedirectUri,

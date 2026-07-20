@@ -39,10 +39,15 @@ const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '.
 // oidc_client_secret is reserved too: it is AES-encrypted at rest and only
 // writable through PUT /sso below — a generic upsert would store plaintext
 // and break decryption (#798).
-const RESERVED_SETTING_KEYS = ['setup_wizard_completed', 'setup_token', 'oidc_client_secret'];
+const RESERVED_SETTING_KEYS = ['setup_wizard_completed', 'setup_token'];
+// EVERY oidc_* key is reserved (#798 phase 2): the client secret would be
+// clobbered with plaintext, and the policy/mapping keys carry invariants
+// (role targets exist, break-glass account present) that only the dedicated
+// PUT /sso validates — a generic upsert would bypass all of them.
+const isReservedSettingKey = (key) => RESERVED_SETTING_KEYS.includes(key) || key.startsWith('oidc_');
 const stripReservedSettingKeys = (settings) => {
-  for (const key of RESERVED_SETTING_KEYS) {
-    delete settings[key];
+  for (const key of Object.keys(settings)) {
+    if (isReservedSettingKey(key)) delete settings[key];
   }
   return settings;
 };
@@ -163,9 +168,7 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
     // generic settings reads — oidc_client_secret (#798) is stored encrypted
     // with setting_type 'string' and would otherwise leak its ciphertext to
     // any settings.view holder; setup_token is the first-run bootstrap secret.
-    for (const key of RESERVED_SETTING_KEYS) {
-      delete settingsObject[key];
-    }
+    stripReservedSettingKeys(settingsObject);
 
     // Mask sensitive secrets before sending to client
     if (settingsObject.security_recaptcha_secret_key) {
@@ -528,15 +531,12 @@ router.put('/sso', adminAuth, requirePermission('settings.edit'), [
     // OIDC-owned accounts are refused there and carry unusable random hashes.
     // settings.edit is super_admin-only, so a lesser local account couldn't
     // fix the SSO config either — without this check an all-OIDC instance
-    // would be unrecoverable during an IdP outage.
-    if (req.body.oidc_disable_local_login === true) {
-      const superAdminRole = await db('roles').where('name', 'super_admin').first();
-      const localSuperAdmin = superAdminRole && await db('admin_users')
-        .where('role_id', superAdminRole.id)
-        .where('is_active', formatBoolean(true))
-        .where((qb) => qb.whereNot('auth_provider', 'oidc').orWhereNull('auth_provider'))
-        .first();
-      if (!localSuperAdmin) {
+    // would be unrecoverable during an IdP outage. Checked on the MERGED
+    // state, not just the request: re-enabling SSO while a stored true flag
+    // re-arms SSO-only mode just as much as setting the flag itself.
+    const effectiveDisableLocal = req.body.oidc_disable_local_login ?? current.disableLocalLogin;
+    if (effectiveDisableLocal === true && effectiveEnabled === true) {
+      if (!(await oidcService.hasActiveLocalSuperAdmin())) {
         return res.status(400).json({ error: 'Disabling local login requires at least one active Super Admin with a local password (the break-glass account)' });
       }
     }
@@ -613,9 +613,7 @@ router.get('/:type', adminAuth, requirePermission('settings.view'), async (req, 
     // generic settings reads — oidc_client_secret (#798) is stored encrypted
     // with setting_type 'string' and would otherwise leak its ciphertext to
     // any settings.view holder; setup_token is the first-run bootstrap secret.
-    for (const key of RESERVED_SETTING_KEYS) {
-      delete settingsObject[key];
-    }
+    stripReservedSettingKeys(settingsObject);
 
     // Mask sensitive secrets before sending to client
     if (settingsObject.security_recaptcha_secret_key) {
