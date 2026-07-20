@@ -103,7 +103,10 @@ export const SsoTab: React.FC = () => {
         mappingRows.filter((row) => row.idpRole.trim()).map((row) => [row.idpRole.trim(), row.role])
       ),
       oidc_require_mapped_role: form.oidc_require_mapped_role,
-      oidc_disable_local_login: form.oidc_disable_local_login,
+      // Turning SSO off must clear the policy in the same save — the backend
+      // (rightly) rejects an explicit true while SSO is off, and the promise
+      // is that disabling SSO restores password login.
+      oidc_disable_local_login: form.oidc_enabled ? form.oidc_disable_local_login : false,
     };
     if (newSecret.trim()) payload.oidc_client_secret = newSecret.trim();
     saveMutation.mutate(payload);

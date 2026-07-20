@@ -42,12 +42,22 @@ const logger = require('../utils/logger');
 const ENC_ALGO = 'aes-256-gcm';
 const ENC_SALT = 'picpeak-oidc-secret-v1'; // fixed: derivation must be stable
 
+// scrypt is deliberately expensive and the derivation is deterministic per
+// process — memoize it, or every decrypt (e.g. config reads) burns ~50ms of
+// blocking CPU on the event loop.
+let _encKeyCache = null; // { material, key }
+
 function getEncryptionKey() {
   const material = process.env.OIDC_ENCRYPTION_KEY || process.env.JWT_SECRET;
   if (!material) {
     throw new Error('oidcService: OIDC_ENCRYPTION_KEY or JWT_SECRET must be set');
   }
-  return crypto.scryptSync(material, ENC_SALT, 32);
+  if (_encKeyCache && _encKeyCache.material === material) {
+    return _encKeyCache.key;
+  }
+  const key = crypto.scryptSync(material, ENC_SALT, 32);
+  _encKeyCache = { material, key };
+  return key;
 }
 
 /** AES-256-GCM encrypt → "iv.tag.ciphertext" (all base64url). */
@@ -138,6 +148,24 @@ async function isLocalLoginDisabled() {
   if (process.env.OIDC_BREAK_GLASS === 'true') return false;
   const cfg = await getOidcConfig();
   return cfg.enabled && cfg.disableLocalLogin && isConfigured(cfg);
+}
+
+// Short-TTL cache of the flag for the UNAUTHENTICATED public-settings
+// endpoint, which every new client hits — without it each request pays the
+// full 13-key config read. The login route keeps using the uncached check
+// (enforcement must be exact); a UI that lags a settings flip by ≤10s only
+// shows a form whose submit the API answers authoritatively. Invalidated on
+// every settings save in this worker.
+const FLAG_CACHE_TTL_MS = 10 * 1000;
+let _localLoginFlagCache = null; // { value, at }
+
+async function isLocalLoginDisabledCached() {
+  if (_localLoginFlagCache && Date.now() - _localLoginFlagCache.at < FLAG_CACHE_TTL_MS) {
+    return _localLoginFlagCache.value;
+  }
+  const value = await isLocalLoginDisabled();
+  _localLoginFlagCache = { value, at: Date.now() };
+  return value;
 }
 
 function isConfigured(cfg) {
@@ -315,7 +343,14 @@ function extractRolesFromClaims(claims, claimPath) {
  */
 async function resolveMappedRole(claims, cfg) {
   const idpRoles = extractRolesFromClaims(claims, cfg.rolesClaim);
-  const targetNames = [...new Set(idpRoles.map((r) => cfg.roleMappings[r]).filter(Boolean))];
+  // Own-property lookup only: an IdP value like `constructor` or `toString`
+  // would otherwise resolve to an inherited function and corrupt the query —
+  // such values must count as unmapped, not break the login.
+  const targetNames = [...new Set(
+    idpRoles
+      .map((r) => (Object.hasOwn(cfg.roleMappings, r) ? cfg.roleMappings[r] : null))
+      .filter((v) => typeof v === 'string' && v.length > 0)
+  )];
   if (targetNames.length === 0) return null;
   const roles = await db('roles').whereIn('name', targetNames).orderBy('priority', 'desc');
   return roles[0] || null;
@@ -334,18 +369,37 @@ async function syncAdminRole(admin, mappedRole) {
 
   const superAdminRole = await db('roles').where('name', 'super_admin').first();
   if (superAdminRole && admin.role_id === superAdminRole.id && mappedRole.id !== superAdminRole.id) {
-    const superAdminCount = await db('admin_users')
-      .where('role_id', superAdminRole.id)
-      .where('is_active', formatBoolean(true))
-      .count('id as count')
-      .first();
-    if (Number(superAdminCount?.count) <= 1) {
+    // Demotion of a super_admin must be count-and-update ATOMIC: two supers
+    // finishing mapped callbacks concurrently would otherwise both count 2
+    // and both demote, leaving zero super_admins. FOR UPDATE on the active
+    // super rows serializes concurrent demotions on Postgres (the second
+    // waiter re-reads after the first commits and sees the shrunken set);
+    // SQLite ignores forUpdate but is single-writer anyway. Use only `trx`
+    // inside — a global-db read here would deadlock SQLite's one-connection
+    // pool (see utils/appSettings.js).
+    let demoted = false;
+    await db.transaction(async (trx) => {
+      const activeSupers = await trx('admin_users')
+        .where('role_id', superAdminRole.id)
+        .where('is_active', formatBoolean(true))
+        .select('id')
+        .forUpdate();
+      if (!activeSupers.some((row) => row.id !== admin.id)) return; // last one — keep
+      await trx('admin_users').where('id', admin.id).update({
+        role_id: mappedRole.id,
+        updated_at: new Date(),
+      });
+      demoted = true;
+    });
+    if (!demoted) {
       logger.warn('OIDC role sync would demote the last active super_admin — keeping super_admin', {
         adminId: admin.id,
         mappedRole: mappedRole.name,
       });
       return admin;
     }
+    logger.info('OIDC: admin role synced from IdP claims', { adminId: admin.id, role: mappedRole.name });
+    return { ...admin, role_id: mappedRole.id };
   }
 
   await db('admin_users').where('id', admin.id).update({
@@ -553,12 +607,14 @@ async function saveOidcSettings(input) {
 
   await Promise.all(writes);
   invalidateDiscoveryCache();
+  _localLoginFlagCache = null;
 }
 
 module.exports = {
   getOidcConfig,
   isConfigured,
   isLocalLoginDisabled,
+  isLocalLoginDisabledCached,
   extractRolesFromClaims,
   resolveMappedRole,
   getRedirectUri,

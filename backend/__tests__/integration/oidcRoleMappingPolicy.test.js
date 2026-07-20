@@ -243,6 +243,19 @@ describe('OIDC role mapping + login policy (#798 phase 2)', () => {
     expect(await roleOf('mapped@example.com')).toBe('viewer');
   });
 
+  it('treats prototype-property IdP values (constructor/toString) as unmapped, not as an error', async () => {
+    idp.setNextUser({
+      sub: 'sub-proto',
+      email: 'proto@example.com',
+      email_verified: true,
+      realm_access: { roles: ['constructor', 'toString', '__proto__'] },
+    });
+    const res = await ssoRoundTrip();
+    // Non-strict: unmapped → JIT with the default role, login succeeds.
+    expect(res.headers.location).toBe('http://localhost:5199/admin/dashboard');
+    expect(await roleOf('proto@example.com')).toBe('viewer');
+  });
+
   it('accepts a space-separated string value on a flat claim', async () => {
     await oidcService.saveOidcSettings({ oidc_roles_claim: 'roles' });
     idp.setNextUser({

@@ -146,7 +146,9 @@ router.get('/', async (req, res) => {
       // refuse a password login (SSO enabled + configured + policy on, no
       // break-glass env) — the login page hides the password form from this,
       // so it must never claim "disabled" when the API would still allow it.
-      oidc_local_login_disabled: await require('../services/oidcService').isLocalLoginDisabled().catch(() => false),
+      // Cached (10s TTL): this endpoint is unauthenticated and hit by every
+      // new client; the login route itself always checks uncached.
+      oidc_local_login_disabled: await require('../services/oidcService').isLocalLoginDisabledCached().catch(() => false),
       enable_recaptcha: settingsObject.security_enable_recaptcha === true || settingsObject.security_enable_recaptcha === 'true',
       recaptcha_site_key: settingsObject.security_recaptcha_site_key || null,
       maintenance_mode: settingsObject.general_maintenance_mode === true || settingsObject.general_maintenance_mode === 'true',
