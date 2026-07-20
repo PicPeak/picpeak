@@ -2348,6 +2348,12 @@
     "patternDescription": "Las contraseñas se generan usando el nombre y la fecha del evento. Ejemplo: \"Venue2024$August\" para mayor seguridad y memorización."
   },
   "feedback": {
+    "reaction": "reacción",
+    "reactions": "Reacciones",
+    "reactWith": "Reaccionar con {{emoji}}",
+    "removeReaction": "Quitar la reacción {{emoji}}",
+    "reactionError": "No se pudo actualizar la reacción",
+    "totalReactions": "Reacciones totales",
     "comments": "Comentarios",
     "addComment": "Añadir comentario",
     "yourName": "Tu nombre",
@@ -2387,6 +2393,8 @@
       "comments": "Comentarios",
       "commentsDesc": "Comentarios de texto en fotos",
       "favorites": "Favoritos",
+      "reactions": "Reacciones con emojis",
+      "reactionsDesc": "Un emoji por invitado y foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Marcar fotos como favoritas",
       "identityMode": "Modo de identidad",
       "identityModeSimple": "Feedback simple",

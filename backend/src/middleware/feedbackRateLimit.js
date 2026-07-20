@@ -46,7 +46,8 @@ async function getRateLimitSettings() {
       rating: { max: 100, window: 3600 }, // 100 ratings per hour
       comment: { max: 20, window: 3600 }, // 20 comments per hour
       like: { max: 200, window: 3600 }, // 200 likes per hour
-      favorite: { max: 100, window: 3600 } // 100 favorites per hour
+      favorite: { max: 100, window: 3600 }, // 100 favorites per hour
+      reaction: { max: 200, window: 3600 } // reactions churn like likes (#839)
     };
   } catch (error) {
     logger.error('Error getting rate limit settings:', error);
@@ -55,7 +56,8 @@ async function getRateLimitSettings() {
       rating: { max: 100, window: 3600 },
       comment: { max: 20, window: 3600 },
       like: { max: 200, window: 3600 },
-      favorite: { max: 100, window: 3600 }
+      favorite: { max: 100, window: 3600 },
+      reaction: { max: 200, window: 3600 }
     };
   }
 }

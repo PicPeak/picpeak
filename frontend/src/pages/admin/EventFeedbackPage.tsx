@@ -6,6 +6,7 @@ import {
   MessageSquare, 
   Star, 
   Heart, 
+  Smile,
   TrendingUp,
   Filter,
   Download,
@@ -422,7 +423,7 @@ export const EventFeedbackPage: React.FC = () => {
           ) : analytics ? (
             <>
               {/* Summary Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                 <Card>
                   <div className="p-6">
                     <div className="flex items-center gap-3 mb-2">
@@ -444,6 +445,17 @@ export const EventFeedbackPage: React.FC = () => {
                       <div>
                         <p className="text-2xl font-bold">{analytics.summary.total_likes}</p>
                         <p className="text-sm text-neutral-600">{t('feedback.totalLikes', 'Total Likes')}</p>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+                <Card>
+                  <div className="p-6">
+                    <div className="flex items-center gap-3 mb-2">
+                      <Smile className="w-8 h-8 text-amber-500" />
+                      <div>
+                        <p className="text-2xl font-bold">{analytics.summary.total_reactions || 0}</p>
+                        <p className="text-sm text-neutral-600">{t('feedback.totalReactions', 'Total Reactions')}</p>
                       </div>
                     </div>
                   </div>

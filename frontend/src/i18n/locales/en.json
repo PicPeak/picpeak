@@ -3338,6 +3338,12 @@
     "patternDescription": "Passwords are generated using your event name and date. Example: \"Venue2024$August\" for better security and memorability."
   },
   "feedback": {
+    "reaction": "reaction",
+    "reactions": "Reactions",
+    "reactWith": "React with {{emoji}}",
+    "removeReaction": "Remove {{emoji}} reaction",
+    "reactionError": "Failed to update reaction",
+    "totalReactions": "Total Reactions",
     "comments": "Comments",
     "addComment": "Add Comment",
     "yourName": "Your name",
@@ -3366,6 +3372,8 @@
       "comments": "Comments",
       "commentsDesc": "Text comments on photos",
       "favorites": "Favorites",
+      "reactions": "Emoji Reactions",
+      "reactionsDesc": "One emoji per guest per photo (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Mark photos as favorites",
       "perGuestLimits": "Per-guest limits",
       "perGuestLimitsDesc": "Cap how many photos each guest can favorite or like — useful for \"pick your top N for the album\" workflows. Leave at 0 for no limit. Lowering a cap below an existing guest's count keeps their existing rows; only new adds are blocked until they remove some.",

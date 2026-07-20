@@ -3317,6 +3317,12 @@
     "patternDescription": "Passwörter werden mit Ihrem Veranstaltungsnamen und -datum generiert. Beispiel: \"Location2024$August\" für bessere Sicherheit und Merkbarkeit."
   },
   "feedback": {
+    "reaction": "Reaktion",
+    "reactions": "Reaktionen",
+    "reactWith": "Mit {{emoji}} reagieren",
+    "removeReaction": "{{emoji}}-Reaktion entfernen",
+    "reactionError": "Reaktion konnte nicht aktualisiert werden",
+    "totalReactions": "Reaktionen gesamt",
     "comments": "Kommentare",
     "addComment": "Kommentar hinzufügen",
     "yourName": "Ihr Name",
@@ -3345,6 +3351,8 @@
       "comments": "Kommentare",
       "commentsDesc": "Textkommentare auf Fotos",
       "favorites": "Favoriten",
+      "reactions": "Emoji-Reaktionen",
+      "reactionsDesc": "Ein Emoji pro Gast und Foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Fotos als Favoriten markieren",
       "perGuestLimits": "Limits pro Gast",
       "perGuestLimitsDesc": "Begrenzen, wie viele Fotos jeder Gast favorisieren oder liken kann — praktisch für „Wählen Sie Ihre Top-N fürs Album“-Abläufe. 0 = unbegrenzt. Eine Senkung unter den aktuellen Stand eines Gasts lässt vorhandene Einträge bestehen; nur neue Hinzufügungen werden blockiert, bis er welche entfernt.",

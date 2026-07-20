@@ -4,6 +4,7 @@ import { feedbackService } from '../../services/feedback.service';
 import { PhotoRating } from './PhotoRating';
 import { PhotoLikes } from './PhotoLikes';
 import { PhotoFavorites } from './PhotoFavorites';
+import { PhotoReactions } from './PhotoReactions';
 import { PhotoComments } from './PhotoComments';
 import { Skeleton } from '../common';
 
@@ -45,6 +46,8 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   const [likeCount, setLikeCount] = useState(0);
   const [isFavorited, setIsFavorited] = useState(false);
   const [favoriteCount, setFavoriteCount] = useState(0);
+  const [myReaction, setMyReaction] = useState<string | null>(null);
+  const [reactionCounts, setReactionCounts] = useState<Record<string, number>>({});
 
   // Update local state when data loads
   useEffect(() => {
@@ -54,6 +57,8 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
       setLikeCount(Number(feedbackData.summary.like_count) || 0);
       setIsFavorited(Boolean(feedbackData.my_feedback.favorited));
       setFavoriteCount(Number(feedbackData.summary.favorite_count) || 0);
+      setMyReaction(feedbackData.my_feedback.reaction || null);
+      setReactionCounts(feedbackData.reactions || {});
     }
   }, [feedbackData]);
 
@@ -75,6 +80,18 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
     if (onFeedbackUpdate) onFeedbackUpdate();
   };
 
+  // Optimistic reaction switch: decrement the old emoji, increment the new.
+  const handleReactionChange = (reaction: string | null) => {
+    setReactionCounts(prev => {
+      const next = { ...prev };
+      if (myReaction) next[myReaction] = Math.max(0, (next[myReaction] || 0) - 1);
+      if (reaction) next[reaction] = (next[reaction] || 0) + 1;
+      return next;
+    });
+    setMyReaction(reaction);
+    if (onFeedbackUpdate) onFeedbackUpdate();
+  };
+
   if (settingsLoading) {
     return (
       <div className={`space-y-3 ${className}`}>
@@ -89,7 +106,8 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
   }
 
   const hasAnyFeedbackType = settings.allow_ratings || settings.allow_likes ||
-                            settings.allow_comments || settings.allow_favorites;
+                            settings.allow_comments || settings.allow_favorites ||
+                            settings.allow_reactions;
 
   if (!hasAnyFeedbackType) {
     return null;
@@ -138,6 +156,19 @@ export const PhotoFeedback: React.FC<PhotoFeedbackProps> = ({
             />
           )}
         </div>
+      )}
+
+      {/* Emoji reactions (#839) */}
+      {settings.allow_reactions && (
+        <PhotoReactions
+          photoId={photoId}
+          gallerySlug={gallerySlug}
+          myReaction={myReaction}
+          reactionCounts={reactionCounts}
+          isEnabled={true}
+          requireNameEmail={settings.require_name_email || false}
+          onReactionChange={handleReactionChange}
+        />
       )}
 
       {/* Comments Section */}

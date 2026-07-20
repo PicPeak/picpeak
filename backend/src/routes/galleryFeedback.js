@@ -31,6 +31,7 @@ router.get('/:slug/feedback-settings',
         allow_likes: Boolean(settings.allow_likes),
         allow_comments: Boolean(settings.allow_comments),
         allow_favorites: Boolean(settings.allow_favorites),
+        allow_reactions: Boolean(settings.allow_reactions),
         require_name_email: Boolean(settings.require_name_email),
         show_feedback_to_guests: Boolean(settings.show_feedback_to_guests),
         identity_mode: settings.identity_mode || 'simple',
@@ -117,6 +118,7 @@ router.get('/:slug/photos/:photoId/feedback',
             .then(r => r.count),
           like_count: photo.like_count || 0,
           favorite_count: photo.favorite_count || 0,
+          reaction_count: photo.reaction_count || 0,
           comment_count: await db('photo_feedback')
             .where({ 
               photo_id: photoId, 
@@ -128,10 +130,13 @@ router.get('/:slug/photos/:photoId/feedback',
             .first()
             .then(r => r.count)
         },
+        // Per-emoji tallies for the reaction bar (#839).
+        reactions: await feedbackService.getPhotoReactionCounts(photoId),
         my_feedback: {
           rating: guestFeedback.find(f => f.feedback_type === 'rating')?.rating,
           liked: !!guestFeedback.find(f => f.feedback_type === 'like'),
-          favorited: !!guestFeedback.find(f => f.feedback_type === 'favorite')
+          favorited: !!guestFeedback.find(f => f.feedback_type === 'favorite'),
+          reaction: guestFeedback.find(f => f.feedback_type === 'reaction')?.reaction || null
         }
       });
     } catch (error) {
@@ -181,7 +186,8 @@ router.post('/:slug/photos/:photoId/feedback',
         rating: settings.allow_ratings,
         like: settings.allow_likes,
         comment: settings.allow_comments,
-        favorite: settings.allow_favorites
+        favorite: settings.allow_favorites,
+        reaction: settings.allow_reactions
       };
 
       if (!typeAllowed[feedbackType]) {
@@ -227,6 +233,7 @@ router.post('/:slug/photos/:photoId/feedback',
         feedback_type: feedbackType,
         rating: req.body.rating,
         comment_text: req.body.comment_text,
+        reaction: req.body.reaction,
         guest_name: req.guest?.name ?? req.body.guest_name,
         guest_email: req.guest?.email ?? req.body.guest_email,
         guest_id: req.guest?.id ?? null,
@@ -346,7 +353,8 @@ router.get('/:slug/feedback-summary',
           allow_ratings: settings.allow_ratings,
           allow_likes: settings.allow_likes,
           allow_comments: settings.allow_comments,
-          allow_favorites: settings.allow_favorites
+          allow_favorites: settings.allow_favorites,
+          allow_reactions: settings.allow_reactions
         },
         summary: guestSummary
       });

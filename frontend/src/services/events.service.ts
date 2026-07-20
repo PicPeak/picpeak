@@ -36,6 +36,7 @@ interface CreateEventData {
   allow_likes?: boolean;
   allow_comments?: boolean;
   allow_favorites?: boolean;
+  allow_reactions?: boolean;
   require_name_email?: boolean;
   moderate_comments?: boolean;
   show_feedback_to_guests?: boolean;

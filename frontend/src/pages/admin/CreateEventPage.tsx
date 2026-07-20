@@ -64,6 +64,7 @@ interface FormData {
     allow_likes: boolean;
     allow_comments: boolean;
     allow_favorites: boolean;
+    allow_reactions: boolean;
     require_name_email: boolean;
     moderate_comments: boolean;
     show_feedback_to_guests: boolean;
@@ -132,6 +133,7 @@ export const CreateEventPage: React.FC = () => {
       allow_likes: true,
       allow_comments: true,
       allow_favorites: true,
+      allow_reactions: true,
       require_name_email: false,
       moderate_comments: true,
       show_feedback_to_guests: true,
@@ -482,6 +484,7 @@ export const CreateEventPage: React.FC = () => {
       allow_likes: feedbackSettings.allow_likes,
       allow_comments: feedbackSettings.allow_comments,
       allow_favorites: feedbackSettings.allow_favorites,
+      allow_reactions: feedbackSettings.allow_reactions,
       require_name_email: feedbackSettings.require_name_email,
       moderate_comments: feedbackSettings.moderate_comments,
       show_feedback_to_guests: feedbackSettings.show_feedback_to_guests,

@@ -2,12 +2,18 @@ import { api } from '../config/api';
 
 export type IdentityMode = 'simple' | 'guest';
 
+// Emoji reactions (#839): the fixed curated set. Mirrored in
+// backend/src/constants/reactions.js — update both together.
+export const REACTION_EMOJIS = ['❤️', '😂', '😍', '👏', '🎉'] as const;
+export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
+
 export interface FeedbackSettings {
   feedback_enabled: boolean;
   allow_ratings: boolean;
   allow_likes: boolean;
   allow_comments: boolean;
   allow_favorites: boolean;
+  allow_reactions: boolean;
   require_name_email: boolean;
   moderate_comments: boolean;
   show_feedback_to_guests: boolean;
@@ -28,10 +34,11 @@ export interface PhotoFeedback {
   id: number;
   photo_id: number;
   event_id: number;
-  feedback_type: 'rating' | 'like' | 'comment' | 'favorite';
+  feedback_type: 'rating' | 'like' | 'comment' | 'favorite' | 'reaction';
   rating?: number;
   comment_text?: string;
   comment?: string;
+  reaction?: string;
   guest_name?: string;
   guest_email?: string;
   is_approved: boolean;
@@ -49,6 +56,7 @@ export interface FeedbackSummary {
   total_ratings: number;
   like_count: number;
   favorite_count: number;
+  reaction_count?: number;
   comment_count: number;
 }
 
@@ -56,11 +64,14 @@ export interface MyFeedback {
   rating?: number;
   liked: boolean;
   favorited: boolean;
+  reaction?: string | null;
 }
 
 export interface FeedbackResponse {
   feedback: PhotoFeedback[];
   summary: FeedbackSummary;
+  /** Per-emoji tallies for the reaction bar (#839), e.g. { '❤️': 3 }. */
+  reactions?: Record<string, number>;
   my_feedback: MyFeedback;
   pagination?: {
     page: number;
@@ -77,6 +88,7 @@ export interface FeedbackAnalytics {
     total_likes: number;
     total_comments: number;
     total_favorites: number;
+    total_reactions?: number;
     pending_moderation: number;
   };
   topRated: Array<{
@@ -198,9 +210,10 @@ class FeedbackService {
   }
 
   async submitFeedback(slug: string, photoId: string, feedback: {
-    feedback_type: 'rating' | 'like' | 'comment' | 'favorite';
+    feedback_type: 'rating' | 'like' | 'comment' | 'favorite' | 'reaction';
     rating?: number;
     comment_text?: string;
+    reaction?: string;
     guest_name?: string;
     guest_email?: string;
   }) {

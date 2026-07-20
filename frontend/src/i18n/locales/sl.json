@@ -2485,6 +2485,12 @@
     "patternDescription": "Gesla se ustvarijo z uporabo imena in datuma dogodka. Primer: »Lokacija2024$Avgust« za boljšo varnost in lažje pomnjenje."
   },
   "feedback": {
+    "reaction": "odziv",
+    "reactions": "Odzivi",
+    "reactWith": "Odzovi se z {{emoji}}",
+    "removeReaction": "Odstrani odziv {{emoji}}",
+    "reactionError": "Odziva ni bilo mogoče posodobiti",
+    "totalReactions": "Skupaj odzivov",
     "comments": "Komentarji",
     "addComment": "Dodaj komentar",
     "yourName": "Vaše ime",
@@ -2513,6 +2519,8 @@
       "comments": "Komentarji",
       "commentsDesc": "Besedilni komentarji na fotografijah",
       "favorites": "Priljubljene",
+      "reactions": "Emoji odzivi",
+      "reactionsDesc": "En emoji na gosta na fotografijo (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Označi fotografije kot priljubljene",
       "identityMode": "Način identitete",
       "identityModeSimple": "Preproste povratne informacije",

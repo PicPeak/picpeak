@@ -239,11 +239,13 @@ router.get('/events/:eventId/feedback-analytics',
         total_likes: summaryData.stats?.total_likes || 0,
         total_comments: summaryData.stats?.total_comments || 0,
         total_favorites: summaryData.stats?.total_favorites || 0,
+        total_reactions: summaryData.stats?.total_reactions || 0,
         pending_moderation: pendingModeration?.count || 0,
-        total_feedback: (summaryData.stats?.total_ratings || 0) + 
-                       (summaryData.stats?.total_likes || 0) + 
-                       (summaryData.stats?.total_comments || 0) + 
-                       (summaryData.stats?.total_favorites || 0)
+        total_feedback: (summaryData.stats?.total_ratings || 0) +
+                       (summaryData.stats?.total_likes || 0) +
+                       (summaryData.stats?.total_comments || 0) +
+                       (summaryData.stats?.total_favorites || 0) +
+                       (summaryData.stats?.total_reactions || 0)
       };
       
       // Get top-rated photos

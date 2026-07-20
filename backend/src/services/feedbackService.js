@@ -1,6 +1,7 @@
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
+const { REACTION_EMOJIS } = require('../constants/reactions');
 
 class FeedbackService {
   /**
@@ -21,6 +22,7 @@ class FeedbackService {
           allow_likes: true,
           allow_comments: false,
           allow_favorites: true,
+          allow_reactions: true,
           require_name_email: false,
           moderate_comments: true,
           show_feedback_to_guests: true,
@@ -102,11 +104,17 @@ class FeedbackService {
 
   async submitFeedback(photoId, eventId, feedbackData, guestIdentifier) {
     try {
-      const { feedback_type, rating, comment_text, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
+      const { feedback_type, rating, comment_text, reaction, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
 
       // Validate feedback type
-      if (!['rating', 'like', 'comment', 'favorite'].includes(feedback_type)) {
+      if (!['rating', 'like', 'comment', 'favorite', 'reaction'].includes(feedback_type)) {
         throw new Error('Invalid feedback type');
+      }
+
+      // Reactions come from a fixed curated set — anything else is rejected
+      // (the route validator enforces this too; this is the last line).
+      if (feedback_type === 'reaction' && !REACTION_EMOJIS.includes(reaction)) {
+        throw new Error('Invalid reaction');
       }
 
       // Check if similar feedback already exists (prevent duplicates).
@@ -136,6 +144,26 @@ class FeedbackService {
                 updated_at: new Date()
               });
 
+            await this.updatePhotoFeedbackStats(photoId);
+            return { id: existing.id, updated: true };
+          }
+
+          // One reaction per guest per photo, changeable (#839): the same
+          // emoji again toggles it off; a different one switches the row.
+          if (feedback_type === 'reaction') {
+            if (existing.reaction === reaction) {
+              await db('photo_feedback')
+                .where('id', existing.id)
+                .delete();
+              await this.updatePhotoFeedbackStats(photoId);
+              return { removed: true };
+            }
+            await db('photo_feedback')
+              .where('id', existing.id)
+              .update({
+                reaction,
+                updated_at: new Date()
+              });
             await this.updatePhotoFeedbackStats(photoId);
             return { id: existing.id, updated: true };
           }
@@ -189,6 +217,7 @@ class FeedbackService {
         feedback_type,
         rating: feedback_type === 'rating' ? rating : null,
         comment_text: feedback_type === 'comment' ? comment_text : null,
+        reaction: feedback_type === 'reaction' ? reaction : null,
         guest_name,
         guest_email,
         guest_identifier: guestIdentifier,
@@ -241,7 +270,7 @@ class FeedbackService {
       
       const feedback = await query
         .orderBy('created_at', 'desc')
-        .select('id', 'feedback_type', 'rating', 'comment_text', 'guest_name', 'created_at', 'is_approved', 'is_hidden');
+        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'guest_name', 'created_at', 'is_approved', 'is_hidden');
       
       return feedback;
     } catch (error) {
@@ -257,7 +286,7 @@ class FeedbackService {
     try {
       const photos = await db('photos')
         .where('event_id', eventId)
-        .select('id', 'filename', 'feedback_count', 'like_count', 'average_rating', 'favorite_count')
+        .select('id', 'filename', 'feedback_count', 'like_count', 'average_rating', 'favorite_count', 'reaction_count')
         .orderBy('average_rating', 'desc')
         .orderBy('like_count', 'desc');
       
@@ -268,7 +297,8 @@ class FeedbackService {
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_ratings', ['rating']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_likes', ['like']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_comments', ['comment']),
-          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_favorites', ['favorite'])
+          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_favorites', ['favorite']),
+          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_reactions', ['reaction'])
         )
         .first();
       
@@ -278,6 +308,31 @@ class FeedbackService {
       };
     } catch (error) {
       logger.error('Error getting feedback summary:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Per-emoji reaction counts for one photo (#839): { '❤️': 3, '👏': 1 }.
+   * Only visible rows count — hidden-by-moderator reactions disappear from
+   * the tallies the same way hidden likes leave like_count.
+   */
+  async getPhotoReactionCounts(photoId) {
+    try {
+      const rows = await db('photo_feedback')
+        .where({ photo_id: photoId, feedback_type: 'reaction' })
+        .where('is_hidden', false)
+        .groupBy('reaction')
+        .select('reaction')
+        .count('id as count');
+
+      const counts = {};
+      for (const row of rows) {
+        if (row.reaction) counts[row.reaction] = Number(row.count) || 0;
+      }
+      return counts;
+    } catch (error) {
+      logger.error('Error getting photo reaction counts:', error);
       throw error;
     }
   }
@@ -295,11 +350,12 @@ class FeedbackService {
           db.raw('COUNT(CASE WHEN feedback_type = ? AND is_approved = ? THEN 1 END) as comment_count', ['comment', formatBoolean(true)]),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as like_count', ['like']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as favorite_count', ['favorite']),
+          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as reaction_count', ['reaction']),
           db.raw('AVG(CASE WHEN feedback_type = ? THEN rating END) as average_rating', ['rating']),
           db.raw('COUNT(DISTINCT COALESCE(CAST(guest_id AS VARCHAR), guest_identifier)) as feedback_count')
         )
         .first();
-      
+
       // Update photo table
       await db('photos')
         .where('id', photoId)
@@ -307,7 +363,8 @@ class FeedbackService {
           feedback_count: stats.feedback_count || 0,
           like_count: stats.like_count || 0,
           average_rating: stats.average_rating || 0,
-          favorite_count: stats.favorite_count || 0
+          favorite_count: stats.favorite_count || 0,
+          reaction_count: stats.reaction_count || 0
         });
     } catch (error) {
       logger.error('Error updating photo feedback stats:', error);
@@ -443,6 +500,7 @@ class FeedbackService {
           'photo_feedback.feedback_type',
           'photo_feedback.rating',
           'photo_feedback.comment_text',
+          'photo_feedback.reaction',
           'photo_feedback.guest_name',
           'photo_feedback.guest_email',
           'photo_feedback.created_at'
@@ -480,6 +538,7 @@ class FeedbackService {
           'photo_feedback.feedback_type',
           'photo_feedback.rating',
           'photo_feedback.comment_text',
+          'photo_feedback.reaction',
           'photo_feedback.guest_name',
           'photo_feedback.guest_email',
           'photo_feedback.guest_identifier',
@@ -505,6 +564,7 @@ class FeedbackService {
             is_liked: false,
             star_rating: '',
             comment: '',
+            reaction: '',
             latest_at: row.created_at,
           };
           byKey.set(key, entry);
@@ -530,6 +590,9 @@ class FeedbackService {
               // not the comment history.
               entry.comment = row.comment_text;
             }
+            break;
+          case 'reaction':
+            if (row.reaction) entry.reaction = row.reaction;
             break;
           default:
             // Unknown feedback type — ignore so a future type doesn't break the export.

@@ -1956,6 +1956,7 @@ router.get('/:slug/feedback-settings', verifyGalleryAccess, async (req, res) => 
       allow_likes: settings.allow_likes,
       allow_comments: settings.allow_comments,
       allow_favorites: settings.allow_favorites,
+      allow_reactions: settings.allow_reactions,
       show_feedback_to_guests: settings.show_feedback_to_guests,
       require_name_email: settings.require_name_email || false,
       identity_mode: settings.identity_mode || 'simple'

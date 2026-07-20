@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Star, Heart, Bookmark, Shield, Eye, User, Users } from 'lucide-react';
+import { MessageSquare, Star, Heart, Bookmark, Shield, Eye, User, Users, Smile } from 'lucide-react';
 import { Card } from '../common';
 import { useTranslation } from 'react-i18next';
 
@@ -15,6 +15,7 @@ interface FeedbackSettings {
   allow_likes: boolean;
   allow_comments: boolean;
   allow_favorites: boolean;
+  allow_reactions: boolean;
   require_name_email: boolean;
   moderate_comments: boolean;
   show_feedback_to_guests: boolean;
@@ -216,6 +217,24 @@ export const FeedbackSettings: React.FC<FeedbackSettingsProps> = ({
                     </div>
                     <div className="text-xs text-neutral-500 dark:text-neutral-400">
                       {t('feedback.settings.favoritesDesc', 'Mark photos as favorites')}
+                    </div>
+                  </div>
+                </label>
+
+                <label className="flex items-center gap-3 p-3 bg-neutral-50 dark:bg-neutral-800 rounded-lg cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-700">
+                  <input
+                    type="checkbox"
+                    checked={settings.allow_reactions}
+                    onChange={() => handleToggle('allow_reactions')}
+                    className="w-4 h-4 text-accent bg-neutral-100 border-neutral-300 rounded focus:ring-primary-500"
+                  />
+                  <Smile className="w-5 h-5 text-neutral-600 dark:text-neutral-400" />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+                      {t('feedback.settings.reactions', 'Emoji Reactions')}
+                    </div>
+                    <div className="text-xs text-neutral-500 dark:text-neutral-400">
+                      {t('feedback.settings.reactionsDesc', 'One emoji per guest per photo (❤️ 😂 😍 👏 🎉)')}
                     </div>
                   </div>
                 </label>

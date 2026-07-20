@@ -2485,6 +2485,12 @@
     "patternDescription": "Wachtwoorden worden gegenereerd met uw evenementnaam en datum. Voorbeeld: \"Locatie2024$Augustus\" voor betere beveiliging en herkenbaarheid."
   },
   "feedback": {
+    "reaction": "reactie",
+    "reactions": "Reacties",
+    "reactWith": "Reageer met {{emoji}}",
+    "removeReaction": "{{emoji}}-reactie verwijderen",
+    "reactionError": "Reactie kon niet worden bijgewerkt",
+    "totalReactions": "Totaal reacties",
     "comments": "Opmerkingen",
     "addComment": "Opmerking toevoegen",
     "yourName": "Uw naam",
@@ -2513,6 +2519,8 @@
       "comments": "Opmerkingen",
       "commentsDesc": "Tekstopmerkingen bij foto's",
       "favorites": "Favorieten",
+      "reactions": "Emoji-reacties",
+      "reactionsDesc": "Eén emoji per gast per foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Foto's als favoriet markeren",
       "identityMode": "Identiteitsmodus",
       "identityModeSimple": "Eenvoudige feedback",

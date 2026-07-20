@@ -2496,6 +2496,12 @@
     "patternDescription": "Les mots de passe sont générés à partir du nom de votre événement et de la date. Exemple : \"Lieu2024$Août\" pour une meilleure sécurité et mémorisation."
   },
   "feedback": {
+    "reaction": "réaction",
+    "reactions": "Réactions",
+    "reactWith": "Réagir avec {{emoji}}",
+    "removeReaction": "Retirer la réaction {{emoji}}",
+    "reactionError": "Impossible de mettre à jour la réaction",
+    "totalReactions": "Total des réactions",
     "comments": "Commentaires",
     "addComment": "Ajouter un commentaire",
     "yourName": "Votre nom",
@@ -2524,6 +2530,8 @@
       "comments": "Commentaires",
       "commentsDesc": "Commentaires textuels sur les photos",
       "favorites": "Favoris",
+      "reactions": "Réactions emoji",
+      "reactionsDesc": "Un emoji par invité et par photo (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Marquer les photos comme favoris",
       "identityMode": "Mode d'identité",
       "identityModeSimple": "Commentaires simples",

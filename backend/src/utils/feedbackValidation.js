@@ -1,6 +1,7 @@
 const { body, param, validationResult } = require('express-validator');
 const validator = require('validator');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('./emailNormalization');
+const { REACTION_EMOJIS } = require('../constants/reactions');
 
 /**
  * Validation rules for feedback submission
@@ -133,14 +134,20 @@ function getValidationRules(feedbackType) {
  */
 const validateFeedbackSubmission = [
   body('feedback_type')
-    .isIn(['rating', 'like', 'comment', 'favorite'])
+    .isIn(['rating', 'like', 'comment', 'favorite', 'reaction'])
     .withMessage('Invalid feedback type'),
-  
+
   // Conditional validation based on feedback type
   body('rating')
     .if(body('feedback_type').equals('rating'))
     .isInt({ min: 1, max: 5 })
     .withMessage('Rating must be between 1 and 5'),
+
+  // Reactions (#839): fixed curated set only — no free-form emoji.
+  body('reaction')
+    .if(body('feedback_type').equals('reaction'))
+    .custom((value) => REACTION_EMOJIS.includes(value))
+    .withMessage('Invalid reaction'),
   
   body('comment_text')
     .if(body('feedback_type').equals('comment'))
@@ -183,6 +190,7 @@ const validateFeedbackSettings = [
   body('allow_likes').optional().isBoolean(),
   body('allow_comments').optional().isBoolean(),
   body('allow_favorites').optional().isBoolean(),
+  body('allow_reactions').optional().isBoolean(),
   body('require_name_email').optional().isBoolean(),
   body('moderate_comments').optional().isBoolean(),
   body('show_feedback_to_guests').optional().isBoolean(),

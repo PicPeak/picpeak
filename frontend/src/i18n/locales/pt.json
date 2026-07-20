@@ -2510,6 +2510,12 @@
     "patternDescription": "As senhas são geradas usando o nome e data do evento. Ex: \"Evento2024$Agosto\" para melhor memorização."
   },
   "feedback": {
+    "reaction": "reação",
+    "reactions": "Reações",
+    "reactWith": "Reagir com {{emoji}}",
+    "removeReaction": "Remover a reação {{emoji}}",
+    "reactionError": "Não foi possível atualizar a reação",
+    "totalReactions": "Total de reações",
     "comments": "Comentários",
     "addComment": "Adicionar Comentário",
     "yourName": "Seu nome",
@@ -2538,6 +2544,8 @@
       "comments": "Comentários",
       "commentsDesc": "Comentários em texto nas fotos",
       "favorites": "Favoritos",
+      "reactions": "Reações com emojis",
+      "reactionsDesc": "Um emoji por convidado por foto (❤️ 😂 😍 👏 🎉)",
       "favoritesDesc": "Marcar fotos como favoritas",
       "identityMode": "Modo de identidade",
       "identityModeSimple": "Feedback simples",
