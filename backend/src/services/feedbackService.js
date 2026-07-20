@@ -150,14 +150,29 @@ class FeedbackService {
 
           // One reaction per guest per photo, changeable (#839): the same
           // emoji again toggles it off; a different one switches the row.
+          // Toggle/switch act on the full guest-scoped QUERY, not existing.id:
+          // like the sibling like path, the check-then-insert above can race
+          // into duplicate rows — operating on the set makes the next
+          // interaction collapse them instead of leaving a phantom count.
+          const reactionScope = () => {
+            const q = db('photo_feedback').where({
+              photo_id: photoId,
+              event_id: eventId,
+              feedback_type: 'reaction',
+            });
+            if (guest_id) q.where('guest_id', guest_id);
+            else q.where('guest_identifier', guestIdentifier);
+            return q;
+          };
           if (feedback_type === 'reaction') {
             if (existing.reaction === reaction) {
-              await db('photo_feedback')
-                .where('id', existing.id)
-                .delete();
+              await reactionScope().delete();
               await this.updatePhotoFeedbackStats(photoId);
               return { removed: true };
             }
+            // Converge to exactly one row: drop any racy duplicates, then
+            // switch the surviving row's emoji.
+            await reactionScope().whereNot('id', existing.id).delete();
             await db('photo_feedback')
               .where('id', existing.id)
               .update({

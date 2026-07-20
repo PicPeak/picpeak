@@ -130,8 +130,12 @@ router.get('/:slug/photos/:photoId/feedback',
             .first()
             .then(r => r.count)
         },
-        // Per-emoji tallies for the reaction bar (#839).
-        reactions: await feedbackService.getPhotoReactionCounts(photoId),
+        // Per-emoji tallies for the reaction bar (#839). Gated on
+        // show_feedback_to_guests: with sharing off a guest sees only their
+        // own selection (my_feedback.reaction below), no aggregate counts.
+        reactions: settings.show_feedback_to_guests
+          ? await feedbackService.getPhotoReactionCounts(photoId)
+          : {},
         my_feedback: {
           rating: guestFeedback.find(f => f.feedback_type === 'rating')?.rating,
           liked: !!guestFeedback.find(f => f.feedback_type === 'like'),

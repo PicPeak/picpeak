@@ -34,21 +34,26 @@ async function getRateLimitSettings() {
       .where('setting_key', 'feedback_rate_limits')
       .first();
     
-    if (settings && settings.setting_value) {
-      // setting_value is already a JSON object in PostgreSQL
-      return typeof settings.setting_value === 'string' 
-        ? JSON.parse(settings.setting_value)
-        : settings.setting_value;
-    }
-    
-    // Default settings
-    return {
+    // Defaults FIRST, stored values override: persisted rows predate newer
+    // action types (`reaction`, #839) — returning the stored object alone
+    // would silently drop their intended defaults to the generic 100/h.
+    const defaults = {
       rating: { max: 100, window: 3600 }, // 100 ratings per hour
       comment: { max: 20, window: 3600 }, // 20 comments per hour
       like: { max: 200, window: 3600 }, // 200 likes per hour
       favorite: { max: 100, window: 3600 }, // 100 favorites per hour
       reaction: { max: 200, window: 3600 } // reactions churn like likes (#839)
     };
+
+    if (settings && settings.setting_value) {
+      // setting_value is already a JSON object in PostgreSQL
+      const stored = typeof settings.setting_value === 'string'
+        ? JSON.parse(settings.setting_value)
+        : settings.setting_value;
+      return { ...defaults, ...stored };
+    }
+
+    return defaults;
   } catch (error) {
     logger.error('Error getting rate limit settings:', error);
     // Return defaults on error

@@ -161,6 +161,32 @@ describe('reaction submission (#839)', () => {
     expect(await reactionCountOf(photoIds[0])).toBe(1);
   });
 
+  it('toggle and switch collapse racy duplicate rows for the same guest', async () => {
+    // Simulate the check-then-insert race: two rows for one guest+photo.
+    const mk = (emoji) => ({
+      photo_id: photoIds[1], event_id: eventId, feedback_type: 'reaction',
+      reaction: emoji, guest_identifier: 'dup-guest', is_approved: true, is_hidden: false,
+      created_at: new Date(), updated_at: new Date(),
+    });
+    await db('photo_feedback').insert([mk('❤️'), mk('❤️')]);
+
+    // Switching converges to exactly ONE row with the new emoji…
+    const switched = await react(photoIds[1], '🎉', { guestIdentifier: 'dup-guest' });
+    expect(switched.updated).toBe(true);
+    let rows = await db('photo_feedback')
+      .where({ photo_id: photoIds[1], feedback_type: 'reaction', guest_identifier: 'dup-guest' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].reaction).toBe('🎉');
+
+    // …and toggle-off removes the full guest-scoped set.
+    await db('photo_feedback').insert(mk('🎉'));
+    const removed = await react(photoIds[1], '🎉', { guestIdentifier: 'dup-guest' });
+    expect(removed.removed).toBe(true);
+    rows = await db('photo_feedback')
+      .where({ photo_id: photoIds[1], feedback_type: 'reaction', guest_identifier: 'dup-guest' });
+    expect(rows).toHaveLength(0);
+  });
+
   it('summary and exports carry reactions', async () => {
     const summary = await feedbackService.getEventFeedbackSummary(eventId);
     expect(Number(summary.stats.total_reactions)).toBeGreaterThan(0);

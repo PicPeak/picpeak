@@ -49,17 +49,22 @@ export const PhotoReactions: React.FC<PhotoReactionsProps> = ({
       }),
     onMutate: async (data) => {
       setIsSubmitting(true);
-      // Optimistic update: same emoji toggles off, another switches.
+      // Optimistic update: same emoji toggles off, another switches. The
+      // PRE-mutation value must travel via the mutation context — the
+      // onError closure sees the post-optimistic render, so reading
+      // `myReaction` there would "revert" to the already-wrong state.
+      const previousReaction = myReaction;
       if (onReactionChange) {
-        onReactionChange(data.emoji === myReaction ? null : data.emoji);
+        onReactionChange(data.emoji === previousReaction ? null : data.emoji);
       }
+      return { previousReaction };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
     },
-    onError: () => {
+    onError: (_error, _data, context) => {
       if (onReactionChange) {
-        onReactionChange(myReaction); // revert optimistic update
+        onReactionChange(context?.previousReaction ?? null); // revert optimistic update
       }
       toast.error(t('feedback.reactionError', 'Failed to update reaction'));
     },
