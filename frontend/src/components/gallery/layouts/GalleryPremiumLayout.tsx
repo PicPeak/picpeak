@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { MasonryPhotoAlbum } from 'react-photo-album';
 import 'react-photo-album/masonry.css';
 import Lightbox from 'yet-another-react-lightbox';
@@ -631,9 +632,12 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         }}
       />
 
-      {/* Emoji reaction bar over the lightbox (#839). Fixed overlay above
-          YARL (z-index 9999) and its bottom thumbnail strip. */}
-      {currentLightboxPhoto && reactionsActive && reactionState?.photoId === currentLightboxPhoto.id && (
+      {/* Emoji reaction bar over the lightbox (#839). Portaled to
+          document.body: inside the layout tree an ancestor stacking context
+          (framer-motion transforms) would paint it UNDER yarl's body-level
+          portal and its backdrop would swallow every click. As a body child
+          the z-index 10000 genuinely beats yarl's 9999. */}
+      {currentLightboxPhoto && reactionsActive && reactionState?.photoId === currentLightboxPhoto.id && createPortal(
         <div className="gallery-premium-lightbox-reactions">
           <PhotoReactions
             photoId={String(currentLightboxPhoto.id)}
@@ -644,7 +648,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
             requireNameEmail={!!feedbackOptions?.requireNameEmail}
             onReactionChange={handleReactionChange}
           />
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Identity Modal */}
