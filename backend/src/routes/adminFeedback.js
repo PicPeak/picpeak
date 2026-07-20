@@ -233,19 +233,22 @@ router.get('/events/:eventId/feedback-analytics',
         .count('* as count')
         .first();
       
+      // Number() everywhere: Postgres COUNT() comes back as a string, and
+      // string + string in the total_feedback sum concatenates ("00006").
+      const counts = {
+        total_ratings: Number(summaryData.stats?.total_ratings) || 0,
+        total_likes: Number(summaryData.stats?.total_likes) || 0,
+        total_comments: Number(summaryData.stats?.total_comments) || 0,
+        total_favorites: Number(summaryData.stats?.total_favorites) || 0,
+        total_reactions: Number(summaryData.stats?.total_reactions) || 0,
+      };
       const summary = {
         average_rating: parseFloat(avgRatingResult?.average_rating || 0),
-        total_ratings: summaryData.stats?.total_ratings || 0,
-        total_likes: summaryData.stats?.total_likes || 0,
-        total_comments: summaryData.stats?.total_comments || 0,
-        total_favorites: summaryData.stats?.total_favorites || 0,
-        total_reactions: summaryData.stats?.total_reactions || 0,
-        pending_moderation: pendingModeration?.count || 0,
-        total_feedback: (summaryData.stats?.total_ratings || 0) +
-                       (summaryData.stats?.total_likes || 0) +
-                       (summaryData.stats?.total_comments || 0) +
-                       (summaryData.stats?.total_favorites || 0) +
-                       (summaryData.stats?.total_reactions || 0)
+        ...counts,
+        pending_moderation: Number(pendingModeration?.count) || 0,
+        total_feedback: counts.total_ratings + counts.total_likes +
+                       counts.total_comments + counts.total_favorites +
+                       counts.total_reactions
       };
       
       // Get top-rated photos

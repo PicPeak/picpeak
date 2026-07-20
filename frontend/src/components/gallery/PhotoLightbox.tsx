@@ -79,6 +79,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     allow_likes?: boolean;
     allow_ratings?: boolean;
     allow_comments?: boolean;
+    allow_reactions?: boolean;
     show_feedback_to_guests?: boolean;
     require_name_email?: boolean;
   } | null>(null);
@@ -750,12 +751,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               </div>
             )}
             
-            {/* Feedback button with indicator. Gated on allow_comments
-                because likes/ratings already have their own dedicated
-                toolbar buttons above — this MessageSquare button only
-                opens the comments panel, so it has nothing to do when
-                comments are off (#518). */}
-            {feedbackEnabled && feedbackSettings?.allow_comments && (
+            {/* Feedback button with indicator. Likes/ratings have their
+                own dedicated toolbar buttons above, so this panel toggle
+                only has work to do when comments (#518) or the emoji
+                reaction bar (#839) live inside the panel. */}
+            {feedbackEnabled && (feedbackSettings?.allow_comments || feedbackSettings?.allow_reactions) && (
               <button
                 onClick={() => {
                   setShowFeedback(!showFeedback);
