@@ -78,6 +78,7 @@ router.get(
           db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'favorite\' THEN 1 END) AS favorites'),
           db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'comment\' THEN 1 END) AS comments'),
           db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'rating\' THEN 1 END) AS ratings'),
+          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'reaction\' THEN 1 END) AS reactions'),
           db.raw('COUNT(DISTINCT photo_feedback.photo_id) AS distinct_photos')
         )
         .orderBy('gallery_guests.created_at', 'desc');
@@ -89,6 +90,7 @@ router.get(
           favorites: parseInt(r.favorites, 10) || 0,
           comments: parseInt(r.comments, 10) || 0,
           ratings: parseInt(r.ratings, 10) || 0,
+          reactions: parseInt(r.reactions, 10) || 0,
           distinct_photos: parseInt(r.distinct_photos, 10) || 0,
         },
       }));
@@ -401,6 +403,7 @@ router.get(
           'photo_feedback.feedback_type',
           'photo_feedback.rating',
           'photo_feedback.comment_text',
+          'photo_feedback.reaction',
           'photo_feedback.created_at',
           'photos.id as photo_id',
           'photos.filename',
@@ -423,6 +426,7 @@ router.get(
         favorited: [],
         rated: [],
         commented: [],
+        reacted: [],
       };
       for (const row of feedback) {
         if (row.feedback_type === 'like') {
@@ -437,6 +441,8 @@ router.get(
             comment: row.comment_text,
             created_at: row.created_at,
           });
+        } else if (row.feedback_type === 'reaction') {
+          selections.reacted.push({ photo: photoFor(row), reaction: row.reaction });
         }
       }
 
@@ -448,6 +454,7 @@ router.get(
             favorites: selections.favorited.length,
             comments: selections.commented.length,
             ratings: selections.rated.length,
+            reactions: selections.reacted.length,
           },
         },
         selections,

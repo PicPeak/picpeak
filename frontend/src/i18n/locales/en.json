@@ -2286,6 +2286,7 @@
         "favorites": "Favorites",
         "comments": "Comments",
         "ratings": "Ratings",
+        "reactions": "Reactions",
         "lastSeen": "Last seen"
       },
       "view": "View details",
@@ -2299,6 +2300,7 @@
         "liked": "Liked",
         "favorited": "Favorited",
         "rated": "Rated",
+        "reacted": "Reacted",
         "commented": "Commented"
       },
       "inviteStatus": {

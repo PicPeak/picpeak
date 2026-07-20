@@ -721,6 +721,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
             allowFavorites: !!feedbackSettings?.allow_favorites,
             allowRatings: !!feedbackSettings?.allow_ratings,
             allowComments: !!feedbackSettings?.allow_comments,
+            allowReactions: !!feedbackSettings?.allow_reactions,
             requireNameEmail: !!feedbackSettings?.require_name_email,
           }}
           isSelectionMode={isSelectionMode}
@@ -967,6 +968,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
               allowFavorites: !!feedbackSettings?.allow_favorites,
               allowRatings: !!feedbackSettings?.allow_ratings,
               allowComments: !!feedbackSettings?.allow_comments,
+              allowReactions: !!feedbackSettings?.allow_reactions,
               requireNameEmail: !!feedbackSettings?.require_name_email,
             }}
             isSelectionMode={isSelectionMode}

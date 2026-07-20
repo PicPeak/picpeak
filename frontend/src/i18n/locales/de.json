@@ -2708,6 +2708,7 @@
         "favorites": "Favoriten",
         "comments": "Kommentare",
         "ratings": "Bewertungen",
+        "reactions": "Reaktionen",
         "lastSeen": "Zuletzt gesehen"
       },
       "view": "Details anzeigen",
@@ -2721,6 +2722,7 @@
         "liked": "Gemocht",
         "favorited": "Favorisiert",
         "rated": "Bewertet",
+        "reacted": "Reagiert",
         "commented": "Kommentiert"
       },
       "inviteStatus": {

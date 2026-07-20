@@ -1688,6 +1688,7 @@
         "favorites": "Favorieten",
         "comments": "Opmerkingen",
         "ratings": "Beoordelingen",
+        "reactions": "Reacties",
         "lastSeen": "Laatste bezoek"
       },
       "view": "Details bekijken",
@@ -1701,6 +1702,7 @@
         "liked": "Geliked",
         "favorited": "Favoriet",
         "rated": "Beoordeeld",
+        "reacted": "Gereageerd",
         "commented": "Becommentarieerd"
       },
       "inviteStatus": {

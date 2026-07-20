@@ -29,6 +29,7 @@ export interface BaseGalleryLayoutProps {
     allowFavorites?: boolean;
     allowRatings?: boolean;
     allowComments?: boolean;
+    allowReactions?: boolean;
     requireNameEmail?: boolean;
   };
   // Logout callback for full-page layouts

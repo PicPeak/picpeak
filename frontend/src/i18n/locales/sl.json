@@ -1688,6 +1688,7 @@
         "favorites": "Priljubljene",
         "comments": "Komentarji",
         "ratings": "Ocene",
+        "reactions": "Odzivi",
         "lastSeen": "Nazadnje viden"
       },
       "view": "Ogled podrobnosti",
@@ -1701,6 +1702,7 @@
         "liked": "Všečkano",
         "favorited": "Dodano med priljubljene",
         "rated": "Ocenjeno",
+        "reacted": "Odzval se",
         "commented": "Komentirano"
       },
       "inviteStatus": {

@@ -408,3 +408,17 @@
 .gallery-premium-animate-in {
   animation: galleryPremiumFadeIn 0.4s ease forwards;
 }
+
+/* Emoji reaction bar over the lightbox (#839). Sits above YARL's container
+   (z-index 9999) and clear of the bottom thumbnail strip. */
+.gallery-premium-lightbox-reactions {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 122px;
+  z-index: 10000;
+  background: rgba(20, 20, 20, 0.75);
+  border-radius: 9999px;
+  padding: 6px 10px;
+  backdrop-filter: blur(6px);
+}

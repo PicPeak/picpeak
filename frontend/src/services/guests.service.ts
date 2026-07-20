@@ -17,6 +17,7 @@ export interface AdminGuestStats {
   favorites: number;
   comments: number;
   ratings: number;
+  reactions: number;
   distinct_photos: number;
 }
 
@@ -45,6 +46,7 @@ export interface AdminGuestSelections {
   favorited: AdminGuestPhoto[];
   rated: Array<{ photo: AdminGuestPhoto; rating: number }>;
   commented: Array<{ photo: AdminGuestPhoto; comment: string; created_at: string }>;
+  reacted: Array<{ photo: AdminGuestPhoto; reaction: string }>;
 }
 
 export interface AdminGuestDetail {

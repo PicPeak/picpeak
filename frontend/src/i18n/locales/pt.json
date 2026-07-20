@@ -1713,6 +1713,7 @@
         "favorites": "Favoritos",
         "comments": "Comentários",
         "ratings": "Avaliações",
+        "reactions": "Reações",
         "lastSeen": "Última visita"
       },
       "view": "Ver detalhes",
@@ -1726,6 +1727,7 @@
         "liked": "Gostou",
         "favorited": "Favorito",
         "rated": "Avaliado",
+        "reacted": "Reagiu",
         "commented": "Comentado"
       },
       "inviteStatus": {
