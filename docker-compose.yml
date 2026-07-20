@@ -63,6 +63,11 @@ services:
       # Public API origin for split-origin deployments (#798 SSO redirect_uri).
       # Empty = same origin as FRONTEND_URL (the standard proxied setup).
       - API_URL=${API_URL:-}
+      # OIDC SSO (#798): key for the client secret at rest (falls back to
+      # JWT_SECRET) and the break-glass override that re-enables local
+      # password login when the IdP is down while SSO-only mode is active.
+      - OIDC_ENCRYPTION_KEY=${OIDC_ENCRYPTION_KEY:-}
+      - OIDC_BREAK_GLASS=${OIDC_BREAK_GLASS:-}
       - ADMIN_URL=${ADMIN_URL:-http://localhost:3001}
       - TZ=${TZ:-UTC}
       - STORAGE_PATH=/app/storage

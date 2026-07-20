@@ -523,6 +523,24 @@ router.put('/sso', adminAuth, requirePermission('settings.edit'), [
       return res.status(400).json({ error: 'Local login can only be disabled while SSO is enabled' });
     }
 
+    // …and an active LOCAL-password super_admin must exist as the break-glass
+    // account: OIDC_BREAK_GLASS only re-opens the password route, but
+    // OIDC-owned accounts are refused there and carry unusable random hashes.
+    // settings.edit is super_admin-only, so a lesser local account couldn't
+    // fix the SSO config either — without this check an all-OIDC instance
+    // would be unrecoverable during an IdP outage.
+    if (req.body.oidc_disable_local_login === true) {
+      const superAdminRole = await db('roles').where('name', 'super_admin').first();
+      const localSuperAdmin = superAdminRole && await db('admin_users')
+        .where('role_id', superAdminRole.id)
+        .where('is_active', formatBoolean(true))
+        .where((qb) => qb.whereNot('auth_provider', 'oidc').orWhereNull('auth_provider'))
+        .first();
+      if (!localSuperAdmin) {
+        return res.status(400).json({ error: 'Disabling local login requires at least one active Super Admin with a local password (the break-glass account)' });
+      }
+    }
+
     await oidcService.saveOidcSettings(req.body);
 
     await logActivity('sso_settings_updated',

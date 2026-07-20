@@ -323,6 +323,28 @@ describe('OIDC role mapping + login policy (#798 phase 2)', () => {
     expect(res.body.error).toMatch(/while SSO is enabled/);
   });
 
+  it('PUT /sso refuses SSO-only mode without an active local-password super admin', async () => {
+    // Make every active super_admin OIDC-owned — break-glass would then
+    // re-open a password route that no account can use.
+    const superRole = await db('roles').where({ name: 'super_admin' }).first();
+    await db('admin_users').where({ role_id: superRole.id }).update({ auth_provider: 'oidc' });
+    const denied = await request(app)
+      .put('/api/admin/settings/sso')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ oidc_disable_local_login: true });
+    // Restore the local break-glass account, then the same request passes.
+    await db('admin_users').where({ email: 'root@example.com' }).update({ auth_provider: 'local' });
+    expect(denied.status).toBe(400);
+    expect(denied.body.error).toMatch(/break-glass/);
+
+    const allowed = await request(app)
+      .put('/api/admin/settings/sso')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ oidc_disable_local_login: true });
+    expect(allowed.status).toBe(200);
+    await oidcService.saveOidcSettings({ oidc_disable_local_login: false });
+  });
+
   it('GET /sso returns the phase-2 fields', async () => {
     const res = await request(app)
       .get('/api/admin/settings/sso')
