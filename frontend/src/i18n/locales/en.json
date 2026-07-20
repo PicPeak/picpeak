@@ -1666,7 +1666,27 @@
       "testOk": "Discovery succeeded — issuer is reachable: {{issuer}}",
       "testFailed": "Discovery failed",
       "saved": "SSO settings saved",
-      "saveError": "Failed to save SSO settings"
+      "saveError": "Failed to save SSO settings",
+      "roleMapping": {
+        "title": "Role mapping",
+        "intro": "Assign PicPeak roles from a role or group claim in the ID token. Roles are re-evaluated on every SSO login — the IdP becomes the source of truth.",
+        "enabled": "Enable role mapping",
+        "enabledHint": "Off: existing admins keep their role and new users get the default role above.",
+        "claim": "Roles claim (dot-path)",
+        "claimHint": "Keycloak: realm_access.roles · Authentik: groups · Entra ID: roles or groups",
+        "mappings": "Mappings (IdP value → PicPeak role)",
+        "noMappings": "No mappings yet — without one, no login gets a role from the IdP.",
+        "idpValuePlaceholder": "IdP role or group, e.g. picpeak-admins",
+        "addMapping": "Add mapping",
+        "requireRole": "Require a mapped role to sign in",
+        "requireRoleHint": "Refuse SSO logins whose token maps to no role — only members of the mapped IdP groups get in. The last active Super Admin is never demoted by mapping."
+      },
+      "policy": {
+        "title": "Login policy",
+        "disableLocalLogin": "Disable local password login",
+        "disableLocalLoginHint": "The login page shows only the SSO button and the API refuses password logins. Only possible while SSO is enabled; turning SSO off restores password login automatically.",
+        "breakGlassHint": "Locked out because the IdP is down or misconfigured? Set the environment variable OIDC_BREAK_GLASS=true on the backend and restart — password login comes back immediately."
+      }
     }
   },
   "analytics": {
@@ -3635,13 +3655,15 @@
     },
     "ssoDivider": "or",
     "ssoSignIn": "Sign in with SSO",
+    "ssoOnlyHint": "Password login is disabled on this instance — sign in through your identity provider.",
     "ssoErrors": {
       "config": "SSO is misconfigured — check the SSO settings or sign in with email and password.",
       "state": "The SSO sign-in expired or was tampered with. Please try again.",
       "idp": "The identity provider rejected the sign-in. Please try again or use email and password.",
       "inactive": "Your admin account is deactivated.",
       "not_provisioned": "No admin account matches your SSO identity. Ask an administrator to invite you.",
-      "no_email": "Your identity provider supplied no email address — an account cannot be created."
+      "no_email": "Your identity provider supplied no email address — an account cannot be created.",
+      "no_role": "Your identity provider granted no role that is mapped to this instance — ask an administrator to add you to a mapped group."
     }
   },
   "slideshow": {

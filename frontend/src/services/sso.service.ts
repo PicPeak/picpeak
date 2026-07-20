@@ -15,6 +15,12 @@ export interface SsoSettings {
   oidc_default_role: string;
   oidc_button_label: string;
   oidc_scopes: string;
+  oidc_role_mapping_enabled: boolean;
+  oidc_roles_claim: string;
+  /** IdP role/group value → PicPeak role name. */
+  oidc_role_mappings: Record<string, string>;
+  oidc_require_mapped_role: boolean;
+  oidc_disable_local_login: boolean;
   redirect_uri: string;
 }
 
@@ -28,6 +34,11 @@ export interface UpdateSsoSettings {
   oidc_default_role?: string;
   oidc_button_label?: string;
   oidc_scopes?: string;
+  oidc_role_mapping_enabled?: boolean;
+  oidc_roles_claim?: string;
+  oidc_role_mappings?: Record<string, string>;
+  oidc_require_mapped_role?: boolean;
+  oidc_disable_local_login?: boolean;
 }
 
 export interface SsoTestResult {

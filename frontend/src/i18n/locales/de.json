@@ -2119,7 +2119,27 @@
       "testOk": "Discovery erfolgreich — Issuer ist erreichbar: {{issuer}}",
       "testFailed": "Discovery fehlgeschlagen",
       "saved": "SSO-Einstellungen gespeichert",
-      "saveError": "SSO-Einstellungen konnten nicht gespeichert werden"
+      "saveError": "SSO-Einstellungen konnten nicht gespeichert werden",
+      "roleMapping": {
+        "title": "Rollen-Mapping",
+        "intro": "Weisen Sie PicPeak-Rollen aus einem Rollen- oder Gruppen-Claim im ID-Token zu. Rollen werden bei jeder SSO-Anmeldung neu ausgewertet — der IdP wird zur führenden Quelle.",
+        "enabled": "Rollen-Mapping aktivieren",
+        "enabledHint": "Aus: Bestehende Admins behalten ihre Rolle, neue Benutzer erhalten die Standardrolle oben.",
+        "claim": "Rollen-Claim (Punkt-Pfad)",
+        "claimHint": "Keycloak: realm_access.roles · Authentik: groups · Entra ID: roles oder groups",
+        "mappings": "Zuordnungen (IdP-Wert → PicPeak-Rolle)",
+        "noMappings": "Noch keine Zuordnungen — ohne Zuordnung erhält keine Anmeldung eine Rolle vom IdP.",
+        "idpValuePlaceholder": "IdP-Rolle oder -Gruppe, z. B. picpeak-admins",
+        "addMapping": "Zuordnung hinzufügen",
+        "requireRole": "Zugeordnete Rolle für die Anmeldung verlangen",
+        "requireRoleHint": "SSO-Anmeldungen ohne zugeordnete Rolle werden abgelehnt — nur Mitglieder der zugeordneten IdP-Gruppen kommen hinein. Der letzte aktive Super Admin wird durch das Mapping nie herabgestuft."
+      },
+      "policy": {
+        "title": "Anmelde-Richtlinie",
+        "disableLocalLogin": "Lokale Passwort-Anmeldung deaktivieren",
+        "disableLocalLoginHint": "Die Anmeldeseite zeigt nur noch den SSO-Button und die API lehnt Passwort-Anmeldungen ab. Nur möglich, solange SSO aktiviert ist; wird SSO deaktiviert, ist die Passwort-Anmeldung automatisch wieder möglich.",
+        "breakGlassHint": "Ausgesperrt, weil der IdP down oder falsch konfiguriert ist? Setzen Sie die Umgebungsvariable OIDC_BREAK_GLASS=true am Backend und starten Sie neu — die Passwort-Anmeldung ist sofort wieder möglich."
+      }
     }
   },
   "branding": {
@@ -3749,13 +3769,15 @@
     },
     "ssoDivider": "oder",
     "ssoSignIn": "Mit SSO anmelden",
+    "ssoOnlyHint": "Die Passwort-Anmeldung ist auf dieser Instanz deaktiviert — melden Sie sich über Ihren Identity Provider an.",
     "ssoErrors": {
       "config": "SSO ist falsch konfiguriert — prüfen Sie die SSO-Einstellungen oder melden Sie sich mit E-Mail und Passwort an.",
       "state": "Die SSO-Anmeldung ist abgelaufen oder wurde manipuliert. Bitte erneut versuchen.",
       "idp": "Der Identity Provider hat die Anmeldung abgelehnt. Bitte erneut versuchen oder E-Mail und Passwort verwenden.",
       "inactive": "Ihr Admin-Konto ist deaktiviert.",
       "not_provisioned": "Kein Admin-Konto passt zu Ihrer SSO-Identität. Bitten Sie einen Administrator um eine Einladung.",
-      "no_email": "Ihr Identity Provider hat keine E-Mail-Adresse geliefert — es kann kein Konto erstellt werden."
+      "no_email": "Ihr Identity Provider hat keine E-Mail-Adresse geliefert — es kann kein Konto erstellt werden.",
+      "no_role": "Ihr Identity Provider hat keine Rolle geliefert, die dieser Instanz zugeordnet ist — bitten Sie einen Administrator, Sie einer zugeordneten Gruppe hinzuzufügen."
     }
   },
   "cssTemplates": {

@@ -102,6 +102,8 @@ export interface PublicSettings {
   // OIDC SSO (#798) — drives the "Sign in with SSO" button on /admin/login.
   oidc_enabled?: boolean;
   oidc_button_label?: string;
+  /** Effective flag (phase 2): the API refuses password logins right now. */
+  oidc_local_login_disabled?: boolean;
 }
 
 export const publicSettingsService = {

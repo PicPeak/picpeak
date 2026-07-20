@@ -436,6 +436,11 @@ router.get('/sso', adminAuth, requirePermission('settings.view'), async (req, re
       oidc_default_role: cfg.defaultRole,
       oidc_button_label: cfg.buttonLabel || '',
       oidc_scopes: cfg.scopes,
+      oidc_role_mapping_enabled: cfg.roleMappingEnabled,
+      oidc_roles_claim: cfg.rolesClaim,
+      oidc_role_mappings: cfg.roleMappings,
+      oidc_require_mapped_role: cfg.requireMappedRole,
+      oidc_disable_local_login: cfg.disableLocalLogin,
       redirect_uri: redirectUri,
     });
   } catch (error) {
@@ -453,6 +458,11 @@ router.put('/sso', adminAuth, requirePermission('settings.edit'), [
   body('oidc_default_role').optional().isString().trim(),
   body('oidc_button_label').optional().isString().trim().isLength({ max: 60 }),
   body('oidc_scopes').optional().isString().trim(),
+  body('oidc_role_mapping_enabled').optional().isBoolean(),
+  body('oidc_roles_claim').optional().isString().trim().isLength({ max: 200 }),
+  body('oidc_role_mappings').optional().isObject(),
+  body('oidc_require_mapped_role').optional().isBoolean(),
+  body('oidc_disable_local_login').optional().isBoolean(),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -490,6 +500,27 @@ router.put('/sso', adminAuth, requirePermission('settings.edit'), [
       if (!role) {
         return res.status(400).json({ error: `Unknown role: ${req.body.oidc_default_role}` });
       }
+    }
+
+    // Every role-mapping target must exist too (#798 phase 2) — a typo'd
+    // role name would silently map users to nothing.
+    if (req.body.oidc_role_mappings !== undefined) {
+      const targets = [...new Set(Object.values(req.body.oidc_role_mappings).map((r) => String(r).trim()).filter(Boolean))];
+      if (targets.length > 0) {
+        const known = (await db('roles').whereIn('name', targets)).map((r) => r.name);
+        const unknown = targets.filter((t) => !known.includes(t));
+        if (unknown.length > 0) {
+          return res.status(400).json({ error: `Unknown role(s) in mapping: ${unknown.join(', ')}` });
+        }
+      }
+    }
+
+    // Turning OFF local login requires SSO to be (staying) enabled. Only the
+    // explicit request is checked — a stored true must never block disabling
+    // SSO itself (runtime enforcement ignores the flag while SSO is off or
+    // unconfigured, and OIDC_BREAK_GLASS=true always re-opens local login).
+    if (req.body.oidc_disable_local_login === true && effectiveEnabled !== true) {
+      return res.status(400).json({ error: 'Local login can only be disabled while SSO is enabled' });
     }
 
     await oidcService.saveOidcSettings(req.body);

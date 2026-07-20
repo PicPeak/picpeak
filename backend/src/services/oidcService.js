@@ -1,10 +1,12 @@
 /**
- * OIDC SSO for admin users (#798, phase 1).
+ * OIDC SSO for admin users (#798).
  *
  * Authorization-code + PKCE against a single configurable IdP (Keycloak,
- * Authentik, Pocket ID, or any spec-compliant provider). Scope is deliberately
- * narrow in phase 1: admin logins only, JIT provisioning with one default
- * role. Role-claim mapping and logout-to-IdP are follow-ups.
+ * Authentik, Pocket ID, or any spec-compliant provider). Phase 1: admin
+ * logins only, JIT provisioning with one default role. Phase 2: role-claim
+ * mapping (dot-path claim, re-evaluated per login) and login policy
+ * (require-mapped-role, disable-local-login with OIDC_BREAK_GLASS env
+ * escape hatch). Logout-to-IdP is a follow-up.
  *
  * Identity binding: SSO logins match on `admin_users.external_subject` (the
  * IdP's stable `sub` claim) — NEVER on email alone, which is an
@@ -76,7 +78,8 @@ function decryptSecret(stored) {
  * for internal use only; the settings GET endpoint must never call this.
  */
 async function getOidcConfig() {
-  const [enabled, issuerUrl, clientId, encSecret, autoprovision, defaultRole, buttonLabel, scopes] =
+  const [enabled, issuerUrl, clientId, encSecret, autoprovision, defaultRole, buttonLabel, scopes,
+    roleMappingEnabled, rolesClaim, roleMappings, requireMappedRole, disableLocalLogin] =
     await Promise.all([
       getAppSetting('oidc_enabled'),
       getAppSetting('oidc_issuer_url'),
@@ -86,6 +89,11 @@ async function getOidcConfig() {
       getAppSetting('oidc_default_role'),
       getAppSetting('oidc_button_label'),
       getAppSetting('oidc_scopes'),
+      getAppSetting('oidc_role_mapping_enabled'),
+      getAppSetting('oidc_roles_claim'),
+      getAppSetting('oidc_role_mappings'),
+      getAppSetting('oidc_require_mapped_role'),
+      getAppSetting('oidc_disable_local_login'),
     ]);
 
   let clientSecret = null;
@@ -110,7 +118,26 @@ async function getOidcConfig() {
     defaultRole: defaultRole || 'viewer',
     buttonLabel: buttonLabel || null,
     scopes: scopes || 'openid profile email',
+    roleMappingEnabled: roleMappingEnabled === true,
+    rolesClaim: rolesClaim || 'roles',
+    roleMappings: (roleMappings && typeof roleMappings === 'object' && !Array.isArray(roleMappings))
+      ? roleMappings : {},
+    requireMappedRole: requireMappedRole === true,
+    disableLocalLogin: disableLocalLogin === true,
   };
+}
+
+/**
+ * Whether the local password login must be refused (#798 phase 2 policy).
+ * Only effective while SSO is actually usable (enabled + fully configured) —
+ * a half-torn-down config must never lock the instance. OIDC_BREAK_GLASS=true
+ * re-enables local login unconditionally so an IdP outage or a role-mapping
+ * misconfig always has a documented way back in.
+ */
+async function isLocalLoginDisabled() {
+  if (process.env.OIDC_BREAK_GLASS === 'true') return false;
+  const cfg = await getOidcConfig();
+  return cfg.enabled && cfg.disableLocalLogin && isConfigured(cfg);
 }
 
 function isConfigured(cfg) {
@@ -261,6 +288,75 @@ async function handleCallback(currentUrl, { state, nonce, codeVerifier }) {
 }
 
 /**
+ * Pull the IdP role values out of the claims via a dot-path (#798 phase 2).
+ * Keycloak nests them (`realm_access.roles`), Authentik uses a flat `groups`,
+ * Entra a flat `roles`/`groups` — a dot-path covers all of them. Accepts an
+ * array, a single string, or a space/comma-separated string value.
+ */
+function extractRolesFromClaims(claims, claimPath) {
+  const path = String(claimPath || '').trim();
+  if (!path) return [];
+  let value = claims;
+  for (const segment of path.split('.')) {
+    if (value == null || typeof value !== 'object') return [];
+    value = value[segment];
+  }
+  if (Array.isArray(value)) return value.filter((v) => typeof v === 'string');
+  if (typeof value === 'string') return value.split(/[\s,]+/).filter(Boolean);
+  return [];
+}
+
+/**
+ * Resolve the IdP-asserted roles to ONE PicPeak role row through the
+ * configured mapping table, or null when nothing maps. Several matches →
+ * the highest-priority role wins (roles.priority, super_admin=100 …
+ * viewer=20). Mapping targets that don't exist in the roles table anymore
+ * (deleted custom role) simply resolve to nothing.
+ */
+async function resolveMappedRole(claims, cfg) {
+  const idpRoles = extractRolesFromClaims(claims, cfg.rolesClaim);
+  const targetNames = [...new Set(idpRoles.map((r) => cfg.roleMappings[r]).filter(Boolean))];
+  if (targetNames.length === 0) return null;
+  const roles = await db('roles').whereIn('name', targetNames).orderBy('priority', 'desc');
+  return roles[0] || null;
+}
+
+/**
+ * Apply the mapped role to an admin row (role re-evaluated on every SSO
+ * login — the IdP is the source of truth while mapping is enabled). One
+ * guard: NEVER demote the last active super_admin, or a bad IdP group
+ * change would leave the instance without user management (same invariant
+ * userManagementService enforces on manual role edits). `mappedRole=null`
+ * (mapping off, or nothing mapped in non-strict mode) keeps the current role.
+ */
+async function syncAdminRole(admin, mappedRole) {
+  if (!mappedRole || admin.role_id === mappedRole.id) return admin;
+
+  const superAdminRole = await db('roles').where('name', 'super_admin').first();
+  if (superAdminRole && admin.role_id === superAdminRole.id && mappedRole.id !== superAdminRole.id) {
+    const superAdminCount = await db('admin_users')
+      .where('role_id', superAdminRole.id)
+      .where('is_active', formatBoolean(true))
+      .count('id as count')
+      .first();
+    if (Number(superAdminCount?.count) <= 1) {
+      logger.warn('OIDC role sync would demote the last active super_admin — keeping super_admin', {
+        adminId: admin.id,
+        mappedRole: mappedRole.name,
+      });
+      return admin;
+    }
+  }
+
+  await db('admin_users').where('id', admin.id).update({
+    role_id: mappedRole.id,
+    updated_at: new Date(),
+  });
+  logger.info('OIDC: admin role synced from IdP claims', { adminId: admin.id, role: mappedRole.name });
+  return { ...admin, role_id: mappedRole.id };
+}
+
+/**
  * Map validated ID token claims to an admin_users row.
  *
  * Resolution order:
@@ -289,6 +385,22 @@ async function resolveAdminFromClaims(claims) {
     throw err;
   }
 
+  const cfg = await getOidcConfig();
+
+  // Role mapping (#798 phase 2): resolve the IdP-asserted role ONCE, before
+  // any account resolution — in strict mode a login without a mapped role is
+  // refused no matter how the identity would have resolved ("only members of
+  // group X may enter"). The mapped role is then applied on every path below.
+  let mappedRole = null;
+  if (cfg.roleMappingEnabled) {
+    mappedRole = await resolveMappedRole(claims, cfg);
+    if (!mappedRole && cfg.requireMappedRole) {
+      const err = new Error('ID token carries no role that maps to a PicPeak role');
+      err.code = 'OIDC_NO_ROLE';
+      throw err;
+    }
+  }
+
   // 1. Established binding — issuer AND subject.
   const bySub = await db('admin_users')
     .where('external_issuer', iss)
@@ -300,7 +412,7 @@ async function resolveAdminFromClaims(claims) {
       err.code = 'OIDC_INACTIVE';
       throw err;
     }
-    return bySub;
+    return syncAdminRole(bySub, mappedRole);
   }
 
   // 2. One-time email link — verified emails only, and only onto rows that
@@ -336,7 +448,7 @@ async function resolveAdminFromClaims(claims) {
           .where('external_issuer', iss)
           .where('external_subject', sub)
           .first();
-        if (rebound && rebound.is_active) return rebound;
+        if (rebound && rebound.is_active) return syncAdminRole(rebound, mappedRole);
         const err = new Error('Account link raced with another sign-in — try again');
         err.code = 'OIDC_BAD_CLAIMS';
         throw err;
@@ -345,12 +457,11 @@ async function resolveAdminFromClaims(claims) {
         adminId: byEmail.id,
         sub,
       });
-      return { ...byEmail, external_issuer: iss, external_subject: sub };
+      return syncAdminRole({ ...byEmail, external_issuer: iss, external_subject: sub }, mappedRole);
     }
   }
 
   // 3. JIT provisioning.
-  const cfg = await getOidcConfig();
   if (!cfg.autoprovision) {
     const err = new Error('No matching admin account and auto-provisioning is disabled');
     err.code = 'OIDC_NOT_PROVISIONED';
@@ -362,7 +473,9 @@ async function resolveAdminFromClaims(claims) {
     throw err;
   }
 
-  const role = await db('roles').where('name', cfg.defaultRole).first();
+  // Mapped role wins over the static default — the default only catches
+  // users with no mapped IdP role while non-strict mapping is on.
+  const role = mappedRole || await db('roles').where('name', cfg.defaultRole).first();
   if (!role) {
     const err = new Error(`Configured default role '${cfg.defaultRole}' does not exist`);
     err.code = 'OIDC_BAD_CONFIG';
@@ -389,7 +502,7 @@ async function resolveAdminFromClaims(claims) {
     })
     .returning('id');
   const adminId = inserted[0]?.id || inserted[0];
-  logger.info('OIDC: JIT-provisioned admin from IdP', { adminId, sub, role: cfg.defaultRole });
+  logger.info('OIDC: JIT-provisioned admin from IdP', { adminId, sub, role: role.name });
 
   return db('admin_users').where('id', adminId).first();
 }
@@ -417,6 +530,23 @@ async function saveOidcSettings(input) {
     if (!scopes.includes('openid')) scopes.unshift('openid');
     put('oidc_scopes', scopes.join(' ') || 'openid profile email', 'string');
   }
+  if (input.oidc_role_mapping_enabled !== undefined) put('oidc_role_mapping_enabled', input.oidc_role_mapping_enabled === true, 'boolean');
+  if (input.oidc_roles_claim !== undefined) put('oidc_roles_claim', String(input.oidc_roles_claim).trim(), 'string');
+  if (input.oidc_role_mappings !== undefined) {
+    // Normalize to a flat { idpRole: picpeakRole } string map; the route has
+    // already validated that every target role exists.
+    const mappings = {};
+    if (input.oidc_role_mappings && typeof input.oidc_role_mappings === 'object' && !Array.isArray(input.oidc_role_mappings)) {
+      for (const [idpRole, picpeakRole] of Object.entries(input.oidc_role_mappings)) {
+        const from = String(idpRole).trim();
+        const to = String(picpeakRole).trim();
+        if (from && to) mappings[from] = to;
+      }
+    }
+    put('oidc_role_mappings', mappings, 'json');
+  }
+  if (input.oidc_require_mapped_role !== undefined) put('oidc_require_mapped_role', input.oidc_require_mapped_role === true, 'boolean');
+  if (input.oidc_disable_local_login !== undefined) put('oidc_disable_local_login', input.oidc_disable_local_login === true, 'boolean');
   if (typeof input.oidc_client_secret === 'string' && input.oidc_client_secret.length > 0) {
     put('oidc_client_secret', encryptSecret(input.oidc_client_secret), 'string');
   }
@@ -428,6 +558,9 @@ async function saveOidcSettings(input) {
 module.exports = {
   getOidcConfig,
   isConfigured,
+  isLocalLoginDisabled,
+  extractRolesFromClaims,
+  resolveMappedRole,
   getRedirectUri,
   buildAuthorizationRequest,
   handleCallback,

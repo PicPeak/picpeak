@@ -106,7 +106,15 @@ router.post('/admin/login', [
     const { username, password, recaptchaToken } = req.body;
     const ipAddress = getClientIp(req);
     const userAgent = req.headers['user-agent'] || '';
-    
+
+    // SSO login policy (#798 phase 2): refuse the password path before any
+    // credential/lockout work while oidc_disable_local_login is effective.
+    // OIDC_BREAK_GLASS=true (checked inside) always re-opens local login.
+    if (await require('../services/oidcService').isLocalLoginDisabled()) {
+      logger.warn('Local admin login refused — disabled by SSO policy', { username, ipAddress });
+      return res.status(403).json({ error: 'Local login is disabled — sign in through SSO', code: 'LOCAL_LOGIN_DISABLED' });
+    }
+
     // Check account lockout first
     const lockoutStatus = await checkAccountLockout(username);
     if (lockoutStatus.isLocked) {
@@ -1001,6 +1009,7 @@ router.get('/admin/sso/callback', async (req, res) => {
       OIDC_INACTIVE: 'inactive',
       OIDC_NOT_PROVISIONED: 'not_provisioned',
       OIDC_NO_EMAIL: 'no_email',
+      OIDC_NO_ROLE: 'no_role',
       OIDC_BAD_CLAIMS: 'idp',
     };
     const key = codeMap[error.code] || 'idp';

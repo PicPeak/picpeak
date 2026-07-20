@@ -67,7 +67,7 @@ export const AdminLoginPage: React.FC = () => {
   useEffect(() => {
     const ssoError = searchParams.get('sso_error');
     if (!ssoError) return;
-    const known = ['config', 'state', 'idp', 'inactive', 'not_provisioned', 'no_email'];
+    const known = ['config', 'state', 'idp', 'inactive', 'not_provisioned', 'no_email', 'no_role'];
     const key = known.includes(ssoError) ? ssoError : 'idp';
     toast.error(t(`adminLogin.ssoErrors.${key}`));
   }, [searchParams, t]);
@@ -262,7 +262,26 @@ export const AdminLoginPage: React.FC = () => {
 
         {/* Login Form */}
         <Card padding="lg">
-          {step === 'credentials' ? (
+          {step === 'credentials' && settingsData?.oidc_enabled === true && settingsData?.oidc_local_login_disabled === true ? (
+          // SSO-only mode (#798 phase 2): the backend refuses password logins
+          // while oidc_disable_local_login is effective, so the form would
+          // only produce 403s — show the SSO entry alone instead.
+          <div className="space-y-6">
+            <p className="text-sm text-center text-neutral-600">
+              {t('adminLogin.ssoOnlyHint', 'Password login is disabled on this instance — sign in through your identity provider.')}
+            </p>
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              className="w-full"
+              leftIcon={<KeyRound className="w-4 h-4" />}
+              onClick={() => { window.location.href = buildResourceUrl('/api/auth/admin/sso/login'); }}
+            >
+              {settingsData.oidc_button_label?.trim() || t('adminLogin.ssoSignIn', 'Sign in with SSO')}
+            </Button>
+          </div>
+          ) : step === 'credentials' ? (
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Form Error */}
             {errors.form && (

@@ -142,6 +142,11 @@ router.get('/', async (req, res) => {
       // SSO" button from these. Issuer/client/secret are never public.
       oidc_enabled: settingsObject.oidc_enabled === true,
       oidc_button_label: settingsObject.oidc_button_label || '',
+      // EFFECTIVE flag (phase 2): true only while the backend would actually
+      // refuse a password login (SSO enabled + configured + policy on, no
+      // break-glass env) — the login page hides the password form from this,
+      // so it must never claim "disabled" when the API would still allow it.
+      oidc_local_login_disabled: await require('../services/oidcService').isLocalLoginDisabled().catch(() => false),
       enable_recaptcha: settingsObject.security_enable_recaptcha === true || settingsObject.security_enable_recaptcha === 'true',
       recaptcha_site_key: settingsObject.security_recaptcha_site_key || null,
       maintenance_mode: settingsObject.general_maintenance_mode === true || settingsObject.general_maintenance_mode === 'true',
