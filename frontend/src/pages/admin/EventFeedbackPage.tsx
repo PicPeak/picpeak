@@ -250,6 +250,7 @@ export const EventFeedbackPage: React.FC = () => {
                 <option value="like">{t('feedback.types.like', 'Likes')}</option>
                 <option value="comment">{t('feedback.types.comment', 'Comments')}</option>
                 <option value="favorite">{t('feedback.types.favorite', 'Favorites')}</option>
+                <option value="reaction">{t('feedback.types.reaction', 'Reactions')}</option>
               </select>
               <select
                 value={feedbackFilter.status}
@@ -294,6 +295,9 @@ export const EventFeedbackPage: React.FC = () => {
                             {item.feedback_type === 'rating' && <Star className="w-4 h-4 text-yellow-500" />}
                             {item.feedback_type === 'like' && <Heart className="w-4 h-4 text-red-500" />}
                             {item.feedback_type === 'comment' && <MessageSquare className="w-4 h-4 text-blue-500" />}
+                            {item.feedback_type === 'reaction' && item.reaction && (
+                              <span className="text-base leading-none">{item.reaction}</span>
+                            )}
                             <span className="font-medium text-sm">
                               {item.guest_name || t('feedback.anonymous', 'Anonymous')}
                             </span>

@@ -2570,7 +2570,8 @@
       "rating": "Notes",
       "like": "J'aimes",
       "comment": "Commentaires",
-      "favorite": "Favoris"
+      "favorite": "Favoris",
+      "reaction": "Réactions"
     },
     "allStatuses": "Tous statuts",
     "status": {

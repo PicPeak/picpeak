@@ -2559,7 +2559,8 @@
       "rating": "Beoordelingen",
       "like": "Likes",
       "comment": "Opmerkingen",
-      "favorite": "Favorieten"
+      "favorite": "Favorieten",
+      "reaction": "Reacties"
     },
     "allStatuses": "Alle statussen",
     "status": {

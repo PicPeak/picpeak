@@ -3397,7 +3397,8 @@
       "rating": "Bewertungen",
       "like": "Likes",
       "comment": "Kommentare",
-      "favorite": "Favoriten"
+      "favorite": "Favoriten",
+      "reaction": "Reaktionen"
     },
     "allStatuses": "Alle Status",
     "status": {

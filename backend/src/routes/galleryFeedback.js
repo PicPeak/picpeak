@@ -118,7 +118,9 @@ router.get('/:slug/photos/:photoId/feedback',
             .then(r => r.count),
           like_count: photo.like_count || 0,
           favorite_count: photo.favorite_count || 0,
-          reaction_count: photo.reaction_count || 0,
+          // Gated like the per-emoji map below — aggregate reaction data is
+          // a new surface, kept fully hidden while sharing is off.
+          reaction_count: settings.show_feedback_to_guests ? (photo.reaction_count || 0) : 0,
           comment_count: await db('photo_feedback')
             .where({ 
               photo_id: photoId, 

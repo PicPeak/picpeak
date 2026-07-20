@@ -2584,7 +2584,8 @@
       "rating": "Avaliações",
       "like": "Gostos",
       "comment": "Comentários",
-      "favorite": "Favoritos"
+      "favorite": "Favoritos",
+      "reaction": "Reações"
     },
     "allStatuses": "Todos os estados",
     "status": {

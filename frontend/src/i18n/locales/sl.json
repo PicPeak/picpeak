@@ -2559,7 +2559,8 @@
       "rating": "Ocene",
       "like": "Všečki",
       "comment": "Komentarji",
-      "favorite": "Priljubljene"
+      "favorite": "Priljubljene",
+      "reaction": "Odzivi"
     },
     "allStatuses": "Vsa stanja",
     "status": {
