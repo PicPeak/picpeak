@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
+const { guestBlockedByReveal, blockHiddenGallery } = require('../utils/revealMode');
 const { feedbackRateLimit, generateGuestIdentifier } = require('../middleware/feedbackRateLimit');
 const { resolveGuest } = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
@@ -52,6 +53,9 @@ router.get('/:slug/feedback-settings',
 // Get feedback for a specific photo
 router.get('/:slug/photos/:photoId/feedback',
   verifyGalleryAccess,
+  // Reveal-gated (#838): sequential photo ids would let hidden-gallery
+  // guests enumerate comments/stats.
+  blockHiddenGallery,
   resolveGuest,
   validatePhotoId,
   checkValidation,
@@ -145,6 +149,8 @@ router.get('/:slug/photos/:photoId/feedback',
 router.post('/:slug/photos/:photoId/feedback',
   verifyGalleryAccess,
   denySlideshowToken,
+  // Reveal-gated (#838): no interacting with photos you cannot see.
+  blockHiddenGallery,
   resolveGuest,
   validatePhotoId,
   validateFeedbackSubmission,
@@ -316,7 +322,6 @@ router.get('/:slug/feedback-summary',
 
       // Reveal mode (#838): the summary lists top photos by filename —
       // hidden along with the gallery for plain guests.
-      const { guestBlockedByReveal } = require('../utils/revealMode');
       if (guestBlockedByReveal(req)) {
         return res.json({ enabled: false, summary: null });
       }
@@ -371,6 +376,13 @@ router.get('/:slug/my-feedback',
   async (req, res) => {
     try {
       const event = req.event;
+
+      // Reveal mode (#838): rows join photos (filename + storage path) —
+      // return the empty back-compat shape rather than a 403 so the gallery
+      // shell loading in parallel doesn't surface error toasts.
+      if (guestBlockedByReveal(req)) {
+        return res.json([]);
+      }
 
       const query = db('photo_feedback')
         .join('photos', 'photo_feedback.photo_id', 'photos.id')

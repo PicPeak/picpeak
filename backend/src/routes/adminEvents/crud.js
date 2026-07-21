@@ -1596,6 +1596,7 @@ module.exports = (router) => {
           await require('../../services/workflows').emitWorkflowEvent('gallery.revealed', {
             entityType: 'event',
             entityId: parseInt(id, 10),
+            dedupSuffix: String(new Date(now).getTime()),
             payload: {
               eventId: parseInt(id, 10),
               slug: event.slug,

@@ -1,7 +1,7 @@
 const express = require('express');
 const { db } = require('../database/db');
 const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
-const { blockHiddenGallery } = require('../utils/revealMode');
+const { blockHiddenGallery, bypassesReveal, isGalleryHidden } = require('../utils/revealMode');
 const secureImageService = require('../services/secureImageService');
 const secureImageMiddleware = require('../middleware/secureImageMiddleware');
 const logger = require('../utils/logger');
@@ -52,7 +52,10 @@ router.post('/:slug/generate-token', async (req, res, next) => {
       expiresIn: protectionLevel === 'maximum' ? 180 : 300, // 3-5 minutes
       maxUses: accessType === 'download' ? 1 : 3,
       clientFingerprint,
-      protectionLevel
+      protectionLevel,
+      // Reveal mode (#838): recorded in the token so a re-hide invalidates
+      // in-flight guest tokens at serve time without breaking the slideshow.
+      revealBypass: bypassesReveal(req)
     };
 
     const token = secureImageService.generateSecureToken(
@@ -136,6 +139,12 @@ router.get('/:slug/secure/:photoId/:token',
 
       if (!event) {
         return res.status(404).json({ error: 'Gallery not found' });
+      }
+
+      // Reveal mode (#838): tokens minted by plain guests die the moment the
+      // gallery is (re-)hidden — bypass contexts keep working.
+      if (isGalleryHidden(event) && !tokenValidation.data?.revealBypass) {
+        return res.status(403).json({ error: 'Gallery is hidden until reveal', code: 'GALLERY_HIDDEN' });
       }
 
       // Verify photo exists and belongs to event  

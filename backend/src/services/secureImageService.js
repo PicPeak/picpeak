@@ -21,7 +21,11 @@ class SecureImageService {
       expiresIn = 300, // 5 minutes default
       maxUses = 1,
       clientFingerprint = '',
-      protectionLevel = 'standard'
+      protectionLevel = 'standard',
+      // Reveal mode (#838): whether the minting context bypasses the
+      // hidden-gallery gate — re-checked at SERVE time so a re-hide
+      // invalidates in-flight guest tokens without breaking the slideshow.
+      revealBypass = false
     } = options;
 
     const tokenData = {
@@ -32,6 +36,7 @@ class SecureImageService {
       maxUses,
       usedCount: 0,
       protectionLevel,
+      revealBypass,
       createdAt: Date.now()
     };
 

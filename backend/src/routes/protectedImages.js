@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { verifyGalleryAccess } = require('../middleware/gallery');
+const { blockHiddenGallery, bypassesReveal, isGalleryHidden } = require('../utils/revealMode');
 const watermarkService = require('../services/watermarkService');
 const secureImageService = require('../services/secureImageService');
 const { getStorage } = require('../services/storage');
@@ -16,10 +17,13 @@ const router = express.Router();
 /**
  * Generate a signed URL token for image access
  */
-function generateImageToken(photoId, expiresIn = 3600) {
+function generateImageToken(photoId, expiresIn = 3600, revealBypass = false) {
   const secret = process.env.JWT_SECRET;
   const expires = Date.now() + (expiresIn * 1000);
-  const data = `${photoId}:${expires}`;
+  // Third segment (#838): whether the minting context bypasses reveal mode
+  // (slideshow/client/admin). Old two-segment tokens verify unchanged and
+  // read as no-bypass.
+  const data = `${photoId}:${expires}:${revealBypass ? 1 : 0}`;
   const signature = crypto.createHmac('sha256', secret).update(data).digest('hex');
   return `${Buffer.from(data).toString('base64')}.${signature}`;
 }
@@ -32,7 +36,7 @@ function verifyImageToken(token) {
     const secret = process.env.JWT_SECRET;
     const [data, signature] = token.split('.');
     const decoded = Buffer.from(data, 'base64').toString();
-    const [photoId, expires] = decoded.split(':');
+    const [photoId, expires, bypassFlag] = decoded.split(':');
     
     // Verify signature (constant-time — avoids leaking the HMAC byte-by-byte)
     const expectedSignature = crypto.createHmac('sha256', secret).update(decoded).digest('hex');
@@ -45,7 +49,7 @@ function verifyImageToken(token) {
       return null;
     }
     
-    return { photoId: parseInt(photoId), expires: parseInt(expires) };
+    return { photoId: parseInt(photoId), expires: parseInt(expires), revealBypass: bypassFlag === '1' };
   } catch (error) {
     return null;
   }
@@ -54,7 +58,7 @@ function verifyImageToken(token) {
 /**
  * Serve protected image with enhanced security
  */
-router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, async (req, res) => {
+router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery, async (req, res) => {
   try {
     const { photoId } = req.params;
     const { protectionLevel = 'standard', token } = req.query;
@@ -174,7 +178,7 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, async (req, res) =
 /**
  * Generate secure token for enhanced image access
  */
-router.post('/:slug/photo/:photoId/generate-secure-token', verifyGalleryAccess, async (req, res) => {
+router.post('/:slug/photo/:photoId/generate-secure-token', verifyGalleryAccess, blockHiddenGallery, async (req, res) => {
   try {
     const { photoId } = req.params;
     const { protectionLevel = 'standard', expiresIn = 300 } = req.body;
@@ -219,6 +223,11 @@ router.post('/:slug/photo/:photoId/generate-secure-token', verifyGalleryAccess, 
  * Generate signed URL for image access (legacy support)
  */
 router.post('/:slug/photo/:photoId/generate-url', verifyGalleryAccess, async (req, res) => {
+  // Reveal-gated for plain guests; bypass callers get a token that stays
+  // valid at SERVE time too (third token segment below).
+  if (require('../utils/revealMode').guestBlockedByReveal(req)) {
+    return res.status(403).json({ error: 'Gallery is hidden until reveal', code: 'GALLERY_HIDDEN' });
+  }
   try {
     const { photoId } = req.params;
     
@@ -235,7 +244,7 @@ router.post('/:slug/photo/:photoId/generate-url', verifyGalleryAccess, async (re
     }
     
     // Generate signed token
-    const token = generateImageToken(photoId);
+    const token = generateImageToken(photoId, 3600, bypassesReveal(req));
     const signedUrl = `/api/images/${req.params.slug}/photo/${photoId}/signed/${token}`;
     
     res.json({ 
@@ -271,7 +280,13 @@ router.get('/:slug/photo/:photoId/signed/:token', async (req, res) => {
     if (!event) {
       return res.status(404).json({ error: 'Event not found' });
     }
-    
+
+    // Reveal mode (#838): a signed URL minted before a re-hide must not keep
+    // serving hidden photos; tokens minted by bypass contexts carry the flag.
+    if (isGalleryHidden(event) && !tokenData.revealBypass) {
+      return res.status(403).json({ error: 'Gallery is hidden until reveal', code: 'GALLERY_HIDDEN' });
+    }
+
     // Get photo
     const photo = await db('photos')
       .where({

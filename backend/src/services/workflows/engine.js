@@ -263,7 +263,7 @@ async function resumeRun(runId, { decisionHandle = null } = {}) {
  * workflow (idempotent via dedup_key) and starts it. Never throws — safe to
  * call after a caller's commit. Fails CLOSED if the flag system is unavailable.
  */
-async function emitWorkflowEvent(triggerType, { entityType = null, entityId = null, payload = {}, targetWorkflowId = null } = {}) {
+async function emitWorkflowEvent(triggerType, { entityType = null, entityId = null, payload = {}, targetWorkflowId = null, dedupSuffix = null } = {}) {
   try {
     const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
     let enabled = false;
@@ -285,7 +285,10 @@ async function emitWorkflowEvent(triggerType, { entityType = null, entityId = nu
       const tcfg = parseJson(wf.trigger_config, {});
       if (tcfg && tcfg.filter && !matchFilter(tcfg.filter, payload)) continue;
 
-      const dedupKey = `${wf.id}:${wf.version}:${triggerType}:${entityType || ''}:${entityId || ''}`;
+      // dedupSuffix (#838): repeatable lifecycle events (a gallery can be
+      // re-hidden and revealed again) append a cycle marker so each cycle
+      // gets its own run while accidental double-emits still dedupe.
+      const dedupKey = `${wf.id}:${wf.version}:${triggerType}:${entityType || ''}:${entityId || ''}${dedupSuffix ? `:${dedupSuffix}` : ''}`;
       const existing = await db('workflow_runs').where({ dedup_key: dedupKey }).first();
       if (existing) continue;
 

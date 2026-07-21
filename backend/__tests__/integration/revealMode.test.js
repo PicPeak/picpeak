@@ -98,6 +98,8 @@ describe('Reveal mode (#838)', () => {
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/gallery'));
     app.use('/api/secure-images', require('../../src/routes/secureImages'));
+    app.use('/api/images', require('../../src/routes/protectedImages'));
+    app.use('/api/gallery', require('../../src/routes/galleryFeedback'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
   }, 120000);
 
@@ -197,6 +199,44 @@ describe('Reveal mode (#838)', () => {
       // Fails later for other reasons (no multipart body) — but never on the
       // reveal gate.
       expect(res.body.code).not.toBe('GALLERY_HIDDEN');
+    });
+
+    it('legacy protected-image routes are reveal-gated for plain guests', async () => {
+      for (const [method, url] of [
+        ['get', `/api/images/${SLUG}/photo/${photoIds[0]}/view`],
+        ['post', `/api/images/${SLUG}/photo/${photoIds[0]}/generate-secure-token`],
+        ['post', `/api/images/${SLUG}/photo/${photoIds[0]}/generate-url`],
+      ]) {
+        const res = await request(app)[method](url).set('Authorization', `Bearer ${galleryToken()}`);
+        expect(`${url}:${res.status}`).toBe(`${url}:403`);
+        expect(res.body.code).toBe('GALLERY_HIDDEN');
+      }
+    });
+
+    it('feedback endpoints are reveal-gated; my-feedback degrades to empty', async () => {
+      // Feedback must be enabled for the routes to get past their own gate.
+      await db('event_feedback_settings').insert({
+        event_id: eventId, feedback_enabled: 1, allow_likes: 1,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+      });
+      const getRes = await request(app)
+        .get(`/api/gallery/${SLUG}/photos/${photoIds[0]}/feedback`)
+        .set('Authorization', `Bearer ${galleryToken()}`);
+      expect(getRes.status).toBe(403);
+      expect(getRes.body.code).toBe('GALLERY_HIDDEN');
+
+      const postRes = await request(app)
+        .post(`/api/gallery/${SLUG}/photos/${photoIds[0]}/feedback`)
+        .set('Authorization', `Bearer ${galleryToken()}`)
+        .send({ feedback_type: 'like' });
+      expect(postRes.status).toBe(403);
+      expect(postRes.body.code).toBe('GALLERY_HIDDEN');
+
+      const mine = await request(app)
+        .get(`/api/gallery/${SLUG}/my-feedback`)
+        .set('Authorization', `Bearer ${galleryToken()}`);
+      expect(mine.status).toBe(200);
+      expect(mine.body).toEqual([]);
     });
 
     it('secure-image token minting is reveal-gated for plain guests', async () => {

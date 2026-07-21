@@ -24,7 +24,10 @@ async function checkScheduledReveals() {
       .whereNotNull('reveal_at')
       .where('reveal_at', '<=', now)
       .where('is_active', formatBoolean(true))
-      .where('is_archived', formatBoolean(false));
+      .where('is_archived', formatBoolean(false))
+      // Drafts aren't guest-reachable — stamping/notifying would burn the
+      // reveal before publication and fire workflows for a dead link.
+      .where('is_draft', formatBoolean(false));
 
     for (const event of due) {
       // Conditional update: another worker (multi-replica) may have stamped
@@ -44,6 +47,7 @@ async function checkScheduledReveals() {
         await require('./workflows').emitWorkflowEvent('gallery.revealed', {
           entityType: 'event',
           entityId: event.id,
+          dedupSuffix: String(new Date(event.reveal_at).getTime()),
           payload: {
             eventId: event.id,
             slug: event.slug,
