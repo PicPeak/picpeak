@@ -229,12 +229,16 @@ describe('Reveal mode (#838)', () => {
       await db('events').where('id', eventId).update({ reveal_at: null, revealed_at: null });
     });
 
-    it('POST /:id/reveal stamps revealed_at and is idempotent', async () => {
+    it('POST /:id/reveal stamps revealed_at, clears the schedule, and is idempotent', async () => {
+      await db('events').where('id', eventId).update({ reveal_at: new Date(Date.now() + 3600_000).toISOString() });
       const res = await request(app)
         .post(`/api/admin/events/${eventId}/reveal`)
         .set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
       expect(res.body.revealed_at).toBeTruthy();
+      // "Reveal now" consumes the pending schedule.
+      const cleared = await db('events').where('id', eventId).first();
+      expect(cleared.reveal_at).toBeNull();
 
       const first = res.body.revealed_at;
       const res2 = await request(app)
@@ -266,6 +270,24 @@ describe('Reveal mode (#838)', () => {
         .get(`/api/gallery/${SLUG}/photos`)
         .set('Authorization', `Bearer ${galleryToken()}`);
       expect(gallery.body.hidden_until_reveal).toBe(true);
+    });
+
+    it('scheduling a FUTURE reveal on a revealed gallery re-arms hiding', async () => {
+      // State: revealed (previous tests). Saving a future schedule re-hides.
+      await db('events').where('id', eventId).update({ revealed_at: new Date().toISOString() });
+      const res = await request(app)
+        .put(`/api/admin/events/${eventId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reveal_mode: true, reveal_at: new Date(Date.now() + 3600_000).toISOString() });
+      expect(res.status).toBe(200);
+      const row = await db('events').where('id', eventId).first();
+      expect(row.revealed_at).toBeNull();
+
+      const gallery = await request(app)
+        .get(`/api/gallery/${SLUG}/photos`)
+        .set('Authorization', `Bearer ${galleryToken()}`);
+      expect(gallery.body.hidden_until_reveal).toBe(true);
+      await db('events').where('id', eventId).update({ reveal_at: null });
     });
 
     it('POST /:id/reveal 400s while reveal mode is off', async () => {

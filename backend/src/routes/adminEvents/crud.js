@@ -1504,6 +1504,12 @@ module.exports = (router) => {
         // ISO string, not a Date object — the SQLite driver stringifies raw
         // Dates uselessly; ISO round-trips on both engines.
         updates.reveal_at = updates.reveal_at ? new Date(updates.reveal_at).toISOString() : null;
+        // Scheduling a FUTURE reveal on an already-revealed gallery re-arms
+        // hiding — that's the only way this state can be reached, since
+        // "Reveal now" and the scheduler both clear/consume the schedule.
+        if (updates.reveal_at && new Date(updates.reveal_at) > new Date() && event.revealed_at) {
+          updates.revealed_at = null;
+        }
       }
 
       // Handle client access fields (#172)
@@ -1575,10 +1581,12 @@ module.exports = (router) => {
       }
 
       const now = new Date().toISOString();
+      // Also clear a pending schedule — "reveal now" makes it obsolete, and
+      // a stale future reveal_at would re-arm hiding on the next form save.
       const stamped = await db('events')
         .where('id', id)
         .whereNull('revealed_at')
-        .update({ revealed_at: now });
+        .update({ revealed_at: now, reveal_at: null });
 
       if (stamped === 1) {
         await logActivity('gallery_revealed', { scheduled: false }, id, {

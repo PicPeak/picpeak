@@ -736,7 +736,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
                 leftIcon={<Upload className="w-5 h-5" />}
                 onClick={() => setShowUploadModal(true)}
               >
-                {t('gallery.uploadPhotos', 'Upload Photos')}
+                {t('upload.uploadPhotos', 'Upload Photos')}
               </Button>
             </div>
           )}
