@@ -28,6 +28,10 @@ export interface Event {
     uploaded_at: string;
   }>;
   allow_user_uploads?: boolean;
+  // Reveal mode (#838)
+  reveal_mode?: boolean;
+  reveal_at?: string | null;
+  revealed_at?: string | null;
   upload_category_id?: number | null;
   hero_photo_id?: number | null;
   total_views?: number;
@@ -208,6 +212,10 @@ export interface GalleryData {
   };
   categories?: PhotoCategory[];
   photos: Photo[];
+  // Reveal mode (#838): the server returns the event shell with photos: []
+  // and this flag while the gallery is hidden from guests.
+  hidden_until_reveal?: boolean;
+  reveal_at?: string | null;
 }
 
 export interface GalleryStats {

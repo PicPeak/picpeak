@@ -360,6 +360,10 @@
     }
   },
   "gallery": {
+    "revealPendingTitle": "The photos are still a surprise",
+    "revealPendingMessage": "The host will reveal the gallery later — check back soon!",
+    "revealScheduledFor": "Reveal scheduled for {{date}}",
+    "revealUploadHint": "You can already add your own photos to the collection:",
     "expires": "Expires",
     "expired": "Expired",
     "contactOrganizer": "Please contact the event organizer if you need access to these photos.",
@@ -511,6 +515,17 @@
     "failedToToggleDownloads": "Failed to update download permission"
   },
   "events": {
+    "revealMode": "Reveal mode (hide gallery until reveal)",
+    "revealModeHelp": "Guests can upload but see no photos until you reveal the gallery — manually or at the scheduled time. Slideshow and client access keep working.",
+    "revealAt": "Scheduled reveal (optional)",
+    "revealAtHelp": "Leave empty to reveal manually with the \"Reveal now\" button.",
+    "revealModeStatus": "Reveal mode",
+    "revealed": "Revealed",
+    "hiddenUntilReveal": "Hidden from guests",
+    "revealScheduled": "Scheduled: {{date}}",
+    "revealNow": "Reveal now",
+    "revealedToast": "Gallery revealed — guests can see the photos now",
+    "revealError": "Failed to reveal the gallery",
     "title": "Events",
     "create": "Create",
     "createEvent": "Create Event",

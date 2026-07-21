@@ -60,6 +60,9 @@ interface UpdateEventData {
   expires_at?: string;
   is_active?: boolean;
   allow_user_uploads?: boolean;
+  // Reveal mode (#838)
+  reveal_mode?: boolean;
+  reveal_at?: string | null;
   upload_category_id?: number | null;
   hero_photo_id?: number | null;
   source_mode?: 'managed' | 'reference';
@@ -128,6 +131,12 @@ export const eventsService = {
   },
 
   // Update event (admin)
+  // Reveal now (#838): stamps revealed_at so the gallery opens for guests.
+  async revealEvent(id: number): Promise<{ revealed_at: string }> {
+    const response = await api.post(`/admin/events/${id}/reveal`);
+    return response.data;
+  },
+
   async updateEvent(id: number, data: UpdateEventData): Promise<Event> {
     const response = await api.put<Event>(`/admin/events/${id}`, data);
     return response.data;

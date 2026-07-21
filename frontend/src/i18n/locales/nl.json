@@ -221,6 +221,10 @@
     "passwordHint": "Het wachtwoord is verstrekt door de organisator van het evenement. Neem contact op als u het niet heeft."
   },
   "gallery": {
+    "revealPendingTitle": "De foto's zijn nog een verrassing",
+    "revealPendingMessage": "De gastheer onthult de galerij later — kom snel terug!",
+    "revealScheduledFor": "Onthulling gepland voor {{date}}",
+    "revealUploadHint": "Je kunt nu al je eigen foto's aan de collectie toevoegen:",
     "expires": "Verloopt",
     "expired": "Verlopen",
     "contactOrganizer": "Neem contact op met de organisator als u toegang tot deze foto's nodig heeft.",
@@ -358,6 +362,17 @@
     "categoryHeroHint": "Als er geen omslagfoto is ingesteld voor een categorie, wordt de standaard hero-foto gebruikt."
   },
   "events": {
+    "revealMode": "Onthullingsmodus (galerij verbergen tot de onthulling)",
+    "revealModeHelp": "Gasten kunnen uploaden maar zien geen foto's totdat je de galerij onthult — handmatig of op het geplande tijdstip. Diavoorstelling en klanttoegang blijven werken.",
+    "revealAt": "Geplande onthulling (optioneel)",
+    "revealAtHelp": "Laat leeg om handmatig te onthullen met de knop \"Nu onthullen\".",
+    "revealModeStatus": "Onthullingsmodus",
+    "revealed": "Onthuld",
+    "hiddenUntilReveal": "Verborgen voor gasten",
+    "revealScheduled": "Gepland: {{date}}",
+    "revealNow": "Nu onthullen",
+    "revealedToast": "Galerij onthuld — gasten kunnen de foto's nu zien",
+    "revealError": "Galerij onthullen mislukt",
     "title": "Evenementen",
     "create": "Aanmaken",
     "createEvent": "Evenement aanmaken",

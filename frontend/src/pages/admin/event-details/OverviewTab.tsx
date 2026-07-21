@@ -32,6 +32,7 @@ interface OverviewTabProps {
   photos: AdminPhoto[];
   phoneFieldEnabled: boolean;
   daysUntilExpiration: number | null;
+  onRevealNow?: () => void;
   refetchEvent: () => void;
   setActiveTab: (tab: EventDetailsTab) => void;
   setShowPasswordReset: (show: boolean) => void;
@@ -63,6 +64,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   photos,
   phoneFieldEnabled,
   daysUntilExpiration,
+  onRevealNow,
   refetchEvent,
   setActiveTab,
   setShowPasswordReset,
@@ -100,6 +102,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           photos={photos}
           phoneFieldEnabled={phoneFieldEnabled}
           daysUntilExpiration={daysUntilExpiration}
+          onRevealNow={onRevealNow}
         />
 
         {/* Share Link */}

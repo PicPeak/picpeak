@@ -6,6 +6,9 @@ export type EditFormState = {
   css_template_id: number | null;
   expires_at: string;
   allow_user_uploads: boolean;
+  // Reveal mode (#838): reveal_at is a datetime-local input string ('' = none)
+  reveal_mode: boolean;
+  reveal_at: string;
   upload_category_id: number | null;
   hero_photo_id: number | null;
   customer_name: string;
@@ -54,6 +57,8 @@ export const INITIAL_EDIT_FORM: EditFormState = {
   css_template_id: null,
   expires_at: '',
   allow_user_uploads: false,
+  reveal_mode: false,
+  reveal_at: '',
   upload_category_id: null,
   hero_photo_id: null,
   customer_name: '',

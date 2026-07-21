@@ -224,6 +224,10 @@
     "passwordHint": "A senha foi fornecida pelo organizador do evento. Entre em contato se não a tiver."
   },
   "gallery": {
+    "revealPendingTitle": "As fotos ainda são uma surpresa",
+    "revealPendingMessage": "O anfitrião revelará a galeria mais tarde — volte em breve!",
+    "revealScheduledFor": "Revelação agendada para {{date}}",
+    "revealUploadHint": "Você já pode adicionar suas próprias fotos à coleção:",
     "expires": "Expira",
     "expired": "Expirada",
     "contactOrganizer": "Entre em contato com o organizador do evento se precisar de acesso a estas fotos",
@@ -366,6 +370,17 @@
     "categoryHeroHint": "Se nenhuma foto de capa for definida, a foto de destaque padrão será usada."
   },
   "events": {
+    "revealMode": "Modo revelação (ocultar a galeria até a revelação)",
+    "revealModeHelp": "Os convidados podem enviar fotos, mas não as veem até você revelar a galeria — manualmente ou no horário agendado. A apresentação de slides e o acesso do cliente continuam funcionando.",
+    "revealAt": "Revelação agendada (opcional)",
+    "revealAtHelp": "Deixe vazio para revelar manualmente com o botão \"Revelar agora\".",
+    "revealModeStatus": "Modo revelação",
+    "revealed": "Revelada",
+    "hiddenUntilReveal": "Oculta para os convidados",
+    "revealScheduled": "Agendada: {{date}}",
+    "revealNow": "Revelar agora",
+    "revealedToast": "Galeria revelada — os convidados já podem ver as fotos",
+    "revealError": "Falha ao revelar a galeria",
     "title": "Eventos",
     "create": "Criar",
     "createEvent": "Criar Evento",

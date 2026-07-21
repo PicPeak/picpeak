@@ -313,7 +313,14 @@ router.get('/:slug/feedback-summary',
   async (req, res) => {
     try {
       const event = req.event;
-      
+
+      // Reveal mode (#838): the summary lists top photos by filename —
+      // hidden along with the gallery for plain guests.
+      const { guestBlockedByReveal } = require('../utils/revealMode');
+      if (guestBlockedByReveal(req)) {
+        return res.json({ enabled: false, summary: null });
+      }
+
       // Get feedback settings
       const settings = await feedbackService.getEventFeedbackSettings(event.id);
       

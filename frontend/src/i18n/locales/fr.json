@@ -221,6 +221,10 @@
     "passwordHint": "Le mot de passe a été fourni par l'organisateur de l'événement. Contactez-le si vous ne l'avez pas."
   },
   "gallery": {
+    "revealPendingTitle": "Les photos sont encore une surprise",
+    "revealPendingMessage": "L'hôte dévoilera la galerie plus tard — revenez bientôt !",
+    "revealScheduledFor": "Révélation prévue le {{date}}",
+    "revealUploadHint": "Vous pouvez déjà ajouter vos propres photos à la collection :",
     "expires": "Expire",
     "expired": "Expiré",
     "contactOrganizer": "Veuillez contacter l'organisateur de l'événement si vous avez besoin d'accéder à ces photos.",
@@ -358,6 +362,17 @@
     "categoryHeroHint": "Si aucune photo de couverture n'est définie pour une catégorie, la photo par défaut sera utilisée."
   },
   "events": {
+    "revealMode": "Mode révélation (masquer la galerie jusqu'à la révélation)",
+    "revealModeHelp": "Les invités peuvent téléverser mais ne voient aucune photo tant que vous ne révélez pas la galerie — manuellement ou à l'heure programmée. Le diaporama et l'accès client continuent de fonctionner.",
+    "revealAt": "Révélation programmée (optionnel)",
+    "revealAtHelp": "Laissez vide pour révéler manuellement avec le bouton « Révéler maintenant ».",
+    "revealModeStatus": "Mode révélation",
+    "revealed": "Révélée",
+    "hiddenUntilReveal": "Masquée pour les invités",
+    "revealScheduled": "Programmée : {{date}}",
+    "revealNow": "Révéler maintenant",
+    "revealedToast": "Galerie révélée — les invités peuvent maintenant voir les photos",
+    "revealError": "Impossible de révéler la galerie",
     "title": "Événements",
     "create": "Créer",
     "createEvent": "Créer un événement",

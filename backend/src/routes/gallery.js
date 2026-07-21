@@ -28,6 +28,7 @@ const { resolvePhotoFilePath } = require('../services/photoResolver');
 const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
 const { getEventShareToken, resolveShareIdentifier, buildShareLinkVariants } = require('../services/shareLinkService');
 const { handleAsync, errorResponse } = require('../utils/routeHelpers');
+const { isGalleryHidden, guestBlockedByReveal } = require('../utils/revealMode');
 const { NotFoundError } = require('../utils/errors');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../services/imageProcessor');
 const downloadZipService = require('../services/downloadZipService');
@@ -205,6 +206,9 @@ router.get('/:slug/info', async (req, res) => {
         'share_token',
         'allow_downloads',
         'allow_user_uploads',
+        'reveal_mode',
+        'reveal_at',
+        'revealed_at',
         'disable_right_click',
         'watermark_downloads',
         'watermark_text',
@@ -275,6 +279,10 @@ router.get('/:slug/info', async (req, res) => {
       color_theme: event.color_theme,
       allow_downloads: !(event.allow_downloads === false || event.allow_downloads === 0 || event.allow_downloads === '0'),
       allow_user_uploads: event.allow_user_uploads === true || event.allow_user_uploads === 1 || event.allow_user_uploads === '1',
+      // Reveal mode (#838): effective hidden state (computed, time-exact) so
+      // the landing page can hint at the reveal before login too.
+      hidden_until_reveal: isGalleryHidden(event),
+      reveal_at: isGalleryHidden(event) ? (event.reveal_at || null) : null,
       disable_right_click: event.disable_right_click === true || event.disable_right_click === 1 || event.disable_right_click === '1',
       watermark_downloads: event.watermark_downloads === true || event.watermark_downloads === 1 || event.watermark_downloads === '1',
       watermark_text: event.watermark_text,
@@ -622,8 +630,15 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
       photosQuery = photosQuery.orderBy('photos.uploaded_at', sortOrder);
     }
 
+    // Reveal mode (#838): while the gallery is hidden, plain guests get
+    // the event shell with an empty photo/category set plus the
+    // hidden_until_reveal flag — the frontend renders the upload-only view
+    // from it. Slideshow, client access and the admin preview bypass
+    // (guestBlockedByReveal). Enforced here, not just in the UI.
+    const hiddenForGuest = guestBlockedByReveal(req);
+
     // Execute the query
-    let photos = await photosQuery;
+    let photos = hiddenForGuest ? [] : await photosQuery;
     
     // Apply filtering if requested (supports global stats + per-guest interactions)
     if (filter) {
@@ -749,7 +764,7 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     
     // Get actual categories used by photos in this event
     // This includes both global categories and event-specific ones
-    const usedCategoryIds = await db('photos')
+    const usedCategoryIds = hiddenForGuest ? [] : await db('photos')
       .where('event_id', req.event.id)
       .whereNotNull('category_id')
       .distinct('category_id')
@@ -872,6 +887,10 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         use_original_filenames: useOriginalFilenames,
         ...protectionSettings
       },
+      // Reveal mode (#838): the guest UI switches to the upload-only view
+      // on this flag; reveal_at lets it show the scheduled time.
+      hidden_until_reveal: hiddenForGuest,
+      reveal_at: hiddenForGuest ? (req.event.reveal_at || null) : undefined,
       categories: categories,
       photos: photos.map(photo => {
         const useJwtUrl = (protectionSettings.protection_level === 'basic' || protectionSettings.protection_level === 'standard');
@@ -1006,8 +1025,20 @@ router.patch('/:slug/photos/visibility/bulk', verifyGalleryAccess, async (req, r
   }
 });
 
+
+// Reveal mode (#838): hard 403 for plain guests on photo/download/stats
+// endpoints while the gallery is hidden. Photo IDs are sequential, so gating
+// only the listing would leave images probeable. Slideshow/client/admin
+// bypass via guestBlockedByReveal.
+function blockHiddenGallery(req, res, next) {
+  if (guestBlockedByReveal(req)) {
+    return res.status(403).json({ error: 'Gallery is hidden until reveal', code: 'GALLERY_HIDDEN' });
+  }
+  next();
+}
+
 // Download single photo
-router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, async (req, res) => {
+router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
     const { photoId } = req.params;
 
@@ -1128,7 +1159,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
 });
 
 // Download all photos as ZIP
-router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async (req, res) => {
+router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
     // Check if downloads are allowed for this event
     if (req.event.allow_downloads === false) {
@@ -1313,7 +1344,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
 });
 
 // Download selected photos as ZIP
-router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken, async (req, res) => {
+router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
     // Check if downloads are allowed for this event
     if (req.event.allow_downloads === false) {
@@ -1437,6 +1468,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
 // View single photo (with watermark if enabled)
 router.get('/:slug/photo/:photoId',
   verifyGalleryAccess,
+  blockHiddenGallery,
   async (req, res) => {
     try {
       const { photoId } = req.params;
@@ -1669,6 +1701,7 @@ router.get('/:slug/photo/:photoId',
 // Serve thumbnail
 router.get('/:slug/thumbnail/:photoId',
   verifyGalleryAccess,
+  blockHiddenGallery,
   async (req, res) => {
     try {
       const { photoId } = req.params;
@@ -1858,6 +1891,7 @@ router.get('/:slug/hero/:photoId',
 // guest would see on the full original.
 router.get('/:slug/preview/:photoId',
   verifyGalleryAccess,
+  blockHiddenGallery,
   async (req, res) => {
     try {
       const { photoId } = req.params;
@@ -1966,7 +2000,7 @@ router.get('/:slug/feedback-settings', verifyGalleryAccess, async (req, res) => 
 });
 
 // Get photo stats
-router.get('/:slug/stats', verifyGalleryAccess, async (req, res) => {
+router.get('/:slug/stats', verifyGalleryAccess, blockHiddenGallery, async (req, res) => {
   try {
     const totalPhotos = await db('photos')
       .where('event_id', req.event.id)

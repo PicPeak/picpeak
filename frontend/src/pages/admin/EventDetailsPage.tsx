@@ -205,6 +205,18 @@ export const EventDetailsPage: React.FC = () => {
   });
 
   // Archive mutation
+  // Reveal now (#838)
+  const revealMutation = useMutation({
+    mutationFn: () => eventsService.revealEvent(Number(id)),
+    onSuccess: () => {
+      toast.success(t('events.revealedToast', 'Gallery revealed — guests can see the photos now'));
+      refetchEvent();
+    },
+    onError: () => {
+      toast.error(t('events.revealError', 'Failed to reveal the gallery'));
+    },
+  });
+
   const archiveMutation = useMutation({
     mutationFn: () => eventsService.archiveEvent(parseInt(id!)),
     onSuccess: () => {
@@ -288,6 +300,11 @@ export const EventDetailsPage: React.FC = () => {
       css_template_id: event.css_template_id || null,
       expires_at: expiresAtDate ? format(expiresAtDate, 'yyyy-MM-dd') : '',
       allow_user_uploads: event.allow_user_uploads || false,
+      reveal_mode: event.reveal_mode || false,
+      // datetime-local wants local "YYYY-MM-DDTHH:mm"
+      reveal_at: event.reveal_at
+        ? (() => { const d = new Date(event.reveal_at); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); })()
+        : '',
       upload_category_id: event.upload_category_id || null,
       hero_photo_id: event.hero_photo_id || null,
       customer_name: event.customer_name || '',
@@ -427,6 +444,10 @@ export const EventDetailsPage: React.FC = () => {
     const updateData: any = {
       expires_at: editForm.expires_at || null,
       allow_user_uploads: editForm.allow_user_uploads,
+      reveal_mode: editForm.allow_user_uploads && editForm.reveal_mode,
+      reveal_at: editForm.allow_user_uploads && editForm.reveal_mode && editForm.reveal_at
+        ? new Date(editForm.reveal_at).toISOString()
+        : null,
       require_password: editForm.require_password,
       css_template_id: editForm.css_template_id,
       // Download protection settings
@@ -565,6 +586,7 @@ export const EventDetailsPage: React.FC = () => {
           photos={photos}
           phoneFieldEnabled={phoneFieldEnabled}
           daysUntilExpiration={daysUntilExpiration}
+          onRevealNow={() => revealMutation.mutate()}
           refetchEvent={refetchEvent}
           setActiveTab={setActiveTab}
           setShowPasswordReset={setShowPasswordReset}

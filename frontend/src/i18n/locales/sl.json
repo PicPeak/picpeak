@@ -221,6 +221,10 @@
     "passwordHint": "Geslo vam je posredoval organizator dogodka. Če ga nimate, se obrnite nanj."
   },
   "gallery": {
+    "revealPendingTitle": "Fotografije so še presenečenje",
+    "revealPendingMessage": "Gostitelj bo galerijo razkril pozneje — kmalu preverite znova!",
+    "revealScheduledFor": "Razkritje načrtovano za {{date}}",
+    "revealUploadHint": "Svoje fotografije lahko dodate v zbirko že zdaj:",
     "expires": "Poteče",
     "expired": "Poteklo",
     "contactOrganizer": "Če potrebujete dostop do teh fotografij, se obrnite na organizatorja dogodka.",
@@ -358,6 +362,17 @@
     "categoryHeroHint": "Če za kategorijo ni nastavljena naslovna fotografija, bo uporabljena privzeta hero fotografija."
   },
   "events": {
+    "revealMode": "Način razkritja (skrij galerijo do razkritja)",
+    "revealModeHelp": "Gostje lahko nalagajo fotografije, vendar jih ne vidijo, dokler galerije ne razkrijete — ročno ali ob načrtovanem času. Diaprojekcija in dostop za stranke delujeta naprej.",
+    "revealAt": "Načrtovano razkritje (neobvezno)",
+    "revealAtHelp": "Pustite prazno za ročno razkritje z gumbom »Razkrij zdaj«.",
+    "revealModeStatus": "Način razkritja",
+    "revealed": "Razkrita",
+    "hiddenUntilReveal": "Skrita za goste",
+    "revealScheduled": "Načrtovano: {{date}}",
+    "revealNow": "Razkrij zdaj",
+    "revealedToast": "Galerija razkrita — gostje zdaj vidijo fotografije",
+    "revealError": "Galerije ni bilo mogoče razkriti",
     "title": "Dogodki",
     "create": "Ustvari",
     "createEvent": "Ustvari dogodek",

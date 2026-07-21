@@ -20,6 +20,7 @@ const path = require('path');
 const { initializeDatabase, db } = require('./src/database/db');
 const { startFileWatcher } = require('./src/services/fileWatcher');
 const { startExpirationChecker } = require('./src/services/expirationChecker');
+const { startRevealScheduler } = require('./src/services/revealScheduler');
 const { startInvoiceScheduler } = require('./src/services/invoiceSchedulerService');
 const { initializeTransporter, startEmailQueueProcessor } = require('./src/services/emailProcessor');
 const { startBackupService } = require('./src/services/backupService');
@@ -903,6 +904,8 @@ async function startServer() {
     
     // Start expiration checker
     startExpirationChecker();
+    // Reveal-mode scheduler (#838): minutely stamp for scheduled reveals.
+    startRevealScheduler();
     // CRM invoice scheduler: hourly tick to flush scheduled-send invoices
     // + run the overdue reminder ladder. No-op when the `bills` feature
     // flag is OFF (the service short-circuits on empty result sets).

@@ -223,6 +223,10 @@
     "passwordHint": "La contraseña la proporcionó el organizador del evento. Contacta con ellos si no la tienes."
   },
   "gallery": {
+    "revealPendingTitle": "Las fotos siguen siendo una sorpresa",
+    "revealPendingMessage": "El anfitrión revelará la galería más tarde — ¡vuelve pronto!",
+    "revealScheduledFor": "Revelación programada para {{date}}",
+    "revealUploadHint": "Ya puedes añadir tus propias fotos a la colección:",
     "title": "Galería de fotos",
     "welcomeMessage": "Mensaje de bienvenida",
     "expiresOn": "Expira el",
@@ -342,6 +346,17 @@
     "categoryHeroHint": "Si no se establece una foto de portada para una categoría, se usará la foto hero por defecto."
   },
   "events": {
+    "revealMode": "Modo revelación (ocultar la galería hasta revelarla)",
+    "revealModeHelp": "Los invitados pueden subir fotos pero no verlas hasta que reveles la galería — manualmente o a la hora programada. La presentación y el acceso de clientes siguen funcionando.",
+    "revealAt": "Revelación programada (opcional)",
+    "revealAtHelp": "Déjalo vacío para revelar manualmente con el botón \"Revelar ahora\".",
+    "revealModeStatus": "Modo revelación",
+    "revealed": "Revelada",
+    "hiddenUntilReveal": "Oculta para los invitados",
+    "revealScheduled": "Programada: {{date}}",
+    "revealNow": "Revelar ahora",
+    "revealedToast": "Galería revelada — los invitados ya pueden ver las fotos",
+    "revealError": "No se pudo revelar la galería",
     "title": "Eventos",
     "create": "Crear",
     "createEvent": "Crear evento",

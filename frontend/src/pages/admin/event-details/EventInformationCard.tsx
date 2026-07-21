@@ -43,6 +43,8 @@ interface EventInformationCardProps {
   photos: AdminPhoto[];
   phoneFieldEnabled: boolean;
   daysUntilExpiration: number | null;
+  // Reveal mode (#838): stamps revealed_at via POST /events/:id/reveal
+  onRevealNow?: () => void;
 }
 
 export const EventInformationCard: React.FC<EventInformationCardProps> = ({
@@ -58,7 +60,8 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
   categories,
   photos,
   phoneFieldEnabled,
-  daysUntilExpiration
+  daysUntilExpiration,
+  onRevealNow
 }) => {
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
@@ -427,6 +430,42 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                 {t('events.uploadCategoryHelp')}
               </p>
+            </div>
+          )}
+
+          {/* Reveal mode (#838) — only meaningful with guest uploads */}
+          {editForm.allow_user_uploads && (
+            <div>
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={editForm.reveal_mode}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, reveal_mode: e.target.checked }))}
+                  className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
+                />
+                <span className="ml-2 text-sm text-neutral-700 dark:text-neutral-300">
+                  {t('events.revealMode', 'Reveal mode (hide gallery until reveal)')}
+                </span>
+              </label>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 ml-6">
+                {t('events.revealModeHelp', 'Guests can upload but see no photos until you reveal the gallery — manually or at the scheduled time. Slideshow and client access keep working.')}
+              </p>
+              {editForm.reveal_mode && (
+                <div className="mt-2 ml-6">
+                  <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    {t('events.revealAt', 'Scheduled reveal (optional)')}
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={editForm.reveal_at}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, reveal_at: e.target.value }))}
+                    className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500"
+                  />
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                    {t('events.revealAtHelp', 'Leave empty to reveal manually with the "Reveal now" button.')}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -833,6 +872,39 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
               )}
             </dd>
           </div>
+
+          {Boolean(event.reveal_mode) && (
+            <div>
+              <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.revealModeStatus', 'Reveal mode')}</dt>
+              <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
+                {event.revealed_at ? (
+                  <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/40 rounded">
+                    {t('events.revealed', 'Revealed')}
+                  </span>
+                ) : (
+                  <div className="space-y-2">
+                    <span className="inline-flex items-center px-2 py-1 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 rounded">
+                      {t('events.hiddenUntilReveal', 'Hidden from guests')}
+                    </span>
+                    {event.reveal_at && (
+                      <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                        {t('events.revealScheduled', 'Scheduled: {{date}}', { date: new Date(event.reveal_at).toLocaleString() })}
+                      </p>
+                    )}
+                    {onRevealNow && (
+                      <button
+                        type="button"
+                        onClick={onRevealNow}
+                        className="block px-3 py-1.5 text-xs font-medium text-white bg-accent hover:bg-accent-dark rounded transition-colors"
+                      >
+                        {t('events.revealNow', 'Reveal now')}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </dd>
+            </div>
+          )}
 
           {/* Download Protection Display */}
           <div className="pt-3 mt-3 border-t border-neutral-200 dark:border-neutral-700">

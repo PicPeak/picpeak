@@ -813,6 +813,10 @@
     }
   },
   "gallery": {
+    "revealPendingTitle": "Die Fotos sind noch eine Überraschung",
+    "revealPendingMessage": "Der Gastgeber gibt die Galerie später frei — schauen Sie bald wieder vorbei!",
+    "revealScheduledFor": "Freigabe geplant für {{date}}",
+    "revealUploadHint": "Sie können schon jetzt eigene Fotos zur Sammlung beitragen:",
     "expires": "Läuft ab",
     "expired": "Abgelaufen",
     "contactOrganizer": "Bitte kontaktieren Sie den Veranstalter, wenn Sie Zugriff auf diese Fotos benötigen.",
@@ -964,6 +968,17 @@
     "failedToToggleDownloads": "Aktualisierung der Download-Berechtigung fehlgeschlagen"
   },
   "events": {
+    "revealMode": "Reveal-Modus (Galerie bis zur Freigabe verbergen)",
+    "revealModeHelp": "Gäste können hochladen, sehen aber keine Fotos, bis Sie die Galerie freigeben — manuell oder zum geplanten Zeitpunkt. Diashow und Kundenzugang funktionieren weiter.",
+    "revealAt": "Geplante Freigabe (optional)",
+    "revealAtHelp": "Leer lassen, um manuell mit „Jetzt freigeben\" freizugeben.",
+    "revealModeStatus": "Reveal-Modus",
+    "revealed": "Freigegeben",
+    "hiddenUntilReveal": "Für Gäste verborgen",
+    "revealScheduled": "Geplant: {{date}}",
+    "revealNow": "Jetzt freigeben",
+    "revealedToast": "Galerie freigegeben — Gäste sehen die Fotos jetzt",
+    "revealError": "Galerie konnte nicht freigegeben werden",
     "totalPhotos": "Gesamtfotos",
     "totalViews": "Gesamtaufrufe",
     "totalDownloads": "Gesamte Downloads",
