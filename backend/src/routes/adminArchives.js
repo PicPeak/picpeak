@@ -293,7 +293,7 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
                 type: path.extname(filename).substring(1).toLowerCase(),
                 size_bytes: stats.size,
                 category_id: categoryId,
-                uploaded_at: new Date()
+                uploaded_at: new Date().toISOString()
               });
             }
           } catch (statError) {

@@ -29,6 +29,7 @@ const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
 const { getEventShareToken, resolveShareIdentifier, buildShareLinkVariants } = require('../services/shareLinkService');
 const { handleAsync, errorResponse } = require('../utils/routeHelpers');
 const { isGalleryHidden, guestBlockedByReveal, blockHiddenGallery } = require('../utils/revealMode');
+const { toIso } = require('../utils/dateNormalize');
 const { NotFoundError } = require('../utils/errors');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../services/imageProcessor');
 const downloadZipService = require('../services/downloadZipService');
@@ -936,14 +937,17 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
             : true,
           category_slug: photo.category_id && categoryMap[photo.category_id] ? categoryMap[photo.category_id].slug : null,
           size: photo.size_bytes,
-          uploaded_at: photo.uploaded_at,
+          // toIso: on SQLite installs rows written with a raw Date (e.g.
+          // the pre-fix archive-restore path) hold epoch numbers — the
+          // Timeline layout's parseISO() crashes on those (#485 class).
+          uploaded_at: toIso(photo.uploaded_at),
           // Image dimensions for layout calculations
           width: photo.width || null,
           height: photo.height || null,
           // Fixed: Use the calculated useJwtUrl variable instead of recalculating
           requires_token: !useJwtUrl,
           // EXIF capture date
-          captured_at: photo.captured_at || null,
+          captured_at: toIso(photo.captured_at) || null,
           // Media type
           media_type: photo.media_type || null,
           mime_type: photo.mime_type || null,

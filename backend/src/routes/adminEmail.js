@@ -419,7 +419,7 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
         account_key: b.account_key,
         imap_pass: (b.imap_pass && b.imap_pass !== '********') ? b.imap_pass : '',
         smtp_pass: (b.smtp_pass && b.smtp_pass !== '********') ? b.smtp_pass : '',
-        created_at: new Date(),
+        created_at: new Date().toISOString(),
         ...patch,
       });
     }
@@ -808,8 +808,8 @@ router.post('/send', adminAuth, messagingGate, requirePermission('email.send'), 
       status: 'sent',
       origin: 'manual',
       rendered_html: html,
-      created_at: new Date(),
-      sent_at: new Date(),
+      created_at: new Date().toISOString(),
+      sent_at: new Date().toISOString(),
     });
     res.json({ ok: true });
   } catch (error) {
@@ -985,7 +985,7 @@ router.put('/templates/:key', [
           template_id: template.id,
           language,
           ...row,
-          created_at: new Date(),
+          created_at: new Date().toISOString(),
         });
       }
     }
@@ -1099,7 +1099,7 @@ router.post('/templates', [
           subject: content.subject || '',
           body_html: content.body_html || '',
           body_text: content.body_text || '',
-          created_at: new Date(),
+          created_at: new Date().toISOString(),
           updated_at: new Date(),
         });
       }

@@ -41,12 +41,19 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const showDates = gallerySettings.timelineShowDates !== false;
   const canQuickComment = Boolean(feedbackEnabled && feedbackOptions?.allowComments && onOpenPhotoWithFeedback);
 
+  // Tolerant timestamp parse: SQLite installs can hold epoch numbers in
+  // uploaded_at (pre-fix archive restores) — parseISO throws on numbers
+  // and crashed the whole Timeline view (#485 class). The API normalizes
+  // to ISO now; this guard covers stale caches and old backends.
+  const parseUploadedAt = (value: string | number) =>
+    typeof value === 'string' ? parseISO(value) : new Date(value);
+
   // Group photos by date
   const groupedPhotos = useMemo(() => {
     const groups = new Map<string, Photo[]>();
     
     photos.forEach(photo => {
-      const date = parseISO(photo.uploaded_at);
+      const date = parseUploadedAt(photo.uploaded_at);
       let groupKey: string;
       
       switch (grouping) {
@@ -76,7 +83,7 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
     return Array.from(groups.entries())
       .map(([date, photos]) => ({
         date,
-        label: photos[0] ? format(parseISO(photos[0].uploaded_at), grouping === 'month' ? 'MMMM yyyy' : grouping === 'week' ? "'Week of' MMM d, yyyy" : 'EEEE, MMMM d, yyyy') : date,
+        label: photos[0] ? format(parseUploadedAt(photos[0].uploaded_at), grouping === 'month' ? 'MMMM yyyy' : grouping === 'week' ? "'Week of' MMM d, yyyy" : 'EEEE, MMMM d, yyyy') : date,
         photos: photos.sort((a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime())
       }))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

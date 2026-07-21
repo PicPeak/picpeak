@@ -941,7 +941,7 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         // Mark as sent, persisting the actual rendered HTML for the Project
         // Overview email preview (guarded — older installs without migration
         // 119 just skip it).
-        const sentUpdate = { status: 'sent', sent_at: new Date() };
+        const sentUpdate = { status: 'sent', sent_at: new Date().toISOString() };
         try {
           if (sendResult && sendResult.html && await hasColumnCached('email_queue', 'rendered_html')) {
             sentUpdate.rendered_html = sendResult.html;
