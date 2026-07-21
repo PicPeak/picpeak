@@ -868,6 +868,9 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         hero_photo_id: req.event.hero_photo_id,
         allow_downloads: req.event.allow_downloads !== false,
         allow_user_uploads: req.event.allow_user_uploads === true,
+        // Reveal mode (#838): armed flag lets an open VISIBLE gallery keep
+        // polling so a re-hide propagates without a manual reload.
+        reveal_armed: req.event.reveal_mode === true || req.event.reveal_mode === 1 || req.event.reveal_mode === '1',
         disable_right_click: req.event.disable_right_click === true,
         watermark_downloads: req.event.watermark_downloads === true,
         watermark_text: req.event.watermark_text,

@@ -32,10 +32,13 @@ async function checkScheduledReveals() {
     for (const event of due) {
       // Conditional update: another worker (multi-replica) may have stamped
       // it between the select and here — exactly one emits the events.
+      // Consume the schedule like "Reveal now" does — a stale past
+      // reveal_at would otherwise instantly re-open the gate when the
+      // gallery is later re-armed without a fresh schedule.
       const stamped = await db('events')
         .where('id', event.id)
         .whereNull('revealed_at')
-        .update({ revealed_at: event.reveal_at });
+        .update({ revealed_at: event.reveal_at, reveal_at: null });
       if (stamped !== 1) continue;
 
       logger.info('Reveal mode: scheduled reveal fired', { eventId: event.id, slug: event.slug });

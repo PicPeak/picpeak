@@ -293,6 +293,7 @@ describe('Reveal mode (#838)', () => {
       const row = await db('events').where('id', eventId).first();
       expect(row.revealed_at).not.toBeNull();
       expect(asMs(row.revealed_at)).toBe(revealAt.getTime());
+      expect(row.reveal_at).toBeNull(); // schedule consumed, like "Reveal now"
 
       // Second pass no-ops (revealed_at already set).
       await checkScheduledReveals();
@@ -361,6 +362,32 @@ describe('Reveal mode (#838)', () => {
         .set('Authorization', `Bearer ${galleryToken()}`);
       expect(gallery.body.hidden_until_reveal).toBe(true);
       await db('events').where('id', eventId).update({ reveal_at: null });
+    });
+
+    it('re-arming without a schedule clears a stale PAST reveal_at', async () => {
+      // Legacy/partial-API state: revealed with the old past schedule still
+      // stored. {reveal_mode:false} then {reveal_mode:true} without
+      // reveal_at must re-hide, not instantly re-open via the stale date.
+      await db('events').where('id', eventId).update({
+        reveal_mode: 0,
+        revealed_at: new Date().toISOString(),
+        reveal_at: new Date(Date.now() - 3600_000).toISOString(),
+      });
+      const res = await request(app)
+        .put(`/api/admin/events/${eventId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reveal_mode: true });
+      expect(res.status).toBe(200);
+
+      const row = await db('events').where('id', eventId).first();
+      expect(row.revealed_at).toBeNull();
+      expect(row.reveal_at).toBeNull();
+
+      const gallery = await request(app)
+        .get(`/api/gallery/${SLUG}/photos`)
+        .set('Authorization', `Bearer ${galleryToken()}`);
+      expect(gallery.body.hidden_until_reveal).toBe(true);
+      expect(gallery.body.photos).toEqual([]);
     });
 
     it('POST /:id/reveal 400s while reveal mode is off', async () => {

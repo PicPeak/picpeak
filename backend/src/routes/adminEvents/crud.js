@@ -1498,6 +1498,16 @@ module.exports = (router) => {
         const wasOn = event.reveal_mode === true || event.reveal_mode === 1 || event.reveal_mode === '1';
         if (nextRevealMode && !wasOn) {
           updates.revealed_at = null;
+          // A stale PAST schedule from a previous cycle would instantly
+          // re-open the gate on re-arm. Only bites partial API updates —
+          // isGalleryHidden() with the stamp cleared tells us whether the
+          // stored schedule still hides anything.
+          const { isGalleryHidden } = require('../../utils/revealMode');
+          if (!Object.prototype.hasOwnProperty.call(updates, 'reveal_at')
+              && event.reveal_at
+              && !isGalleryHidden({ reveal_mode: true, revealed_at: null, reveal_at: event.reveal_at })) {
+            updates.reveal_at = null;
+          }
         }
       }
       if (Object.prototype.hasOwnProperty.call(updates, 'reveal_at')) {
