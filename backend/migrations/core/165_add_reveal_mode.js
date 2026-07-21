@@ -12,23 +12,33 @@
  *   hidden. Re-enabling reveal_mode clears it (re-hide).
  */
 
+// Each column guarded independently: a partially applied prior run (or a
+// fork that added one of them) must not leave the others missing — the
+// routes select all three.
 exports.up = async function (knex) {
-  const hasRevealMode = await knex.schema.hasColumn('events', 'reveal_mode');
-  if (!hasRevealMode) {
+  if (!(await knex.schema.hasColumn('events', 'reveal_mode'))) {
     await knex.schema.alterTable('events', (table) => {
       table.boolean('reveal_mode').defaultTo(false);
+    });
+  }
+  if (!(await knex.schema.hasColumn('events', 'reveal_at'))) {
+    await knex.schema.alterTable('events', (table) => {
       table.timestamp('reveal_at').nullable();
+    });
+  }
+  if (!(await knex.schema.hasColumn('events', 'revealed_at'))) {
+    await knex.schema.alterTable('events', (table) => {
       table.timestamp('revealed_at').nullable();
     });
   }
 };
 
 exports.down = async function (knex) {
-  if (await knex.schema.hasColumn('events', 'reveal_mode')) {
-    await knex.schema.alterTable('events', (table) => {
-      table.dropColumn('reveal_mode');
-      table.dropColumn('reveal_at');
-      table.dropColumn('revealed_at');
-    });
+  for (const column of ['revealed_at', 'reveal_at', 'reveal_mode']) {
+    if (await knex.schema.hasColumn('events', column)) {
+      await knex.schema.alterTable('events', (table) => {
+        table.dropColumn(column);
+      });
+    }
   }
 };

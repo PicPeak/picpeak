@@ -140,6 +140,21 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
     }
   }, [data?.event?.default_photo_sort, defaultSortApplied]);
 
+  // Reveal mode (#838): an already-open hidden view must flip to the real
+  // gallery when the reveal happens. Refetch right at reveal_at, plus a
+  // 60s poll as fallback — a manual "Reveal now" has no push channel.
+  const hiddenUntilReveal = data?.hidden_until_reveal === true;
+  const revealAtMs = data?.reveal_at ? new Date(data.reveal_at).getTime() : null;
+  useEffect(() => {
+    if (!hiddenUntilReveal) return undefined;
+    const timers: Array<ReturnType<typeof setTimeout>> = [];
+    if (revealAtMs && revealAtMs > Date.now()) {
+      timers.push(setTimeout(() => { refetch(); }, Math.min(revealAtMs - Date.now() + 1000, 2 ** 31 - 1)));
+    }
+    const interval = setInterval(() => { refetch(); }, 60_000);
+    return () => { timers.forEach(clearTimeout); clearInterval(interval); };
+  }, [hiddenUntilReveal, revealAtMs, refetch]);
+
   // Get individual protection settings from event
   const disableRightClick = data?.event?.disable_right_click === true;
   const enableDevtoolsProtection = data?.event?.enable_devtools_protection === true;
@@ -704,7 +719,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   // Reveal mode (#838): the server returned the event shell with no photos —
   // render the upload-only view for EVERY layout. Enforcement is server-side
   // (the photo endpoints refuse plain guests); this is the friendly face.
-  if (data?.hidden_until_reveal) {
+  if (hiddenUntilReveal) {
     const uploadsOn = Boolean(data?.event?.allow_user_uploads || event?.allow_user_uploads);
     return (
       <GalleryLayout event={event} brandingSettings={brandingSettings}>

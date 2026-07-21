@@ -28,7 +28,7 @@ const { resolvePhotoFilePath } = require('../services/photoResolver');
 const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
 const { getEventShareToken, resolveShareIdentifier, buildShareLinkVariants } = require('../services/shareLinkService');
 const { handleAsync, errorResponse } = require('../utils/routeHelpers');
-const { isGalleryHidden, guestBlockedByReveal } = require('../utils/revealMode');
+const { isGalleryHidden, guestBlockedByReveal, blockHiddenGallery } = require('../utils/revealMode');
 const { NotFoundError } = require('../utils/errors');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../services/imageProcessor');
 const downloadZipService = require('../services/downloadZipService');
@@ -1026,17 +1026,6 @@ router.patch('/:slug/photos/visibility/bulk', verifyGalleryAccess, async (req, r
 });
 
 
-// Reveal mode (#838): hard 403 for plain guests on photo/download/stats
-// endpoints while the gallery is hidden. Photo IDs are sequential, so gating
-// only the listing would leave images probeable. Slideshow/client/admin
-// bypass via guestBlockedByReveal.
-function blockHiddenGallery(req, res, next) {
-  if (guestBlockedByReveal(req)) {
-    return res.status(403).json({ error: 'Gallery is hidden until reveal', code: 'GALLERY_HIDDEN' });
-  }
-  next();
-}
-
 // Download single photo
 router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
@@ -1793,6 +1782,9 @@ router.get('/:slug/thumbnail/:photoId',
 // Serve hero-optimized image (1920x1080 for full-width hero sections)
 router.get('/:slug/hero/:photoId',
   verifyGalleryAccess,
+  // Reveal-gated too: this route serves a 1920px derivative of ANY photo id,
+  // not just the chosen hero — an open bypass while hidden (review round 1).
+  blockHiddenGallery,
   async (req, res) => {
     try {
       const { photoId } = req.params;

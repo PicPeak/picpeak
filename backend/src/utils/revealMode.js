@@ -39,11 +39,15 @@ function isGalleryHidden(event, now = new Date()) {
 
 /**
  * Which access levels see the full gallery while it is hidden:
- * the live slideshow (the "surprise beamer" case), client access (the host
- * reviewing their own event) and the admin preview.
+ * the live slideshow (the "surprise beamer" case), client access and
+ * customer-portal-minted tokens (both are the host/customer reviewing
+ * their own event — those tokens carry via:'customer' with NO accessLevel,
+ * so accessLevel alone would misclassify them as guests) and the admin
+ * preview.
  */
 function bypassesReveal(req) {
   if (req.accessLevel === 'slideshow' || req.accessLevel === 'client') return true;
+  if (req.viaCustomer) return true;
   // Lazy require avoids a cycle: middleware/gallery requires nothing from
   // here, but keeping the import local makes that permanent.
   const { isAdminPreview } = require('../middleware/gallery');
@@ -55,4 +59,17 @@ function guestBlockedByReveal(req, now = new Date()) {
   return isGalleryHidden(req.event, now) && !bypassesReveal(req);
 }
 
-module.exports = { isGalleryHidden, bypassesReveal, guestBlockedByReveal };
+/**
+ * Route guard: hard 403 for plain guests on photo/derivative/download
+ * endpoints while the gallery is hidden. Photo IDs are sequential, so
+ * gating only the listing would leave images probeable. Mount AFTER
+ * verifyGalleryAccess (needs req.event / req.accessLevel).
+ */
+function blockHiddenGallery(req, res, next) {
+  if (guestBlockedByReveal(req)) {
+    return res.status(403).json({ error: 'Gallery is hidden until reveal', code: 'GALLERY_HIDDEN' });
+  }
+  next();
+}
+
+module.exports = { isGalleryHidden, bypassesReveal, guestBlockedByReveal, blockHiddenGallery };

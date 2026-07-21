@@ -97,6 +97,7 @@ describe('Reveal mode (#838)', () => {
     app.use(express.json());
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/gallery'));
+    app.use('/api/secure-images', require('../../src/routes/secureImages'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
   }, 120000);
 
@@ -165,6 +166,7 @@ describe('Reveal mode (#838)', () => {
         `/api/gallery/${SLUG}/download/${photoIds[0]}`,
         `/api/gallery/${SLUG}/download-all`,
         `/api/gallery/${SLUG}/stats`,
+        `/api/gallery/${SLUG}/hero/${photoIds[0]}`,
       ]) {
         const res = await request(app).get(url).set('Authorization', `Bearer ${galleryToken()}`);
         expect(`${url}:${res.status}`).toBe(`${url}:403`);
@@ -195,6 +197,37 @@ describe('Reveal mode (#838)', () => {
       // Fails later for other reasons (no multipart body) — but never on the
       // reveal gate.
       expect(res.body.code).not.toBe('GALLERY_HIDDEN');
+    });
+
+    it('secure-image token minting is reveal-gated for plain guests', async () => {
+      const res = await request(app)
+        .post(`/api/secure-images/${SLUG}/generate-token`)
+        .set('Authorization', `Bearer ${galleryToken()}`)
+        .send({ photoId: photoIds[0] });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('GALLERY_HIDDEN');
+    });
+
+    it('customer-portal tokens (via:customer, no accessLevel) bypass reveal mode', async () => {
+      const acct = await db('customer_accounts').insert({
+        email: 'portal-customer@example.com',
+        password_hash: 'x',
+        is_active: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).returning('id');
+      const customerId = acct[0]?.id ?? acct[0];
+      await db('event_customer_assignments').insert({
+        event_id: eventId,
+        customer_account_id: customerId,
+      });
+
+      const res = await request(app)
+        .get(`/api/gallery/${SLUG}/photos`)
+        .set('Authorization', `Bearer ${galleryToken({ via: 'customer', customerId })}`);
+      expect(res.status).toBe(200);
+      expect(res.body.hidden_until_reveal).toBe(false);
+      expect(res.body.photos).toHaveLength(2);
     });
 
     it('a reveal_at in the past opens the gate without any stamp', async () => {
