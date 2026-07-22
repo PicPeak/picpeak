@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.94.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.93.0-beta.0...v3.94.0-beta.0) (2026-07-22)
+
+
+### Features
+
+* **auth:** OIDC role mapping + login policy — phase 2 ([#798](https://github.com/PicPeak/picpeak/issues/798)) ([#854](https://github.com/PicPeak/picpeak/issues/854)) ([f8a95d2](https://github.com/PicPeak/picpeak/commit/f8a95d29d2feb5f651ff6a0bcfa1b5b1540f114a))
+* **feedback:** emoji reactions on photos ([#839](https://github.com/PicPeak/picpeak/issues/839)) ([#855](https://github.com/PicPeak/picpeak/issues/855)) ([3d6c984](https://github.com/PicPeak/picpeak/commit/3d6c9848dcbace1d1ce74890460e369854be65c7))
+* **gallery:** reveal mode — hide gallery from guests until reveal ([#838](https://github.com/PicPeak/picpeak/issues/838)) ([#856](https://github.com/PicPeak/picpeak/issues/856)) ([2f05fcc](https://github.com/PicPeak/picpeak/commit/2f05fcc39deaf226a6cc8796ebee9b40bc89e9ae))
+
+
+### Bug Fixes
+
+* **dates:** normalize SQLite epoch timestamps at remaining API surfaces ([#485](https://github.com/PicPeak/picpeak/issues/485) follow-up) ([#857](https://github.com/PicPeak/picpeak/issues/857)) ([c6ec93e](https://github.com/PicPeak/picpeak/commit/c6ec93eef9f18e8867e86691800a60379bb16591))
+
 ## [3.93.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.92.2-beta.0...v3.93.0-beta.0) (2026-07-19)
 
 
