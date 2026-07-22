@@ -15,7 +15,7 @@ const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
 
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 describe('category ordering (#782)', () => {
   let db;

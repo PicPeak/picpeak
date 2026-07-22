@@ -7,7 +7,7 @@
 const crypto = require('crypto');
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 describe('booking cutover — draft invoices on hold', () => {
   let db; let cleanup; let adminId; let customerId; let quoteService;

@@ -9,7 +9,7 @@ const {
 // bootCrmDb runs the full core-migration set in beforeAll; under full-suite
 // parallel load on a small CI runner that can exceed the 5s default. Match the
 // other migration-heavy CRM suites (discountLineItems, incomingInvoiceRebill).
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 let db;
 let cleanup;

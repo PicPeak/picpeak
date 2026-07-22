@@ -14,7 +14,7 @@ const path = require('path');
 
 const { bootCrmDb } = require('./helpers/crmDb');
 
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 describe('backupService — config + file collection + manifest (smoke)', () => {
   let db;

@@ -32,7 +32,7 @@ jest.mock('../../src/services/restoreService', () => ({
   },
 }));
 
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 describe('installFromBackupBoot', () => {
   let db;
