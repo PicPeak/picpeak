@@ -17,7 +17,6 @@ import { GALLERY_THEME_PRESETS } from '../types/theme.types';
 import { buildResourceUrl } from '../utils/url';
 import { isGalleryPublic, normalizeRequirePassword } from '../utils/accessControl';
 import { detectInAppBrowser } from '../utils/inAppBrowser';
-import { sanitizePasswordInput } from '../utils/passwordInput';
 
 export const GalleryPage: React.FC = () => {
   const { slug: rawSlug, token: rawToken } = useParams<{ slug: string; token?: string }>();
@@ -211,7 +210,7 @@ export const GalleryPage: React.FC = () => {
     e.preventDefault();
     e.stopPropagation(); // Prevent any bubbling
     
-    if (requiresPassword && !sanitizePasswordInput(password)) {
+    if (requiresPassword && !password.trim()) {
       setLoginError(t('auth.pleaseEnterPassword'));
       return;
     }
@@ -224,33 +223,14 @@ export const GalleryPage: React.FC = () => {
         return;
       }
 
-      // Sanitize the password before sending: trim the trailing space the
-      // Instagram in-app browser's predictive-text keyboard appends on
-      // submit, and strip invisible Unicode that rides along when the
-      // password is copy-pasted out of a chat app. Both fail byte-exact
-      // bcrypt compare on the backend with no visible cause (#654).
-      const submittedPassword = requiresPassword ? sanitizePasswordInput(password) : '';
-      try {
-        await login(resolvedSlug, submittedPassword, recaptchaToken);
-      } catch (error: any) {
-        // Sanitizing bets that invisible characters are paste accidents, but
-        // a stored password can legitimately contain them (e.g. a ZWJ emoji
-        // sequence) — creation paths don't normalize. If the sanitized form
-        // was rejected and differs from what the guest typed, retry once with
-        // the typed value (edges trimmed). Skipped when a reCAPTCHA token is
-        // in play: tokens are single-use, the retry would fail verification.
-        const typedPassword = password.trim();
-        if (
-          error.response?.status === 401 &&
-          requiresPassword &&
-          typedPassword !== submittedPassword &&
-          !recaptchaToken
-        ) {
-          await login(resolvedSlug, typedPassword, recaptchaToken);
-        } else {
-          throw error;
-        }
-      }
+      // Trim the password before sending. The Instagram in-app browser's
+      // predictive-text keyboard frequently appends a trailing space when the
+      // user taps the submit button, which then fails byte-exact bcrypt
+      // compare on the backend with no visible cause (#654). Mid-string
+      // invisible Unicode from chat-app copy-paste is handled server-side as
+      // a same-request compare fallback (see auth.js gallery/verify).
+      const submittedPassword = requiresPassword ? password.trim() : '';
+      await login(resolvedSlug, submittedPassword, recaptchaToken);
 
       if (requiresPassword) {
         analyticsService.trackGalleryEvent('password_entry', {

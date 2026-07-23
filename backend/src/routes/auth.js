@@ -28,6 +28,7 @@ const {
 } = require('../utils/tokenUtils');
 const { getEventShareToken, resolveShareIdentifier } = require('../services/shareLinkService');
 const { getClientIp } = require('../utils/requestIp');
+const { sanitizePasswordInput } = require('../utils/passwordInput');
 const {
   validatePasswordInContext,
   getBcryptRounds,
@@ -388,7 +389,19 @@ router.post('/gallery/verify', [
         return res.status(401).json({ error: 'Invalid gallery or password' });
       }
 
-      const validPassword = await bcrypt.compare(password, event.password_hash);
+      let validPassword = await bcrypt.compare(password, event.password_hash);
+      if (!validPassword) {
+        // Passwords copy-pasted out of chat apps carry invisible Unicode
+        // that fails the byte-exact compare (#654). Retry the compare with
+        // those characters stripped — in the SAME request, so the fallback
+        // costs no reCAPTCHA token and no failed-attempt quota. Exact bytes
+        // are tried first so stored passwords that legitimately contain
+        // such characters keep working.
+        const sanitized = sanitizePasswordInput(password);
+        if (sanitized !== password) {
+          validPassword = await bcrypt.compare(sanitized, event.password_hash);
+        }
+      }
       if (!validPassword) {
         await trackFailedAttempt(`gallery:${slug}`, ipAddress, userAgent);
         await db('access_logs').insert({
