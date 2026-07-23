@@ -351,11 +351,16 @@
     "tooManyAttempts": "Too many failed login attempts. Please try again later.",
     "pleaseEnterPassword": "Please enter a password",
     "passwordHint": "The password was provided by the event organizer. Contact them if you don't have it.",
+    "networkError": "Connection failed. Please check your internet connection and try again.",
+    "recaptchaFailed": "Security verification failed. Please reload the page and try again.",
     "iab": {
       "instagram": {
-        "title": "Open this link in your browser",
-        "ios": "Instagram's built-in browser sometimes blocks the password login. Tap the ⋯ menu in the top right, then \"Open in external browser\" (or copy the link and paste into Safari).",
-        "android": "Instagram's built-in browser sometimes blocks the password login. Tap the ⋮ menu in the top right, then \"Open in external browser\" (or copy the link and paste into Chrome)."
+        "blockedTitle": "Instagram's browser can't open this gallery",
+        "blockedIos": "Password login does not work reliably in Instagram's built-in browser. Tap the ⋯ menu in the top right and choose \"Open in external browser\", or copy the link and paste it into Safari.",
+        "blockedAndroid": "Password login does not work reliably in Instagram's built-in browser. Tap the ⋮ menu in the top right and choose \"Open in external browser\", or copy the link and paste it into Chrome.",
+        "copyLink": "Copy link",
+        "linkCopied": "Link copied",
+        "tryAnyway": "Try entering the password here anyway"
       }
     }
   },

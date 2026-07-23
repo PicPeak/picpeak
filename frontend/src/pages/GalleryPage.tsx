@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { AlertCircle, Clock } from 'lucide-react';
+import { AlertCircle, Check, Clock, Copy } from 'lucide-react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../hooks/useLocalizedDate';
@@ -17,6 +17,7 @@ import { GALLERY_THEME_PRESETS } from '../types/theme.types';
 import { buildResourceUrl } from '../utils/url';
 import { isGalleryPublic, normalizeRequirePassword } from '../utils/accessControl';
 import { detectInAppBrowser } from '../utils/inAppBrowser';
+import { sanitizePasswordInput } from '../utils/passwordInput';
 
 export const GalleryPage: React.FC = () => {
   const { slug: rawSlug, token: rawToken } = useParams<{ slug: string; token?: string }>();
@@ -32,6 +33,13 @@ export const GalleryPage: React.FC = () => {
   // Evaluate once per mount — UA doesn't change at runtime, and using useMemo
   // avoids re-running detection on every render of the form.
   const iabDetection = React.useMemo(() => detectInAppBrowser(), []);
+  // Field reports on #654 show the password form failing inside Instagram's
+  // IAB even with the input-attribute/trim defenses, so the form is hidden
+  // there by default. `iabOverride` is the guest's escape hatch (also covers
+  // a UA-detection false positive, or Instagram fixing their webview).
+  const [iabOverride, setIabOverride] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const iabBlocked = iabDetection.app === 'instagram' && !iabOverride;
   const [resolvedSlug, setResolvedSlug] = useState<string | null>(() => {
     if (rawSlug && !rawToken && /^[0-9a-fA-F]{32}$/.test(rawSlug)) {
       return null;
@@ -203,7 +211,7 @@ export const GalleryPage: React.FC = () => {
     e.preventDefault();
     e.stopPropagation(); // Prevent any bubbling
     
-    if (requiresPassword && !password.trim()) {
+    if (requiresPassword && !sanitizePasswordInput(password)) {
       setLoginError(t('auth.pleaseEnterPassword'));
       return;
     }
@@ -216,13 +224,12 @@ export const GalleryPage: React.FC = () => {
         return;
       }
 
-      // Trim the password before sending. The Instagram in-app browser's
-      // predictive-text keyboard frequently appends a trailing space when the
-      // user taps the submit button, which then fails byte-exact bcrypt
-      // compare on the backend with no visible cause (#654). Event-gallery
-      // passwords don't legitimately carry leading/trailing whitespace, so
-      // trimming silently is safe.
-      const submittedPassword = requiresPassword ? password.trim() : '';
+      // Sanitize the password before sending: trim the trailing space the
+      // Instagram in-app browser's predictive-text keyboard appends on
+      // submit, and strip invisible Unicode that rides along when the
+      // password is copy-pasted out of a chat app. Both fail byte-exact
+      // bcrypt compare on the backend with no visible cause (#654).
+      const submittedPassword = requiresPassword ? sanitizePasswordInput(password) : '';
       await login(resolvedSlug, submittedPassword, recaptchaToken);
       
       if (requiresPassword) {
@@ -233,11 +240,20 @@ export const GalleryPage: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Login error:', error);
-      const errorMessage = error.response?.data?.error || 'Invalid password';
+      const errorMessage = error.response?.data?.error || '';
       const statusCode = error.response?.status;
-      
+
       // Map backend error messages to user-friendly translations
-      if (statusCode === 401 || errorMessage.toLowerCase().includes('invalid password')) {
+      if (!error.response) {
+        // The request never got a response (offline, proxy/webview killed
+        // it). Falling through to "incorrect password" here sent #654
+        // reporters chasing the wrong cause — name the real failure.
+        setLoginError(t('auth.networkError', 'Connection failed. Please check your internet connection and try again.'));
+      } else if (statusCode === 400 && errorMessage.toLowerCase().includes('recaptcha')) {
+        // reCAPTCHA rejection is not a wrong password either — the widget
+        // regularly fails to load inside in-app webviews (#654).
+        setLoginError(t('auth.recaptchaFailed', 'Security verification failed. Please reload the page and try again.'));
+      } else if (statusCode === 401 || errorMessage.toLowerCase().includes('invalid password')) {
         setLoginError(t('auth.wrongPassword'));
       } else if (statusCode === 429 || errorMessage.toLowerCase().includes('too many')) {
         setLoginError(t('auth.tooManyAttempts'));
@@ -260,6 +276,32 @@ export const GalleryPage: React.FC = () => {
       // Do not clear the password
     } finally {
       setIsLoggingIn(false);
+    }
+  };
+
+  const handleCopyLink = async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+    } catch {
+      // The async clipboard API is often unavailable inside in-app webviews —
+      // fall back to the legacy textarea + execCommand path.
+      const textarea = document.createElement('textarea');
+      textarea.value = url;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        setLinkCopied(true);
+      } catch {
+        // Leave the button label unchanged; the user can still long-press
+        // the address bar to copy manually.
+      }
+      document.body.removeChild(textarea);
     }
   };
 
@@ -396,33 +438,60 @@ export const GalleryPage: React.FC = () => {
             <CardContent className="p-4 sm:p-6">
               <h2 className="text-base sm:text-lg lg:text-xl font-semibold mb-4">{t('auth.enterPassword')}</h2>
 
-              {/* Instagram in-app browser warning (#654). The IAB's keyboard
-                  bridge silently mangles password inputs (autocaps overrides,
-                  predictive-text-appended trailing spaces, stale autofill).
-                  Detect it and surface a "open in your normal browser" hint
-                  so the user can self-rescue. */}
-              {iabDetection.app === 'instagram' && (
+              {/* Instagram in-app browser blocker (#654). Field reports show
+                  password login failing inside the IAB even with the
+                  input-attribute + trim defenses, so instead of a warning
+                  above the form we replace the form: "open in your normal
+                  browser" instructions plus a copy-link button. "Try anyway"
+                  restores the form as an escape hatch (UA false positive, or
+                  Instagram fixing their webview). */}
+              {iabBlocked && (
                 <div
                   role="alert"
-                  className="mb-4 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-900 dark:text-amber-100"
+                  className="rounded-lg border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/40 p-4 text-sm text-red-900 dark:text-red-100"
                 >
-                  <p className="font-medium">
-                    {t('auth.iab.instagram.title', 'Open this link in your browser')}
-                  </p>
-                  <p className="mt-1 text-xs">
-                    {iabDetection.platform === 'ios'
-                      ? t(
-                        'auth.iab.instagram.ios',
-                        "Instagram's built-in browser sometimes blocks the password login. Tap the ⋯ menu in the top right, then \"Open in external browser\" (or copy the link and paste into Safari).",
-                      )
-                      : t(
-                        'auth.iab.instagram.android',
-                        "Instagram's built-in browser sometimes blocks the password login. Tap the ⋮ menu in the top right, then \"Open in external browser\" (or copy the link and paste into Chrome).",
-                      )}
-                  </p>
+                  <div className="flex items-start">
+                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 mr-2 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium">
+                        {t('auth.iab.instagram.blockedTitle', "Instagram's browser can't open this gallery")}
+                      </p>
+                      <p className="mt-1 text-xs">
+                        {iabDetection.platform === 'ios'
+                          ? t(
+                            'auth.iab.instagram.blockedIos',
+                            'Password login does not work reliably in Instagram\'s built-in browser. Tap the ⋯ menu in the top right and choose "Open in external browser", or copy the link and paste it into Safari.',
+                          )
+                          : t(
+                            'auth.iab.instagram.blockedAndroid',
+                            'Password login does not work reliably in Instagram\'s built-in browser. Tap the ⋮ menu in the top right and choose "Open in external browser", or copy the link and paste it into Chrome.',
+                          )}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="lg"
+                    className="w-full mt-4 text-sm sm:text-base"
+                    onClick={handleCopyLink}
+                    leftIcon={linkCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  >
+                    {linkCopied
+                      ? t('auth.iab.instagram.linkCopied', 'Link copied')
+                      : t('auth.iab.instagram.copyLink', 'Copy link')}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => setIabOverride(true)}
+                    className="mt-3 w-full text-center text-xs text-red-800 dark:text-red-200 underline"
+                  >
+                    {t('auth.iab.instagram.tryAnyway', 'Try entering the password here anyway')}
+                  </button>
                 </div>
               )}
 
+              {!iabBlocked && (
               <form onSubmit={handleLogin} className="space-y-4">
                 <Input
                   type="password"
@@ -462,10 +531,13 @@ export const GalleryPage: React.FC = () => {
                   {t('gallery.viewGallery')}
                 </Button>
               </form>
+              )}
 
-              <p className="text-xs text-neutral-500 text-center mt-4 sm:mt-6">
-                {t('auth.passwordHint')}
-              </p>
+              {!iabBlocked && (
+                <p className="text-xs text-neutral-500 text-center mt-4 sm:mt-6">
+                  {t('auth.passwordHint')}
+                </p>
+              )}
             </CardContent>
           </Card>
 

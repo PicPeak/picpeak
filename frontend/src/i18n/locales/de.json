@@ -804,11 +804,16 @@
     "tooManyAttempts": "Zu viele fehlgeschlagene Anmeldeversuche. Bitte versuchen Sie es später erneut.",
     "pleaseEnterPassword": "Bitte geben Sie ein Passwort ein",
     "passwordHint": "Das Passwort wurde vom Veranstalter bereitgestellt. Kontaktieren Sie ihn, wenn Sie es nicht haben.",
+    "networkError": "Verbindung fehlgeschlagen. Bitte prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.",
+    "recaptchaFailed": "Sicherheitsprüfung fehlgeschlagen. Bitte laden Sie die Seite neu und versuchen Sie es erneut.",
     "iab": {
       "instagram": {
-        "title": "Diesen Link im Browser öffnen",
-        "ios": "Der eingebaute Browser von Instagram blockiert das Passwort-Login manchmal. Oben rechts auf das ⋯-Menü tippen und „Im externen Browser öffnen“ wählen (oder den Link kopieren und in Safari einfügen).",
-        "android": "Der eingebaute Browser von Instagram blockiert das Passwort-Login manchmal. Oben rechts auf das ⋮-Menü tippen und „Im externen Browser öffnen“ wählen (oder den Link kopieren und in Chrome einfügen)."
+        "blockedTitle": "Der Instagram-Browser kann diese Galerie nicht öffnen",
+        "blockedIos": "Das Passwort-Login funktioniert im eingebauten Browser von Instagram nicht zuverlässig. Oben rechts auf das ⋯-Menü tippen und „Im externen Browser öffnen“ wählen — oder den Link kopieren und in Safari einfügen.",
+        "blockedAndroid": "Das Passwort-Login funktioniert im eingebauten Browser von Instagram nicht zuverlässig. Oben rechts auf das ⋮-Menü tippen und „Im externen Browser öffnen“ wählen — oder den Link kopieren und in Chrome einfügen.",
+        "copyLink": "Link kopieren",
+        "linkCopied": "Link kopiert",
+        "tryAnyway": "Passwort trotzdem hier eingeben"
       }
     }
   },
