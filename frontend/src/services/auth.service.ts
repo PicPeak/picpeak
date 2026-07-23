@@ -35,10 +35,14 @@ export const authService = {
 
   async adminLogout() {
     try {
-      await api.post('/auth/logout');
+      const response = await api.post('/auth/logout');
+      // RP-initiated logout (#798 phase 3): for SSO sessions with
+      // logout-to-IdP enabled, the backend hands back the IdP's end-session
+      // URL — navigate there so the IdP session ends too; the IdP returns
+      // to /admin/login afterwards.
+      window.location.href = response.data?.ssoLogoutUrl || '/admin/login';
     } catch (err) {
       // Ignore logout errors; fallback to redirect
-    } finally {
       window.location.href = '/admin/login';
     }
   },

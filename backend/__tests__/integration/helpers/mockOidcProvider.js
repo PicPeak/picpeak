@@ -34,6 +34,7 @@ class MockOidcProvider {
     // Test hooks:
     this.tamperNonce = false; // sign the ID token with a WRONG nonce
     this.emailViaUserinfoOnly = false; // omit email from the ID token; serve it on /userinfo
+    this.advertiseEndSession = true; // include end_session_endpoint in discovery (#798 phase 3)
     this.accessTokens = new Map(); // access_token -> user (for /userinfo)
     this.server = null;
     this.issuer = null;
@@ -85,6 +86,7 @@ class MockOidcProvider {
         token_endpoint: `${this.issuer}/token`,
         userinfo_endpoint: `${this.issuer}/userinfo`,
         jwks_uri: `${this.issuer}/jwks`,
+        ...(this.advertiseEndSession ? { end_session_endpoint: `${this.issuer}/logout` } : {}),
         response_types_supported: ['code'],
         subject_types_supported: ['public'],
         id_token_signing_alg_values_supported: ['RS256'],

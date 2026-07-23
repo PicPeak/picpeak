@@ -335,7 +335,19 @@ router.post('/logout', async (req, res) => {
       clearGalleryAuthCookies(res);
     }
 
-    res.json({ message: 'Logged out successfully' });
+    // RP-initiated logout (#798 phase 3): when this browser session came in
+    // via SSO (marked by the oidc_id_token cookie set by the callback) and
+    // the feature is enabled, hand the frontend the IdP's end-session URL to
+    // navigate to after the local logout. Never blocks the local logout —
+    // buildEndSessionUrl returns null on any failure.
+    let ssoLogoutUrl = null;
+    const oidcIdToken = req.cookies?.[OIDC_ID_TOKEN_COOKIE];
+    if (oidcIdToken) {
+      res.clearCookie(OIDC_ID_TOKEN_COOKIE, { ...oidcIdTokenCookieOptions(req), maxAge: undefined });
+      ssoLogoutUrl = await require('../services/oidcService').buildEndSessionUrl(oidcIdToken);
+    }
+
+    res.json({ message: 'Logged out successfully', ...(ssoLogoutUrl ? { ssoLogoutUrl } : {}) });
   } catch (error) {
     errorResponse(res, error, 500, 'Logout failed');
   }
@@ -945,6 +957,24 @@ function oidcStateCookieOptions(req) {
   };
 }
 
+// Raw ID token of the SSO session, kept for RP-initiated logout (#798
+// phase 3): /logout sends it to the IdP as id_token_hint so the IdP ends
+// its session without a confirmation prompt. Its presence is also the
+// marker that THIS browser session came in via SSO — local-password
+// sessions must never be bounced to the IdP on logout. Path covers both
+// the callback (which sets it) and /api/auth/logout (which consumes it).
+const OIDC_ID_TOKEN_COOKIE = 'oidc_id_token';
+
+function oidcIdTokenCookieOptions(req) {
+  return {
+    httpOnly: true,
+    secure: Boolean(req.secure),
+    sameSite: 'Lax',
+    path: '/api/auth',
+    maxAge: 24 * 60 * 60 * 1000, // matches the admin session JWT lifetime
+  };
+}
+
 // Kick off the IdP round-trip. 404 when SSO is off so the endpoint is
 // invisible on non-SSO installs.
 router.get('/admin/sso/login', async (req, res) => {
@@ -999,7 +1029,7 @@ router.get('/admin/sso/callback', async (req, res) => {
     const callbackUrl = new URL(await oidcService.getRedirectUri());
     callbackUrl.search = req.originalUrl.split('?')[1] || '';
 
-    const claims = await oidcService.handleCallback(callbackUrl.href, {
+    const { claims, idToken } = await oidcService.handleCallback(callbackUrl.href, {
       state: stash.s,
       nonce: stash.n,
       codeVerifier: stash.cv,
@@ -1017,6 +1047,13 @@ router.get('/admin/sso/callback', async (req, res) => {
     const ipAddress = getClientIp(req);
     const userAgent = req.headers['user-agent'] || '';
     await establishAdminSession(res, admin, ipAddress, userAgent, admin.username);
+
+    // Cookie limit is 4KB — an oversized ID token (huge group lists) is
+    // dropped rather than truncated; logout then falls back to the
+    // client_id-only end-session request (extra IdP confirmation click).
+    if (idToken && idToken.length <= 3900) {
+      res.cookie(OIDC_ID_TOKEN_COOKIE, idToken, oidcIdTokenCookieOptions(req));
+    }
 
     await logActivity('admin_sso_login', { provider: 'oidc' }, null, {
       type: 'admin', id: admin.id, name: admin.username,

@@ -2158,7 +2158,10 @@
         "title": "Anmelde-Richtlinie",
         "disableLocalLogin": "Lokale Passwort-Anmeldung deaktivieren",
         "disableLocalLoginHint": "Die Anmeldeseite zeigt nur noch den SSO-Button und die API lehnt Passwort-Anmeldungen ab. Nur möglich, solange SSO aktiviert ist; wird SSO deaktiviert, ist die Passwort-Anmeldung automatisch wieder möglich.",
-        "breakGlassHint": "Ausgesperrt, weil der IdP down oder falsch konfiguriert ist? Setzen Sie die Umgebungsvariable OIDC_BREAK_GLASS=true am Backend und starten Sie neu — die Passwort-Anmeldung ist sofort wieder möglich."
+        "breakGlassHint": "Ausgesperrt, weil der IdP down oder falsch konfiguriert ist? Setzen Sie die Umgebungsvariable OIDC_BREAK_GLASS=true am Backend und starten Sie neu — die Passwort-Anmeldung ist sofort wieder möglich.",
+        "logoutFromIdp": "Auch beim Identity Provider abmelden",
+        "logoutFromIdpHint": "Die Abmeldung von PicPeak beendet auch die IdP-Sitzung (RP-initiated Logout). Gilt nur für Sitzungen, die per SSO angemeldet wurden; ohne diese Option bleibt die IdP-Sitzung bestehen und der nächste SSO-Klick meldet direkt wieder an.",
+        "postLogoutRedirectUri": "Post-Logout-Redirect-URI (beim IdP-Client registrieren, z. B. Keycloak „Valid post logout redirect URIs“)"
       }
     }
   },

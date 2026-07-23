@@ -1705,7 +1705,10 @@
         "title": "Login policy",
         "disableLocalLogin": "Disable local password login",
         "disableLocalLoginHint": "The login page shows only the SSO button and the API refuses password logins. Only possible while SSO is enabled; turning SSO off restores password login automatically.",
-        "breakGlassHint": "Locked out because the IdP is down or misconfigured? Set the environment variable OIDC_BREAK_GLASS=true on the backend and restart — password login comes back immediately."
+        "breakGlassHint": "Locked out because the IdP is down or misconfigured? Set the environment variable OIDC_BREAK_GLASS=true on the backend and restart — password login comes back immediately.",
+        "logoutFromIdp": "Also sign out of the identity provider",
+        "logoutFromIdpHint": "Logging out of PicPeak also ends the IdP session (RP-initiated logout). Only applies to sessions that signed in via SSO; without this, logging out of PicPeak leaves the IdP session alive and the next SSO click signs straight back in.",
+        "postLogoutRedirectUri": "Post-logout redirect URI (register this on your IdP client, e.g. Keycloak \"Valid post logout redirect URIs\")"
       }
     }
   },

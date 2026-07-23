@@ -430,6 +430,7 @@ router.get('/sso', adminAuth, requirePermission('settings.view'), async (req, re
     // than failing the whole settings read; the login route refuses to start
     // the flow in that state anyway (OIDC_BAD_CONFIG).
     const redirectUri = await oidcService.getRedirectUri().catch(() => '');
+    const postLogoutRedirectUri = await oidcService.getPostLogoutRedirectUri().catch(() => '');
     res.json({
       oidc_enabled: cfg.enabled,
       oidc_issuer_url: cfg.issuerUrl || '',
@@ -444,7 +445,9 @@ router.get('/sso', adminAuth, requirePermission('settings.view'), async (req, re
       oidc_role_mappings: cfg.roleMappings,
       oidc_require_mapped_role: cfg.requireMappedRole,
       oidc_disable_local_login: cfg.disableLocalLogin,
+      oidc_logout_from_idp: cfg.logoutFromIdp,
       redirect_uri: redirectUri,
+      post_logout_redirect_uri: postLogoutRedirectUri,
     });
   } catch (error) {
     logger.error('Failed to read SSO settings', { error: error.message });
@@ -466,6 +469,7 @@ router.put('/sso', adminAuth, requirePermission('settings.edit'), [
   body('oidc_role_mappings').optional().isObject(),
   body('oidc_require_mapped_role').optional().isBoolean(),
   body('oidc_disable_local_login').optional().isBoolean(),
+  body('oidc_logout_from_idp').optional().isBoolean(),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);

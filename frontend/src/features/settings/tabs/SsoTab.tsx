@@ -107,6 +107,7 @@ export const SsoTab: React.FC = () => {
       // (rightly) rejects an explicit true while SSO is off, and the promise
       // is that disabling SSO restores password login.
       oidc_disable_local_login: form.oidc_enabled ? form.oidc_disable_local_login : false,
+      oidc_logout_from_idp: form.oidc_enabled ? form.oidc_logout_from_idp : false,
     };
     if (newSecret.trim()) payload.oidc_client_secret = newSecret.trim();
     saveMutation.mutate(payload);
@@ -422,6 +423,35 @@ export const SsoTab: React.FC = () => {
           {form.oidc_disable_local_login && (
             <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-300">
               {t('settings.sso.policy.breakGlassHint', 'Locked out because the IdP is down or misconfigured? Set the environment variable OIDC_BREAK_GLASS=true on the backend and restart — password login comes back immediately.')}
+            </div>
+          )}
+
+          {/* Logout-to-IdP (#798 phase 3) */}
+          <label className="flex items-start gap-3 pt-1 cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5 rounded border-neutral-300 dark:border-neutral-600 text-accent focus:ring-primary-500"
+              checked={form.oidc_logout_from_idp}
+              onChange={(e) => set('oidc_logout_from_idp', e.target.checked)}
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                {t('settings.sso.policy.logoutFromIdp', 'Also sign out of the identity provider')}
+              </span>
+              <span className="block text-xs text-neutral-500 dark:text-neutral-400">
+                {t('settings.sso.policy.logoutFromIdpHint', 'Logging out of PicPeak also ends the IdP session (RP-initiated logout). Only applies to sessions that signed in via SSO; without this, logging out of PicPeak leaves the IdP session alive and the next SSO click signs straight back in.')}
+              </span>
+            </span>
+          </label>
+
+          {form.oidc_logout_from_idp && form.post_logout_redirect_uri && (
+            <div className="rounded-lg bg-neutral-50 dark:bg-neutral-800/60 p-3">
+              <p className="text-xs font-medium text-neutral-600 dark:text-neutral-300 mb-1">
+                {t('settings.sso.policy.postLogoutRedirectUri', 'Post-logout redirect URI (register this on your IdP client, e.g. Keycloak "Valid post logout redirect URIs")')}
+              </p>
+              <code className="block text-xs text-neutral-800 dark:text-neutral-200 break-all">
+                {form.post_logout_redirect_uri}
+              </code>
             </div>
           )}
         </div>

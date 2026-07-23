@@ -21,7 +21,10 @@ export interface SsoSettings {
   oidc_role_mappings: Record<string, string>;
   oidc_require_mapped_role: boolean;
   oidc_disable_local_login: boolean;
+  oidc_logout_from_idp: boolean;
   redirect_uri: string;
+  /** Register this at the IdP (e.g. Keycloak "Valid post logout redirect URIs"). */
+  post_logout_redirect_uri: string;
 }
 
 export interface UpdateSsoSettings {
@@ -39,6 +42,7 @@ export interface UpdateSsoSettings {
   oidc_role_mappings?: Record<string, string>;
   oidc_require_mapped_role?: boolean;
   oidc_disable_local_login?: boolean;
+  oidc_logout_from_idp?: boolean;
 }
 
 export interface SsoTestResult {
