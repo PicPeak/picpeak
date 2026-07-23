@@ -230,8 +230,28 @@ export const GalleryPage: React.FC = () => {
       // password is copy-pasted out of a chat app. Both fail byte-exact
       // bcrypt compare on the backend with no visible cause (#654).
       const submittedPassword = requiresPassword ? sanitizePasswordInput(password) : '';
-      await login(resolvedSlug, submittedPassword, recaptchaToken);
-      
+      try {
+        await login(resolvedSlug, submittedPassword, recaptchaToken);
+      } catch (error: any) {
+        // Sanitizing bets that invisible characters are paste accidents, but
+        // a stored password can legitimately contain them (e.g. a ZWJ emoji
+        // sequence) — creation paths don't normalize. If the sanitized form
+        // was rejected and differs from what the guest typed, retry once with
+        // the typed value (edges trimmed). Skipped when a reCAPTCHA token is
+        // in play: tokens are single-use, the retry would fail verification.
+        const typedPassword = password.trim();
+        if (
+          error.response?.status === 401 &&
+          requiresPassword &&
+          typedPassword !== submittedPassword &&
+          !recaptchaToken
+        ) {
+          await login(resolvedSlug, typedPassword, recaptchaToken);
+        } else {
+          throw error;
+        }
+      }
+
       if (requiresPassword) {
         analyticsService.trackGalleryEvent('password_entry', {
           gallery: resolvedSlug,
@@ -295,11 +315,14 @@ export const GalleryPage: React.FC = () => {
       document.body.appendChild(textarea);
       textarea.select();
       try {
-        document.execCommand('copy');
-        setLinkCopied(true);
+        // execCommand signals failure via its return value, not by throwing —
+        // only report "copied" when it actually worked; otherwise leave the
+        // label unchanged and the user can still long-press the address bar.
+        if (document.execCommand('copy')) {
+          setLinkCopied(true);
+        }
       } catch {
-        // Leave the button label unchanged; the user can still long-press
-        // the address bar to copy manually.
+        // Same as a false return: keep the label unchanged.
       }
       document.body.removeChild(textarea);
     }
