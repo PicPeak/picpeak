@@ -230,6 +230,8 @@ function getGuestTokenFromRequest(req, slug) {
 
 module.exports = {
   ADMIN_COOKIE_NAME,
+  buildCookieOptionsWithExpiry,
+  buildClearCookieOptions,
   GALLERY_COOKIE_NAME,
   GALLERY_COOKIE_PREFIX,
   GUEST_COOKIE_PREFIX,

@@ -25,6 +25,8 @@ const {
   clearGalleryAuthCookies,
   getAdminTokenFromRequest,
   getGalleryTokenFromRequest,
+  buildCookieOptionsWithExpiry,
+  buildClearCookieOptions,
 } = require('../utils/tokenUtils');
 const { getEventShareToken, resolveShareIdentifier } = require('../services/shareLinkService');
 const { getClientIp } = require('../utils/requestIp');
@@ -75,6 +77,13 @@ async function establishAdminSession(res, admin, ipAddress, userAgent, lockoutKe
   });
 
   setAdminAuthCookie(res, token);
+
+  // A fresh login supersedes any SSO marker a previous session left behind
+  // (#798 phase 3): sessions can die without /logout (deactivation, expiry,
+  // restore), and a stale marker would bounce a subsequent local-password
+  // session to the IdP on logout. The SSO callback re-sets the marker for
+  // its own session right after this returns.
+  res.clearCookie(OIDC_ID_TOKEN_COOKIE, oidcIdTokenClearOptions());
 
   return {
     id: admin.id,
@@ -343,8 +352,11 @@ router.post('/logout', async (req, res) => {
     let ssoLogoutUrl = null;
     const oidcIdToken = req.cookies?.[OIDC_ID_TOKEN_COOKIE];
     if (oidcIdToken) {
-      res.clearCookie(OIDC_ID_TOKEN_COOKIE, { ...oidcIdTokenCookieOptions(req), maxAge: undefined });
-      ssoLogoutUrl = await require('../services/oidcService').buildEndSessionUrl(oidcIdToken);
+      res.clearCookie(OIDC_ID_TOKEN_COOKIE, oidcIdTokenClearOptions());
+      // The bare 'sso' marker (oversized ID token at login) still triggers
+      // the round-trip, just without an id_token_hint.
+      const hint = oidcIdToken.split('.').length === 3 ? oidcIdToken : undefined;
+      ssoLogoutUrl = await require('../services/oidcService').buildEndSessionUrl(hint);
     }
 
     res.json({ message: 'Logged out successfully', ...(ssoLogoutUrl ? { ssoLogoutUrl } : {}) });
@@ -963,16 +975,19 @@ function oidcStateCookieOptions(req) {
 // marker that THIS browser session came in via SSO — local-password
 // sessions must never be bounced to the IdP on logout. Path covers both
 // the callback (which sets it) and /api/auth/logout (which consumes it).
+// Options derive from the shared cookie policy (COOKIE_SAMESITE /
+// COOKIE_DOMAIN / secure resolution) — in split-origin deployments the
+// admin session runs on SameSite=None, and a hardcoded Lax here would
+// mean the cookie never reaches the cross-site /logout XHR, silently
+// disabling logout-to-IdP. The default maxAge matches the 24h admin JWT.
 const OIDC_ID_TOKEN_COOKIE = 'oidc_id_token';
 
-function oidcIdTokenCookieOptions(req) {
-  return {
-    httpOnly: true,
-    secure: Boolean(req.secure),
-    sameSite: 'Lax',
-    path: '/api/auth',
-    maxAge: 24 * 60 * 60 * 1000, // matches the admin session JWT lifetime
-  };
+function oidcIdTokenCookieOptions(res) {
+  return { ...buildCookieOptionsWithExpiry(res), path: '/api/auth' };
+}
+
+function oidcIdTokenClearOptions() {
+  return { ...buildClearCookieOptions(), path: '/api/auth' };
 }
 
 // Kick off the IdP round-trip. 404 when SSO is off so the endpoint is
@@ -1048,11 +1063,14 @@ router.get('/admin/sso/callback', async (req, res) => {
     const userAgent = req.headers['user-agent'] || '';
     await establishAdminSession(res, admin, ipAddress, userAgent, admin.username);
 
-    // Cookie limit is 4KB — an oversized ID token (huge group lists) is
-    // dropped rather than truncated; logout then falls back to the
-    // client_id-only end-session request (extra IdP confirmation click).
-    if (idToken && idToken.length <= 3900) {
-      res.cookie(OIDC_ID_TOKEN_COOKIE, idToken, oidcIdTokenCookieOptions(req));
+    // Cookie limit is 4KB — an oversized ID token (huge group lists) can't
+    // be stored, but the SSO-session marker must survive or logout-to-IdP
+    // silently turns off for exactly those users. Store the bare marker
+    // 'sso' instead; logout then sends the end-session request without an
+    // id_token_hint (costs one IdP confirmation click).
+    if (idToken) {
+      const cookieValue = idToken.length <= 3900 ? idToken : 'sso';
+      res.cookie(OIDC_ID_TOKEN_COOKIE, cookieValue, oidcIdTokenCookieOptions(res));
     }
 
     await logActivity('admin_sso_login', { provider: 'oidc' }, null, {

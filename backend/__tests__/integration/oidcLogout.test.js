@@ -19,11 +19,13 @@
 const request = require('supertest');
 const express = require('express');
 const cookieParser = require('cookie-parser');
+const bcrypt = require('bcrypt');
 
 const { bootCrmDb } = require('./helpers/crmDb');
 const { MockOidcProvider } = require('./helpers/mockOidcProvider');
 
 describe('OIDC logout-to-IdP (#798 phase 3)', () => {
+  let db;
   let cleanup;
   let app;
   let idp;
@@ -32,7 +34,7 @@ describe('OIDC logout-to-IdP (#798 phase 3)', () => {
   beforeAll(async () => {
     process.env.JWT_SECRET = process.env.JWT_SECRET || 'oidc-logout-test-secret';
     process.env.FRONTEND_URL = 'http://localhost:5199';
-    ({ cleanup } = await bootCrmDb());
+    ({ db, cleanup } = await bootCrmDb());
 
     idp = new MockOidcProvider();
     const issuer = await idp.start();
@@ -77,10 +79,16 @@ describe('OIDC logout-to-IdP (#798 phase 3)', () => {
       .expect(302);
   }
 
-  /** The oidc_id_token cookie pair ("oidc_id_token=<jwt>") from a callback response. */
+  /**
+   * The oidc_id_token cookie pair ("oidc_id_token=<jwt>") from a callback
+   * response. The callback carries TWO Set-Cookie headers for this name —
+   * establishAdminSession clears any stale marker, then the callback sets
+   * the fresh one — and browsers apply them in order, so the LAST wins.
+   */
   function idTokenCookie(res) {
-    const cookie = (res.headers['set-cookie'] || []).find((c) => c.startsWith('oidc_id_token='));
-    return cookie ? cookie.split(';')[0] : null;
+    const cookies = (res.headers['set-cookie'] || []).filter((c) => c.startsWith('oidc_id_token='));
+    const last = cookies[cookies.length - 1];
+    return last ? last.split(';')[0] : null;
   }
 
   it('stores the raw ID token in the oidc_id_token cookie on SSO login', async () => {
@@ -93,7 +101,8 @@ describe('OIDC logout-to-IdP (#798 phase 3)', () => {
     // Raw JWT, HttpOnly, scoped to /api/auth.
     const raw = decodeURIComponent(cookie.replace('oidc_id_token=', ''));
     expect(raw.split('.')).toHaveLength(3);
-    const full = (res.headers['set-cookie'] || []).find((c) => c.startsWith('oidc_id_token='));
+    const setCookies = (res.headers['set-cookie'] || []).filter((c) => c.startsWith('oidc_id_token='));
+    const full = setCookies[setCookies.length - 1];
     expect(full).toMatch(/HttpOnly/i);
     expect(full).toMatch(/Path=\/api\/auth/i);
   });
@@ -176,6 +185,54 @@ describe('OIDC logout-to-IdP (#798 phase 3)', () => {
         oidc_client_secret: idp.clientSecret,
       });
     }
+  });
+
+  it('stores a bare marker for oversized ID tokens; logout still round-trips, without a hint', async () => {
+    idp.setNextUser({
+      sub: 'logout-sub-5',
+      email: 'logout5@example.com',
+      email_verified: true,
+      // ~9KB of group claims — far past the 4KB cookie limit.
+      groups: Array.from({ length: 300 }, (_, i) => `group-${String(i).padStart(4, '0')}-xxxxxxxxxxxxxxxx`),
+    });
+    const cbRes = await ssoRoundTrip();
+    const cookie = idTokenCookie(cbRes);
+    expect(cookie).toBeTruthy();
+    expect(decodeURIComponent(cookie.replace('oidc_id_token=', ''))).toBe('sso');
+
+    const res = await request(app)
+      .post('/api/auth/logout')
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(res.body.ssoLogoutUrl).toBeTruthy();
+    const url = new URL(res.body.ssoLogoutUrl);
+    expect(url.searchParams.get('id_token_hint')).toBeNull();
+    expect(url.searchParams.get('client_id')).toBe(idp.clientId);
+  });
+
+  it('a fresh local-password login clears a stale SSO marker', async () => {
+    const role = await db('roles').where({ name: 'admin' }).first();
+    await db('admin_users').insert({
+      username: 'stale-marker-admin',
+      email: 'stale-marker@example.com',
+      password_hash: await bcrypt.hash('StaleMarker123!', 4),
+      role_id: role.id,
+      is_active: 1,
+      must_change_password: 0,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    // Stale marker from a dead SSO session rides along on the login request.
+    const res = await request(app)
+      .post('/api/auth/admin/login')
+      .set('Cookie', 'oidc_id_token=stale.jwt.value')
+      .send({ username: 'stale-marker-admin', password: 'StaleMarker123!' })
+      .expect(200);
+
+    const cleared = (res.headers['set-cookie'] || []).find((c) => c.startsWith('oidc_id_token='));
+    expect(cleared).toBeTruthy();
+    expect(cleared).toMatch(/Expires=Thu, 01 Jan 1970|Max-Age=0/i);
   });
 
   it('exposes the flag and post_logout_redirect_uri via getOidcConfig/getPostLogoutRedirectUri', async () => {
