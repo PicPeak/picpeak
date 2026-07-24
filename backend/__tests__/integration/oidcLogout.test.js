@@ -235,6 +235,33 @@ describe('OIDC logout-to-IdP (#798 phase 3)', () => {
     expect(cleared).toMatch(/Expires=Thu, 01 Jan 1970|Max-Age=0/i);
   });
 
+  it('skips the round-trip when the stored hint was issued by a DIFFERENT issuer (config changed)', async () => {
+    // Fake-but-well-formed JWT from another IdP — payload is all that matters,
+    // buildEndSessionUrl decodes without verification for routing only.
+    const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+    const foreignToken = `${b64({ alg: 'none' })}.${b64({ iss: 'http://other-idp.example', aud: idp.clientId })}.sig`;
+
+    const res = await request(app)
+      .post('/api/auth/logout')
+      .set('Cookie', `oidc_id_token=${foreignToken}`)
+      .expect(200);
+    expect(res.body.ssoLogoutUrl).toBeUndefined();
+  });
+
+  it('drops only the hint when the issuer matches but the client changed', async () => {
+    const b64 = (obj) => Buffer.from(JSON.stringify(obj)).toString('base64url');
+    const oldClientToken = `${b64({ alg: 'none' })}.${b64({ iss: idp.issuer, aud: 'previous-client-id' })}.sig`;
+
+    const res = await request(app)
+      .post('/api/auth/logout')
+      .set('Cookie', `oidc_id_token=${oldClientToken}`)
+      .expect(200);
+    expect(res.body.ssoLogoutUrl).toBeTruthy();
+    const url = new URL(res.body.ssoLogoutUrl);
+    expect(url.searchParams.get('id_token_hint')).toBeNull();
+    expect(url.searchParams.get('client_id')).toBe(idp.clientId);
+  });
+
   it('exposes the flag and post_logout_redirect_uri via getOidcConfig/getPostLogoutRedirectUri', async () => {
     // Settings-route auth chains are covered in oidcSso.test.js; here the
     // service surface the routes read from is pinned directly.

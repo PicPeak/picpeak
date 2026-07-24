@@ -364,18 +364,46 @@ async function getPostLogoutRedirectUri() {
  * treats null as "finish the local logout normally". A logout must never
  * fail because the IdP is unreachable.
  */
+/** Decode a JWT payload WITHOUT verification — only for routing decisions
+ * on claims we minted no trust in (which IdP/client issued this token). */
+function decodeJwtPayload(token) {
+  try {
+    return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString('utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
 async function buildEndSessionUrl(idTokenHint) {
   try {
     const cfg = await getOidcConfig();
     if (!cfg.enabled || !cfg.logoutFromIdp || !isConfigured(cfg)) return null;
     const { client, issuerMetadata } = await getClient(cfg);
     if (!issuerMetadata.end_session_endpoint) return null;
+
+    // The hint comes from a cookie minted at login — the OIDC config may
+    // have changed since. A token from a DIFFERENT issuer means the session
+    // belongs to another IdP entirely: skip the round-trip (ending the new
+    // IdP's session would be wrong, and providers that validate the hint
+    // would strand the user on an error page). Same issuer but a different
+    // client (aud): the hint is unusable, but the browser's IdP session is
+    // real — round-trip without the hint.
+    let hint = idTokenHint;
+    if (hint) {
+      const payload = decodeJwtPayload(hint);
+      if (!payload || payload.iss !== issuerMetadata.issuer) return null;
+      const audMatches = Array.isArray(payload.aud)
+        ? payload.aud.includes(cfg.clientId)
+        : payload.aud === cfg.clientId;
+      if (!audMatches) hint = undefined;
+    }
+
     const postLogoutRedirectUri = await getPostLogoutRedirectUri();
     return client.endSessionUrl({
       // Without the hint most IdPs (Keycloak included) fall back to a
       // "do you really want to log out?" confirmation page — still correct,
       // just one extra click. client_id keeps the request valid either way.
-      ...(idTokenHint ? { id_token_hint: idTokenHint } : {}),
+      ...(hint ? { id_token_hint: hint } : {}),
       ...(postLogoutRedirectUri ? { post_logout_redirect_uri: postLogoutRedirectUri } : {}),
       client_id: cfg.clientId,
     });
