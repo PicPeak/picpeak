@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.95.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.94.2-beta.0...v3.95.0-beta.0) (2026-07-24)
+
+
+### Features
+
+* **auth:** OIDC logout-to-IdP — phase 3 ([#798](https://github.com/PicPeak/picpeak/issues/798)) ([#865](https://github.com/PicPeak/picpeak/issues/865)) ([219d07b](https://github.com/PicPeak/picpeak/commit/219d07b04adf54756317d3cc3069f834aa2b460e))
+
 ## [3.94.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.94.1-beta.0...v3.94.2-beta.0) (2026-07-23)
 
 
