@@ -4,7 +4,7 @@
   "description": "Backend for PicPeak event photo sharing platform",
   "main": "server.js",
   "engines": {
-    "node": ">=20.9.0"
+    "node": "^20.19.0 || >=22"
   },
   "scripts": {
     "start": "node server.js",
