@@ -218,7 +218,7 @@ async function generateThumbnail(imagePath, options = {}) {
     let sharpInstance = sharp(imagePath, {
       limitInputPixels: 268402689, // ~16k x 16k max
       sequentialRead: true,
-      failOnError: false
+      failOn: 'none'
     });
 
     // Strip EXIF/metadata from thumbnails (privacy: prevent GPS leak etc.)
@@ -463,7 +463,7 @@ async function generateHeroImage(imagePath, options = {}) {
     let sharpInstance = sharp(imagePath, {
       limitInputPixels: 268402689,
       sequentialRead: true,
-      failOnError: false
+      failOn: 'none'
     });
 
     // Strip EXIF/metadata from hero images (privacy: prevent GPS leak etc.)
@@ -598,7 +598,7 @@ async function generatePreviewImage(imagePath, options = {}) {
     let sharpInstance = sharp(imagePath, {
       limitInputPixels: 268402689, // ~16k x 16k max
       sequentialRead: true,
-      failOnError: false,
+      failOn: 'none',
     });
 
     // Strip EXIF — same privacy reasoning as thumbnails/heroes.

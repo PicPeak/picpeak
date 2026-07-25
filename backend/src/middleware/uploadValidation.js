@@ -23,7 +23,7 @@ async function validateUploadedFile(filePath) {
       let metadata;
       try {
         metadata = await sharp(filePath, {
-          failOnError: false, // Don't fail on recoverable errors
+          failOn: 'none', // Don't fail on recoverable errors
           limitInputPixels: 268402689 // ~16k x 16k max
         }).metadata();
       } catch (metadataError) {
@@ -43,7 +43,7 @@ async function validateUploadedFile(filePath) {
       // Additional check: verify we can actually decode a small portion of the image
       try {
         await sharp(filePath, {
-          failOnError: false,
+          failOn: 'none',
           limitInputPixels: 268402689
         })
         .resize(10, 10) // Try to resize to very small size
