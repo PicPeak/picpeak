@@ -15,6 +15,7 @@ readonly SCRIPT_VERSION="2.1.0"
 readonly APP_NAME="PicPeak"
 readonly REPO_URL="https://github.com/PicPeak/picpeak.git"
 readonly NODE_VERSION="20"
+readonly NODE_MIN_VERSION="20.9.0"  # sharp >=0.35 requires Node >=20.9
 readonly MIN_RAM_DOCKER=2048
 readonly MIN_RAM_NATIVE=1024
 readonly MIN_DISK_GB=2
@@ -721,7 +722,7 @@ EOF
 ################################################################################
 
 install_nodejs() {
-    if command_exists node && [[ $(node -v | cut -d'v' -f2 | cut -d'.' -f1) -ge $NODE_VERSION ]]; then
+    if command_exists node && [[ "$(printf '%s\n' "$NODE_MIN_VERSION" "$(node -v | cut -d'v' -f2)" | sort -V | head -1)" == "$NODE_MIN_VERSION" ]]; then
         log_success "Node.js $(node -v) is already installed"
         return
     fi

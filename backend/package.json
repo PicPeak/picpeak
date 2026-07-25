@@ -3,6 +3,9 @@
   "version": "3.45.4",
   "description": "Backend for PicPeak event photo sharing platform",
   "main": "server.js",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
