@@ -484,17 +484,20 @@ const DEFAULT_EXCLUDE_PATTERNS = ['.nfs*', '.DS_Store', 'Thumbs.db'];
  *                         Used to evaluate feature_flag gates.
  * @returns {Promise<Array<{ path: string, feature_flag: string|null }>>}
  */
-async function loadBackupPathRows() {
+async function loadBackupPathRows({ includeDisabled = false } = {}) {
   try {
     if (!(await db.schema.hasTable('backup_paths'))) {
       logger.warn('backup_paths table missing — falling back to LEGACY_BACKUP_PATHS');
       return LEGACY_BACKUP_PATHS;
     }
-    const rows = await db('backup_paths')
-      .where('include_in_default', formatBoolean(true))
+    let query = db('backup_paths')
       .orderBy('display_order', 'asc')
-      .select('path', 'feature_flag');
-    if (!rows.length) {
+      .select('path', 'feature_flag', 'include_in_default');
+    if (!includeDisabled) {
+      query = query.where('include_in_default', formatBoolean(true));
+    }
+    const rows = await query;
+    if (!rows.filter((r) => normalizeBoolean(r.include_in_default)).length) {
       logger.warn('backup_paths has no rows with include_in_default=true — falling back to LEGACY_BACKUP_PATHS');
       return LEGACY_BACKUP_PATHS;
     }
@@ -552,9 +555,14 @@ async function resolveBackupPaths(config) {
 
 // The rows the admin de-selected — the rsync destination needs them as
 // --exclude filters because it syncs the whole storage root rather than
-// the walker's file list.
+// the walker's file list. Includes rows with include_in_default=false,
+// which the enabled-only loader would otherwise hide from rsync entirely.
 async function resolveExcludedBackupPaths(config) {
-  return (await loadBackupPathRows()).filter((row) => !backupPathIncluded(row, config));
+  const rows = await loadBackupPathRows({ includeDisabled: true });
+  return rows.filter((row) => {
+    const disabled = row.include_in_default !== undefined && !normalizeBoolean(row.include_in_default);
+    return disabled || !backupPathIncluded(row, config);
+  });
 }
 
 /**
@@ -1681,6 +1689,7 @@ service.resolveBackupPaths = resolveBackupPaths;
 service.resolveExcludedBackupPaths = resolveExcludedBackupPaths;
 service.backupPathIncluded = backupPathIncluded;
 service.effectiveFlagValue = effectiveFlagValue;
+service.normalizeBoolean = normalizeBoolean;
 service.buildRsyncArgs = buildRsyncArgs;
 service.resolveScheduleCron = resolveScheduleCron;
 service.getNextScheduledRun = getNextScheduledRun;

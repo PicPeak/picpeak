@@ -213,9 +213,10 @@ async function buildConfiguredPathReport(configuredRows, config) {
     let featureFlagValue = null;
     if (row.feature_flag) {
       // Alias-aware: show the value the gate actually used, not a seeded
-      // canonical key shadowed by the UI's spelling.
+      // canonical key shadowed by the UI's spelling. Normalize like the
+      // walker does — Boolean('false') is true.
       const v = backupService.effectiveFlagValue(row, config);
-      featureFlagValue = v === undefined || v === null ? null : Boolean(v);
+      featureFlagValue = v === undefined || v === null ? null : backupService.normalizeBoolean(v);
     }
 
     let coverage;
