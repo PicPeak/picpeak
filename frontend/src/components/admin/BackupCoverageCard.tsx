@@ -258,6 +258,12 @@ const SummaryCard: React.FC<{
             value={String(summary.skippedByFeatureFlagCount)}
           />
         )}
+        {summary.skippedBySettingCount > 0 && (
+          <Row
+            label={t('backup.coverage.summary.skippedBySetting', 'Skipped (backup settings)')}
+            value={String(summary.skippedBySettingCount)}
+          />
+        )}
         {summary.missingOnDiskCount > 0 && (
           <Row
             label={t('backup.coverage.summary.missingOnDisk', 'Missing on disk')}

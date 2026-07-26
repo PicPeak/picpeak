@@ -534,6 +534,18 @@ function backupPathIncluded(row, config) {
   return normalizeBoolean(flagValue);
 }
 
+// The raw config value the gate actually consulted for a row's feature
+// flag (alias-aware) — the coverage report shows it next to the status,
+// so it must not display the shadowed seeded key.
+function effectiveFlagValue(row, config) {
+  if (!row.feature_flag || !config) return undefined;
+  const alias = FLAG_ALIASES[row.feature_flag];
+  if (alias && config[alias] !== undefined && config[alias] !== null) {
+    return config[alias];
+  }
+  return config[row.feature_flag];
+}
+
 async function resolveBackupPaths(config) {
   return (await loadBackupPathRows()).filter((row) => backupPathIncluded(row, config));
 }
@@ -1668,6 +1680,7 @@ service.validateBackupManifest = validateBackupManifest;
 service.resolveBackupPaths = resolveBackupPaths;
 service.resolveExcludedBackupPaths = resolveExcludedBackupPaths;
 service.backupPathIncluded = backupPathIncluded;
+service.effectiveFlagValue = effectiveFlagValue;
 service.buildRsyncArgs = buildRsyncArgs;
 service.resolveScheduleCron = resolveScheduleCron;
 service.getNextScheduledRun = getNextScheduledRun;
