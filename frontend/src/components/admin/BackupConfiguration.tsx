@@ -5,7 +5,6 @@ import {
   Server,
   Cloud,
   HardDrive,
-  AlertCircle,
   Eye,
   EyeOff,
   Wifi,
@@ -111,8 +110,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
 
   const [showSecrets, setShowSecrets] = useState({
     s3_secret_key: false,
-    ssh_key: false,
-    encryption_passphrase: false
+    ssh_key: false
   });
 
   const [testingConnection, setTestingConnection] = useState(false);
@@ -152,7 +150,12 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
       return;
     }
 
-    onSave(formData);
+    onSave({
+      ...formData,
+      // Only a custom schedule carries a cron expression; sending the default
+      // cron alongside e.g. 'weekly' made the backend run daily (issue #871).
+      backup_schedule_cron: formData.backup_schedule === 'custom' ? formData.backup_schedule_cron : '',
+    });
   };
 
   const testConnection = async () => {
@@ -543,69 +546,6 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
               <p className="text-xs text-neutral-500 dark:text-neutral-400">{t('backup.configuration.whatToBackup.thumbnailsHelp')}</p>
             </div>
           </label>
-        </div>
-      </Card>
-
-      {/* Advanced Options */}
-      <Card className="p-6">
-        <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('backup.configuration.advancedOptions.title')}</h3>
-
-        <div className="space-y-4">
-          <label className="flex items-center">
-            <input
-              type="checkbox"
-              checked={formData.backup_compression}
-              onChange={(e) => handleChange('backup_compression', e.target.checked)}
-              className="h-4 w-4 text-primary focus:ring-primary border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
-            />
-            <div className="ml-3">
-              <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('backup.configuration.advancedOptions.compression')}</span>
-              <p className="text-xs text-neutral-500 dark:text-neutral-400">{t('backup.configuration.advancedOptions.compressionHelp')}</p>
-            </div>
-          </label>
-
-          <div>
-            <label className="flex items-center mb-3">
-              <input
-                type="checkbox"
-                checked={formData.backup_encryption}
-                onChange={(e) => handleChange('backup_encryption', e.target.checked)}
-                className="h-4 w-4 text-primary focus:ring-primary border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
-              />
-              <div className="ml-3">
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('backup.configuration.advancedOptions.encryption')}</span>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400">{t('backup.configuration.advancedOptions.encryptionHelp')}</p>
-              </div>
-            </label>
-
-            {formData.backup_encryption && (
-              <div className="ml-7">
-                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                  {t('backup.configuration.advancedOptions.encryptionPassphrase')}
-                </label>
-                <div className="relative">
-                  <Input
-                    type={showSecrets.encryption_passphrase ? 'text' : 'password'}
-                    value={formData.backup_encryption_passphrase}
-                    onChange={(e) => handleChange('backup_encryption_passphrase', e.target.value)}
-                    placeholder={t('backup.configuration.advancedOptions.encryptionPassphraseHelp')}
-                    required={formData.backup_encryption}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowSecrets(prev => ({ ...prev, encryption_passphrase: !prev.encryption_passphrase }))}
-                    className="absolute top-1/2 -translate-y-1/2 right-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300"
-                  >
-                    {showSecrets.encryption_passphrase ? <EyeOff size={20} /> : <Eye size={20} />}
-                  </button>
-                </div>
-                <p className="mt-1 text-xs text-red-600">
-                  <AlertCircle className="inline h-3 w-3 mr-1" />
-                  {t('backup.configuration.advancedOptions.encryptionPassphraseHelp')}
-                </p>
-              </div>
-            )}
-          </div>
         </div>
       </Card>
 
