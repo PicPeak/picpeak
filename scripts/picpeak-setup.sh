@@ -15,6 +15,7 @@ readonly SCRIPT_VERSION="2.1.0"
 readonly APP_NAME="PicPeak"
 readonly REPO_URL="https://github.com/PicPeak/picpeak.git"
 readonly NODE_VERSION="20"
+readonly NODE_MIN_VERSION="20.19.0"  # backend engines: ^20.19.0 || >=22 (sharp 0.35, html-to-text 10)
 readonly MIN_RAM_DOCKER=2048
 readonly MIN_RAM_NATIVE=1024
 readonly MIN_DISK_GB=2
@@ -721,7 +722,15 @@ EOF
 ################################################################################
 
 install_nodejs() {
-    if command_exists node && [[ $(node -v | cut -d'v' -f2 | cut -d'.' -f1) -ge $NODE_VERSION ]]; then
+    # --update dispatches here before main() runs detect_os, so detect on demand
+    if [[ -z "$PACKAGE_MANAGER" ]]; then
+        detect_os
+    fi
+
+    local node_ver
+    node_ver=$(command_exists node && node -v | cut -d'v' -f2 || echo "0")
+    # backend engines range is ^20.19.0 || >=22 (Node 21 is excluded by the glob/minimatch family)
+    if [[ "$(printf '%s\n' "$NODE_MIN_VERSION" "$node_ver" | sort -V | head -1)" == "$NODE_MIN_VERSION" && "${node_ver%%.*}" != "21" ]]; then
         log_success "Node.js $(node -v) is already installed"
         return
     fi
@@ -738,7 +747,12 @@ install_nodejs() {
             $PACKAGE_MANAGER install -y nodejs
             ;;
     esac
-    
+
+    # Package managers won't downgrade a newer Node (e.g. 21), so re-verify before continuing
+    node_ver=$(command_exists node && node -v | cut -d'v' -f2 || echo "0")
+    if [[ "$(printf '%s\n' "$NODE_MIN_VERSION" "$node_ver" | sort -V | head -1)" != "$NODE_MIN_VERSION" || "${node_ver%%.*}" == "21" ]]; then
+        die "Node.js v$node_ver does not satisfy the backend requirement (^$NODE_MIN_VERSION || >=22); remove the current Node.js, install a supported version, then re-run this script"
+    fi
     log_success "Node.js installed: $(node -v)"
 }
 
@@ -1254,7 +1268,10 @@ update_docker_installation() {
 
 update_native_installation() {
     log_step "Updating native installation..."
-    
+
+    # Make sure the runtime satisfies the backend engines range before taking the service down
+    install_nodejs
+
     # Stop services
     systemctl stop picpeak-backend || true
     if systemctl list-unit-files | grep -q '^picpeak-workers.service'; then
