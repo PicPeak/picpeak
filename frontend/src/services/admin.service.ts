@@ -253,6 +253,7 @@ export type BackupPathCoverage =
   | 'will-scan'
   | 'skipped-by-toggle'
   | 'skipped-by-feature-flag'
+  | 'skipped-by-setting'
   | 'missing-on-disk';
 
 export interface BackupCoveragePath {

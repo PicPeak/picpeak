@@ -393,7 +393,11 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = []) 
 
       const isExcluded = excludePatterns.some(pattern => {
         if (pattern.includes('*')) {
-          const regex = new RegExp(`^${pattern.replace(/\*/g, '.*')}$`);
+          // Escape regex metacharacters before expanding the glob star — the
+          // raw replace turned '.nfs*' into /^.nfs.*$/ whose leading dot
+          // matched any character (e.g. 'anfs-photo.jpg' was excluded too).
+          const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+          const regex = new RegExp(`^${escaped}$`);
           return regex.test(entry.name);
         }
         return entry.name === pattern;
@@ -480,45 +484,65 @@ const DEFAULT_EXCLUDE_PATTERNS = ['.nfs*', '.DS_Store', 'Thumbs.db'];
  *                         Used to evaluate feature_flag gates.
  * @returns {Promise<Array<{ path: string, feature_flag: string|null }>>}
  */
-async function resolveBackupPaths(config) {
-  let rows;
+async function loadBackupPathRows() {
   try {
     if (!(await db.schema.hasTable('backup_paths'))) {
       logger.warn('backup_paths table missing — falling back to LEGACY_BACKUP_PATHS');
-      rows = LEGACY_BACKUP_PATHS;
-    } else {
-      rows = await db('backup_paths')
-        .where('include_in_default', formatBoolean(true))
-        .orderBy('display_order', 'asc')
-        .select('path', 'feature_flag');
-      if (!rows.length) {
-        logger.warn('backup_paths has no rows with include_in_default=true — falling back to LEGACY_BACKUP_PATHS');
-        rows = LEGACY_BACKUP_PATHS;
-      }
+      return LEGACY_BACKUP_PATHS;
     }
+    const rows = await db('backup_paths')
+      .where('include_in_default', formatBoolean(true))
+      .orderBy('display_order', 'asc')
+      .select('path', 'feature_flag');
+    if (!rows.length) {
+      logger.warn('backup_paths has no rows with include_in_default=true — falling back to LEGACY_BACKUP_PATHS');
+      return LEGACY_BACKUP_PATHS;
+    }
+    return rows;
   } catch (err) {
     logger.warn(`Failed to query backup_paths (${err.message}) — falling back to LEGACY_BACKUP_PATHS`);
-    rows = LEGACY_BACKUP_PATHS;
+    return LEGACY_BACKUP_PATHS;
   }
+}
 
-  // Apply feature_flag gating. A row with feature_flag='backup_include_archived'
-  // requires config.backup_include_archived to be truthy (same semantics as
-  // the historical `includeArchived` parameter).
-  return rows.filter((row) => {
-    const optOutKey = OPT_OUT_FLAGS[row.path];
-    if (optOutKey && config) {
-      const optOutValue = config[optOutKey];
-      if (optOutValue !== undefined && optOutValue !== null && normalizeBoolean(optOutValue) === false) {
-        return false;
-      }
+// Per-row gate. Applies the UI opt-out toggles first, then feature_flag
+// gating: a row with feature_flag='backup_include_archived' requires the
+// corresponding config key to be truthy (same semantics as the historical
+// `includeArchived` parameter).
+function backupPathIncluded(row, config) {
+  const optOutKey = OPT_OUT_FLAGS[row.path];
+  if (optOutKey && config) {
+    const optOutValue = config[optOutKey];
+    if (optOutValue !== undefined && optOutValue !== null && normalizeBoolean(optOutValue) === false) {
+      return false;
     }
-    if (!row.feature_flag) return true;
-    let flagValue = config ? config[row.feature_flag] : undefined;
-    if ((flagValue === undefined || flagValue === null) && config && FLAG_ALIASES[row.feature_flag]) {
-      flagValue = config[FLAG_ALIASES[row.feature_flag]];
+  }
+  if (!row.feature_flag) return true;
+  let flagValue;
+  if (config) {
+    // The alias (backup_include_archives) is what the current UI writes;
+    // the canonical singular key is seeded true by migration on every
+    // install, so the UI value must take precedence or the checkbox can
+    // never turn the flag off.
+    const alias = FLAG_ALIASES[row.feature_flag];
+    if (alias && config[alias] !== undefined && config[alias] !== null) {
+      flagValue = config[alias];
+    } else {
+      flagValue = config[row.feature_flag];
     }
-    return normalizeBoolean(flagValue);
-  });
+  }
+  return normalizeBoolean(flagValue);
+}
+
+async function resolveBackupPaths(config) {
+  return (await loadBackupPathRows()).filter((row) => backupPathIncluded(row, config));
+}
+
+// The rows the admin de-selected — the rsync destination needs them as
+// --exclude filters because it syncs the whole storage root rather than
+// the walker's file list.
+async function resolveExcludedBackupPaths(config) {
+  return (await loadBackupPathRows()).filter((row) => !backupPathIncluded(row, config));
 }
 
 /**
@@ -728,7 +752,7 @@ function validateRsyncParam(value, label) {
   return value;
 }
 
-function buildRsyncArgs(config) {
+function buildRsyncArgs(config, extraExcludes = []) {
   const storagePath = getStoragePath();
   const host = validateRsyncParam(config.backup_rsync_host, 'host');
   const remotePath = validateRsyncParam(config.backup_rsync_path, 'remote path');
@@ -755,7 +779,14 @@ function buildRsyncArgs(config) {
     args.push('-e', `ssh -i ${sshKey} -o StrictHostKeyChecking=no`);
   }
 
-  const excludePatterns = config.backup_exclude_patterns || [];
+  // Same noise filters as the walker, plus the de-selected backup paths
+  // (extraExcludes) — rsync syncs the whole storage root, so this is the
+  // only place the What-to-Backup selection can take effect for rsync.
+  const excludePatterns = [...new Set([
+    ...DEFAULT_EXCLUDE_PATTERNS,
+    ...(Array.isArray(config.backup_exclude_patterns) ? config.backup_exclude_patterns : []),
+    ...extraExcludes,
+  ])];
   excludePatterns.forEach(pattern => args.push('--exclude', pattern));
 
   const source = `${storagePath}/`;
@@ -794,7 +825,11 @@ function parseRsyncStats(output) {
 
 async function performRsyncBackup(config, files) {
   const { spawnAsync } = require('../utils/safeExec');
-  const rsyncArgs = buildRsyncArgs(config);
+  // Anchored excludes for the de-selected What-to-Backup paths; rsync
+  // otherwise transfers the whole storage root regardless of the walker's
+  // file list (which only feeds manifests and file state).
+  const excludedPaths = await resolveExcludedBackupPaths(config);
+  const rsyncArgs = buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`));
   const { stdout } = await spawnAsync('rsync', rsyncArgs);
   const stats = parseRsyncStats(stdout);
 
@@ -1631,6 +1666,9 @@ service.cleanupOldBackupRuns = cleanupOldBackupRuns;
 service.getBackupManifest = getBackupManifest;
 service.validateBackupManifest = validateBackupManifest;
 service.resolveBackupPaths = resolveBackupPaths;
+service.resolveExcludedBackupPaths = resolveExcludedBackupPaths;
+service.backupPathIncluded = backupPathIncluded;
+service.buildRsyncArgs = buildRsyncArgs;
 service.resolveScheduleCron = resolveScheduleCron;
 service.getNextScheduledRun = getNextScheduledRun;
 

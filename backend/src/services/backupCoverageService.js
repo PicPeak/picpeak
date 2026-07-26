@@ -219,10 +219,10 @@ async function buildConfiguredPathReport(configuredRows, config) {
     let coverage;
     if (!includedInDefault) {
       coverage = 'skipped-by-toggle';
-    } else if (row.feature_flag && featureFlagValue !== true) {
-      // null (unset) and explicit false both gate the path off — matches
-      // the walker's normalizeBoolean semantics
-      coverage = 'skipped-by-feature-flag';
+    } else if (!backupService.backupPathIncluded(row, config)) {
+      // Same gate the walker uses — feature flags (incl. the UI's
+      // backup_include_archives alias) and the What-to-Backup opt-outs.
+      coverage = row.feature_flag ? 'skipped-by-feature-flag' : 'skipped-by-setting';
     } else if (!stat.exists) {
       coverage = 'missing-on-disk';
     } else {

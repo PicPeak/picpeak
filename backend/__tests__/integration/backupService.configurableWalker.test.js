@@ -225,6 +225,42 @@ describe('backupService — configurable walker (backup_paths)', () => {
       });
       expect(files.map((f) => f.relativePath)).toContain('events/archived/E4/archived.jpg');
     });
+
+    it('the UI plural key beats the migration-seeded singular key', async () => {
+      // Migration seeds backup_include_archived=true on every install; the
+      // form only ever writes the plural key, so unchecking Archives must
+      // win over the stale seeded value.
+      seedFile('events/archived/E5/archived.jpg');
+
+      const files = await backupService.getFilesToBackup({
+        backup_include_archived: true,   // seeded default
+        backup_include_archives: false,  // what the admin actually chose
+      });
+      expect(files.map((f) => f.relativePath)).not.toContain('events/archived/E5/archived.jpg');
+    });
+
+    it('rsync gets the de-selected paths and noise filters as --exclude args', async () => {
+      const excluded = await backupService.resolveExcludedBackupPaths({
+        backup_include_thumbnails: false,
+        backup_include_archives: false,
+      });
+      expect(excluded.map((r) => r.path)).toEqual(
+        expect.arrayContaining(['thumbnails', 'events/archived'])
+      );
+
+      const args = backupService.buildRsyncArgs(
+        { backup_rsync_host: 'backup.example.com', backup_rsync_path: '/srv/backups' },
+        excluded.map((r) => `/${r.path}/`)
+      );
+      const excludes = args
+        .map((a, i) => (a === '--exclude' ? args[i + 1] : null))
+        .filter(Boolean);
+      expect(excludes).toEqual(expect.arrayContaining([
+        '.nfs*',
+        '/thumbnails/',
+        '/events/archived/',
+      ]));
+    });
   });
 
   // Issue #871 — .nfs* silly-rename artifacts were uploaded to S3.
@@ -252,6 +288,21 @@ describe('backupService — configurable walker (backup_paths)', () => {
 
     expect(rels).toContain('events/active/E1/photo.jpg');
     expect(rels).not.toContain('events/active/E1/scratch.tmp');
+  });
+
+  it('glob patterns are literal outside the star (.nfs* must not eat anfs-…)', async () => {
+    seedFile('events/active/E1/anfs-photo.jpg');
+    seedFile('events/active/E1/notes-tmp');
+
+    const files = await backupService.getFilesToBackup({
+      backup_exclude_patterns: ['*.tmp'],
+    });
+    const rels = files.map((f) => f.relativePath);
+
+    // '.nfs*' used to compile to /^.nfs.*$/ whose dot matched any char;
+    // '*.tmp' used to compile to /^.*.tmp$/ which also matched 'notes-tmp'.
+    expect(rels).toContain('events/active/E1/anfs-photo.jpg');
+    expect(rels).toContain('events/active/E1/notes-tmp');
   });
 
   // Issue #871 — weekly schedules silently ran daily, and the dashboard's
