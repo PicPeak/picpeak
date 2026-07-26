@@ -430,6 +430,7 @@
         "willScan": "Wird gescannt",
         "skippedByToggle": "Aus",
         "skippedByFlag": "Per Flag aus",
+        "skippedBySetting": "In Backup-Einstellungen aus",
         "missingOnDisk": "Auf Festplatte fehlend"
       },
       "drift": {

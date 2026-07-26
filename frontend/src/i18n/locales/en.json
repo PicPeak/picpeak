@@ -2876,6 +2876,7 @@
         "willScan": "Will scan",
         "skippedByToggle": "Off",
         "skippedByFlag": "Gated off",
+        "skippedBySetting": "Off (backup settings)",
         "missingOnDisk": "Missing on disk"
       },
       "drift": {

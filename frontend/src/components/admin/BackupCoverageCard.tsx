@@ -380,6 +380,10 @@ const CoverageBadge: React.FC<{ coverage: BackupPathCoverage }> = ({ coverage })
       tone: 'neutral',
       label: t('backup.coverage.coverage.skippedByFlag', 'Gated off'),
     },
+    'skipped-by-setting': {
+      tone: 'neutral',
+      label: t('backup.coverage.coverage.skippedBySetting', 'Off (backup settings)'),
+    },
     'missing-on-disk': {
       tone: 'amber',
       label: t('backup.coverage.coverage.missingOnDisk', 'Missing on disk'),
