@@ -290,6 +290,7 @@ export interface BackupCoverageReport {
     willScanCount: number;
     skippedByToggleCount: number;
     skippedByFeatureFlagCount: number;
+    skippedBySettingCount: number;
     missingOnDiskCount: number;
     driftCount: number;
     tableMissingFallbackInUse: boolean;

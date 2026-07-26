@@ -212,8 +212,10 @@ async function buildConfiguredPathReport(configuredRows, config) {
     const includedInDefault = Boolean(row.include_in_default);
     let featureFlagValue = null;
     if (row.feature_flag) {
-      const v = config[row.feature_flag];
-      featureFlagValue = v === undefined ? null : Boolean(v);
+      // Alias-aware: show the value the gate actually used, not a seeded
+      // canonical key shadowed by the UI's spelling.
+      const v = backupService.effectiveFlagValue(row, config);
+      featureFlagValue = v === undefined || v === null ? null : Boolean(v);
     }
 
     let coverage;
@@ -313,6 +315,7 @@ async function getCoverageReport() {
     willScanCount:           paths.filter((p) => p.coverage === 'will-scan').length,
     skippedByToggleCount:    paths.filter((p) => p.coverage === 'skipped-by-toggle').length,
     skippedByFeatureFlagCount: paths.filter((p) => p.coverage === 'skipped-by-feature-flag').length,
+    skippedBySettingCount:   paths.filter((p) => p.coverage === 'skipped-by-setting').length,
     missingOnDiskCount:      paths.filter((p) => p.coverage === 'missing-on-disk').length,
     driftCount: unconfiguredOnDisk.length,
     tableMissingFallbackInUse: fallback,

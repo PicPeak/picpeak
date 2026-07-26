@@ -101,7 +101,9 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
     backup_include_database: true,
     backup_include_photos: true,
     backup_include_archives: true,
-    backup_include_thumbnails: false,
+    // Matches the backend never-saved fallback (include everything) so the
+    // form does not show "off" while thumbnails are in fact being backed up.
+    backup_include_thumbnails: true,
     backup_include_temp: false,
     backup_compression: true,
     backup_encryption: false,
