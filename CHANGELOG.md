@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.5](https://github.com/PicPeak/picpeak/compare/v3.45.4...v3.45.5) (2026-07-26)
+
+
+### Bug Fixes
+
+* **security:** bump backend deps to close all 14 open Trivy code-scanning alerts (stable) ([#870](https://github.com/PicPeak/picpeak/issues/870)) ([39696d4](https://github.com/PicPeak/picpeak/commit/39696d42fe22478aee1b8d777d8bcfd5ef986fe4))
+* **security:** read the password-complexity key the settings UI writes (stable) ([#844](https://github.com/PicPeak/picpeak/issues/844)) ([50f5ca1](https://github.com/PicPeak/picpeak/commit/50f5ca1d5bbe6f03397b3dc66ea8c3bea538466e))
+
 ## [3.45.4](https://github.com/PicPeak/picpeak/compare/v3.45.3...v3.45.4) (2026-07-17)
 
 
