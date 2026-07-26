@@ -128,7 +128,7 @@ export const BackupManagement: React.FC = () => {
               <div className="flex items-center space-x-2">
                 <Clock className="h-5 w-5 text-neutral-400" />
                 <span className="text-sm text-neutral-600 dark:text-neutral-400">
-                  {t('backup.status.nextBackup')}: {backupStatus?.nextBackup || t('backup.status.notScheduled')}
+                  {t('backup.status.nextBackup')}: {backupStatus?.nextBackup ? fmtDateTime(backupStatus.nextBackup) : t('backup.status.notScheduled')}
                 </span>
               </div>
             )}
