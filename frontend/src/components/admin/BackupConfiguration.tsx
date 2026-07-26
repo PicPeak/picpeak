@@ -152,12 +152,16 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
       return;
     }
 
-    onSave({
-      ...formData,
-      // Only a custom schedule carries a cron expression; sending the default
-      // cron alongside e.g. 'weekly' made the backend run daily (issue #871).
-      backup_schedule_cron: formData.backup_schedule === 'custom' ? formData.backup_schedule_cron : '',
-    });
+    // A custom schedule needs a real 5-field cron — the backend silently
+    // falls back to daily 02:00 otherwise. For named schedules the stored
+    // cron is kept (the backend prefers the label), so switching back to
+    // Custom keeps the previously saved expression.
+    if (formData.backup_schedule === 'custom' && !/^\s*\S+(\s+\S+){4}\s*$/.test(formData.backup_schedule_cron)) {
+      toast.error(t('backup.configuration.messages.invalidCron', 'Please enter a valid cron expression (5 fields)'));
+      return;
+    }
+
+    onSave(formData);
   };
 
   const testConnection = async () => {

@@ -261,6 +261,17 @@ describe('backupService — configurable walker (backup_paths)', () => {
         '/events/archived/',
       ]));
     });
+
+    it('rows toggled off via include_in_default also become rsync excludes', async () => {
+      // The enabled-only loader hides these rows from the walker, but rsync
+      // syncs the whole storage root, so they must still appear as excludes.
+      await db('backup_paths').where('path', 'previews').update({
+        include_in_default: false,
+      });
+
+      const excluded = await backupService.resolveExcludedBackupPaths({});
+      expect(excluded.map((r) => r.path)).toContain('previews');
+    });
   });
 
   // Issue #871 — .nfs* silly-rename artifacts were uploaded to S3.
