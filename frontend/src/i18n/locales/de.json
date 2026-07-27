@@ -416,6 +416,7 @@
         "willScan": "Wird gescannt",
         "skippedByToggle": "Übersprungen (Schalter aus)",
         "skippedByFlag": "Übersprungen (Feature-Flag)",
+        "skippedBySetting": "Übersprungen (Backup-Einstellungen)",
         "missingOnDisk": "Auf Festplatte fehlend",
         "drift": "Nicht konfiguriert auf Festplatte (Drift)"
       },
@@ -430,6 +431,7 @@
         "willScan": "Wird gescannt",
         "skippedByToggle": "Aus",
         "skippedByFlag": "Per Flag aus",
+        "skippedBySetting": "In Backup-Einstellungen aus",
         "missingOnDisk": "Auf Festplatte fehlend"
       },
       "drift": {

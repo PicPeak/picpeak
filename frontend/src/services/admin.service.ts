@@ -251,6 +251,7 @@ export type BackupPathCoverage =
   | 'will-scan'
   | 'skipped-by-toggle'
   | 'skipped-by-feature-flag'
+  | 'skipped-by-setting'
   | 'missing-on-disk';
 
 export interface BackupCoveragePath {
@@ -289,6 +290,7 @@ export interface BackupCoverageReport {
     willScanCount: number;
     skippedByToggleCount: number;
     skippedByFeatureFlagCount: number;
+    skippedBySettingCount: number;
     missingOnDiskCount: number;
     driftCount: number;
     tableMissingFallbackInUse: boolean;

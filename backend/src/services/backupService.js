@@ -7,6 +7,7 @@ const os = require('os');
 const { promisify } = require('util');
 
 const cron = require('node-cron');
+const cronParser = require('cron-parser');
 const { db } = require('../database/db');
 const { queueEmail } = require('./emailProcessor');
 const logger = require('../utils/logger');
@@ -348,7 +349,10 @@ async function getDatabaseBackupInfoInternal() {
       return {
         type: recent.backup_type || 'unknown',
         backupFile: recent.file_path,
-        size: recent.file_size_bytes,
+        // file_size_bytes is a bigInteger column — node-postgres returns int8
+        // as a STRING, and `backedUpSize += size` then concatenates instead of
+        // adding (issue #871: "167.6 TB" dashboard size). Coerce at the source.
+        size: Number(recent.file_size_bytes) || 0,
         checksum: recent.checksum,
         hasChanged,
         backupTime: recent.completed_at,
@@ -389,7 +393,11 @@ async function scanDirectory(dirPath, fileList, basePath, excludePatterns = []) 
 
       const isExcluded = excludePatterns.some(pattern => {
         if (pattern.includes('*')) {
-          const regex = new RegExp(`^${pattern.replace(/\*/g, '.*')}$`);
+          // Escape regex metacharacters before expanding the glob star — the
+          // raw replace turned '.nfs*' into /^.nfs.*$/ whose leading dot
+          // matched any character (e.g. 'anfs-photo.jpg' was excluded too).
+          const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+          const regex = new RegExp(`^${escaped}$`);
           return regex.test(entry.name);
         }
         return entry.name === pattern;
@@ -437,6 +445,26 @@ const LEGACY_BACKUP_PATHS = [
   { path: 'business-docs',    feature_flag: null },
 ];
 
+// "What to Backup" opt-OUT toggles written by BackupConfiguration.tsx.
+// Default-ON semantics: only an explicit false excludes the path, so
+// installs that never saved the backup form keep backing up everything
+// (issue #871: unchecking Thumbnails had no effect because these keys
+// were stored but never read).
+const OPT_OUT_FLAGS = {
+  'events/active': 'backup_include_photos',
+  'thumbnails': 'backup_include_thumbnails',
+};
+
+// The UI "Archives" checkbox writes backup_include_archives (plural) while
+// the feature_flag rows use backup_include_archived — accept both.
+const FLAG_ALIASES = {
+  backup_include_archived: 'backup_include_archives',
+};
+
+// Filesystem noise that must never land in a backup: NFS silly-rename
+// artifacts (issue #871 showed .nfs* files uploaded to S3) and OS metadata.
+const DEFAULT_EXCLUDE_PATTERNS = ['.nfs*', '.DS_Store', 'Thumbs.db'];
+
 /**
  * Resolve the walker's target subdirectories from `backup_paths`.
  *
@@ -456,34 +484,84 @@ const LEGACY_BACKUP_PATHS = [
  *                         Used to evaluate feature_flag gates.
  * @returns {Promise<Array<{ path: string, feature_flag: string|null }>>}
  */
-async function resolveBackupPaths(config) {
-  let rows;
+async function loadBackupPathRows({ includeDisabled = false } = {}) {
   try {
     if (!(await db.schema.hasTable('backup_paths'))) {
       logger.warn('backup_paths table missing — falling back to LEGACY_BACKUP_PATHS');
-      rows = LEGACY_BACKUP_PATHS;
-    } else {
-      rows = await db('backup_paths')
-        .where('include_in_default', formatBoolean(true))
-        .orderBy('display_order', 'asc')
-        .select('path', 'feature_flag');
-      if (!rows.length) {
-        logger.warn('backup_paths has no rows with include_in_default=true — falling back to LEGACY_BACKUP_PATHS');
-        rows = LEGACY_BACKUP_PATHS;
-      }
+      return LEGACY_BACKUP_PATHS;
     }
+    let query = db('backup_paths')
+      .orderBy('display_order', 'asc')
+      .select('path', 'feature_flag', 'include_in_default');
+    if (!includeDisabled) {
+      query = query.where('include_in_default', formatBoolean(true));
+    }
+    const rows = await query;
+    if (!rows.filter((r) => normalizeBoolean(r.include_in_default)).length) {
+      logger.warn('backup_paths has no rows with include_in_default=true — falling back to LEGACY_BACKUP_PATHS');
+      return LEGACY_BACKUP_PATHS;
+    }
+    return rows;
   } catch (err) {
     logger.warn(`Failed to query backup_paths (${err.message}) — falling back to LEGACY_BACKUP_PATHS`);
-    rows = LEGACY_BACKUP_PATHS;
+    return LEGACY_BACKUP_PATHS;
   }
+}
 
-  // Apply feature_flag gating. A row with feature_flag='backup_include_archived'
-  // requires config.backup_include_archived to be truthy (same semantics as
-  // the historical `includeArchived` parameter).
+// Per-row gate. Applies the UI opt-out toggles first, then feature_flag
+// gating: a row with feature_flag='backup_include_archived' requires the
+// corresponding config key to be truthy (same semantics as the historical
+// `includeArchived` parameter).
+function backupPathIncluded(row, config) {
+  const optOutKey = OPT_OUT_FLAGS[row.path];
+  if (optOutKey && config) {
+    const optOutValue = config[optOutKey];
+    if (optOutValue !== undefined && optOutValue !== null && normalizeBoolean(optOutValue) === false) {
+      return false;
+    }
+  }
+  if (!row.feature_flag) return true;
+  let flagValue;
+  if (config) {
+    // The alias (backup_include_archives) is what the current UI writes;
+    // the canonical singular key is seeded true by migration on every
+    // install, so the UI value must take precedence or the checkbox can
+    // never turn the flag off.
+    const alias = FLAG_ALIASES[row.feature_flag];
+    if (alias && config[alias] !== undefined && config[alias] !== null) {
+      flagValue = config[alias];
+    } else {
+      flagValue = config[row.feature_flag];
+    }
+  }
+  return normalizeBoolean(flagValue);
+}
+
+// The raw config value the gate actually consulted for a row's feature
+// flag (alias-aware) — the coverage report shows it next to the status,
+// so it must not display the shadowed seeded key.
+function effectiveFlagValue(row, config) {
+  if (!row.feature_flag || !config) return undefined;
+  const alias = FLAG_ALIASES[row.feature_flag];
+  if (alias && config[alias] !== undefined && config[alias] !== null) {
+    return config[alias];
+  }
+  return config[row.feature_flag];
+}
+
+async function resolveBackupPaths(config) {
+  return (await loadBackupPathRows()).filter((row) => backupPathIncluded(row, config));
+}
+
+// The rows the admin de-selected — the rsync destination needs them as
+// --exclude filters because it syncs the whole storage root rather than
+// the walker's file list. Includes rows with include_in_default=false,
+// which the enabled-only loader would otherwise hide from rsync entirely.
+async function resolveExcludedBackupPaths(config) {
+  const rows = await loadBackupPathRows({ includeDisabled: true });
   return rows.filter((row) => {
-    if (!row.feature_flag) return true;
-    const flagValue = config ? config[row.feature_flag] : undefined;
-    return normalizeBoolean(flagValue);
+    const disabled = row.include_in_default !== undefined && !normalizeBoolean(row.include_in_default);
+    return disabled || !backupPathIncluded(row, config);
   });
 }
 
@@ -574,6 +652,14 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
 
   const targets = await resolveBackupPaths(config);
 
+  // backup_exclude_patterns was only honored by the rsync destination
+  // (as --exclude args); the local/S3 walker ignored it. Merge it with
+  // the always-on noise filters here so every destination agrees.
+  const configuredExcludes = Array.isArray(config.backup_exclude_patterns)
+    ? config.backup_exclude_patterns
+    : [];
+  const excludePatterns = [...new Set([...DEFAULT_EXCLUDE_PATTERNS, ...configuredExcludes])];
+
   for (const target of targets) {
     // CRM document estate is special-cased in the comment block below
     // because it's the most expensive omission to recover from:
@@ -589,7 +675,7 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     // those values refer to do not, leaving every CRM *_path column a
     // broken FK. scanDirectory short-circuits on ENOENT so installs
     // that never used CRM features won't error.
-    await scanDirectory(path.join(storagePath, target.path), files, storagePath);
+    await scanDirectory(path.join(storagePath, target.path), files, storagePath, excludePatterns);
   }
 
   return files;
@@ -686,7 +772,7 @@ function validateRsyncParam(value, label) {
   return value;
 }
 
-function buildRsyncArgs(config) {
+function buildRsyncArgs(config, extraExcludes = []) {
   const storagePath = getStoragePath();
   const host = validateRsyncParam(config.backup_rsync_host, 'host');
   const remotePath = validateRsyncParam(config.backup_rsync_path, 'remote path');
@@ -713,7 +799,14 @@ function buildRsyncArgs(config) {
     args.push('-e', `ssh -i ${sshKey} -o StrictHostKeyChecking=no`);
   }
 
-  const excludePatterns = config.backup_exclude_patterns || [];
+  // Same noise filters as the walker, plus the de-selected backup paths
+  // (extraExcludes) — rsync syncs the whole storage root, so this is the
+  // only place the What-to-Backup selection can take effect for rsync.
+  const excludePatterns = [...new Set([
+    ...DEFAULT_EXCLUDE_PATTERNS,
+    ...(Array.isArray(config.backup_exclude_patterns) ? config.backup_exclude_patterns : []),
+    ...extraExcludes,
+  ])];
   excludePatterns.forEach(pattern => args.push('--exclude', pattern));
 
   const source = `${storagePath}/`;
@@ -752,7 +845,11 @@ function parseRsyncStats(output) {
 
 async function performRsyncBackup(config, files) {
   const { spawnAsync } = require('../utils/safeExec');
-  const rsyncArgs = buildRsyncArgs(config);
+  // Anchored excludes for the de-selected What-to-Backup paths; rsync
+  // otherwise transfers the whole storage root regardless of the walker's
+  // file list (which only feeds manifests and file state).
+  const excludedPaths = await resolveExcludedBackupPaths(config);
+  const rsyncArgs = buildRsyncArgs(config, excludedPaths.map((row) => `/${row.path}/`));
   const { stdout } = await spawnAsync('rsync', rsyncArgs);
   const stats = parseRsyncStats(stdout);
 
@@ -1175,6 +1272,50 @@ async function runBackupInternal(isManual = false) {
   }
 }
 
+// Two settings cooperate here:
+//   - backup_schedule           — UI label like "daily" / "weekly" / "custom"
+//   - backup_schedule_cron      — actual cron expression (custom schedules)
+// Older startup code read backup_schedule and crashed when it found a label
+// instead of a cron expression. Resolution order: explicit cron field, then
+// map known labels, then fall back to default.
+const NAMED_SCHEDULES = {
+  hourly: '0 * * * *',
+  daily: '0 2 * * *',
+  weekly: '0 3 * * 0',  // Sunday 03:00
+  monthly: '0 4 1 * *',
+};
+
+function resolveScheduleCron(config) {
+  const isCronExpression = (s) => typeof s === 'string' && /^\s*\S+(\s+\S+){4}\s*$/.test(s);
+  const readSetting = (key) => {
+    if (config && Object.prototype.hasOwnProperty.call(config, key)) {
+      return String(config[key] ?? '').trim();
+    }
+    if (config?.__raw && Object.prototype.hasOwnProperty.call(config.__raw, key)) {
+      return String(parseSettingValue(config.__raw[key]) ?? '').trim();
+    }
+    return '';
+  };
+
+  let schedule = '0 2 * * *';
+  const cronCandidate = readSetting('backup_schedule_cron');
+  const labelCandidate = readSetting('backup_schedule');
+  // A named label wins over the cron field: the UI always used to send its
+  // default cron ('0 3 * * *') alongside e.g. backup_schedule='weekly', which
+  // silently turned weekly schedules into daily ones (issue #871). The cron
+  // field only applies for 'custom' (or when no known label is set).
+  if (labelCandidate && labelCandidate.toLowerCase() !== 'custom' && NAMED_SCHEDULES[labelCandidate.toLowerCase()]) {
+    schedule = NAMED_SCHEDULES[labelCandidate.toLowerCase()];
+  } else if (cronCandidate && isCronExpression(cronCandidate)) {
+    schedule = cronCandidate;
+  } else if (labelCandidate && isCronExpression(labelCandidate)) {
+    // Back-compat: a deployment that wrote a cron expression directly into
+    // backup_schedule (no _cron field) still works.
+    schedule = labelCandidate;
+  }
+  return schedule;
+}
+
 async function startBackupService() {
   try {
     const config = await resolveConfigWithFallback();
@@ -1192,42 +1333,7 @@ async function startBackupService() {
       backupJob = null;
     }
 
-    // Two settings cooperate here:
-    //   - backup_schedule           — UI label like "daily" / "weekly" / "custom"
-    //   - backup_schedule_cron      — actual cron expression
-    // The frontend writes both (BackupConfiguration.jsx). Older startup code
-    // here read backup_schedule and crashed when it found a label instead of
-    // a cron expression. Resolution order: explicit cron field, then map known
-    // labels, then fall back to default.
-    const NAMED_SCHEDULES = {
-      hourly: '0 * * * *',
-      daily: '0 2 * * *',
-      weekly: '0 3 * * 0',  // Sunday 03:00
-      monthly: '0 4 1 * *',
-    };
-    const isCronExpression = (s) => typeof s === 'string' && /^\s*\S+(\s+\S+){4}\s*$/.test(s);
-    const readSetting = (key) => {
-      if (config && Object.prototype.hasOwnProperty.call(config, key)) {
-        return String(config[key] ?? '').trim();
-      }
-      if (config?.__raw && Object.prototype.hasOwnProperty.call(config.__raw, key)) {
-        return String(parseSettingValue(config.__raw[key]) ?? '').trim();
-      }
-      return '';
-    };
-
-    let schedule = '0 2 * * *';
-    const cronCandidate = readSetting('backup_schedule_cron');
-    const labelCandidate = readSetting('backup_schedule');
-    if (cronCandidate && isCronExpression(cronCandidate)) {
-      schedule = cronCandidate;
-    } else if (labelCandidate && NAMED_SCHEDULES[labelCandidate.toLowerCase()]) {
-      schedule = NAMED_SCHEDULES[labelCandidate.toLowerCase()];
-    } else if (labelCandidate && isCronExpression(labelCandidate)) {
-      // Back-compat: a deployment that wrote a cron expression directly into
-      // backup_schedule (no _cron field) still works.
-      schedule = labelCandidate;
-    }
+    const schedule = resolveScheduleCron(config);
 
     backupJob = cron.schedule(schedule, async () => {
       logger.info('Starting scheduled backup');
@@ -1319,6 +1425,8 @@ async function getBackupStatus(limit = 10) {
     // ago looked identical to a successful one. Same "silent failure
     // not surfaced" class Stage A was designed to fight.
     const lastSuccessful = runs.find(r => r.status === 'completed') || null;
+    const config = await getBackupConfigInternal();
+    const nextRun = getNextScheduledRun(config);
     // Detect zombie running rows (started >30min ago, never updated)
     // — these are processes that died without writing a completed_at.
     // Surface them so the admin can tell at a glance vs a live run.
@@ -1339,7 +1447,8 @@ async function getBackupStatus(limit = 10) {
       recentRuns: runs,
       recentBackups: runs, // Alias for frontend compatibility
       totalBackups: runs.filter(r => r.status === 'completed').length,
-      nextScheduledRun: getNextScheduledRun()
+      nextScheduledRun: nextRun,
+      nextBackup: nextRun // BackupManagement.tsx reads this name
     };
   } catch (error) {
     logger.error('Failed to get backup status:', error);
@@ -1351,12 +1460,19 @@ async function getBackupStatus(limit = 10) {
   }
 }
 
-function getNextScheduledRun() {
-  const now = new Date();
-  const next = new Date(now);
-  next.setDate(now.getDate() + 1);
-  next.setHours(2, 0, 0, 0);
-  return next.toISOString();
+function getNextScheduledRun(config) {
+  // null → the UI shows "Not scheduled". Only a real, enabled schedule
+  // produces a date (issue #871: this used to be a hardcoded "tomorrow
+  // 02:00" that ignored the configured schedule entirely).
+  if (!config || !normalizeBoolean(config.backup_enabled)) {
+    return null;
+  }
+  try {
+    return cronParser.parseExpression(resolveScheduleCron(config)).next().toISOString();
+  } catch (error) {
+    logger.warn(`Could not compute next backup run: ${error.message}`);
+    return null;
+  }
 }
 
 async function cleanupOldBackupRuns(retentionDays = 30) {
@@ -1569,5 +1685,13 @@ service.getBackupStatus = getBackupStatus;
 service.cleanupOldBackupRuns = cleanupOldBackupRuns;
 service.getBackupManifest = getBackupManifest;
 service.validateBackupManifest = validateBackupManifest;
+service.resolveBackupPaths = resolveBackupPaths;
+service.resolveExcludedBackupPaths = resolveExcludedBackupPaths;
+service.backupPathIncluded = backupPathIncluded;
+service.effectiveFlagValue = effectiveFlagValue;
+service.normalizeBoolean = normalizeBoolean;
+service.buildRsyncArgs = buildRsyncArgs;
+service.resolveScheduleCron = resolveScheduleCron;
+service.getNextScheduledRun = getNextScheduledRun;
 
 module.exports = service;

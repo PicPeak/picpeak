@@ -212,17 +212,20 @@ async function buildConfiguredPathReport(configuredRows, config) {
     const includedInDefault = Boolean(row.include_in_default);
     let featureFlagValue = null;
     if (row.feature_flag) {
-      const v = config[row.feature_flag];
-      featureFlagValue = v === undefined ? null : Boolean(v);
+      // Alias-aware: show the value the gate actually used, not a seeded
+      // canonical key shadowed by the UI's spelling. Normalize like the
+      // walker does — Boolean('false') is true.
+      const v = backupService.effectiveFlagValue(row, config);
+      featureFlagValue = v === undefined || v === null ? null : backupService.normalizeBoolean(v);
     }
 
     let coverage;
     if (!includedInDefault) {
       coverage = 'skipped-by-toggle';
-    } else if (row.feature_flag && featureFlagValue !== true) {
-      // null (unset) and explicit false both gate the path off — matches
-      // the walker's normalizeBoolean semantics
-      coverage = 'skipped-by-feature-flag';
+    } else if (!backupService.backupPathIncluded(row, config)) {
+      // Same gate the walker uses — feature flags (incl. the UI's
+      // backup_include_archives alias) and the What-to-Backup opt-outs.
+      coverage = row.feature_flag ? 'skipped-by-feature-flag' : 'skipped-by-setting';
     } else if (!stat.exists) {
       coverage = 'missing-on-disk';
     } else {
@@ -313,6 +316,7 @@ async function getCoverageReport() {
     willScanCount:           paths.filter((p) => p.coverage === 'will-scan').length,
     skippedByToggleCount:    paths.filter((p) => p.coverage === 'skipped-by-toggle').length,
     skippedByFeatureFlagCount: paths.filter((p) => p.coverage === 'skipped-by-feature-flag').length,
+    skippedBySettingCount:   paths.filter((p) => p.coverage === 'skipped-by-setting').length,
     missingOnDiskCount:      paths.filter((p) => p.coverage === 'missing-on-disk').length,
     driftCount: unconfiguredOnDisk.length,
     tableMissingFallbackInUse: fallback,

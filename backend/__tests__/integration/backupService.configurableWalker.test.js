@@ -177,4 +177,203 @@ describe('backupService — configurable walker (backup_paths)', () => {
     const filesOn = await backupService.getFilesToBackup(true);
     expect(filesOn.map((f) => f.relativePath)).toContain('events/archived/E3/legacy.jpg');
   });
+
+  // Issue #871 — the "What to Backup" checkboxes were stored but never read.
+  describe('UI opt-out toggles (issue #871)', () => {
+    it('unchecking Thumbnails excludes thumbnails/', async () => {
+      seedFile('thumbnails/E1/thumb.jpg');
+      seedFile('events/active/E1/photo.jpg');
+
+      const files = await backupService.getFilesToBackup({
+        backup_include_thumbnails: false,
+      });
+      const rels = files.map((f) => f.relativePath);
+
+      expect(rels).toContain('events/active/E1/photo.jpg');
+      expect(rels).not.toContain('thumbnails/E1/thumb.jpg');
+    });
+
+    it('unchecking Photos excludes events/active', async () => {
+      seedFile('thumbnails/E1/thumb.jpg');
+      seedFile('events/active/E1/photo.jpg');
+
+      const files = await backupService.getFilesToBackup({
+        backup_include_photos: false,
+      });
+      const rels = files.map((f) => f.relativePath);
+
+      expect(rels).toContain('thumbnails/E1/thumb.jpg');
+      expect(rels).not.toContain('events/active/E1/photo.jpg');
+    });
+
+    it('defaults to including everything when the keys were never saved', async () => {
+      seedFile('thumbnails/E1/thumb.jpg');
+      seedFile('events/active/E1/photo.jpg');
+
+      const files = await backupService.getFilesToBackup({});
+      const rels = files.map((f) => f.relativePath);
+
+      expect(rels).toContain('thumbnails/E1/thumb.jpg');
+      expect(rels).toContain('events/active/E1/photo.jpg');
+    });
+
+    it("accepts the UI's plural backup_include_archives for the archived gate", async () => {
+      seedFile('events/archived/E4/archived.jpg');
+
+      const files = await backupService.getFilesToBackup({
+        backup_include_archives: true,
+      });
+      expect(files.map((f) => f.relativePath)).toContain('events/archived/E4/archived.jpg');
+    });
+
+    it('the UI plural key beats the migration-seeded singular key', async () => {
+      // Migration seeds backup_include_archived=true on every install; the
+      // form only ever writes the plural key, so unchecking Archives must
+      // win over the stale seeded value.
+      seedFile('events/archived/E5/archived.jpg');
+
+      const files = await backupService.getFilesToBackup({
+        backup_include_archived: true,   // seeded default
+        backup_include_archives: false,  // what the admin actually chose
+      });
+      expect(files.map((f) => f.relativePath)).not.toContain('events/archived/E5/archived.jpg');
+    });
+
+    it('rsync gets the de-selected paths and noise filters as --exclude args', async () => {
+      const excluded = await backupService.resolveExcludedBackupPaths({
+        backup_include_thumbnails: false,
+        backup_include_archives: false,
+      });
+      expect(excluded.map((r) => r.path)).toEqual(
+        expect.arrayContaining(['thumbnails', 'events/archived'])
+      );
+
+      const args = backupService.buildRsyncArgs(
+        { backup_rsync_host: 'backup.example.com', backup_rsync_path: '/srv/backups' },
+        excluded.map((r) => `/${r.path}/`)
+      );
+      const excludes = args
+        .map((a, i) => (a === '--exclude' ? args[i + 1] : null))
+        .filter(Boolean);
+      expect(excludes).toEqual(expect.arrayContaining([
+        '.nfs*',
+        '/thumbnails/',
+        '/events/archived/',
+      ]));
+    });
+
+    it('rows toggled off via include_in_default also become rsync excludes', async () => {
+      // The enabled-only loader hides these rows from the walker, but rsync
+      // syncs the whole storage root, so they must still appear as excludes.
+      await db('backup_paths').where('path', 'previews').update({
+        include_in_default: false,
+      });
+
+      const excluded = await backupService.resolveExcludedBackupPaths({});
+      expect(excluded.map((r) => r.path)).toContain('previews');
+    });
+  });
+
+  // Issue #871 — .nfs* silly-rename artifacts were uploaded to S3.
+  it('never backs up filesystem noise (.nfs*, .DS_Store)', async () => {
+    seedFile('thumbnails/E1/.nfs000000000000006600000008');
+    seedFile('events/active/E1/.DS_Store');
+    seedFile('events/active/E1/photo.jpg');
+
+    const files = await backupService.getFilesToBackup({});
+    const rels = files.map((f) => f.relativePath);
+
+    expect(rels).toContain('events/active/E1/photo.jpg');
+    expect(rels.some((r) => r.includes('.nfs'))).toBe(false);
+    expect(rels.some((r) => r.includes('.DS_Store'))).toBe(false);
+  });
+
+  it('the walker honors backup_exclude_patterns (previously rsync-only)', async () => {
+    seedFile('events/active/E1/photo.jpg');
+    seedFile('events/active/E1/scratch.tmp');
+
+    const files = await backupService.getFilesToBackup({
+      backup_exclude_patterns: ['*.tmp'],
+    });
+    const rels = files.map((f) => f.relativePath);
+
+    expect(rels).toContain('events/active/E1/photo.jpg');
+    expect(rels).not.toContain('events/active/E1/scratch.tmp');
+  });
+
+  it('glob patterns are literal outside the star (.nfs* must not eat anfs-…)', async () => {
+    seedFile('events/active/E1/anfs-photo.jpg');
+    seedFile('events/active/E1/notes-tmp');
+
+    const files = await backupService.getFilesToBackup({
+      backup_exclude_patterns: ['*.tmp'],
+    });
+    const rels = files.map((f) => f.relativePath);
+
+    // '.nfs*' used to compile to /^.nfs.*$/ whose dot matched any char;
+    // '*.tmp' used to compile to /^.*.tmp$/ which also matched 'notes-tmp'.
+    expect(rels).toContain('events/active/E1/anfs-photo.jpg');
+    expect(rels).toContain('events/active/E1/notes-tmp');
+  });
+
+  // Issue #871 — weekly schedules silently ran daily, and the dashboard's
+  // "next backup" was a hardcoded "tomorrow 02:00".
+  describe('schedule resolution + next run (issue #871)', () => {
+    it('a named label beats the stray default cron the UI used to send', () => {
+      expect(backupService.resolveScheduleCron({
+        backup_schedule: 'weekly',
+        backup_schedule_cron: '0 3 * * *', // old UI default, sent unconditionally
+      })).toBe('0 3 * * 0');
+    });
+
+    it('custom schedules use the cron field', () => {
+      expect(backupService.resolveScheduleCron({
+        backup_schedule: 'custom',
+        backup_schedule_cron: '15 5 * * 2',
+      })).toBe('15 5 * * 2');
+    });
+
+    it('falls back to the default daily cron', () => {
+      expect(backupService.resolveScheduleCron({})).toBe('0 2 * * *');
+    });
+
+    it('getNextScheduledRun is null when backups are disabled', () => {
+      expect(backupService.getNextScheduledRun(null)).toBeNull();
+      expect(backupService.getNextScheduledRun({ backup_enabled: false })).toBeNull();
+    });
+
+    it('getNextScheduledRun returns the real next weekly fire time', () => {
+      const iso = backupService.getNextScheduledRun({
+        backup_enabled: true,
+        backup_schedule: 'weekly',
+        backup_schedule_cron: '0 3 * * *',
+      });
+      const next = new Date(iso);
+      expect(Number.isNaN(next.getTime())).toBe(false);
+      expect(next.getTime()).toBeGreaterThan(Date.now());
+      expect(next.getDay()).toBe(0);   // Sunday
+      expect(next.getHours()).toBe(3); // 03:00
+    });
+  });
+
+  // Issue #871 — "Backup Size: 167.6 TB": file_size_bytes is a bigInteger
+  // column, node-postgres returns int8 as a string, and the S3 path did
+  // `backedUpSize += size` — string concatenation.
+  it('getDatabaseBackupInfo coerces file_size_bytes to a number', async () => {
+    await db('database_backup_runs').del();
+    await db('database_backup_runs').insert({
+      backup_type: 'full',
+      status: 'completed',
+      file_path: '/backups/db/dump.sql.gz',
+      // Simulate the PG int8-as-string driver behaviour (sqlite stores
+      // whatever it is handed, so the string round-trips).
+      file_size_bytes: '421988',
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    });
+
+    const info = await backupService.getDatabaseBackupInfo();
+    expect(typeof info.size).toBe('number');
+    expect(info.size).toBe(421988);
+  });
 });

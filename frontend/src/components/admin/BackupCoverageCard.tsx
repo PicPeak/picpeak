@@ -258,6 +258,12 @@ const SummaryCard: React.FC<{
             value={String(summary.skippedByFeatureFlagCount)}
           />
         )}
+        {summary.skippedBySettingCount > 0 && (
+          <Row
+            label={t('backup.coverage.summary.skippedBySetting', 'Skipped (backup settings)')}
+            value={String(summary.skippedBySettingCount)}
+          />
+        )}
         {summary.missingOnDiskCount > 0 && (
           <Row
             label={t('backup.coverage.summary.missingOnDisk', 'Missing on disk')}
@@ -379,6 +385,10 @@ const CoverageBadge: React.FC<{ coverage: BackupPathCoverage }> = ({ coverage })
     'skipped-by-feature-flag': {
       tone: 'neutral',
       label: t('backup.coverage.coverage.skippedByFlag', 'Gated off'),
+    },
+    'skipped-by-setting': {
+      tone: 'neutral',
+      label: t('backup.coverage.coverage.skippedBySetting', 'Off (backup settings)'),
     },
     'missing-on-disk': {
       tone: 'amber',
