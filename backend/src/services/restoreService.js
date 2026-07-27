@@ -298,7 +298,10 @@ class RestoreService {
         this.log('info', 'Applying post-restore migrations to restored database...');
         this.updateProgress('Applying any post-backup migrations...');
         const backendRoot = path.join(__dirname, '..', '..');
-        const { stderr } = await spawnAsync('npm', ['run', 'migrate:safe'], {
+        // Invoked via node directly — the runtime image ships no npm
+        // (see Dockerfile), and an ENOENT here would be swallowed by the
+        // non-fatal catch below, silently skipping post-restore migrations.
+        const { stderr } = await spawnAsync('node', ['migrations/run-migrations-safe.js'], {
           cwd: backendRoot,
           env: { ...process.env },
         });

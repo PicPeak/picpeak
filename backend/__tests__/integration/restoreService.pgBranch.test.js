@@ -183,22 +183,24 @@ describe('restoreService — PG branch scope contract (PR #596 review)', () => {
     expect(window).toMatch(/was_successful:\s*true/);
   });
 
-  it('npm run migrate:safe is invoked after the replay in restore()', () => {
+  it('the safe migration runner is invoked after the replay in restore()', () => {
     // Contract from PR #596 round 4: backups taken on older picpeak
     // versions must restore COMPLETELY on a newer image — even if new
     // migrations have been added since the backup was taken. The
-    // restore() flow shells out to `npm run migrate:safe` AFTER the
+    // restore() flow shells out to the safe migration runner AFTER the
     // operator-meta replay so the schema catches up to the running
     // code WITHIN the restore boundary (not on the next container
-    // restart).
+    // restart). Invoked as `node migrations/run-migrations-safe.js` —
+    // the runtime image ships no npm, so the former `npm run
+    // migrate:safe` would ENOENT into the non-fatal catch.
     //
     // Contract:
-    //   1. A `migrate:safe` shell-out exists somewhere in restoreService
+    //   1. A run-migrations-safe shell-out exists somewhere in restoreService
     //   2. It sits AFTER the replay drain — verification → replay →
     //      migrations is the documented order
     //   3. It does NOT sit inside performDatabaseRestore (must run
     //      against the reinit'd pool from the parent restore())
-    const migrateLine = findFirst(/['"]migrate:safe['"]/);
+    const migrateLine = findFirst(/run-migrations-safe\.js/);
     expect(migrateLine).toBeGreaterThan(0);
 
     const replayLine = findLast(/this\.preservedMetaSnapshot\.length\s*>\s*0/);
