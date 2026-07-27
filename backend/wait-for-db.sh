@@ -120,12 +120,14 @@ echo "Ensuring storage directories exist..."
 STORAGE_BASE="${STORAGE_PATH:-/app/storage}"
 mkdir -p "$STORAGE_BASE/events/active" "$STORAGE_BASE/events/archived" "$STORAGE_BASE/thumbnails" 2>/dev/null || true
 
-# Run migrations (use safe runner in production)
+# Run migrations (use safe runner in production). Invoked via node directly —
+# the runtime image no longer ships npm (see Dockerfile: its bundled deps kept
+# tripping CVE scanners while npm itself never runs in production).
 echo "Running database migrations..."
 if [ "$NODE_ENV" = "production" ]; then
-  npm run migrate:safe
+  node migrations/run-migrations-safe.js
 else
-  npm run migrate
+  node migrations/run-migrations.js
 fi
 
 # Execute the main command

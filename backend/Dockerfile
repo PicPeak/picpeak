@@ -37,14 +37,16 @@ ARG CACHEBUST=1
 # Upgrade all packages to fix security vulnerabilities (OpenSSL, libexpat, BusyBox CVEs)
 RUN echo "cachebust=${CACHEBUST}" && apk upgrade --no-cache
 
-# Upgrade the npm CLI in the final image so its bundled deps are patched
-# (sigstore 4.x, tar) — closes CVE-2026-48815 and the older @sigstore/core / tar
-# Trivy alerts. Safe here: only the CLI present in the image changes. Runtime
-# dependencies come from the builder stage (COPY --from=builder node_modules
-# below) and the entrypoint runs node, not npm — so npm 11's install behaviour
-# (the reason 10.x was pinned) never executes in this stage. npm 11 needs
-# Node >=22.9, satisfied by node:22-alpine.
-RUN npm install -g npm@11
+# Remove the npm CLI from the final image. Nothing runs npm here: the
+# entrypoint is node, runtime deps are COPY'd from the builder stage, and
+# wait-for-db.sh invokes the migration runners via node directly. npm's
+# bundled node_modules kept tripping Trivy (sigstore, tar 7.5.19,
+# brace-expansion 5.0.7 — even npm 12.0.1 still ships the vulnerable
+# copies), so shipping no npm ends that alert class instead of chasing
+# per-release patches. Note: `docker exec … npm run <script>` no longer
+# works in the container — use `node migrations/run-migrations-safe.js`
+# and friends instead.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 
 # Install dumb-init for proper signal handling, postgresql-client for database
 # checks, ffmpeg for video upload support, and su-exec for the root → nodejs
