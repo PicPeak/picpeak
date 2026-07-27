@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.7](https://github.com/PicPeak/picpeak/compare/v3.45.6...v3.45.7) (2026-07-27)
+
+
+### Bug Fixes
+
+* **security:** close 5 Trivy alerts — postcss/tar bumps + drop npm from the runtime image (stable) ([#879](https://github.com/PicPeak/picpeak/issues/879)) ([d868aac](https://github.com/PicPeak/picpeak/commit/d868aac70300149e77fb9568735b6481f88a644f))
+
 ## [3.45.6](https://github.com/PicPeak/picpeak/compare/v3.45.5...v3.45.6) (2026-07-27)
 
 
