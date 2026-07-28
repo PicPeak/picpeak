@@ -407,13 +407,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     setIsDragging(false);
   };
 
-  const handleImageClick = (e: React.MouseEvent) => {
-    // Only close if clicking the background, not the image
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
   // Touch event handlers: pinch-to-zoom (2 fingers) + single-finger
   // carousel-style swipe nav. Swipe is suppressed while zoomed in so the
   // user can pan instead. The carousel is also disabled mid-animation.
@@ -860,7 +853,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               key={slideKey(photo, slot)}
               className="h-full flex items-center justify-center"
               style={{ flex: '0 0 33.3333%' }}
-              onClick={handleImageClick}
             >
               <AuthenticatedImage
                 // Same preview-prefer-with-fallback logic as the
@@ -915,7 +907,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           <div
             ref={trackContainerRef}
             className="absolute top-0 left-0 bottom-0 overflow-hidden z-0"
-            onClick={isVideoCurrent ? undefined : handleImageClick}
             onMouseDown={isVideoCurrent ? undefined : handleMouseDown}
             onMouseMove={isVideoCurrent ? undefined : handleMouseMove}
             onMouseUp={isVideoCurrent ? undefined : handleMouseUp}
