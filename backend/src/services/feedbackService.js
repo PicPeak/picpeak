@@ -117,6 +117,12 @@ class FeedbackService {
         throw new Error('Invalid reaction');
       }
 
+      // Rating 0 clears the guest's rating (#884). Compare numerically —
+      // the route validator coerces, but direct callers may pass the
+      // numeric string "0", which is truthy and would slip past a bare
+      // `!rating` into the update/insert paths below.
+      const isRatingClear = feedback_type === 'rating' && !Number(rating);
+
       // Check if similar feedback already exists (prevent duplicates).
       // When a per-person guest_id is present, scope the check to that guest
       // so two guests on the same device can independently like a photo.
@@ -135,13 +141,21 @@ class FeedbackService {
         const existing = await duplicateQuery.first();
 
         if (existing) {
-          // Rating 0 clears the guest's rating (#884) — delete the row
-          // rather than storing 0, which would drag the photo's average
-          // down and still count in total_ratings.
-          if (feedback_type === 'rating' && !rating) {
-            await db('photo_feedback')
-              .where('id', existing.id)
-              .delete();
+          // Rating 0 clears the guest's rating (#884) — delete rather
+          // than store 0, which would drag the photo's average down and
+          // still count in total_ratings. Delete the full guest-scoped
+          // set, not existing.id: the check-then-insert above can race
+          // into duplicate rows (same defense as the reaction path), and
+          // clearing must not leave a stray duplicate in the average.
+          if (isRatingClear) {
+            const clearScope = db('photo_feedback').where({
+              photo_id: photoId,
+              event_id: eventId,
+              feedback_type: 'rating',
+            });
+            if (guest_id) clearScope.where('guest_id', guest_id);
+            else clearScope.where('guest_identifier', guestIdentifier);
+            await clearScope.delete();
 
             await this.updatePhotoFeedbackStats(photoId);
             return { removed: true };
@@ -213,7 +227,7 @@ class FeedbackService {
 
       // Rating 0 with no existing rating: nothing to clear — never insert a
       // 0-rating row (#884).
-      if (feedback_type === 'rating' && !rating) {
+      if (isRatingClear) {
         return { removed: true };
       }
 

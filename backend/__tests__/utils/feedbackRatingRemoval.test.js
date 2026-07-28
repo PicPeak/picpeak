@@ -127,6 +127,35 @@ describe('rating removal (#884)', () => {
     expect(await photoAverage()).toBe(4);
   });
 
+  test('numeric string "0" also clears (truthy-string bypass guard)', async () => {
+    await rate(4);
+    const removed = await rate('0');
+    expect(removed.removed).toBe(true);
+    expect(await ratingRows(GUEST_A)).toHaveLength(0);
+    expect(await photoAverage()).toBe(0);
+  });
+
+  test('clearing deletes racy duplicate rating rows, not just the first', async () => {
+    // Simulate the check-then-insert race: two rating rows for one guest.
+    const row = {
+      photo_id: photoId,
+      event_id: eventId,
+      feedback_type: 'rating',
+      guest_identifier: GUEST_A,
+      is_approved: 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    await db('photo_feedback').insert({ ...row, rating: 3 });
+    await db('photo_feedback').insert({ ...row, rating: 5 });
+    expect(await ratingRows(GUEST_A)).toHaveLength(2);
+
+    const removed = await rate(0);
+    expect(removed.removed).toBe(true);
+    expect(await ratingRows(GUEST_A)).toHaveLength(0);
+    expect(await photoAverage()).toBe(0);
+  });
+
   test('re-rating with a different value still updates in place', async () => {
     await rate(3);
     const updated = await rate(5);

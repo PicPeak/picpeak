@@ -1053,6 +1053,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               guest_email: email,
             });
             setMyRating(pendingAction.rating);
+            // Refresh the visible average/count — parity with the direct
+            // submit paths, and required for a clear (#884) so the old
+            // average doesn't linger until the photo is reopened.
+            try {
+              const fresh = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
+              setAvgRating(Number(fresh.summary?.average_rating) || 0);
+              setTotalRatings(Number(fresh.summary?.total_ratings) || 0);
+            } catch {}
           }
           // Sync gallery photo list (feedback filter chips) — parity with
           // the direct submit paths.
