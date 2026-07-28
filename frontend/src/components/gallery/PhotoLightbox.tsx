@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
-import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, MessageSquare, Heart, Star } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star } from 'lucide-react';
 import type { Photo } from '../../types';
 import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { AuthenticatedImage } from '../common';
@@ -407,6 +407,14 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     setIsDragging(false);
   };
 
+  // Double-click returns a zoomed image to fit-to-screen (#886). At zoom 1
+  // it does nothing.
+  const handleDoubleClick = () => {
+    if (zoom > 1) {
+      resetZoom();
+    }
+  };
+
   // Touch event handlers: pinch-to-zoom (2 fingers) + single-finger
   // carousel-style swipe nav. Swipe is suppressed while zoomed in so the
   // user can pan instead. The carousel is also disabled mid-animation.
@@ -696,7 +704,18 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             >
               <ZoomIn className="w-5 h-5 text-white" />
             </button>
-            
+            {/* One-click return from zoomed to fit-to-screen (#886).
+                Double-clicking the image does the same. */}
+            <button
+              onClick={resetZoom}
+              disabled={zoom <= 1}
+              className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label="Fit to screen"
+              title="Fit to screen"
+            >
+              <Minimize2 className="w-5 h-5 text-white" />
+            </button>
+
             <div className="w-px h-6 bg-white/20 mx-2" />
             
             {photoAllowsDownload && (
@@ -907,6 +926,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           <div
             ref={trackContainerRef}
             className="absolute top-0 left-0 bottom-0 overflow-hidden z-0"
+            onDoubleClick={isVideoCurrent ? undefined : handleDoubleClick}
             onMouseDown={isVideoCurrent ? undefined : handleMouseDown}
             onMouseMove={isVideoCurrent ? undefined : handleMouseMove}
             onMouseUp={isVideoCurrent ? undefined : handleMouseUp}
