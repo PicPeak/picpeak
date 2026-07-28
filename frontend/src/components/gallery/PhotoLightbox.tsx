@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star } from 'lucide-react';
 import type { Photo } from '../../types';
@@ -101,6 +101,21 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     const onResize = () => setIsSmallScreen(window.innerWidth < 640);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // The bottom toolbar is opaque and the image area stops above it (#888)
+  // so the toolbar never masks part of the photo. Its height varies
+  // (flex-wrap on small screens, optional filename line, safe-area
+  // padding), so measure it and keep the measurement fresh.
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) return;
+    setToolbarHeight(el.offsetHeight);
+    const observer = new ResizeObserver(() => setToolbarHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
 
@@ -656,9 +671,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       {/* Bottom toolbar. flex-wrap + reduced gap/padding on mobile prevent
          the action row from clipping when feedback (likes / 5-star ratings /
          comments) is enabled. pb-[env(safe-area-inset-bottom)] keeps the
-         buttons above the iOS home indicator. */}
+         buttons above the iOS home indicator. Opaque, and the image area
+         above is shortened by toolbarHeight so it never masks the photo
+         (#888). */}
       <div
-        className="absolute bottom-0 left-0 bg-gradient-to-t from-black/80 to-transparent px-3 pt-3 pb-3 sm:p-4 z-20"
+        ref={toolbarRef}
+        className="absolute bottom-0 left-0 bg-black px-3 pt-3 pb-3 sm:p-4 z-20"
         style={{
           right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
           paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))'
@@ -925,7 +943,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         return (
           <div
             ref={trackContainerRef}
-            className="absolute top-0 left-0 bottom-0 overflow-hidden z-0"
+            className="absolute top-0 left-0 overflow-hidden z-0"
             onDoubleClick={isVideoCurrent ? undefined : handleDoubleClick}
             onMouseDown={isVideoCurrent ? undefined : handleMouseDown}
             onMouseMove={isVideoCurrent ? undefined : handleMouseMove}
@@ -938,6 +956,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             style={{
               cursor: isVideoCurrent ? 'default' : (zoom > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default'),
               right: isDesktopFeedback ? `${desktopFeedbackWidth}px` : 0,
+              // Stop above the opaque toolbar so it never masks the
+              // photo (#888).
+              bottom: `${toolbarHeight}px`,
               // Tell the browser we handle horizontal gestures ourselves so
               // it doesn't fight us with edge-swipe back navigation, native
               // pinch-zoom, etc. Videos keep default touch behaviour.
