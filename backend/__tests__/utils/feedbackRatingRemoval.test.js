@@ -135,6 +135,15 @@ describe('rating removal (#884)', () => {
     expect(await photoAverage()).toBe(0);
   });
 
+  test('malformed rating input never clears an existing rating', async () => {
+    await rate(4);
+    for (const bad of [undefined, null, 'bad', NaN]) {
+      const r = await rate(bad);
+      expect(r.removed).toBeFalsy();
+    }
+    expect(await ratingRows(GUEST_A)).toHaveLength(1);
+  });
+
   test('clearing deletes racy duplicate rating rows, not just the first', async () => {
     // Simulate the check-then-insert race: two rating rows for one guest.
     const row = {

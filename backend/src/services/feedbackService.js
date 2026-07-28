@@ -117,11 +117,11 @@ class FeedbackService {
         throw new Error('Invalid reaction');
       }
 
-      // Rating 0 clears the guest's rating (#884). Compare numerically —
-      // the route validator coerces, but direct callers may pass the
-      // numeric string "0", which is truthy and would slip past a bare
-      // `!rating` into the update/insert paths below.
-      const isRatingClear = feedback_type === 'rating' && !Number(rating);
+      // Rating 0 clears the guest's rating (#884). Only the explicit zero
+      // sentinel (0, or "0" from callers that skip the route validator's
+      // toInt) triggers the destructive path — malformed input (undefined,
+      // NaN, null) must never delete an existing rating.
+      const isRatingClear = feedback_type === 'rating' && (rating === 0 || rating === '0');
 
       // Check if similar feedback already exists (prevent duplicates).
       // When a per-person guest_id is present, scope the check to that guest

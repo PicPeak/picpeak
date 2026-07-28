@@ -118,6 +118,16 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     return () => observer.disconnect();
   }, []);
 
+  // Keep the index valid when the photo list shrinks while open (see
+  // currentPhoto fallback below).
+  useEffect(() => {
+    if (photos.length === 0) {
+      onClose();
+    } else if (currentIndex > photos.length - 1) {
+      setCurrentIndex(photos.length - 1);
+    }
+  }, [photos.length, currentIndex]);
+
 
   // Save-aware download. On mobile (where Web Share + files is supported)
   // this opens the OS share sheet so "Save to Photos" actually lands in
@@ -125,7 +135,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // otherwise have to chain Files → unzip → save (#531). Desktop and
   // unsupported browsers fall through to a regular <a download>.
   const downloadPhotoMutation = useSavePhotoToDevice();
-  const currentPhoto = photos[currentIndex];
+  // Fall back to the last photo when the list shrinks under us: clearing
+  // your rating under the "Rated" feedback filter (#884) — like unliking
+  // under "Likes" — refetches the gallery and can drop the current photo,
+  // leaving currentIndex past the end. The effect below re-syncs the
+  // index (or closes the lightbox when nothing is left).
+  const currentPhoto = photos[currentIndex] ?? photos[photos.length - 1];
   // Per-category download permission (#640). AND'd with the event-level
   // allowDownloads — disabling at either level hides the download button.
   // Defaults true for uncategorised photos and pre-migration-135 categories.
@@ -241,7 +256,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     let mounted = true;
     (async () => {
       try {
-        if (!feedbackSettings?.feedback_enabled) return;
+        if (!feedbackSettings?.feedback_enabled || !currentPhoto) return;
         const data = await feedbackService.getPhotoFeedback(slug, String(currentPhoto.id));
         if (!mounted) return;
         setMyLiked(!!data.my_feedback.liked);
@@ -254,7 +269,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       }
     })();
     return () => { mounted = false; };
-  }, [slug, currentPhoto.id, feedbackSettings?.feedback_enabled]);
+  }, [slug, currentPhoto?.id, feedbackSettings?.feedback_enabled]);
 
   const submitLike = async () => {
     // Guest identity mode: ensure we have a per-person guest token. The
@@ -628,6 +643,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const lightboxClass = useEnhancedProtection ? 
     `fixed inset-0 bg-black z-50 flex items-center justify-center protected-image protection-${protectionLevel}` :
     'fixed inset-0 bg-black z-50 flex items-center justify-center';
+
+  // Empty list (last photo dropped out of the current filter): the effect
+  // above is about to close the lightbox — render nothing meanwhile.
+  if (!currentPhoto) {
+    return null;
+  }
 
   const desktopFeedbackWidth = 416; // 26rem; keep in sync with panel width
   const isDesktopFeedback = showFeedback && !isSmallScreen;

@@ -207,15 +207,21 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const handleRate = useCallback(async (rating: number) => {
     if (!selectedPhotoForFeedback) return;
 
+    // Clicking the star you already gave clears the rating (#884) —
+    // 0 tells the backend to delete it. Session-local `ratings` is the
+    // source of truth for "my rating" here, never the photo's average.
+    const current = ratings[selectedPhotoForFeedback.id] || 0;
+    const next = rating === current ? 0 : rating;
+
     setRatings(prev => ({
       ...prev,
-      [selectedPhotoForFeedback.id]: rating
+      [selectedPhotoForFeedback.id]: next
     }));
 
     try {
       await feedbackService.submitFeedback(slug, String(selectedPhotoForFeedback.id), {
         feedback_type: 'rating',
-        rating: rating,
+        rating: next,
         guest_name: savedIdentity?.name,
         guest_email: savedIdentity?.email,
       });
@@ -223,7 +229,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     } catch (err) {
       console.warn('Rating submit failed', err);
     }
-  }, [selectedPhotoForFeedback, slug, savedIdentity, onFeedbackChange]);
+  }, [selectedPhotoForFeedback, ratings, slug, savedIdentity, onFeedbackChange]);
 
   const handleDownloadAll = useCallback(async () => {
     toast.info(t('gallery.downloading', { count: photos.length }));
@@ -388,7 +394,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           onClose={handleCloseFeedback}
           photo={selectedPhotoForFeedback}
           comments={selectedPhotoForFeedback ? (comments[selectedPhotoForFeedback.id] || []) : []}
-          rating={selectedPhotoForFeedback ? (ratings[selectedPhotoForFeedback.id] || selectedPhotoForFeedback.average_rating || 0) : 0}
+          rating={selectedPhotoForFeedback ? (ratings[selectedPhotoForFeedback.id] ?? (selectedPhotoForFeedback.average_rating || 0)) : 0}
           onAddComment={handleAddComment}
           onRate={handleRate}
           requireNameEmail={feedbackOptions?.requireNameEmail}
