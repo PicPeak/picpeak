@@ -135,6 +135,18 @@ class FeedbackService {
         const existing = await duplicateQuery.first();
 
         if (existing) {
+          // Rating 0 clears the guest's rating (#884) — delete the row
+          // rather than storing 0, which would drag the photo's average
+          // down and still count in total_ratings.
+          if (feedback_type === 'rating' && !rating) {
+            await db('photo_feedback')
+              .where('id', existing.id)
+              .delete();
+
+            await this.updatePhotoFeedbackStats(photoId);
+            return { removed: true };
+          }
+
           if (feedback_type === 'rating' && rating !== existing.rating) {
             // Update existing rating
             await db('photo_feedback')
@@ -197,6 +209,12 @@ class FeedbackService {
 
           return { id: existing.id, exists: true };
         }
+      }
+
+      // Rating 0 with no existing rating: nothing to clear — never insert a
+      // 0-rating row (#884).
+      if (feedback_type === 'rating' && !rating) {
+        return { removed: true };
       }
 
       // Per-guest cap enforcement (#655). Only checked on ADD; toggle-off is

@@ -137,11 +137,12 @@ const validateFeedbackSubmission = [
     .isIn(['rating', 'like', 'comment', 'favorite', 'reaction'])
     .withMessage('Invalid feedback type'),
 
-  // Conditional validation based on feedback type
+  // Conditional validation based on feedback type. 0 clears the guest's
+  // existing rating (#884).
   body('rating')
     .if(body('feedback_type').equals('rating'))
-    .isInt({ min: 1, max: 5 })
-    .withMessage('Rating must be between 1 and 5'),
+    .isInt({ min: 0, max: 5 })
+    .withMessage('Rating must be between 0 and 5'),
 
   // Reactions (#839): fixed curated set only — no free-form emoji.
   body('reaction')

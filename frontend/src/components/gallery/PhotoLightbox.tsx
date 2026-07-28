@@ -777,10 +777,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 {[1,2,3,4,5].map((i) => (
                   <button
                     key={i}
-                    onClick={() => submitRating(i)}
+                    // Clicking the current rating again clears it (#884) —
+                    // 0 tells the backend to delete the guest's rating.
+                    onClick={() => submitRating(i === myRating ? 0 : i)}
                     className="p-1"
-                    aria-label={`Rate ${i} star${i>1?'s':''}`}
-                    title={`Rate ${i}`}
+                    aria-label={i === myRating ? 'Remove rating' : `Rate ${i} star${i>1?'s':''}`}
+                    title={i === myRating ? 'Remove rating' : `Rate ${i}`}
                   >
                     <Star className={`w-5 h-5 ${myRating >= i ? 'text-yellow-400 fill-yellow-400' : 'text-white/70'}`} />
                   </button>
@@ -1041,7 +1043,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               // Per-guest cap reached (#655) on the post-identity-modal submit.
               if (!handleLimitError(err)) throw err;
             }
-          } else if (pendingAction?.type === 'rating' && pendingAction.rating) {
+          } else if (pendingAction?.type === 'rating' && typeof pendingAction.rating === 'number') {
+            // Explicit number check above: a pending rating of 0 (= clear
+            // my rating, #884) must still be submitted.
             await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
               feedback_type: 'rating',
               rating: pendingAction.rating,
