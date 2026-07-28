@@ -783,7 +783,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           photos={filteredPhotos}
           slug={slug}
           categoryId={selectedCategoryId}
-          onFeedbackChange={() => refetch()}
+          onFeedbackChange={() => {
+            refetch();
+            // Guest-mode Rated/Liked filter membership + chip counts come
+            // from my-feedback, not the photo rows (#538) — refresh it too
+            // so e.g. a cleared rating (#884) leaves the Rated filter.
+            queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+          }}
           heroPhotoOverride={staticHeroPhoto}
           feedbackEnabled={feedbackEnabled}
           feedbackOptions={{
@@ -1030,7 +1036,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
             photos={filteredPhotos} 
             slug={slug} 
             categoryId={selectedCategoryId}
-            onFeedbackChange={() => refetch()}
+            onFeedbackChange={() => {
+              refetch();
+              // Guest-mode Rated/Liked filter membership + chip counts come
+              // from my-feedback, not the photo rows (#538) — refresh it too
+              // so e.g. a cleared rating (#884) leaves the Rated filter.
+              queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+            }}
             heroPhotoOverride={staticHeroPhoto}
             feedbackEnabled={feedbackEnabled}
             feedbackOptions={{

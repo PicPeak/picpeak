@@ -56,6 +56,12 @@ export const PhotoRating: React.FC<PhotoRatingProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
+      // The parent refetch fired optimistically in onMutate, i.e. possibly
+      // before the server applied the change — refresh gallery-level state
+      // again now that it has, so the average/Rated-filter membership
+      // reflect the accepted value (matters most for a clear, #884).
+      queryClient.invalidateQueries({ queryKey: ['gallery-photos', gallerySlug] });
+      queryClient.invalidateQueries({ queryKey: ['my-feedback', gallerySlug] });
       toast.success(t('feedback.ratingSubmitted', 'Rating submitted'));
     },
     onError: (error: any) => {
