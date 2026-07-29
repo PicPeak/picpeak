@@ -1153,9 +1153,15 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     const isVideo = photo.media_type === 'video' ||
       Boolean(storedVideoMime) ||
       Boolean(extMime && extMime.startsWith('video/'));
+    // Map-only on the image side too: interpolating the raw extension
+    // would synthesize image/svg+xml (scriptable inline) or header-invalid
+    // values from client-controlled chunked-upload filenames. Anything the
+    // shared map doesn't know is served as image/jpeg — browsers sniff
+    // image bytes in <img>/blob contexts, so a mislabel is harmless where
+    // an injected type is not.
     const contentType = isVideo
       ? storedVideoMime || (extMime && extMime.startsWith('video/') ? extMime : null) || 'video/mp4'
-      : (extMime && extMime.startsWith('image/') ? extMime : null) || `image/${ext || 'jpeg'}`;
+      : (extMime && extMime.startsWith('image/') ? extMime : null) || 'image/jpeg';
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
