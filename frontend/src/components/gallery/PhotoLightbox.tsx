@@ -6,6 +6,7 @@ import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { AuthenticatedImage } from '../common';
 import { PhotoFeedback } from './PhotoFeedback';
 import { feedbackService } from '../../services/feedback.service';
+import { galleryService } from '../../services/gallery.service';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { VideoPlayer } from './VideoPlayer';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
@@ -127,6 +128,17 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       setCurrentIndex(photos.length - 1);
     }
   }, [photos.length, currentIndex]);
+
+  // View beacon (#895): count exactly the photo that became the visible
+  // slide. The image fetches themselves can't be counted — preloaded
+  // neighbours would inflate, and a neighbour promoted by a swipe is
+  // never re-fetched (#505).
+  const currentPhotoId = photos[currentIndex]?.id;
+  useEffect(() => {
+    if (currentPhotoId !== undefined) {
+      galleryService.trackPhotoView(slug, currentPhotoId);
+    }
+  }, [slug, currentPhotoId]);
 
 
   // Save-aware download. On mobile (where Web Share + files is supported)

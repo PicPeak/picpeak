@@ -126,53 +126,39 @@ describe('photo engagement counters (#895)', () => {
     await db('access_logs').where('event_id', eventId).del();
   });
 
-  describe('view_count (#895 — previously never written)', () => {
-    it('increments when the full-size photo is served', async () => {
-      const res = await request(app)
-        .get(`/api/gallery/${SLUG}/photo/${photoIds[0]}`)
-        .set('Authorization', `Bearer ${galleryToken()}`);
-      expect(res.status).toBe(200);
-      await settle();
+  describe('view_count via the view beacon (#895 — previously never written)', () => {
+    const beacon = (photoId, token = galleryToken()) => request(app)
+      .post(`/api/gallery/${SLUG}/photo/${photoId}/view`)
+      .set('Authorization', `Bearer ${token}`);
+
+    it('increments exactly the beaconed photo', async () => {
+      expect((await beacon(photoIds[0])).status).toBe(204);
       expect((await getPhoto(photoIds[0])).view_count).toBe(1);
 
-      await request(app)
-        .get(`/api/gallery/${SLUG}/photo/${photoIds[0]}`)
-        .set('Authorization', `Bearer ${galleryToken()}`);
-      await settle();
+      expect((await beacon(photoIds[0])).status).toBe(204);
       expect((await getPhoto(photoIds[0])).view_count).toBe(2);
       // Other photos untouched
       expect((await getPhoto(photoIds[1])).view_count).toBe(0);
     });
 
-    it('does NOT count the slideshow kiosk (migration 138 design)', async () => {
+    it('serving the image bytes does NOT count (preloads must not inflate)', async () => {
       const res = await request(app)
         .get(`/api/gallery/${SLUG}/photo/${photoIds[0]}`)
-        .set('Authorization', `Bearer ${galleryToken({ accessLevel: 'slideshow' })}`);
+        .set('Authorization', `Bearer ${galleryToken()}`);
       expect(res.status).toBe(200);
       await settle();
       expect((await getPhoto(photoIds[0])).view_count).toBe(0);
     });
 
-    it('does NOT count follow-up video Range requests (seeks are not views)', async () => {
-      await db('photos').where('id', photoIds[2]).update({ media_type: 'video', mime_type: 'video/mp4' });
-      try {
-        await request(app)
-          .get(`/api/gallery/${SLUG}/photo/${photoIds[2]}`)
-          .set('Authorization', `Bearer ${galleryToken()}`)
-          .set('Range', 'bytes=5-');
-        await settle();
-        expect((await getPhoto(photoIds[2])).view_count).toBe(0);
+    it('rejects the slideshow kiosk (migration 138 design)', async () => {
+      const res = await beacon(photoIds[0], galleryToken({ accessLevel: 'slideshow' }));
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect((await getPhoto(photoIds[0])).view_count).toBe(0);
+    });
 
-        // The opening request (start of playback) does count.
-        await request(app)
-          .get(`/api/gallery/${SLUG}/photo/${photoIds[2]}`)
-          .set('Authorization', `Bearer ${galleryToken()}`)
-          .set('Range', 'bytes=0-');
-        await settle();
-        expect((await getPhoto(photoIds[2])).view_count).toBe(1);
-      } finally {
-        await db('photos').where('id', photoIds[2]).update({ media_type: null, mime_type: null });
-      }
+    it("404s a photo that isn't in the event", async () => {
+      const res = await beacon(999999);
+      expect(res.status).toBe(404);
     });
   });
 
@@ -208,6 +194,60 @@ describe('photo engagement counters (#895)', () => {
       for (const id of photoIds) {
         expect((await getPhoto(id)).download_count).toBe(1);
       }
+    });
+
+    it('skipped archive entries do not count (missing source file)', async () => {
+      // Own event so the on-the-fly archiver path is guaranteed — the
+      // main event may have a cached zip from the previous test's
+      // background generation, and racing its build/invalidate hangs.
+      const slug2 = `${SLUG}-skip`;
+      const ev = await db('events').insert({
+        slug: slug2,
+        event_type: 'wedding',
+        event_name: 'Engagement Skip Test',
+        event_date: '2026-08-01',
+        host_email: 'host@example.com',
+        admin_email: 'admin@example.com',
+        password_hash: 'x',
+        share_link: `/gallery/${slug2}/share`,
+        share_token: 'engagement-skip-share',
+        expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+        is_active: 1,
+        is_archived: 0,
+        is_draft: 0,
+        allow_downloads: 1,
+        created_at: new Date().toISOString(),
+      }).returning('id');
+      const eventId2 = ev[0]?.id ?? ev[0];
+      const dir2 = path.join(process.env.STORAGE_PATH, 'events/active', slug2);
+      fs.mkdirSync(dir2, { recursive: true });
+      const ids2 = [];
+      for (let i = 0; i < 2; i++) {
+        // Only photo 0 gets a real file — photo 1's source is missing.
+        if (i === 0) fs.writeFileSync(path.join(dir2, `photo-${i}.jpg`), Buffer.from('skip-test-bytes'));
+        const p = await db('photos').insert({
+          event_id: eventId2,
+          filename: `photo-${i}.jpg`,
+          path: `${slug2}/photo-${i}.jpg`,
+          type: 'individual',
+          uploaded_at: new Date().toISOString(),
+        }).returning('id');
+        ids2.push(p[0]?.id ?? p[0]);
+      }
+      const token2 = jwt.sign(
+        { eventId: eventId2, eventSlug: slug2, type: 'gallery' },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h', issuer: 'picpeak-auth' }
+      );
+
+      const res = await request(app)
+        .get(`/api/gallery/${slug2}/download-all`)
+        .set('Authorization', `Bearer ${token2}`);
+      expect(res.status).toBe(200);
+      await settle();
+      expect((await db('photos').where('id', ids2[0]).first()).download_count).toBe(1);
+      // photo-1's source was missing → skipped from the zip → not counted
+      expect((await db('photos').where('id', ids2[1]).first()).download_count).toBe(0);
     });
   });
 

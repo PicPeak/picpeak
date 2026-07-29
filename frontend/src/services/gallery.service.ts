@@ -198,6 +198,15 @@ export const galleryService = {
     this.triggerBrowserDownload(fetched.blob, fetched.serverFilename || filename);
   },
 
+  // Per-photo view beacon (#895). Fired by the lightbox when a photo
+  // becomes the visible slide — request-level counting on the image
+  // endpoints can't tell the current slide from its preloaded
+  // neighbours. Fire-and-forget: view counting must never surface an
+  // error to the guest.
+  trackPhotoView(slug: string, photoId: number): void {
+    api.post(`/gallery/${slug}/photo/${photoId}/view`).catch(() => {});
+  },
+
   // Download all photos as ZIP
   // When a pre-generated zip is available, use native browser download (Content-Length → progress bar).
   // Otherwise fall back to blob download.
