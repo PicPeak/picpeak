@@ -75,7 +75,7 @@ describe('admin Live Slideshow endpoints', () => {
     app.use((err, req, res, next) => {
       res.status(err.statusCode || err.status || 500).json({ error: err.message, code: err.code });
     });
-  }, 30000);
+  }, 120000);
 
   afterAll(async () => { await cleanup(); });
 

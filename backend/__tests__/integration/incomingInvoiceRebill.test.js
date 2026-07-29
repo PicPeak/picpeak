@@ -13,7 +13,7 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 // Service-level CRM calls cold-require heavy modules (pdfService, nodemailer)
 // on first use; bump the budget for this file.
-jest.setTimeout(60000);
+jest.setTimeout(120000);
 
 describe('incoming-invoice categorise / re-bill chain', () => {
   let db;

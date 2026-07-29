@@ -83,7 +83,7 @@ describe('admin CRM routes — auth + permission gate', () => {
     // Invalid: signed with a different secret. adminAuth must reject.
     const jwt = require('jsonwebtoken');
     invalidToken = jwt.sign({ id: adminId, type: 'admin' }, 'WRONG-SECRET', { issuer: 'picpeak-auth' });
-  }, 60000);
+  }, 120000);
 
   afterAll(async () => {
     if (cleanup) await cleanup();

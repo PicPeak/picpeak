@@ -34,7 +34,7 @@ jest.mock('../../src/services/databaseBackup', () => ({
   DatabaseBackupService: class {},
 }));
 
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 describe('backupService — inline DB dump + fail-loud guard', () => {
   let db;

@@ -6,7 +6,7 @@
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 // bootCrmDb runs the full core-migration set in beforeAll.
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 describe('event type slug rename cascade', () => {
   let db;

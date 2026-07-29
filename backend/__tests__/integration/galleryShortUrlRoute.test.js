@@ -17,7 +17,7 @@ const request = require('supertest');
 
 const { bootCrmDb } = require('./helpers/crmDb');
 
-jest.setTimeout(60000);
+jest.setTimeout(120000);
 
 let db; let cleanup; let service; let app;
 

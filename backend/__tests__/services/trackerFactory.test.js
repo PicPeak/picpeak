@@ -27,7 +27,7 @@ let db; let cleanup;
 
 beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
-}, 30000);
+}, 120000);
 
 afterAll(async () => { if (cleanup) await cleanup(); });
 

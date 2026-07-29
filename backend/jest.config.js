@@ -1,5 +1,9 @@
 module.exports = {
   testEnvironment: 'node',
+  // bootCrmDb() runs EVERY core migration in beforeAll and the chain keeps
+  // growing (134 migrations and counting via backports). 120s matches the
+  // beta-branch convention from #860.
+  testTimeout: 120000,
   coverageDirectory: 'coverage',
   collectCoverageFrom: [
     'src/**/*.js',

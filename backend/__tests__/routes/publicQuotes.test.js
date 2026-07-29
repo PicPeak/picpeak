@@ -60,7 +60,7 @@ describe('publicQuotes routes', () => {
     quoteId = inserted[0]?.id ?? inserted[0];
 
     app = buildRouteApp('/api/public/quotes', require('../../src/routes/publicQuotes'));
-  }, 60000);
+  }, 120000);
 
   afterAll(async () => {
     if (cleanup) await cleanup();

@@ -40,7 +40,7 @@ jest.mock('../../src/middleware/permissions', () => ({
   requirePermission: () => (_req, _res, next) => next(),
 }));
 
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 describe('GET /api/admin/system-health/backup-coverage', () => {
   let db;

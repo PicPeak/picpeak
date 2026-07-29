@@ -33,7 +33,7 @@ describe('publicPaymentCheck routes', () => {
     ({ db, cleanup } = await bootCrmDb());
     await seedMinimal(db);
     app = buildRouteApp('/api/public/payment-check', require('../../src/routes/publicPaymentCheck'));
-  }, 60000);
+  }, 120000);
 
   afterAll(async () => {
     if (cleanup) await cleanup();

@@ -67,11 +67,10 @@ async function insertEvent(db, over = {}) {
 describe('public Live Slideshow routes', () => {
   let db; let cleanup; let app;
 
-  // bootCrmDb runs the full migration set against a fresh SQLite file, which
-  // takes <2s locally but has been observed to exceed Jest's default 5s
-  // `beforeAll` timeout on slower GitHub Actions runners (~5.4s — runner-to-
-  // runner I/O variance). Raise the hook timeout so this doesn't intermittently
-  // block PRs on CI; doesn't affect happy-path local runs.
+  // bootCrmDb runs the full migration set against a fresh SQLite file and the
+  // chain keeps growing via backports. Hook-argument timeouts OVERRIDE the
+  // 120s jest.config default (same trap as the jest.setTimeout pins) — keep
+  // this at 120000, matching the config.
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
     await seedMinimal(db);
@@ -86,7 +85,7 @@ describe('public Live Slideshow routes', () => {
     app.use((err, req, res, next) => {
       res.status(err.statusCode || err.status || 500).json({ error: err.message, code: err.code });
     });
-  }, 30000);
+  }, 120000);
 
   afterAll(async () => { await cleanup(); });
 

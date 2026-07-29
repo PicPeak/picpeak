@@ -14,7 +14,7 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 // Service-level CRM calls cold-require heavy modules (pdfService,
 // nodemailer, etc.) on first use; the global 5 s per-test budget is
 // too tight for that. Bump it for this file only.
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 describe('discount line items (negative unit_price_minor)', () => {
   let db;
