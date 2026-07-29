@@ -1126,7 +1126,19 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     const event = await db('events').where('id', eventId).first();
     const storageKey = resolvePhotoStorageKey(event, photo);
 
-    res.setHeader('Content-Type', `image/${path.extname(photo.filename).slice(1)}`);
+    // Content-Type from the stored MIME type (#908) — the extension-based
+    // `image/<ext>` produced invalid types like image/mp4 for videos, and
+    // AdminAuthenticatedVideo's blob inherits it, so browsers refused to
+    // play admin video previews. Fallbacks mirror the download handler:
+    // videos to video/mp4, images to the extension (jpeg when there is
+    // none — a bare `image/` is invalid too).
+    const isVideo = photo.media_type === 'video' ||
+      (photo.mime_type && photo.mime_type.startsWith('video/'));
+    res.setHeader(
+      'Content-Type',
+      photo.mime_type ||
+        (isVideo ? 'video/mp4' : `image/${path.extname(photo.filename).slice(1) || 'jpeg'}`)
+    );
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 
