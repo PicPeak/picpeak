@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.96.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.95.5-beta.0...v3.96.0-beta.0) (2026-07-29)
+
+
+### Features
+
+* **gallery:** quick return from zoomed to fit-to-screen in the lightbox ([#886](https://github.com/PicPeak/picpeak/issues/886)) ([#891](https://github.com/PicPeak/picpeak/issues/891)) ([97f6889](https://github.com/PicPeak/picpeak/commit/97f68899a221e3bc9b4e30c7d9a19eb16f062ba6))
+
 ## [3.95.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.95.4-beta.0...v3.95.5-beta.0) (2026-07-29)
 
 
