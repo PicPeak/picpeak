@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.97.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.97.0-beta.0...v3.97.1-beta.0) (2026-07-29)
+
+
+### Bug Fixes
+
+* **tests:** raise migration-boot hook timeout pins to the 120s default ([#900](https://github.com/PicPeak/picpeak/issues/900)) ([d9ad982](https://github.com/PicPeak/picpeak/commit/d9ad982373861cd05f23167f1e2e50eaebfb7bba))
+
 ## [3.97.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.96.1-beta.0...v3.97.0-beta.0) (2026-07-29)
 
 
