@@ -1143,7 +1143,11 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     const { EXTENSION_TO_MIME } = require('../services/uploadSettings');
     const ext = path.extname(photo.filename).slice(1).toLowerCase();
     const extMime = EXTENSION_TO_MIME[ext] || null;
-    const storedVideoMime = photo.mime_type && photo.mime_type.startsWith('video/')
+    // Full-token validation, not just a prefix check: the stored value is
+    // client-controlled, and header-invalid characters (video/mp4\r\nX: y)
+    // would make setHeader throw — a permanent 500 for that photo. Bare
+    // 'video/' is equally invalid; both fall back to the extension map.
+    const storedVideoMime = photo.mime_type && /^video\/[\w.+-]+$/.test(photo.mime_type)
       ? photo.mime_type
       : null;
     const isVideo = photo.media_type === 'video' ||

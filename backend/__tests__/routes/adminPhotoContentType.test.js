@@ -129,6 +129,24 @@ describe('admin photo view Content-Type (#908)', () => {
     expect(res.headers['content-type']).toBe('video/mp4');
   });
 
+  it('rejects malformed video/ MIME values that would break setHeader', async () => {
+    // Header-invalid chars in the stored value must not 500 the route —
+    // fall back to the extension map instead.
+    const id = await addPhoto('crlf.mp4', {
+      media_type: 'video',
+      mime_type: 'video/mp4\r\nX-Evil: 1',
+    });
+    const res = await getPhotoRes(id);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('video/mp4');
+    expect(res.headers['x-evil']).toBeUndefined();
+
+    const bare = await addPhoto('bare.webm', { media_type: 'video', mime_type: 'video/' });
+    const res2 = await getPhotoRes(bare);
+    expect(res2.status).toBe(200);
+    expect(res2.headers['content-type']).toBe('video/webm');
+  });
+
   it('never echoes a stored non-media MIME type (inline XSS guard)', async () => {
     const id = await addPhoto('evil.png', { mime_type: 'text/html' });
     const res = await getPhotoRes(id);
