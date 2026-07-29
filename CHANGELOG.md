@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.97.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.96.1-beta.0...v3.97.0-beta.0) (2026-07-29)
+
+
+### Features
+
+* **feedback:** let guests remove their star rating ([#884](https://github.com/PicPeak/picpeak/issues/884)) ([#893](https://github.com/PicPeak/picpeak/issues/893)) ([6a048d0](https://github.com/PicPeak/picpeak/commit/6a048d08bd5d1d16f5ec2d2e580831086a32c71b))
+
 ## [3.96.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.96.0-beta.0...v3.96.1-beta.0) (2026-07-29)
 
 
