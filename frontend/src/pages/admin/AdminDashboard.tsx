@@ -15,7 +15,7 @@ import {
   Check,
   X
 } from 'lucide-react';
-import { differenceInDays, parseISO } from 'date-fns';
+import { parseISO } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
@@ -237,7 +237,8 @@ export const AdminDashboard: React.FC = () => {
             ) : (
               <div className="space-y-3">
                 {expiringEvents.map((event) => {
-                  const daysLeft = differenceInDays(parseISO(event.expires_at!), new Date());
+                  // Ceiling (#909): truncation showed "0 days" on the last day.
+                  const daysLeft = Math.max(1, Math.ceil((parseISO(event.expires_at!).getTime() - Date.now()) / 86400000));
 
                   return (
                     <div
