@@ -1,0 +1,50 @@
+name: Cut Stable Release (daily batch)
+
+# Stable fixes accumulate in release-please's rolling release PR instead of
+# each cutting its own patch version (the old per-merge auto-merge produced
+# e.g. 3.45.8 AND 3.45.9 on the same day). This workflow merges the open
+# stable release PR once a day, so a day of N bugfixes ships as ONE version
+# with all N changelog entries — and one Docker build instead of N.
+#
+# - schedule only fires from the default branch (main); the stable copy of
+#   this file is inert and exists to keep the branches in sync.
+# - Need a release NOW? Run this via workflow_dispatch, or merge the
+#   release PR by hand — the schedule is a default, not a gate.
+# - Approval/merge mechanics mirror the old inline step (#719): approve as
+#   github-actions[bot] (GITHUB_TOKEN, a valid distinct reviewer), enable
+#   auto-merge as the PAT so the merge attributes to a real identity and
+#   triggers the tag-cutting run. --auto waits for green checks.
+
+on:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge-stable-release-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve and enable auto-merge on the open stable release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PAT: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # No checkout — set the repo explicitly so gh works without a
+          # git remote (same pattern as whatsnew, 2a5f0a8).
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$RELEASE_PAT" ]; then
+            echo "RELEASE_PLEASE_TOKEN not set — skipping (manual review required)."
+            exit 0
+          fi
+          pr=$(gh pr list --head release-please--branches--stable --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            echo "No open stable release PR — nothing to cut today."
+            exit 0
+          fi
+          gh pr review "$pr" --approve --body "Automated approval — daily stable release batch (release-please version bump + changelog)." || true
+          GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto || true
+          echo "Enabled auto-merge on stable release PR #$pr — merges when checks are green."
