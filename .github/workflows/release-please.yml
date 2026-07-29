@@ -27,32 +27,12 @@ jobs:
           manifest-file: .release-please-manifest.json
           target-branch: stable
 
-      # Auto-approve + auto-merge the open stable release PR. See the beta
-      # workflow for the full rationale. Skipped on the release-cutting run and
-      # whenever no PAT is configured.
-      - name: Auto-approve and enable auto-merge on the release PR
-        if: ${{ steps.release.outputs.release_created != 'true' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_PAT: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-          # No checkout in this job — set the repo explicitly so gh works
-          # without a git remote (same pattern as whatsnew, 2a5f0a8).
-          GH_REPO: ${{ github.repository }}
-        run: |
-          if [ -z "$RELEASE_PAT" ]; then
-            echo "RELEASE_PLEASE_TOKEN not set — skipping auto-merge (manual review still required)."
-            exit 0
-          fi
-          pr=$(gh pr list --head release-please--branches--stable --state open --json number --jq '.[0].number // empty')
-          if [ -n "$pr" ]; then
-            # Approve as github-actions[bot] (GITHUB_TOKEN, ≠ the PAT author) so it
-            # is a valid review; enable auto-merge as the PAT so the merge commit is
-            # attributed to a real identity and triggers the tag-cutting run (#719).
-            gh pr review "$pr" --approve --body "Automated approval — release-please version bump + changelog (#719)." || true
-            GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto || true
-          else
-            echo "No open release PR to auto-merge."
-          fi
+      # NOTE: stable release PRs are intentionally NOT auto-merged here
+      # anymore. Fixes accumulate in the rolling release PR and are cut as
+      # ONE patch version per day by release-stable-daily.yml (18:00 UTC,
+      # or on demand via workflow_dispatch / a manual merge of the release
+      # PR). Beta keeps instant releases — see release-please-beta.yml —
+      # because same-day reporter verification depends on it.
 
       - name: Output Release Info
         if: ${{ steps.release.outputs.release_created }}
