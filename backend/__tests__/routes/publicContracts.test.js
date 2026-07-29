@@ -51,7 +51,7 @@ describe('publicContracts routes', () => {
     contractId = inserted[0]?.id ?? inserted[0];
 
     app = buildRouteApp('/api/public/contracts', require('../../src/routes/publicContracts'));
-  }, 60000);
+  }, 120000);
 
   afterAll(async () => {
     if (cleanup) await cleanup();

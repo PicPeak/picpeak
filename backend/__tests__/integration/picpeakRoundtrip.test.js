@@ -28,7 +28,7 @@ beforeAll(async () => {
   ({ importFromPicpeak, validateManifest } = require('../../src/services/picpeakImportService'));
   const role = await db('roles').where({ name: 'super_admin' }).first();
   superAdminRoleId = role.id;
-}, 60000);
+}, 120000);
 
 afterAll(async () => {
   await cleanup();

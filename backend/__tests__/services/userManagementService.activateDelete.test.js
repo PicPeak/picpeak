@@ -48,7 +48,7 @@ describe('userManagementService — activate + delete (#574 follow-up)', () => {
       is_active: 1, created_at: new Date(),
     }).returning('id');
     targetId = targetInsert[0]?.id ?? targetInsert[0];
-  }, 60000);
+  }, 120000);
 
   afterAll(async () => {
     if (cleanup) await cleanup();

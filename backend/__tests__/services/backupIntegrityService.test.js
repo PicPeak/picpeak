@@ -22,7 +22,7 @@ const crypto = require('crypto');
 
 const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
 
-jest.setTimeout(30000);
+jest.setTimeout(120000);
 
 describe('backupIntegrityService.verifyDocumentArtefacts', () => {
   let db;

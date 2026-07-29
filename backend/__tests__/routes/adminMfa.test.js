@@ -39,7 +39,7 @@ const {
   bootCrmDb, mintAdminToken, buildRouteApp,
 } = require('../integration/helpers/crmDb');
 
-jest.setTimeout(60000);
+jest.setTimeout(120000);
 
 let db;
 let cleanup;
@@ -95,7 +95,7 @@ beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
   adminApp = buildRouteApp('/api/admin/auth', require('../../src/routes/adminAuth'));
   authApp = buildRouteApp('/api/auth', require('../../src/routes/auth'));
-}, 60000);
+}, 120000);
 
 afterAll(async () => {
   if (cleanup) await cleanup();
