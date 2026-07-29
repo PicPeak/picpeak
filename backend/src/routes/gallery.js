@@ -1162,7 +1162,10 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
 // which zips EVERY event photo with no per-category allow_downloads
 // filter — the counter has to reflect what actually shipped. (That the
 // prebuilt zip ignores per-category download opt-outs is a separate,
-// pre-existing issue.) Fire-and-forget at the call sites: counters must
+// pre-existing issue.) Known approximation: _build skips entries whose
+// WATERMARK step fails and still publishes the zip; counting those
+// would need a persisted archive manifest, which isn't worth it for
+// that tail case. Fire-and-forget at the call sites: counters must
 // never fail a download.
 async function bumpEventDownloadCounts(eventId) {
   await db('photos').where('event_id', eventId).increment('download_count', 1);

@@ -608,6 +608,14 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
         close={() => setLightboxIndex(-1)}
         index={lightboxIndex}
         slides={slides}
+        // View beacon (#895): yarl fires `view` on open and on every
+        // slide change — same semantics as PhotoLightbox's beacon.
+        on={{
+          view: ({ index }) => {
+            const photo = filteredPhotos[index];
+            if (photo) galleryService.trackPhotoView(slug, photo.id);
+          },
+        }}
         plugins={[
           Thumbnails,
           Zoom,
