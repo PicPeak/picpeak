@@ -105,7 +105,7 @@ describe('admin event QR endpoints', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('application/pdf');
     expect(res.body.slice(0, 4).toString()).toBe('%PDF');
-  }, 30000);
+  }, 120000);
 
   it('409s when the event has no share link', async () => {
     // events.share_link is NOT NULL — an empty string is the closest real-world

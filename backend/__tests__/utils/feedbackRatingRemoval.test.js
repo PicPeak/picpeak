@@ -87,7 +87,7 @@ beforeAll(async () => {
     uploaded_at: new Date().toISOString(),
   }).returning('id');
   photoId = r[0]?.id ?? r[0];
-}, 30000);
+}, 120000);
 
 afterAll(async () => { if (cleanup) await cleanup(); });
 

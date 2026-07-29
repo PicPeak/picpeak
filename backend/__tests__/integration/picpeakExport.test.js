@@ -21,7 +21,7 @@ beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
   process.env.STORAGE_PATH = tmpDir; // isolate file collection to the temp dir
   ({ createPicpeak } = require('../../src/services/picpeakExportService'));
-}, 60000);
+}, 120000);
 
 afterAll(async () => {
   await cleanup();

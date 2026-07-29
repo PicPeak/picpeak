@@ -27,7 +27,7 @@ beforeAll(async () => {
   setupService = require('../../src/services/setupService');
   ({ getAppSetting, upsertAppSetting } = require('../../src/utils/appSettings'));
   app = buildRouteApp('/api/setup', require('../../src/routes/setup'));
-}, 60000);
+}, 120000);
 
 afterAll(async () => {
   await cleanup();

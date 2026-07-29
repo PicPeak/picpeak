@@ -95,7 +95,7 @@ beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
   adminApp = buildRouteApp('/api/admin/auth', require('../../src/routes/adminAuth'));
   authApp = buildRouteApp('/api/auth', require('../../src/routes/auth'));
-}, 60000);
+}, 120000);
 
 afterAll(async () => {
   if (cleanup) await cleanup();

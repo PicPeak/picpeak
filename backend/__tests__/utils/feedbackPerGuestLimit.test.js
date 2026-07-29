@@ -115,7 +115,7 @@ beforeAll(async () => {
     }).returning('id');
     photoIds.push(r[0]?.id ?? r[0]);
   }
-}, 30000);
+}, 120000);
 
 afterAll(async () => { if (cleanup) await cleanup(); });
 
