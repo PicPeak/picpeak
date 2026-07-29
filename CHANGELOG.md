@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.97.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.97.3-beta.0...v3.97.4-beta.0) (2026-07-29)
+
+
+### Bug Fixes
+
+* **admin:** expose view/download counters in the admin photos list ([#895](https://github.com/PicPeak/picpeak/issues/895) follow-up) ([#914](https://github.com/PicPeak/picpeak/issues/914)) ([aca3c8e](https://github.com/PicPeak/picpeak/commit/aca3c8e4bc33e74c81c4d2f2a15baf490c967134))
+* **admin:** stop marking events expired up to 24h early ([#909](https://github.com/PicPeak/picpeak/issues/909)) ([#916](https://github.com/PicPeak/picpeak/issues/916)) ([487f55f](https://github.com/PicPeak/picpeak/commit/487f55f2d9463d85898555472cd66ae69d1d0f31))
+
 ## [3.97.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.97.2-beta.0...v3.97.3-beta.0) (2026-07-29)
 
 
