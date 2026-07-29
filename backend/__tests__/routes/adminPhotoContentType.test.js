@@ -175,6 +175,21 @@ describe('admin photo view Content-Type (#908)', () => {
     expect(res.headers['content-type']).toBe('image/png');
   });
 
+  it('does not synthesize types from unmapped image extensions', async () => {
+    // Raw interpolation would produce image/svg+xml (scriptable inline)
+    // or arbitrary strings from client-controlled filenames — the shared
+    // map is the allowlist, everything else is served as image/jpeg.
+    const svg = await addPhoto('vector.svg+xml');
+    const res = await getPhotoRes(svg);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/jpeg');
+
+    const weird = await addPhoto('weird.xyz');
+    const res2 = await getPhotoRes(weird);
+    expect(res2.status).toBe(200);
+    expect(res2.headers['content-type']).toBe('image/jpeg');
+  });
+
   it('extensionless files get image/jpeg, never a bare image/', async () => {
     const id = await addPhoto('noext');
     const res = await getPhotoRes(id);
