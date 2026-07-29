@@ -933,6 +933,22 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
 });
 
 // Download all photos as ZIP
+// Zip downloads count toward each contained photo's download_count (#895)
+// — previously only single-photo downloads did, so galleries whose guests
+// grab the zip showed 0 per-photo downloads forever. Used by the
+// pre-generated-zip branches only: it mirrors downloadZipService._build,
+// which zips EVERY event photo with no per-category allow_downloads
+// filter — the counter has to reflect what actually shipped. (That the
+// prebuilt zip ignores per-category download opt-outs is a separate,
+// pre-existing issue.) Known approximation: _build skips entries whose
+// WATERMARK step fails and still publishes the zip; counting those
+// would need a persisted archive manifest, which isn't worth it for
+// that tail case. Fire-and-forget at the call sites: counters must
+// never fail a download.
+async function bumpEventDownloadCounts(eventId) {
+  await db('photos').where('event_id', eventId).increment('download_count', 1);
+}
+
 router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async (req, res) => {
   try {
     // Check if downloads are allowed for this event
@@ -962,6 +978,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
             user_agent: req.headers['user-agent'],
             action: 'download_all_presigned'
           }).catch(() => {});
+          bumpEventDownloadCounts(req.event.id).catch(() => {});
           res.redirect(302, url);
           return;
         } catch (err) {
@@ -985,6 +1002,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
         user_agent: req.headers['user-agent'],
         action: 'download_all'
       }).catch(() => {});
+      bumpEventDownloadCounts(req.event.id).catch(() => {});
       return;
     }
 
@@ -1044,6 +1062,10 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
     // get a deterministic `_1` suffix before the entries hit the archive.
     const useOriginalBulk = await getUseOriginalFilenames();
     const bulkEntryNames = getZipEntryNames(photos, useOriginalBulk);
+    // Only photos whose append succeeded count as downloaded (#895) — the
+    // catch below deliberately skips missing/corrupt sources, and those
+    // never make it into the archive.
+    const appendedIds = [];
     for (let i = 0; i < photos.length; i += 1) {
       const photo = photos[i];
       const storageKey = resolvePhotoStorageKey(req.event, photo);
@@ -1057,6 +1079,22 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
       }
 
       try {
+        // Verify the source exists BEFORE appending — but only for local
+        // sources: fs.createReadStream is lazy, so its error fires outside
+        // this try/catch and the archive 'error' handler then kills the
+        // whole response instead of skipping one photo (#895 review). S3's
+        // get() awaits GetObject and rejects right here on a missing key,
+        // so a preflight HEAD per entry would just be a redundant serial
+        // round trip (500-photo zip = 500 extra HEADs).
+        if (storageKey && storage.kind() === 'local') {
+          const srcStat = await storage.stat(storageKey);
+          if (!srcStat) {
+            throw new Error(`Photo missing in storage: ${storageKey}`);
+          }
+        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
+          throw new Error('Photo file missing on disk');
+        }
+
         if (shouldApplyWatermark && effectiveSettings) {
           // Watermark service operates on a local path. For managed photos in
           // S3 mode, materialize a tmp local copy first.
@@ -1076,9 +1114,9 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
           const stream = await storage.get(storageKey);
           archive.append(stream, { name: archiveName });
         } else {
-          const filePath = resolvePhotoFilePath(req.event, photo);
-          archive.file(filePath, { name: archiveName });
+          archive.file(resolvePhotoFilePath(req.event, photo), { name: archiveName });
         }
+        appendedIds.push(photo.id);
       } catch (err) {
         logger.warn('Skipping photo in bulk download due to error', {
           slug: req.params.slug,
@@ -1098,6 +1136,12 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
       user_agent: req.headers['user-agent'],
       action: 'download_all'
     });
+    // Exactly the photos that made it into this archive (#895) — skipped
+    // (missing/corrupt) sources don't count.
+    if (appendedIds.length > 0) {
+      db('photos').whereIn('id', appendedIds)
+        .increment('download_count', 1).catch(() => {});
+    }
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to create download archive');
   }
@@ -1179,11 +1223,26 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // #493: same display-name resolution as bulk download, with dedup.
     const useOriginalSelected = await getUseOriginalFilenames();
     const selectedEntryNames = getZipEntryNames(photos, useOriginalSelected);
+    // Only photos whose append succeeded count as downloaded (#895).
+    const appendedIds = [];
     for (let i = 0; i < photos.length; i += 1) {
       const photo = photos[i];
       const name = selectedEntryNames[i] || `photo-${photo.id}.jpg`;
       const storageKey = resolveSelectedKey(req.event, photo);
       try {
+        // Same pre-append source check as download-all (#895 review),
+        // local backend only: a lazy fs stream's async error would kill
+        // the response instead of skipping the photo; S3's get() rejects
+        // at the await below, so no redundant per-entry HEAD there.
+        if (storageKey && selectedStorage.kind() === 'local') {
+          const srcStat = await selectedStorage.stat(storageKey);
+          if (!srcStat) {
+            throw new Error(`Photo missing in storage: ${storageKey}`);
+          }
+        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
+          throw new Error('Photo file missing on disk');
+        }
+
         if (shouldApplyWatermark && effectiveSettings) {
           const buf = storageKey
             ? await withSelectedLocalCopy(storageKey, (lp) =>
@@ -1197,6 +1256,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         } else {
           archive.file(resolvePhotoFilePath(req.event, photo), { name });
         }
+        appendedIds.push(photo.id);
       } catch (err) {
         logger.warn('Skipping selected photo due to error', {
           slug: req.params.slug,
@@ -1215,11 +1275,48 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       user_agent: req.headers['user-agent'],
       action: 'download_selected'
     });
+    // Exactly the photos that made it into this archive (#895) — skipped
+    // (missing/corrupt) sources don't count.
+    if (appendedIds.length > 0) {
+      db('photos').whereIn('id', appendedIds)
+        .increment('download_count', 1).catch(() => {});
+    }
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to download selected photos');
   }
 });
 
+
+// Explicit per-photo view beacon (#895). Counting views on the image-
+// serving routes is wrong in both directions: the lightbox preloads the
+// prev/next neighbours (three fetches per open), while a preloaded
+// neighbour that becomes the current slide is never re-fetched (#505
+// keeps the DOM node alive across the swipe) — so request-level counters
+// overcount preloads AND undercount swipe-throughs. Instead the lightbox
+// pings this endpoint exactly when a photo becomes the visible slide.
+// This also covers enhanced/maximum-protection galleries, whose bytes
+// are served by /api/secure-images and never pass the routes below.
+// The slideshow kiosk is excluded (denySlideshowToken; migration 138).
+router.post('/:slug/photo/:photoId/view',
+  verifyGalleryAccess,
+  denySlideshowToken,
+  async (req, res) => {
+    try {
+      const photo = await db('photos')
+        .where({ id: req.params.photoId, event_id: req.event.id })
+        .first('id', 'visibility');
+      if (!photo) {
+        return res.status(404).json({ error: 'Photo not found' });
+      }
+      if (photo.visibility === 'hidden' && req.accessLevel !== 'client') {
+        return res.status(403).json({ error: 'Photo not available' });
+      }
+      await db('photos').where('id', photo.id).increment('view_count', 1);
+      res.status(204).end();
+    } catch (error) {
+      errorResponse(res, error, 500, 'Failed to record view');
+    }
+  });
 
 // View single photo (with watermark if enabled)
 router.get('/:slug/photo/:photoId',

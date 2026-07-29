@@ -69,7 +69,7 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
 
     // Get total downloads (last 30 days) - include both single and bulk downloads
     const totalDownloads = await db('access_logs')
-      .whereIn('action', ['download', 'download_all'])
+      .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
       .where('timestamp', '>=', thirtyDaysAgo.toISOString())
       .count('id as count')
       .first();
@@ -99,7 +99,7 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
       .first();
 
     const previousDownloads = await db('access_logs')
-      .whereIn('action', ['download', 'download_all'])
+      .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
       .where('timestamp', '>=', sixtyDaysAgo.toISOString())
       .where('timestamp', '<', thirtyDaysAgo.toISOString())
       .count('id as count')
@@ -271,7 +271,7 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
     // Get downloads per day - include both single and bulk downloads
     const downloadsData = await db('access_logs')
       .select(db.raw('DATE(timestamp) as date'), db.raw('COUNT(*) as count'))
-      .whereIn('action', ['download', 'download_all'])
+      .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
       .where('timestamp', '>=', startDateStr)
       .groupByRaw('DATE(timestamp)');
 
@@ -307,7 +307,7 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
       .select('events.id', 'events.event_name', 'events.slug')
       .select(db.raw('COUNT(CASE WHEN action = \'view\' THEN 1 END) as views'))
       .select(db.raw('COUNT(DISTINCT CASE WHEN action = \'view\' THEN ip_address END) as uniqueVisitors'))
-      .select(db.raw('COUNT(CASE WHEN action IN (\'download\', \'download_all\') THEN 1 END) as downloads'))
+      .select(db.raw('COUNT(CASE WHEN action IN (\'download\', \'download_all\', \'download_all_presigned\', \'download_selected\') THEN 1 END) as downloads'))
       .join('events', 'access_logs.event_id', 'events.id')
       .where('access_logs.timestamp', '>=', startDateStr)
       .groupBy('events.id', 'events.event_name', 'events.slug')
@@ -377,7 +377,7 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
       .first();
 
     const totalDownloadsCount = await db('access_logs')
-      .whereIn('action', ['download', 'download_all'])
+      .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
       .where('timestamp', '>=', startDateStr)
       .count('id as count')
       .first();
