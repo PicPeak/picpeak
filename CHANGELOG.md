@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.9](https://github.com/PicPeak/picpeak/compare/v3.45.8...v3.45.9) (2026-07-29)
+
+
+### Bug Fixes
+
+* **analytics:** make per-photo view/download counters actually count ([#895](https://github.com/PicPeak/picpeak/issues/895)) (stable) ([#905](https://github.com/PicPeak/picpeak/issues/905)) ([90b589a](https://github.com/PicPeak/picpeak/commit/90b589a88e4c56ccac6dba86c48a604f2abcc008))
+
 ## [3.45.8](https://github.com/PicPeak/picpeak/compare/v3.45.7...v3.45.8) (2026-07-29)
 
 
