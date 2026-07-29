@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.8](https://github.com/PicPeak/picpeak/compare/v3.45.7...v3.45.8) (2026-07-29)
+
+
+### Bug Fixes
+
+* **tests:** raise jest timeouts to the 120s convention (stable) ([#902](https://github.com/PicPeak/picpeak/issues/902)) ([962f1d9](https://github.com/PicPeak/picpeak/commit/962f1d95868251ddeb01a5234c8d9bd1d57429e8))
+
 ## [3.45.7](https://github.com/PicPeak/picpeak/compare/v3.45.6...v3.45.7) (2026-07-27)
 
 
