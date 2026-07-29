@@ -6,11 +6,15 @@
  * URL into a blob whose type inherits the header, and browsers refuse to
  * play a <video> blob labeled image/* — blank/grey admin video preview.
  *
- * Pins:
- *  - stored photos.mime_type wins (video/mp4 for videos)
- *  - videos without a stored mime_type still get video/mp4
- *  - images without a stored mime_type fall back to the extension
- *  - extensionless files get image/jpeg, never the invalid bare `image/`
+ * Pins (incl. external-review hardening):
+ *  - the header is ALWAYS image/* or video/*: a stored non-media MIME
+ *    (chunked uploads store the client-sent type unvalidated) is never
+ *    echoed — text/html inline under the app origin would be XSS
+ *  - stored video/ MIME wins; MIME-less videos map from the extension
+ *    (.mov → video/quicktime), unknown video extensions get video/mp4
+ *  - images IGNORE the stored MIME (migration 039 backfilled image/jpeg
+ *    onto every legacy row, PNGs included) and use the extension,
+ *    normalized (jpg → image/jpeg); extensionless files get image/jpeg
  */
 
 const path = require('path');
@@ -111,11 +115,39 @@ describe('admin photo view Content-Type (#908)', () => {
     expect(res.headers['content-type']).toBe('video/mp4');
   });
 
-  it('falls back to video/mp4 for a video row without a stored mime_type', async () => {
+  it('maps MIME-less videos from their extension (.mov → video/quicktime)', async () => {
     const id = await addPhoto('clip-nomime.mov', { media_type: 'video' });
     const res = await getPhotoRes(id);
     expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('video/quicktime');
+  });
+
+  it('falls back to video/mp4 for a video with an unknown extension', async () => {
+    const id = await addPhoto('clip-unknown.xyz', { media_type: 'video' });
+    const res = await getPhotoRes(id);
+    expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('video/mp4');
+  });
+
+  it('never echoes a stored non-media MIME type (inline XSS guard)', async () => {
+    const id = await addPhoto('evil.png', { mime_type: 'text/html' });
+    const res = await getPhotoRes(id);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
+  });
+
+  it('ignores the migration-039 image/jpeg backfill on legacy PNG rows', async () => {
+    const id = await addPhoto('legacy.png', { mime_type: 'image/jpeg' });
+    const res = await getPhotoRes(id);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
+  });
+
+  it('normalizes jpg to the canonical image/jpeg', async () => {
+    const id = await addPhoto('shot.jpg');
+    const res = await getPhotoRes(id);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/jpeg');
   });
 
   it('keeps the extension fallback for images without a stored mime_type', async () => {
