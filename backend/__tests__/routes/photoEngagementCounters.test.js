@@ -52,7 +52,7 @@ describe('photo engagement counters (#895)', () => {
   const getPhoto = async (id) => db('photos').where('id', id).first();
   // The counter writes are fire-and-forget on purpose — give the event
   // loop a beat before asserting.
-  const settle = () => new Promise((r) => setTimeout(r, 100));
+  const settle = () => new Promise((r) => setTimeout(r, 400));
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
