@@ -773,9 +773,11 @@ module.exports = (router) => {
         .where('action', 'view')
         .count('* as totalViews');
 
+      // One row per download event: singles AND zips (#895). Must stay in
+      // sync with adminDashboard's definition or the two surfaces disagree.
       const [{ totalDownloads }] = await db('access_logs')
         .where('event_id', id)
-        .where('action', 'download')
+        .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
         .count('* as totalDownloads');
 
       const [{ uniqueVisitors }] = await db('access_logs')

@@ -1155,6 +1155,27 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
 });
 
 // Download all photos as ZIP
+// Zip downloads count toward each contained photo's download_count (#895)
+// — previously only single-photo downloads did, so galleries whose guests
+// grab the zip showed 0 per-photo downloads forever. Uses the same
+// category allow_downloads filter the archive builders use; for the
+// pre-generated zip this mirrors its contents rather than reading them.
+// Fire-and-forget at the call sites: counters must never fail a download.
+async function bumpEventDownloadCounts(eventId) {
+  const ids = await db('photos')
+    .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
+    .where('photos.event_id', eventId)
+    .where(function () {
+      this.whereNull('photos.category_id')
+        .orWhere('photo_categories.allow_downloads', true)
+        .orWhereNull('photo_categories.allow_downloads');
+    })
+    .pluck('photos.id');
+  if (ids.length > 0) {
+    await db('photos').whereIn('id', ids).increment('download_count', 1);
+  }
+}
+
 router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
     // Check if downloads are allowed for this event
@@ -1184,6 +1205,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
             user_agent: req.headers['user-agent'],
             action: 'download_all_presigned'
           }).catch(() => {});
+          bumpEventDownloadCounts(req.event.id).catch(() => {});
           // Surface in the admin notification bell (#746).
           logActivity('gallery_downloaded', { scope: 'all' }, req.event.id, galleryActor(req));
           res.redirect(302, url);
@@ -1209,6 +1231,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         user_agent: req.headers['user-agent'],
         action: 'download_all'
       }).catch(() => {});
+      bumpEventDownloadCounts(req.event.id).catch(() => {});
       // Surface in the admin notification bell (#746) — only once the
       // stream actually finished; logging at pipe-time would report
       // downloads that then broke mid-transfer (codex review of #849).
@@ -1334,6 +1357,9 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       user_agent: req.headers['user-agent'],
       action: 'download_all'
     });
+    // Exactly the photos streamed into this archive (#895).
+    db('photos').whereIn('id', photos.map((p) => p.id))
+      .increment('download_count', 1).catch(() => {});
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to create download archive');
   }
@@ -1455,6 +1481,9 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       user_agent: req.headers['user-agent'],
       action: 'download_selected'
     });
+    // Exactly the validated photos that went into this archive (#895).
+    db('photos').whereIn('id', photos.map((p) => p.id))
+      .increment('download_count', 1).catch(() => {});
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to download selected photos');
   }
@@ -1495,6 +1524,19 @@ router.get('/:slug/photo/:photoId',
           secureEndpoint: `/api/secure-images/${req.params.slug}/generate-token`,
           photoId: photoId
         });
+      }
+
+      // Per-photo view counter (#895) — photos.view_count existed in the
+      // schema and the admin UI but nothing ever incremented it. Fire-and-
+      // forget: analytics must never block or fail the byte-serving path.
+      // Skipped for the slideshow kiosk (excluded from visitor analytics —
+      // migration 138 design) and for follow-up video Range requests
+      // (every seek would otherwise count as another view).
+      if (
+        req.accessLevel !== 'slideshow' &&
+        (!isVideo || !req.headers.range || req.headers.range.startsWith('bytes=0-'))
+      ) {
+        db('photos').where('id', photoId).increment('view_count', 1).catch(() => {});
       }
 
       // Resolve where to read the photo bytes from. For external/reference
@@ -1932,6 +1974,18 @@ router.get('/:slug/preview/:photoId',
           slug: req.params.slug, photoId, eventId: req.event.id, previewPath,
         });
         return res.redirect(`/api/gallery/${req.params.slug}/photo/${photoId}`);
+      }
+
+      // Per-photo view counter (#895). The lightbox fetches this tier when
+      // the admin enabled previews (#492), so it has to count here too —
+      // otherwise enabling previews would silently stop view tracking.
+      // Before the ETag check on purpose: a 304 revalidation is still a
+      // guest looking at the photo. The redirect fallbacks above don't
+      // count — the /photo route they land on does. The slideshow kiosk
+      // prefers preview_url and loops forever, so it's excluded here just
+      // like in /photo (migration 138 design).
+      if (req.accessLevel !== 'slideshow') {
+        db('photos').where('id', photoId).increment('view_count', 1).catch(() => {});
       }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
