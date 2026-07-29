@@ -1309,18 +1309,19 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       }
 
       try {
-        // Verify the source exists BEFORE appending: storage.get() hands
-        // archiver a lazy stream whose error fires outside this try/catch
-        // — the archive 'error' handler then kills the whole response
-        // instead of skipping one photo (#895 review). stat/existsSync
-        // fail synchronously, so a missing source is skipped cleanly and
-        // never counted.
-        if (storageKey) {
+        // Verify the source exists BEFORE appending — but only for local
+        // sources: fs.createReadStream is lazy, so its error fires outside
+        // this try/catch and the archive 'error' handler then kills the
+        // whole response instead of skipping one photo (#895 review). S3's
+        // get() awaits GetObject and rejects right here on a missing key,
+        // so a preflight HEAD per entry would just be a redundant serial
+        // round trip (500-photo zip = 500 extra HEADs).
+        if (storageKey && storage.kind() === 'local') {
           const srcStat = await storage.stat(storageKey);
           if (!srcStat) {
             throw new Error(`Photo missing in storage: ${storageKey}`);
           }
-        } else if (!fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
+        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
           throw new Error('Photo file missing on disk');
         }
 
@@ -1465,15 +1466,16 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       const name = selectedEntryNames[i] || `photo-${photo.id}.jpg`;
       const storageKey = resolveSelectedKey(req.event, photo);
       try {
-        // Same pre-append source check as download-all (#895 review):
-        // a lazy stream's async error would kill the response instead of
-        // skipping the photo, and a skipped photo must not be counted.
-        if (storageKey) {
+        // Same pre-append source check as download-all (#895 review),
+        // local backend only: a lazy fs stream's async error would kill
+        // the response instead of skipping the photo; S3's get() rejects
+        // at the await below, so no redundant per-entry HEAD there.
+        if (storageKey && selectedStorage.kind() === 'local') {
           const srcStat = await selectedStorage.stat(storageKey);
           if (!srcStat) {
             throw new Error(`Photo missing in storage: ${storageKey}`);
           }
-        } else if (!fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
+        } else if (!storageKey && !fs.existsSync(resolvePhotoFilePath(req.event, photo))) {
           throw new Error('Photo file missing on disk');
         }
 
