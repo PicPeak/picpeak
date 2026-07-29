@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.95.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.95.4-beta.0...v3.95.5-beta.0) (2026-07-29)
+
+
+### Bug Fixes
+
+* **gallery:** don't close the lightbox when clicking beside the photo ([#883](https://github.com/PicPeak/picpeak/issues/883)) ([#890](https://github.com/PicPeak/picpeak/issues/890)) ([34c2992](https://github.com/PicPeak/picpeak/commit/34c2992521fcb4a495398f27f6044d696b4d17c3))
+
 ## [3.95.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.95.3-beta.0...v3.95.4-beta.0) (2026-07-27)
 
 
