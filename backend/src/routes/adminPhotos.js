@@ -1091,7 +1091,13 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         average_rating: photo.average_rating || 0,
         comment_count: commentMap[photo.id] || 0,
         like_count: photo.like_count || 0,
-        favorite_count: photo.favorite_count || 0
+        favorite_count: photo.favorite_count || 0,
+        // Engagement counters (#895 follow-up): the grid reads these, but
+        // this explicit mapper never included them — so the Engagement
+        // column showed 0 regardless of what the DB counted. This, not
+        // stale data, was why per-image downloads always displayed 0.
+        view_count: photo.view_count || 0,
+        download_count: photo.download_count || 0
       }))
     });
   } catch (error) {
