@@ -18,7 +18,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
-import { parseISO, differenceInDays } from 'date-fns';
+import { parseISO } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useModal, useMutationWithToast } from '../../hooks';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -258,8 +258,14 @@ export const EventsListPage: React.FC = () => {
 
     if (!event.expires_at) return { label: t('events.active'), color: 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/40' };
 
-    const days = differenceInDays(parseISO(event.expires_at), new Date());
-    if (days <= 0) return { label: t('events.expired'), color: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/40' };
+    // Expired means the timestamp has actually passed (#909):
+    // differenceInDays truncates to whole days, so an event expiring in a
+    // few hours returned 0 and showed "Expired" while the public gallery
+    // (which compares real timestamps) correctly showed it active.
+    const expiresAt = parseISO(event.expires_at);
+    if (expiresAt.getTime() <= Date.now()) return { label: t('events.expired'), color: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/40' };
+    // Ceiling so the last day reads "1 day left", never "0 days".
+    const days = Math.ceil((expiresAt.getTime() - Date.now()) / 86400000);
     if (days <= 7) return { label: t('events.daysLeft', { count: days }), color: 'text-orange-600 dark:text-orange-400 bg-orange-100 dark:bg-orange-900/40' };
 
     return { label: t('events.active'), color: 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/40' };
