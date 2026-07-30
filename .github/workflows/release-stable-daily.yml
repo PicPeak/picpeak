@@ -40,11 +40,32 @@ jobs:
             echo "RELEASE_PLEASE_TOKEN not set — skipping (manual review required)."
             exit 0
           fi
-          pr=$(gh pr list --head release-please--branches--stable --state open --json number --jq '.[0].number // empty')
+          # Strict selection (review P1): this job runs daily even without a
+          # stable push, and `gh pr list --head` matches the branch NAME only
+          # — a fork PR can spoof `release-please--branches--stable`. Pin the
+          # base to stable AND require a same-repo head (isCrossRepository
+          # == false); a fork PR is cross-repository, so it can never be
+          # picked and auto-merged with the privileged PAT.
+          pr=$(gh pr list \
+            --base stable \
+            --head release-please--branches--stable \
+            --state open \
+            --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository == false)] | .[0].number // empty')
           if [ -z "$pr" ]; then
-            echo "No open stable release PR — nothing to cut today."
+            echo "No open same-repo stable release PR — nothing to cut today."
             exit 0
           fi
-          gh pr review "$pr" --approve --body "Automated approval — daily stable release batch (release-please version bump + changelog)." || true
-          GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto || true
-          echo "Enabled auto-merge on stable release PR #$pr — merges when checks are green."
+          # Approve is tolerant — a pre-existing approval already satisfies
+          # branch protection and re-approving can return non-zero.
+          gh pr review "$pr" --approve --body "Automated approval — daily stable release batch (release-please version bump + changelog)." || echo "::warning::approve returned non-zero (PR may already be approved)"
+          # But the auto-merge enable is the load-bearing step: this scheduled
+          # job is the ONLY automatic stable cut, so DON'T swallow its failure
+          # (review P2) — an expired/under-scoped PAT would otherwise stop
+          # releases while the workflow stays green.
+          GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto
+          if [ "$(gh pr view "$pr" --json autoMergeRequest --jq '.autoMergeRequest != null')" != "true" ]; then
+            echo "::error::auto-merge was not enabled on stable release PR #$pr — check RELEASE_PLEASE_TOKEN scope/expiry."
+            exit 1
+          fi
+          echo "Auto-merge enabled on stable release PR #$pr — merges when checks are green."
