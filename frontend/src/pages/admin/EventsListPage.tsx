@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useExpiryRefresh } from '../../hooks/useExpiryRefresh';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -142,7 +142,7 @@ export const EventsListPage: React.FC = () => {
 
   // Fetch events — fully server-side: pagination, status filter, and search
   // (#346 — counters and search were previously bounded to the first 100 rows).
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['admin-events', statusFilter ?? 'all', debouncedSearchTerm, page],
     queryFn: () => eventsService.getEvents(page, PAGE_SIZE, statusFilter, debouncedSearchTerm || undefined),
     placeholderData: (prev) => prev,
@@ -232,13 +232,13 @@ export const EventsListPage: React.FC = () => {
   // ordered as the backend returned them (created_at desc by default).
   const events: Event[] = data?.events ?? [];
 
-  // Re-render when the soonest event expiry passes (#909 review): the status
-  // badge is computed inline from Date.now(), so a page left open would keep
-  // showing "active"/"1 day left" past the boundary. A no-op state bump is
-  // enough — the recomputed render reads a fresh Date.now().
-  const [, setExpiryTick] = useState(0);
-  const bumpExpiryTick = useCallback(() => setExpiryTick((n) => n + 1), []);
-  useExpiryRefresh(events.map((e) => e.expires_at), bumpExpiryTick);
+  // Refetch when the soonest event expiry passes (#909 review): the status
+  // badge is computed inline from Date.now(), and under the "expiring" filter
+  // the backend drops the row once expires_at <= now — so a plain re-render
+  // would leave a stale "Expired" row (and total) in that filtered view.
+  // refetch() re-runs with the current page/filter/search: rows and totals
+  // both correct under every filter.
+  useExpiryRefresh(events.map((e) => e.expires_at), refetch);
   const pagination = data?.pagination;
   const totalPages = pagination?.totalPages ?? 1;
   const filteredCount = pagination?.total ?? 0;

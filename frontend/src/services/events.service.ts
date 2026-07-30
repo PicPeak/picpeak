@@ -95,7 +95,9 @@ export const eventsService = {
     page: number = 1,
     limit: number = 20,
     status?: EventStatusFilter,
-    search?: string
+    search?: string,
+    sortBy?: string,
+    sortOrder?: 'asc' | 'desc'
   ): Promise<EventsListResponse> {
     const params = new URLSearchParams({
       page: page.toString(),
@@ -107,6 +109,12 @@ export const eventsService = {
     }
     if (search) {
       params.append('search', search);
+    }
+    if (sortBy) {
+      params.append('sortBy', sortBy);
+    }
+    if (sortOrder) {
+      params.append('sortOrder', sortOrder);
     }
 
     const response = await api.get<EventsListResponse>(`/admin/events?${params}`);

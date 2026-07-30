@@ -78,7 +78,10 @@ export const AdminDashboard: React.FC = () => {
   // which silently missed any expiring event outside the first 100 rows.
   const { data: expiringEventsData, isLoading: eventsLoading } = useQuery({
     queryKey: ['admin-events-summary', 'expiring'],
-    queryFn: () => eventsService.getEvents(1, 5, 'expiring'),
+    // Order by soonest expiry so the five shown rows ARE the earliest to
+    // expire — useExpiryRefresh then schedules against the true next boundary
+    // even when >5 events are expiring (#909 review round 3).
+    queryFn: () => eventsService.getEvents(1, 5, 'expiring', undefined, 'expires_at', 'asc'),
   });
 
   // Keep the "expiring soon" card honest when a row crosses its expiry while
