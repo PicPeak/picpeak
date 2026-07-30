@@ -137,6 +137,34 @@ router.get('/:slug/secure/:photoId/:token',
         return res.status(404).json({ error: 'Gallery not found' });
       }
 
+      // Bind the token to the gallery + photo it was minted for
+      // (GHSA-g94x-8vv8-3c9f). This route serves via <img src> with the
+      // token in the URL, so it can't require verifyGalleryAccess like the
+      // download sibling does. Instead enforce the scope already inside the
+      // token: it is minted for one photoId (and photos belong to exactly
+      // one gallery), and its sessionId records the minting gallery's id.
+      // Without this, a token minted on any PUBLIC gallery reads every other
+      // gallery's photos with no password.
+      const tokenPhotoId = Number(tokenValidation.data?.photoId);
+      if (!Number.isInteger(tokenPhotoId) || tokenPhotoId !== Number(photoId)) {
+        await secureImageService.logImageAccess(
+          photoId, event.id, req.clientInfo, 'token_photo_mismatch'
+        );
+        return res.status(403).json({ error: 'Token not valid for this photo' });
+      }
+      // Defense in depth: the sessionId embeds the gallery the token was
+      // minted for (`gallery_public_<id>_...` / `gallery_<id>_...`). Reject a
+      // token whose gallery is parseable and differs from this one.
+      const sessionEventId = Number(
+        (String(tokenValidation.data?.sessionId || '').match(/^gallery_(?:public_)?(\d+)_/) || [])[1]
+      );
+      if (Number.isInteger(sessionEventId) && sessionEventId !== Number(event.id)) {
+        await secureImageService.logImageAccess(
+          photoId, event.id, req.clientInfo, 'token_gallery_mismatch'
+        );
+        return res.status(403).json({ error: 'Token not valid for this gallery' });
+      }
+
       // Verify photo exists and belongs to event  
       const photo = await db('photos')
         .where({ id: photoId, event_id: event.id })
