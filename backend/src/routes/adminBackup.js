@@ -1,7 +1,7 @@
 const express = require('express');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, requireSuperAdmin } = require('../middleware/permissions');
 const { clearAdminAuthCookie } = require('../utils/tokenUtils');
 const { revokeToken } = require('../utils/tokenRevocation');
 const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest } = require('../services/backupService');
@@ -150,7 +150,12 @@ router.post('/run', adminAuth, requirePermission('backup.create'), async (req, r
 // SECURITY: the file contains plaintext secrets (SMTP password, admin password
 // hashes, API keys). The download UI must warn before offering it. We surface
 // the flag as a response header too so the client can double-confirm.
-router.get('/picpeak/export', adminAuth, requirePermission('backup.create'), async (req, res) => {
+// Full-instance export dumps every table unredacted — bcrypt password
+// hashes, 2FA columns, and all integration secrets (SMTP/SSO/WhatsApp/
+// webhook/S3) in cleartext. The built-in `admin` role holds backup.create,
+// but is denied this data everywhere else (config APIs mask secrets as
+// ********). Gate the raw dump behind super_admin (GHSA-pv6w-rj34-wj9v).
+router.get('/picpeak/export', adminAuth, requireSuperAdmin(), async (req, res) => {
   const fsSync = require('fs');
   try {
     const includePhotos = req.query.includePhotos === 'true' || req.query.includePhotos === '1';
