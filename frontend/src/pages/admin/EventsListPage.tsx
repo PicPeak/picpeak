@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useExpiryRefresh } from '../../hooks/useExpiryRefresh';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
@@ -230,6 +231,14 @@ export const EventsListPage: React.FC = () => {
   // Filtering and searching now happen server-side. Use the response directly,
   // ordered as the backend returned them (created_at desc by default).
   const events: Event[] = data?.events ?? [];
+
+  // Re-render when the soonest event expiry passes (#909 review): the status
+  // badge is computed inline from Date.now(), so a page left open would keep
+  // showing "active"/"1 day left" past the boundary. A no-op state bump is
+  // enough — the recomputed render reads a fresh Date.now().
+  const [, setExpiryTick] = useState(0);
+  const bumpExpiryTick = useCallback(() => setExpiryTick((n) => n + 1), []);
+  useExpiryRefresh(events.map((e) => e.expires_at), bumpExpiryTick);
   const pagination = data?.pagination;
   const totalPages = pagination?.totalPages ?? 1;
   const filteredCount = pagination?.total ?? 0;

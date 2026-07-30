@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useExpiryRefresh } from '../../hooks/useExpiryRefresh';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
@@ -100,6 +101,13 @@ export const EventDetailsPage: React.FC = () => {
     queryFn: () => eventsService.getEvent(parseInt(id!)),
     enabled: !!id,
   });
+
+  // Flip the expiry banner live when the timestamp passes with the page open
+  // (#909 review) — isExpired further down is computed inline from Date.now().
+  // Kept here with the other hooks, above the loading early-return.
+  const [, setExpiryTick] = useState(0);
+  const bumpExpiryTick = useCallback(() => setExpiryTick((n) => n + 1), []);
+  useExpiryRefresh([event?.expires_at], bumpExpiryTick);
 
   // Fetch feedback settings
   const { data: eventFeedbackSettings } = useQuery({
