@@ -115,7 +115,14 @@ export const AdminDashboard: React.FC = () => {
     );
   }
 
-  const expiringEvents = expiringEventsData?.events ?? [];
+  // Drop rows whose expiry has actually passed while the dashboard sat open
+  // (review #909): the query isn't polled, so a cached expired event would
+  // otherwise linger — and the day clamp below rendered it as "1 day left"
+  // indefinitely. An expired gallery is inaccessible; it shouldn't show in
+  // "expiring soon" at all.
+  const expiringEvents = (expiringEventsData?.events ?? []).filter(
+    (e: any) => !e.expires_at || parseISO(e.expires_at).getTime() > Date.now()
+  );
   const expiringTotal = expiringEventsData?.pagination?.total ?? expiringEvents.length;
 
   // Format numbers for display
@@ -237,8 +244,10 @@ export const AdminDashboard: React.FC = () => {
             ) : (
               <div className="space-y-3">
                 {expiringEvents.map((event) => {
-                  // Ceiling (#909): truncation showed "0 days" on the last day.
-                  const daysLeft = Math.max(1, Math.ceil((parseISO(event.expires_at!).getTime() - Date.now()) / 86400000));
+                  // Ceiling (#909): truncation showed "0 days" on the last
+                  // day. The list is pre-filtered to unexpired rows, so the
+                  // delta is always positive and ceils to >= 1 — no clamp.
+                  const daysLeft = Math.ceil((parseISO(event.expires_at!).getTime() - Date.now()) / 86400000);
 
                   return (
                     <div
