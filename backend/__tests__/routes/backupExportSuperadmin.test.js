@@ -20,7 +20,11 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'bkexport-test-secret';
 
 // The export otherwise walks the whole DB and writes a zip — stub it so the
 // super_admin happy path is fast and deterministic; the gate is what's tested.
-const mockExportPath = path.join(os.tmpdir(), `picpeak-export-stub-${Date.now()}.picpeak`);
+// The route deletes path.dirname(filePath) recursively after download, so the
+// stub MUST live in its own dir — a bare os.tmpdir() file would make the route
+// wipe the whole temp root (and other jest workers' DB files).
+const mockExportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-export-stub-'));
+const mockExportPath = path.join(mockExportDir, 'export.picpeak');
 fs.writeFileSync(mockExportPath, 'stub');
 jest.mock('../../src/services/picpeakExportService', () => ({
   createPicpeak: jest.fn(async () => ({ filePath: mockExportPath })),
@@ -71,7 +75,7 @@ describe('backup export super_admin gate (GHSA-pv6w)', () => {
 
   afterAll(async () => {
     if (cleanup) await cleanup();
-    fs.rmSync(mockExportPath, { force: true });
+    fs.rmSync(mockExportDir, { recursive: true, force: true });
   });
 
   it('denies the built-in admin role (was: full DB dump)', async () => {

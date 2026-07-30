@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Card, Loading } from '../../components/common';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
+import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import { BackupDashboard } from '../../components/admin/BackupDashboard';
 import { BackupConfiguration } from '../../components/admin/BackupConfiguration';
 import { BackupHistory } from '../../components/admin/BackupHistory';
@@ -33,6 +34,11 @@ type TabId = 'dashboard' | 'configuration' | 'history' | 'restore' | 'integrity'
 export const BackupManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const { t } = useTranslation();
+  // Full-instance export contains every secret, so the endpoint is
+  // super_admin-only (GHSA-pv6w) — hide the card for other roles instead
+  // of showing a button that always 403s.
+  const { user } = useAdminAuth();
+  const isSuperAdmin = user?.role?.name === 'super_admin';
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
 
   const tabs = [
@@ -201,7 +207,7 @@ export const BackupManagement: React.FC = () => {
               onRunBackup={() => manualBackupMutation.mutate()}
               isBackupRunning={backupStatus?.isRunning || manualBackupMutation.isPending}
             />
-            <PicpeakExportCard />
+            {isSuperAdmin && <PicpeakExportCard />}
           </div>
         )}
 
