@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.97.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.97.5-beta.0...v3.97.6-beta.0) (2026-07-30)
+
+
+### Bug Fixes
+
+* **security:** close GHSA-g94x (cross-gallery photo read) + GHSA-pv6w (admin DB export) ([#924](https://github.com/PicPeak/picpeak/issues/924)) ([03087c7](https://github.com/PicPeak/picpeak/commit/03087c798c8414505fcd694df7cd53bc08126b32))
+
 ## [3.97.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.97.4-beta.0...v3.97.5-beta.0) (2026-07-30)
 
 
