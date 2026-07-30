@@ -156,6 +156,13 @@ describe('admin photo view Content-Type (#908)', () => {
     expect(res.headers['content-type']).toBe('image/avif');
   });
 
+  it('preserves other importer raster types too (apng, x-icon)', async () => {
+    const apng = await addPhoto('anim.apng', { mime_type: 'image/apng' });
+    expect((await getPhotoRes(apng)).headers['content-type']).toBe('image/apng');
+    const ico = await addPhoto('fav.ico', { mime_type: 'image/x-icon' });
+    expect((await getPhotoRes(ico)).headers['content-type']).toBe('image/x-icon');
+  });
+
   it('does NOT honor a stored scriptable image type (image/svg+xml)', async () => {
     // svg is inline-scriptable and must never be echoed — allowlist excludes it.
     const id = await addPhoto('vector.svg', { mime_type: 'image/svg+xml' });
