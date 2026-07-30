@@ -52,7 +52,7 @@ describe('photo engagement counters (#895)', () => {
   const getPhoto = async (id) => db('photos').where('id', id).first();
   // The counter writes are fire-and-forget on purpose — give the event
   // loop a beat before asserting.
-  const settle = () => new Promise((r) => setTimeout(r, 100));
+  const settle = () => new Promise((r) => setTimeout(r, 400));
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
@@ -115,6 +115,7 @@ describe('photo engagement counters (#895)', () => {
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/gallery'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
+    app.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
   }, 120000);
 
   afterAll(async () => {
@@ -200,6 +201,13 @@ describe('photo engagement counters (#895)', () => {
       // Own event so the on-the-fly archiver path is guaranteed — the
       // main event may have a cached zip from the previous test's
       // background generation, and racing its build/invalidate hangs.
+      // The route also fires a background pre-zip build after streaming;
+      // against this event's intentionally missing file it crashes with
+      // an async ENOENT that jest attributes to whatever test is running
+      // by then — neutralize it, it's not under test here.
+      const downloadZipService = require('../../src/services/downloadZipService');
+      const generateZipSpy = jest.spyOn(downloadZipService, 'generateZip')
+        .mockResolvedValue({ success: false, error: 'disabled in test' });
       const slug2 = `${SLUG}-skip`;
       const ev = await db('events').insert({
         slug: slug2,
@@ -248,6 +256,33 @@ describe('photo engagement counters (#895)', () => {
       expect((await db('photos').where('id', ids2[0]).first()).download_count).toBe(1);
       // photo-1's source was missing → skipped from the zip → not counted
       expect((await db('photos').where('id', ids2[1]).first()).download_count).toBe(0);
+      generateZipSpy.mockRestore();
+    });
+  });
+
+  describe('admin photos list exposes the counters (#895 follow-up)', () => {
+    it('returns view_count and download_count so the Engagement column can render them', async () => {
+      // The list mapper builds an explicit object — before this fix it
+      // omitted both fields, so the admin table showed 0 forever even
+      // though the DB counted correctly.
+      await request(app)
+        .post(`/api/gallery/${SLUG}/photo/${photoIds[0]}/view`)
+        .set('Authorization', `Bearer ${galleryToken()}`);
+      await request(app)
+        .get(`/api/gallery/${SLUG}/download/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${galleryToken()}`);
+      await settle();
+
+      const res = await request(app)
+        .get(`/api/admin/photos/${eventId}/photos`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      const row = res.body.photos.find((p) => p.id === photoIds[0]);
+      expect(row.view_count).toBe(1);
+      expect(row.download_count).toBe(1);
+      const untouched = res.body.photos.find((p) => p.id === photoIds[1]);
+      expect(untouched.view_count).toBe(0);
+      expect(untouched.download_count).toBe(0);
     });
   });
 
