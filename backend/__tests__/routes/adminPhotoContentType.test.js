@@ -175,6 +175,21 @@ describe('admin photo view Content-Type (#908)', () => {
     expect(res.headers['content-type']).toBe('image/png');
   });
 
+  it('handles Object.prototype key extensions without a 500 (.constructor)', async () => {
+    // The extension-to-MIME lookup must be own-property only — a raw
+    // index access returns an inherited function for these keys and the
+    // downstream startsWith throws. Serve image/jpeg instead of 500.
+    const id = await addPhoto('payload.constructor');
+    const res = await getPhotoRes(id);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/jpeg');
+
+    const id2 = await addPhoto('payload.__proto__', { media_type: 'video' });
+    const res2 = await getPhotoRes(id2);
+    expect(res2.status).toBe(200);
+    expect(res2.headers['content-type']).toBe('video/mp4');
+  });
+
   it('does not synthesize types from unmapped image extensions', async () => {
     // Raw interpolation would produce image/svg+xml (scriptable inline)
     // or arbitrary strings from client-controlled filenames — the shared

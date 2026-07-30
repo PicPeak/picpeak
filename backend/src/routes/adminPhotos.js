@@ -1148,7 +1148,13 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     //    admin player's blob unplayable (#908).
     const { EXTENSION_TO_MIME } = require('../services/uploadSettings');
     const ext = path.extname(photo.filename).slice(1).toLowerCase();
-    const extMime = EXTENSION_TO_MIME[ext] || null;
+    // Own-property lookup (review): a client-controlled filename ending in
+    // .constructor / .__proto__ / .toString would otherwise return an
+    // inherited Object.prototype member, and the extMime.startsWith below
+    // would throw — a permanent 500 for that photo instead of the fallback.
+    const extMime = Object.prototype.hasOwnProperty.call(EXTENSION_TO_MIME, ext)
+      ? EXTENSION_TO_MIME[ext]
+      : null;
     // Full-token validation, not just a prefix check: the stored value is
     // client-controlled, and header-invalid characters (video/mp4\r\nX: y)
     // would make setHeader throw — a permanent 500 for that photo. Bare
