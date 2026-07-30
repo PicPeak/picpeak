@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Calendar, 
@@ -16,6 +16,8 @@ import {
   X
 } from 'lucide-react';
 import { parseISO } from 'date-fns';
+import { useQueryClient } from '@tanstack/react-query';
+import { useExpiryRefresh } from '../../hooks/useExpiryRefresh';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
@@ -79,6 +81,23 @@ export const AdminDashboard: React.FC = () => {
     queryFn: () => eventsService.getEvents(1, 5, 'expiring'),
   });
 
+  // Keep the "expiring soon" card honest when a row crosses its expiry while
+  // the dashboard sits open (#909 review). Filtering client-side desynced the
+  // list from the cached total/stat; instead we refetch the whole set at the
+  // boundary — the backend returns rows/total/stats that already exclude the
+  // now-expired event, so everything stays consistent. Fixes the stale
+  // "1 day left" for roles without the health poll (editor/viewer). Placed
+  // with the other top-level hooks, above the loading early-return.
+  const queryClient = useQueryClient();
+  const refreshExpiring = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['admin-events-summary', 'expiring'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
+  }, [queryClient]);
+  useExpiryRefresh(
+    (expiringEventsData?.events ?? []).map((e: any) => e.expires_at),
+    refreshExpiring,
+  );
+
   // Pending workflow approvals — only when the workflow engine is live. These
   // are the human-in-the-loop gates (e.g. "review invoice before sending").
   const { flags } = useFeatureFlags();
@@ -115,14 +134,7 @@ export const AdminDashboard: React.FC = () => {
     );
   }
 
-  // Drop rows whose expiry has actually passed while the dashboard sat open
-  // (review #909): the query isn't polled, so a cached expired event would
-  // otherwise linger — and the day clamp below rendered it as "1 day left"
-  // indefinitely. An expired gallery is inaccessible; it shouldn't show in
-  // "expiring soon" at all.
-  const expiringEvents = (expiringEventsData?.events ?? []).filter(
-    (e: any) => !e.expires_at || parseISO(e.expires_at).getTime() > Date.now()
-  );
+  const expiringEvents = expiringEventsData?.events ?? [];
   const expiringTotal = expiringEventsData?.pagination?.total ?? expiringEvents.length;
 
   // Format numbers for display
@@ -244,10 +256,10 @@ export const AdminDashboard: React.FC = () => {
             ) : (
               <div className="space-y-3">
                 {expiringEvents.map((event) => {
-                  // Ceiling (#909): truncation showed "0 days" on the last
-                  // day. The list is pre-filtered to unexpired rows, so the
-                  // delta is always positive and ceils to >= 1 — no clamp.
-                  const daysLeft = Math.ceil((parseISO(event.expires_at!).getTime() - Date.now()) / 86400000);
+                  // Ceiling so the final partial day reads "1 day", not "0"
+                  // (#909); clamped since a row can sit at the boundary for the
+                  // instant before useExpiryRefresh refetches it away.
+                  const daysLeft = Math.max(1, Math.ceil((parseISO(event.expires_at!).getTime() - Date.now()) / 86400000));
 
                   return (
                     <div
