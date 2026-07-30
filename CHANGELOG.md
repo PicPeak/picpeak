@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.97.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.97.4-beta.0...v3.97.5-beta.0) (2026-07-30)
+
+
+### Bug Fixes
+
+* **admin:** code-review follow-ups on [#910](https://github.com/PicPeak/picpeak/issues/910)/[#916](https://github.com/PicPeak/picpeak/issues/916) (MIME resolver + expiry reactivity) ([#921](https://github.com/PicPeak/picpeak/issues/921)) ([252475f](https://github.com/PicPeak/picpeak/commit/252475fce2ce8d5e16915c4d3558576ad720189b))
+
 ## [3.97.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.97.3-beta.0...v3.97.4-beta.0) (2026-07-29)
 
 
