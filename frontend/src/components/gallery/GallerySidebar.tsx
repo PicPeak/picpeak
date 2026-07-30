@@ -1,9 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { X, Download, Filter, SortAsc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera } from 'lucide-react';
+import { X, Download, Filter, SortAsc, SortDesc, Search, Calendar, Type, HardDrive, Check, Star, Upload, Camera } from 'lucide-react';
 import { Button } from '../common';
 import { PhotoCategory } from '../../types';
 import { useTranslation } from 'react-i18next';
-import { GalleryFilter, type FilterType } from './GalleryFilter';
+import { GalleryFilter, type FilterType, type FeedbackFilterType } from './GalleryFilter';
 
 interface GallerySidebarProps {
   isOpen: boolean;
@@ -15,6 +15,9 @@ interface GallerySidebarProps {
   onSearchChange: (term: string) => void;
   sortBy: 'date' | 'name' | 'size' | 'rating' | 'capture_date';
   onSortChange: (sort: 'date' | 'name' | 'size' | 'rating' | 'capture_date') => void;
+  // Sort direction (#889)
+  sortDesc?: boolean;
+  onSortDescChange?: (desc: boolean) => void;
   isSelectionMode: boolean;
   onToggleSelectionMode: () => void;
   selectedCount: number;
@@ -29,7 +32,8 @@ interface GallerySidebarProps {
   allowUploads?: boolean;
   onUploadClick?: () => void;
   feedbackEnabled?: boolean;
-  filterType?: FilterType;
+  // Multi-select feedback filters (#889): empty array = "All".
+  activeFilters?: FeedbackFilterType[];
   onFilterChange?: (filter: FilterType) => void;
   likeCount?: number;
   favoriteCount?: number;
@@ -49,6 +53,8 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   onSearchChange,
   sortBy,
   onSortChange,
+  sortDesc = true,
+  onSortDescChange,
   isSelectionMode,
   onToggleSelectionMode,
   selectedCount,
@@ -63,7 +69,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   allowUploads,
   onUploadClick,
   feedbackEnabled = false,
-  filterType = 'all',
+  activeFilters = [],
   onFilterChange,
   likeCount = 0,
   favoriteCount = 0,
@@ -223,7 +229,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
           {feedbackEnabled && onFilterChange && (
             <div className="gallery-sidebar-section gallery-sidebar-feedback p-4 border-b border-surface">
               <GalleryFilter
-                currentFilter={filterType}
+                activeFilters={activeFilters}
                 onFilterChange={(filter) => {
                   onFilterChange(filter);
                   if (isMobile) onClose();
@@ -374,6 +380,30 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                   );
                 })}
               </div>
+
+              {/* Sort direction (#889) */}
+              {onSortDescChange && (
+                <div className="flex items-center gap-2 mt-3">
+                  <Button
+                    variant={!sortDesc ? 'primary' : 'outline'}
+                    size="sm"
+                    leftIcon={<SortAsc className="w-4 h-4" />}
+                    onClick={() => onSortDescChange(false)}
+                    className="gallery-btn flex-1"
+                  >
+                    {t('gallery.sortAscending', 'Sort ascending')}
+                  </Button>
+                  <Button
+                    variant={sortDesc ? 'primary' : 'outline'}
+                    size="sm"
+                    leftIcon={<SortDesc className="w-4 h-4" />}
+                    onClick={() => onSortDescChange(true)}
+                    className="gallery-btn flex-1"
+                  >
+                    {t('gallery.sortDescending', 'Sort descending')}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Search, SortAsc, Grid, Heart, Star, MessageSquare, Bookmark } from 'lucide-react';
+import { Search, SortAsc, SortDesc, Grid, Heart, Star, MessageSquare, Bookmark } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../common';
-import type { FilterType } from './GalleryFilter';
+import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 
 interface PhotoCategory {
   id: number | string;
@@ -27,10 +27,15 @@ interface PhotoFilterBarProps {
   onSearchChange: (term: string) => void;
   sortBy: 'date' | 'name' | 'size' | 'rating' | 'capture_date';
   onSortChange: (sort: 'date' | 'name' | 'size' | 'rating' | 'capture_date') => void;
+  // Sort direction (#889). Direction controls only render when the
+  // callback is provided (PreviewPage doesn't pass it).
+  sortDesc?: boolean;
+  onSortDescChange?: (desc: boolean) => void;
   photoCount: number;
-  // Feedback filter props
+  // Feedback filter props. Multi-select (#889): empty array = "All";
+  // clicking a filter toggles it in the parent's set.
   feedbackEnabled?: boolean;
-  currentFilter?: FilterType;
+  activeFilters?: FeedbackFilterType[];
   onFilterChange?: (filter: FilterType) => void;
   mediaFilter?: 'all' | 'photo' | 'video';
   onMediaFilterChange?: (filter: 'all' | 'photo' | 'video') => void;
@@ -46,9 +51,11 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
   onSearchChange,
   sortBy,
   onSortChange,
+  sortDesc = true,
+  onSortDescChange,
   photoCount,
   feedbackEnabled = false,
-  currentFilter = 'all',
+  activeFilters = [],
   onFilterChange,
   mediaFilter = 'all',
   onMediaFilterChange,
@@ -56,6 +63,8 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
 }) => {
   const { t } = useTranslation();
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const isActive = (filter: FilterType) =>
+    filter === 'all' ? activeFilters.length === 0 : activeFilters.includes(filter as FeedbackFilterType);
   return (
     <div className="space-y-4">
       {/* Search and Sort */}
@@ -77,7 +86,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
           <Button
             variant="outline"
             size="md"
-            leftIcon={<SortAsc className="w-4 h-4" />}
+            leftIcon={sortDesc ? <SortDesc className="w-4 h-4" /> : <SortAsc className="w-4 h-4" />}
             onClick={() => setShowSortMenu(!showSortMenu)}
             className="w-full md:w-auto text-sm md:text-base"
           >
@@ -147,6 +156,36 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
               >
                 {t('gallery.sortByRating', 'Sort by Rating')}
               </button>
+
+              {/* Sort direction (#889) */}
+              {onSortDescChange && (
+                <div className="border-t border-surface mt-1 pt-1">
+                  <button
+                    onClick={() => {
+                      onSortDescChange(false);
+                      setShowSortMenu(false);
+                    }}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-black/10 flex items-center gap-2 ${
+                      !sortDesc ? 'bg-accent-dark text-white' : 'text-muted-theme'
+                    }`}
+                  >
+                    <SortAsc className="w-4 h-4" />
+                    {t('gallery.sortAscending', 'Sort ascending')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      onSortDescChange(true);
+                      setShowSortMenu(false);
+                    }}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-black/10 flex items-center gap-2 ${
+                      sortDesc ? 'bg-accent-dark text-white' : 'text-muted-theme'
+                    }`}
+                  >
+                    <SortDesc className="w-4 h-4" />
+                    {t('gallery.sortDescending', 'Sort descending')}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -202,7 +241,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                 </span>
                 <div className="flex items-center gap-1">
                   <Button
-                    variant={currentFilter === 'all' ? 'primary' : 'outline'}
+                    variant={isActive('all') ? 'primary' : 'outline'}
                     size="sm"
                     onClick={() => onFilterChange('all')}
                     className="p-1 w-8 h-8 flex items-center justify-center"
@@ -211,7 +250,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                     <Grid className="w-3.5 h-3.5" />
                   </Button>
                   <Button
-                    variant={currentFilter === 'liked' ? 'primary' : 'outline'}
+                    variant={isActive('liked') ? 'primary' : 'outline'}
                     size="sm"
                     onClick={() => onFilterChange('liked')}
                     className="p-1 w-8 h-8 flex items-center justify-center"
@@ -220,7 +259,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                     <Heart className="w-3.5 h-3.5" />
                   </Button>
                   <Button
-                    variant={currentFilter === 'favorited' ? 'primary' : 'outline'}
+                    variant={isActive('favorited') ? 'primary' : 'outline'}
                     size="sm"
                     onClick={() => onFilterChange('favorited')}
                     className="p-1 w-8 h-8 flex items-center justify-center"
@@ -229,7 +268,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                     <Bookmark className="w-3.5 h-3.5" />
                   </Button>
                   <Button
-                    variant={currentFilter === 'rated' ? 'primary' : 'outline'}
+                    variant={isActive('rated') ? 'primary' : 'outline'}
                     size="sm"
                     onClick={() => onFilterChange('rated')}
                     className="p-1 w-8 h-8 flex items-center justify-center"
@@ -238,7 +277,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                     <Star className="w-3.5 h-3.5" />
                   </Button>
                   <Button
-                    variant={currentFilter === 'commented' ? 'primary' : 'outline'}
+                    variant={isActive('commented') ? 'primary' : 'outline'}
                     size="sm"
                     onClick={() => onFilterChange('commented')}
                     className="p-1 w-8 h-8 flex items-center justify-center"
@@ -301,7 +340,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
             </span>
             <div className="flex items-center gap-1">
               <Button
-                variant={currentFilter === 'all' ? 'primary' : 'outline'}
+                variant={isActive('all') ? 'primary' : 'outline'}
                 size="sm"
                 onClick={() => onFilterChange('all')}
                 className="p-1 w-8 h-8 flex items-center justify-center"
@@ -310,7 +349,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                 <Grid className="w-3.5 h-3.5" />
               </Button>
               <Button
-                variant={currentFilter === 'liked' ? 'primary' : 'outline'}
+                variant={isActive('liked') ? 'primary' : 'outline'}
                 size="sm"
                 onClick={() => onFilterChange('liked')}
                 className="p-1 w-8 h-8 flex items-center justify-center"
@@ -319,7 +358,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                 <Heart className="w-3.5 h-3.5" />
               </Button>
               <Button
-                variant={currentFilter === 'favorited' ? 'primary' : 'outline'}
+                variant={isActive('favorited') ? 'primary' : 'outline'}
                 size="sm"
                 onClick={() => onFilterChange('favorited')}
                 className="p-1 w-8 h-8 flex items-center justify-center"
@@ -328,7 +367,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                 <Bookmark className="w-3.5 h-3.5" />
               </Button>
               <Button
-                variant={currentFilter === 'rated' ? 'primary' : 'outline'}
+                variant={isActive('rated') ? 'primary' : 'outline'}
                 size="sm"
                 onClick={() => onFilterChange('rated')}
                 className="p-1 w-8 h-8 flex items-center justify-center"
@@ -337,7 +376,7 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
                 <Star className="w-3.5 h-3.5" />
               </Button>
               <Button
-                variant={currentFilter === 'commented' ? 'primary' : 'outline'}
+                variant={isActive('commented') ? 'primary' : 'outline'}
                 size="sm"
                 onClick={() => onFilterChange('commented')}
                 className="p-1 w-8 h-8 flex items-center justify-center"

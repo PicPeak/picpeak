@@ -41,7 +41,7 @@ describe('PhotoFilterBar feedback chips (#802)', () => {
       <PhotoFilterBar
         {...baseProps}
         feedbackEnabled
-        currentFilter="all"
+        activeFilters={[]}
         onFilterChange={vi.fn()}
       />
     );
@@ -58,7 +58,7 @@ describe('PhotoFilterBar feedback chips (#802)', () => {
         categories={[{ id: 1, name: 'Ceremony', slug: 'ceremony' }]}
         photos={[{ id: 1, category_id: 1 } as never]}
         feedbackEnabled
-        currentFilter="all"
+        activeFilters={[]}
         onFilterChange={vi.fn()}
       />
     );

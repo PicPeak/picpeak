@@ -17,7 +17,7 @@ import { UserPhotoUpload } from './UserPhotoUpload';
 import { GuestNamePromptModal } from './GuestNamePromptModal';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { GuestIdentityProvider } from '../../contexts/GuestIdentityContext';
-import type { FilterType } from './GalleryFilter';
+import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { api } from '../../config/api';
@@ -90,7 +90,18 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   useGalleryCustomCss(slug);
 
   const [protectionLevel, setProtectionLevel] = useState<'basic' | 'standard' | 'enhanced' | 'maximum'>('standard');
-  const [filterType, setFilterType] = useState<FilterType>('all');
+  // Multi-select feedback filters (#889): OR-combined; empty = "All".
+  // Clicking a filter toggles it, clicking "All" clears the set.
+  const [activeFilters, setActiveFilters] = useState<FeedbackFilterType[]>([]);
+  const handleFilterChange = (filter: FilterType) => {
+    if (filter === 'all') {
+      setActiveFilters([]);
+    } else {
+      setActiveFilters(prev => prev.includes(filter)
+        ? prev.filter(f => f !== filter)
+        : [...prev, filter]);
+    }
+  };
   const [mediaFilter, setMediaFilter] = useState<'all' | 'photo' | 'video'>('all');
   const [guestId, setGuestId] = useState<string>('');
   const [staticHeroPhoto, setStaticHeroPhoto] = useState<Photo | null>(null);
@@ -258,7 +269,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   //
   // Always-on in guest mode (not gated on the active filter) because
   // the chip counts render whether or not a feedback filter is selected
-  // — gating on filterType would leave "Liked (0)" stale until the user
+  // — gating on activeFilters would leave "Liked (0)" stale until the user
   // clicks the chip, which is the same UX cliff bug 1 was reporting.
   const isGuestIdentityMode = feedbackSettings?.identity_mode === 'guest';
   const { data: myFeedbackRows } = useQuery<Array<{
@@ -348,7 +359,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   const [defaultHeroPhoto, setDefaultHeroPhoto] = useState<Photo | null>(null);
 
   useEffect(() => {
-    if (!defaultHeroPhoto && data?.photos && filterType === 'all') {
+    if (!defaultHeroPhoto && data?.photos && activeFilters.length === 0) {
       let hero: Photo | null = null;
       const heroId = data?.event?.hero_photo_id || null;
       if (heroId) {
@@ -363,7 +374,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         setStaticHeroPhoto(hero);
       }
     }
-  }, [data?.photos, data?.event?.hero_photo_id, filterType, defaultHeroPhoto]);
+  }, [data?.photos, data?.event?.hero_photo_id, activeFilters, defaultHeroPhoto]);
 
   // Switch hero photo when a category with its own hero image is selected
   useEffect(() => {
@@ -504,36 +515,30 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
       );
     }
     
-    // Apply feedback filter. In guest identity mode the filter has to
-    // scope to the *current guest's* interactions (#538 bug 1) — the
-    // aggregate counts on each photo row are global across all guests,
-    // which gave an empty grid when the guest had liked photos that
-    // nobody else had touched. Falls back to the aggregate-count check
-    // in simple/non-guest mode where there's no per-person identity to
-    // scope by.
-    switch (filterType) {
-      case 'liked':
-        photos = isGuestIdentityMode
-          ? photos.filter(photo => myFeedbackPhotoIds.liked.has(photo.id))
-          : photos.filter(photo => (photo.like_count || 0) > 0);
-        break;
-      case 'favorited':
-        photos = isGuestIdentityMode
-          ? photos.filter(photo => myFeedbackPhotoIds.favorited.has(photo.id))
-          : photos.filter(photo => (photo.favorite_count || 0) > 0);
-        break;
-      case 'rated':
-        photos = isGuestIdentityMode
-          ? photos.filter(photo => myFeedbackPhotoIds.rated.has(photo.id))
-          : photos.filter(photo => (photo.average_rating || 0) > 0 || (photo.total_ratings || 0) > 0);
-        break;
-      case 'commented':
-        photos = isGuestIdentityMode
-          ? photos.filter(photo => myFeedbackPhotoIds.commented.has(photo.id))
-          : photos.filter(photo => (photo.comment_count || 0) > 0);
-        break;
-      default:
-        break;
+    // Apply feedback filters. Multi-select (#889): a photo matching ANY
+    // active filter passes (OR-combined); an empty set means no feedback
+    // filtering. In guest identity mode each filter has to scope to the
+    // *current guest's* interactions (#538 bug 1) — the aggregate counts
+    // on each photo row are global across all guests, which gave an empty
+    // grid when the guest had liked photos that nobody else had touched.
+    // Falls back to the aggregate-count check in simple/non-guest mode
+    // where there's no per-person identity to scope by.
+    if (activeFilters.length > 0) {
+      const matchers: Record<FeedbackFilterType, (photo: Photo) => boolean> = {
+        liked: (photo) => isGuestIdentityMode
+          ? myFeedbackPhotoIds.liked.has(photo.id)
+          : (photo.like_count || 0) > 0,
+        favorited: (photo) => isGuestIdentityMode
+          ? myFeedbackPhotoIds.favorited.has(photo.id)
+          : (photo.favorite_count || 0) > 0,
+        rated: (photo) => isGuestIdentityMode
+          ? myFeedbackPhotoIds.rated.has(photo.id)
+          : (photo.average_rating || 0) > 0 || (photo.total_ratings || 0) > 0,
+        commented: (photo) => isGuestIdentityMode
+          ? myFeedbackPhotoIds.commented.has(photo.id)
+          : (photo.comment_count || 0) > 0,
+      };
+      photos = photos.filter(photo => activeFilters.some(filter => matchers[filter](photo)));
     }
     
     // Apply sorting
@@ -576,7 +581,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
     }
     
     return photos;
-  }, [data?.photos, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, filterType, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds]);
+  }, [data?.photos, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds]);
 
   // Counts shown in the filter chips ("Liked (N)", etc.). In guest
   // mode these need to mirror the per-guest filter behaviour above —
@@ -862,6 +867,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           onSearchChange={setSearchTerm}
           sortBy={sortBy}
           onSortChange={setSortBy}
+          sortDesc={sortDesc}
+          onSortDescChange={setSortDesc}
           isSelectionMode={isSelectionMode}
           onToggleSelectionMode={() => setIsSelectionMode(!isSelectionMode)}
           selectedCount={selectedPhotos.size}
@@ -876,8 +883,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           allowUploads={data?.event?.allow_user_uploads || event?.allow_user_uploads || false}
           onUploadClick={() => setShowUploadModal(true)}
           feedbackEnabled={feedbackEnabled}
-          filterType={filterType}
-          onFilterChange={setFilterType}
+          activeFilters={activeFilters}
+          onFilterChange={handleFilterChange}
           mediaFilter={mediaFilter}
           onMediaFilterChange={setMediaFilter}
           showMediaFilter={showMediaFilter}
@@ -1015,11 +1022,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
               onSearchChange={setSearchTerm}
             sortBy={sortBy}
             onSortChange={setSortBy}
+            sortDesc={sortDesc}
+            onSortDescChange={setSortDesc}
             photoCount={filteredPhotos.length}
             // Feedback filter props
             feedbackEnabled={feedbackEnabled}
-            currentFilter={filterType}
-            onFilterChange={setFilterType}
+            activeFilters={activeFilters}
+            onFilterChange={handleFilterChange}
             mediaFilter={mediaFilter}
             onMediaFilterChange={setMediaFilter}
             showMediaFilter={showMediaFilter}
