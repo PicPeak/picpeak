@@ -22,6 +22,7 @@ jest.mock('../../src/middleware/auth', () => ({
 }));
 jest.mock('../../src/middleware/permissions', () => ({
   requirePermission: () => (_req, _res, next) => next(),
+  requireSuperAdmin: () => (_req, _res, next) => next(),
 }));
 
 describe('backup credential masking', () => {
