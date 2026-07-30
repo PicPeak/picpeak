@@ -230,10 +230,10 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
             <div className="gallery-sidebar-section gallery-sidebar-feedback p-4 border-b border-surface">
               <GalleryFilter
                 activeFilters={activeFilters}
-                onFilterChange={(filter) => {
-                  onFilterChange(filter);
-                  if (isMobile) onClose();
-                }}
+                // Unlike the single-select category/sort buttons, feedback
+                // filters are multi-select toggles (#889) — keep the mobile
+                // sidebar open so several can be combined in one visit.
+                onFilterChange={onFilterChange}
                 feedbackEnabled={feedbackEnabled}
                 likeCount={likeCount}
                 favoriteCount={favoriteCount}
