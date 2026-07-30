@@ -343,7 +343,9 @@ export const EventDetailsPage: React.FC = () => {
       hero_logo_size: event.hero_logo_size ?? null,
       hero_logo_position: event.hero_logo_position || 'top',
       // #894: null = default (show); only false hides the password-page logo.
-      login_logo_visible: event.login_logo_visible ?? null,
+      // Boolean() folds SQLite's 0/1 into real booleans so the edit form's
+      // strict `=== false` check reads a persisted hide correctly.
+      login_logo_visible: event.login_logo_visible == null ? null : Boolean(event.login_logo_visible),
       // Hero image anchor position (#162)
       hero_image_anchor: event.hero_image_anchor || 'center',
       // Photo cap

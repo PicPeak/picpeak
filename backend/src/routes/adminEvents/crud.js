@@ -1455,11 +1455,14 @@ module.exports = (router) => {
           : formatBoolean(updates.hero_logo_visible);
       }
 
-      // Password-page logo toggle (#894): same null-passthrough coercion.
+      // Password-page logo toggle (#894): null passes through; other
+      // accepted representations ("false", 0, …) are parsed before the
+      // DB formatting — formatBoolean alone would store the truthy
+      // string "false" as 1.
       if (Object.prototype.hasOwnProperty.call(updates, 'login_logo_visible')) {
         updates.login_logo_visible = updates.login_logo_visible === null
           ? null
-          : formatBoolean(updates.login_logo_visible);
+          : formatBoolean(parseBooleanInput(updates.login_logo_visible, true));
       }
 
       // Per-event opt-in for hero-photo OG share image (#474). Coerce so

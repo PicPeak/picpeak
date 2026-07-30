@@ -219,6 +219,15 @@ describe('admin events CRUD endpoints (smoke)', () => {
       expect(clear.status).toBe(200);
       row = await db('events').where({ id }).first();
       expect(row.login_logo_visible).toBeNull();
+
+      // The string "false" passes isBoolean() validation — it must be
+      // parsed, not treated as a truthy string (would store 1 = show).
+      const hideStr = await auth(request(app).put(`/api/admin/events/${id}`)).send({
+        login_logo_visible: 'false',
+      });
+      expect(hideStr.status).toBe(200);
+      row = await db('events').where({ id }).first();
+      expect([false, 0]).toContain(row.login_logo_visible);
     });
   });
 

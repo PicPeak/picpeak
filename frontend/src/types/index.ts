@@ -108,6 +108,9 @@ export interface GalleryInfo {
   requires_password?: boolean;
   color_theme?: string;
   default_photo_sort?: string;
+  // Resolved server-side (#894): false only when the admin hid the logo
+  // on this gallery's password page.
+  login_logo_visible?: boolean;
 }
 
 export interface Photo {
