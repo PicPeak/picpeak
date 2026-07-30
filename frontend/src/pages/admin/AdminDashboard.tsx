@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Calendar, 
@@ -15,7 +15,9 @@ import {
   Check,
   X
 } from 'lucide-react';
-import { differenceInDays, parseISO } from 'date-fns';
+import { parseISO } from 'date-fns';
+import { useQueryClient } from '@tanstack/react-query';
+import { useExpiryRefresh } from '../../hooks/useExpiryRefresh';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
@@ -76,8 +78,28 @@ export const AdminDashboard: React.FC = () => {
   // which silently missed any expiring event outside the first 100 rows.
   const { data: expiringEventsData, isLoading: eventsLoading } = useQuery({
     queryKey: ['admin-events-summary', 'expiring'],
-    queryFn: () => eventsService.getEvents(1, 5, 'expiring'),
+    // Order by soonest expiry so the five shown rows ARE the earliest to
+    // expire — useExpiryRefresh then schedules against the true next boundary
+    // even when >5 events are expiring (#909 review round 3).
+    queryFn: () => eventsService.getEvents(1, 5, 'expiring', undefined, 'expires_at', 'asc'),
   });
+
+  // Keep the "expiring soon" card honest when a row crosses its expiry while
+  // the dashboard sits open (#909 review). Filtering client-side desynced the
+  // list from the cached total/stat; instead we refetch the whole set at the
+  // boundary — the backend returns rows/total/stats that already exclude the
+  // now-expired event, so everything stays consistent. Fixes the stale
+  // "1 day left" for roles without the health poll (editor/viewer). Placed
+  // with the other top-level hooks, above the loading early-return.
+  const queryClient = useQueryClient();
+  const refreshExpiring = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['admin-events-summary', 'expiring'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-dashboard-stats'] });
+  }, [queryClient]);
+  useExpiryRefresh(
+    (expiringEventsData?.events ?? []).map((e: any) => e.expires_at),
+    refreshExpiring,
+  );
 
   // Pending workflow approvals — only when the workflow engine is live. These
   // are the human-in-the-loop gates (e.g. "review invoice before sending").
@@ -237,7 +259,10 @@ export const AdminDashboard: React.FC = () => {
             ) : (
               <div className="space-y-3">
                 {expiringEvents.map((event) => {
-                  const daysLeft = differenceInDays(parseISO(event.expires_at!), new Date());
+                  // Ceiling so the final partial day reads "1 day", not "0"
+                  // (#909); clamped since a row can sit at the boundary for the
+                  // instant before useExpiryRefresh refetches it away.
+                  const daysLeft = Math.max(1, Math.ceil((parseISO(event.expires_at!).getTime() - Date.now()) / 86400000));
 
                   return (
                     <div

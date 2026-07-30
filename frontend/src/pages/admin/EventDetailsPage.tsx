@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useExpiryRefresh } from '../../hooks/useExpiryRefresh';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { differenceInDays } from 'date-fns';
 import { toast } from 'react-toastify';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
@@ -100,6 +100,13 @@ export const EventDetailsPage: React.FC = () => {
     queryFn: () => eventsService.getEvent(parseInt(id!)),
     enabled: !!id,
   });
+
+  // Flip the expiry banner live when the timestamp passes with the page open
+  // (#909 review) — isExpired further down is computed inline from Date.now().
+  // Kept here with the other hooks, above the loading early-return.
+  const [, setExpiryTick] = useState(0);
+  const bumpExpiryTick = useCallback(() => setExpiryTick((n) => n + 1), []);
+  useExpiryRefresh([event?.expires_at], bumpExpiryTick);
 
   // Fetch feedback settings
   const { data: eventFeedbackSettings } = useQuery({
@@ -277,9 +284,14 @@ export const EventDetailsPage: React.FC = () => {
   }
 
   const expiresAtDate = safeParseDate(event.expires_at);
-  const daysUntilExpiration = expiresAtDate ? differenceInDays(expiresAtDate, new Date()) : null;
-  const isExpired = daysUntilExpiration !== null && daysUntilExpiration <= 0;
-  const isExpiring = daysUntilExpiration !== null && daysUntilExpiration > 0 && daysUntilExpiration <= 7;
+  // Timestamp comparison, not truncated whole days (#909): the old
+  // differenceInDays <= 0 marked events "expired" up to 24h early.
+  // Ceiling keeps the countdown at "1 day" through the final day.
+  const isExpired = expiresAtDate !== null && expiresAtDate.getTime() <= Date.now();
+  const daysUntilExpiration = expiresAtDate
+    ? Math.ceil((expiresAtDate.getTime() - Date.now()) / 86400000)
+    : null;
+  const isExpiring = !isExpired && daysUntilExpiration !== null && daysUntilExpiration > 0 && daysUntilExpiration <= 7;
 
   const handleStartEdit = () => {
     setEditForm({
