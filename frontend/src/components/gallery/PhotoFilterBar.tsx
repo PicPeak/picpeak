@@ -86,7 +86,9 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
           <Button
             variant="outline"
             size="md"
-            leftIcon={sortDesc ? <SortDesc className="w-4 h-4" /> : <SortAsc className="w-4 h-4" />}
+            // Direction-aware icon only when the parent controls direction —
+            // PreviewPage renders this bar without it and sorts its own way.
+            leftIcon={onSortDescChange && sortDesc ? <SortDesc className="w-4 h-4" /> : <SortAsc className="w-4 h-4" />}
             onClick={() => setShowSortMenu(!showSortMenu)}
             className="w-full md:w-auto text-sm md:text-base"
           >
