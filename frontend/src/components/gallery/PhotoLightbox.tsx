@@ -470,11 +470,18 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       const { zoom: prevZoom, dragOffset: prevOffset } = wheelStateRef.current;
-      // deltaMode 1 = line-based scrolling (Firefox); normalise to pixels.
-      const deltaPx = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+      // Normalise deltaY to pixels: deltaMode 1 = lines (Firefox),
+      // deltaMode 2 = pages (rare; deltaY is ±1 per notch there).
+      const deltaPx = e.deltaMode === 1 ? e.deltaY * 33
+        : e.deltaMode === 2 ? e.deltaY * 300
+        : e.deltaY;
       const nextZoom = Math.min(3, Math.max(1, prevZoom * Math.exp(-deltaPx * 0.002)));
       if (nextZoom === prevZoom) return;
       if (nextZoom <= 1) {
+        // Sync the ref before the async setState so a burst of wheel
+        // events landing within one render frame chains each step off
+        // the previous one instead of all reading the same stale zoom.
+        wheelStateRef.current = { zoom: 1, dragOffset: { x: 0, y: 0 } };
         setZoom(1);
         setDragOffset({ x: 0, y: 0 });
         return;
@@ -487,11 +494,13 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       const cx = e.clientX - (rect.left + rect.width / 2);
       const cy = e.clientY - (rect.top + rect.height / 2);
       const ratio = nextZoom / prevZoom;
-      setZoom(nextZoom);
-      setDragOffset({
+      const nextOffset = {
         x: cx - (cx - prevOffset.x) * ratio,
         y: cy - (cy - prevOffset.y) * ratio,
-      });
+      };
+      wheelStateRef.current = { zoom: nextZoom, dragOffset: nextOffset };
+      setZoom(nextZoom);
+      setDragOffset(nextOffset);
     };
     el.addEventListener('wheel', handleWheel, { passive: false });
     return () => el.removeEventListener('wheel', handleWheel);
