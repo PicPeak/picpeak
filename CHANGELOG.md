@@ -5,6 +5,16 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.10](https://github.com/PicPeak/picpeak/compare/v3.45.9...v3.45.10) (2026-07-30)
+
+
+### Bug Fixes
+
+* **admin:** expose view/download counters in the admin photos list ([#895](https://github.com/PicPeak/picpeak/issues/895) follow-up) (stable) ([#915](https://github.com/PicPeak/picpeak/issues/915)) ([a27d19b](https://github.com/PicPeak/picpeak/commit/a27d19b4d147c33166b47a6bac12b8d1be32daf1))
+* **admin:** serve videos with their real MIME type in the admin photo view ([#908](https://github.com/PicPeak/picpeak/issues/908)) (stable) ([#911](https://github.com/PicPeak/picpeak/issues/911)) ([d68d84e](https://github.com/PicPeak/picpeak/commit/d68d84e5c8cfcd123c95e474d2b87d153764f710))
+* **admin:** stop marking events expired up to 24h early ([#909](https://github.com/PicPeak/picpeak/issues/909)) (stable) ([#917](https://github.com/PicPeak/picpeak/issues/917)) ([6891769](https://github.com/PicPeak/picpeak/commit/6891769124f77d5af1bbe8eb0932a86753d89e7d))
+* **security:** close GHSA-g94x (cross-gallery photo read) + GHSA-pv6w (admin DB export) (stable) ([#925](https://github.com/PicPeak/picpeak/issues/925)) ([60cbda5](https://github.com/PicPeak/picpeak/commit/60cbda5b2228e0bddf5356eae279d9e7916e9ac2))
+
 ## [3.45.9](https://github.com/PicPeak/picpeak/compare/v3.45.8...v3.45.9) (2026-07-29)
 
 
