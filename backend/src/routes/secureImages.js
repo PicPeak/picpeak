@@ -148,7 +148,7 @@ router.get('/:slug/secure/:photoId/:token',
       const tokenPhotoId = Number(tokenValidation.data?.photoId);
       if (!Number.isInteger(tokenPhotoId) || tokenPhotoId !== Number(photoId)) {
         await secureImageService.logImageAccess(
-          photoId, event.id, req.clientInfo, 'token_photo_mismatch'
+          photoId, event.id, req.clientInfo, 'photo_mismatch'
         );
         return res.status(403).json({ error: 'Token not valid for this photo' });
       }
@@ -160,7 +160,7 @@ router.get('/:slug/secure/:photoId/:token',
       );
       if (Number.isInteger(sessionEventId) && sessionEventId !== Number(event.id)) {
         await secureImageService.logImageAccess(
-          photoId, event.id, req.clientInfo, 'token_gallery_mismatch'
+          photoId, event.id, req.clientInfo, 'gallery_mismatch'
         );
         return res.status(403).json({ error: 'Token not valid for this gallery' });
       }
