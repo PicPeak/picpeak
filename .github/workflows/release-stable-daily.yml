@@ -64,8 +64,18 @@ jobs:
           # (review P2) — an expired/under-scoped PAT would otherwise stop
           # releases while the workflow stays green.
           GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto
-          if [ "$(gh pr view "$pr" --json autoMergeRequest --jq '.autoMergeRequest != null')" != "true" ]; then
-            echo "::error::auto-merge was not enabled on stable release PR #$pr — check RELEASE_PLEASE_TOKEN scope/expiry."
+          # `gh pr merge --auto` merges IMMEDIATELY when the required checks
+          # are already green — the normal case at 18:00, since the fixes
+          # merged hours earlier and CI passed. So success is EITHER the PR is
+          # already merged OR an auto-merge request is now pending; only a PR
+          # that is still open with no auto-merge request is a real failure
+          # (expired/under-scoped PAT) worth failing the job on (review round 2).
+          state=$(gh pr view "$pr" --json state --jq '.state')
+          if [ "$state" = "MERGED" ]; then
+            echo "Stable release PR #$pr merged immediately (checks were already green)."
+          elif [ "$(gh pr view "$pr" --json autoMergeRequest --jq '.autoMergeRequest != null')" = "true" ]; then
+            echo "Auto-merge enabled on stable release PR #$pr — merges when checks are green."
+          else
+            echo "::error::stable release PR #$pr is still open with no auto-merge — check RELEASE_PLEASE_TOKEN scope/expiry."
             exit 1
           fi
-          echo "Auto-merge enabled on stable release PR #$pr — merges when checks are green."
