@@ -405,16 +405,18 @@ export const GalleryPage: React.FC = () => {
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #fafafa)' }}>
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="w-full max-w-lg">
-          {/* Logo/Header */}
+          {/* Logo/Header. The logo can be hidden per gallery (#894). */}
           <div className="text-center mb-4 sm:mb-6">
-            <img 
-              src={settingsData?.branding_logo_url ? 
-                buildResourceUrl(settingsData.branding_logo_url) : 
-                '/picpeak-logo-transparent.png'
-              } 
-              alt={settingsData?.branding_company_name || 'PicPeak'}
-              className="h-12 sm:h-16 lg:h-20 w-auto object-contain mx-auto mb-3 sm:mb-4"
-            />
+            {galleryInfo?.login_logo_visible !== false && (
+              <img
+                src={settingsData?.branding_logo_url ?
+                  buildResourceUrl(settingsData.branding_logo_url) :
+                  '/picpeak-logo-transparent.png'
+                }
+                alt={settingsData?.branding_company_name || 'PicPeak'}
+                className="h-12 sm:h-16 lg:h-20 w-auto object-contain mx-auto mb-3 sm:mb-4"
+              />
+            )}
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-2 px-2" style={{ color: 'var(--color-primary, #5C8762)' }}>
               {galleryInfo?.event_name}
             </h1>

@@ -221,6 +221,7 @@ router.get('/:slug/info', async (req, res) => {
         'hero_logo_size',
         'hero_logo_position',
         'hero_logo_url',
+        'login_logo_visible',
         'header_style',
         'hero_divider_style',
         'hero_image_anchor',
@@ -290,6 +291,9 @@ router.get('/:slug/info', async (req, res) => {
       enable_devtools_protection: event.enable_devtools_protection === true || event.enable_devtools_protection === 1 || event.enable_devtools_protection === '1',
       use_canvas_rendering: event.use_canvas_rendering === true || event.use_canvas_rendering === 1 || event.use_canvas_rendering === '1',
       hero_logo_visible: resolveHeroLogoVisible(event.hero_logo_visible, globalHeroLogoVisible),
+      // #894: only an explicit false hides the logo on the password page;
+      // NULL keeps the default (show).
+      login_logo_visible: !(event.login_logo_visible === false || event.login_logo_visible === 0 || event.login_logo_visible === '0'),
       // #756: NULL per-event size inherits the global branding_logo_size.
       hero_logo_size: event.hero_logo_size || globalLogoSize || 'medium',
       hero_logo_position: event.hero_logo_position || 'top',

@@ -201,6 +201,25 @@ describe('admin events CRUD endpoints (smoke)', () => {
       });
       expect(res.status).toBe(400);
     });
+
+    // #894 — per-event password-page logo toggle: false hides, null
+    // restores the default (show).
+    it('stores login_logo_visible: false and clears it back to NULL', async () => {
+      const id = await insertEvent(db, adminId);
+      const hide = await auth(request(app).put(`/api/admin/events/${id}`)).send({
+        login_logo_visible: false,
+      });
+      expect(hide.status).toBe(200);
+      let row = await db('events').where({ id }).first();
+      expect([false, 0]).toContain(row.login_logo_visible);
+
+      const clear = await auth(request(app).put(`/api/admin/events/${id}`)).send({
+        login_logo_visible: null,
+      });
+      expect(clear.status).toBe(200);
+      row = await db('events').where({ id }).first();
+      expect(row.login_logo_visible).toBeNull();
+    });
   });
 
   describe('DELETE /:id', () => {

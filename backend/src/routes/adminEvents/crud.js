@@ -1090,6 +1090,7 @@ module.exports = (router) => {
         hero_logo_visible: source.hero_logo_visible,
         hero_logo_size: source.hero_logo_size,
         hero_logo_position: source.hero_logo_position,
+        login_logo_visible: source.login_logo_visible,
         header_style: source.header_style || 'standard',
         hero_divider_style: source.hero_divider_style || 'wave',
         hero_image_anchor: source.hero_image_anchor || 'center',
@@ -1237,6 +1238,8 @@ module.exports = (router) => {
     body('hero_logo_visible').optional({ nullable: true }).isBoolean(),
     body('hero_logo_size').optional({ nullable: true }).isIn(['small', 'medium', 'large', 'xlarge']),
     body('hero_logo_position').optional().isIn(['top', 'center', 'bottom']),
+    // Password-page logo toggle (#894). null = default (show).
+    body('login_logo_visible').optional({ nullable: true }).isBoolean(),
     // Header style settings (decoupled from layout)
     body('header_style').optional().isIn(['hero', 'standard', 'banner', 'minimal', 'none']),
     body('hero_divider_style').optional().isIn(['wave', 'straight', 'angle', 'curve', 'none']),
@@ -1450,6 +1453,13 @@ module.exports = (router) => {
         updates.hero_logo_visible = updates.hero_logo_visible === null
           ? null
           : formatBoolean(updates.hero_logo_visible);
+      }
+
+      // Password-page logo toggle (#894): same null-passthrough coercion.
+      if (Object.prototype.hasOwnProperty.call(updates, 'login_logo_visible')) {
+        updates.login_logo_visible = updates.login_logo_visible === null
+          ? null
+          : formatBoolean(updates.login_logo_visible);
       }
 
       // Per-event opt-in for hero-photo OG share image (#474). Coerce so

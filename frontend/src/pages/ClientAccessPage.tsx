@@ -110,8 +110,8 @@ export const ClientAccessPage: React.FC = () => {
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--color-background, #fafafa)' }}>
       <div className="min-h-screen flex flex-col">
-        {/* Logo */}
-        {brandLogo && (
+        {/* Logo — hidden when the admin turned it off for this gallery (#894) */}
+        {brandLogo && galleryInfo.login_logo_visible !== false && (
           <div className="p-8 text-center">
             <img
               src={buildResourceUrl(brandLogo)}

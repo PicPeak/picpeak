@@ -757,6 +757,26 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
                 </>
               )}
 
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1 flex items-center gap-1">
+                  <Image className="w-4 h-4 text-neutral-500 dark:text-neutral-400" />
+                  {t('events.loginLogoVisible', 'Display logo on password page')}
+                </label>
+                <select
+                  // #894: two-state — null keeps the default (show), false
+                  // hides the branding logo on this gallery's password page.
+                  value={editForm.login_logo_visible === false ? 'hide' : 'show'}
+                  onChange={(e) => setEditForm(prev => ({
+                    ...prev,
+                    login_logo_visible: e.target.value === 'hide' ? false : null
+                  }))}
+                  className="w-full sm:w-64 px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-md shadow-sm focus:ring-primary-500 focus:border-accent-dark text-sm"
+                >
+                  <option value="show">{t('events.loginLogoShow', 'Show (default)')}</option>
+                  <option value="hide">{t('events.loginLogoHide', 'Hide')}</option>
+                </select>
+              </div>
+
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
                 {t('events.heroLogoInfo', 'These settings apply when the gallery uses the Hero layout. You can hide the logo or customize its size and position.')}
               </p>

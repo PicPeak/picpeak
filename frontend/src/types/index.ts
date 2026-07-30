@@ -51,6 +51,9 @@ export interface Event {
   hero_logo_size?: 'small' | 'medium' | 'large' | 'xlarge' | null;
   hero_logo_position?: 'top' | 'center' | 'bottom';
   hero_logo_url?: string | null;
+  // Hide the branding logo on the gallery password page (#894).
+  // null = default (show); only an explicit false hides it.
+  login_logo_visible?: boolean | null;
   // Per-event opt-in for using the hero photo as the social-share
   // preview image (#474). When false, og:image falls back to the
   // brand logo. Defaults false on existing rows so no admin's hero
@@ -198,6 +201,9 @@ export interface GalleryData {
     hero_logo_size?: 'small' | 'medium' | 'large' | 'xlarge' | null;
     hero_logo_position?: 'top' | 'center' | 'bottom';
     hero_logo_url?: string | null;
+    // Resolved server-side (#894): false only when the admin hid the
+    // logo on this gallery's password page.
+    login_logo_visible?: boolean;
     // Header style settings (decoupled from layout)
     header_style?: 'hero' | 'standard' | 'minimal' | 'none';
     hero_divider_style?: 'wave' | 'straight' | 'angle' | 'curve' | 'none';
