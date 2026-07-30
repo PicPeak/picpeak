@@ -1156,18 +1156,32 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     const storedVideoMime = photo.mime_type && /^video\/[\w.+-]+$/.test(photo.mime_type)
       ? photo.mime_type
       : null;
+    // Honor a stored image MIME only when it is a known-safe RASTER type
+    // (#908 review round 2): the S3 auto-importer stores correct types for
+    // formats whose extension isn't in EXTENSION_TO_MIME (avif/bmp/tiff/
+    // heic), so map-only would mislabel them as image/jpeg. Allowlist, not
+    // a regex — image/svg+xml is a scriptable inline type and must never
+    // pass, and migration 039's blanket image/jpeg backfill on legacy rows
+    // is why the extension still wins ahead of this (see below).
+    const SAFE_IMAGE_MIME = new Set([
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+      'image/avif', 'image/bmp', 'image/tiff', 'image/heic', 'image/heif',
+    ]);
+    const storedImageMime = SAFE_IMAGE_MIME.has(photo.mime_type) ? photo.mime_type : null;
     const isVideo = photo.media_type === 'video' ||
       Boolean(storedVideoMime) ||
       Boolean(extMime && extMime.startsWith('video/'));
-    // Map-only on the image side too: interpolating the raw extension
-    // would synthesize image/svg+xml (scriptable inline) or header-invalid
-    // values from client-controlled chunked-upload filenames. Anything the
-    // shared map doesn't know is served as image/jpeg — browsers sniff
-    // image bytes in <img>/blob contexts, so a mislabel is harmless where
-    // an injected type is not.
+    // Never interpolate the raw extension on the image side: it would
+    // synthesize image/svg+xml (scriptable inline) or header-invalid values
+    // from client-controlled chunked-upload filenames. Precedence is
+    // mapped-extension (also corrects the 039 legacy-jpeg backfill on PNGs)
+    // -> safe stored raster MIME (auto-imported avif/bmp/tiff) -> image/jpeg.
+    // A stored type outside the allowlist degrades to image/jpeg; browsers
+    // sniff image bytes in <img>/blob contexts, so a mislabel is harmless
+    // where an injected type is not.
     const contentType = isVideo
       ? storedVideoMime || (extMime && extMime.startsWith('video/') ? extMime : null) || 'video/mp4'
-      : (extMime && extMime.startsWith('image/') ? extMime : null) || 'image/jpeg';
+      : (extMime && extMime.startsWith('image/') ? extMime : null) || storedImageMime || 'image/jpeg';
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');

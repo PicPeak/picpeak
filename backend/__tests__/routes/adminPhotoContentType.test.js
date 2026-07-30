@@ -147,6 +147,23 @@ describe('admin photo view Content-Type (#908)', () => {
     expect(res2.headers['content-type']).toBe('video/webm');
   });
 
+  it('preserves an auto-imported avif via the safe stored-MIME allowlist', async () => {
+    // .avif isn't in EXTENSION_TO_MIME; s3AutoImporter stores image/avif.
+    // Map-only would mislabel it image/jpeg — the allowlist keeps it.
+    const id = await addPhoto('imported.avif', { mime_type: 'image/avif' });
+    const res = await getPhotoRes(id);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/avif');
+  });
+
+  it('does NOT honor a stored scriptable image type (image/svg+xml)', async () => {
+    // svg is inline-scriptable and must never be echoed — allowlist excludes it.
+    const id = await addPhoto('vector.svg', { mime_type: 'image/svg+xml' });
+    const res = await getPhotoRes(id);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/jpeg');
+  });
+
   it('never echoes a stored non-media MIME type (inline XSS guard)', async () => {
     const id = await addPhoto('evil.png', { mime_type: 'text/html' });
     const res = await getPhotoRes(id);
