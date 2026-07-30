@@ -457,6 +457,46 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     }
   };
 
+  // Mouse-wheel zoom centered on the cursor (#885). Multiplicative steps
+  // feel uniform across the 1–3 range and are finer than the 0.5-step
+  // toolbar buttons. Attached as a native non-passive listener because
+  // the event must be preventDefault()ed to keep the page behind the
+  // lightbox from scrolling, and React's onWheel can't guarantee that.
+  const wheelStateRef = useRef({ zoom, dragOffset });
+  wheelStateRef.current = { zoom, dragOffset };
+  useEffect(() => {
+    const el = trackContainerRef.current;
+    if (!el || currentPhoto?.media_type === 'video') return;
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const { zoom: prevZoom, dragOffset: prevOffset } = wheelStateRef.current;
+      // deltaMode 1 = line-based scrolling (Firefox); normalise to pixels.
+      const deltaPx = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+      const nextZoom = Math.min(3, Math.max(1, prevZoom * Math.exp(-deltaPx * 0.002)));
+      if (nextZoom === prevZoom) return;
+      if (nextZoom <= 1) {
+        setZoom(1);
+        setDragOffset({ x: 0, y: 0 });
+        return;
+      }
+      // Keep the image point under the cursor fixed while the scale
+      // changes: take the cursor's offset from the container centre (the
+      // image's natural centre) and rescale its distance to the current
+      // pan offset by the zoom ratio.
+      const rect = el.getBoundingClientRect();
+      const cx = e.clientX - (rect.left + rect.width / 2);
+      const cy = e.clientY - (rect.top + rect.height / 2);
+      const ratio = nextZoom / prevZoom;
+      setZoom(nextZoom);
+      setDragOffset({
+        x: cx - (cx - prevOffset.x) * ratio,
+        y: cy - (cy - prevOffset.y) * ratio,
+      });
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [currentPhoto]);
+
   // Touch event handlers: pinch-to-zoom (2 fingers) + single-finger
   // carousel-style swipe nav. Swipe is suppressed while zoomed in so the
   // user can pan instead. The carousel is also disabled mid-animation.
