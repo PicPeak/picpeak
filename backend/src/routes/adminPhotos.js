@@ -1156,18 +1156,20 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     const storedVideoMime = photo.mime_type && /^video\/[\w.+-]+$/.test(photo.mime_type)
       ? photo.mime_type
       : null;
-    // Honor a stored image MIME only when it is a known-safe RASTER type
-    // (#908 review round 2): the S3 auto-importer stores correct types for
-    // formats whose extension isn't in EXTENSION_TO_MIME (avif/bmp/tiff/
-    // heic), so map-only would mislabel them as image/jpeg. Allowlist, not
-    // a regex — image/svg+xml is a scriptable inline type and must never
-    // pass, and migration 039's blanket image/jpeg backfill on legacy rows
-    // is why the extension still wins ahead of this (see below).
-    const SAFE_IMAGE_MIME = new Set([
-      'image/jpeg', 'image/png', 'image/webp', 'image/gif',
-      'image/avif', 'image/bmp', 'image/tiff', 'image/heic', 'image/heif',
-    ]);
-    const storedImageMime = SAFE_IMAGE_MIME.has(photo.mime_type) ? photo.mime_type : null;
+    // Honor a stored image MIME for any header-safe RASTER type (#908
+    // review): the S3 auto-importer accepts arbitrary image/* from
+    // mime-types and stores it (avif/bmp/tiff/heic/apng/ico/jxl/…), and a
+    // hand-listed allowlist kept missing formats. Allow image/<token> but
+    // NEVER the scriptable svg / *+xml family (image/svg+xml executes
+    // inline). The strict token + anchors also block header injection
+    // (image/x\r\nY:). Migration 039's blanket image/jpeg backfill on
+    // legacy rows is why the mapped extension still wins ahead of this.
+    const storedImageMime =
+      photo.mime_type &&
+      /^image\/[\w.+-]+$/.test(photo.mime_type) &&
+      !/^image\/svg|xml/i.test(photo.mime_type)
+        ? photo.mime_type
+        : null;
     const isVideo = photo.media_type === 'video' ||
       Boolean(storedVideoMime) ||
       Boolean(extMime && extMime.startsWith('video/'));
