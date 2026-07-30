@@ -70,10 +70,15 @@ jobs:
           # already merged OR an auto-merge request is now pending; only a PR
           # that is still open with no auto-merge request is a real failure
           # (expired/under-scoped PAT) worth failing the job on (review round 2).
-          state=$(gh pr view "$pr" --json state --jq '.state')
+          # One snapshot of both fields (review round 3): querying state and
+          # autoMergeRequest separately races — auto-merge can complete
+          # between the two calls, so the first sees OPEN and the second sees
+          # the request already cleared on the now-merged PR → false failure.
+          read -r state automerge < <(gh pr view "$pr" --json state,autoMergeRequest \
+            --jq '[.state, (.autoMergeRequest != null)] | @tsv')
           if [ "$state" = "MERGED" ]; then
             echo "Stable release PR #$pr merged immediately (checks were already green)."
-          elif [ "$(gh pr view "$pr" --json autoMergeRequest --jq '.autoMergeRequest != null')" = "true" ]; then
+          elif [ "$automerge" = "true" ]; then
             echo "Auto-merge enabled on stable release PR #$pr — merges when checks are green."
           else
             echo "::error::stable release PR #$pr is still open with no auto-merge — check RELEASE_PLEASE_TOKEN scope/expiry."
