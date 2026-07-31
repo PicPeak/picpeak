@@ -74,6 +74,25 @@ describe('LocalFsStorage.putFromFile', () => {
     expect(JSON.stringify(keys)).not.toContain('.tmp.');
   });
 
+  it('reclaims stale orphaned staging files during list()', async () => {
+    const dir = path.join(root, 'events/active/ev');
+    await fsp.mkdir(dir, { recursive: true });
+    const fresh = path.join(dir, 'f.jpg.tmp.111.aaaaaaaa');
+    const stale = path.join(dir, 's.jpg.tmp.222.bbbbbbbb');
+    await fsp.writeFile(fresh, Buffer.from('in-flight'));
+    await fsp.writeFile(stale, Buffer.from('orphaned'));
+    // Age the "stale" one past the reclaim threshold (1h).
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await fsp.utimes(stale, old, old);
+
+    await storage.list('events/active/ev');
+
+    // Fresh in-flight staging survives (a live copy may still rename it);
+    // the crash orphan is gone.
+    await expect(fsp.stat(fresh)).resolves.toBeDefined();
+    await expect(fsp.stat(stale)).rejects.toThrow();
+  });
+
   it('never exposes a partially written destination (tmp+rename atomicity)', async () => {
     // A large-ish payload so the copy is not a single instantaneous block.
     const big = Buffer.alloc(8 * 1024 * 1024, 0xab);

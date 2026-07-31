@@ -6,6 +6,11 @@ const crypto = require('crypto');
 
 const logger = require('../../utils/logger');
 
+// Staging files older than this are considered orphaned by a crash between
+// copy and rename, and are reclaimed during list() walks. Generous enough
+// that no legitimate in-flight copy (even multi-GB on slow NFS) hits it.
+const STAGING_RECLAIM_AGE_MS = 60 * 60 * 1000;
+
 /**
  * Filesystem-backed implementation of the StorageBackend interface.
  * All keys are relative to `root` (typically process.env.STORAGE_PATH).
@@ -139,8 +144,20 @@ class LocalFsStorage {
         // Hide in-flight staging files (put/putFromFile write `<key>.tmp.<pid>.<hex>`
         // siblings before the atomic rename). Without this filter a
         // concurrent archive/backup listing could stream a partial tmp
-        // entry or fail when the rename wins the race (#931).
-        if (/\.tmp\.\d+\.[0-9a-f]+$/.test(ent.name)) continue;
+        // entry or fail when the rename wins the race (#931). Stale ones
+        // (a crash between copy and rename orphans them) are reclaimed
+        // here — hiding without reclaiming would let interrupted uploads
+        // accumulate invisible files until the volume fills.
+        if (/\.tmp\.\d+\.[0-9a-f]+$/.test(ent.name)) {
+          const childAbs = path.join(dir, ent.name);
+          try {
+            const st = await fsp.stat(childAbs);
+            if (Date.now() - st.mtimeMs > STAGING_RECLAIM_AGE_MS) {
+              await fsp.unlink(childAbs).catch(() => {});
+            }
+          } catch { /* vanished (rename/cleanup won the race) — fine */ }
+          continue;
+        }
         const childAbs = path.join(dir, ent.name);
         const childRel = relBase ? `${relBase}/${ent.name}` : ent.name;
         if (ent.isDirectory()) {
