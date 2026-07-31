@@ -67,8 +67,18 @@ class LocalFsStorage {
   async putFromFile(relPath, localPath, _options = {}) {
     const abs = this._resolve(relPath);
     await fsp.mkdir(path.dirname(abs), { recursive: true });
-    // copyFile is atomic from the destination's perspective on POSIX.
-    await fsp.copyFile(localPath, abs);
+    // copyFile truncates and rewrites the destination in place, so a
+    // concurrent reader (thumbnail/watermark generation, photo serving)
+    // can observe partial or foreign bytes mid-copy (#931). Copy to a
+    // sibling tmp file and rename, like put() above — rename IS atomic.
+    const tmp = `${abs}.tmp.${process.pid}.${crypto.randomBytes(4).toString('hex')}`;
+    try {
+      await fsp.copyFile(localPath, tmp);
+      await fsp.rename(tmp, abs);
+    } catch (err) {
+      await fsp.unlink(tmp).catch(() => {});
+      throw err;
+    }
   }
 
   async get(relPath) {
