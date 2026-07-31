@@ -23,6 +23,13 @@ class WatermarkGeneratorService {
     this.batchSize = 10;
     // Concurrent processing limit
     this.concurrentLimit = 2;
+    // ONE process-wide limiter for every sharp pipeline this service
+    // spawns (#931). Per-invocation limiters would stack: overlapping
+    // regenerateAll/generateForEvent calls each brought their own cap,
+    // and the fire-and-forget generateForPhoto side-effect (one per
+    // uploaded photo) had no cap at all — a 363-photo bulk upload could
+    // decode 363 full-resolution images concurrently (#628 OOM class).
+    this.limit = pLimit(this.concurrentLimit);
   }
 
   /**
@@ -63,11 +70,11 @@ class WatermarkGeneratorService {
       // (external reference mode). watermarkService needs a local file path.
       const event = { slug: photo.slug, source_mode: photo.source_mode, external_path: photo.external_path };
       const storageKey = resolvePhotoStorageKey(event, photo);
-      const result = storageKey
-        ? await withLocalCopy(storageKey, (lp) =>
+      const result = await this.limit(() => (storageKey
+        ? withLocalCopy(storageKey, (lp) =>
           watermarkService.generateAndSaveWatermark(photo, lp, settings)
         )
-        : await watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), settings);
+        : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), settings)));
 
       if (result.success) {
         // Update database with watermark path
@@ -123,17 +130,17 @@ class WatermarkGeneratorService {
         return { ...results, errors: ['Watermarking is disabled'] };
       }
 
-      // Process in batches. The limiter caps concurrent sharp pipelines at
-      // concurrentLimit — a bare Promise.all over the batch ran all 10 at
-      // once, decoding 10 full-resolution images simultaneously (#931; same
-      // OOM class as #628 in the thumbnail path).
-      const limit = pLimit(this.concurrentLimit);
+      // Process in batches. processPhotoWatermark routes every sharp
+      // pipeline through the shared instance limiter — a bare Promise.all
+      // over the batch ran all 10 at once, decoding 10 full-resolution
+      // images simultaneously (#931; same OOM class as #628 in the
+      // thumbnail path).
       for (let i = 0; i < photos.length; i += this.batchSize) {
         const batch = photos.slice(i, i + this.batchSize);
 
         // Process batch with limited concurrency
         const batchResults = await Promise.all(
-          batch.map(photo => limit(() => this.processPhotoWatermark(photo, settings)))
+          batch.map(photo => this.processPhotoWatermark(photo, settings))
         );
 
         // Collect results
@@ -173,11 +180,11 @@ class WatermarkGeneratorService {
     try {
       const event = { slug: photo.slug, source_mode: photo.source_mode, external_path: photo.external_path };
       const storageKey = resolvePhotoStorageKey(event, photo);
-      const result = storageKey
-        ? await withLocalCopy(storageKey, (lp) =>
+      const result = await this.limit(() => (storageKey
+        ? withLocalCopy(storageKey, (lp) =>
           watermarkService.generateAndSaveWatermark(photo, lp, settings)
         )
-        : await watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), settings);
+        : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), settings)));
 
       if (result.success) {
         await db('photos')
@@ -241,8 +248,7 @@ class WatermarkGeneratorService {
       logger.info(`Starting watermark regeneration for ${photos.length} photos`);
 
       // Process in batches, capped at concurrentLimit parallel sharp
-      // pipelines (see generateForEvent).
-      const limit = pLimit(this.concurrentLimit);
+      // pipelines via the shared instance limiter (see generateForEvent).
       for (let i = 0; i < photos.length; i += this.batchSize) {
         // Check if job was cancelled
         if (!this.activeJobs.has(jobId)) {
@@ -254,7 +260,7 @@ class WatermarkGeneratorService {
 
         // Process batch with limited concurrency
         const batchResults = await Promise.all(
-          batch.map(photo => limit(() => this.processPhotoWatermark(photo, settings)))
+          batch.map(photo => this.processPhotoWatermark(photo, settings))
         );
 
         // Collect results

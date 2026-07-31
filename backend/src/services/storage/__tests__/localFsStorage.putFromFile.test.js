@@ -57,6 +57,23 @@ describe('LocalFsStorage.putFromFile', () => {
     expect(entries.filter((e) => e.includes('.tmp.'))).toEqual([]);
   });
 
+  it('hides in-flight staging files from list()', async () => {
+    const src = path.join(srcDir, 'a.jpg');
+    await fsp.writeFile(src, Buffer.from('photo-a-bytes'));
+    await storage.putFromFile('events/active/ev/a.jpg', src);
+
+    // Simulate a concurrent writer's staging file: archiveEvent lists
+    // this exact prefix and must never see (stream/delete) it.
+    await fsp.writeFile(
+      path.join(root, 'events/active/ev/b.jpg.tmp.12345.deadbeef'),
+      Buffer.from('partial')
+    );
+
+    const keys = (await storage.list('events/active/ev')).map((e) => e.key ?? e);
+    expect(JSON.stringify(keys)).toContain('a.jpg');
+    expect(JSON.stringify(keys)).not.toContain('.tmp.');
+  });
+
   it('never exposes a partially written destination (tmp+rename atomicity)', async () => {
     // A large-ish payload so the copy is not a single instantaneous block.
     const big = Buffer.alloc(8 * 1024 * 1024, 0xab);

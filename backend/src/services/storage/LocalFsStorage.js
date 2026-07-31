@@ -136,6 +136,11 @@ class LocalFsStorage {
         throw err;
       }
       for (const ent of dirents) {
+        // Hide in-flight staging files (put/putFromFile write `<key>.tmp.<pid>.<hex>`
+        // siblings before the atomic rename). Without this filter a
+        // concurrent archive/backup listing could stream a partial tmp
+        // entry or fail when the rename wins the race (#931).
+        if (/\.tmp\.\d+\.[0-9a-f]+$/.test(ent.name)) continue;
         const childAbs = path.join(dir, ent.name);
         const childRel = relBase ? `${relBase}/${ent.name}` : ent.name;
         if (ent.isDirectory()) {
