@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.98.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.97.6-beta.0...v3.98.0-beta.0) (2026-07-31)
+
+
+### Features
+
+* **gallery:** mouse-wheel zoom at cursor in the lightbox ([#885](https://github.com/PicPeak/picpeak/issues/885)) ([#927](https://github.com/PicPeak/picpeak/issues/927)) ([926a4a5](https://github.com/PicPeak/picpeak/commit/926a4a540d6f6a1e134ca4e611f850edf6338378))
+* **gallery:** multi-select feedback filters + sort direction controls ([#889](https://github.com/PicPeak/picpeak/issues/889)) ([#929](https://github.com/PicPeak/picpeak/issues/929)) ([3bcded7](https://github.com/PicPeak/picpeak/commit/3bcded78a448f5b099e87a73c7f1e44e859882aa))
+* **gallery:** per-event toggle to hide the logo on the password page ([#894](https://github.com/PicPeak/picpeak/issues/894)) ([#928](https://github.com/PicPeak/picpeak/issues/928)) ([08ff9f2](https://github.com/PicPeak/picpeak/commit/08ff9f20e73a12bc89fad539781c4f48972f48e1))
+
 ## [3.97.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.97.5-beta.0...v3.97.6-beta.0) (2026-07-30)
 
 
