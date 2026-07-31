@@ -8,6 +8,7 @@
  * - Tracking regeneration progress
  */
 
+const pLimit = require('p-limit');
 const { db } = require('../database/db');
 const watermarkService = require('./watermarkService');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
@@ -130,13 +131,17 @@ class WatermarkGeneratorService {
         return { ...results, errors: ['Watermarking is disabled'] };
       }
 
-      // Process in batches
+      // Process in batches. The limiter caps concurrent sharp pipelines at
+      // concurrentLimit — a bare Promise.all over the batch ran all 10 at
+      // once, decoding 10 full-resolution images simultaneously (#931; same
+      // OOM class as #628 in the thumbnail path).
+      const limit = pLimit(this.concurrentLimit);
       for (let i = 0; i < photos.length; i += this.batchSize) {
         const batch = photos.slice(i, i + this.batchSize);
 
         // Process batch with limited concurrency
         const batchResults = await Promise.all(
-          batch.map(photo => this.processPhotoWatermark(photo, settings))
+          batch.map(photo => limit(() => this.processPhotoWatermark(photo, settings)))
         );
 
         // Collect results
@@ -243,7 +248,9 @@ class WatermarkGeneratorService {
 
       logger.info(`Starting watermark regeneration for ${photos.length} photos`);
 
-      // Process in batches
+      // Process in batches, capped at concurrentLimit parallel sharp
+      // pipelines (see generateForEvent).
+      const limit = pLimit(this.concurrentLimit);
       for (let i = 0; i < photos.length; i += this.batchSize) {
         // Check if job was cancelled
         if (!this.activeJobs.has(jobId)) {
@@ -255,7 +262,7 @@ class WatermarkGeneratorService {
 
         // Process batch with limited concurrency
         const batchResults = await Promise.all(
-          batch.map(photo => this.processPhotoWatermark(photo, settings))
+          batch.map(photo => limit(() => this.processPhotoWatermark(photo, settings)))
         );
 
         // Collect results

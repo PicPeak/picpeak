@@ -354,9 +354,11 @@ async function queueFilesForProcessing(files, options = {}) {
 
   if (fileList.length === 0) return { uploadId, photos: queued, errors };
 
-  // Counter base — same approximation the upload route used pre-async.
-  // Strict uniqueness is still enforced by the filename template; on a
-  // collision the worker would just fail one photo.
+  // Counter base — a per-request approximation (concurrent calls can
+  // compute the same base). Uniqueness of the final path comes from the
+  // random suffix inside generatePhotoFilename (#931) — before that
+  // suffix, a counter collision silently overwrote the first photo's
+  // bytes at its already-recorded path.
   const existingCount = await db('photos')
     .where({ event_id: eventId, type: photoType })
     .count('id as count')
