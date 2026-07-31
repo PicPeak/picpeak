@@ -70,11 +70,21 @@ class WatermarkGeneratorService {
       // (external reference mode). watermarkService needs a local file path.
       const event = { slug: photo.slug, source_mode: photo.source_mode, external_path: photo.external_path };
       const storageKey = resolvePhotoStorageKey(event, photo);
-      const result = await this.limit(() => (storageKey
-        ? withLocalCopy(storageKey, (lp) =>
-          watermarkService.generateAndSaveWatermark(photo, lp, settings)
-        )
-        : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), settings)));
+      const result = await this.limit(async () => {
+        // Revalidate inside the limited slot: a long queue (bulk upload)
+        // can hold this job for minutes, during which an admin may disable
+        // watermarking — running with the captured settings would recreate
+        // files AFTER clearAllWatermarks() wiped them (#931 round 3).
+        const fresh = await watermarkService.getWatermarkSettings();
+        if (!fresh || !fresh.enabled) {
+          return { success: false, watermarkPath: null, error: 'Watermarking is disabled' };
+        }
+        return storageKey
+          ? withLocalCopy(storageKey, (lp) =>
+            watermarkService.generateAndSaveWatermark(photo, lp, fresh)
+          )
+          : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), fresh);
+      });
 
       if (result.success) {
         // Update database with watermark path
@@ -180,11 +190,21 @@ class WatermarkGeneratorService {
     try {
       const event = { slug: photo.slug, source_mode: photo.source_mode, external_path: photo.external_path };
       const storageKey = resolvePhotoStorageKey(event, photo);
-      const result = await this.limit(() => (storageKey
-        ? withLocalCopy(storageKey, (lp) =>
-          watermarkService.generateAndSaveWatermark(photo, lp, settings)
-        )
-        : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), settings)));
+      const result = await this.limit(async () => {
+        // Same revalidation as generateForPhoto: batch jobs queue for a
+        // long time, and a disable mid-run must not recreate files after
+        // clearAllWatermarks(). The batch's `settings` snapshot is still
+        // used for rendering; only the enabled gate is rechecked.
+        const fresh = await watermarkService.getWatermarkSettings();
+        if (!fresh || !fresh.enabled) {
+          return { success: false, watermarkPath: null, error: 'Watermarking is disabled' };
+        }
+        return storageKey
+          ? withLocalCopy(storageKey, (lp) =>
+            watermarkService.generateAndSaveWatermark(photo, lp, settings)
+          )
+          : watermarkService.generateAndSaveWatermark(photo, resolvePhotoFilePath(event, photo), settings);
+      });
 
       if (result.success) {
         await db('photos')
