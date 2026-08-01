@@ -112,8 +112,15 @@ class DownloadZipService {
       const event = await db('events').where({ id: eventId }).first();
       if (!event) return { success: false, error: 'Event not found' };
 
+      // The prebuilt zip is served to ordinary gallery guests (the
+      // download-all fast path), so it must exclude hidden/client-only
+      // photos — NULL visibility counts as visible (pre-migration rows).
+      // PIN-clients bypass this cache and stream a full archive instead.
       const photos = await db('photos')
         .where({ event_id: eventId })
+        .where(function () {
+          this.where('visibility', 'visible').orWhereNull('visibility');
+        })
         .select('*')
         .orderBy('type', 'asc')
         .orderBy('uploaded_at', 'desc');

@@ -7,6 +7,7 @@ const secureImageService = require('../services/secureImageService');
 const { getStorage } = require('../services/storage');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../services/photoResolver');
 const { withLocalCopy } = require('../services/imageProcessor');
+const { isPhotoHiddenFromViewer } = require('../utils/photoVisibility');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
@@ -77,6 +78,12 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, async (req, res) =
     
     if (!photo) {
       return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    // Block guest access to hidden/client-only photos (parity with the
+    // gallery single-photo routes).
+    if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+      return res.status(403).json({ error: 'Photo not available' });
     }
 
     // Check for suspicious activity
@@ -233,7 +240,15 @@ router.post('/:slug/photo/:photoId/generate-url', verifyGalleryAccess, async (re
     if (!photo) {
       return res.status(404).json({ error: 'Photo not found' });
     }
-    
+
+    // Refuse to mint a signed URL for a hidden/client-only photo when the
+    // caller isn't a client. The signed-serve route below is token-only
+    // (no gallery auth), so the access decision has to happen here at mint
+    // time — mirroring how the reveal-bypass flag is baked into the token.
+    if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+      return res.status(403).json({ error: 'Photo not available' });
+    }
+
     // Generate signed token
     const token = generateImageToken(photoId);
     const signedUrl = `/api/images/${req.params.slug}/photo/${photoId}/signed/${token}`;

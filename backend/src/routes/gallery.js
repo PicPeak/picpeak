@@ -30,6 +30,7 @@ const { handleAsync, errorResponse } = require('../utils/routeHelpers');
 const { NotFoundError } = require('../utils/errors');
 const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../services/imageProcessor');
 const downloadZipService = require('../services/downloadZipService');
+const { applyPhotoVisibilityFilter, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 const {
   getUseOriginalFilenames,
   pickRawDownloadName,
@@ -956,8 +957,14 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
       return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
     }
 
-    // Try to serve pre-generated zip (instant download with Content-Length)
-    const zipInfo = await downloadZipService.getZipInfo(req.event.id);
+    // Try to serve pre-generated zip (instant download with Content-Length).
+    // The prebuilt zip is the guest bundle — it excludes hidden/client-only
+    // photos (see downloadZipService._build). PIN-clients must still receive
+    // hidden photos, so they skip the fast path and fall through to the
+    // on-the-fly stream below, which filters by access level (a no-op for
+    // clients). This closes the hidden-photo leak in the bulk download.
+    const isClient = canSeeHiddenPhotos(req.accessLevel);
+    const zipInfo = isClient ? null : await downloadZipService.getZipInfo(req.event.id);
     if (zipInfo) {
       const storage = getStorage();
 
@@ -1015,14 +1022,17 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
     // Fetch photos — exclude photos in categories that disabled downloads (#640).
     // Uncategorised photos are always included; categories without the column
     // (pre-migration-135) fall through the LEFT JOIN's null and are included.
-    const photos = await db('photos')
-      .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
-      .where('photos.event_id', req.event.id)
-      .where(function () {
-        this.whereNull('photos.category_id')
-          .orWhere('photo_categories.allow_downloads', true)
-          .orWhereNull('photo_categories.allow_downloads');
-      })
+    const photos = await applyPhotoVisibilityFilter(
+      db('photos')
+        .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
+        .where('photos.event_id', req.event.id)
+        .where(function () {
+          this.whereNull('photos.category_id')
+            .orWhere('photo_categories.allow_downloads', true)
+            .orWhereNull('photo_categories.allow_downloads');
+        }),
+      req.accessLevel
+    )
       .select('photos.*')
       .orderBy('photos.type', 'asc')
       .orderBy('photos.uploaded_at', 'desc');
@@ -1172,15 +1182,18 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
 
     // Fetch photos — exclude photos in categories that disabled downloads (#640).
     // Same LEFT JOIN pattern as the download-all endpoint.
-    const photos = await db('photos')
-      .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
-      .where('photos.event_id', req.event.id)
-      .whereIn('photos.id', photoIds)
-      .where(function () {
-        this.whereNull('photos.category_id')
-          .orWhere('photo_categories.allow_downloads', true)
-          .orWhereNull('photo_categories.allow_downloads');
-      })
+    const photos = await applyPhotoVisibilityFilter(
+      db('photos')
+        .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
+        .where('photos.event_id', req.event.id)
+        .whereIn('photos.id', photoIds)
+        .where(function () {
+          this.whereNull('photos.category_id')
+            .orWhere('photo_categories.allow_downloads', true)
+            .orWhereNull('photo_categories.allow_downloads');
+        }),
+      req.accessLevel
+    )
       .select('photos.*')
       .orderBy('photos.uploaded_at', 'desc');
 
