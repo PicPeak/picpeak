@@ -99,10 +99,22 @@ describe('resolveLogoFile', () => {
     }
   });
 
-  it('treats absolute paths as-is when they exist', async () => {
+  it('rejects an absolute path OUTSIDE the storage roots (GHSA-c7x5)', async () => {
+    // The raw-absolute candidate was an arbitrary-file-read primitive
+    // (logo_path: '/etc/passwd' → rasterised into a PDF). Absolute paths
+    // outside the storage roots are now dropped even if they exist.
     existsSpy.mockImplementation((p) => p === '/abs/path/logo.png');
     getAppSetting.mockResolvedValue(null);
     const out = await resolveLogoFile({ logo_path: '/abs/path/logo.png' });
-    expect(out).toBe('/abs/path/logo.png');
+    expect(out).toBeNull();
+  });
+
+  it('still accepts an absolute path INSIDE the storage root', async () => {
+    // The legitimate case: multer stores the uploaded logo under
+    // storage/uploads/logos with an absolute path — that stays resolvable.
+    existsSpy.mockImplementation((p) => p === '/app/storage/uploads/logos/logo.png');
+    getAppSetting.mockResolvedValue(null);
+    const out = await resolveLogoFile({ logo_path: '/app/storage/uploads/logos/logo.png' });
+    expect(out).toBe('/app/storage/uploads/logos/logo.png');
   });
 });
