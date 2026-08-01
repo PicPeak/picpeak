@@ -131,19 +131,43 @@ describe('authorization / ownership gaps', () => {
         archive_path: '/hijacked/archive/path',
         hero_logo_path: '/etc/passwd',
         is_draft: 1,
+        project_id: 99999,
+        // Case-variant keys — SQLite matches columns case-insensitively.
+        Password_Hash: 'case-hijack-hash',
+        Created_By: 88888,
       });
       expect(res.status).toBe(200);
 
       const row = await db('events').where({ id: eventId }).first();
       expect(row.event_name).toBe('After');        // legit field applied
-      expect(row.created_by).toBe(superId);         // ownership untouched
+      expect(row.created_by).toBe(superId);         // ownership untouched (+ case-variant)
       expect(row.slug).toBe('authz-mass-assign');   // routing identity untouched
       expect(row.share_token).toBe(seedShareToken); // secret untouched
-      expect(row.password_hash).toBe('orig-hash');  // secret untouched
+      expect(row.password_hash).toBe('orig-hash');  // secret untouched (+ case-variant)
       expect(row.is_archived).toBeFalsy();          // archive lifecycle untouched
       expect(row.archive_path).toBeFalsy();         // forged archive path rejected
       expect(row.hero_logo_path).toBeFalsy();       // fs.unlink primitive blocked
       expect(row.is_draft).toBeFalsy();             // publish workflow not bypassed
+      expect(row.project_id).toBeFalsy();           // server-managed relationship untouched
+    });
+
+    it('returns 200 (no-op) when the body contains only protected fields', async () => {
+      const ins = await db('events').insert({
+        slug: 'authz-empty-update', event_type: 'wedding', event_name: 'Keep',
+        event_date: '2026-08-01', host_email: 'h@example.com', admin_email: 'a@example.com',
+        password_hash: 'x', share_link: '/gallery/authz-empty/share', share_token: 'authz-empty-share',
+        expires_at: new Date(Date.now() + 7 * 864e5).toISOString(),
+        is_active: 1, is_archived: 0, is_draft: 0, created_by: superId,
+        created_at: new Date().toISOString(),
+      }).returning('id');
+      const id = ins[0]?.id ?? ins[0];
+      // Body reduces to {} after the denylist — must not 500 (Knex rejects
+      // .update({})).
+      const res = await auth(request(app).put(`/api/admin/events/${id}`), superTok)
+        .send({ created_by: 1, slug: 'x', is_archived: 1 });
+      expect(res.status).toBe(200);
+      const row = await db('events').where({ id }).first();
+      expect(row.event_name).toBe('Keep');
     });
   });
 
