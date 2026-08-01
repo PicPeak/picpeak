@@ -1291,6 +1291,11 @@ module.exports = (router) => {
         'id', 'created_by', 'created_at', 'updated_at',
         'slug', 'share_link', 'share_token', 'client_share_token',
         'show_share_token', 'password_hash', 'client_password_hash',
+        // Archive lifecycle is governed by events.archive/restore and the
+        // dedicated archive routes — not events.edit. Blocking these keys
+        // stops an editor forging a server-consumed archive_path or
+        // flipping is_archived through the edit payload (codex review).
+        'is_archived', 'archived_at', 'archive_path',
       ];
       for (const col of IMMUTABLE_EVENT_COLUMNS) {
         delete updates[col];
