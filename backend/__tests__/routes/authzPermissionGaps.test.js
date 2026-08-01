@@ -127,6 +127,8 @@ describe('authorization / ownership gaps', () => {
         slug: 'hijacked-slug',
         share_token: 'hijacked-token',
         password_hash: 'hijacked-hash',
+        is_archived: 1,
+        archive_path: '/hijacked/archive/path',
       });
       expect(res.status).toBe(200);
 
@@ -136,6 +138,8 @@ describe('authorization / ownership gaps', () => {
       expect(row.slug).toBe('authz-mass-assign');   // routing identity untouched
       expect(row.share_token).toBe(seedShareToken); // secret untouched
       expect(row.password_hash).toBe('orig-hash');  // secret untouched
+      expect(row.is_archived).toBeFalsy();          // archive lifecycle untouched
+      expect(row.archive_path).toBeFalsy();         // forged archive path rejected
     });
   });
 
