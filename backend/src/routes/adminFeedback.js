@@ -164,6 +164,24 @@ router.get('/events/:eventId/feedback',
   }
 );
 
+// Ownership guard for by-feedback-id routes (GHSA-2qc2 / GHSA-32h4). These
+// take a :feedbackId (not :eventId), so requireEventOwnership can't apply —
+// resolve the feedback's event and enforce the same rule (super_admin sees
+// all; others need to own the event, or it's ownerless/legacy). Returns
+// false and sends a 404 (not 403 — don't leak which feedback ids exist)
+// when the caller may not act on it.
+async function assertOwnsFeedback(req, res, feedbackId) {
+  if (req.admin.roleName === 'super_admin') return true;
+  const fb = await db('photo_feedback').where('id', feedbackId).first('event_id');
+  if (!fb) { res.status(404).json({ error: 'Feedback not found' }); return false; }
+  const event = await db('events').where('id', fb.event_id).first('created_by');
+  if (event && event.created_by && event.created_by !== req.admin.id) {
+    res.status(404).json({ error: 'Feedback not found' });
+    return false;
+  }
+  return true;
+}
+
 // Moderate feedback (approve/hide/reject)
 router.put('/feedback/:feedbackId/:action',
   adminAuth,
@@ -171,11 +189,12 @@ router.put('/feedback/:feedbackId/:action',
   async (req, res) => {
     try {
       const { feedbackId, action } = req.params;
-      
+
       if (!['approve', 'hide', 'reject'].includes(action)) {
         return res.status(400).json({ error: 'Invalid action' });
       }
-      
+      if (!(await assertOwnsFeedback(req, res, feedbackId))) return;
+
       await feedbackService.moderateFeedback(feedbackId, action, req.admin.id);
       
       res.json({ success: true });
@@ -193,7 +212,8 @@ router.delete('/feedback/:feedbackId',
   async (req, res) => {
     try {
       const { feedbackId } = req.params;
-      
+      if (!(await assertOwnsFeedback(req, res, feedbackId))) return;
+
       await feedbackService.deleteFeedback(feedbackId, req.admin.id);
       
       res.json({ success: true });
@@ -347,7 +367,15 @@ router.get('/feedback/pending-moderation',
   requirePermission('events.view'),
   async (req, res) => {
     try {
-      const pending = await feedbackService.getPendingModeration();
+      // Scope to the caller's owned events unless super_admin (GHSA-3335).
+      let ownedEventIds = null;
+      if (req.admin.roleName !== 'super_admin') {
+        const rows = await db('events')
+          .where((q) => q.whereNull('created_by').orWhere('created_by', req.admin.id))
+          .select('id');
+        ownedEventIds = rows.map((r) => r.id);
+      }
+      const pending = await feedbackService.getPendingModeration(null, ownedEventIds);
       res.json(pending);
     } catch (error) {
       logger.error('Error getting pending moderation:', error);

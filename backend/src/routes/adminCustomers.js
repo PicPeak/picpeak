@@ -11,6 +11,7 @@ const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
+const { filterOwnedEventIds } = require('../middleware/ownership');
 
 // Hour-entry routes are gated by the hoursLogging master so a direct API hit
 // can't read/edit/delete/bill logged hours while the feature is off (the
@@ -528,9 +529,16 @@ router.put('/:id/events', [
   body('event_ids.*').isInt({ min: 1 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
+  // Only assign events the caller may act on (GHSA-xr6x) — otherwise a
+  // restricted role could mint a customer's gallery access to foreign
+  // events by supplying arbitrary ids. super_admin keeps all.
+  const { allowed, denied } = await filterOwnedEventIds(req.admin, req.body.event_ids);
+  if (denied.length) {
+    return res.status(403).json({ error: 'One or more events are not yours to assign' });
+  }
   const result = await customerAccountsService.setAssignmentsForCustomer(
     parseInt(req.params.id, 10),
-    req.body.event_ids,
+    allowed,
     req.admin.id,
   );
   successResponse(res, result);
