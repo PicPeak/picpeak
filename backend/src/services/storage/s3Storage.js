@@ -131,6 +131,19 @@ class S3StorageAdapter extends stream.EventEmitter {
    */
   async testConnection() {
     try {
+      // Resolve-and-vet the custom endpoint before the network round-trip
+      // (the constructor's literal check can't catch a public-looking
+      // hostname that resolves to an internal IP). Prod-only, matching the
+      // constructor gate — dev points at localhost MinIO deliberately.
+      if (process.env.NODE_ENV === 'production' && this.config.endpoint) {
+        const { isHostAllowed } = require('../../utils/networkValidation');
+        const { hostname } = new URL(
+          /^https?:\/\//.test(this.config.endpoint) ? this.config.endpoint : `https://${this.config.endpoint}`
+        );
+        if (!(await isHostAllowed(hostname))) {
+          throw new Error('S3 endpoint resolves to a private or internal network address');
+        }
+      }
       await this.s3Client.send(new HeadBucketCommand({ Bucket: this.bucket }));
       logger.info(`Successfully connected to S3 bucket: ${this.bucket}`);
       return true;

@@ -1,5 +1,6 @@
 const { URL } = require('url');
 const net = require('net');
+const dns = require('dns').promises;
 
 /**
  * Check if a hostname or IP resolves to a private/internal network address.
@@ -162,6 +163,11 @@ function isPrivateIPv6(ip) {
 
 /**
  * Validate a URL string, rejecting private/internal targets.
+ *
+ * NOTE: literal-only. For a hostname (not an IP), this checks the string but
+ * NOT what it resolves to — `evil.example` with an A record of 10.0.0.5
+ * passes. Prefer isHostAllowed / validateExternalUrlAsync at any call site
+ * that then actually connects; kept for synchronous callers and fast checks.
  * @param {string} urlString - URL to validate
  * @returns {{ valid: boolean, error?: string }}
  */
@@ -177,4 +183,65 @@ function validateExternalUrl(urlString) {
   }
 }
 
-module.exports = { isPrivateIP, validateExternalUrl };
+/**
+ * Resolve a hostname and reject if it (or ANY of its A/AAAA records) points
+ * at a private/internal address. Closes the SSRF hole where a public-looking
+ * hostname resolves to an internal IP or the cloud metadata endpoint — the
+ * literal isPrivateIP check alone can't see that. Fails closed on resolution
+ * failure. IP literals are decided by isPrivateIP without a lookup.
+ *
+ * Residual: a determined attacker who controls DNS can still rebind between
+ * this check and the client's own resolution (TOCTOU). Fully closing that
+ * needs pinning the connection to the vetted IP, which the underlying
+ * clients (nodemailer/imap/ssh/aws-sdk) don't cleanly support; these actions
+ * are admin-only, so resolve-and-vet is the proportionate mitigation.
+ *
+ * @param {string} hostname
+ * @returns {Promise<boolean>} true when safe to connect
+ */
+async function classifyHost(hostname) {
+  if (!hostname || typeof hostname !== 'string') return 'invalid';
+  // Literal check first: IP literals, blocked names, .internal/.local/.localhost.
+  if (isPrivateIP(hostname)) return 'private';
+  // An IP literal is fully decided above — no name to resolve.
+  const bare = hostname.replace(/^\[|\]$/g, '');
+  if (net.isIP(bare)) return 'ok';
+  let addresses;
+  try {
+    addresses = await dns.lookup(hostname, { all: true });
+  } catch {
+    return 'unresolved'; // transient/NXDOMAIN — caller decides retry vs reject
+  }
+  if (!addresses.length) return 'unresolved';
+  return addresses.every((a) => !isPrivateIP(a.address)) ? 'ok' : 'private';
+}
+
+async function isHostAllowed(hostname) {
+  // Fail-closed boolean for save/test call sites: anything not clearly 'ok'
+  // (including a transient lookup failure) is rejected.
+  return (await classifyHost(hostname)) === 'ok';
+}
+
+/**
+ * Async, DNS-resolving counterpart to validateExternalUrl. Returns a `reason`
+ * so callers with retry semantics (e.g. the webhook worker) can distinguish a
+ * policy rejection ('private'/'invalid') from a transient lookup failure
+ * ('unresolved') that should be retried rather than permanently failed.
+ * @param {string} urlString
+ * @returns {Promise<{ valid: boolean, error?: string, reason: string }>}
+ */
+async function validateExternalUrlAsync(urlString) {
+  let parsed;
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    return { valid: false, error: 'Invalid URL format', reason: 'invalid' };
+  }
+  const reason = await classifyHost(parsed.hostname);
+  if (reason !== 'ok') {
+    return { valid: false, error: 'URL points to a private or internal network address', reason };
+  }
+  return { valid: true, reason: 'ok' };
+}
+
+module.exports = { isPrivateIP, validateExternalUrl, isHostAllowed, validateExternalUrlAsync, classifyHost };

@@ -845,6 +845,14 @@ function parseRsyncStats(output) {
 
 async function performRsyncBackup(config, files) {
   const { spawnAsync } = require('../utils/safeExec');
+  // SSRF: the /test-connection route validates the host, but a scheduled or
+  // manual /run reaches here directly with the stored host. Resolve-and-vet
+  // it right before ssh/rsync does its own DNS at connect time, so a host
+  // that resolves to an internal address can't be reached (GHSA-4jh8).
+  const { isHostAllowed } = require('../utils/networkValidation');
+  if (!(await isHostAllowed(config.backup_rsync_host))) {
+    throw new Error('rsync host resolves to a private or internal network address');
+  }
   // Anchored excludes for the de-selected What-to-Backup paths; rsync
   // otherwise transfers the whole storage root regardless of the walker's
   // file list (which only feeds manifests and file state).

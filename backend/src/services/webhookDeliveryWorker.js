@@ -2,7 +2,7 @@ const axios = require('axios');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { signPayload, renderTemplate } = require('./webhookService');
-const { validateExternalUrl } = require('../utils/networkValidation');
+const { validateExternalUrlAsync } = require('../utils/networkValidation');
 
 const POLL_INTERVAL_MS = parseInt(process.env.WEBHOOK_DELIVERY_INTERVAL_MS || '5000', 10);
 const CONCURRENCY = parseInt(process.env.WEBHOOK_DELIVERY_CONCURRENCY || '5', 10);
@@ -91,12 +91,24 @@ async function deliverOne(row) {
     return;
   }
 
-  // Re-validate URL per delivery — DNS-rebinding mitigation. Admin can opt
-  // out via WEBHOOK_ALLOW_PRIVATE_URLS=true for local-receiver dev runs.
+  // Re-validate URL per delivery — DNS-rebinding mitigation. Resolves the
+  // host and vets every A/AAAA record (a public-looking name that now
+  // resolves to an internal IP is rejected). Admin can opt out via
+  // WEBHOOK_ALLOW_PRIVATE_URLS=true for local-receiver dev runs.
   if (!allowPrivateUrls) {
-    const urlCheck = validateExternalUrl(webhook.url);
+    const urlCheck = await validateExternalUrlAsync(webhook.url);
     if (!urlCheck.valid) {
-      await markFailedFinal(row, `URL rejected: ${urlCheck.error}`);
+      // A transient lookup failure ('unresolved' — EAI_AGAIN, resolver
+      // briefly down) must NOT connect: falling through to axios would let
+      // an attacker SERVFAIL this preflight and answer axios's own lookup
+      // with a private/metadata IP, defeating the guard. Schedule the
+      // normal retry/backoff instead — no request is made. A confirmed
+      // policy rejection (resolves-to-private / malformed) is permanent.
+      if (urlCheck.reason === 'unresolved') {
+        await scheduleTransientRetry(row, webhook, 'URL host did not resolve — retrying');
+      } else {
+        await markFailedFinal(row, `URL rejected: ${urlCheck.error}`);
+      }
       return;
     }
   }
@@ -215,6 +227,36 @@ async function markFailedFinal(row, reason) {
       next_retry_at: null,
     });
   await db('webhooks').where({ id: row.webhook_id }).update({ last_failure_at: new Date() });
+}
+
+// Schedule the normal retry/backoff for a transient failure that must not
+// make a network request (e.g. the SSRF preflight lookup failed). Mirrors
+// the failure branch of the main delivery path: retry until MAX_ATTEMPTS,
+// then give up. No response fields — nothing was sent.
+async function scheduleTransientRetry(row, webhook, errorMsg) {
+  const newAttempt = row.attempt_count + 1;
+  if (newAttempt >= MAX_ATTEMPTS) {
+    await db('webhook_deliveries')
+      .where({ id: row.id })
+      .update({
+        status: 'failed',
+        last_error: errorMsg,
+        attempt_count: newAttempt,
+        completed_at: new Date(),
+        next_retry_at: null,
+      });
+  } else {
+    const backoff = BACKOFF_MS[Math.min(newAttempt - 1, BACKOFF_MS.length - 1)];
+    await db('webhook_deliveries')
+      .where({ id: row.id })
+      .update({
+        status: 'pending',
+        last_error: errorMsg,
+        attempt_count: newAttempt,
+        next_retry_at: new Date(Date.now() + backoff),
+      });
+  }
+  await db('webhooks').where({ id: webhook.id }).update({ last_failure_at: new Date() });
 }
 
 function stringifyBody(data) {
