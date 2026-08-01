@@ -25,7 +25,11 @@ class SecureImageService {
       // Reveal mode (#838): whether the minting context bypasses the
       // hidden-gallery gate — re-checked at SERVE time so a re-hide
       // invalidates in-flight guest tokens without breaking the slideshow.
-      revealBypass = false
+      revealBypass = false,
+      // Whether the minter was a PIN-client — lets the serve route keep
+      // delivering a photo hidden AFTER minting (TOCTOU). A guest's token
+      // carries false, so it stops the moment the photo is hidden.
+      clientBypass = false
     } = options;
 
     const tokenData = {
@@ -37,6 +41,7 @@ class SecureImageService {
       usedCount: 0,
       protectionLevel,
       revealBypass,
+      clientBypass,
       createdAt: Date.now()
     };
 

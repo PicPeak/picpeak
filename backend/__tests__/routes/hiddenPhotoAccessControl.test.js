@@ -206,4 +206,35 @@ describe('hidden-photo access control (GHSA cluster)', () => {
       expect(res.body.token).toBeDefined();
     });
   });
+
+  // A capability minted while a photo is visible must stop serving once the
+  // photo is hidden — unless minted by a client (clientBypass in the token).
+  describe('signed-URL TOCTOU (hidden AFTER minting)', () => {
+    afterEach(async () => {
+      await db('photos').where({ id: visibleId }).update({ visibility: 'visible' });
+    });
+
+    it("a guest's pre-minted signed URL stops serving once the photo is hidden", async () => {
+      const mint = await request(app)
+        .post(`/api/images/${SLUG}/photo/${visibleId}/generate-url`)
+        .set('Authorization', `Bearer ${guestToken()}`);
+      expect(mint.status).toBe(200);
+      const url = mint.body.url;
+      // Still visible → serves.
+      expect((await request(app).get(url)).status).toBe(200);
+      // Hide it → the guest token (no clientBypass) must now be refused.
+      await db('photos').where({ id: visibleId }).update({ visibility: 'hidden' });
+      expect((await request(app).get(url)).status).toBe(403);
+    });
+
+    it("a client's pre-minted signed URL keeps serving after the photo is hidden", async () => {
+      const mint = await request(app)
+        .post(`/api/images/${SLUG}/photo/${visibleId}/generate-url`)
+        .set('Authorization', `Bearer ${clientToken()}`);
+      expect(mint.status).toBe(200);
+      const url = mint.body.url;
+      await db('photos').where({ id: visibleId }).update({ visibility: 'hidden' });
+      expect((await request(app).get(url)).status).toBe(200);
+    });
+  });
 });

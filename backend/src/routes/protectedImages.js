@@ -8,7 +8,7 @@ const secureImageService = require('../services/secureImageService');
 const { getStorage } = require('../services/storage');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../services/photoResolver');
 const { withLocalCopy } = require('../services/imageProcessor');
-const { isPhotoHiddenFromViewer } = require('../utils/photoVisibility');
+const { isPhotoHiddenFromViewer, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
@@ -18,13 +18,16 @@ const router = express.Router();
 /**
  * Generate a signed URL token for image access
  */
-function generateImageToken(photoId, expiresIn = 3600, revealBypass = false) {
+function generateImageToken(photoId, expiresIn = 3600, revealBypass = false, clientBypass = false) {
   const secret = process.env.JWT_SECRET;
   const expires = Date.now() + (expiresIn * 1000);
   // Third segment (#838): whether the minting context bypasses reveal mode
-  // (slideshow/client/admin). Old two-segment tokens verify unchanged and
-  // read as no-bypass.
-  const data = `${photoId}:${expires}:${revealBypass ? 1 : 0}`;
+  // (slideshow/client/admin). Fourth segment: whether the minter was a
+  // PIN-client, allowing the serve route to still deliver a photo that was
+  // hidden AFTER minting (TOCTOU) — a guest's token carries 0, so it stops
+  // working the moment the photo is hidden. Old shorter tokens verify
+  // unchanged and read both flags as no-bypass.
+  const data = `${photoId}:${expires}:${revealBypass ? 1 : 0}:${clientBypass ? 1 : 0}`;
   const signature = crypto.createHmac('sha256', secret).update(data).digest('hex');
   return `${Buffer.from(data).toString('base64')}.${signature}`;
 }
@@ -37,20 +40,25 @@ function verifyImageToken(token) {
     const secret = process.env.JWT_SECRET;
     const [data, signature] = token.split('.');
     const decoded = Buffer.from(data, 'base64').toString();
-    const [photoId, expires, bypassFlag] = decoded.split(':');
-    
+    const [photoId, expires, bypassFlag, clientFlag] = decoded.split(':');
+
     // Verify signature (constant-time — avoids leaking the HMAC byte-by-byte)
     const expectedSignature = crypto.createHmac('sha256', secret).update(decoded).digest('hex');
     if (!timingSafeEqualStr(signature, expectedSignature)) {
       return null;
     }
-    
+
     // Check expiration
     if (Date.now() > parseInt(expires)) {
       return null;
     }
-    
-    return { photoId: parseInt(photoId), expires: parseInt(expires), revealBypass: bypassFlag === '1' };
+
+    return {
+      photoId: parseInt(photoId),
+      expires: parseInt(expires),
+      revealBypass: bypassFlag === '1',
+      clientBypass: clientFlag === '1',
+    };
   } catch (error) {
     return null;
   }
@@ -211,12 +219,14 @@ router.post('/:slug/photo/:photoId/generate-secure-token', verifyGalleryAccess, 
     // Create client fingerprint
     const clientFingerprint = secureImageService.createClientFingerprint(req);
 
-    // Generate secure token
+    // Generate secure token. clientBypass lets a client's token keep serving
+    // a photo hidden after minting; a guest's stops at the serve route.
     const token = secureImageService.generateSecureToken(photoId, req.sessionID || 'anonymous', {
       expiresIn,
       maxUses: protectionLevel === 'maximum' ? 1 : 3,
       clientFingerprint,
-      protectionLevel
+      protectionLevel,
+      clientBypass: canSeeHiddenPhotos(req.accessLevel)
     });
     
     res.json({ 
@@ -264,8 +274,10 @@ router.post('/:slug/photo/:photoId/generate-url', verifyGalleryAccess, async (re
       return res.status(403).json({ error: 'Photo not available' });
     }
 
-    // Generate signed token
-    const token = generateImageToken(photoId, 3600, bypassesReveal(req));
+    // Generate signed token. The client-bypass flag lets a PIN-client's
+    // token keep serving a photo hidden after minting; a guest's token
+    // (clientBypass=0) stops the moment the photo is hidden.
+    const token = generateImageToken(photoId, 3600, bypassesReveal(req), canSeeHiddenPhotos(req.accessLevel));
     const signedUrl = `/api/images/${req.params.slug}/photo/${photoId}/signed/${token}`;
     
     res.json({ 
@@ -319,7 +331,14 @@ router.get('/:slug/photo/:photoId/signed/:token', async (req, res) => {
     if (!photo) {
       return res.status(404).json({ error: 'Photo not found' });
     }
-    
+
+    // Recheck visibility at serve time (TOCTOU): a photo hidden AFTER the
+    // URL was minted must stop serving, unless the token was minted by a
+    // client (clientBypass) — mirroring the reveal-mode check above.
+    if (photo.visibility === 'hidden' && !tokenData.clientBypass) {
+      return res.status(403).json({ error: 'Photo not available' });
+    }
+
     // Get watermark settings
     const watermarkSettings = await watermarkService.getWatermarkSettings();
 
