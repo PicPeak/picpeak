@@ -129,6 +129,8 @@ describe('authorization / ownership gaps', () => {
         password_hash: 'hijacked-hash',
         is_archived: 1,
         archive_path: '/hijacked/archive/path',
+        hero_logo_path: '/etc/passwd',
+        is_draft: 1,
       });
       expect(res.status).toBe(200);
 
@@ -140,6 +142,8 @@ describe('authorization / ownership gaps', () => {
       expect(row.password_hash).toBe('orig-hash');  // secret untouched
       expect(row.is_archived).toBeFalsy();          // archive lifecycle untouched
       expect(row.archive_path).toBeFalsy();         // forged archive path rejected
+      expect(row.hero_logo_path).toBeFalsy();       // fs.unlink primitive blocked
+      expect(row.is_draft).toBeFalsy();             // publish workflow not bypassed
     });
   });
 
