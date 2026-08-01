@@ -1029,7 +1029,9 @@ async function sendQuote(id, adminId) {
   });
 
   try {
-    await logActivity('quote_sent', { quoteId: id, token }, null, `admin:${adminId}`);
+    // Do NOT log the raw bearer token — it grants quote actions and the
+    // activity log is readable later (GHSA-prch). The quoteId is the audit key.
+    await logActivity('quote_sent', { quoteId: id }, null, `admin:${adminId}`);
   } catch (_) {}
 
   // Fire the quote.sent workflow trigger (best-effort; emit is fail-closed when
@@ -1254,7 +1256,8 @@ async function recordResponse({ token, action, ip, tosAccepted }) {
   });
 
   try {
-    await logActivity(`quote_${newStatus}`, { quoteId: quote.id, token: tokenRow.token }, null, 'customer:public');
+    // Raw bearer token must not reach the activity log (GHSA-prch).
+    await logActivity(`quote_${newStatus}`, { quoteId: quote.id }, null, 'customer:public');
   } catch (_) {}
 
   // Defer the workflow emit until the 15-min toggle window locks — so accepting

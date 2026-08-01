@@ -171,8 +171,12 @@ router.post('/logout', adminAuth, handleAsync(async (req, res) => {
   // Get token from header
   const token = req.headers.authorization?.split(' ')[1];
   if (token) {
-    // End the session
+    // End the in-memory session AND revoke the JWT (GHSA-cjqh) — the token
+    // is otherwise valid until expiry, so photoAuth/adminAuth would keep
+    // honouring it after logout. isTokenRevoked() checks this store.
     endSession(token);
+    const { revokeToken } = require('../utils/tokenRevocation');
+    await revokeToken(token, 'logout');
   }
 
   // Log activity

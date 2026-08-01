@@ -3,6 +3,8 @@ const jwt = require('jsonwebtoken');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getGalleryTokenFromRequest } = require('../utils/tokenUtils');
+const { isTokenRevoked } = require('../utils/tokenRevocation');
+const { isTokenBeforeCutoff } = require('../utils/sessionCutoff');
 const logger = require('../utils/logger');
 
 async function photoAuth(req, res, next) {
@@ -89,7 +91,13 @@ async function photoAuth(req, res, next) {
         
         // Check if it's an admin token (admins can view all photos)
         if (decoded.type === 'admin') {
-          // For both thumbnails and photos with admin token, allow access
+          // Enforce the same revocation / session-cutoff invalidation that
+          // adminAuth does — otherwise a validly-signed admin JWT keeps
+          // serving photos after logout, password change, or explicit
+          // revocation (GHSA-x55x).
+          if (await isTokenRevoked(decoded) || await isTokenBeforeCutoff(decoded)) {
+            return res.status(401).json({ error: 'Session expired' });
+          }
           return next();
         }
     } catch (err) {

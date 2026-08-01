@@ -349,6 +349,14 @@ router.get('/:slug/secure-download/:photoId/:token',
         return res.status(403).json({ error: 'Invalid or expired token' });
       }
 
+      // Bind the token to the photo it was minted for (GHSA-crxv) — the
+      // /secure serve route does this, but secure-download did not, so a
+      // token minted for photo A could download photo B (incl. a hidden one).
+      const tokenPhotoId = Number(tokenValidation.data?.photoId);
+      if (!Number.isInteger(tokenPhotoId) || tokenPhotoId !== Number(photoId)) {
+        return res.status(403).json({ error: 'Token not valid for this photo' });
+      }
+
       // Verify photo exists
       const photo = await db('photos')
         .where({ id: photoId, event_id: req.event.id })

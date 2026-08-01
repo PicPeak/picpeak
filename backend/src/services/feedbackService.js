@@ -504,7 +504,7 @@ class FeedbackService {
   /**
    * Get feedback requiring moderation
    */
-  async getPendingModeration(eventId = null) {
+  async getPendingModeration(eventId = null, ownedEventIds = null) {
     try {
       let query = db('photo_feedback')
         .join('photos', 'photo_feedback.photo_id', 'photos.id')
@@ -512,9 +512,13 @@ class FeedbackService {
         .where('photo_feedback.is_approved', false)
         .where('photo_feedback.is_hidden', false)
         .where('photo_feedback.feedback_type', 'comment');
-      
+
       if (eventId) {
         query = query.where('photo_feedback.event_id', eventId);
+      } else if (Array.isArray(ownedEventIds)) {
+        // Scope to the caller's owned events (GHSA-3335) — an empty set
+        // matches nothing, so a restricted admin sees only their own.
+        query = query.whereIn('photo_feedback.event_id', ownedEventIds.length ? ownedEventIds : [-1]);
       }
       
       const pending = await query
