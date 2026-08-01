@@ -98,6 +98,26 @@ async function photoAuth(req, res, next) {
           if (await isTokenRevoked(decoded) || await isTokenBeforeCutoff(decoded)) {
             return res.status(401).json({ error: 'Session expired' });
           }
+          // adminAuth also (a) rejects tokens for a now-deactivated admin and
+          // (b) rejects any token minted before the admin's last password
+          // change. isTokenBeforeCutoff is only the GLOBAL restore cutoff, not
+          // a per-admin password change, so without these two checks a stale
+          // or pre-password-change admin token still fetches every photo.
+          const admin = await db('admin_users')
+            .where({ id: decoded.id, is_active: formatBoolean(true) })
+            .select('id', 'password_changed_at')
+            .first();
+          if (!admin) {
+            return res.status(401).json({ error: 'Session expired' });
+          }
+          if (admin.password_changed_at) {
+            const passwordChangedSeconds = Math.floor(
+              new Date(admin.password_changed_at).getTime() / 1000
+            );
+            if (decoded.iat < passwordChangedSeconds) {
+              return res.status(401).json({ error: 'Session expired' });
+            }
+          }
           return next();
         }
     } catch (err) {
