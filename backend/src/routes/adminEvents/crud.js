@@ -1269,6 +1269,52 @@ module.exports = (router) => {
 
       const { id } = req.params;
       const updates = { ...req.body };
+
+      // Strip identity/provenance/secret columns from the mass-assigned
+      // body (GHSA-3rqx). The handler spreads req.body straight into the
+      // events UPDATE, so without this an events.edit holder could rewrite
+      // ownership (created_by), routing identity (slug/share_link), the
+      // share/client tokens, or the password hashes directly. Plaintext
+      // `password`/`client_password` inputs are NOT stripped — those are the
+      // supported way to change credentials and get hashed below; the
+      // tokens are regenerated internally where needed.
+      // The handler spreads req.body straight into the events UPDATE, so any
+      // column an events.edit holder names is writable unless blocked here.
+      // This is a COMPLETE deny-set of every server-managed / permission-gated
+      // events column (enumerated from the schema); everything else is a
+      // legitimate edit-form field and passes through, including input-only
+      // keys (password/client_password) the handler transforms below. New
+      // server-managed columns MUST be added here. (codex review — GHSA-3rqx.)
+      const IMMUTABLE_EVENT_COLUMNS = [
+        // Identity / provenance
+        'id', 'created_by', 'created_at', 'updated_at', 'slug',
+        // Routing + share/client tokens (generated at create / internally)
+        'share_link', 'share_token', 'client_share_token', 'show_share_token',
+        // Secrets (set via the plaintext password/client_password inputs)
+        'password_hash', 'client_password_hash',
+        // Server-consumed file paths — e.g. DELETE /:id/logo fs.unlink()s
+        // hero_logo_path, so a forged value is an arbitrary-delete primitive.
+        'hero_logo_path', 'hero_logo_url', 'archive_path', 'download_zip_path',
+        // Server-managed timestamps
+        'download_zip_generated_at', 'archived_at', 'revealed_at', 'event_reminder_sent_at',
+        // Lifecycle — governed by dedicated permission-gated routes
+        // (events.archive/restore, publish, activate/deactivate), not events.edit.
+        'is_archived', 'is_draft', 'is_active',
+        // Relationships — managed by projectService.assignEvent + its
+        // customer-consistency checks, and events.edit ≠ quotes/contracts perms.
+        'project_id', 'quote_id',
+        // Legacy mirrors — rejected explicitly below in favour of customer_*.
+        'host_name', 'host_email',
+      ];
+      // Case-insensitive match: SQLite treats quoted identifiers
+      // case-insensitively, so a `{ "Password_Hash": ... }` key would
+      // otherwise survive a case-sensitive delete and still hit the real
+      // column (codex review).
+      const denied = new Set(IMMUTABLE_EVENT_COLUMNS.map((c) => c.toLowerCase()));
+      for (const key of Object.keys(updates)) {
+        if (denied.has(key.toLowerCase())) delete updates[key];
+      }
+
       const customerColumnsAvailable = await hasCustomerContactColumns();
 
       if (Object.prototype.hasOwnProperty.call(updates, 'host_name') || Object.prototype.hasOwnProperty.call(updates, 'host_email')) {
@@ -1497,10 +1543,15 @@ module.exports = (router) => {
         }
       }
 
-      // Update event
-      await db('events')
-        .where('id', id)
-        .update(updates);
+      // Update event. Skip the write when the denylist (or masked secrets)
+      // left nothing to change — Knex rejects .update({}) with an error,
+      // which would surface as a 500 for an otherwise-valid no-op request
+      // (e.g. a body of only protected fields). (codex review.)
+      if (Object.keys(updates).length > 0) {
+        await db('events')
+          .where('id', id)
+          .update(updates);
+      }
 
       // Customer-account assignments (#354). Same skip semantics as POST:
       // ignore when the customer portal flag is off so stale tabs don't

@@ -15,8 +15,31 @@ const { requirePermission, userHasAnyPermission } = require('../middleware/permi
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const projectService = require('../services/projectService');
 const { db } = require('../database/db');
+const { ForbiddenError } = require('../utils/errors');
 
 const router = express.Router();
+
+// A deal that spans both quotes and contracts cascades a project link across
+// BOTH tables (projectService.linkDealToProject). So attaching one document
+// must also require manage permission on the OTHER domain the cascade will
+// touch — otherwise quotes.manage alone could re-point a linked contract, and
+// vice versa (GHSA-v4vw / codex review). No-op when the deal touches only the
+// one domain, or on older instances without the deal_uuid column.
+async function assertCascadePermitted(req, docTable, docId, otherTable, otherPerm) {
+  let doc;
+  try {
+    doc = await db(docTable).where({ id: docId }).first('deal_uuid');
+  } catch { return; }
+  if (!doc || !doc.deal_uuid) return;
+  let linked;
+  try {
+    linked = await db(otherTable).where({ deal_uuid: doc.deal_uuid }).first('id');
+  } catch { return; }
+  if (!linked) return;
+  if (!(await userHasAnyPermission(req.admin.id, [otherPerm]))) {
+    throw new ForbiddenError(`This deal also links a ${otherTable.replace(/s$/, '')}; the ${otherPerm} permission is required`);
+  }
+}
 router.use(adminAuth);
 
 // Projects is feature-flagged like bills/quotes — when off, the whole cockpit
@@ -105,23 +128,30 @@ router.post('/:id/events',
 );
 
 // Attach a quote to the project (quotes carry no event_id — migration 121).
+// Requires quotes.manage in addition to events.edit — attaching a quote
+// mutates a separately-permissioned document domain (GHSA-v4vw).
 router.post('/:id/quotes',
-  requirePermission('events.edit'),
+  requirePermission(['events.edit', 'quotes.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 }), body('quoteId').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const result = await projectService.assignQuote(parseInt(req.params.id, 10), parseInt(req.body.quoteId, 10));
+    const quoteId = parseInt(req.body.quoteId, 10);
+    await assertCascadePermitted(req, 'quotes', quoteId, 'contracts', 'contracts.manage');
+    const result = await projectService.assignQuote(parseInt(req.params.id, 10), quoteId);
     return successResponse(res, result, 200, 'Quote attached to project');
   }),
 );
 
-// Attach a contract to the project.
+// Attach a contract to the project. Requires contracts.manage in addition
+// to events.edit (GHSA-v4vw).
 router.post('/:id/contracts',
-  requirePermission('events.edit'),
+  requirePermission(['events.edit', 'contracts.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 }), body('contractId').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const result = await projectService.assignContract(parseInt(req.params.id, 10), parseInt(req.body.contractId, 10));
+    const contractId = parseInt(req.body.contractId, 10);
+    await assertCascadePermitted(req, 'contracts', contractId, 'quotes', 'quotes.manage');
+    const result = await projectService.assignContract(parseInt(req.params.id, 10), contractId);
     return successResponse(res, result, 200, 'Contract attached to project');
   }),
 );
