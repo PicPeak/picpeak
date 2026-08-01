@@ -153,9 +153,20 @@ router.get('/resolve/:identifier', handleAsync(async (req, res) => {
   }
 
   const { event, matchType, shareToken } = result;
-  const linkVariants = await buildShareLinkVariants({ slug: event.slug, shareToken });
   const requiresPassword = !(event.require_password === false || event.require_password === 0 || event.require_password === '0');
 
+  // The share_token is a bearer secret. Only return it (and the share
+  // links/URLs that embed it) when the caller already proved they hold it —
+  // i.e. they resolved via the token or the full share link. A bare *slug*
+  // lookup (slugs appear in gallery URLs and are guessable) must NOT hand
+  // back the secret, or an anonymous caller could turn a known slug into
+  // share-link access to a no-password gallery (GHSA-rh8r).
+  const callerHasToken = matchType !== 'slug';
+  if (!callerHasToken) {
+    return res.json({ slug: event.slug, matchType, requires_password: requiresPassword });
+  }
+
+  const linkVariants = await buildShareLinkVariants({ slug: event.slug, shareToken });
   res.json({
     slug: event.slug,
     token: shareToken,

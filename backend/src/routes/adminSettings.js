@@ -39,7 +39,14 @@ const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '.
 // oidc_client_secret is reserved too: it is AES-encrypted at rest and only
 // writable through PUT /sso below — a generic upsert would store plaintext
 // and break decryption (#798).
-const RESERVED_SETTING_KEYS = ['setup_wizard_completed', 'setup_token'];
+// Branding *path* keys (GHSA-665x) are server-computed by the logo-upload
+// flow and feed a filesystem logo resolver; letting the general settings PUT
+// set them to arbitrary strings makes them an input to path resolution.
+// Reserve them here — the dedicated upload endpoints still write them.
+const RESERVED_SETTING_KEYS = [
+  'setup_wizard_completed', 'setup_token',
+  'branding_logo_path', 'branding_logo_path_dark', 'branding_watermark_logo_path',
+];
 // EVERY oidc_* key is reserved (#798 phase 2): the client secret would be
 // clobbered with plaintext, and the policy/mapping keys carry invariants
 // (role targets exist, break-glass account present) that only the dedicated

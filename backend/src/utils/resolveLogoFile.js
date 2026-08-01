@@ -57,18 +57,27 @@ function generateCandidates(raw, storageRoot) {
   if (!value) return [];
   const stripped = value.replace(/^\/+/, '');
   const baseName = path.basename(value);
+  const cwdStorage = path.join(process.cwd(), 'storage');
   // Build candidate set; dedup at the end so we don't stat the same
   // file twice when the inputs overlap.
   const candidates = [
-    path.isAbsolute(value) ? value : null,
     path.join(storageRoot, stripped),
     path.join(storageRoot, 'uploads', 'logos', baseName),
     path.join(storageRoot, 'branding', baseName),
-    path.join(process.cwd(), 'storage', stripped),
-    path.join(process.cwd(), 'storage', 'uploads', 'logos', baseName),
-    path.join(process.cwd(), 'storage', 'branding', baseName),
-  ].filter(Boolean);
-  return [...new Set(candidates)];
+    path.join(cwdStorage, stripped),
+    path.join(cwdStorage, 'uploads', 'logos', baseName),
+    path.join(cwdStorage, 'branding', baseName),
+  ];
+  // GHSA-c7x5: only read logo files INSIDE the storage roots. This drops
+  // the previous raw-absolute-path candidate (an admin-set logo_path of
+  // `/etc/passwd` was rasterised into a PDF) and any `..`-escaping stripped
+  // path. baseName-based candidates are inherently contained.
+  const roots = [path.resolve(storageRoot), path.resolve(cwdStorage)];
+  const contained = candidates.filter((c) => {
+    const r = path.resolve(c);
+    return roots.some((root) => r === root || r.startsWith(root + path.sep));
+  });
+  return [...new Set(contained)];
 }
 
 function pickExisting(candidates) {
