@@ -958,13 +958,20 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
     }
 
     // Try to serve pre-generated zip (instant download with Content-Length).
-    // The prebuilt zip is the guest bundle — it excludes hidden/client-only
-    // photos (see downloadZipService._build). PIN-clients must still receive
-    // hidden photos, so they skip the fast path and fall through to the
-    // on-the-fly stream below, which filters by access level (a no-op for
-    // clients). This closes the hidden-photo leak in the bulk download.
+    // Guests may use the prebuilt cache ONLY when the event has no hidden
+    // photos: a cache built before a photo was hidden — or before this
+    // visibility-aware builder shipped — could otherwise still leak it, and
+    // getZipInfo only checks the DB pointer + file stat, not freshness. When
+    // hidden photos exist, guests fall through to the visibility-filtered
+    // stream below. PIN-clients always stream a full archive.
     const isClient = canSeeHiddenPhotos(req.accessLevel);
-    const zipInfo = isClient ? null : await downloadZipService.getZipInfo(req.event.id);
+    const eventHasHidden = await db('photos')
+      .where({ event_id: req.event.id, visibility: 'hidden' })
+      .first()
+      .then(Boolean);
+    const zipInfo = (isClient || eventHasHidden)
+      ? null
+      : await downloadZipService.getZipInfo(req.event.id);
     if (zipInfo) {
       const storage = getStorage();
 
@@ -1013,11 +1020,16 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
       return;
     }
 
-    // Fallback: on-the-fly streaming (existing behavior)
-    // Also trigger background zip generation for next time
-    downloadZipService.generateZip(req.event.id).catch(err =>
-      logger.warn('Background zip generation failed', { eventId: req.event.id, error: err.message })
-    );
+    // Fallback: on-the-fly streaming (existing behavior). Only pre-build the
+    // guest cache when it will actually be served next time — a guest
+    // download of an event with no hidden photos. Client bypasses and
+    // hidden-photo events always stream, so rebuilding the guest archive on
+    // those requests is wasted I/O (codex review).
+    if (!isClient && !eventHasHidden) {
+      downloadZipService.generateZip(req.event.id).catch(err =>
+        logger.warn('Background zip generation failed', { eventId: req.event.id, error: err.message })
+      );
+    }
 
     // Fetch photos — exclude photos in categories that disabled downloads (#640).
     // Uncategorised photos are always included; categories without the column

@@ -343,12 +343,13 @@ router.get('/:slug/secure-download/:photoId/:token',
       }
 
       // Per-category download opt-out (#640) — the regular single-photo
-      // download enforces this too; the secure path skipped it.
+      // download enforces this too; the secure path skipped it. SQLite
+      // returns the boolean as numeric 0, so check both forms.
       if (photo.category_id) {
         const cat = await db('photo_categories')
           .where('id', photo.category_id)
           .first('allow_downloads');
-        if (cat && cat.allow_downloads === false) {
+        if (cat && (cat.allow_downloads === false || cat.allow_downloads === 0)) {
           return res.status(403).json({ error: 'Downloads are disabled for this category' });
         }
       }

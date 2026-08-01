@@ -173,6 +173,22 @@ describe('hidden-photo access control (GHSA cluster)', () => {
     });
   });
 
+  describe('legacy secure-token mint (protectedImages generate-secure-token)', () => {
+    it('403s a hidden photo for a guest', async () => {
+      const res = await request(app)
+        .post(`/api/images/${SLUG}/photo/${hiddenId}/generate-secure-token`)
+        .set('Authorization', `Bearer ${guestToken()}`);
+      expect(res.status).toBe(403);
+    });
+    it('mints for a client', async () => {
+      const res = await request(app)
+        .post(`/api/images/${SLUG}/photo/${hiddenId}/generate-secure-token`)
+        .set('Authorization', `Bearer ${clientToken()}`);
+      expect(res.status).toBe(200);
+      expect(res.body.token).toBeDefined();
+    });
+  });
+
   describe('secure-token mint (GHSA-2hqg)', () => {
     it('403s minting a secure token for a hidden photo as a guest', async () => {
       const res = await request(app)
