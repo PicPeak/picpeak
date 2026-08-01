@@ -502,6 +502,15 @@ router.get('/export', adminAuth, requirePermission('settings.view'), async (req,
 /**
  * Helper function to convert data to CSV
  */
+const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
+
+function csvCell(value) {
+  // Formula-neutralize, then RFC-4180 quote (the previous join('') did
+  // neither — GHSA-37p4).
+  const s = neutralizeSpreadsheetFormula(value);
+  return /[,"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 function convertToCSV(data) {
   // Simplified CSV conversion for security logs
   const headers = ['timestamp', 'event_type', 'client_ip', 'details'];
@@ -511,8 +520,8 @@ function convertToCSV(data) {
     log.client_ip,
     JSON.stringify(log.details || {})
   ]);
-  
-  return [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
+
+  return [headers.join(','), ...rows.map(row => row.map(csvCell).join(','))].join('\n');
 }
 
 module.exports = router;
