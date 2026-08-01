@@ -66,9 +66,11 @@ router.post('/config', [
       tls_reject_unauthorized
     } = req.body;
 
-    // Validate SMTP host is not a private/internal address (SSRF protection)
-    const { isPrivateIP } = require('../utils/networkValidation');
-    if (isPrivateIP(smtp_host)) {
+    // Validate SMTP host is not a private/internal address (SSRF protection).
+    // Resolves DNS so a public-looking hostname pointing at an internal IP
+    // is caught, not just literal private addresses (#GHSA-ch64).
+    const { isHostAllowed } = require('../utils/networkValidation');
+    if (!(await isHostAllowed(smtp_host))) {
       return res.status(400).json({ error: 'SMTP host cannot point to a private or internal network address' });
     }
 
@@ -152,8 +154,8 @@ router.post('/incoming-config', [
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass, imap_folder } = req.body;
-    const { isPrivateIP } = require('../utils/networkValidation');
-    if (isPrivateIP(imap_host)) {
+    const { isHostAllowed } = require('../utils/networkValidation');
+    if (!(await isHostAllowed(imap_host))) {
       return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
     }
     const existing = await db('email_configs').first();
@@ -183,8 +185,8 @@ router.post('/incoming-config/folders', adminAuth, requirePermission('email.view
   try {
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass } = req.body || {};
     if (imap_host) {
-      const { isPrivateIP } = require('../utils/networkValidation');
-      if (isPrivateIP(imap_host)) {
+      const { isHostAllowed } = require('../utils/networkValidation');
+      if (!(await isHostAllowed(imap_host))) {
         return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
       }
     }
@@ -205,8 +207,8 @@ router.post('/incoming-config/test', adminAuth, requirePermission('email.view'),
   try {
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass, imap_folder } = req.body || {};
     if (imap_host) {
-      const { isPrivateIP } = require('../utils/networkValidation');
-      if (isPrivateIP(imap_host)) {
+      const { isHostAllowed } = require('../utils/networkValidation');
+      if (!(await isHostAllowed(imap_host))) {
         return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
       }
     }
@@ -385,11 +387,11 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
     if (!b.account_key) return res.status(400).json({ error: 'account_key is required' });
     // SSRF guard — mirror /config + /incoming-config: neither the IMAP nor the
     // SMTP host may point at a private/internal address.
-    const { isPrivateIP } = require('../utils/networkValidation');
-    if (b.imap_host && isPrivateIP(b.imap_host)) {
+    const { isHostAllowed } = require('../utils/networkValidation');
+    if (b.imap_host && !(await isHostAllowed(b.imap_host))) {
       return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
     }
-    if (b.smtp_host && isPrivateIP(b.smtp_host)) {
+    if (b.smtp_host && !(await isHostAllowed(b.smtp_host))) {
       return res.status(400).json({ error: 'SMTP host cannot point to a private or internal network address' });
     }
     const patch = {
@@ -434,8 +436,8 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
 router.post('/accounts/test', adminAuth, messagingGate, requirePermission('email.view'), async (req, res) => {
   try {
     const b = req.body || {};
-    const { isPrivateIP } = require('../utils/networkValidation');
-    if (b.imap_host && isPrivateIP(b.imap_host)) {
+    const { isHostAllowed } = require('../utils/networkValidation');
+    if (b.imap_host && !(await isHostAllowed(b.imap_host))) {
       return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
     }
     let pass = b.imap_pass;

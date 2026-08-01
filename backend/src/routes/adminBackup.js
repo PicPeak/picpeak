@@ -364,9 +364,11 @@ router.post('/test-connection', adminAuth, requirePermission('backup.create'), a
         break;
       }
 
-      // SSRF protection: block connections to private/internal addresses
-      const { isPrivateIP } = require('../utils/networkValidation');
-      if (isPrivateIP(host)) {
+      // SSRF protection: resolve the host and block any private/internal
+      // address. ssh does its own DNS at connect time, so a literal-only
+      // check let a hostname resolving to an internal IP through (#GHSA-4jh8).
+      const { isHostAllowed } = require('../utils/networkValidation');
+      if (!(await isHostAllowed(host))) {
         res.json({ success: false, message: 'Host cannot be a private or internal network address' });
         break;
       }
