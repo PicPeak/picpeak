@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import { analyticsService } from './services/analytics.service';
+import { analyticsService, AnalyticsRouteTracker } from './services/analytics.service';
 
 import { GalleryAuthProvider, MaintenanceProvider } from './contexts';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -115,8 +115,10 @@ function AnalyticsBootstrap() {
         provider: 'rybbit',
         hostUrl: settings.rybbit_url,
         websiteId: settings.rybbit_website_id,
-        autoTrack: true,
         doNotTrack: true,
+        // Mask every /gallery/* path (they embed the share token) so Rybbit's
+        // auto-tracked page views never carry the secret (GHSA-7m6c).
+        maskPatterns: ['/gallery/**'],
       });
       return;
     }
@@ -138,7 +140,9 @@ function AnalyticsBootstrap() {
         provider: 'umami',
         hostUrl: settings.umami_url,
         websiteId: settings.umami_website_id,
-        autoTrack: true,
+        // autoTrack omitted → data-auto-track="false": Umami must NOT read the
+        // raw window.location (token leak). Page views come from the manual,
+        // sanitized AnalyticsRouteTracker instead (GHSA-7m6c).
         doNotTrack: true,
       });
       return;
@@ -151,7 +155,7 @@ function AnalyticsBootstrap() {
         provider: 'umami',
         hostUrl: envUmamiUrl,
         websiteId: envUmamiWebsiteId,
-        autoTrack: true,
+        // autoTrack omitted → data-auto-track="false" (see above, GHSA-7m6c).
         doNotTrack: true,
       });
     }
@@ -194,6 +198,7 @@ function App() {
               <DynamicFavicon />
               <RobotsMetaTags />
               <Router>
+                <AnalyticsRouteTracker />
                 <MaintenanceWrapper>
                   <SkipLink />
                   <Routes>

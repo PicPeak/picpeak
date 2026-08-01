@@ -29,6 +29,9 @@ interface RybbitInitConfig extends BaseInitConfig {
   provider: 'rybbit';
   websiteId: string;
   hostUrl: string;
+  // URL path patterns whose value must never reach the collector (they embed
+  // the gallery share token). Rendered into Rybbit's data-mask-patterns.
+  maskPatterns?: string[];
 }
 
 interface CustomInitConfig extends BaseInitConfig {
@@ -105,6 +108,16 @@ class AnalyticsService {
       script.defer = true;
       script.src = `${config.hostUrl.replace(/\/+$/, '')}/api/script.js`;
       script.setAttribute('data-site-id', config.websiteId);
+      // GHSA-7m6c: Rybbit auto-tracks page views (initial load + SPA route
+      // changes) reading window.location, so a gallery URL would ship the raw
+      // share token. Unlike Umami we CAN'T fix this with a manual tracker —
+      // the initial-load pageview fires before any of our code runs. Instead
+      // use Rybbit's native data-mask-patterns, which replaces matching paths
+      // with the pattern string in analytics, stripping the token on every
+      // auto-tracked pageview including the first.
+      if (config.maskPatterns?.length) {
+        script.setAttribute('data-mask-patterns', JSON.stringify(config.maskPatterns));
+      }
       document.head.appendChild(script);
     } else if (config.provider === 'custom') {
       // The admin-pasted HTML is sanitised server-side (see
@@ -173,15 +186,15 @@ class AnalyticsService {
 
   trackPageView(url?: string, referrer?: string) {
     if (!this.initialized) return;
-    const raw = url ?? (typeof window !== 'undefined' ? window.location.pathname : '');
+    // Only Umami is manually tracked here: its auto-track is disabled (so the
+    // raw token URL never hits the collector) and this sanitized call is the
+    // ONLY page-view source. Rybbit keeps its own auto-tracking with
+    // data-mask-patterns doing the redaction, so a manual call would
+    // double-count — skip it. 'none'/'custom' have no page-view API.
+    if (this.provider !== 'umami' || typeof window === 'undefined' || !window.umami) return;
+    const raw = url ?? window.location.pathname;
     const safe = this.sanitizeTrackedUrl(raw);
-    if (this.provider === 'umami' && typeof window !== 'undefined' && window.umami) {
-      window.umami.trackView(safe, referrer, this.websiteId || undefined);
-    } else if (this.provider === 'rybbit' && typeof window !== 'undefined' && window.rybbit?.pageview) {
-      // Pass the redacted path so Rybbit records it instead of reading the
-      // raw window.location itself.
-      window.rybbit.pageview(safe);
-    }
+    window.umami.trackView(safe, referrer, this.websiteId || undefined);
   }
 
   // Gallery-specific tracking events
@@ -235,4 +248,14 @@ export const useAnalytics = () => {
   }, [location]);
 
   return analyticsService;
+};
+
+// Renderless component that drives manual page-view tracking. MUST be mounted
+// INSIDE <Router> (useLocation needs router context) — that's why the
+// AnalyticsBootstrap init, which lives outside the Router, can't do this
+// itself. Without a mounted caller trackPageView never fires and Umami — whose
+// auto-track we deliberately disable — records nothing.
+export const AnalyticsRouteTracker = (): null => {
+  useAnalytics();
+  return null;
 };
