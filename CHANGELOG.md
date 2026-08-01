@@ -5,6 +5,17 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.11](https://github.com/PicPeak/picpeak/compare/v3.45.10...v3.45.11) (2026-08-01)
+
+
+### Bug Fixes
+
+* **security:** block guest access to hidden/client-only photos across bulk + secure routes (stable) ([#940](https://github.com/PicPeak/picpeak/issues/940)) ([34a7b1c](https://github.com/PicPeak/picpeak/commit/34a7b1c0137cf4cba53f17270f619ce9755c4c98))
+* **security:** bump sanitize-html to 2.17.5 (CVE-2026-53606) (stable) ([#938](https://github.com/PicPeak/picpeak/issues/938)) ([7419c68](https://github.com/PicPeak/picpeak/commit/7419c683375d12650c448caa47ffe0444a7e1458))
+* **security:** close authorization/ownership gaps (token scope, mass-assignment, category hero, project docs) (stable) ([#944](https://github.com/PicPeak/picpeak/issues/944)) ([2462ba6](https://github.com/PicPeak/picpeak/commit/2462ba6897c93b3f0834d60cc2e6827a45487062))
+* **security:** resolve DNS before vetting external hostnames (SSRF cluster) (stable) ([#942](https://github.com/PicPeak/picpeak/issues/942)) ([90275f8](https://github.com/PicPeak/picpeak/commit/90275f88e9af523ba3cc254cef2ca6f48a2a4129))
+* **uploads:** prevent cross-photo contamination from filename collisions and non-atomic writes ([#931](https://github.com/PicPeak/picpeak/issues/931)) (stable) ([#934](https://github.com/PicPeak/picpeak/issues/934)) ([fc99e2b](https://github.com/PicPeak/picpeak/commit/fc99e2b233b4a7c81c410f7d557e7dff270437bd))
+
 ## [3.45.10](https://github.com/PicPeak/picpeak/compare/v3.45.9...v3.45.10) (2026-07-30)
 
 
