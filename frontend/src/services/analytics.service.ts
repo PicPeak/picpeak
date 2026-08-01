@@ -56,7 +56,7 @@ declare global {
     };
     rybbit?: {
       event: (eventName: string, eventData?: any) => void;
-      pageview?: () => void;
+      pageview?: (path?: string) => void;
     };
   }
 }
@@ -85,7 +85,12 @@ class AnalyticsService {
       script.defer = true;
       script.src = `${config.hostUrl.replace(/\/+$/, '')}/script.js`;
       script.setAttribute('data-website-id', config.websiteId);
-      if (config.autoTrack === false) script.setAttribute('data-auto-track', 'false');
+      // Auto-track OFF by default (GHSA-7m6c): Umami's auto page-view capture
+      // reads window.location verbatim, so a gallery URL /gallery/:slug/:token
+      // would ship the secret share token to the analytics collector. Page
+      // views are fired manually through trackPageView(), which redacts the
+      // token. Only an explicit autoTrack:true opts back into raw capture.
+      if (config.autoTrack !== true) script.setAttribute('data-auto-track', 'false');
       if (config.doNotTrack !== false) script.setAttribute('data-do-not-track', 'true');
       if (config.domains?.length) script.setAttribute('data-domains', config.domains.join(','));
       document.head.appendChild(script);
@@ -148,12 +153,34 @@ class AnalyticsService {
     // 'none' / 'custom' / unloaded → silently ignore.
   }
 
+  // Redact secrets from a URL before it reaches the analytics collector
+  // (GHSA-7m6c): drop the query string entirely and replace token-looking
+  // path segments (long hex / opaque IDs — e.g. the gallery share token in
+  // /gallery/:slug/:token) with a placeholder. Failing safe: on any parse
+  // issue return just the pathname without the query.
+  private sanitizeTrackedUrl(url: string): string {
+    try {
+      const pathOnly = url.split('?')[0].split('#')[0];
+      return pathOnly
+        .split('/')
+        .map((seg) =>
+          /^[0-9a-fA-F]{16,}$/.test(seg) || /^[A-Za-z0-9_-]{20,}$/.test(seg) ? '[redacted]' : seg)
+        .join('/');
+    } catch {
+      return url.split('?')[0];
+    }
+  }
+
   trackPageView(url?: string, referrer?: string) {
     if (!this.initialized) return;
+    const raw = url ?? (typeof window !== 'undefined' ? window.location.pathname : '');
+    const safe = this.sanitizeTrackedUrl(raw);
     if (this.provider === 'umami' && typeof window !== 'undefined' && window.umami) {
-      window.umami.trackView(url, referrer, this.websiteId || undefined);
+      window.umami.trackView(safe, referrer, this.websiteId || undefined);
     } else if (this.provider === 'rybbit' && typeof window !== 'undefined' && window.rybbit?.pageview) {
-      window.rybbit.pageview();
+      // Pass the redacted path so Rybbit records it instead of reading the
+      // raw window.location itself.
+      window.rybbit.pageview(safe);
     }
   }
 
