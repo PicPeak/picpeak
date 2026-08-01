@@ -95,9 +95,15 @@ async function deliverOne(row) {
   // host and vets every A/AAAA record (a public-looking name that now
   // resolves to an internal IP is rejected). Admin can opt out via
   // WEBHOOK_ALLOW_PRIVATE_URLS=true for local-receiver dev runs.
+  //
+  // Only a CONFIRMED policy rejection (resolves-to-private / malformed URL)
+  // is permanent. A transient lookup failure ('unresolved' — EAI_AGAIN,
+  // resolver briefly down) falls through to the normal axios attempt, whose
+  // own DNS error then feeds the retry/backoff path — matching pre-fix
+  // behaviour instead of permanently dropping the delivery on a blip.
   if (!allowPrivateUrls) {
     const urlCheck = await validateExternalUrlAsync(webhook.url);
-    if (!urlCheck.valid) {
+    if (!urlCheck.valid && urlCheck.reason !== 'unresolved') {
       await markFailedFinal(row, `URL rejected: ${urlCheck.error}`);
       return;
     }

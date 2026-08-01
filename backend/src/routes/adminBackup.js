@@ -57,9 +57,24 @@ router.put('/config', adminAuth, requirePermission('backup.create'), async (req,
         }
         break;
       case 's3':
-        if (!updates.backup_s3_endpoint || !updates.backup_s3_bucket || 
+        if (!updates.backup_s3_endpoint || !updates.backup_s3_bucket ||
               !updates.backup_s3_access_key || !updates.backup_s3_secret_key) {
           return res.status(400).json({ error: 'S3 backup requires endpoint, bucket, and credentials' });
+        }
+        // SSRF: reject an endpoint that resolves to a private/internal
+        // address before it's persisted — the management ops (manifest,
+        // bucket/file browse, cleanup, test-upload) connect directly without
+        // going through testConnection. Prod-only; dev points at localhost
+        // MinIO deliberately (mirrors the S3StorageBackend constructor gate).
+        if (process.env.NODE_ENV === 'production') {
+          const rawEndpoint = updates.backup_s3_endpoint;
+          const withProto = /^https?:\/\//.test(rawEndpoint) ? rawEndpoint : `https://${rawEndpoint}`;
+          let epHost = null;
+          try { epHost = new URL(withProto).hostname; } catch { epHost = null; }
+          const { isHostAllowed } = require('../utils/networkValidation');
+          if (!epHost || !(await isHostAllowed(epHost))) {
+            return res.status(400).json({ error: 'S3 endpoint resolves to a private or internal network address' });
+          }
         }
         break;
       }
