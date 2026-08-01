@@ -13,7 +13,7 @@ const {
   pickRawDownloadName,
 } = require('../services/downloadFilenameService');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
-const { isPhotoHiddenFromViewer } = require('../utils/photoVisibility');
+const { isPhotoHiddenFromViewer, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 
 const router = express.Router();
 
@@ -58,7 +58,10 @@ router.post('/:slug/generate-token', async (req, res, next) => {
       expiresIn: protectionLevel === 'maximum' ? 180 : 300, // 3-5 minutes
       maxUses: accessType === 'download' ? 1 : 3,
       clientFingerprint,
-      protectionLevel
+      protectionLevel,
+      // TOCTOU: a client's token keeps serving a photo hidden after minting;
+      // a guest's stops the moment it's hidden (checked at the serve route).
+      clientBypass: canSeeHiddenPhotos(req.accessLevel)
     };
 
     const token = secureImageService.generateSecureToken(
@@ -179,6 +182,13 @@ router.get('/:slug/secure/:photoId/:token',
 
       if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
+      }
+
+      // Recheck visibility at serve time (TOCTOU): a photo hidden AFTER the
+      // token was minted must stop serving, unless the token was minted by a
+      // client (clientBypass) — mirroring the reveal-mode check above.
+      if (photo.visibility === 'hidden' && !tokenValidation.data?.clientBypass) {
+        return res.status(403).json({ error: 'Photo not available' });
       }
 
       // Resolve photo through storage backend (managed) or fall back to local

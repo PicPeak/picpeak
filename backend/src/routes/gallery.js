@@ -785,6 +785,10 @@ router.patch('/:slug/photos/:photoId/visibility', verifyGalleryAccess, async (re
       .where({ id: photoId, event_id: req.event.id })
       .update({ visibility });
 
+    // A client hiding/showing a photo changes the guest download bundle —
+    // drop the cached ZIP so it rebuilds fresh (codex review).
+    downloadZipService.invalidate(req.event.id);
+
     res.json({ message: 'Photo visibility updated', visibility });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to update photo visibility');
@@ -812,6 +816,10 @@ router.patch('/:slug/photos/visibility/bulk', verifyGalleryAccess, async (req, r
       .whereIn('id', photoIds)
       .where('event_id', req.event.id)
       .update({ visibility });
+
+    // Client bulk hide/show alters the guest download bundle — invalidate
+    // the cached ZIP (codex review).
+    downloadZipService.invalidate(req.event.id);
 
     res.json({ message: `${count} photos updated`, visibility });
   } catch (error) {
