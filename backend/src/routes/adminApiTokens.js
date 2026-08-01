@@ -20,7 +20,10 @@ const router = express.Router();
 // the plaintext, never recoverable after creation.
 router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) => {
   try {
-    const tokens = await db('api_tokens')
+    // Scope to the caller's own tokens unless super_admin — the previous
+    // query returned every admin's token metadata (name/preview/scopes/
+    // owner) to any settings.view holder (GHSA-jm7j).
+    const tokensQuery = db('api_tokens')
       .leftJoin('admin_users', 'admin_users.id', 'api_tokens.created_by')
       .select(
         'api_tokens.id',
@@ -34,6 +37,10 @@ router.get('/', adminAuth, requirePermission('settings.view'), async (req, res) 
         'admin_users.username as owner_username'
       )
       .orderBy('api_tokens.created_at', 'desc');
+    if (req.admin.roleName !== 'super_admin') {
+      tokensQuery.where('api_tokens.created_by', req.admin.id);
+    }
+    const tokens = await tokensQuery;
     // toIso: last_used_at / revoked_at were written as raw Dates before
     // this fix — SQLite installs hold epoch numbers in existing rows.
     res.json(tokens.map((t) => ({
@@ -110,6 +117,12 @@ router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req,
     const { id } = req.params;
     const row = await db('api_tokens').where({ id }).first();
     if (!row) return res.status(404).json({ error: 'Token not found' });
+    // Only the token's owner (or a super_admin) may revoke it — otherwise
+    // any settings.edit holder could revoke another admin's tokens
+    // (GHSA-gprq). 404 rather than 403 so a non-owner can't probe token ids.
+    if (req.admin.roleName !== 'super_admin' && row.created_by !== req.admin.id) {
+      return res.status(404).json({ error: 'Token not found' });
+    }
     if (row.revoked_at) return res.status(400).json({ error: 'Token already revoked' });
 
     await db('api_tokens').where({ id }).update({ revoked_at: new Date().toISOString() });

@@ -152,8 +152,18 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
         .trim()
     };
 
-    // Update hero_photo_id if provided (including null to clear it)
+    // Update hero_photo_id if provided (including null to clear it). A
+    // non-null hero must belong to this category (GHSA-j2f4) — the general
+    // update path previously wrote it with no membership check at all.
     if (Object.prototype.hasOwnProperty.call(req.body, 'hero_photo_id')) {
+      if (hero_photo_id) {
+        const heroPhoto = await db('photos')
+          .where({ id: hero_photo_id, category_id: id })
+          .first();
+        if (!heroPhoto) {
+          return res.status(404).json({ error: 'Photo not found in this category' });
+        }
+      }
       updateData.hero_photo_id = hero_photo_id || null;
     }
 
@@ -203,11 +213,16 @@ router.put('/:id/hero', adminAuth, requirePermission('settings.edit'), [
       return res.status(404).json({ error: 'Category not found' });
     }
 
-    // If hero_photo_id is provided, verify it belongs to a photo in this category
+    // If hero_photo_id is provided, verify the photo actually belongs to
+    // THIS category — checking existence alone let an admin point a
+    // category's hero at a photo from a different category or event
+    // (GHSA-j2f4).
     if (hero_photo_id) {
-      const photo = await db('photos').where('id', hero_photo_id).first();
+      const photo = await db('photos')
+        .where({ id: hero_photo_id, category_id: id })
+        .first();
       if (!photo) {
-        return res.status(404).json({ error: 'Photo not found' });
+        return res.status(404).json({ error: 'Photo not found in this category' });
       }
     }
 

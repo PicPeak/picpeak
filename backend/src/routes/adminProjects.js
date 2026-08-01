@@ -105,8 +105,10 @@ router.post('/:id/events',
 );
 
 // Attach a quote to the project (quotes carry no event_id — migration 121).
+// Requires quotes.manage in addition to events.edit — attaching a quote
+// mutates a separately-permissioned document domain (GHSA-v4vw).
 router.post('/:id/quotes',
-  requirePermission('events.edit'),
+  requirePermission(['events.edit', 'quotes.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 }), body('quoteId').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -115,9 +117,10 @@ router.post('/:id/quotes',
   }),
 );
 
-// Attach a contract to the project.
+// Attach a contract to the project. Requires contracts.manage in addition
+// to events.edit (GHSA-v4vw).
 router.post('/:id/contracts',
-  requirePermission('events.edit'),
+  requirePermission(['events.edit', 'contracts.manage'], { requireAll: true }),
   [param('id').isInt({ min: 1 }), body('contractId').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);

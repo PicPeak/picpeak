@@ -1278,6 +1278,24 @@ module.exports = (router) => {
 
       const { id } = req.params;
       const updates = { ...req.body };
+
+      // Strip identity/provenance/secret columns from the mass-assigned
+      // body (GHSA-3rqx). The handler spreads req.body straight into the
+      // events UPDATE, so without this an events.edit holder could rewrite
+      // ownership (created_by), routing identity (slug/share_link), the
+      // share/client tokens, or the password hashes directly. Plaintext
+      // `password`/`client_password` inputs are NOT stripped — those are the
+      // supported way to change credentials and get hashed below; the
+      // tokens are regenerated internally where needed.
+      const IMMUTABLE_EVENT_COLUMNS = [
+        'id', 'created_by', 'created_at', 'updated_at',
+        'slug', 'share_link', 'share_token', 'client_share_token',
+        'show_share_token', 'password_hash', 'client_password_hash',
+      ];
+      for (const col of IMMUTABLE_EVENT_COLUMNS) {
+        delete updates[col];
+      }
+
       const customerColumnsAvailable = await hasCustomerContactColumns();
 
       if (Object.prototype.hasOwnProperty.call(updates, 'host_name') || Object.prototype.hasOwnProperty.call(updates, 'host_email')) {
