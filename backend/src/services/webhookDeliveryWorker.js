@@ -2,7 +2,7 @@ const axios = require('axios');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { signPayload, renderTemplate } = require('./webhookService');
-const { validateExternalUrl } = require('../utils/networkValidation');
+const { validateExternalUrlAsync } = require('../utils/networkValidation');
 
 const POLL_INTERVAL_MS = parseInt(process.env.WEBHOOK_DELIVERY_INTERVAL_MS || '5000', 10);
 const CONCURRENCY = parseInt(process.env.WEBHOOK_DELIVERY_CONCURRENCY || '5', 10);
@@ -91,10 +91,12 @@ async function deliverOne(row) {
     return;
   }
 
-  // Re-validate URL per delivery — DNS-rebinding mitigation. Admin can opt
-  // out via WEBHOOK_ALLOW_PRIVATE_URLS=true for local-receiver dev runs.
+  // Re-validate URL per delivery — DNS-rebinding mitigation. Resolves the
+  // host and vets every A/AAAA record (a public-looking name that now
+  // resolves to an internal IP is rejected). Admin can opt out via
+  // WEBHOOK_ALLOW_PRIVATE_URLS=true for local-receiver dev runs.
   if (!allowPrivateUrls) {
-    const urlCheck = validateExternalUrl(webhook.url);
+    const urlCheck = await validateExternalUrlAsync(webhook.url);
     if (!urlCheck.valid) {
       await markFailedFinal(row, `URL rejected: ${urlCheck.error}`);
       return;

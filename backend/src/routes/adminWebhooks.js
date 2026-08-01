@@ -20,7 +20,7 @@ const { body, query, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { validateExternalUrl } = require('../utils/networkValidation');
+const { validateExternalUrlAsync } = require('../utils/networkValidation');
 const webhookService = require('../services/webhookService');
 const logger = require('../utils/logger');
 
@@ -78,9 +78,9 @@ router.post(
   requirePermission('settings.edit'),
   [
     body('name').isString().trim().isLength({ min: 1, max: 100 }),
-    body('url').isString().isLength({ max: 2048 }).custom((url) => {
+    body('url').isString().isLength({ max: 2048 }).custom(async (url) => {
       if (ALLOW_PRIVATE_URLS) return true;
-      const check = validateExternalUrl(url);
+      const check = await validateExternalUrlAsync(url);
       if (!check.valid) throw new Error(check.error);
       return true;
     }),
@@ -160,9 +160,9 @@ router.put(
   requirePermission('settings.edit'),
   [
     body('name').optional().isString().trim().isLength({ min: 1, max: 100 }),
-    body('url').optional().isString().isLength({ max: 2048 }).custom((url) => {
+    body('url').optional().isString().isLength({ max: 2048 }).custom(async (url) => {
       if (ALLOW_PRIVATE_URLS) return true;
-      const check = validateExternalUrl(url);
+      const check = await validateExternalUrlAsync(url);
       if (!check.valid) throw new Error(check.error);
       return true;
     }),
