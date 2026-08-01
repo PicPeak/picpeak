@@ -199,39 +199,49 @@ function validateExternalUrl(urlString) {
  * @param {string} hostname
  * @returns {Promise<boolean>} true when safe to connect
  */
-async function isHostAllowed(hostname) {
-  if (!hostname || typeof hostname !== 'string') return false;
+async function classifyHost(hostname) {
+  if (!hostname || typeof hostname !== 'string') return 'invalid';
   // Literal check first: IP literals, blocked names, .internal/.local/.localhost.
-  if (isPrivateIP(hostname)) return false;
+  if (isPrivateIP(hostname)) return 'private';
   // An IP literal is fully decided above — no name to resolve.
   const bare = hostname.replace(/^\[|\]$/g, '');
-  if (net.isIP(bare)) return true;
+  if (net.isIP(bare)) return 'ok';
   let addresses;
   try {
     addresses = await dns.lookup(hostname, { all: true });
   } catch {
-    return false; // unresolvable → fail closed
+    return 'unresolved'; // transient/NXDOMAIN — caller decides retry vs reject
   }
-  if (!addresses.length) return false;
-  return addresses.every((a) => !isPrivateIP(a.address));
+  if (!addresses.length) return 'unresolved';
+  return addresses.every((a) => !isPrivateIP(a.address)) ? 'ok' : 'private';
+}
+
+async function isHostAllowed(hostname) {
+  // Fail-closed boolean for save/test call sites: anything not clearly 'ok'
+  // (including a transient lookup failure) is rejected.
+  return (await classifyHost(hostname)) === 'ok';
 }
 
 /**
- * Async, DNS-resolving counterpart to validateExternalUrl.
+ * Async, DNS-resolving counterpart to validateExternalUrl. Returns a `reason`
+ * so callers with retry semantics (e.g. the webhook worker) can distinguish a
+ * policy rejection ('private'/'invalid') from a transient lookup failure
+ * ('unresolved') that should be retried rather than permanently failed.
  * @param {string} urlString
- * @returns {Promise<{ valid: boolean, error?: string }>}
+ * @returns {Promise<{ valid: boolean, error?: string, reason: string }>}
  */
 async function validateExternalUrlAsync(urlString) {
   let parsed;
   try {
     parsed = new URL(urlString);
   } catch {
-    return { valid: false, error: 'Invalid URL format' };
+    return { valid: false, error: 'Invalid URL format', reason: 'invalid' };
   }
-  if (!(await isHostAllowed(parsed.hostname))) {
-    return { valid: false, error: 'URL points to a private or internal network address' };
+  const reason = await classifyHost(parsed.hostname);
+  if (reason !== 'ok') {
+    return { valid: false, error: 'URL points to a private or internal network address', reason };
   }
-  return { valid: true };
+  return { valid: true, reason: 'ok' };
 }
 
-module.exports = { isPrivateIP, validateExternalUrl, isHostAllowed, validateExternalUrlAsync };
+module.exports = { isPrivateIP, validateExternalUrl, isHostAllowed, validateExternalUrlAsync, classifyHost };

@@ -12,9 +12,31 @@ const dns = require('dns');
 const {
   isHostAllowed,
   validateExternalUrlAsync,
+  classifyHost,
 } = require('../../src/utils/networkValidation');
 
 const lookup = dns.promises.lookup;
+
+describe('classifyHost', () => {
+  beforeEach(() => lookup.mockReset());
+
+  it('distinguishes private, unresolved, ok, and invalid', async () => {
+    lookup.mockResolvedValue([{ address: '10.0.0.5', family: 4 }]);
+    expect(await classifyHost('evil.example')).toBe('private');
+
+    lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+    expect(await classifyHost('example.com')).toBe('ok');
+
+    lookup.mockRejectedValue(new Error('EAI_AGAIN'));
+    expect(await classifyHost('blip.example')).toBe('unresolved');
+
+    lookup.mockResolvedValue([]);
+    expect(await classifyHost('empty.example')).toBe('unresolved');
+
+    expect(await classifyHost('')).toBe('invalid');
+    expect(await classifyHost('10.0.0.1')).toBe('private'); // literal, no lookup
+  });
+});
 
 describe('isHostAllowed', () => {
   beforeEach(() => lookup.mockReset());
@@ -88,5 +110,19 @@ describe('validateExternalUrlAsync', () => {
 
   it('rejects a malformed URL', async () => {
     expect((await validateExternalUrlAsync('not a url')).valid).toBe(false);
+  });
+
+  it('reports reason=unresolved for a transient lookup failure (retryable)', async () => {
+    lookup.mockRejectedValue(new Error('EAI_AGAIN'));
+    const r = await validateExternalUrlAsync('https://blip.example/hook');
+    expect(r.valid).toBe(false);
+    expect(r.reason).toBe('unresolved');
+  });
+
+  it('reports reason=private for a resolved-private host (permanent)', async () => {
+    lookup.mockResolvedValue([{ address: '169.254.169.254', family: 4 }]);
+    const r = await validateExternalUrlAsync('https://rebind.example/hook');
+    expect(r.valid).toBe(false);
+    expect(r.reason).toBe('private');
   });
 });
