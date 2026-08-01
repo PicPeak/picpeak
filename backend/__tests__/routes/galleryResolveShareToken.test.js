@@ -73,4 +73,15 @@ describe('GET /api/gallery/resolve/:identifier (GHSA-rh8r)', () => {
     expect(res.body.token).toBe(SHARE_TOKEN);
     expect(res.body.matchType).toMatch(/token/);
   });
+
+  it('does NOT leak the token via SQL LIKE wildcards in the link_partial fallback', async () => {
+    // Before the escaping fix, an anonymous request of 32 underscores matched
+    // any share_link ending in a 32-char token (`_` = single-char wildcard),
+    // resolved as matchType 'link_partial', and handed back the bearer token.
+    // The share_token here has no underscores, so an escaped LIKE must miss.
+    const res = await request(app).get(`/api/gallery/resolve/${'_'.repeat(SHARE_TOKEN.length)}`);
+    expect(res.status).toBe(404);
+    expect(res.body.token).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain(SHARE_TOKEN);
+  });
 });

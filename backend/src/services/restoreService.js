@@ -1399,6 +1399,15 @@ END $$;`
 
         for (const file of filesToVerify) {
           const filePath = path.join(storagePath, file.path);
+          // Same containment guard as performFilesRestore: a traversal
+          // manifest entry (e.g. `../../etc/passwd`) was skipped during the
+          // restore, so it must not be fs.access'd/hashed here either —
+          // otherwise an existing outside file makes the skipped entry look
+          // "verified" (and we'd read an arbitrary file off disk).
+          if (pathEscapes(storagePath, filePath)) {
+            verification.errors.push(`Refusing unsafe manifest path on verification: ${file.path}`);
+            continue;
+          }
           try {
             await fs.access(filePath);
             
