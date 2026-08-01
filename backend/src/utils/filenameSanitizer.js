@@ -1,4 +1,5 @@
 const path = require('path');
+const crypto = require('crypto');
 
 /**
  * Sanitize a string to be used as a filename component
@@ -59,8 +60,18 @@ function generatePhotoFilename(eventName, categoryName, counter, extension) {
   const sanitizedEvent = sanitizeFilename(eventName, 30);
   const sanitizedCategory = sanitizeFilename(categoryName || 'uncategorized', 20);
   const paddedCounter = String(counter).padStart(4, '0');
-  
-  return `${sanitizedEvent}_${sanitizedCategory}_${paddedCounter}${extension}`;
+  // Random suffix (#931): the counter base is `count(*)+1` computed per
+  // upload request, so two concurrent bulk-upload requests can assign the
+  // same counter to different photos. Since files are written to their
+  // final path before any row exists (and photos has no unique index on
+  // filename — one can't be added without a dedupe migration on installs
+  // that already carry historical duplicates), a collision silently
+  // overwrites the first photo's bytes at its recorded path — cross-photo
+  // contamination. 48 bits keep the collision odds negligible even for
+  // pathological concurrency (two simultaneous 2000-photo uploads: ~7e-12).
+  const suffix = crypto.randomBytes(6).toString('hex');
+
+  return `${sanitizedEvent}_${sanitizedCategory}_${paddedCounter}_${suffix}${extension}`;
 }
 
 /**

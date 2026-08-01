@@ -315,9 +315,10 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     const crypto = require('crypto');
     const uploadId = crypto.randomBytes(16).toString('hex');
 
-    // Counter base — same approximation as before. Strict uniqueness is
-    // already enforced by the filename template + DB unique index, so a
-    // small race here just retries a counter on conflict (rare).
+    // Counter base — a per-request approximation (concurrent upload
+    // requests can compute the same base; there is NO unique index on
+    // photos.filename). Uniqueness of the final path comes from the
+    // random suffix inside generatePhotoFilename (#931).
     const existingCount = await db('photos')
       .where({ event_id: eventId, type: photoType })
       .count('id as count')

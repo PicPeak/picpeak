@@ -89,23 +89,25 @@ describe('sanitizeFilename — edge cases', () => {
 });
 
 describe('generatePhotoFilename — composed name uses the NFD pipeline', () => {
-  it('round-trips Ägypten + individual → Agypten_individual_0050.jpg (#607)', () => {
+  // The trailing _[0-9a-f]{12} is the anti-collision suffix (#931) that
+  // keeps concurrent uploads from assigning the same final storage path.
+  it('round-trips Ägypten + individual → Agypten_individual_0050 (#607)', () => {
     expect(generatePhotoFilename('Ägypten', 'individual', 50, '.jpg'))
-      .toBe('Agypten_individual_0050.jpg');
+      .toMatch(/^Agypten_individual_0050_[0-9a-f]{12}\.jpg$/);
   });
 
   it('handles missing category by defaulting to "uncategorized"', () => {
     expect(generatePhotoFilename('Wedding', null, 1, '.jpg'))
-      .toBe('Wedding_uncategorized_0001.jpg');
+      .toMatch(/^Wedding_uncategorized_0001_[0-9a-f]{12}\.jpg$/);
   });
 
   it('zero-pads the counter to 4 digits', () => {
-    expect(generatePhotoFilename('e', 'c', 7, '.png')).toBe('e_c_0007.png');
-    expect(generatePhotoFilename('e', 'c', 1234, '.png')).toBe('e_c_1234.png');
-    // 5+ digit counters intentionally overflow the pad — pinned because
-    // the unique index in the photos table doesn't care about pad width,
-    // only string uniqueness.
-    expect(generatePhotoFilename('e', 'c', 99999, '.png')).toBe('e_c_99999.png');
+    expect(generatePhotoFilename('e', 'c', 7, '.png')).toMatch(/^e_c_0007_[0-9a-f]{12}\.png$/);
+    expect(generatePhotoFilename('e', 'c', 1234, '.png')).toMatch(/^e_c_1234_[0-9a-f]{12}\.png$/);
+    // 5+ digit counters intentionally overflow the pad — pad width never
+    // mattered for uniqueness (there is no unique index on filenames);
+    // the random suffix is what guarantees it.
+    expect(generatePhotoFilename('e', 'c', 99999, '.png')).toMatch(/^e_c_99999_[0-9a-f]{12}\.png$/);
   });
 });
 
