@@ -21,7 +21,11 @@ class SecureImageService {
       expiresIn = 300, // 5 minutes default
       maxUses = 1,
       clientFingerprint = '',
-      protectionLevel = 'standard'
+      protectionLevel = 'standard',
+      // Whether the minter was a PIN-client — lets the serve route keep
+      // delivering a photo hidden AFTER minting (TOCTOU). A guest's token
+      // carries false, so it stops the moment the photo is hidden.
+      clientBypass = false
     } = options;
 
     const tokenData = {
@@ -32,6 +36,7 @@ class SecureImageService {
       maxUses,
       usedCount: 0,
       protectionLevel,
+      clientBypass,
       createdAt: Date.now()
     };
 

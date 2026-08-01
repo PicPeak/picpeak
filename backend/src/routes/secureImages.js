@@ -13,6 +13,7 @@ const {
   pickRawDownloadName,
 } = require('../services/downloadFilenameService');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
+const { isPhotoHiddenFromViewer, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 
 const router = express.Router();
 
@@ -40,6 +41,12 @@ router.post('/:slug/generate-token', async (req, res, next) => {
       return res.status(404).json({ error: 'Photo not found' });
     }
 
+    // Don't mint a secure-image capability for a hidden/client-only photo
+    // when the caller isn't a client (the token is reusable up to 3×).
+    if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+      return res.status(403).json({ error: 'Photo not available' });
+    }
+
     // Create client fingerprint
     const clientFingerprint = secureImageService.createClientFingerprint(req);
     
@@ -51,7 +58,10 @@ router.post('/:slug/generate-token', async (req, res, next) => {
       expiresIn: protectionLevel === 'maximum' ? 180 : 300, // 3-5 minutes
       maxUses: accessType === 'download' ? 1 : 3,
       clientFingerprint,
-      protectionLevel
+      protectionLevel,
+      // TOCTOU: a client's token keeps serving a photo hidden after minting;
+      // a guest's stops the moment it's hidden (checked at the serve route).
+      clientBypass: canSeeHiddenPhotos(req.accessLevel)
     };
 
     const token = secureImageService.generateSecureToken(
@@ -172,6 +182,13 @@ router.get('/:slug/secure/:photoId/:token',
 
       if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
+      }
+
+      // Recheck visibility at serve time (TOCTOU): a photo hidden AFTER the
+      // token was minted must stop serving, unless the token was minted by a
+      // client (clientBypass) — mirroring the reveal-mode check above.
+      if (photo.visibility === 'hidden' && !tokenValidation.data?.clientBypass) {
+        return res.status(403).json({ error: 'Photo not available' });
       }
 
       // Resolve photo through storage backend (managed) or fall back to local
@@ -328,6 +345,23 @@ router.get('/:slug/secure-download/:photoId/:token',
 
       if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
+      }
+
+      // Block guest access to hidden/client-only photos.
+      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+        return res.status(403).json({ error: 'Photo not available' });
+      }
+
+      // Per-category download opt-out (#640) — the regular single-photo
+      // download enforces this too; the secure path skipped it. SQLite
+      // returns the boolean as numeric 0, so check both forms.
+      if (photo.category_id) {
+        const cat = await db('photo_categories')
+          .where('id', photo.category_id)
+          .first('allow_downloads');
+        if (cat && (cat.allow_downloads === false || cat.allow_downloads === 0)) {
+          return res.status(403).json({ error: 'Downloads are disabled for this category' });
+        }
       }
 
       // Resolve photo through storage backend (managed) or local disk (external).
