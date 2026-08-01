@@ -202,9 +202,15 @@ router.post('/:slug/photo/:photoId/generate-secure-token', verifyGalleryAccess, 
       return res.status(404).json({ error: 'Photo not found' });
     }
 
+    // Don't mint a secure-image capability for a hidden/client-only photo
+    // when the caller isn't a client — the serve route is token-only.
+    if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+      return res.status(403).json({ error: 'Photo not available' });
+    }
+
     // Create client fingerprint
     const clientFingerprint = secureImageService.createClientFingerprint(req);
-    
+
     // Generate secure token
     const token = secureImageService.generateSecureToken(photoId, req.sessionID || 'anonymous', {
       expiresIn,
