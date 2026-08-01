@@ -12,6 +12,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { filterOwnedEventIds } = require('../middleware/ownership');
+const { db } = require('../database/db');
 
 // Hour-entry routes are gated by the hoursLogging master so a direct API hit
 // can't read/edit/delete/bill logged hours while the feature is off (the
@@ -529,6 +530,7 @@ router.put('/:id/events', [
   body('event_ids.*').isInt({ min: 1 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
+  const customerId = parseInt(req.params.id, 10);
   // Only assign events the caller may act on (GHSA-xr6x) — otherwise a
   // restricted role could mint a customer's gallery access to foreign
   // events by supplying arbitrary ids. super_admin keeps all.
@@ -536,9 +538,27 @@ router.put('/:id/events', [
   if (denied.length) {
     return res.status(403).json({ error: 'One or more events are not yours to assign' });
   }
+  // setAssignmentsForCustomer replaces the FULL assignment list, deleting any
+  // existing row not in the submitted set. A restricted admin must not be able
+  // to revoke another admin's customer↔event links that way, so preserve the
+  // customer's existing assignments to events the caller does NOT own by
+  // merging them back into the list. super_admin owns everything, so nothing
+  // is force-preserved for them.
+  let finalEventIds = allowed;
+  if (req.admin.roleName !== 'super_admin') {
+    const existingEventIds = await db('event_customer_assignments')
+      .where('customer_account_id', customerId)
+      .pluck('event_id');
+    if (existingEventIds.length) {
+      const { allowed: ownedExisting } = await filterOwnedEventIds(req.admin, existingEventIds);
+      const ownedExistingSet = new Set(ownedExisting.map(Number));
+      const foreignExisting = existingEventIds.filter((id) => !ownedExistingSet.has(Number(id)));
+      finalEventIds = [...new Set([...allowed.map(Number), ...foreignExisting.map(Number)])];
+    }
+  }
   const result = await customerAccountsService.setAssignmentsForCustomer(
-    parseInt(req.params.id, 10),
-    allowed,
+    customerId,
+    finalEventIds,
     req.admin.id,
   );
   successResponse(res, result);
