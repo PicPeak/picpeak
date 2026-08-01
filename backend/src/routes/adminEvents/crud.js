@@ -1287,15 +1287,25 @@ module.exports = (router) => {
       // `password`/`client_password` inputs are NOT stripped — those are the
       // supported way to change credentials and get hashed below; the
       // tokens are regenerated internally where needed.
+      // The handler spreads req.body straight into the events UPDATE, so any
+      // column an events.edit holder names is writable unless blocked here.
+      // Rather than allowlist this god-handler's dozens of legitimate fields
+      // (and risk silently dropping one), deny every column OUTSIDE the
+      // edit-form's remit, grouped by the class it protects. New sensitive
+      // columns MUST be added here. (codex review — GHSA-3rqx.)
       const IMMUTABLE_EVENT_COLUMNS = [
-        'id', 'created_by', 'created_at', 'updated_at',
-        'slug', 'share_link', 'share_token', 'client_share_token',
-        'show_share_token', 'password_hash', 'client_password_hash',
-        // Archive lifecycle is governed by events.archive/restore and the
-        // dedicated archive routes — not events.edit. Blocking these keys
-        // stops an editor forging a server-consumed archive_path or
-        // flipping is_archived through the edit payload (codex review).
-        'is_archived', 'archived_at', 'archive_path',
+        // Identity / provenance
+        'id', 'created_by', 'created_at', 'updated_at', 'slug',
+        // Routing + share/client tokens (generated at create / internally)
+        'share_link', 'share_token', 'client_share_token', 'show_share_token',
+        // Secrets (set via the plaintext password/client_password inputs)
+        'password_hash', 'client_password_hash',
+        // Server-consumed file paths — e.g. DELETE /:id/logo fs.unlink()s
+        // hero_logo_path, so a forged value is an arbitrary-delete primitive.
+        'hero_logo_path', 'hero_logo_url', 'archive_path', 'download_zip_path',
+        // Lifecycle — governed by dedicated permission-gated routes
+        // (events.archive/restore, publish, activate/deactivate), not events.edit.
+        'is_archived', 'archived_at', 'is_draft', 'is_active',
       ];
       for (const col of IMMUTABLE_EVENT_COLUMNS) {
         delete updates[col];
