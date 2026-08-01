@@ -757,6 +757,16 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
       .where({ id: photoId, event_id: eventId })
       .update(updateData);
 
+    // A visibility or category change alters which photos belong in the
+    // guest download bundle — drop the cached ZIP so it rebuilds fresh,
+    // otherwise a hide→unhide cycle can leave the stale cache omitting
+    // photos added in between (codex review).
+    if (updateData.visibility !== undefined
+        || Object.prototype.hasOwnProperty.call(updateData, 'category_id')
+        || Object.prototype.hasOwnProperty.call(updateData, 'type')) {
+      downloadZipService.invalidate(parseInt(eventId, 10));
+    }
+
     // Fetch and return the updated photo
     const updatedPhoto = await db('photos')
       .where({ id: photoId, event_id: eventId })
@@ -904,6 +914,14 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
       .whereIn('id', photoIds)
       .where('event_id', eventId)
       .update(updateData);
+
+    // Visibility/category changes alter the guest download bundle — drop the
+    // cached ZIP so it rebuilds fresh (codex review).
+    if (updateData.visibility !== undefined
+        || Object.prototype.hasOwnProperty.call(updateData, 'category_id')
+        || Object.prototype.hasOwnProperty.call(updateData, 'type')) {
+      downloadZipService.invalidate(parseInt(eventId, 10));
+    }
 
     res.json({ message: `${photoIds.length} photos updated successfully` });
   } catch (error) {
