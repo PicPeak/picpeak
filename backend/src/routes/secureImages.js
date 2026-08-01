@@ -14,6 +14,7 @@ const {
   pickRawDownloadName,
 } = require('../services/downloadFilenameService');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
+const { isPhotoHiddenFromViewer } = require('../utils/photoVisibility');
 
 const router = express.Router();
 
@@ -39,6 +40,12 @@ router.post('/:slug/generate-token', async (req, res, next) => {
 
     if (!photo) {
       return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    // Don't mint a secure-image capability for a hidden/client-only photo
+    // when the caller isn't a client (the token is reusable up to 3×).
+    if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+      return res.status(403).json({ error: 'Photo not available' });
     }
 
     // Create client fingerprint
@@ -339,6 +346,22 @@ router.get('/:slug/secure-download/:photoId/:token',
 
       if (!photo) {
         return res.status(404).json({ error: 'Photo not found' });
+      }
+
+      // Block guest access to hidden/client-only photos.
+      if (isPhotoHiddenFromViewer(photo, req.accessLevel)) {
+        return res.status(403).json({ error: 'Photo not available' });
+      }
+
+      // Per-category download opt-out (#640) — the regular single-photo
+      // download enforces this too; the secure path skipped it.
+      if (photo.category_id) {
+        const cat = await db('photo_categories')
+          .where('id', photo.category_id)
+          .first('allow_downloads');
+        if (cat && cat.allow_downloads === false) {
+          return res.status(403).json({ error: 'Downloads are disabled for this category' });
+        }
       }
 
       // Resolve photo through storage backend (managed) or local disk (external).
