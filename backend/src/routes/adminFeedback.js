@@ -1,4 +1,5 @@
 const express = require('express');
+const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
 const router = express.Router();
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -455,11 +456,13 @@ function convertToCSV(data) {
       const value = row[header];
       if (value === null || value === undefined) return '';
       if (typeof value === 'boolean') return value ? 'yes' : 'no';
-      if (typeof value === 'string'
-        && (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r'))) {
-        return `"${value.replace(/"/g, '""')}"`;
+      // Formula-neutralize user-controlled cells (guest_name/comment_text)
+      // before quoting — quoting alone doesn't stop `=cmd()` (GHSA-3cw3).
+      const neutralized = neutralizeSpreadsheetFormula(value);
+      if (neutralized.includes(',') || neutralized.includes('"') || neutralized.includes('\n') || neutralized.includes('\r')) {
+        return `"${neutralized.replace(/"/g, '""')}"`;
       }
-      return value;
+      return neutralized;
     }).join(',');
   });
 

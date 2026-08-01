@@ -39,8 +39,13 @@ function serializeGuest(row) {
   };
 }
 
+const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
+
 function escapeCsvCell(value) {
-  const str = value == null ? '' : String(value);
+  // Neutralize spreadsheet formulas FIRST (a `=cmd()` guest name executes on
+  // open — RFC-4180 quoting doesn't stop it), then quote-wrap (GHSA-wc99 /
+  // GHSA-f4fp).
+  const str = neutralizeSpreadsheetFormula(value);
   if (/[,"\n\r]/.test(str)) {
     return `"${str.replace(/"/g, '""')}"`;
   }

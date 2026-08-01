@@ -6,6 +6,7 @@
 const archiver = require('archiver');
 const { PassThrough } = require('stream');
 const { XmpGenerator } = require('./xmpGenerator');
+const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
 const { db } = require('../database/db');
 const path = require('path');
 const fs = require('fs').promises;
@@ -162,7 +163,10 @@ class PhotoExportService {
 
     const csvContent = [
       headers.join(','),
-      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      // Formula-neutralize each cell before quoting — filenames/categories
+      // are user-controlled, and quoting alone doesn't stop `=cmd()`
+      // execution (GHSA-5364).
+      ...rows.map(row => row.map(cell => `"${neutralizeSpreadsheetFormula(cell).replace(/"/g, '""')}"`).join(','))
     ].join('\n');
 
     return {
