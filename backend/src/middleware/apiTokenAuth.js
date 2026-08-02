@@ -33,6 +33,24 @@ function parseScopes(raw) {
 }
 
 /**
+ * Does this error mean the `roles` table/column genuinely isn't there yet
+ * (mid-upgrade), as opposed to the database being briefly unhappy?
+ *
+ * The distinction matters because the fallback below grants super_admin: a
+ * catch-all would turn any transient failure — connection reset, deadlock,
+ * statement timeout — into a privilege escalation that hands a demoted viewer
+ * exactly the access GHSA-9697 closes.
+ */
+function isMissingRolesSchema(err) {
+  const message = String(err?.message || '');
+  if (!/roles/i.test(message)) return false;
+  // PG: 42P01 undefined_table / 42703 undefined_column. SQLite carries no
+  // codes, so match its wording too.
+  return err?.code === '42P01' || err?.code === '42703'
+    || /no such table|no such column|does not exist|unknown column/i.test(message);
+}
+
+/**
  * Middleware: authenticate via API token. Maps the token to its owner
  * admin user, attaches { req.admin, req.apiToken }, then defers to the
  * regular permission machinery on top.
@@ -83,6 +101,10 @@ async function apiTokenAuth(req, res, next) {
         )
         .first();
     } catch (joinError) {
+      // Fail CLOSED on anything that isn't a genuinely missing roles schema:
+      // the fallback fabricates super_admin, so a transient query failure must
+      // not become a free privilege upgrade. Rethrow → outer catch → 500.
+      if (!isMissingRolesSchema(joinError)) throw joinError;
       logger.debug('Roles table not available in apiTokenAuth', { error: joinError.message });
       admin = await db('admin_users')
         .where({ id: row.created_by, is_active: formatBoolean(true) })
@@ -149,6 +171,7 @@ module.exports = {
   generateApiToken,
   hashToken,
   parseScopes,
+  isMissingRolesSchema,
   TOKEN_PREFIX,
   VALID_SCOPES
 };
