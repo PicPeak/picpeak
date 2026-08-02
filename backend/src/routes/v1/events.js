@@ -21,6 +21,14 @@ const { body, query, validationResult } = require('express-validator');
 const { db, logActivity } = require('../../database/db');
 const { apiTokenAuth, requireApiScope } = require('../../middleware/apiTokenAuth');
 const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
+// GHSA-9697: migration 081 defines a token's effective permissions as the
+// INTERSECTION of the owner's role permissions and the token's scope flags.
+// requireApiScope only ever checked the scope half — so a token minted while
+// its owner was super_admin kept full write access after the owner was demoted
+// to viewer (userManagementService never touches api_tokens). These
+// requirePermission gates supply the missing half; they key on req.admin.id,
+// which apiTokenAuth populates.
+const { requirePermission } = require('../../middleware/permissions');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const { generateThumbnail } = require('../../services/imageProcessor');
 const logger = require('../../utils/logger');
@@ -116,6 +124,7 @@ router.post(
   '/events',
   apiTokenAuth,
   requireApiScope('admin'),
+  requirePermission('events.create'),
   [
     body('event_name').isString().trim().notEmpty(),
     body('event_type').isIn(['wedding', 'birthday', 'corporate', 'other', 'family']),
@@ -420,6 +429,7 @@ router.get(
   '/events',
   apiTokenAuth,
   requireApiScope('read'),
+  requirePermission('events.view'),
   [
     query('page').optional().isInt({ min: 1 }).toInt(),
     query('limit').optional().isInt({ min: 1, max: 100 }).toInt()
@@ -473,7 +483,7 @@ router.get(
  *       200: { description: Event details }
  *       404: { description: Not found }
  */
-router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requireEventOwnership, async (req, res) => {
+router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requirePermission('events.view'), requireEventOwnership, async (req, res) => {
   try {
     const event = await db('events').where({ id: req.params.id }).first();
     if (!event) return res.status(404).json({ error: 'Event not found' });
@@ -539,6 +549,7 @@ router.post(
   '/events/:id/photos',
   apiTokenAuth,
   requireApiScope('write'),
+  requirePermission('photos.upload'),
   requireEventOwnership,
   photoUpload.single('photo'),
   async (req, res) => {
@@ -692,7 +703,7 @@ router.post(
  *                 share_url: { type: string, format: uri }
  *       404: { description: Not found }
  */
-router.get('/events/:id/share-link', apiTokenAuth, requireApiScope('read'), requireEventOwnership, async (req, res) => {
+router.get('/events/:id/share-link', apiTokenAuth, requireApiScope('read'), requirePermission('events.view'), requireEventOwnership, async (req, res) => {
   try {
     const event = await db('events').where({ id: req.params.id }).first();
     if (!event) return res.status(404).json({ error: 'Event not found' });

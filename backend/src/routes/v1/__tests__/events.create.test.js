@@ -51,6 +51,16 @@ jest.mock('../../../database/db', () => {
   };
 });
 
+// RBAC is enforced on these routes since GHSA-9697 (requirePermission), but
+// this suite mocks the database, so a real permission lookup would 500. These
+// tests cover route logic, not authorization — the intersection of token
+// scopes and role permissions is pinned in __tests__/routes/v1EventOwnership.
+jest.mock('../../../middleware/permissions', () => ({
+  requirePermission: () => (_req, _res, next) => next(),
+  userHasAnyPermission: async () => true,
+  userHasAllPermissions: async () => true,
+}));
+
 jest.mock('../../../middleware/apiTokenAuth', () => ({
   apiTokenAuth: (req, _res, next) => {
     req.apiToken = { id: 1, admin_id: 1, scopes: ['admin'] };
