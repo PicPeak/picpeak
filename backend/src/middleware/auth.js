@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
+const { isMissingRolesSchema } = require('../utils/dbErrors');
 const { isTokenRevoked } = require('../utils/tokenRevocation');
 const logger = require('../utils/logger');
 const { getAdminTokenFromRequest, getGalleryTokenFromRequest } = require('../utils/tokenUtils');
@@ -75,6 +76,14 @@ async function adminAuth(req, res, next) {
         )
         .first();
     } catch (joinError) {
+      // Fail CLOSED on anything that isn't a genuinely missing roles schema:
+      // the fallback below fabricates super_admin, so a transient query failure
+      // (connection reset, deadlock, statement timeout, pool exhaustion) must
+      // not become a free privilege upgrade for every scoped admin. Rethrow →
+      // outer catch → 401, which is already how a transient DB fault in this
+      // try block behaves (isTokenRevoked hits the DB here). apiTokenAuth takes
+      // the same posture on the v1 surface, differing only in its 500.
+      if (!isMissingRolesSchema(joinError)) throw joinError;
       // Fallback: roles table may not exist yet during upgrade
       // Query without role join - user will have no role info but can still authenticate
       logger.debug('Roles table not available, falling back to basic auth', { error: joinError.message });
