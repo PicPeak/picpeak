@@ -16,6 +16,7 @@ const path = require('path');
 const { escapeLikePattern } = require('../../utils/sqlSecurity');
 const { validatePasswordInContext, getBcryptRounds } = require('../../utils/passwordValidation');
 const logger = require('../../utils/logger');
+const { sanitizeForLog, sanitizeValidationErrors } = require('../../utils/sanitizeForLog');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const { parseBooleanInput } = require('../../utils/parsers');
@@ -126,10 +127,13 @@ module.exports = (router) => {
     body('customer_account_ids.*').optional().isInt({ min: 1 })
   ], async (req, res) => {
     try {
-      logger.debug('Create event request body', { body: req.body });
+      // Redact credentials — the body carries the gallery password (GHSA-r794).
+      logger.debug('Create event request body', { body: sanitizeForLog(req.body) });
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        logger.error('Validation errors:', errors.array());
+        // errors.array() embeds the SUBMITTED value per field — including a
+        // rejected plaintext password (GHSA-r794).
+        logger.error('Validation errors:', sanitizeValidationErrors(errors.array()));
         return res.status(400).json({ errors: errors.array() });
       }
 
@@ -1272,7 +1276,8 @@ module.exports = (router) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        logger.debug('Update event validation errors', { errors: errors.array(), body: req.body });
+        // Redact credentials — an invalid update still logs the whole body (GHSA-pgmp).
+        logger.debug('Update event validation errors', { errors: sanitizeValidationErrors(errors.array()), body: sanitizeForLog(req.body) });
         return res.status(400).json({ errors: errors.array() });
       }
 
@@ -1450,9 +1455,12 @@ module.exports = (router) => {
       }
 
       // Log the update request for debugging
+      // `updates` no longer holds the plaintext password (stripped above), but
+      // it still carries client_password_hash and — when regenerate_client_token
+      // was passed — a LIVE client_share_token bearer credential.
       logger.debug('Update event request', {
         id,
-        updates,
+        updates: sanitizeForLog(updates),
         color_theme_length: updates.color_theme ? updates.color_theme.length : 0,
         color_theme_type: typeof updates.color_theme,
         hero_photo_id: updates.hero_photo_id,

@@ -1008,8 +1008,13 @@ async function startServer() {
     // Runs AFTER install-from-backup so a restored instance (which repopulates
     // admin_users) never prints a throwaway token. Best-effort — never blocks boot.
     let setupToken = null;
+    let setupTokenFile = null;
     try {
-      setupToken = await require('./src/services/setupService').ensureSetupToken();
+      const setupSvc = require('./src/services/setupService');
+      setupToken = await setupSvc.ensureSetupToken();
+      // Present only when the 0600 token file was written successfully.
+      const candidate = setupSvc.setupTokenFilePath();
+      setupTokenFile = require('fs').existsSync(candidate) ? candidate : null;
     } catch (err) {
       logger.warn(`[setup] ensureSetupToken skipped: ${err.message}`);
     }
@@ -1029,12 +1034,17 @@ async function startServer() {
       logger.info(`Server running on port ${PORT}`);
       logger.info(`Admin interface: ${process.env.ADMIN_URL || 'http://localhost:3000'}`);
       logger.info(`Frontend: ${process.env.FRONTEND_URL || 'http://localhost:3001'}`);
-      // First-run: print the one-time setup token to STDOUT (the file logger
-      // doesn't reach `docker logs`), as the last + most visible thing at boot.
+      // First-run banner. Print the TOKEN ITSELF only when the 0600 token file
+      // could not be written — otherwise this lands a live first-admin
+      // credential in `docker logs` / journald, which is the leak GHSA-r794's
+      // sweep turned up. When the file exists we point at it instead.
       if (setupToken) {
         const url = `${process.env.ADMIN_URL || 'http://localhost:3000'}/admin`;
         const line = '='.repeat(64);
-        console.log(`\n${line}\n  PicPeak first-run setup — no admin account yet.\n  Open:                  ${url}\n  One-time setup token:  ${setupToken}\n  (also saved to data/SETUP_TOKEN)\n${line}\n`);
+        const secretLine = setupTokenFile
+          ? `  Setup token saved to:  ${setupTokenFile}\n  (read it there — deliberately not printed)`
+          : `  One-time setup token:  ${setupToken}\n  (could not write the token file, so it is shown here)`;
+        console.log(`\n${line}\n  PicPeak first-run setup — no admin account yet.\n  Open:                  ${url}\n${secretLine}\n${line}\n`);
       }
     });
   } catch (error) {
