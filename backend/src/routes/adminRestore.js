@@ -786,9 +786,20 @@ async function getBackupConfig() {
  *
  * @returns {Promise<string|null>} an error message, or null when acceptable
  */
+// `source` is usually a SOURCE TYPE, not a path: the restore wizard posts
+// 'local' | 's3' | 'upload' and restoreService.restore() branches on those
+// literals before deriving an actual directory (see its comment at the
+// `options.source === 'local'` branch). Treating them as paths resolved
+// 'local' to <cwd>/local, failed containment, and 400'd the entire normal
+// restore workflow — so type tokens are excluded from the path check.
+const SOURCE_TYPE_TOKENS = ['local', 's3', 'upload'];
+
 async function checkRestorePathsAllowed({ source, manifestPath }) {
   const isS3 = (v) => typeof v === 'string' && v.startsWith('s3://');
-  const candidates = [source, manifestPath].filter((v) => v && !isS3(v));
+  const isTypeToken = (v) => typeof v === 'string'
+    && SOURCE_TYPE_TOKENS.includes(v.trim().toLowerCase());
+  const candidates = [source, manifestPath]
+    .filter((v) => v && !isS3(v) && !isTypeToken(v));
   if (candidates.length === 0) return null;
 
   const config = await getBackupConfig();
@@ -821,3 +832,6 @@ async function checkRestorePathsAllowed({ source, manifestPath }) {
 }
 
 module.exports = router;
+// Exposed for tests: the source/manifestPath containment rules (GHSA-fw4c) are
+// worth pinning directly, especially the source-TYPE-token carve-out.
+module.exports._internal = { checkRestorePathsAllowed, SOURCE_TYPE_TOKENS };
