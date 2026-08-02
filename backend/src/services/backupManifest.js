@@ -134,7 +134,10 @@ class BackupManifestGenerator {
       }
     };
 
-    // Calculate total checksum of the manifest
+    // Calculate total checksum of the manifest. Records WHICH algorithm was
+    // used so validation can tell a keyed manifest from a legacy unkeyed one
+    // (GHSA-hgp8).
+    manifest.verification.checksum_algorithm = this.getManifestKey() ? 'hmac-sha256' : 'sha256';
     manifest.verification.total_checksum = this.calculateManifestChecksum(manifest);
 
     return manifest;
@@ -227,10 +230,49 @@ class BackupManifestGenerator {
       throw new Error('File count mismatch');
     }
 
-    // Validate total checksum
-    const calculatedChecksum = this.calculateManifestChecksum(manifest);
-    if (manifest.verification.total_checksum !== calculatedChecksum) {
-      throw new Error('Manifest checksum verification failed');
+    // Validate total checksum (GHSA-hgp8). Manifests written before this
+    // change carry no algorithm field — treat those as plain sha256.
+    const declaredAlgorithm = manifest.verification.checksum_algorithm || 'sha256';
+    const key = this.getManifestKey();
+
+    if (declaredAlgorithm === 'hmac-sha256' && !key) {
+      // A keyed manifest but no key configured. We cannot prove authenticity
+      // — but refusing outright would brick recovery for an operator who lost
+      // the key along with the host, which is precisely when a restore is
+      // needed. Fall back to a loud warning rather than a hard failure.
+      logger.warn(
+        'Manifest declares a keyed checksum but BACKUP_MANIFEST_KEY is not set — '
+        + 'authenticity cannot be verified. Set the key to enable verification.'
+      );
+    } else {
+      const keyedArg = declaredAlgorithm === 'hmac-sha256' ? key : false;
+      const expected = manifest.verification.total_checksum;
+      const calculatedChecksum = this.calculateManifestChecksum(manifest, { keyed: keyedArg });
+
+      if (expected !== calculatedChecksum) {
+        // Manifests written before the canonicalization fix hashed a
+        // serialization that omitted nested fields. Accept those so existing
+        // backups stay restorable, but say plainly that their coverage is
+        // partial — the file list was NOT included in that digest.
+        const legacyChecksum = this.calculateManifestChecksum(
+          manifest, { keyed: keyedArg, legacy: true }
+        );
+        if (expected !== legacyChecksum) {
+          throw new Error('Manifest checksum verification failed');
+        }
+        logger.warn(
+          'Manifest uses the legacy checksum serialization, which did not cover the file list — '
+          + 'integrity of file paths/sizes is unverified. Re-run a backup to upgrade it.'
+        );
+      }
+      if (declaredAlgorithm === 'sha256' && key) {
+        // Unkeyed manifest verified fine, but note that an unkeyed checksum
+        // only detects corruption — it establishes nothing about authenticity.
+        logger.warn(
+          'Manifest uses an unkeyed checksum (written before BACKUP_MANIFEST_KEY was set) — '
+          + 'integrity verified, authenticity not established.'
+        );
+      }
     }
 
     logger.info('Manifest validation passed');
@@ -327,6 +369,7 @@ class BackupManifestGenerator {
     // otherwise validateManifest() rejects the loaded manifest because
     // generateManifest() stamped a checksum that did NOT include this
     // section.
+    fullManifest.verification.checksum_algorithm = this.getManifestKey() ? 'hmac-sha256' : 'sha256';
     fullManifest.verification.total_checksum = this.calculateManifestChecksum(fullManifest);
 
     return fullManifest;
@@ -439,16 +482,67 @@ class BackupManifestGenerator {
     }
   }
 
-  calculateManifestChecksum(manifest) {
+  /**
+   * GHSA-hgp8: the plain SHA-256 below proves the manifest wasn't CORRUPTED,
+   * not that it is AUTHENTIC — anyone who can rewrite the file can recompute
+   * it. Setting BACKUP_MANIFEST_KEY upgrades new manifests to a keyed HMAC,
+   * which matters when the backup store is a different trust domain from the
+   * host (S3 bucket creds != host creds).
+   *
+   * Deliberately OPT-IN and verify-if-present: the key cannot live in the
+   * database (the database is inside the backup), so a mandatory HMAC would
+   * lock an operator out of the exact disaster-recovery case this system
+   * exists for — total host loss, fresh install, only the backup survives.
+   * Unkeyed manifests therefore still validate, and a keyed manifest is only
+   * held to the keyed check when a key is configured.
+   */
+  getManifestKey() {
+    const key = process.env.BACKUP_MANIFEST_KEY;
+    return typeof key === 'string' && key.trim() ? key.trim() : null;
+  }
+
+  /**
+   * Canonical JSON: object keys sorted recursively so the digest is stable
+   * regardless of property insertion order, and — critically — so NESTED
+   * values are actually covered.
+   *
+   * The previous implementation passed `Object.keys(manifest).sort()` as
+   * JSON.stringify's second argument. That parameter is an array *replacer*
+   * (a property allowlist applied at every depth), not a key sorter, so every
+   * nested key absent from that top-level list — `path`, `size`, per-file
+   * `checksum` — was dropped before hashing. The file list was therefore
+   * outside the "integrity" check entirely: a manifest path could be rewritten
+   * to `../../etc/passwd` without disturbing the checksum.
+   */
+  canonicalize(value) {
+    if (Array.isArray(value)) return value.map((v) => this.canonicalize(v));
+    if (value && typeof value === 'object') {
+      return Object.keys(value).sort().reduce((acc, k) => {
+        acc[k] = this.canonicalize(value[k]);
+        return acc;
+      }, {});
+    }
+    return value;
+  }
+
+  calculateManifestChecksum(manifest, { keyed = null, legacy = false } = {}) {
     // Create a copy without the checksum field
     const manifestCopy = JSON.parse(JSON.stringify(manifest));
     if (manifestCopy.verification) {
       delete manifestCopy.verification.total_checksum;
+      delete manifestCopy.verification.checksum_algorithm;
     }
 
-    // Calculate SHA256 of the sorted JSON
-    const content = JSON.stringify(manifestCopy, Object.keys(manifestCopy).sort());
-    return crypto.createHash('sha256').update(content).digest('hex');
+    // `legacy` reproduces the old (under-covering) serialization so manifests
+    // written by earlier versions still validate — see validateManifest.
+    const content = legacy
+      ? JSON.stringify(manifestCopy, Object.keys(manifestCopy).sort())
+      : JSON.stringify(this.canonicalize(manifestCopy));
+
+    const key = keyed === null ? this.getManifestKey() : keyed;
+    return key
+      ? crypto.createHmac('sha256', key).update(content).digest('hex')
+      : crypto.createHash('sha256').update(content).digest('hex');
   }
 
   /**
