@@ -34,7 +34,7 @@ function transformProject(p) {
 /** List projects with customer email + event count + rolled-up value.
  *  `perms` gates which document types feed the value (matches the cockpit):
  *  invoices need bills.view, quotes need quotes.view. */
-async function listProjects({ search = '', status = null, perms = {} } = {}) {
+async function listProjects({ search = '', status = null, perms = {}, projectIds = null } = {}) {
   let q = db('projects')
     .leftJoin('customer_accounts', 'customer_accounts.id', 'projects.customer_account_id')
     .select(
@@ -43,6 +43,9 @@ async function listProjects({ search = '', status = null, perms = {} } = {}) {
       db('events').count('* as c').whereRaw('events.project_id = projects.id').as('event_count'),
     )
     .orderBy('projects.updated_at', 'desc');
+  // Ownership allowlist (GHSA-wrg5). null = unrestricted; an empty array
+  // legitimately means "owns nothing" and must return no rows.
+  if (projectIds !== null) q = q.whereIn('projects.id', projectIds);
   if (status) q = q.where('projects.status', status);
   if (search) {
     q = q.where(function () {
@@ -130,13 +133,21 @@ async function getProjectById(id) {
 
 async function createProject({ name, customerAccountId = null }, adminId) {
   if (!name || !String(name).trim()) throw new AppError('Project name is required', 400);
-  const inserted = await db('projects').insert({
+  const row = {
     name: String(name).trim(),
     customer_account_id: customerAccountId || null,
     status: 'active',
     created_at: new Date(),
     updated_at: new Date(),
-  }).returning('id');
+  };
+  // Record the owner (GHSA-wrg5). adminId was already passed in and silently
+  // discarded, which left a brand-new empty project with no derivable owner —
+  // it has no linked events to infer one from yet. Guarded so an instance that
+  // has not run migration 167 still creates projects.
+  if (adminId && await hasColumnCached('projects', 'created_by')) {
+    row.created_by = adminId;
+  }
+  const inserted = await db('projects').insert(row).returning('id');
   const id = (inserted[0] && typeof inserted[0] === 'object') ? inserted[0].id : inserted[0];
   return getProjectById(id);
 }
