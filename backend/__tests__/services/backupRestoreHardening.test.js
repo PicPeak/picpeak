@@ -147,3 +147,66 @@ describe('manifest checksum coverage (canonicalization)', () => {
     expect(() => backupManifest.validateManifest(m)).not.toThrow();
   });
 });
+
+describe('checksum verification is shared and downgrade-aware (codex round 2)', () => {
+  const fullManifest = () => ({
+    manifest: { version: '1.0', id: 'test' },
+    backup: { type: 'full' },
+    system: { platform: 'linux' },
+    application: { version: '1.0.0' },
+    files: { count: 1, manifest: [{ path: 'a.jpg', size: 1 }] },
+    database: { type: 'sqlite' },
+    verification: { total_checksum: null, checksum_algorithm: 'sha256' },
+  });
+
+  afterEach(() => {
+    delete process.env.BACKUP_MANIFEST_KEY;
+    delete process.env.BACKUP_MANIFEST_REQUIRE_KEYED;
+  });
+
+  it('accepts a legacy-serialized manifest through the SHARED verifier', () => {
+    // restoreService recomputed the digest itself with the canonical
+    // serializer, which rejected every pre-existing backup.
+    const m = fullManifest();
+    m.verification.total_checksum = backupManifest.calculateManifestChecksum(
+      m, { keyed: false, legacy: true },
+    );
+    const res = backupManifest.verifyManifestChecksum(m);
+    expect(res.valid).toBe(true);
+    expect(res.warnings.join(' ')).toMatch(/legacy checksum serialization/i);
+  });
+
+  it('warns but accepts an unkeyed manifest when a key is configured', () => {
+    const m = fullManifest();
+    m.verification.total_checksum = backupManifest.calculateManifestChecksum(m, { keyed: false });
+    process.env.BACKUP_MANIFEST_KEY = 'secret-key';
+
+    const res = backupManifest.verifyManifestChecksum(m);
+    expect(res.valid).toBe(true);
+    expect(res.warnings.join(' ')).toMatch(/authenticity NOT established/i);
+  });
+
+  it('REJECTS the algorithm downgrade once REQUIRE_KEYED is on', () => {
+    // Attacker rewrites the manifest, strips checksum_algorithm and recomputes
+    // a plain SHA-256. With the strict flag set that must not verify.
+    const m = fullManifest();
+    m.files.manifest[0].path = '../../etc/passwd';
+    m.verification.total_checksum = backupManifest.calculateManifestChecksum(m, { keyed: false });
+
+    process.env.BACKUP_MANIFEST_KEY = 'secret-key';
+    process.env.BACKUP_MANIFEST_REQUIRE_KEYED = 'true';
+
+    const res = backupManifest.verifyManifestChecksum(m);
+    expect(res.valid).toBe(false);
+    expect(res.error).toMatch(/downgrade/i);
+  });
+
+  it('rejects a keyed manifest with no key when REQUIRE_KEYED is on', () => {
+    const m = fullManifest();
+    m.verification.checksum_algorithm = 'hmac-sha256';
+    m.verification.total_checksum = backupManifest.calculateManifestChecksum(m, { keyed: 'k' });
+    process.env.BACKUP_MANIFEST_REQUIRE_KEYED = 'true';
+
+    expect(backupManifest.verifyManifestChecksum(m).valid).toBe(false);
+  });
+});
