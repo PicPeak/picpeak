@@ -12,6 +12,15 @@ const backupManifest = require('./backupManifest');
 const S3StorageAdapter = require('./storage/s3Storage');
 const { queueEmail } = require('./emailProcessor');
 const { formatBoolean } = require('../utils/dbCompat');
+
+// A manifest is attacker-influenceable (hand-crafted backup). Reject any
+// entry path that would resolve OUTSIDE its intended base directory
+// (traversal / absolute path) before any fs write. The target may not exist
+// yet, so resolve rather than realpath (GHSA-fm58).
+function pathEscapes(baseDir, candidate) {
+  const rel = path.relative(path.resolve(baseDir), path.resolve(candidate));
+  return !rel || rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel);
+}
 const { formatBytes } = require('../utils/formatBytes');
 const os = require('os');
 
@@ -771,7 +780,14 @@ class RestoreService {
         for (const file of filesToDownload) {
           const s3Key = path.posix.join(prefix, file.path);
           const localFilePath = path.join(localPath, file.path);
-          
+
+          // Containment guard (GHSA-fm58): reject a manifest path that would
+          // write outside the download staging dir.
+          if (pathEscapes(localPath, localFilePath)) {
+            this.log('error', `Refusing unsafe manifest path on download: ${file.path}`);
+            continue;
+          }
+
           await fs.mkdir(path.dirname(localFilePath), { recursive: true });
           
           try {
@@ -1204,6 +1220,14 @@ END $$;`
         const sourcePath = path.join(backupPath, file.path);
         const targetPath = path.join(storagePath, file.path);
 
+        // Containment guard (GHSA-fm58): a crafted manifest path like
+        // `../../etc/cron.d/x` would otherwise escape the storage root and
+        // overwrite arbitrary files. Skip any entry that escapes.
+        if (pathEscapes(backupPath, sourcePath) || pathEscapes(storagePath, targetPath)) {
+          errors.push(`Refusing unsafe manifest path: ${file.path}`);
+          continue;
+        }
+
         // Check if source file exists
         try {
           await fs.access(sourcePath);
@@ -1375,6 +1399,15 @@ END $$;`
 
         for (const file of filesToVerify) {
           const filePath = path.join(storagePath, file.path);
+          // Same containment guard as performFilesRestore: a traversal
+          // manifest entry (e.g. `../../etc/passwd`) was skipped during the
+          // restore, so it must not be fs.access'd/hashed here either —
+          // otherwise an existing outside file makes the skipped entry look
+          // "verified" (and we'd read an arbitrary file off disk).
+          if (pathEscapes(storagePath, filePath)) {
+            verification.errors.push(`Refusing unsafe manifest path on verification: ${file.path}`);
+            continue;
+          }
           try {
             await fs.access(filePath);
             

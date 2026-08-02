@@ -159,7 +159,16 @@ const resolveShareIdentifier = async (identifier) => {
     return { event, matchType: 'link', shareToken: getEventShareToken(event) };
   }
 
-  event = await baseQuery.clone().where('share_link', 'like', `%/${trimmed}`).first();
+  // GHSA-rh8r hardening: `trimmed` is attacker-controlled, so escape LIKE
+  // wildcards (`%`, `_`, and the escape char itself) before embedding it.
+  // Otherwise an anonymous `/resolve/________…________` (32 underscores)
+  // matches ANY share_link via single-char wildcards, resolves as
+  // matchType 'link_partial', and the /resolve route hands back the
+  // gallery's bearer token — reopening the very hole the token-withholding
+  // fix closed. Explicit ESCAPE clause because SQLite has no default LIKE
+  // escape character (Postgres defaults to backslash, but we set it for both).
+  const likeTail = `%/${trimmed.replace(/[\\%_]/g, (c) => `\\${c}`)}`;
+  event = await baseQuery.clone().whereRaw('share_link LIKE ? ESCAPE \'\\\'', [likeTail]).first();
   if (event) {
     return { event, matchType: 'link_partial', shareToken: getEventShareToken(event) };
   }
