@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
+const { Transform } = require('stream');
 const { createReadStream, createWriteStream } = require('fs');
 const { spawnAsync, spawnToFile, spawnFromFile } = require('../utils/safeExec');
 const { db } = require('../database/db');
@@ -519,13 +520,21 @@ class RestoreService {
     };
 
     try {
-      // Check backup integrity
-      if (manifest.verification && manifest.verification.total_checksum) {
-        const calculatedChecksum = backupManifest.calculateManifestChecksum(manifest);
-        if (calculatedChecksum !== manifest.verification.total_checksum) {
-          validation.errors.push('Manifest checksum verification failed');
-          validation.isValid = false;
-        }
+      // Check backup integrity. MUST delegate to verifyManifestChecksum rather
+      // than recomputing here — that helper owns the legacy-serialization and
+      // keyed/unkeyed fallbacks (GHSA-hgp8). Recomputing with the default
+      // canonical+keyed settings rejected every backup written before those
+      // changes, i.e. every existing one.
+      //
+      // Called UNCONDITIONALLY: the old `if (…total_checksum)` guard meant an
+      // attacker who could rewrite the backup store simply deleted the field
+      // to skip verification altogether. The helper owns that case now and
+      // rejects it.
+      const checksumResult = backupManifest.verifyManifestChecksum(manifest);
+      checksumResult.warnings.forEach((w) => this.log('warn', w));
+      if (!checksumResult.valid) {
+        validation.errors.push(checksumResult.error || 'Manifest checksum verification failed');
+        validation.isValid = false;
       }
 
       // Check backup age
@@ -1512,10 +1521,33 @@ END $$;`
    * Decompress gzip file
    */
   async decompressFile(inputPath, outputPath) {
+    // Bound the EXPANDED size (GHSA-h652). gunzip happily inflates a small
+    // crafted .gz into an unbounded stream, filling the disk before any later
+    // validation runs. Cap it and fail the pipeline the moment the limit is
+    // crossed. The default is deliberately generous — real database dumps are
+    // large — and overridable for installs with genuinely bigger data.
+    const configured = Number(process.env.RESTORE_MAX_DECOMPRESSED_BYTES);
+    const maxBytes = Number.isFinite(configured) && configured > 0
+      ? configured
+      : 50 * 1024 * 1024 * 1024; // 50 GB
+
+    let written = 0;
+    const limiter = new Transform({
+      transform(chunk, _enc, cb) {
+        written += chunk.length;
+        if (written > maxBytes) {
+          return cb(new Error(
+            `Decompressed size exceeds limit of ${maxBytes} bytes — refusing to continue`
+          ));
+        }
+        cb(null, chunk);
+      },
+    });
+
     const gunzip = zlib.createGunzip();
     const source = createReadStream(inputPath);
     const destination = createWriteStream(outputPath);
-    await pipeline(source, gunzip, destination);
+    await pipeline(source, gunzip, limiter, destination);
   }
 
   /**

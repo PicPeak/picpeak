@@ -134,7 +134,10 @@ class BackupManifestGenerator {
       }
     };
 
-    // Calculate total checksum of the manifest
+    // Calculate total checksum of the manifest. Records WHICH algorithm was
+    // used so validation can tell a keyed manifest from a legacy unkeyed one
+    // (GHSA-hgp8).
+    manifest.verification.checksum_algorithm = this.getManifestKey() ? 'hmac-sha256' : 'sha256';
     manifest.verification.total_checksum = this.calculateManifestChecksum(manifest);
 
     return manifest;
@@ -227,11 +230,15 @@ class BackupManifestGenerator {
       throw new Error('File count mismatch');
     }
 
-    // Validate total checksum
-    const calculatedChecksum = this.calculateManifestChecksum(manifest);
-    if (manifest.verification.total_checksum !== calculatedChecksum) {
-      throw new Error('Manifest checksum verification failed');
+    // Validate total checksum (GHSA-hgp8) — delegated so every caller shares
+    // the same fallback rules. restoreService.performPreRestoreValidation()
+    // used to recompute the digest itself with the default (canonical, keyed)
+    // settings, which silently rejected every pre-existing backup.
+    const checksumResult = this.verifyManifestChecksum(manifest);
+    if (!checksumResult.valid) {
+      throw new Error(checksumResult.error || 'Manifest checksum verification failed');
     }
+    checksumResult.warnings.forEach((w) => logger.warn(w));
 
     logger.info('Manifest validation passed');
     return true;
@@ -327,6 +334,7 @@ class BackupManifestGenerator {
     // otherwise validateManifest() rejects the loaded manifest because
     // generateManifest() stamped a checksum that did NOT include this
     // section.
+    fullManifest.verification.checksum_algorithm = this.getManifestKey() ? 'hmac-sha256' : 'sha256';
     fullManifest.verification.total_checksum = this.calculateManifestChecksum(fullManifest);
 
     return fullManifest;
@@ -439,16 +447,167 @@ class BackupManifestGenerator {
     }
   }
 
-  calculateManifestChecksum(manifest) {
+  /**
+   * GHSA-hgp8: the plain SHA-256 below proves the manifest wasn't CORRUPTED,
+   * not that it is AUTHENTIC — anyone who can rewrite the file can recompute
+   * it. Setting BACKUP_MANIFEST_KEY upgrades new manifests to a keyed HMAC,
+   * which matters when the backup store is a different trust domain from the
+   * host (S3 bucket creds != host creds).
+   *
+   * Deliberately OPT-IN and verify-if-present: the key cannot live in the
+   * database (the database is inside the backup), so a mandatory HMAC would
+   * lock an operator out of the exact disaster-recovery case this system
+   * exists for — total host loss, fresh install, only the backup survives.
+   * Unkeyed manifests therefore still validate, and a keyed manifest is only
+   * held to the keyed check when a key is configured.
+   */
+  getManifestKey() {
+    const key = process.env.BACKUP_MANIFEST_KEY;
+    return typeof key === 'string' && key.trim() ? key.trim() : null;
+  }
+
+  /**
+   * Single source of truth for "does this manifest's checksum verify?"
+   * (GHSA-hgp8). Returns a result object rather than throwing so callers can
+   * surface warnings without duplicating the fallback rules — a duplicated
+   * check in restoreService recomputed the digest with the default canonical
+   * serializer and rejected every manifest written before that change.
+   *
+   * Rules, in order:
+   *   - keyed manifest + no key configured  → cannot verify; accept with a
+   *     loud warning (refusing would brick recovery when the key was lost with
+   *     the host, which is exactly when a restore is needed), UNLESS
+   *     BACKUP_MANIFEST_REQUIRE_KEYED is set.
+   *   - unkeyed manifest + key configured   → possible downgrade. Accepted with
+   *     a warning by default for backward compatibility; rejected when
+   *     BACKUP_MANIFEST_REQUIRE_KEYED is set, which is the setting an operator
+   *     turns on once all their backups are keyed.
+   *   - digest mismatch → retry with the legacy (pre-canonicalization)
+   *     serialization so old backups stay restorable, then fail.
+   *   - no checksum at all → reject. Every manifest this codebase has ever
+   *     written stamps `verification.total_checksum` (generateManifest and
+   *     the incremental path both do), so an absent one means the manifest
+   *     was rewritten — and accepting it would let an attacker strip the
+   *     field to skip verification entirely, walking straight past both the
+   *     downgrade guard and BACKUP_MANIFEST_REQUIRE_KEYED.
+   *
+   * @returns {{valid: boolean, error?: string, warnings: string[]}}
+   */
+  verifyManifestChecksum(manifest) {
+    const warnings = [];
+    if (!manifest?.verification?.total_checksum) {
+      return {
+        valid: false,
+        error: 'Manifest carries no checksum — refusing to treat an unverifiable manifest as authentic',
+        warnings,
+      };
+    }
+
+    const declaredAlgorithm = manifest.verification.checksum_algorithm || 'sha256';
+    const key = this.getManifestKey();
+    const requireKeyed = /^(1|true|yes)$/i.test(String(process.env.BACKUP_MANIFEST_REQUIRE_KEYED || ''));
+
+    if (declaredAlgorithm === 'hmac-sha256' && !key) {
+      if (requireKeyed) {
+        return {
+          valid: false,
+          error: 'Manifest is keyed but BACKUP_MANIFEST_KEY is not set (BACKUP_MANIFEST_REQUIRE_KEYED is on)',
+          warnings,
+        };
+      }
+      warnings.push(
+        'Manifest declares a keyed checksum but BACKUP_MANIFEST_KEY is not set — '
+        + 'authenticity cannot be verified. Set the key to enable verification.'
+      );
+      return { valid: true, warnings };
+    }
+
+    // Downgrade guard: with a key configured, an attacker who can rewrite the
+    // backup store could otherwise strip checksum_algorithm, edit the manifest
+    // and recompute a plain SHA-256 that we would happily accept. Rejecting
+    // that by default would break every pre-key backup, so it is opt-in.
+    //
+    // The strict rejection must NOT be conditional on a key being configured:
+    // strict mode is a statement about the manifests ("all mine are keyed"),
+    // not about this host. Gating it on `key` made the flag fail open on
+    // exactly the fresh disaster-recovery host that is missing the secret.
+    if (declaredAlgorithm !== 'hmac-sha256') {
+      if (requireKeyed) {
+        return {
+          valid: false,
+          error: 'Manifest is not keyed but BACKUP_MANIFEST_REQUIRE_KEYED is on — refusing a possible checksum downgrade',
+          warnings,
+        };
+      }
+      if (key) {
+        warnings.push(
+          'Manifest uses an unkeyed checksum while BACKUP_MANIFEST_KEY is set — integrity verified, '
+          + 'authenticity NOT established (a rewritten manifest could have downgraded the algorithm). '
+          + 'Set BACKUP_MANIFEST_REQUIRE_KEYED=true once all backups are keyed.'
+        );
+      }
+    }
+
+    const keyedArg = declaredAlgorithm === 'hmac-sha256' ? key : false;
+    const expected = manifest.verification.total_checksum;
+
+    if (expected === this.calculateManifestChecksum(manifest, { keyed: keyedArg })) {
+      return { valid: true, warnings };
+    }
+    // Pre-canonicalization manifests hashed a serialization that omitted
+    // nested fields; accept those so existing backups stay restorable.
+    if (expected === this.calculateManifestChecksum(manifest, { keyed: keyedArg, legacy: true })) {
+      warnings.push(
+        'Manifest uses the legacy checksum serialization, which did not cover the file list — '
+        + 'integrity of file paths/sizes is unverified. Re-run a backup to upgrade it.'
+      );
+      return { valid: true, warnings };
+    }
+    return { valid: false, error: 'Manifest checksum verification failed', warnings };
+  }
+
+  /**
+   * Canonical JSON: object keys sorted recursively so the digest is stable
+   * regardless of property insertion order, and — critically — so NESTED
+   * values are actually covered.
+   *
+   * The previous implementation passed `Object.keys(manifest).sort()` as
+   * JSON.stringify's second argument. That parameter is an array *replacer*
+   * (a property allowlist applied at every depth), not a key sorter, so every
+   * nested key absent from that top-level list — `path`, `size`, per-file
+   * `checksum` — was dropped before hashing. The file list was therefore
+   * outside the "integrity" check entirely: a manifest path could be rewritten
+   * to `../../etc/passwd` without disturbing the checksum.
+   */
+  canonicalize(value) {
+    if (Array.isArray(value)) return value.map((v) => this.canonicalize(v));
+    if (value && typeof value === 'object') {
+      return Object.keys(value).sort().reduce((acc, k) => {
+        acc[k] = this.canonicalize(value[k]);
+        return acc;
+      }, {});
+    }
+    return value;
+  }
+
+  calculateManifestChecksum(manifest, { keyed = null, legacy = false } = {}) {
     // Create a copy without the checksum field
     const manifestCopy = JSON.parse(JSON.stringify(manifest));
     if (manifestCopy.verification) {
       delete manifestCopy.verification.total_checksum;
+      delete manifestCopy.verification.checksum_algorithm;
     }
 
-    // Calculate SHA256 of the sorted JSON
-    const content = JSON.stringify(manifestCopy, Object.keys(manifestCopy).sort());
-    return crypto.createHash('sha256').update(content).digest('hex');
+    // `legacy` reproduces the old (under-covering) serialization so manifests
+    // written by earlier versions still validate — see validateManifest.
+    const content = legacy
+      ? JSON.stringify(manifestCopy, Object.keys(manifestCopy).sort())
+      : JSON.stringify(this.canonicalize(manifestCopy));
+
+    const key = keyed === null ? this.getManifestKey() : keyed;
+    return key
+      ? crypto.createHmac('sha256', key).update(content).digest('hex')
+      : crypto.createHash('sha256').update(content).digest('hex');
   }
 
   /**

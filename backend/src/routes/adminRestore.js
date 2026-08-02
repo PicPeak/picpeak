@@ -91,6 +91,12 @@ router.post('/validate', requirePermission('backup.restore'), [
   }
 
   try {
+    // Constrain the caller-supplied paths to configured backup roots (GHSA-fw4c)
+    const pathError = await checkRestorePathsAllowed(req.body);
+    if (pathError) {
+      return res.status(400).json({ success: false, error: pathError });
+    }
+
     // Transform S3 config from frontend format
     const s3Config = transformS3Config(req.body);
 
@@ -163,6 +169,12 @@ router.post('/start', requirePermission('backup.restore'), [
         success: false,
         error: 'Restore operation already in progress'
       });
+    }
+
+    // Constrain the caller-supplied paths to configured backup roots (GHSA-fw4c)
+    const pathError = await checkRestorePathsAllowed(req.body);
+    if (pathError) {
+      return res.status(400).json({ success: false, error: pathError });
     }
 
     // Check permissions for dangerous options
@@ -759,4 +771,67 @@ async function getBackupConfig() {
   return config;
 }
 
+/**
+ * GHSA-fw4c: `source` and `manifestPath` were validated only as "not empty"
+ * before being handed to the privileged restore engine, which reads them,
+ * parses the manifest and executes the referenced SQL against the live
+ * database. Constrain them to the operator-configured backup locations.
+ *
+ * The allowlist is the SAME set the restore wizard discovers from
+ * (`backup_destination_path` + `backup_manifest_path`), so the disaster-
+ * recovery flow is untouched: an operator restoring from a rescued mount
+ * already has to point those settings at it for the backup to be listed.
+ * RESTORE_ALLOWED_ROOTS (colon-separated) is an escape hatch for unusual
+ * layouts. S3 sources are URLs, not paths, and are validated elsewhere.
+ *
+ * @returns {Promise<string|null>} an error message, or null when acceptable
+ */
+// `source` is usually a SOURCE TYPE, not a path: the restore wizard posts
+// 'local' | 's3' | 'upload' and restoreService.restore() branches on those
+// literals before deriving an actual directory (see its comment at the
+// `options.source === 'local'` branch). Treating them as paths resolved
+// 'local' to <cwd>/local, failed containment, and 400'd the entire normal
+// restore workflow — so type tokens are excluded from the path check.
+const SOURCE_TYPE_TOKENS = ['local', 's3', 'upload'];
+
+async function checkRestorePathsAllowed({ source, manifestPath }) {
+  const isS3 = (v) => typeof v === 'string' && v.startsWith('s3://');
+  const isTypeToken = (v) => typeof v === 'string'
+    && SOURCE_TYPE_TOKENS.includes(v.trim().toLowerCase());
+  const candidates = [source, manifestPath]
+    .filter((v) => v && !isS3(v) && !isTypeToken(v));
+  if (candidates.length === 0) return null;
+
+  const config = await getBackupConfig();
+  const roots = [];
+  if (config.backup_destination_path) roots.push(config.backup_destination_path);
+  if (config.backup_manifest_path) roots.push(config.backup_manifest_path);
+  for (const extra of (process.env.RESTORE_ALLOWED_ROOTS || '').split(':')) {
+    if (extra.trim()) roots.push(extra.trim());
+  }
+  if (roots.length === 0) {
+    // Nothing configured to compare against — a restore can't be scoped, so
+    // don't pretend to enforce. Discovery would find nothing either.
+    return null;
+  }
+
+  const resolvedRoots = roots.map((r) => path.resolve(r));
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    const inside = resolvedRoots.some(
+      (root) => resolved === root || resolved.startsWith(root + path.sep)
+    );
+    if (!inside) {
+      logger.warn('Refusing restore path outside the configured backup roots', {
+        candidate, roots,
+      });
+      return 'Backup source and manifest path must be inside a configured backup location';
+    }
+  }
+  return null;
+}
+
 module.exports = router;
+// Exposed for tests: the source/manifestPath containment rules (GHSA-fw4c) are
+// worth pinning directly, especially the source-TYPE-token carve-out.
+module.exports._internal = { checkRestorePathsAllowed, SOURCE_TYPE_TOKENS };
