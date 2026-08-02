@@ -525,13 +525,16 @@ class RestoreService {
       // keyed/unkeyed fallbacks (GHSA-hgp8). Recomputing with the default
       // canonical+keyed settings rejected every backup written before those
       // changes, i.e. every existing one.
-      if (manifest.verification && manifest.verification.total_checksum) {
-        const checksumResult = backupManifest.verifyManifestChecksum(manifest);
-        checksumResult.warnings.forEach((w) => this.log('warn', w));
-        if (!checksumResult.valid) {
-          validation.errors.push(checksumResult.error || 'Manifest checksum verification failed');
-          validation.isValid = false;
-        }
+      //
+      // Called UNCONDITIONALLY: the old `if (…total_checksum)` guard meant an
+      // attacker who could rewrite the backup store simply deleted the field
+      // to skip verification altogether. The helper owns that case now and
+      // rejects it.
+      const checksumResult = backupManifest.verifyManifestChecksum(manifest);
+      checksumResult.warnings.forEach((w) => this.log('warn', w));
+      if (!checksumResult.valid) {
+        validation.errors.push(checksumResult.error || 'Manifest checksum verification failed');
+        validation.isValid = false;
       }
 
       // Check backup age

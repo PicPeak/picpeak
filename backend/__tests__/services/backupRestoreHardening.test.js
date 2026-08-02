@@ -209,4 +209,33 @@ describe('checksum verification is shared and downgrade-aware (codex round 2)', 
 
     expect(backupManifest.verifyManifestChecksum(m).valid).toBe(false);
   });
+
+  it('REJECTS a manifest whose checksum was stripped entirely', () => {
+    // The cheapest bypass of every rule above: delete the field instead of
+    // forging it. Both the helper's early return and restoreService's
+    // `if (…total_checksum)` guard used to wave that through.
+    const m = fullManifest();
+    delete m.verification.total_checksum;
+
+    const res = backupManifest.verifyManifestChecksum(m);
+    expect(res.valid).toBe(false);
+    expect(res.error).toMatch(/no checksum/i);
+
+    delete m.verification;
+    expect(backupManifest.verifyManifestChecksum(m).valid).toBe(false);
+  });
+
+  it('REJECTS an unkeyed manifest under REQUIRE_KEYED even with no key configured', () => {
+    // Strict mode is a claim about the manifests, not about this host — so a
+    // fresh disaster-recovery box that lost BACKUP_MANIFEST_KEY must not
+    // silently start accepting plain SHA-256 manifests again.
+    const m = fullManifest();
+    m.verification.total_checksum = backupManifest.calculateManifestChecksum(m, { keyed: false });
+    process.env.BACKUP_MANIFEST_REQUIRE_KEYED = 'true';
+    delete process.env.BACKUP_MANIFEST_KEY;
+
+    const res = backupManifest.verifyManifestChecksum(m);
+    expect(res.valid).toBe(false);
+    expect(res.error).toMatch(/downgrade/i);
+  });
 });
