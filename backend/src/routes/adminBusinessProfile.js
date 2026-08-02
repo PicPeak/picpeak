@@ -249,33 +249,51 @@ router.get(
     const brandingLogoUrl  = await getAppSetting('branding_logo_url');
     const resolved = await resolveLogoFile(profile);
 
+    // GHSA-29vm: report candidates RELATIVE to the storage roots rather than
+    // echoing absolute container paths and process.cwd(). This endpoint exists
+    // to answer "which candidate did/didn't exist", which relative paths answer
+    // just as well without handing out the filesystem layout.
+    const cwdStorage = path.join(process.cwd(), 'storage');
+    const relativise = (p) => {
+      for (const [name, root] of [['STORAGE', storageRoot], ['CWD_STORAGE', cwdStorage]]) {
+        const rel = path.relative(root, p);
+        if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+          return `<${name}>/${rel.split(path.sep).join('/')}`;
+        }
+      }
+      return path.basename(p);
+    };
+
     const inspect = (label, raw) => {
       const value = (raw || '').toString().trim();
       if (!value) return { label, value: null, candidates: [] };
       const stripped = value.replace(/^\/+/, '');
       const baseName = path.basename(value);
+      // Mirrors resolveLogoFile's candidate list. The raw-absolute candidate
+      // this used to advertise was dropped from the resolver by GHSA-c7x5
+      // (containment to the storage roots) — keeping it here would make the
+      // diagnostic misreport what the resolver actually tries.
       const candidates = [
-        path.isAbsolute(value) ? value : null,
         path.join(storageRoot, stripped),
         path.join(storageRoot, 'uploads', 'logos', baseName),
         path.join(storageRoot, 'branding', baseName),
-        path.join(process.cwd(), 'storage', stripped),
-        path.join(process.cwd(), 'storage', 'uploads', 'logos', baseName),
-        path.join(process.cwd(), 'storage', 'branding', baseName),
-      ].filter(Boolean);
+        path.join(cwdStorage, stripped),
+        path.join(cwdStorage, 'uploads', 'logos', baseName),
+        path.join(cwdStorage, 'branding', baseName),
+      ];
       return {
         label, value,
         candidates: [...new Set(candidates)].map((p) => ({
-          path: p,
+          path: relativise(p),
           exists: (() => { try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; } })(),
         })),
       };
     };
 
     return successResponse(res, {
-      storageRoot,
-      cwd: process.cwd(),
-      resolvedTo: resolved,
+      // Absolute storageRoot / cwd deliberately omitted (GHSA-29vm); the
+      // candidate paths below are shown relative to <STORAGE>/<CWD_STORAGE>.
+      resolvedTo: resolved ? relativise(resolved) : null,
       sources: [
         inspect('business_profile.logo_path', profile?.logo_path),
         inspect('app_settings.branding_logo_path', brandingDiskPath),

@@ -59,6 +59,13 @@ function buildAdapter({ baseUrl, websiteId, apiKey }) {
             Authorization: `Bearer ${apiKey}`,
             Accept: 'application/json',
           },
+          // Never follow a redirect (GHSA-mw76). undici only strips
+          // Authorization/Cookie/Proxy-Authorization/Host when a redirect
+          // crosses origins — a custom key header would be replayed verbatim to
+          // whatever host the tracker redirects to. Self-hosted trackers on
+          // private addresses keep working; only a proxy that 301s is affected,
+          // and that surfaces as a clear logged error rather than a silent leak.
+          redirect: 'error',
           signal: controller.signal,
         });
       } catch (err) {

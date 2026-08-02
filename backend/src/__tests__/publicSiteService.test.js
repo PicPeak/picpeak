@@ -52,7 +52,11 @@ describe('publicSiteService', () => {
     const payload = await getPublicSitePayload({ bypassCache: true });
 
     expect(payload.enabled).toBe(true);
-    expect(payload.html).toContain('<h1>Willow & Pine Studio</h1>');
+    // Brand tokens are HTML-escaped on substitution now (GHSA-j347), so a bare
+    // `&` in the company name is emitted as the `&amp;` entity. That renders
+    // identically in a browser — it is the correctly-encoded form — but the raw
+    // payload string differs from the pre-fix output.
+    expect(payload.html).toContain('<h1>Willow &amp; Pine Studio</h1>');
     expect(payload.html).not.toContain('<script');
     expect(payload.baseCss.length).toBeGreaterThan(0);
     expect(payload.branding.companyName).toBe('Willow & Pine Studio');
