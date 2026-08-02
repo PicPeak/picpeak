@@ -78,4 +78,88 @@ async function filterOwnedEventIds(admin, eventIds) {
   return { allowed, denied };
 }
 
-module.exports = { requireEventOwnership, filterOwnedEventIds, scopeEventsQuery };
+/**
+ * Knex subquery selecting the ids of projects `admin` may act on, or `null`
+ * when the caller is unrestricted (GHSA-wrg5).
+ *
+ * Rules, in priority order:
+ *   1. A project's STORED owner is authoritative. If `projects.created_by` is
+ *      set to a live admin, only that admin (and super_admin) may act on it.
+ *      Earlier this union'd in "any linked event I can see", which meant one
+ *      legacy ownerless event inside another admin's project exposed the whole
+ *      project — its other events, invoices and emails — through the overview.
+ *   2. Only when there is NO usable stored owner (NULL, or pointing at a
+ *      deleted admin) do we derive from linked events, and then EVERY linked
+ *      event must be accessible: a project the old unrestricted routes filled
+ *      with several admins' events is ambiguous, and migration 167 deliberately
+ *      leaves those NULL. Granting on "any" would have made exactly those
+ *      mixed projects readable by everyone.
+ *   3. A project with no usable owner AND no linked events (an orphan — not
+ *      creatable since createProject stamps created_by) stays super_admin-only.
+ *      Failing closed beats failing open; a super_admin can reassign it.
+ *
+ * Returned as a subquery so callers avoid materialising an id list.
+ */
+function ownedProjectsSubquery(admin) {
+  if (admin?.roleName === 'super_admin') return null;
+
+  const linkedEvents = () => db('events').select(db.raw('1')).whereRaw('events.project_id = projects.id');
+
+  return db('projects').select('projects.id').where((w) => {
+    w.where('projects.created_by', admin.id)
+      .orWhere((noOwner) => {
+        noOwner
+          // No usable stored owner: NULL, or a creator that no longer exists
+          // (hard-deleted admin) — otherwise that project would be locked away
+          // from everyone but super_admin forever.
+          .where((c) => c
+            .whereNull('projects.created_by')
+            .orWhereNotIn('projects.created_by', db('admin_users').select('id')))
+          .whereExists(linkedEvents())
+          .whereNotExists(
+            linkedEvents().whereNotNull('events.created_by').whereNot('events.created_by', admin.id),
+          );
+      });
+  });
+}
+
+/**
+ * Materialised form of ownedProjectsSubquery, for callers that need the ids
+ * themselves. `null` = unrestricted.
+ *
+ * @returns {Promise<number[]|null>}
+ */
+async function ownedProjectIds(admin) {
+  const sub = ownedProjectsSubquery(admin);
+  if (sub === null) return null;
+  const rows = await sub;
+  return rows.map((r) => Number(r.id));
+}
+
+/**
+ * Middleware enforcing ownedProjectIds() on a :id project route. 404 (not 403)
+ * on a foreign project so the endpoint isn't an existence oracle — same
+ * posture filterOwnedEventIds takes for foreign-vs-missing ids.
+ */
+function requireProjectOwnership(req, res, next) {
+  const sub = ownedProjectsSubquery(req.admin);
+  if (sub === null) return next();
+  const projectId = Number(req.params.id);
+  sub.clone()
+    .where('projects.id', projectId)
+    .first()
+    .then((row) => {
+      if (!row) return res.status(404).json({ error: 'Project not found' });
+      next();
+    })
+    .catch(() => res.status(500).json({ error: 'Failed to verify project ownership' }));
+}
+
+module.exports = {
+  requireEventOwnership,
+  filterOwnedEventIds,
+  scopeEventsQuery,
+  ownedProjectIds,
+  ownedProjectsSubquery,
+  requireProjectOwnership,
+};
