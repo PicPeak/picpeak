@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.98.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.98.4-beta.0...v3.98.5-beta.0) (2026-08-02)
+
+
+### Bug Fixes
+
+* **security:** enforce project ownership on project + project-email routes (GHSA-wrg5, GHSA-93x4) ([#960](https://github.com/PicPeak/picpeak/issues/960)) ([7c0c0a5](https://github.com/PicPeak/picpeak/commit/7c0c0a5b7ff5758ec07ac64ab5c0c81818cca96d))
+
 ## [3.98.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.98.3-beta.0...v3.98.4-beta.0) (2026-08-02)
 
 
