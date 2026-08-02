@@ -94,4 +94,30 @@ describe('logo diagnostic disclosure (GHSA-29vm)', () => {
     expect(source.candidates.some((c) => c.exists)).toBe(true);
     expect(res.body.resolvedTo).toMatch(/^<STORAGE>\//);
   });
+
+  it('shows the <STORAGE>/<value> candidate for a ROOT-RELATIVE logo URL (round 3)', async () => {
+    // `/custom/logo.png` is a URL, not a disk path, but path.isAbsolute() says
+    // true for both. Gating the stripped joins on isAbsolute() therefore hid
+    // `<STORAGE>/custom/logo.png` — a candidate resolveLogoFile does try and
+    // can resolve — so the diagnostic claimed nothing existed for a logo that
+    // renders fine, and collapsed the configured value to its basename.
+    await db('app_settings').where({ setting_key: 'branding_logo_path' })
+      .update({ setting_value: JSON.stringify('/custom/logo.png') });
+
+    const res = await request(app)
+      .get('/api/admin/business-profile/logo-diagnostic')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    const source = res.body.sources.find((s) => s.label === 'app_settings.branding_logo_path');
+    expect(source.candidates.some((c) => c.path === '<STORAGE>/custom/logo.png' && c.exists)).toBe(true);
+
+    // …and the disclosure guarantee still holds for this shape.
+    const body = JSON.stringify(res.body);
+    expect(body).not.toContain(STORAGE);
+    expect(body).not.toContain(process.cwd());
+
+    await db('app_settings').where({ setting_key: 'branding_logo_path' })
+      .update({ setting_value: JSON.stringify(logoPath) });
+  });
 });

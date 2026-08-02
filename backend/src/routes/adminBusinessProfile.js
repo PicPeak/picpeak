@@ -275,19 +275,28 @@ router.get(
       // it points outside — so the diagnostic must include it too, or a
       // legitimately-contained absolute logo shows every candidate as missing
       // while resolvedTo names the file.
-      // The stripped joins are NOT conditional on path.isAbsolute(). A stored
-      // logo_path is just as often a root-relative URL (`/custom/logo.png`) as
-      // a multer disk path, and isAbsolute() cannot tell them apart — for the
-      // URL form `<STORAGE>/custom/logo.png` is a real file the resolver
-      // happily returns, so skipping it made this endpoint report "no source
-      // candidate exists" about a logo that renders fine, and collapse the
-      // configured value to its basename. Output stays safe because every
-      // candidate still passes the containment filter below and redact()
-      // rewrites survivors to `<STORAGE>/…`, never an absolute host path.
-      const strippedJoins = [
-        path.join(storageRoot, stripped),
-        path.join(cwdStorage, stripped),
-      ];
+      // The stripped joins (`<ROOT>/<value-minus-leading-slash>`) are gated on
+      // containment, NOT on path.isAbsolute(). isAbsolute() cannot tell a
+      // multer disk path from a root-relative URL like `/custom/logo.png`, and
+      // for the URL form `<STORAGE>/custom/logo.png` is a file the resolver
+      // genuinely returns — skipping it made this endpoint report "no source
+      // candidate exists" about a logo that renders fine.
+      //
+      // The gate is instead: does the raw value ALREADY resolve inside a
+      // storage root? If so it is a real disk path, the raw candidate below
+      // covers it, and the stripped join would only produce a double-prefixed
+      // path that can never exist while re-embedding the absolute path
+      // GHSA-29vm exists to stop echoing (redact() strips only the leading
+      // root, so the inner one would survive).
+      const valueInsideRoot = path.isAbsolute(value) && [
+        path.resolve(storageRoot), path.resolve(cwdStorage),
+      ].some((root) => {
+        const r = path.resolve(value);
+        return r === root || r.startsWith(root + path.sep);
+      });
+      const strippedJoins = valueInsideRoot
+        ? []
+        : [path.join(storageRoot, stripped), path.join(cwdStorage, stripped)];
       const candidates = [
         ...(path.isAbsolute(value) ? [value] : []),
         ...strippedJoins,
