@@ -5,6 +5,17 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.98.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.98.3-beta.0...v3.98.4-beta.0) (2026-08-02)
+
+
+### Bug Fixes
+
+* **security:** backup/restore hardening — public-dir DB dump, restore path allowlist, gunzip bound, manifest keying ([#956](https://github.com/PicPeak/picpeak/issues/956)) ([0d4c308](https://github.com/PicPeak/picpeak/commit/0d4c30884e21a43401f7e8acc0f31e5ab1f77bba))
+* **security:** bound inbound-mail resources, redact secrets from logs (GHSA-2qf9, pgmp, r794) ([#959](https://github.com/PicPeak/picpeak/issues/959)) ([1b4e5fe](https://github.com/PicPeak/picpeak/commit/1b4e5fee3efd1a7fb980476d45551971225df50c))
+* **security:** enforce event ownership on the v1 API surface (GHSA-9697) ([#957](https://github.com/PicPeak/picpeak/issues/957)) ([e2ce95e](https://github.com/PicPeak/picpeak/commit/e2ce95ee48105f6e04150334df77a866a1c60a83))
+* **security:** escape brand tokens, block tracker redirects, trim logo diagnostic (GHSA-j347, mw76, 29vm) ([#961](https://github.com/PicPeak/picpeak/issues/961)) ([164129b](https://github.com/PicPeak/picpeak/commit/164129b8f5bbf8a68d743930a72bdb95b88fdee3))
+* **security:** scope dashboard stats/analytics/activity to the caller's events (GHSA-c2jj, gqx7, jhcf) ([#958](https://github.com/PicPeak/picpeak/issues/958)) ([da855cf](https://github.com/PicPeak/picpeak/commit/da855cfef9e74b0b1e77d54c39008c998ab3e20b))
+
 ## [3.98.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.98.2-beta.0...v3.98.3-beta.0) (2026-08-02)
 
 
