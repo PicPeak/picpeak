@@ -79,23 +79,6 @@ async function filterOwnedEventIds(admin, eventIds) {
 }
 
 /**
- * Ids of the projects an admin may act on, or `null` when unrestricted
- * (GHSA-wrg5).
- *
- * A project is the caller's when EITHER:
- *   - `projects.created_by` is theirs or NULL (unowned/legacy — same
- *     convention the events table uses), OR
- *   - it has at least one linked event they own (the transitive path via
- *     `events.project_id` → `events.created_by`).
- *
- * The union matters: pre-migration-167 rows have no stored creator but do have
- * linked events, and a brand-new empty project has a creator but no events.
- * `created_by` is read defensively so an instance that hasn't run 167 yet
- * simply falls back to the transitive rule instead of throwing.
- *
- * @returns {Promise<number[]|null>}
- */
-/**
  * Knex subquery selecting the ids of projects `admin` may act on, or `null`
  * when the caller is unrestricted (GHSA-wrg5).
  *
