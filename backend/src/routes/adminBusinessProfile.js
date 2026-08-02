@@ -269,21 +269,40 @@ router.get(
       if (!value) return { label, value: null, candidates: [] };
       const stripped = value.replace(/^\/+/, '');
       const baseName = path.basename(value);
-      // Mirrors resolveLogoFile's candidate list. The raw-absolute candidate
-      // this used to advertise was dropped from the resolver by GHSA-c7x5
-      // (containment to the storage roots) — keeping it here would make the
-      // diagnostic misreport what the resolver actually tries.
+      // Mirrors resolveLogoFile's candidate list EXACTLY. It keeps the raw
+      // absolute value as a candidate (multer stores branding_logo_path
+      // absolute) and lets the storage-root containment filter reject it when
+      // it points outside — so the diagnostic must include it too, or a
+      // legitimately-contained absolute logo shows every candidate as missing
+      // while resolvedTo names the file.
+      // One deliberate, cosmetic divergence: when `value` is absolute the
+      // resolver also tries path.join(root, value-minus-leading-slash). That is
+      // a double-prefixed path which can never exist, and rendering it would
+      // re-embed the very absolute path this endpoint must stop echoing — so it
+      // is omitted. Every candidate that can actually match is still shown.
+      const strippedJoins = path.isAbsolute(value)
+        ? []
+        : [path.join(storageRoot, stripped), path.join(cwdStorage, stripped)];
       const candidates = [
-        path.join(storageRoot, stripped),
+        ...(path.isAbsolute(value) ? [value] : []),
+        ...strippedJoins,
         path.join(storageRoot, 'uploads', 'logos', baseName),
         path.join(storageRoot, 'branding', baseName),
-        path.join(cwdStorage, stripped),
         path.join(cwdStorage, 'uploads', 'logos', baseName),
         path.join(cwdStorage, 'branding', baseName),
       ];
+      const roots = [path.resolve(storageRoot), path.resolve(cwdStorage)];
+      const contained = candidates.filter((c) => {
+        const r = path.resolve(c);
+        return roots.some((root) => r === root || r.startsWith(root + path.sep));
+      });
       return {
-        label, value,
-        candidates: [...new Set(candidates)].map((p) => ({
+        label,
+        // GHSA-29vm: branding_logo_path is stored absolute by multer, so
+        // echoing it back handed out the filesystem layout just as the
+        // candidate paths did. Relativise it the same way.
+        value: path.isAbsolute(value) ? relativise(value) : value,
+        candidates: [...new Set(contained)].map((p) => ({
           path: relativise(p),
           exists: (() => { try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; } })(),
         })),
