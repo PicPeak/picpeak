@@ -123,8 +123,20 @@ router.post('/backup', requirePermission('backup.create'), async (req, res) => {
       trackingUrl: '/api/admin/database-backup/progress'
     });
     
-    // Run backup in background
-    databaseBackupService.backup(req.body).catch(error => {
+    // Forward ONLY the real backup knobs (GHSA-jw8m). Passing req.body
+    // straight through let the caller set `destinationPath`, which the
+    // service merges over its config — so a backup.create holder (the
+    // `admin` role, which has neither settings.edit nor backup.restore)
+    // could dump the whole database into the PUBLIC /uploads static mount
+    // and fetch it unauthenticated, hashes and encrypted SMTP creds included.
+    // destinationPath is not a persistable setting; the request body was its
+    // only source, so dropping it here costs no legitimate behaviour.
+    const body = req.body || {};
+    const options = {};
+    for (const key of ['compress', 'validateIntegrity', 'includeChecksums']) {
+      if (body[key] !== undefined) options[key] = body[key];
+    }
+    databaseBackupService.backup(options).catch(error => {
       logger.error('Manual database backup failed:', error);
     });
   } catch (error) {
