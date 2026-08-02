@@ -46,7 +46,11 @@ jest.mock('../../../database/db', () => {
 jest.mock('../../../middleware/apiTokenAuth', () => ({
   apiTokenAuth: (req, _res, next) => {
     req.apiToken = { id: 1, admin_id: 1, scopes: ['write'] };
-    req.admin = { id: 1, username: 'token-admin' };
+    // roleName matters since GHSA-9697: requireEventOwnership now guards this
+    // route. super_admin short-circuits it without issuing a DB query, which
+    // keeps this suite's sequenced dbMock chains aligned — this suite is about
+    // category scoping, not ownership (see v1EventOwnership.test.js for that).
+    req.admin = { id: 1, username: 'token-admin', roleName: 'super_admin' };
     next();
   },
   requireApiScope: () => (_req, _res, next) => next(),

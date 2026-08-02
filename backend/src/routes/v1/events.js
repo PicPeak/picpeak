@@ -20,6 +20,7 @@ const sharp = require('sharp');
 const { body, query, validationResult } = require('express-validator');
 const { db, logActivity } = require('../../database/db');
 const { apiTokenAuth, requireApiScope } = require('../../middleware/apiTokenAuth');
+const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const { generateThumbnail } = require('../../services/imageProcessor');
 const logger = require('../../utils/logger');
@@ -437,14 +438,19 @@ router.get(
       const limit = req.query.limit || 25;
       const offset = (page - 1) * limit;
 
+      // Scope to events the token owner may see (GHSA-9697). Previously this
+      // listed every event on the instance regardless of who owned the token.
       const [events, totalRow] = await Promise.all([
-        db('events')
-          .select('id', 'slug', 'event_name', 'event_type', 'event_date', 'expires_at',
-            'is_active', 'is_archived', 'is_draft', 'created_at')
+        scopeEventsQuery(
+          db('events')
+            .select('id', 'slug', 'event_name', 'event_type', 'event_date', 'expires_at',
+              'is_active', 'is_archived', 'is_draft', 'created_at'),
+          req.admin
+        )
           .orderBy('created_at', 'desc')
           .limit(limit)
           .offset(offset),
-        db('events').count('id as count').first()
+        scopeEventsQuery(db('events').count('id as count'), req.admin).first()
       ]);
       const total = parseInt(totalRow?.count || 0, 10);
       res.json({ events, pagination: { page, limit, total } });
@@ -517,7 +523,7 @@ router.get('/event-types', apiTokenAuth, requireApiScope('read'), async (req, re
  *       200: { description: Event details }
  *       404: { description: Not found }
  */
-router.get('/events/:id', apiTokenAuth, requireApiScope('read'), async (req, res) => {
+router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requireEventOwnership, async (req, res) => {
   try {
     const event = await db('events').where({ id: req.params.id }).first();
     if (!event) return res.status(404).json({ error: 'Event not found' });
@@ -583,6 +589,7 @@ router.post(
   '/events/:id/photos',
   apiTokenAuth,
   requireApiScope('write'),
+  requireEventOwnership,
   photoUpload.single('photo'),
   async (req, res) => {
     let tempPath = null;
@@ -735,7 +742,7 @@ router.post(
  *                 share_url: { type: string, format: uri }
  *       404: { description: Not found }
  */
-router.get('/events/:id/share-link', apiTokenAuth, requireApiScope('read'), async (req, res) => {
+router.get('/events/:id/share-link', apiTokenAuth, requireApiScope('read'), requireEventOwnership, async (req, res) => {
   try {
     const event = await db('events').where({ id: req.params.id }).first();
     if (!event) return res.status(404).json({ error: 'Event not found' });
