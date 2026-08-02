@@ -5,6 +5,16 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.12](https://github.com/PicPeak/picpeak/compare/v3.45.11...v3.45.12) (2026-08-02)
+
+
+### Bug Fixes
+
+* **security:** authz/ownership gaps (token binding, auth revocation, feedback/customer ownership, token logging) (stable) ([#951](https://github.com/PicPeak/picpeak/issues/951)) ([5d5db4e](https://github.com/PicPeak/picpeak/commit/5d5db4e766eee23a6678b399cdb9cc449fcea198))
+* **security:** neutralize spreadsheet formulas in all CSV/export cell-writers (CSV injection cluster) ([#949](https://github.com/PicPeak/picpeak/issues/949)) ([e5dccf1](https://github.com/PicPeak/picpeak/commit/e5dccf166419bb571b052990aada14801e16ac79))
+* **security:** redact gallery share tokens from analytics tracking (GHSA-7m6c) (stable) ([#953](https://github.com/PicPeak/picpeak/issues/953)) ([2c7b5df](https://github.com/PicPeak/picpeak/commit/2c7b5dfd020ac1fb2acdb7667998b2f373ce99d9))
+* **security:** unauth share_token leak (HIGH) + restore path-traversal, logo file-read (stable) ([#947](https://github.com/PicPeak/picpeak/issues/947)) ([bfafece](https://github.com/PicPeak/picpeak/commit/bfafecedc755790374565281287b9777ae0f5315))
+
 ## [3.45.11](https://github.com/PicPeak/picpeak/compare/v3.45.10...v3.45.11) (2026-08-01)
 
 
