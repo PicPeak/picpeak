@@ -111,10 +111,15 @@ docker compose up -d
 On first start with no `ADMIN_PASSWORD` set, PicPeak has **no admin account yet** and greets you with an in-browser setup screen — no credentials in `.env`:
 
 1. Open **http://localhost:3000/admin** — you'll be redirected to `/setup`.
-2. Grab the **one-time setup token** from the backend logs (it's also saved to `data/SETUP_TOKEN`):
+2. Read the **one-time setup token** from the 0600 file the backend writes it to
+   (it is deliberately *not* printed to the logs — that would leave a live
+   bootstrap credential in `docker logs`):
    ```bash
-   docker compose logs backend | grep -i "setup token"
+   docker compose exec backend cat /app/data/SETUP_TOKEN
    ```
+   It is bind-mounted, so `sudo cat data/SETUP_TOKEN` on the host works too. Only
+   if that file could not be written does the backend fall back to logging the
+   token (`docker compose logs backend | grep -i "setup token"`).
 3. Paste the token, set your admin **email + password**, and you're in. The token is single-use, and the setup screen closes permanently once an admin exists.
 
 > Prefer the old behaviour? Set `ADMIN_PASSWORD` in `.env` and PicPeak auto-creates the admin on first boot instead (credentials written to `data/ADMIN_CREDENTIALS.txt`).
