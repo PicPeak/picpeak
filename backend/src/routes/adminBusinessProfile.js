@@ -275,14 +275,19 @@ router.get(
       // it points outside — so the diagnostic must include it too, or a
       // legitimately-contained absolute logo shows every candidate as missing
       // while resolvedTo names the file.
-      // One deliberate, cosmetic divergence: when `value` is absolute the
-      // resolver also tries path.join(root, value-minus-leading-slash). That is
-      // a double-prefixed path which can never exist, and rendering it would
-      // re-embed the very absolute path this endpoint must stop echoing — so it
-      // is omitted. Every candidate that can actually match is still shown.
-      const strippedJoins = path.isAbsolute(value)
-        ? []
-        : [path.join(storageRoot, stripped), path.join(cwdStorage, stripped)];
+      // The stripped joins are NOT conditional on path.isAbsolute(). A stored
+      // logo_path is just as often a root-relative URL (`/custom/logo.png`) as
+      // a multer disk path, and isAbsolute() cannot tell them apart — for the
+      // URL form `<STORAGE>/custom/logo.png` is a real file the resolver
+      // happily returns, so skipping it made this endpoint report "no source
+      // candidate exists" about a logo that renders fine, and collapse the
+      // configured value to its basename. Output stays safe because every
+      // candidate still passes the containment filter below and redact()
+      // rewrites survivors to `<STORAGE>/…`, never an absolute host path.
+      const strippedJoins = [
+        path.join(storageRoot, stripped),
+        path.join(cwdStorage, stripped),
+      ];
       const candidates = [
         ...(path.isAbsolute(value) ? [value] : []),
         ...strippedJoins,
