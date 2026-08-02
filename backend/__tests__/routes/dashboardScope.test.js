@@ -171,3 +171,26 @@ describe('dashboard scoping (GHSA-c2jj / gqx7 / jhcf)', () => {
     expect(activity.body.map((a) => a.actorName)).toContain('foreign-actor');
   });
 });
+
+/**
+ * Codex round 2: the /activity filter trusts `activity_logs.event_id`, but
+ * expenseService was passing `adminId` into logActivity's third positional
+ * parameter — which is `eventId`. Admin and event id sequences overlap, so a
+ * foreign admin's expense metadata could surface under an editor's event.
+ * Those writers now pass the actor instead, leaving event_id NULL.
+ */
+describe('activity writers do not put admin ids in event_id (GHSA-jhcf)', () => {
+  it('expenseService passes the actor, not adminId, as the event id', () => {
+    const fs2 = require('fs');
+    const src = fs2.readFileSync(
+      require('path').join(__dirname, '../../src/services/expenseService.js'), 'utf8',
+    );
+    // No logActivity call may end with a bare `, adminId)` — that slot is eventId.
+    const offenders = src.split('\n').filter(
+      (l) => l.includes('logActivity(') && /,\s*adminId\s*\)/.test(l),
+    );
+    expect(offenders).toEqual([]);
+    // And the actor form must actually be in use.
+    expect(src).toContain("{ type: 'admin', id: adminId }");
+  });
+});
