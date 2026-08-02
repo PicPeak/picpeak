@@ -484,13 +484,23 @@ class BackupManifestGenerator {
    *     turns on once all their backups are keyed.
    *   - digest mismatch → retry with the legacy (pre-canonicalization)
    *     serialization so old backups stay restorable, then fail.
+   *   - no checksum at all → reject. Every manifest this codebase has ever
+   *     written stamps `verification.total_checksum` (generateManifest and
+   *     the incremental path both do), so an absent one means the manifest
+   *     was rewritten — and accepting it would let an attacker strip the
+   *     field to skip verification entirely, walking straight past both the
+   *     downgrade guard and BACKUP_MANIFEST_REQUIRE_KEYED.
    *
    * @returns {{valid: boolean, error?: string, warnings: string[]}}
    */
   verifyManifestChecksum(manifest) {
     const warnings = [];
     if (!manifest?.verification?.total_checksum) {
-      return { valid: true, warnings };
+      return {
+        valid: false,
+        error: 'Manifest carries no checksum — refusing to treat an unverifiable manifest as authentic',
+        warnings,
+      };
     }
 
     const declaredAlgorithm = manifest.verification.checksum_algorithm || 'sha256';
@@ -516,7 +526,12 @@ class BackupManifestGenerator {
     // backup store could otherwise strip checksum_algorithm, edit the manifest
     // and recompute a plain SHA-256 that we would happily accept. Rejecting
     // that by default would break every pre-key backup, so it is opt-in.
-    if (declaredAlgorithm !== 'hmac-sha256' && key) {
+    //
+    // The strict rejection must NOT be conditional on a key being configured:
+    // strict mode is a statement about the manifests ("all mine are keyed"),
+    // not about this host. Gating it on `key` made the flag fail open on
+    // exactly the fresh disaster-recovery host that is missing the secret.
+    if (declaredAlgorithm !== 'hmac-sha256') {
       if (requireKeyed) {
         return {
           valid: false,
@@ -524,11 +539,13 @@ class BackupManifestGenerator {
           warnings,
         };
       }
-      warnings.push(
-        'Manifest uses an unkeyed checksum while BACKUP_MANIFEST_KEY is set — integrity verified, '
-        + 'authenticity NOT established (a rewritten manifest could have downgraded the algorithm). '
-        + 'Set BACKUP_MANIFEST_REQUIRE_KEYED=true once all backups are keyed.'
-      );
+      if (key) {
+        warnings.push(
+          'Manifest uses an unkeyed checksum while BACKUP_MANIFEST_KEY is set — integrity verified, '
+          + 'authenticity NOT established (a rewritten manifest could have downgraded the algorithm). '
+          + 'Set BACKUP_MANIFEST_REQUIRE_KEYED=true once all backups are keyed.'
+        );
+      }
     }
 
     const keyedArg = declaredAlgorithm === 'hmac-sha256' ? key : false;
