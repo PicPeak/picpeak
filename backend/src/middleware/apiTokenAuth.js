@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { db } = require('../database/db');
+const { formatBoolean } = require('../utils/dbCompat');
 const logger = require('../utils/logger');
 
 const TOKEN_PREFIX = 'pp_live_';
@@ -29,6 +30,24 @@ function parseScopes(raw) {
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter((s) => VALID_SCOPES.includes(s));
+}
+
+/**
+ * Does this error mean the `roles` table/column genuinely isn't there yet
+ * (mid-upgrade), as opposed to the database being briefly unhappy?
+ *
+ * The distinction matters because the fallback below grants super_admin: a
+ * catch-all would turn any transient failure — connection reset, deadlock,
+ * statement timeout — into a privilege escalation that hands a demoted viewer
+ * exactly the access GHSA-9697 closes.
+ */
+function isMissingRolesSchema(err) {
+  const message = String(err?.message || '');
+  if (!/roles/i.test(message)) return false;
+  // PG: 42P01 undefined_table / 42703 undefined_column. SQLite carries no
+  // codes, so match its wording too.
+  return err?.code === '42P01' || err?.code === '42703'
+    || /no such table|no such column|does not exist|unknown column/i.test(message);
 }
 
 /**
@@ -63,10 +82,36 @@ async function apiTokenAuth(req, res, next) {
       return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
     }
 
-    const admin = await db('admin_users')
-      .where({ id: row.created_by, is_active: true })
-      .select('id', 'username', 'email', 'role_id')
-      .first();
+    // Load the owner WITH their role name (GHSA-9697). Without it,
+    // req.admin.roleName was undefined — and every ownership check keys on
+    // roleName — so the v1 surface could not tell a super_admin from a
+    // demoted viewer. Mirrors adminAuth's shape, including the
+    // roles-table-missing fallback used during upgrades.
+    let admin;
+    try {
+      admin = await db('admin_users')
+        .leftJoin('roles', 'roles.id', 'admin_users.role_id')
+        .where({ 'admin_users.id': row.created_by, 'admin_users.is_active': formatBoolean(true) })
+        .select(
+          'admin_users.id',
+          'admin_users.username',
+          'admin_users.email',
+          'roles.id as role_id',
+          'roles.name as role_name'
+        )
+        .first();
+    } catch (joinError) {
+      // Fail CLOSED on anything that isn't a genuinely missing roles schema:
+      // the fallback fabricates super_admin, so a transient query failure must
+      // not become a free privilege upgrade. Rethrow → outer catch → 500.
+      if (!isMissingRolesSchema(joinError)) throw joinError;
+      logger.debug('Roles table not available in apiTokenAuth', { error: joinError.message });
+      admin = await db('admin_users')
+        .where({ id: row.created_by, is_active: formatBoolean(true) })
+        .select('id', 'username', 'email', 'role_id')
+        .first();
+      if (admin) admin.role_name = 'super_admin'; // upgrade-path parity with adminAuth
+    }
     if (!admin) {
       return res.status(401).json({ error: 'Token owner unavailable', code: 'OWNER_INACTIVE' });
     }
@@ -75,7 +120,15 @@ async function apiTokenAuth(req, res, next) {
     db('api_tokens').where({ id: row.id }).update({ last_used_at: new Date() })
       .catch((err) => logger.debug('api_tokens last_used update failed', { err: err.message }));
 
-    req.admin = admin;
+    // Same shape adminAuth produces, so requirePermission / ownership helpers
+    // behave identically whether the caller used a session or an API token.
+    req.admin = {
+      id: admin.id,
+      username: admin.username,
+      email: admin.email,
+      roleId: admin.role_id,
+      roleName: admin.role_name
+    };
     req.apiToken = {
       id: row.id,
       name: row.name,
@@ -118,6 +171,7 @@ module.exports = {
   generateApiToken,
   hashToken,
   parseScopes,
+  isMissingRolesSchema,
   TOKEN_PREFIX,
   VALID_SCOPES
 };

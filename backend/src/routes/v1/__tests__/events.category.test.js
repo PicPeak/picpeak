@@ -43,10 +43,24 @@ jest.mock('../../../database/db', () => {
   };
 });
 
+// RBAC is enforced on these routes since GHSA-9697 (requirePermission), but
+// this suite mocks the database, so a real permission lookup would 500. These
+// tests cover route logic, not authorization — the intersection of token
+// scopes and role permissions is pinned in __tests__/routes/v1EventOwnership.
+jest.mock('../../../middleware/permissions', () => ({
+  requirePermission: () => (_req, _res, next) => next(),
+  userHasAnyPermission: async () => true,
+  userHasAllPermissions: async () => true,
+}));
+
 jest.mock('../../../middleware/apiTokenAuth', () => ({
   apiTokenAuth: (req, _res, next) => {
     req.apiToken = { id: 1, admin_id: 1, scopes: ['write'] };
-    req.admin = { id: 1, username: 'token-admin' };
+    // roleName matters since GHSA-9697: requireEventOwnership now guards this
+    // route. super_admin short-circuits it without issuing a DB query, which
+    // keeps this suite's sequenced dbMock chains aligned — this suite is about
+    // category scoping, not ownership (see v1EventOwnership.test.js for that).
+    req.admin = { id: 1, username: 'token-admin', roleName: 'super_admin' };
     next();
   },
   requireApiScope: () => (_req, _res, next) => next(),

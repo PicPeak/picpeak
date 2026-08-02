@@ -33,6 +33,20 @@ function requireEventOwnership(req, res, next) {
 }
 
 /**
+ * Apply the ownership predicate to a knex query over `events`, for list
+ * endpoints that can't use requireEventOwnership (no :id to check).
+ * super_admin is unrestricted; everyone else sees ownerless (legacy/system)
+ * events plus their own — the same rule requireEventOwnership enforces
+ * per-row.
+ */
+function scopeEventsQuery(query, admin, column = 'created_by') {
+  if (admin?.roleName === 'super_admin') {
+    return query;
+  }
+  return query.where((q) => q.whereNull(column).orWhere(column, admin.id));
+}
+
+/**
  * Return the subset of `eventIds` the admin may act on, mirroring
  * requireEventOwnership for bulk routes that can't use it (they take an
  * array in the body, not an :id param). super_admin gets everything;
@@ -64,4 +78,4 @@ async function filterOwnedEventIds(admin, eventIds) {
   return { allowed, denied };
 }
 
-module.exports = { requireEventOwnership, filterOwnedEventIds };
+module.exports = { requireEventOwnership, filterOwnedEventIds, scopeEventsQuery };
