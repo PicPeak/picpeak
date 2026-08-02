@@ -63,11 +63,38 @@ function sanitizeBrandUrl(url) {
   }
 
   const trimmed = url.trim();
-  if (trimmed.startsWith('javascript:')) {
+  // GHSA-j347: the old check was a case-sensitive literal `javascript:`, which
+  // `JavaScript:` walks straight past. Allowlist the schemes a logo URL can
+  // legitimately use instead of blocklisting one spelling. Relative paths (the
+  // common case — /uploads/logos/x.png) carry no scheme and are unaffected.
+  const scheme = trimmed.match(/^\s*([a-z][a-z0-9+.-]*)\s*:/i);
+  if (scheme && !['http', 'https'].includes(scheme[1].toLowerCase())) {
     return null;
   }
 
   return trimmed;
+}
+
+/**
+ * HTML-escape a brand token value (GHSA-j347).
+ *
+ * Brand tokens are substituted AFTER sanitize-html runs, so markup in a token
+ * value reaches the public page unfiltered. The default templates interpolate
+ * tokens into text AND into quoted attributes
+ * (`<img src="{{brand_logo_url}}" alt="{{company_name}} logo">`,
+ * `href="mailto:{{support_email}}"`), so escaping the five HTML-significant
+ * characters is correct in both positions.
+ *
+ * Mirrors galleryOgService's escapeHtml, which already handles this correctly.
+ */
+function escapeTokenValue(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 async function fetchBrandingContext() {
@@ -265,13 +292,18 @@ function applyBrandTokens(html, branding) {
     brand_text_hex: branding.colors?.text || '#0f172a'
   };
 
+  // Escape on substitution (GHSA-j347) — this runs AFTER sanitizeHtmlPayload,
+  // so an unescaped value would reintroduce raw markup into the public origin.
   return html.replace(/\{\{\s*(company_name|company_tagline|support_email|brand_logo_url|brand_primary_hex|brand_accent_hex|brand_background_hex|brand_text_hex)\s*\}\}/gi,
-    (_, key) => tokens[key] || '');
+    (_, key) => escapeTokenValue(tokens[key] || ''));
 }
 
 module.exports = {
   getPublicSitePayload,
   clearPublicSiteCache,
   getDefaultPublicSitePayload,
-  getRawPublicSiteSettings
+  getRawPublicSiteSettings,
+  // Exposed for tests only — the token-escaping and URL-scheme rules
+  // (GHSA-j347) are worth pinning directly rather than through the cache.
+  _internal: { applyBrandTokens, sanitizeBrandUrl }
 };
