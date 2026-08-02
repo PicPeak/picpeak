@@ -1,4 +1,5 @@
 const archiver = require('archiver');
+const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
 const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
@@ -261,12 +262,13 @@ function convertToCSV(data) {
 
   const csvRows = data.map(row => {
     return headers.map(header => {
-      const value = row[header];
-      // Escape quotes and wrap in quotes if contains comma
-      if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+      // Formula-neutralize before quoting (guest_name/comment_text are
+      // user-controlled); the old check didn't even escape \n/\r (GHSA-q82f).
+      const value = neutralizeSpreadsheetFormula(row[header]);
+      if (value.includes(',') || value.includes('"') || value.includes('\n') || value.includes('\r')) {
         return `"${value.replace(/"/g, '""')}"`;
       }
-      return value || '';
+      return value;
     }).join(',');
   });
 
