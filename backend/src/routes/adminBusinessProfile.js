@@ -249,33 +249,84 @@ router.get(
     const brandingLogoUrl  = await getAppSetting('branding_logo_url');
     const resolved = await resolveLogoFile(profile);
 
+    // GHSA-29vm: report candidates RELATIVE to the storage roots rather than
+    // echoing absolute container paths and process.cwd(). This endpoint exists
+    // to answer "which candidate did/didn't exist", which relative paths answer
+    // just as well without handing out the filesystem layout.
+    const cwdStorage = path.join(process.cwd(), 'storage');
+    const relativise = (p) => {
+      for (const [name, root] of [['STORAGE', storageRoot], ['CWD_STORAGE', cwdStorage]]) {
+        const rel = path.relative(root, p);
+        if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
+          return `<${name}>/${rel.split(path.sep).join('/')}`;
+        }
+      }
+      return path.basename(p);
+    };
+
     const inspect = (label, raw) => {
       const value = (raw || '').toString().trim();
       if (!value) return { label, value: null, candidates: [] };
       const stripped = value.replace(/^\/+/, '');
       const baseName = path.basename(value);
+      // Mirrors resolveLogoFile's candidate list EXACTLY. It keeps the raw
+      // absolute value as a candidate (multer stores branding_logo_path
+      // absolute) and lets the storage-root containment filter reject it when
+      // it points outside — so the diagnostic must include it too, or a
+      // legitimately-contained absolute logo shows every candidate as missing
+      // while resolvedTo names the file.
+      // The stripped joins (`<ROOT>/<value-minus-leading-slash>`) are gated on
+      // containment, NOT on path.isAbsolute(). isAbsolute() cannot tell a
+      // multer disk path from a root-relative URL like `/custom/logo.png`, and
+      // for the URL form `<STORAGE>/custom/logo.png` is a file the resolver
+      // genuinely returns — skipping it made this endpoint report "no source
+      // candidate exists" about a logo that renders fine.
+      //
+      // The gate is instead: does the raw value ALREADY resolve inside a
+      // storage root? If so it is a real disk path, the raw candidate below
+      // covers it, and the stripped join would only produce a double-prefixed
+      // path that can never exist while re-embedding the absolute path
+      // GHSA-29vm exists to stop echoing (redact() strips only the leading
+      // root, so the inner one would survive).
+      const valueInsideRoot = path.isAbsolute(value) && [
+        path.resolve(storageRoot), path.resolve(cwdStorage),
+      ].some((root) => {
+        const r = path.resolve(value);
+        return r === root || r.startsWith(root + path.sep);
+      });
+      const strippedJoins = valueInsideRoot
+        ? []
+        : [path.join(storageRoot, stripped), path.join(cwdStorage, stripped)];
       const candidates = [
-        path.isAbsolute(value) ? value : null,
-        path.join(storageRoot, stripped),
+        ...(path.isAbsolute(value) ? [value] : []),
+        ...strippedJoins,
         path.join(storageRoot, 'uploads', 'logos', baseName),
         path.join(storageRoot, 'branding', baseName),
-        path.join(process.cwd(), 'storage', stripped),
-        path.join(process.cwd(), 'storage', 'uploads', 'logos', baseName),
-        path.join(process.cwd(), 'storage', 'branding', baseName),
-      ].filter(Boolean);
+        path.join(cwdStorage, 'uploads', 'logos', baseName),
+        path.join(cwdStorage, 'branding', baseName),
+      ];
+      const roots = [path.resolve(storageRoot), path.resolve(cwdStorage)];
+      const contained = candidates.filter((c) => {
+        const r = path.resolve(c);
+        return roots.some((root) => r === root || r.startsWith(root + path.sep));
+      });
       return {
-        label, value,
-        candidates: [...new Set(candidates)].map((p) => ({
-          path: p,
+        label,
+        // GHSA-29vm: branding_logo_path is stored absolute by multer, so
+        // echoing it back handed out the filesystem layout just as the
+        // candidate paths did. Relativise it the same way.
+        value: path.isAbsolute(value) ? relativise(value) : value,
+        candidates: [...new Set(contained)].map((p) => ({
+          path: relativise(p),
           exists: (() => { try { return fs.existsSync(p) && fs.statSync(p).isFile(); } catch { return false; } })(),
         })),
       };
     };
 
     return successResponse(res, {
-      storageRoot,
-      cwd: process.cwd(),
-      resolvedTo: resolved,
+      // Absolute storageRoot / cwd deliberately omitted (GHSA-29vm); the
+      // candidate paths below are shown relative to <STORAGE>/<CWD_STORAGE>.
+      resolvedTo: resolved ? relativise(resolved) : null,
       sources: [
         inspect('business_profile.logo_path', profile?.logo_path),
         inspect('app_settings.branding_logo_path', brandingDiskPath),
