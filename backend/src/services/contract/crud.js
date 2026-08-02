@@ -211,7 +211,7 @@ async function createContract(payload, adminId) {
     }
     const inserted = await trx('contracts').insert(row).returning('id');
     if (row.project_id && row.deal_uuid) {
-      await require('../projectService').linkDealToProject(row.deal_uuid, row.project_id, trx);
+      await require('../projectService').linkDealToProject(row.deal_uuid, row.project_id, trx, { id: adminId });
     }
     const contractId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
@@ -313,7 +313,7 @@ async function updateContract(id, payload, adminId) {
     // Cascade across the deal lineage (linked quote / event / invoices).
     if (updates.project_id) {
       const dealRow = await trx('contracts').where({ id }).select('deal_uuid').first();
-      await require('../projectService').linkDealToProject(dealRow && dealRow.deal_uuid, updates.project_id, trx);
+      await require('../projectService').linkDealToProject(dealRow && dealRow.deal_uuid, updates.project_id, trx, { id: adminId });
     }
 
     // Replace inclusions only when the caller sent an explicit list.

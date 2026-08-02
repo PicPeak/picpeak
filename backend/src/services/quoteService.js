@@ -594,7 +594,7 @@ async function createQuote(payload, adminId) {
     // quote with no contract/event yet — just adopts the customer onto an
     // empty project).
     if (row.project_id) {
-      await require('./projectService').linkDealToProject(row.deal_uuid, row.project_id, trx);
+      await require('./projectService').linkDealToProject(row.deal_uuid, row.project_id, trx, { id: adminId });
     }
 
     if (totals.lineItems.length > 0) {
@@ -733,7 +733,7 @@ async function updateQuote(id, payload, adminId) {
     // contract / event / invoices roll up into the same project automatically.
     if (updates.project_id) {
       const dealRow = await trx('quotes').where({ id }).select('deal_uuid').first();
-      await require('./projectService').linkDealToProject(dealRow && dealRow.deal_uuid, updates.project_id, trx);
+      await require('./projectService').linkDealToProject(dealRow && dealRow.deal_uuid, updates.project_id, trx, { id: adminId });
     }
 
     // Delete + reinsert keeps the editor flow simple: the frontend

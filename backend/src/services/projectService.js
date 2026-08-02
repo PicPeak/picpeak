@@ -236,14 +236,38 @@ async function assignEvent(projectId, eventId) {
 }
 
 /**
+ * Resolve `actor.roleName`, looking it up when the caller only had an admin id
+ * to hand (the quote/contract create+update paths thread `adminId`, not the
+ * full req.admin). Fails CLOSED — an unresolvable role is treated as scoped,
+ * never as super_admin.
+ */
+async function isSuperAdmin(actor, conn = db) {
+  if (!actor) return false;
+  if (actor.roleName !== undefined) return actor.roleName === 'super_admin';
+  try {
+    const row = await conn('admin_users')
+      .leftJoin('roles', 'roles.id', 'admin_users.role_id')
+      .where('admin_users.id', actor.id)
+      .first('roles.name as role_name');
+    return row?.role_name === 'super_admin';
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
  * Cascade a project link across a whole deal's lineage. Given a deal_uuid, link
  * every quote + contract in that deal to the project, re-point every event the
  * deal produced (so its invoices / emails / gallery roll up automatically), and
  * adopt the deal's customer onto the project when it has none. This is what
  * makes "drop a quote on an empty project" fill the cockpit with the linked
  * contract, event and invoices. Idempotent; pass a trx to run inside a txn.
+ *
+ * `actor` (req.admin) enables the ownership guard below and MUST be supplied by
+ * any admin-facing caller — route-level project ownership only vets the
+ * destination, while this function re-points the deal's events into it.
  */
-async function linkDealToProject(dealUuid, projectId, conn = db) {
+async function linkDealToProject(dealUuid, projectId, conn = db, actor = null) {
   if (!dealUuid || !projectId) return;
 
   // Collect ALL the deal's customers across its quote/contract/invoice lineage
@@ -286,6 +310,31 @@ async function linkDealToProject(dealUuid, projectId, conn = db) {
     throw new AppError('That belongs to a different customer than this project', 422, 'PROJECT_CUSTOMER_MISMATCH');
   }
 
+  // Ownership of the LINEAGE, not just the destination (GHSA-wrg5). The route
+  // guard (requireProjectOwnership) only vets `projectId`; the writes below
+  // re-point every event this deal produced into it. Without this check an
+  // editor could create an empty project, attach another admin's quote, and
+  // pull that admin's events — plus the invoices, emails and gallery that roll
+  // up with them — into a project they own and can read via /:id/overview.
+  // An unassigned project offers no resistance either, since it ADOPTS the
+  // deal's customer below rather than rejecting it.
+  //
+  // Events are the only ownership signal a deal carries: quotes/contracts have
+  // no created_by in this schema, so a deal whose lineage produced no event
+  // still cannot be attributed to an admin — a pre-existing property of the CRM
+  // model, not something this guard can close.
+  if (actor?.id && eventIds.size && !(await isSuperAdmin(actor, conn))) {
+    const ownable = await conn('events')
+      .whereIn('id', Array.from(eventIds))
+      .andWhere((q) => q.whereNull('created_by').orWhere('created_by', actor.id))
+      .pluck('id');
+    if (ownable.length !== eventIds.size) {
+      throw new AppError(
+        'That deal includes events that are not yours to move', 403, 'DEAL_EVENT_FORBIDDEN',
+      );
+    }
+  }
+
   // Cleared to write: link the deal's quotes/contracts, re-point its events so
   // invoices/emails/gallery roll up automatically.
   if (quotesHaveDeal && await hasColumnCached('quotes', 'project_id')) {
@@ -307,7 +356,7 @@ async function linkDealToProject(dealUuid, projectId, conn = db) {
 
 /** Attach (or, with projectId=null, detach) a quote/contract to a project.
  *  Attaching cascades the link across the deal lineage (see linkDealToProject). */
-async function assignDocument(table, projectId, documentId) {
+async function assignDocument(table, projectId, documentId, actor = null) {
   if (!(await hasColumnCached(table, 'project_id'))) {
     throw new AppError('This instance has no project_id column yet — run migrations', 409);
   }
@@ -330,15 +379,21 @@ async function assignDocument(table, projectId, documentId) {
   ) {
     throw new AppError('That belongs to a different customer than this project', 422, 'PROJECT_CUSTOMER_MISMATCH');
   }
-  await db(table).where({ id: documentId }).update({ project_id: projectId || null });
+  // Cascade FIRST, then stamp this document. linkDealToProject runs the
+  // lineage-ownership guard and throws before it writes anything, so a refused
+  // attach leaves no half-applied link behind — the other order committed the
+  // foreign document into the caller's project and only then refused the
+  // cascade. It already stamps this row's project_id via the deal_uuid sweep;
+  // the update below covers the standalone (no-deal) document.
   if (projectId && doc.deal_uuid) {
-    await linkDealToProject(doc.deal_uuid, projectId);
+    await linkDealToProject(doc.deal_uuid, projectId, db, actor);
   }
+  await db(table).where({ id: documentId }).update({ project_id: projectId || null });
   return { projectId: projectId || null, documentId };
 }
 
-const assignQuote = (projectId, quoteId) => assignDocument('quotes', projectId, quoteId);
-const assignContract = (projectId, contractId) => assignDocument('contracts', projectId, contractId);
+const assignQuote = (projectId, quoteId, actor) => assignDocument('quotes', projectId, quoteId, actor);
+const assignContract = (projectId, contractId, actor) => assignDocument('contracts', projectId, contractId, actor);
 
 /**
  * Project valuation — "newest stage wins per deal, cumulative across events".

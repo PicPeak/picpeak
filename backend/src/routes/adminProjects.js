@@ -155,7 +155,7 @@ router.post('/:id/quotes',
     validateRequest(req);
     const quoteId = parseInt(req.body.quoteId, 10);
     await assertCascadePermitted(req, 'quotes', quoteId, 'contracts', 'contracts.manage');
-    const result = await projectService.assignQuote(parseInt(req.params.id, 10), quoteId);
+    const result = await projectService.assignQuote(parseInt(req.params.id, 10), quoteId, req.admin);
     return successResponse(res, result, 200, 'Quote attached to project');
   }),
 );
@@ -170,7 +170,7 @@ router.post('/:id/contracts',
     validateRequest(req);
     const contractId = parseInt(req.body.contractId, 10);
     await assertCascadePermitted(req, 'contracts', contractId, 'quotes', 'quotes.manage');
-    const result = await projectService.assignContract(parseInt(req.params.id, 10), contractId);
+    const result = await projectService.assignContract(parseInt(req.params.id, 10), contractId, req.admin);
     return successResponse(res, result, 200, 'Contract attached to project');
   }),
 );
