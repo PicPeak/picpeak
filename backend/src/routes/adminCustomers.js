@@ -11,6 +11,8 @@ const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
+const { filterOwnedEventIds } = require('../middleware/ownership');
+const { db } = require('../database/db');
 
 // Hour-entry routes are gated by the hoursLogging master so a direct API hit
 // can't read/edit/delete/bill logged hours while the feature is off (the
@@ -528,9 +530,45 @@ router.put('/:id/events', [
   body('event_ids.*').isInt({ min: 1 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
+  const customerId = parseInt(req.params.id, 10);
+  const submitted = req.body.event_ids.map(Number);
+
+  // The customer's CURRENT assignments. The "Manage galleries" dialog submits
+  // the full initial list back — including any events owned by OTHER admins —
+  // so we need this to tell "retain an existing foreign assignment" apart from
+  // "newly grant a foreign event".
+  const existingEventIds = (await db('event_customer_assignments')
+    .where('customer_account_id', customerId)
+    .pluck('event_id')).map(Number);
+  const existingSet = new Set(existingEventIds);
+
+  // Events the caller may act on (GHSA-xr6x). A denied id is only acceptable
+  // when the customer ALREADY has that assignment (a foreign event the caller
+  // is merely keeping); a denied id that isn't already assigned is a fresh
+  // attempt to mint access to a foreign/nonexistent event → reject.
+  const { allowed } = await filterOwnedEventIds(req.admin, submitted);
+  const allowedSet = new Set(allowed.map(Number));
+  const illegalNew = submitted.filter((id) => !allowedSet.has(id) && !existingSet.has(id));
+  if (illegalNew.length) {
+    return res.status(403).json({ error: 'One or more events are not yours to assign' });
+  }
+
+  // setAssignmentsForCustomer replaces the FULL assignment list, deleting any
+  // existing row not in the submitted set. A restricted admin must not be able
+  // to revoke another admin's customer↔event links that way, so always retain
+  // the customer's existing assignments to events the caller does NOT own —
+  // regardless of whether the client echoed them back. super_admin owns
+  // everything, so nothing is force-preserved for them.
+  let finalEventIds = allowed.map(Number);
+  if (req.admin.roleName !== 'super_admin' && existingEventIds.length) {
+    const { allowed: ownedExisting } = await filterOwnedEventIds(req.admin, existingEventIds);
+    const ownedExistingSet = new Set(ownedExisting.map(Number));
+    const foreignExisting = existingEventIds.filter((id) => !ownedExistingSet.has(id));
+    finalEventIds = [...new Set([...finalEventIds, ...foreignExisting])];
+  }
   const result = await customerAccountsService.setAssignmentsForCustomer(
-    parseInt(req.params.id, 10),
-    req.body.event_ids,
+    customerId,
+    finalEventIds,
     req.admin.id,
   );
   successResponse(res, result);

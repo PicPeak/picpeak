@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getGalleryTokenFromRequest } = require('../utils/tokenUtils');
+const { isTokenRevoked } = require('../utils/tokenRevocation');
 const logger = require('../utils/logger');
 
 async function photoAuth(req, res, next) {
@@ -89,7 +90,33 @@ async function photoAuth(req, res, next) {
         
         // Check if it's an admin token (admins can view all photos)
         if (decoded.type === 'admin') {
-          // For both thumbnails and photos with admin token, allow access
+          // Enforce the same revocation / session-cutoff invalidation that
+          // adminAuth does — otherwise a validly-signed admin JWT keeps
+          // serving photos after logout, password change, or explicit
+          // revocation (GHSA-x55x).
+          if (await isTokenRevoked(decoded)) {
+            return res.status(401).json({ error: 'Session expired' });
+          }
+          // adminAuth also (a) rejects tokens for a now-deactivated admin and
+          // (b) rejects any token minted before the admin's last password
+          // change. Token revocation alone doesn't cover those, so without
+          // these two checks a stale or pre-password-change admin token still
+          // fetches every photo.
+          const admin = await db('admin_users')
+            .where({ id: decoded.id, is_active: formatBoolean(true) })
+            .select('id', 'password_changed_at')
+            .first();
+          if (!admin) {
+            return res.status(401).json({ error: 'Session expired' });
+          }
+          if (admin.password_changed_at) {
+            const passwordChangedSeconds = Math.floor(
+              new Date(admin.password_changed_at).getTime() / 1000
+            );
+            if (decoded.iat < passwordChangedSeconds) {
+              return res.status(401).json({ error: 'Session expired' });
+            }
+          }
           return next();
         }
     } catch (err) {

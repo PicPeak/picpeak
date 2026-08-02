@@ -8,7 +8,7 @@ const { endSession } = require('../middleware/sessionTimeout');
 const { validatePasswordStrength } = require('../utils/passwordGenerator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { NotFoundError, ConflictError, ValidationError } = require('../utils/errors');
-const { setAdminAuthCookie } = require('../utils/tokenUtils');
+const { setAdminAuthCookie, clearAdminAuthCookie } = require('../utils/tokenUtils');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 const mfaService = require('../services/mfaService');
 const router = express.Router();
@@ -168,12 +168,21 @@ router.post('/change-password', [
 
 // Logout
 router.post('/logout', adminAuth, handleAsync(async (req, res) => {
-  // Get token from header
-  const token = req.headers.authorization?.split(' ')[1];
+  // Use the token adminAuth actually authenticated with (req.token) — it may
+  // have come from the admin_token cookie, not the Authorization header. The
+  // old header-only read skipped revocation entirely for cookie-based logout,
+  // leaving the JWT valid until expiry while reporting a successful logout.
+  const token = req.token;
   if (token) {
-    // End the session
+    // End the in-memory session AND revoke the JWT (GHSA-cjqh) — the token
+    // is otherwise valid until expiry, so photoAuth/adminAuth would keep
+    // honouring it after logout. isTokenRevoked() checks this store.
     endSession(token);
+    const { revokeToken } = require('../utils/tokenRevocation');
+    await revokeToken(token, 'logout');
   }
+  // Clear the auth cookie so the browser stops sending the (now revoked) JWT.
+  clearAdminAuthCookie(res);
 
   // Log activity
   await logActivity('admin_logout',
