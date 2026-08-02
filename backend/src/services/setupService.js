@@ -15,9 +15,10 @@ const { formatBoolean } = require('../utils/dbCompat');
 // First-run bootstrap. The app boots with NO admin account and no
 // ADMIN_PASSWORD in the environment; the first browser visit creates the admin.
 // That create call is guarded by a one-time setup token, generated at boot
-// while no admin exists and printed to the logs (+ a best-effort data/SETUP_TOKEN
-// file). The token is ALWAYS required and burned on first use, so the endpoint
-// is permanently closed once setup is done — safe even on a public IP.
+// while no admin exists and written to a 0600 data/SETUP_TOKEN file — and only
+// echoed to the logs when that write fails (see ensureSetupToken). The token is
+// ALWAYS required and burned on first use, so the endpoint is permanently
+// closed once setup is done — safe even on a public IP.
 const SETUP_TOKEN_KEY = 'setup_token';
 
 async function noAdminExists() {
@@ -32,8 +33,8 @@ async function getSetupStatus() {
   return { needsAdmin, complete: !needsAdmin };
 }
 
-// Logs are the source of truth; the file is a convenience for operators who
-// reach a shell more easily than the container log view (e.g. `cat data/SETUP_TOKEN`).
+// The file is the source of truth (`cat data/SETUP_TOKEN`); the logs only carry
+// the token when this file could not be written.
 function setupTokenFilePath() {
   const dir = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
   return path.join(dir, 'SETUP_TOKEN');
@@ -60,13 +61,39 @@ async function ensureSetupToken() {
     // (getAppSetting JSON.parses on read). A raw string is rejected by jsonb.
     await upsertAppSetting(SETUP_TOKEN_KEY, JSON.stringify(token), 'string');
   }
-  logger.warn(`[setup] No admin account yet — open /admin to finish setup. One-time setup token: ${token}`);
+  // Write the token to a 0600 file first, and only surface it in the logs /
+  // stdout when that write FAILED. Previously it was logged unconditionally at
+  // `warn`, so every default install (LOG_LEVEL=info) wrote a live
+  // first-admin-bootstrap credential into combined.log and security.log —
+  // both under the host-bind-mounted ./logs — never rotated out after use.
+  // The log line remains as the documented last-resort recovery path.
+  //
+  // server.js makes the same decision for its stdout banner by checking
+  // whether the token file exists (setupTokenFilePath is exported for that):
+  // printing the token there lands it in `docker logs` / journald, which is
+  // the very leak this closes.
+  let file = null;
+  let writeError = null;
   try {
-    const file = setupTokenFilePath();
+    file = setupTokenFilePath();
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, `${token}\n`, { mode: 0o600 });
   } catch (err) {
-    logger.warn(`[setup] Could not write setup token file (logs still have it): ${err.message}`);
+    writeError = err;
+    file = null;
+  }
+
+  if (writeError) {
+    logger.warn(
+      `[setup] Could not write the setup token file (${writeError.message}) — `
+      + 'falling back to the log. No admin account yet; open /admin to finish setup. '
+      + `One-time setup token: ${token}`
+    );
+  } else {
+    logger.warn(
+      '[setup] No admin account yet — open /admin to finish setup. '
+      + `The one-time setup token is in ${file} (not logged).`
+    );
   }
   return token;
 }
@@ -173,4 +200,4 @@ async function createInitialAdmin({ token, email, password, ip }) {
   };
 }
 
-module.exports = { getSetupStatus, ensureSetupToken, verifySetupToken, createInitialAdmin };
+module.exports = { getSetupStatus, ensureSetupToken, setupTokenFilePath, verifySetupToken, createInitialAdmin };

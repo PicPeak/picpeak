@@ -20,6 +20,31 @@ const sanitizeHtml = require('sanitize-html');
 const { isUniqueViolation } = require('../utils/dbErrors');
 
 const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
+
+// Resource caps for inbound mail (GHSA-2qf9). Anyone who can email the
+// operator's mailbox reaches this code path unauthenticated, and nothing here
+// used to bound message size, attachment count or attachment bytes. Defaults
+// are generous for real supplier invoices; all three are env-overridable.
+const numFromEnv = (name, fallback) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const MAX_MESSAGE_BYTES = numFromEnv('EMAIL_INTAKE_MAX_MESSAGE_BYTES', 25 * 1024 * 1024);
+// received_emails.message_id is varchar(512) WITH a UNIQUE constraint. A sender
+// can legally emit a Message-ID longer than that; the insert then throws, the
+// catch path stores a synthetic err-<uid>-<now> key that can never match the
+// dedup pass, and every poll re-downloads and re-parses the same message
+// forever. Collapse anything overlong to a stable hash so the key always fits
+// and always reproduces (GHSA-2qf9).
+const MESSAGE_ID_MAX = 512;
+const boundedMessageId = (raw, fallback) => {
+  const value = String(raw || fallback || '').trim() || String(fallback || '');
+  if (value.length <= MESSAGE_ID_MAX) return value;
+  return `sha256:${require('crypto').createHash('sha256').update(value).digest('hex')}`;
+};
+const MAX_ATTACHMENTS = numFromEnv('EMAIL_INTAKE_MAX_ATTACHMENTS', 25);
+const MAX_ATTACHMENT_BYTES = numFromEnv('EMAIL_INTAKE_MAX_ATTACHMENT_BYTES', 25 * 1024 * 1024);
+
 let polling = false;
 
 // Fail fast instead of hanging on a wrong host/port (e.g. IMAP pointed at an
@@ -280,8 +305,17 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
       const candidates = [];
       if (uids.length) {
         // eslint-disable-next-line no-restricted-syntax
-        for await (const m of client.fetch(uids, { uid: true, envelope: true }, { uid: true })) {
-          candidates.push({ uid: m.uid, messageId: (m.envelope && m.envelope.messageId) || `uid-${cfg.folder}-${m.uid}` });
+        // `size` rides along in the same cheap envelope pass, so an oversized
+        // message can be rejected BEFORE its source is downloaded (GHSA-2qf9).
+        for await (const m of client.fetch(uids, { uid: true, envelope: true, size: true }, { uid: true })) {
+          candidates.push({
+            uid: m.uid,
+            size: Number(m.size) || 0,
+            messageId: boundedMessageId(
+              m.envelope && m.envelope.messageId,
+              `uid-${cfg.folder}-${m.uid}`,
+            ),
+          });
         }
       }
 
@@ -300,10 +334,30 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
         let claimKey = null;
         let claimed = false;
         try {
+          // Refuse oversized messages before download (GHSA-2qf9). Recorded
+          // under the REAL message id — not a synthetic err-<uid>-<now> key —
+          // so the step-3 dedup skips it on the next poll. Without that, the
+          // same huge message was re-downloaded every poll interval forever,
+          // and an OOM-kill/restart simply resumed the loop.
+          if (MAX_MESSAGE_BYTES > 0 && cand.size > MAX_MESSAGE_BYTES) {
+            logger.warn?.(`emailIntake: skipping uid ${cand.uid} — ${cand.size} bytes exceeds the ${MAX_MESSAGE_BYTES}-byte limit`);
+            await db('received_emails').insert({
+              message_id: cand.messageId,
+              account_key: accountKey,
+              status: 'error',
+              error: `Message too large (${cand.size} bytes); limit is ${MAX_MESSAGE_BYTES}`,
+              attachment_count: 0,
+              received_at: new Date(),
+              created_at: new Date(),
+            });
+            await client.messageFlagsAdd(cand.uid, ['\\Seen'], { uid: true });
+            continue;
+          }
+
           const one = await client.fetchOne(String(cand.uid), { source: true }, { uid: true });
           if (!one || !one.source) continue;
           const parsed = await simpleParser(one.source);
-          messageId = parsed.messageId || cand.messageId;
+          messageId = boundedMessageId(parsed.messageId, cand.messageId);
           // Claim key: a no-Message-ID mail still needs a non-null, per-message
           // key so two pollers converge — fall back to the mailbox uid.
           claimKey = messageId || `nomsgid-${cand.uid}`;
@@ -347,7 +401,25 @@ async function pollAccountOnce(cfg, { accountKey = 'accounting', routeToExpenses
           let count = 0;
           const attErrors = [];
           if (routeToExpenses) {
-            const atts = (parsed.attachments || []).filter((a) => ALLOWED_MIME.includes(a.contentType));
+            const allowed = (parsed.attachments || []).filter((a) => ALLOWED_MIME.includes(a.contentType));
+            // Cap attachment count AND cumulative bytes (GHSA-2qf9) — a single
+            // in-limit message can still carry hundreds of attachments, each
+            // written to disk by saveAttachment().
+            const atts = [];
+            let attBytes = 0;
+            for (const att of allowed) {
+              if (atts.length >= MAX_ATTACHMENTS) {
+                attErrors.push(`Attachment limit reached (${MAX_ATTACHMENTS}); remaining attachments skipped`);
+                break;
+              }
+              const size = att.content ? att.content.length : 0;
+              if (attBytes + size > MAX_ATTACHMENT_BYTES) {
+                attErrors.push(`Cumulative attachment size limit reached (${MAX_ATTACHMENT_BYTES} bytes); remaining attachments skipped`);
+                break;
+              }
+              attBytes += size;
+              atts.push(att);
+            }
             for (const att of atts) {
               try {
                 const filePath = await saveAttachment(att);
