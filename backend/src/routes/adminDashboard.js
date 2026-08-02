@@ -42,25 +42,29 @@ function normaliseDateKey(value) {
  *
  * @returns {Promise<number[]|null>} ids to restrict to, or null for no limit
  */
-async function scopedEventIds(admin) {
-  if (admin?.roleName !== 'editor') return null;
-  return db('events').where('created_by', admin.id).pluck('id');
+function isScopedAdmin(admin) {
+  return admin?.roleName === 'editor';
 }
 
-/** Apply scopedEventIds() output to a query, when scoping applies. */
-function applyEventScope(query, ids, column) {
-  return ids === null ? query : query.whereIn(column, ids);
+/**
+ * Restrict `query` to the caller's own events.
+ *
+ * Uses a SUBQUERY rather than materialising the id list. An editor owning more
+ * events than the driver's bind-parameter limit (~999 on SQLite, 65535 on
+ * Postgres) would otherwise blow past it once every id became a placeholder,
+ * turning all three dashboard endpoints into 500s — and even well below that
+ * limit the whole list was re-sent for each of the ~10 aggregates per request.
+ */
+function applyEventScope(query, admin, column) {
+  if (!isScopedAdmin(admin)) return query;
+  return query.whereIn(column, db('events').select('id').where('created_by', admin.id));
 }
 
 // Get dashboard statistics
 router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req, res) => {
   try {
-    // Restrict every aggregate below to the caller's own events when scoping
-    // applies (GHSA-c2jj). `null` means unrestricted.
-    const ids = await scopedEventIds(req.admin);
-
     // Get active events count
-    const activeEvents = await applyEventScope(db('events'), ids, 'id')
+    const activeEvents = await applyEventScope(db('events'), req.admin, 'id')
       .where('is_active', formatBoolean(true))
       .where('is_archived', formatBoolean(false))
       .count('id as count')
@@ -71,7 +75,7 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
     const now = new Date();
     
-    const expiringEvents = await applyEventScope(db('events'), ids, 'id')
+    const expiringEvents = await applyEventScope(db('events'), req.admin, 'id')
       .where('is_active', formatBoolean(true))
       .where('is_archived', formatBoolean(false))
       .where('expires_at', '<=', sevenDaysFromNow.toISOString())
@@ -80,12 +84,12 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
       .first();
 
     // Get total photos count
-    const totalPhotos = await applyEventScope(db('photos'), ids, 'event_id')
+    const totalPhotos = await applyEventScope(db('photos'), req.admin, 'event_id')
       .count('id as count')
       .first();
 
     // Get storage usage (sum of all photo sizes)
-    const storageUsed = await applyEventScope(db('photos'), ids, 'event_id')
+    const storageUsed = await applyEventScope(db('photos'), req.admin, 'event_id')
       .sum('size_bytes as total')
       .first();
 
@@ -93,21 +97,21 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     
-    const totalViews = await applyEventScope(db('access_logs'), ids, 'event_id')
+    const totalViews = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .where('action', 'view')
       .where('timestamp', '>=', thirtyDaysAgo.toISOString())
       .count('id as count')
       .first();
 
     // Get total downloads (last 30 days) - include both single and bulk downloads
-    const totalDownloads = await applyEventScope(db('access_logs'), ids, 'event_id')
+    const totalDownloads = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
       .where('timestamp', '>=', thirtyDaysAgo.toISOString())
       .count('id as count')
       .first();
 
     // Get archived events count
-    const archivedEvents = await applyEventScope(db('events'), ids, 'id')
+    const archivedEvents = await applyEventScope(db('events'), req.admin, 'id')
       .where('is_archived', formatBoolean(true))
       .count('id as count')
       .first();
@@ -115,7 +119,7 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
     // Get total events count (all events regardless of status) — used by the
     // events list page to render accurate "All (N)" / Total Events counters
     // when the table is server-paginated (#346).
-    const totalEvents = await applyEventScope(db('events'), ids, 'id')
+    const totalEvents = await applyEventScope(db('events'), req.admin, 'id')
       .count('id as count')
       .first();
 
@@ -123,14 +127,14 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
     const sixtyDaysAgo = new Date();
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
     
-    const previousViews = await applyEventScope(db('access_logs'), ids, 'event_id')
+    const previousViews = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .where('action', 'view')
       .where('timestamp', '>=', sixtyDaysAgo.toISOString())
       .where('timestamp', '<', thirtyDaysAgo.toISOString())
       .count('id as count')
       .first();
 
-    const previousDownloads = await applyEventScope(db('access_logs'), ids, 'event_id')
+    const previousDownloads = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
       .where('timestamp', '>=', sixtyDaysAgo.toISOString())
       .where('timestamp', '<', thirtyDaysAgo.toISOString())
@@ -174,12 +178,11 @@ router.get('/activity', adminAuth, requirePermission('analytics.view'), async (r
     // (logins, settings changes) carry no event, and those are deliberately
     // EXCLUDED for a scoped caller rather than shown, since they are exactly
     // the cross-admin actions this advisory is about.
-    const ids = await scopedEventIds(req.admin);
     const activities = await applyEventScope(
       db('activity_logs')
         .select('activity_logs.*', 'events.event_name')
         .leftJoin('events', 'activity_logs.event_id', 'events.id'),
-      ids,
+      req.admin,
       'activity_logs.event_id'
     )
       .orderBy('activity_logs.created_at', 'desc')
@@ -288,11 +291,6 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
   try {
     const days = sanitizeDays(req.query.days || 7);
 
-    // Restrict every series/aggregate to the caller's own events (GHSA-gqx7).
-    // This endpoint is the worst of the three: topGalleries returns event
-    // NAMES and SLUGS, not just counts, and slugs are the public gallery URL.
-    const ids = await scopedEventIds(req.admin);
-
     // Generate date range
     const dates = [];
     for (let i = days - 1; i >= 0; i--) {
@@ -310,21 +308,21 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
     const startDateStr = startDate.toISOString();
 
     // Get views per day
-    const viewsData = await applyEventScope(db('access_logs'), ids, 'event_id')
+    const viewsData = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .select(db.raw('DATE(timestamp) as date'), db.raw('COUNT(*) as count'))
       .where('action', 'view')
       .where('timestamp', '>=', startDateStr)
       .groupByRaw('DATE(timestamp)');
 
     // Get downloads per day - include both single and bulk downloads
-    const downloadsData = await applyEventScope(db('access_logs'), ids, 'event_id')
+    const downloadsData = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .select(db.raw('DATE(timestamp) as date'), db.raw('COUNT(*) as count'))
       .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
       .where('timestamp', '>=', startDateStr)
       .groupByRaw('DATE(timestamp)');
 
     // Get unique visitors per day
-    const visitorsData = await applyEventScope(db('access_logs'), ids, 'event_id')
+    const visitorsData = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .select(db.raw('DATE(timestamp) as date'), db.raw('COUNT(DISTINCT ip_address) as count'))
       .where('timestamp', '>=', startDateStr)
       .groupByRaw('DATE(timestamp)');
@@ -351,7 +349,7 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
     });
 
     // Get top galleries by views with additional metrics
-    const topGalleries = await applyEventScope(db('access_logs'), ids, 'access_logs.event_id')
+    const topGalleries = await applyEventScope(db('access_logs'), req.admin, 'access_logs.event_id')
       .select('events.id', 'events.event_name', 'events.slug')
       .select(db.raw('COUNT(CASE WHEN action = \'view\' THEN 1 END) as views'))
       .select(db.raw('COUNT(DISTINCT CASE WHEN action = \'view\' THEN ip_address END) as uniqueVisitors'))
@@ -375,7 +373,7 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
     // The external tracker reports instance-wide device data with no way to
     // filter it by event, so a scoped caller must not receive it (GHSA-gqx7).
     // They fall through to the access_logs heuristic, which IS scoped.
-    const adapter = ids === null ? await resolveAdapter() : null;
+    const adapter = isScopedAdmin(req.admin) ? null : await resolveAdapter();
     if (adapter) {
       try {
         const trackerDevices = await adapter.fetchDeviceBreakdown({
@@ -397,7 +395,7 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
       // Local heuristic on access_logs user_agent. Coarse — `LIKE` doesn't
       // cover every UA shape (some Android browsers, embedded webviews, etc.)
       // — and counts come back as strings on Postgres, hence Number() below.
-      const deviceData = await applyEventScope(db('access_logs'), ids, 'event_id')
+      const deviceData = await applyEventScope(db('access_logs'), req.admin, 'event_id')
         .select(
           db.raw(`
             CASE
@@ -421,19 +419,19 @@ router.get('/analytics', adminAuth, requirePermission('analytics.view'), async (
     }
 
     // Calculate totals for the period (matching /stats logic)
-    const totalViews = await applyEventScope(db('access_logs'), ids, 'event_id')
+    const totalViews = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .where('action', 'view')
       .where('timestamp', '>=', startDateStr)
       .count('id as count')
       .first();
 
-    const totalDownloadsCount = await applyEventScope(db('access_logs'), ids, 'event_id')
+    const totalDownloadsCount = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .whereIn('action', ['download', 'download_all', 'download_all_presigned', 'download_selected'])
       .where('timestamp', '>=', startDateStr)
       .count('id as count')
       .first();
 
-    const totalUniqueVisitors = await applyEventScope(db('access_logs'), ids, 'event_id')
+    const totalUniqueVisitors = await applyEventScope(db('access_logs'), req.admin, 'event_id')
       .where('timestamp', '>=', startDateStr)
       .countDistinct('ip_address as count')
       .first();

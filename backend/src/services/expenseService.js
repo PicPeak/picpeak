@@ -193,7 +193,7 @@ async function recordInboundDocument({ source, filePath, originalFilename, mimeT
   };
   const inserted = await db('inbound_documents').insert(row).returning('id');
   const id = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
-  await logActivity('incoming_invoice_captured', { inboundDocumentId: id, source: row.source, duplicate: !!duplicateOfId }, adminId);
+  await logActivity('incoming_invoice_captured', { inboundDocumentId: id, source: row.source, duplicate: !!duplicateOfId }, null, { type: 'admin', id: adminId });
   return getInbound(id);
 }
 
@@ -242,7 +242,7 @@ async function updateInbound(id, payload, adminId) {
     if (payload[camel] !== undefined) patch[snake] = payload[camel] === '' ? null : payload[camel];
   }
   await db('inbound_documents').where({ id }).update(patch);
-  await logActivity('incoming_invoice_updated', { inboundDocumentId: id }, adminId);
+  await logActivity('incoming_invoice_updated', { inboundDocumentId: id }, null, { type: 'admin', id: adminId });
   return getInbound(id);
 }
 
@@ -458,8 +458,8 @@ async function categorizeInbound(id, payload, adminId) {
   });
   // Audit logging AFTER commit — logActivity writes via the global db and would
   // deadlock if run inside the transaction above on a SQLite-backed install.
-  await logActivity('incoming_invoice_categorized', { inboundDocumentId: id, disposition }, adminId);
-  if (billedInvoiceId) await logActivity('incoming_invoice_rebilled', { inboundDocumentId: id, invoiceId: billedInvoiceId }, adminId);
+  await logActivity('incoming_invoice_categorized', { inboundDocumentId: id, disposition }, null, { type: 'admin', id: adminId });
+  if (billedInvoiceId) await logActivity('incoming_invoice_rebilled', { inboundDocumentId: id, invoiceId: billedInvoiceId }, null, { type: 'admin', id: adminId });
   return getInbound(id);
 }
 
@@ -494,7 +494,7 @@ async function rebillInbound(id, payload, adminId, trx0) {
   const invoiceId = trx0 ? await run(trx0) : await db.transaction(run);
   // Log after commit (global-db write — see billInboundNow). When a caller
   // supplied trx0, that outer transaction owns the audit log instead.
-  if (!trx0) await logActivity('incoming_invoice_rebilled', { inboundDocumentId: id, invoiceId }, adminId);
+  if (!trx0) await logActivity('incoming_invoice_rebilled', { inboundDocumentId: id, invoiceId }, null, { type: 'admin', id: adminId });
   return { document: await getInbound(id), invoiceId };
 }
 
@@ -607,7 +607,7 @@ async function billPendingRebills(customerId, adminId) {
     return { invoiceId, count: pending.length };
   });
   // Audit log after commit (global-db write — see billInboundNow).
-  await logActivity('incoming_invoices_rebilled_bundle', { customerId: customer.id, invoiceId: result.invoiceId, count: result.count }, adminId);
+  await logActivity('incoming_invoices_rebilled_bundle', { customerId: customer.id, invoiceId: result.invoiceId, count: result.count }, null, { type: 'admin', id: adminId });
   return result;
 }
 
@@ -624,7 +624,7 @@ async function markInboundSupplierPayment(id, { paid, paidAt, paymentMethod, pay
     supplier_payment_ref: paid ? (paymentReference || null) : null,
     updated_at: new Date(),
   });
-  await logActivity('incoming_invoice_supplier_payment', { inboundDocumentId: id, paid: !!paid }, adminId);
+  await logActivity('incoming_invoice_supplier_payment', { inboundDocumentId: id, paid: !!paid }, null, { type: 'admin', id: adminId });
   return getInbound(id);
 }
 
@@ -714,7 +714,7 @@ async function createExpense(payload, adminId, { receiptPath } = {}) {
   });
   const inserted = await db('expenses').insert(row).returning('id');
   const id = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
-  await logActivity('expense_created', { expenseId: id, kind: row.kind }, adminId);
+  await logActivity('expense_created', { expenseId: id, kind: row.kind }, null, { type: 'admin', id: adminId });
   return getExpense(id);
 }
 
@@ -747,7 +747,7 @@ async function updateExpense(id, payload, adminId, { receiptPath } = {}) {
   }
   if (receiptPath) patch.receipt_path = receiptPath;
   await db('expenses').where({ id }).update(patch);
-  await logActivity('expense_updated', { expenseId: id }, adminId);
+  await logActivity('expense_updated', { expenseId: id }, null, { type: 'admin', id: adminId });
   return getExpense(id);
 }
 
@@ -787,7 +787,7 @@ async function rebillExpense(id, payload, adminId, trx0) {
       status: 'invoiced',
       updated_at: new Date(),
     });
-    await logActivity('expense_invoiced', { expenseId: id, invoiceId }, adminId);
+    await logActivity('expense_invoiced', { expenseId: id, invoiceId }, null, { type: 'admin', id: adminId });
     return invoiceId;
   };
   const invoiceId = trx0 ? await run(trx0) : await db.transaction(run);
@@ -807,7 +807,7 @@ async function markExpensePaid(id, { paid, paidAt, paymentMethod, paymentReferen
     payment_reference: paid ? (paymentReference || null) : null,
     updated_at: new Date(),
   });
-  await logActivity('expense_paid', { expenseId: id, paid: !!paid }, adminId);
+  await logActivity('expense_paid', { expenseId: id, paid: !!paid }, null, { type: 'admin', id: adminId });
   return getExpense(id);
 }
 
