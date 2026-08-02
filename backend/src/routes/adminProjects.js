@@ -15,7 +15,7 @@ const { requirePermission, userHasAnyPermission } = require('../middleware/permi
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const projectService = require('../services/projectService');
 const { db } = require('../database/db');
-const { ownedProjectIds, requireProjectOwnership, filterOwnedEventIds } = require('../middleware/ownership');
+const { ownedProjectsSubquery, requireProjectOwnership, filterOwnedEventIds } = require('../middleware/ownership');
 const { ForbiddenError } = require('../utils/errors');
 
 const router = express.Router();
@@ -66,8 +66,10 @@ router.get('/', requirePermission('events.view'), handleAsync(async (req, res) =
     bills: await userHasAnyPermission(req.admin.id, ['bills.view']),
     quotes: await userHasAnyPermission(req.admin.id, ['quotes.view']),
   };
-  // Only the caller's projects (GHSA-wrg5) — null means unrestricted.
-  const projectIds = await ownedProjectIds(req.admin);
+  // Only the caller's projects (GHSA-wrg5). Passed as a SUBQUERY so a large
+  // project count can't hit the driver's bind-parameter limit; null means
+  // unrestricted.
+  const projectIds = ownedProjectsSubquery(req.admin);
   const projects = await projectService.listProjects({
     search: req.query.q || '',
     status: req.query.status || null,

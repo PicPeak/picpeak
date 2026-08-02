@@ -43,8 +43,10 @@ async function listProjects({ search = '', status = null, perms = {}, projectIds
       db('events').count('* as c').whereRaw('events.project_id = projects.id').as('event_count'),
     )
     .orderBy('projects.updated_at', 'desc');
-  // Ownership allowlist (GHSA-wrg5). null = unrestricted; an empty array
-  // legitimately means "owns nothing" and must return no rows.
+  // Ownership allowlist (GHSA-wrg5). `null` = unrestricted; otherwise a knex
+  // SUBQUERY of allowed ids (a plain array also works). The subquery keeps a
+  // large project count off the driver's bind-parameter limit, and correctly
+  // yields no rows for an admin who owns nothing.
   if (projectIds !== null) q = q.whereIn('projects.id', projectIds);
   if (status) q = q.where('projects.status', status);
   if (search) {
