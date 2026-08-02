@@ -21,6 +21,17 @@ const { formatBoolean } = require('../utils/dbCompat');
 // closed once setup is done — safe even on a public IP.
 const SETUP_TOKEN_KEY = 'setup_token';
 
+// Path of the token file as ACTUALLY written by the last ensureSetupToken()
+// run, or null when that write failed. server.js keys its stdout banner on
+// this: it used to re-derive the answer with existsSync(), which reports
+// success for a stale, read-only or directory-shaped SETUP_TOKEN that the write
+// could not replace — suppressing the token while pointing the operator at
+// content that is wrong or unreadable.
+let writtenTokenFile = null;
+function writtenSetupTokenFile() {
+  return writtenTokenFile;
+}
+
 // One-way flag flipped when the setup wizard finishes (migration 161 marks it
 // completed on installs that predate the wizard's event-types step). While it
 // is unset — i.e. only during the first-run wizard — the seeded SYSTEM event
@@ -70,6 +81,7 @@ async function clearSetupToken() {
 }
 
 async function ensureSetupToken() {
+  writtenTokenFile = null;
   if (!(await noAdminExists())) {
     await clearSetupToken();
     return null;
@@ -88,16 +100,18 @@ async function ensureSetupToken() {
   // both under the host-bind-mounted ./logs — never rotated out after use.
   // The log line remains as the documented last-resort recovery path.
   //
-  // server.js makes the same decision for its stdout banner by checking
-  // whether the token file exists (setupTokenFilePath is exported for that):
-  // printing the token there lands it in `docker logs` / journald, which is
-  // the very leak this closes.
+  // server.js makes the same decision for its stdout banner by reading
+  // writtenSetupTokenFile() — the outcome recorded here, not a re-derived
+  // existsSync() guess: printing the token there lands it in `docker logs` /
+  // journald, which is the very leak this closes, and suppressing it when the
+  // file is NOT actually current strands the operator with no token at all.
   let file = null;
   let writeError = null;
   try {
     file = setupTokenFilePath();
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, `${token}\n`, { mode: 0o600 });
+    writtenTokenFile = file;
   } catch (err) {
     writeError = err;
     file = null;
@@ -224,6 +238,7 @@ module.exports = {
   getSetupStatus,
   ensureSetupToken,
   setupTokenFilePath,
+  writtenSetupTokenFile,
   verifySetupToken,
   createInitialAdmin,
   isSetupWizardCompleted,

@@ -1012,9 +1012,11 @@ async function startServer() {
     try {
       const setupSvc = require('./src/services/setupService');
       setupToken = await setupSvc.ensureSetupToken();
-      // Present only when the 0600 token file was written successfully.
-      const candidate = setupSvc.setupTokenFilePath();
-      setupTokenFile = require('fs').existsSync(candidate) ? candidate : null;
+      // The path the write ACTUALLY produced (null when it failed). existsSync
+      // on the candidate answered a different question and reported success
+      // for a stale, read-only or directory-shaped SETUP_TOKEN — suppressing
+      // the token here while pointing the operator at content that is not it.
+      setupTokenFile = setupSvc.writtenSetupTokenFile();
     } catch (err) {
       logger.warn(`[setup] ensureSetupToken skipped: ${err.message}`);
     }

@@ -93,7 +93,7 @@ export const SetupPage: React.FC = () => {
     if (errors[field]) setErrors((prev) => ({ ...prev, [field]: '' }));
   };
 
-  const recoveryCommand = 'docker compose logs backend | grep -i "setup token"';
+  const recoveryCommand = 'docker compose exec backend cat /app/data/SETUP_TOKEN';
 
   const copyRecoveryCommand = async () => {
     try {

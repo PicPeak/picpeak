@@ -3635,7 +3635,7 @@
     "tokenCommandLabel": "Can't find your token? Run this in the project directory:",
     "copyCommand": "Copy command",
     "tokenRotatedLink": "Logs already rotated away? Read the setup guide",
-    "tokenLocationHint": "Can't find it? Run: docker compose logs backend | grep -i \"setup token\"",
+    "tokenLocationHint": "Can't find it? Run: docker compose exec backend cat /app/data/SETUP_TOKEN",
     "invalidToken": "That setup token is not valid.",
     "passwordRequirements": "Use at least 8 characters with an upper-case letter, a lower-case letter and a number.",
     "emailLabel": "Email address",

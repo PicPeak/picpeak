@@ -3749,7 +3749,7 @@
     "tokenCommandLabel": "Token nicht gefunden? Führen Sie dies im Projektverzeichnis aus:",
     "copyCommand": "Befehl kopieren",
     "tokenRotatedLink": "Logs bereits rotiert? Zur Einrichtungsanleitung",
-    "tokenLocationHint": "Nicht gefunden? Führen Sie aus: docker compose logs backend | grep -i \"setup token\"",
+    "tokenLocationHint": "Nicht gefunden? Führen Sie aus: docker compose exec backend cat /app/data/SETUP_TOKEN",
     "invalidToken": "Dieser Setup-Token ist ungültig.",
     "passwordRequirements": "Verwenden Sie mindestens 8 Zeichen mit einem Groß- und einem Kleinbuchstaben sowie einer Ziffer.",
     "emailLabel": "E-Mail-Adresse",
