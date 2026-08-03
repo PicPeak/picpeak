@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.45.13](https://github.com/PicPeak/picpeak/compare/v3.45.12...v3.45.13) (2026-08-03)
+
+
+### Bug Fixes
+
+* **auth:** fail closed when the adminAuth roles join errors (stable) ([#975](https://github.com/PicPeak/picpeak/issues/975)) ([cc49f69](https://github.com/PicPeak/picpeak/commit/cc49f6997ac54c3e25d5562721c446b7dac7f074))
+* **projects:** stop the cockpit offering email controls the API rejects (stable) ([#977](https://github.com/PicPeak/picpeak/issues/977)) ([2d0e6ab](https://github.com/PicPeak/picpeak/commit/2d0e6ab2dca84cf74c6c6b5c40ecae5c5cde814c))
+* **security:** backup/restore hardening — public-dir DB dump, restore path allowlist, gunzip bound, manifest keying (stable) ([#962](https://github.com/PicPeak/picpeak/issues/962)) ([3b88036](https://github.com/PicPeak/picpeak/commit/3b88036fda871b3a1ca2e933c39fa96e37950fe6))
+* **security:** bound inbound-mail resources, redact secrets from logs (stable) ([#965](https://github.com/PicPeak/picpeak/issues/965)) ([ccab902](https://github.com/PicPeak/picpeak/commit/ccab9024d4ef2f556169bbca8c6bba4801afe3a0))
+* **security:** enforce event ownership on the v1 API surface (GHSA-9697) (stable) ([#963](https://github.com/PicPeak/picpeak/issues/963)) ([4e99897](https://github.com/PicPeak/picpeak/commit/4e9989731390f9c067b048f4fa56ed3bf8ec472d))
+* **security:** enforce project ownership on project + project-email routes (stable) ([#966](https://github.com/PicPeak/picpeak/issues/966)) ([fecc18c](https://github.com/PicPeak/picpeak/commit/fecc18cbc837507bf30dd7502786de4e067855a5))
+* **security:** escape brand tokens, block tracker redirects, trim logo diagnostic (stable) ([#967](https://github.com/PicPeak/picpeak/issues/967)) ([7f27e67](https://github.com/PicPeak/picpeak/commit/7f27e6771f666a40ec0581dc7702be3a1de8330d))
+* **security:** scope dashboard stats/analytics/activity to the caller's events (stable) ([#964](https://github.com/PicPeak/picpeak/issues/964)) ([11f9f58](https://github.com/PicPeak/picpeak/commit/11f9f584ded5f777a61dc2e1e637d478a61ac377))
+
 ## [3.45.12](https://github.com/PicPeak/picpeak/compare/v3.45.11...v3.45.12) (2026-08-02)
 
 
