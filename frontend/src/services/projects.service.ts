@@ -49,6 +49,10 @@ export interface ProjectEmail {
   eventId: number | null;
   /** true = exact HTML stored at send time; false = preview re-rendered. */
   stored: boolean;
+  /** Authoritative: would the queued-mail routes accept an action on this row?
+   *  False for CRM document mail (no event to own) and for event mail the
+   *  caller does not own. Absent on older backends → treated as false. */
+  canAct?: boolean;
 }
 
 export interface ProjectInvoice {
