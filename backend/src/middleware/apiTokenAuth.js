@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
+const { isMissingRolesSchema } = require('../utils/dbErrors');
 const logger = require('../utils/logger');
 
 const TOKEN_PREFIX = 'pp_live_';
@@ -30,24 +31,6 @@ function parseScopes(raw) {
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter((s) => VALID_SCOPES.includes(s));
-}
-
-/**
- * Does this error mean the `roles` table/column genuinely isn't there yet
- * (mid-upgrade), as opposed to the database being briefly unhappy?
- *
- * The distinction matters because the fallback below grants super_admin: a
- * catch-all would turn any transient failure — connection reset, deadlock,
- * statement timeout — into a privilege escalation that hands a demoted viewer
- * exactly the access GHSA-9697 closes.
- */
-function isMissingRolesSchema(err) {
-  const message = String(err?.message || '');
-  if (!/roles/i.test(message)) return false;
-  // PG: 42P01 undefined_table / 42703 undefined_column. SQLite carries no
-  // codes, so match its wording too.
-  return err?.code === '42P01' || err?.code === '42703'
-    || /no such table|no such column|does not exist|unknown column/i.test(message);
 }
 
 /**
