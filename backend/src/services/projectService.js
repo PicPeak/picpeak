@@ -481,14 +481,20 @@ async function getProjectOverview(id, perms = {}, admin = null) {
   // A's project. Deriving actionability from `event_id != null` alone (as the
   // UI first did) would then still render controls that requireOwnedQueuedEmail
   // rejects with a 404.
+  // No admin context → nothing is actionable. Without this, an ownerless
+  // (legacy/system) event would satisfy `created_by == null` and be marked
+  // actionable for a caller we know nothing about.
   const isSuperAdmin = admin?.roleName === 'super_admin';
-  const actionableEventIds = new Set(
-    isSuperAdmin
-      ? eventIds
-      : eventRows
-        .filter((e) => e.created_by == null || Number(e.created_by) === Number(admin?.id))
+  let actionableEventIds = new Set();
+  if (isSuperAdmin) {
+    actionableEventIds = new Set(eventIds);
+  } else if (admin?.id != null) {
+    actionableEventIds = new Set(
+      eventRows
+        .filter((e) => e.created_by == null || Number(e.created_by) === Number(admin.id))
         .map((e) => e.id),
-  );
+    );
+  }
 
   const out = { project, events, emails: [], quotes: [], contracts: [], invoices: [], hours: { entries: [], totalMinutes: 0 } };
 

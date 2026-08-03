@@ -28,7 +28,7 @@ const { bootCrmDb, seedMinimal } = require('../integration/helpers/crmDb');
 describe('getProjectOverview email canAct (#969)', () => {
   let db; let cleanup; let projectService;
   let adminA; let adminB; let superAdmin;
-  let projectId; let ownEventId; let foreignEventId;
+  let projectId; let ownEventId; let foreignEventId; let ownerlessEventId;
 
   const mkAdmin = async (username, roleName) => {
     const role = await db('roles').where({ name: roleName }).first();
@@ -78,12 +78,16 @@ describe('getProjectOverview email canAct (#969)', () => {
     }).returning('id');
     projectId = p[0]?.id ?? p[0];
 
-    // Both events hang off adminA's project; only the first is adminA's.
+    // All three hang off adminA's project. Only the first is adminA's; the
+    // third is an ownerless legacy row, which filterOwnedEventIds treats as
+    // owned by whoever asks — but only once we know who is asking.
     ownEventId = await mkEvent('canact-own', adminA, projectId);
     foreignEventId = await mkEvent('canact-foreign', adminB, projectId);
+    ownerlessEventId = await mkEvent('canact-legacy', null, projectId);
 
     await mkMail(ownEventId, 'gallery_ready');
     await mkMail(foreignEventId, 'gallery_ready');
+    await mkMail(ownerlessEventId, 'gallery_ready');
   }, 120000);
 
   afterAll(async () => { if (cleanup) await cleanup(); });
@@ -119,8 +123,19 @@ describe('getProjectOverview email canAct (#969)', () => {
     expect(overview.emails.every((e) => e.canAct === true)).toBe(true);
   });
 
+  it('clears mail on an ownerless legacy event for an identified caller', async () => {
+    // Parity with filterOwnedEventIds, which allows created_by IS NULL.
+    const overview = await projectService.getProjectOverview(
+      projectId, {}, { id: adminA, roleName: 'editor' },
+    );
+    expect(byEvent(overview).get(ownerlessEventId).canAct).toBe(true);
+  });
+
   it('denies everything when no admin context is supplied', async () => {
+    // Including the ownerless event: `created_by == null` must not read as
+    // "owned" when we do not know who is asking (codex review round 2).
     const overview = await projectService.getProjectOverview(projectId, {});
+    expect(overview.emails.length).toBe(3);
     expect(overview.emails.every((e) => e.canAct === false)).toBe(true);
   });
 
@@ -128,7 +143,7 @@ describe('getProjectOverview email canAct (#969)', () => {
     const overview = await projectService.getProjectOverview(
       projectId, {}, { id: adminA, roleName: 'editor' },
     );
-    expect(overview.events.length).toBe(2);
+    expect(overview.events.length).toBe(3);
     for (const e of overview.events) expect(e).not.toHaveProperty('created_by');
   });
 });
