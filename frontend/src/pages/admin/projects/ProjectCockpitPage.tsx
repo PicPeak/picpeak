@@ -43,11 +43,9 @@ interface FeedItem {
   emailId?: number;
   emailStatus?: string;
   reRendered?: boolean;
-  /** null for CRM document mail (quote/contract/invoice/storno), which is
-   *  queued without an event. The queued-mail routes authorize through
-   *  email_queue.event_id, so those rows are only actionable by a
-   *  super_admin — see canActOnEmail. */
-  emailEventId?: number | null;
+  /** Server's verdict on whether the queued-mail routes would accept an action
+   *  on this row. Not derivable client-side — see canActOnEmail. */
+  emailCanAct?: boolean;
 }
 
 /** The feature flag that gates each document's detail ROUTE (RequireFeature
@@ -115,18 +113,21 @@ export const ProjectCockpitPage: React.FC = () => {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { flags } = useFeatureFlags();
-  const { hasPermission, isSuperAdmin } = usePermissions();
+  const { hasPermission } = usePermissions();
   const { format, formatTime } = useLocalizedDate();
 
   // Which email controls are actually reachable for THIS admin, so the feed
   // stops offering buttons the API will reject (#969):
   //   404 — requireOwnedQueuedEmail (adminProjects.js) scopes queued mail
-  //         through email_queue.event_id. CRM document mail (quote/contract/
-  //         invoice/storno) carries no event_id, so for a non-super_admin it
-  //         has no ownable parent to check and always 404s.
+  //         through email_queue.event_id AND ownership of that event. CRM
+  //         document mail carries no event_id at all. The server decides this
+  //         for us (`canAct`) because neither half is derivable here: the
+  //         overview deliberately does not expose who owns a sibling event.
+  //         Absent (older backend) → treat as not actionable, so we fail to
+  //         hiding a live control rather than offering a dead one.
   //   403 — preview needs `events.view`, but resend/cancel/retry/send-now
   //         need `email.send`; the feed used to render all four regardless.
-  const canActOnEmail = (item: FeedItem) => isSuperAdmin || item.emailEventId != null;
+  const canActOnEmail = (item: FeedItem) => item.emailCanAct === true;
   const canSendEmail = hasPermission('email.send');
 
   const [editName, setEditName] = useState<string | null>(null);
@@ -207,7 +208,7 @@ export const ProjectCockpitPage: React.FC = () => {
         title: t(`projects.feed.email`, 'Email') + ` · ${e.type}`,
         subtitle: e.recipient + (e.error ? ` — ${e.error}` : ''),
         status: e.status, emailId: e.id, emailStatus: e.status, reRendered: !e.stored,
-        emailEventId: e.eventId,
+        emailCanAct: e.canAct,
       });
     }
     for (const q of data.quotes) {

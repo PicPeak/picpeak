@@ -44,18 +44,34 @@ const OVERVIEW = {
   milestones: [],
   valuation: { byCurrency: [] },
   emails: [
+    // Event mail the caller owns → the server says actionable.
     { id: 11, recipient: 'kunde@example.com', type: 'gallery_ready', status: 'sent',
       queuedAt: '2026-08-01T10:00:00Z', sentAt: '2026-08-01T10:00:05Z', error: null,
-      eventId: 42, stored: true },
+      eventId: 42, stored: true, canAct: true },
+    // CRM document mail — no event to own, so 404 for a non-super_admin.
     { id: 12, recipient: 'kunde@example.com', type: 'invoice_sent', status: 'sent',
       queuedAt: '2026-08-01T11:00:00Z', sentAt: '2026-08-01T11:00:05Z', error: null,
-      eventId: null, stored: true },
+      eventId: null, stored: true, canAct: false },
+    // Event mail for a FOREIGN event: a super_admin can attach admin B's event
+    // to admin A's project, and project ownership does not imply event
+    // ownership — so eventId is non-null yet the action still 404s.
+    { id: 13, recipient: 'kunde@example.com', type: 'gallery_ready', status: 'sent',
+      queuedAt: '2026-08-01T12:00:00Z', sentAt: '2026-08-01T12:00:05Z', error: null,
+      eventId: 99, stored: true, canAct: false },
   ],
 };
 
+/** The same payload as a super_admin sees it — the server stamps every row. */
+const OVERVIEW_SUPER = {
+  ...OVERVIEW,
+  emails: OVERVIEW.emails.map((e) => ({ ...e, canAct: true })),
+};
+
+let currentOverview: typeof OVERVIEW = OVERVIEW;
+
 vi.mock('../../../../services/projects.service', () => ({
   projectsService: {
-    overview: vi.fn(async () => OVERVIEW),
+    overview: vi.fn(async () => currentOverview),
     emailPreview: vi.fn(async () => ({ html: '<p>x</p>', subject: 's' })),
     resendEmail: vi.fn(), cancelEmail: vi.fn(), retryEmail: vi.fn(), sendEmailNow: vi.fn(),
     update: vi.fn(), assignEvent: vi.fn(),
@@ -95,20 +111,25 @@ const renderPage = async () => {
 };
 
 describe('ProjectCockpitPage email controls (#969)', () => {
-  beforeEach(() => { mockPerms = { isSuperAdmin: false, permissions: ['events.view'] }; });
-
-  it('super_admin sees controls on both event and CRM document mail', async () => {
-    mockPerms = { isSuperAdmin: true, permissions: [] };
-    await renderPage();
-    // Preview on both rows, Resend on both (super_admin implies email.send).
-    expect(screen.getAllByText('Preview')).toHaveLength(2);
-    expect(screen.getAllByText('Resend')).toHaveLength(2);
+  beforeEach(() => {
+    mockPerms = { isSuperAdmin: false, permissions: ['events.view'] };
+    currentOverview = OVERVIEW;
   });
 
-  it('a scoped admin gets no controls on CRM document mail (would 404)', async () => {
+  it('super_admin sees controls on every row', async () => {
+    mockPerms = { isSuperAdmin: true, permissions: [] };
+    currentOverview = OVERVIEW_SUPER;
+    await renderPage();
+    // All three rows, Resend on all (super_admin implies email.send).
+    expect(screen.getAllByText('Preview')).toHaveLength(3);
+    expect(screen.getAllByText('Resend')).toHaveLength(3);
+  });
+
+  it('a scoped admin gets controls only on mail the server says it can act on', async () => {
     mockPerms = { isSuperAdmin: false, permissions: ['events.view', 'email.send'] };
     await renderPage();
-    // Only the event-linked mail is actionable; the CRM row offers nothing.
+    // Only the owned event mail. The CRM row (no event) and the foreign-event
+    // row both 404, so neither offers anything.
     expect(screen.getAllByText('Preview')).toHaveLength(1);
     expect(screen.getAllByText('Resend')).toHaveLength(1);
   });
@@ -121,5 +142,17 @@ describe('ProjectCockpitPage email controls (#969)', () => {
     expect(screen.queryByText('Cancel')).toBeNull();
     expect(screen.queryByText('Retry')).toBeNull();
     expect(screen.queryByText('Send now')).toBeNull();
+  });
+
+  it('offers nothing when the server omits canAct (older backend)', async () => {
+    mockPerms = { isSuperAdmin: false, permissions: ['events.view', 'email.send'] };
+    currentOverview = {
+      ...OVERVIEW,
+      emails: OVERVIEW.emails.map(({ canAct: _drop, ...e }) => e as typeof OVERVIEW.emails[number]),
+    };
+    await renderPage();
+    // Fail to hiding a live control rather than offering a dead one.
+    expect(screen.queryByText('Preview')).toBeNull();
+    expect(screen.queryByText('Resend')).toBeNull();
   });
 });
