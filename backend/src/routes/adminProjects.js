@@ -183,7 +183,7 @@ router.get('/:id/overview', requirePermission('events.view'), requireProjectOwne
     quotes: await userHasAnyPermission(req.admin.id, ['quotes.view']),
     contracts: await userHasAnyPermission(req.admin.id, ['contracts.view']),
   };
-  const overview = await projectService.getProjectOverview(parseInt(req.params.id, 10), perms);
+  const overview = await projectService.getProjectOverview(parseInt(req.params.id, 10), perms, req.admin);
   return successResponse(res, overview);
 }));
 

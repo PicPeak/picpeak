@@ -454,15 +454,47 @@ function computeValuation(invoices = [], quotes = []) {
  * Full overview aggregation for the cockpit. Returns the project, its events,
  * and the rolled-up emails / quotes / contracts / invoices / hours + a
  * timeline of milestones. `perms` gates which doc types are included.
+ *
+ * `admin` (optional) is used only to stamp each email with `canAct` — whether
+ * the queued-mail routes would actually accept an action on it. See below.
  */
-async function getProjectOverview(id, perms = {}) {
+async function getProjectOverview(id, perms = {}, admin = null) {
   const project = await getProjectById(id);
   if (!project) throw new AppError('Project not found', 404);
 
-  const events = await db('events')
+  // `created_by` is selected for the ownership check below and stripped again
+  // before the response — the cockpit has no business learning who owns a
+  // sibling event.
+  const eventRows = await db('events')
     .where({ project_id: id })
-    .select('id', 'event_name', 'event_date', 'slug', 'is_active', 'is_draft', 'expires_at', 'is_archived');
+    .select('id', 'event_name', 'event_date', 'slug', 'is_active', 'is_draft', 'expires_at', 'is_archived', 'created_by');
+  const events = eventRows.map(({ created_by: _ignored, ...e }) => e);
   const eventIds = events.map((e) => e.id);
+
+  // Which of this project's events would filterOwnedEventIds() let `admin`
+  // act on. Mirrors that predicate exactly (ownership.js): super_admin gets
+  // everything, otherwise created_by IS NULL OR created_by = admin.id.
+  //
+  // Project ownership does NOT imply event ownership — ownedProjectsSubquery's
+  // `projects.created_by = admin.id` branch places no constraint on who owns
+  // the linked events, so a super_admin can attach admin B's event to admin
+  // A's project. Deriving actionability from `event_id != null` alone (as the
+  // UI first did) would then still render controls that requireOwnedQueuedEmail
+  // rejects with a 404.
+  // No admin context → nothing is actionable. Without this, an ownerless
+  // (legacy/system) event would satisfy `created_by == null` and be marked
+  // actionable for a caller we know nothing about.
+  const isSuperAdmin = admin?.roleName === 'super_admin';
+  let actionableEventIds = new Set();
+  if (isSuperAdmin) {
+    actionableEventIds = new Set(eventIds);
+  } else if (admin?.id != null) {
+    actionableEventIds = new Set(
+      eventRows
+        .filter((e) => e.created_by == null || Number(e.created_by) === Number(admin.id))
+        .map((e) => e.id),
+    );
+  }
 
   const out = { project, events, emails: [], quotes: [], contracts: [], invoices: [], hours: { entries: [], totalMinutes: 0 } };
 
@@ -518,6 +550,11 @@ async function getProjectOverview(id, perms = {}) {
     queuedAt: e.created_at, sentAt: e.sent_at, error: e.error_message, eventId: e.event_id,
     // false → the cockpit preview will re-render from the current template.
     stored: !!Number(e.has_rendered),
+    // Would requireOwnedQueuedEmail accept preview/resend/cancel/retry/send-now
+    // on this row? Authoritative here because the client cannot derive it: CRM
+    // document mail has no event to own, and event mail additionally requires
+    // ownership of THAT event, which the response deliberately does not expose.
+    canAct: isSuperAdmin || (e.event_id != null && actionableEventIds.has(e.event_id)),
   });
 
   const emailRows = [];

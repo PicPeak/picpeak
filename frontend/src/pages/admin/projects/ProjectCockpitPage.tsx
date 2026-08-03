@@ -27,6 +27,7 @@ import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../../hooks';
 import { formatMoneyMinor } from '../../../utils/money';
 import { useFeatureFlags, type FeatureKey } from '../../../contexts/FeatureFlagsContext';
+import { usePermissions } from '../../../contexts/PermissionsContext';
 
 type FeedKind = 'email' | 'quote' | 'contract' | 'invoice' | 'gallery' | 'hours';
 
@@ -42,6 +43,9 @@ interface FeedItem {
   emailId?: number;
   emailStatus?: string;
   reRendered?: boolean;
+  /** Server's verdict on whether the queued-mail routes would accept an action
+   *  on this row. Not derivable client-side — see canActOnEmail. */
+  emailCanAct?: boolean;
 }
 
 /** The feature flag that gates each document's detail ROUTE (RequireFeature
@@ -109,7 +113,22 @@ export const ProjectCockpitPage: React.FC = () => {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { flags } = useFeatureFlags();
+  const { hasPermission } = usePermissions();
   const { format, formatTime } = useLocalizedDate();
+
+  // Which email controls are actually reachable for THIS admin, so the feed
+  // stops offering buttons the API will reject (#969):
+  //   404 — requireOwnedQueuedEmail (adminProjects.js) scopes queued mail
+  //         through email_queue.event_id AND ownership of that event. CRM
+  //         document mail carries no event_id at all. The server decides this
+  //         for us (`canAct`) because neither half is derivable here: the
+  //         overview deliberately does not expose who owns a sibling event.
+  //         Absent (older backend) → treat as not actionable, so we fail to
+  //         hiding a live control rather than offering a dead one.
+  //   403 — preview needs `events.view`, but resend/cancel/retry/send-now
+  //         need `email.send`; the feed used to render all four regardless.
+  const canActOnEmail = (item: FeedItem) => item.emailCanAct === true;
+  const canSendEmail = hasPermission('email.send');
 
   const [editName, setEditName] = useState<string | null>(null);
   const [preview, setPreview] = useState<EmailPreview | null>(null);
@@ -189,6 +208,7 @@ export const ProjectCockpitPage: React.FC = () => {
         title: t(`projects.feed.email`, 'Email') + ` · ${e.type}`,
         subtitle: e.recipient + (e.error ? ` — ${e.error}` : ''),
         status: e.status, emailId: e.id, emailStatus: e.status, reRendered: !e.stored,
+        emailCanAct: e.canAct,
       });
     }
     for (const q of data.quotes) {
@@ -376,7 +396,9 @@ export const ProjectCockpitPage: React.FC = () => {
               // not a dead strip next to them). Hours have neither → static.
               const onRowClick = item.href
                 ? () => navigate(item.href as string)
-                : (item.kind === 'email' && item.emailId != null ? () => openPreview(item.emailId as number) : undefined);
+                : (item.kind === 'email' && item.emailId != null && canActOnEmail(item)
+                  ? () => openPreview(item.emailId as number)
+                  : undefined);
               return (
                 <li
                   key={item.key}
@@ -397,7 +419,7 @@ export const ProjectCockpitPage: React.FC = () => {
                         <span className="inline-block rounded-full px-2 py-0.5 text-xs bg-neutral-100 dark:bg-neutral-700 text-neutral-600 dark:text-neutral-300">{item.status}</span>
                       )}
                       {item.amount && <span className="text-xs font-medium text-neutral-700 dark:text-neutral-300">{item.amount}</span>}
-                      {item.kind === 'email' && item.emailId != null && (
+                      {item.kind === 'email' && item.emailId != null && canActOnEmail(item) && (
                         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                           <button onClick={() => openPreview(item.emailId as number)} className="inline-flex items-center gap-1 text-xs text-primary-600 hover:underline">
                             <Eye className="w-3 h-3" />{t('projects.email.preview', 'Preview')}
@@ -410,12 +432,12 @@ export const ProjectCockpitPage: React.FC = () => {
                               {t('projects.email.reRenderedTag', '≈ re-rendered')}
                             </span>
                           )}
-                          {item.emailStatus === 'sent' && (
+                          {canSendEmail && item.emailStatus === 'sent' && (
                             <button onClick={() => emailActionMutation.mutate({ action: 'resend', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300 hover:underline">
                               <Send className="w-3 h-3" />{t('projects.email.resend', 'Resend')}
                             </button>
                           )}
-                          {item.emailStatus === 'pending' && (
+                          {canSendEmail && item.emailStatus === 'pending' && (
                             <>
                               <button onClick={() => emailActionMutation.mutate({ action: 'sendNow', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300 hover:underline">
                                 <Send className="w-3 h-3" />{t('projects.email.sendNow', 'Send now')}
@@ -425,7 +447,7 @@ export const ProjectCockpitPage: React.FC = () => {
                               </button>
                             </>
                           )}
-                          {item.emailStatus === 'failed' && (
+                          {canSendEmail && item.emailStatus === 'failed' && (
                             <button onClick={() => emailActionMutation.mutate({ action: 'retry', emailId: item.emailId as number })} className="inline-flex items-center gap-1 text-xs text-amber-600 hover:underline">
                               <RotateCw className="w-3 h-3" />{t('projects.email.retry', 'Retry')}
                             </button>
