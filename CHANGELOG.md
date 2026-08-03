@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.98.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.98.5-beta.0...v3.98.6-beta.0) (2026-08-03)
+
+
+### Bug Fixes
+
+* **auth:** fail closed when the adminAuth roles join errors ([#974](https://github.com/PicPeak/picpeak/issues/974)) ([6699855](https://github.com/PicPeak/picpeak/commit/6699855c931657c7af7860e9bdd097da303a3a26))
+* **projects:** stop the cockpit offering email controls the API rejects ([#976](https://github.com/PicPeak/picpeak/issues/976)) ([67592fc](https://github.com/PicPeak/picpeak/commit/67592fc56956b1ec4db696483efd2a285bffb6f4))
+
 ## [3.98.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.98.4-beta.0...v3.98.5-beta.0) (2026-08-02)
 
 
