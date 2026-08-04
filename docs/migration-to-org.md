@@ -14,8 +14,37 @@ itself is unchanged; only the URLs you pull images from have moved.
 | **Branches (stable channel)** | `main` | `stable` |
 
 **Action required**: update your `docker-compose.yml` to pull from
-`ghcr.io/picpeak/picpeak/{backend,frontend}`. The old path no longer serves
-images.
+`ghcr.io/picpeak/picpeak/{backend,frontend}`.
+
+## The old path does not fail — it freezes
+
+This is the part that catches people out. `ghcr.io/the-luap/picpeak/*` **still
+serves**; it simply stopped receiving new images on 2026-05-27. So:
+
+- `docker compose pull` succeeds.
+- `docker rmi <image>` followed by a fresh pull succeeds.
+- You get byte-identical layers every time, because the tag never moves again.
+
+Nothing anywhere reports an error. The only visible symptom is that PicPeak keeps
+telling you an update is available and the update never arrives — which reads
+like a broken download rather than a retired registry path.
+
+### Am I affected?
+
+```bash
+docker image inspect ghcr.io/the-luap/picpeak/backend:latest \
+  --format '{{.Created}} {{index .Config.Labels "org.opencontainers.image.version"}}'
+```
+
+A `Created` date of `2026-05-27` (or a `version` of `main` rather than a `v3.x.y`
+tag) means you are on the retired path. Compare against the current image:
+
+```bash
+docker image inspect ghcr.io/picpeak/picpeak/backend:latest --format '{{.Created}}'
+```
+
+If your compose file still references `the-luap`, the fix below is all you need —
+there is nothing wrong with your install.
 
 ## Why this changed
 

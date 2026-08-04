@@ -3,7 +3,8 @@
 > [!IMPORTANT]
 > **PicPeak has moved to its own GitHub organization.**
 >
-> - **Docker images** are now published at `ghcr.io/picpeak/picpeak/{backend,frontend}`. The old path (`ghcr.io/the-luap/picpeak/...`) is no longer served — update your `docker-compose.yml`.
+> - **Docker images** are now published at `ghcr.io/picpeak/picpeak/{backend,frontend}`. Update your `docker-compose.yml`.
+> - ⚠️ The old path (`ghcr.io/the-luap/picpeak/...`) **still responds, but its tags are frozen** at 2026-05-27. `docker compose pull` succeeds and hands back the same build every time, so an out-of-date install looks like a broken download rather than a dead path. If PicPeak keeps reporting an update that never arrives, check your image path first.
 > - **Branches**: active development is now on `main` (was `beta`); the curated stable channel is now `stable` (was `main`). Existing PRs and clones auto-redirect via GitHub.
 >
 > See **[`docs/migration-to-org.md`](docs/migration-to-org.md)** for the one-line `docker-compose.yml` edit and full details.
