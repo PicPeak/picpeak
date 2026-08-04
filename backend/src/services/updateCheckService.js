@@ -151,6 +151,37 @@ async function fetchAvailableVersions() {
 /**
  * Check for available updates
  */
+// First stable release published to the org registry only. v3.44.0 shipped
+// 2026-05-27, the same day ghcr.io/the-luap/picpeak/* stopped receiving images;
+// v3.45.0 followed on 2026-07-09 on ghcr.io/picpeak/picpeak/* alone. Nothing
+// was published in between, so "stable below this" is an exact detector for an
+// install still pulling the retired path — not a heuristic.
+const REGISTRY_RENAME_STABLE_FLOOR = '3.45.0';
+
+/**
+ * Is this install running a pre-rename image, i.e. still pulling from the
+ * retired `ghcr.io/the-luap/picpeak/*` path? (#985)
+ *
+ * The in-app MigrationBanner cannot reach these operators: it shipped
+ * 2026-06-29, a month after the old registry froze, so their build predates the
+ * banner itself. The update check is the one channel that does reach them —
+ * their instance is demonstrably still talking to GitHub, which is how they see
+ * "update available" at all.
+ *
+ * Stable channel only, deliberately. The beta boundary is inferred rather than
+ * clean (3.59.0-beta.0 landed two days after the freeze), and a false positive
+ * here tells a correctly-configured operator their registry is retired.
+ */
+function isPreRenameStable(currentVersion, channel) {
+  if (channel !== 'stable') return false;
+  // getCurrentVersion() falls back to '0.0.0' when package.json is unreadable.
+  // That is a broken install, not a pre-rename one — it sorts below the floor,
+  // so guard it explicitly rather than sending that operator to change their
+  // image path.
+  if (!currentVersion || currentVersion === '0.0.0') return false;
+  return compareVersions(currentVersion, REGISTRY_RENAME_STABLE_FLOOR) < 0;
+}
+
 async function checkForUpdates(forceRefresh = false) {
   const now = Date.now();
 
@@ -197,6 +228,7 @@ async function checkForUpdates(forceRefresh = false) {
     },
     updateAvailable,
     newerBetaAvailable,
+    registryMigrationRequired: isPreRenameStable(currentVersion, currentChannel),
     lastChecked: new Date().toISOString()
   };
 
@@ -240,5 +272,7 @@ module.exports = {
   getReleasesSince,
   compareVersions,
   parseVersion,
+  isPreRenameStable,
+  REGISTRY_RENAME_STABLE_FLOOR,
   clearCache
 };

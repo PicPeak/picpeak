@@ -16,6 +16,10 @@ interface UpdateInfo {
   };
   updateAvailable: boolean;
   newerBetaAvailable?: boolean;
+  /** Running a pre-rename stable build, i.e. still pulling the retired
+   *  ghcr.io/the-luap/picpeak/* path (#985). Such installs predate
+   *  MigrationBanner and can never render it, so the notice rides here. */
+  registryMigrationRequired?: boolean;
   lastChecked: string;
   error?: string;
   message?: string;
@@ -83,6 +87,31 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({ onDismis
                 channel: channelLabel
               })}
             </p>
+            {/* Pre-rename install (#985): pulling the retired registry path means
+                `docker compose pull` succeeds against a frozen tag and the update
+                never actually arrives. These builds predate MigrationBanner, so
+                this is the only place the instruction can reach them. */}
+            {updateInfo.registryMigrationRequired && (
+              <div className="mt-2 rounded-md bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 p-2">
+                <p className="text-xs font-semibold text-amber-800 dark:text-amber-200">
+                  {t('admin.updates.registryMoved.title', 'Pulling from the retired image registry')}
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                  {t('admin.updates.registryMoved.body', {
+                    defaultValue: 'This update will not arrive until you change the image path in docker-compose.yml to {{newPath}}. The old path still responds, so `docker compose pull` appears to succeed while serving the same frozen build.',
+                    newPath: 'ghcr.io/picpeak/picpeak/{backend,frontend}',
+                  })}{' '}
+                  <a
+                    href="https://github.com/PicPeak/picpeak/blob/main/docs/migration-to-org.md"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline hover:no-underline"
+                  >
+                    {t('admin.updates.registryMoved.link', 'See migration notes')}
+                  </a>
+                </p>
+              </div>
+            )}
             {Array.isArray(updateInfo.latestHighlights) && updateInfo.latestHighlights.length > 0 && (
               <div className="mt-2">
                 <p className="text-xs font-medium text-blue-700 dark:text-blue-300">
