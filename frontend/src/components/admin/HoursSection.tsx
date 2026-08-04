@@ -56,6 +56,10 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
   const { flags } = useFeatureFlags();
   // Billing hours (and the combined path) go through customers.edit (#866 review).
   const canBill = usePermission('customers.edit');
+  // The open-re-bills counter below reads GET /expenses/inbound/by-customer/:id,
+  // which requires accounting.view — a different permission from the one that
+  // authorises the billing itself (#983).
+  const canViewAccounting = usePermission('accounting.view');
   const { format: fmtDate, formatTime: fmtTime } = useLocalizedDate();
   const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [startTime, setStartTime] = useState('09:00');
@@ -167,11 +171,14 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
   });
 
   // Open re-bills count for the cross-add offer (#866) — only when the
-  // incoming-invoices feature is on and the admin can create the invoice.
+  // incoming-invoices feature is on, the admin can create the invoice
+  // (customers.edit) AND can read the re-bills the count comes from
+  // (accounting.view). Both are required: without the read permission the
+  // request just 403s on every render (#983).
   const { data: openRebills = 0 } = useQuery({
     queryKey: ['customer-open-rebills-count', customerId],
     queryFn: async () => (await accountingService.listCustomerRebills(customerId)).filter((r) => r.status === 'open').length,
-    enabled: !!flags.incomingInvoices && canBill,
+    enabled: !!flags.incomingInvoices && canBill && canViewAccounting,
     staleTime: 30_000,
   });
   const [crossAddOpen, setCrossAddOpen] = useState(false);

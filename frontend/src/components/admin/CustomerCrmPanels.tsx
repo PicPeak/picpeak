@@ -252,6 +252,10 @@ const RebillsPanel: React.FC<Props> = ({ customerAccountId }) => {
   const canView = usePermission('accounting.view');
   const canManage = usePermission('accounting.manage');
   const canCombine = usePermission('customers.edit');
+  // The open-hours counter below reads GET /customers/:id/hour-entries, which
+  // requires customers.view — a different permission from the customers.edit
+  // that authorises the combined billing itself (#983).
+  const canViewCustomers = usePermission('customers.view');
   const [crossAddOpen, setCrossAddOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -262,12 +266,15 @@ const RebillsPanel: React.FC<Props> = ({ customerAccountId }) => {
     staleTime: 30_000,
   });
 
-  // Open hours count for the cross-add offer — only when hours logging is on
-  // AND the admin can actually create the combined invoice.
+  // Open hours count for the cross-add offer — only when hours logging is on,
+  // the admin can actually create the combined invoice (customers.edit) AND can
+  // read the hour entries the count comes from (customers.view). Both are
+  // required: without the read permission the request just 403s on every
+  // render (#983).
   const { data: openHours = 0 } = useQuery({
     queryKey: ['customer-open-hours-count', customerAccountId],
     queryFn: async () => (await customerAdminService.listHourEntries(customerAccountId, 'unbilled')).length,
-    enabled: !!flags.hoursLogging && canCombine,
+    enabled: !!flags.hoursLogging && canCombine && canViewCustomers,
     staleTime: 30_000,
   });
 
