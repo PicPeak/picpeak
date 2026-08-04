@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.100.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.99.2-beta.0...v3.100.0-beta.0) (2026-08-04)
+
+
+### Features
+
+* **admin:** surface the registry move through the update check ([#993](https://github.com/PicPeak/picpeak/issues/993)) ([137a42f](https://github.com/PicPeak/picpeak/commit/137a42f259692999fe88b75bbe6652d34893ef11))
+* **gallery:** admin preview skips the password on protected galleries ([#981](https://github.com/PicPeak/picpeak/issues/981)) ([f006615](https://github.com/PicPeak/picpeak/commit/f00661511c3f3b4fc338be860965244b0ee3b611))
+
+
+### Bug Fixes
+
+* **security:** vet the destination project when linking a deal ([#991](https://github.com/PicPeak/picpeak/issues/991)) ([0c8ad6b](https://github.com/PicPeak/picpeak/commit/0c8ad6bbedb00ba443c20c7ab00b58925d6b9b5c))
+
 ## [3.99.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.99.1-beta.0...v3.99.2-beta.0) (2026-08-04)
 
 
