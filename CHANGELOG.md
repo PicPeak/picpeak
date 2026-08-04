@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.99.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.99.0-beta.0...v3.99.1-beta.0) (2026-08-04)
+
+
+### Bug Fixes
+
+* **accounting:** gate cross-add counters on the permission their endpoint checks ([#984](https://github.com/PicPeak/picpeak/issues/984)) ([4b53b64](https://github.com/PicPeak/picpeak/commit/4b53b64277a6e3b1d3e94b8cc3bb705aa33629ec))
+
 ## [3.99.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.98.6-beta.0...v3.99.0-beta.0) (2026-08-03)
 
 
