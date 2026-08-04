@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.99.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.99.1-beta.0...v3.99.2-beta.0) (2026-08-04)
+
+
+### Bug Fixes
+
+* **deps:** bump ip-address, brace-expansion and postcss for open CVEs ([#987](https://github.com/PicPeak/picpeak/issues/987)) ([6c03fea](https://github.com/PicPeak/picpeak/commit/6c03feaef5ef9be694445728f5d5a4ddabafd5c1))
+
 ## [3.99.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.99.0-beta.0...v3.99.1-beta.0) (2026-08-04)
 
 
