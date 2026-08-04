@@ -268,7 +268,61 @@ async function isSuperAdmin(actor, conn = db) {
  * destination, while this function re-points the deal's events into it.
  */
 async function linkDealToProject(dealUuid, projectId, conn = db, actor = null) {
-  if (!dealUuid || !projectId) return;
+  if (!projectId) return;
+
+  // Ownership of the DESTINATION. `attachDocumentToProject` reaches here behind
+  // requireProjectOwnership, but the quote/contract create+update paths do not:
+  // adminQuotes.js / adminContracts.js take `projectId` straight from the body
+  // behind `quotes.manage` / `contracts.manage`, which are permissions, not
+  // ownership. So the destination has to be vetted here, at the one choke point
+  // every caller shares, rather than relying on a route guard three of the four
+  // callers never had.
+  //
+  // Without it a scoped admin could point a new quote at a project they do not
+  // own: the lineage check below is skipped when the deal has produced no event
+  // yet (`eventIds.size` is 0), and an unassigned project ADOPTS the deal's
+  // customer instead of rejecting it. That writes their document into another
+  // admin's cockpit, and on an OWNERLESS project (created_by IS NULL — legacy
+  // rows migration 167's backfill could not attribute) it escalates: once the
+  // quote converts to an event, that event becomes the project's only linked
+  // event, which is exactly the condition ownedProjectsSubquery's second branch
+  // grants ownership on — handing the caller read access to whatever documents
+  // were already attached there.
+  //
+  // Mirrors ownedProjectsSubquery (middleware/ownership.js) rather than calling
+  // it, because that helper binds the module-level `db` and this runs inside the
+  // caller's transaction.
+  if (actor?.id && !(await isSuperAdmin(actor, conn))) {
+    const owned = await conn('projects')
+      .where({ id: projectId })
+      .where((w) => {
+        w.where('created_by', actor.id)
+          .orWhere((noOwner) => {
+            noOwner
+              .where((c) => c
+                .whereNull('created_by')
+                .orWhereNotIn('created_by', conn('admin_users').select('id')))
+              .whereExists(
+                conn('events').select(conn.raw('1')).whereRaw('events.project_id = projects.id'),
+              )
+              .whereNotExists(
+                conn('events').select(conn.raw('1')).whereRaw('events.project_id = projects.id')
+                  .whereNotNull('events.created_by').whereNot('events.created_by', actor.id),
+              );
+          });
+      })
+      .first('id');
+    if (!owned) {
+      throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
+    }
+  }
+
+  // Nothing to cascade without a deal, but the destination above still had
+  // to be vetted: every caller writes `project_id` onto its own row BEFORE
+  // calling us, and `deal_uuid` is nullable (migration 107). A legacy quote
+  // with no deal would otherwise return here having bypassed the check while
+  // its foreign project link stood.
+  if (!dealUuid) return;
 
   // Collect ALL the deal's customers across its quote/contract/invoice lineage
   // AND every event it converted into — BEFORE mutating anything, so a link
@@ -310,9 +364,8 @@ async function linkDealToProject(dealUuid, projectId, conn = db, actor = null) {
     throw new AppError('That belongs to a different customer than this project', 422, 'PROJECT_CUSTOMER_MISMATCH');
   }
 
-  // Ownership of the LINEAGE, not just the destination (GHSA-wrg5). The route
-  // guard (requireProjectOwnership) only vets `projectId`; the writes below
-  // re-point every event this deal produced into it. Without this check an
+  // Ownership of the LINEAGE, not just the destination (GHSA-wrg5). The writes
+  // below re-point every event this deal produced into it. Without this check an
   // editor could create an empty project, attach another admin's quote, and
   // pull that admin's events — plus the invoices, emails and gallery that roll
   // up with them — into a project they own and can read via /:id/overview.

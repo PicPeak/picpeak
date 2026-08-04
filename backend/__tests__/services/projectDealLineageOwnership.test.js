@@ -135,4 +135,95 @@ describe('linkDealToProject enforces lineage ownership (GHSA-wrg5, round 3)', ()
       projectService.assignQuote(project, quoteId, { id: editorA }),
     ).rejects.toMatchObject({ code: 'DEAL_EVENT_FORBIDDEN' });
   });
+
+  // The lineage guard above only fires once a deal has produced an event. The
+  // quote/contract create+update paths call linkDealToProject with a
+  // body-supplied projectId and NO route-level ownership guard, so a brand-new
+  // deal (eventIds empty) skipped every check and wrote into a foreign project.
+  describe('destination ownership (codex review follow-up)', () => {
+    it('refuses a foreign project even when the deal has no events yet', async () => {
+      const victimProject = await mkProject('victim-destination', editorB);
+      const quoteId = await mkQuote('deal-no-events', null);
+
+      await expect(
+        projectService.linkDealToProject('deal-no-events', victimProject, db, { id: editorA }),
+      ).rejects.toMatchObject({ code: 'PROJECT_NOT_FOUND' });
+
+      const q = await db('quotes').where({ id: quoteId }).first('project_id');
+      expect(q.project_id == null).toBe(true);
+    });
+
+    it('refuses an OWNERLESS project with no events (the escalation path)', async () => {
+      // created_by NULL + no linked events is exactly the shape that would let
+      // the caller claim the project via ownedProjectsSubquery's second branch
+      // once their quote converts to an event.
+      const orphan = await mkProject('orphan-destination', null);
+      await mkQuote('deal-orphan', null);
+
+      await expect(
+        projectService.linkDealToProject('deal-orphan', orphan, db, { id: editorA }),
+      ).rejects.toMatchObject({ code: 'PROJECT_NOT_FOUND' });
+    });
+
+    it("still allows the caller's own project with no events", async () => {
+      const own = await mkProject('own-destination', editorA);
+      const quoteId = await mkQuote('deal-own-dest', null);
+
+      await projectService.linkDealToProject('deal-own-dest', own, db, { id: editorA });
+
+      const q = await db('quotes').where({ id: quoteId }).first('project_id');
+      expect(Number(q.project_id)).toBe(Number(own));
+    });
+
+    it('refuses a foreign project when the deal_uuid is NULL (codex round 1)', async () => {
+      // deal_uuid is nullable (migration 107) and quoteService.update passes the
+      // EXISTING row's value, so a legacy quote reaches linkDealToProject with
+      // null. The old `if (!dealUuid || !projectId) return` bailed before the
+      // guard — while the caller had already written project_id onto its row.
+      const victimProject = await mkProject('victim-nulldeal', editorB);
+
+      await expect(
+        projectService.linkDealToProject(null, victimProject, db, { id: editorA }),
+      ).rejects.toMatchObject({ code: 'PROJECT_NOT_FOUND' });
+    });
+
+    it('still no-ops on a NULL deal_uuid pointed at the caller-s own project', async () => {
+      // The destination is vetted, then it returns without cascading — there is
+      // no lineage to move.
+      const own = await mkProject('own-nulldeal', editorA);
+      await expect(
+        projectService.linkDealToProject(null, own, db, { id: editorA }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('does not leak customer association through the error code', async () => {
+      // The customer check used to run first, so a foreign project whose
+      // customer differed answered 422 PROJECT_CUSTOMER_MISMATCH while an
+      // unknown id answered 404 — enough to enumerate projects and infer their
+      // customer. Both must now be indistinguishable to a scoped caller.
+      const foreignWithCustomer = await mkProject('victim-customer', editorB);
+      await db('projects').where({ id: foreignWithCustomer }).update({ customer_account_id: customerId });
+      await mkQuote('deal-oracle', null);
+
+      await expect(
+        projectService.linkDealToProject('deal-oracle', foreignWithCustomer, db, { id: editorA }),
+      ).rejects.toMatchObject({ code: 'PROJECT_NOT_FOUND' });
+
+      await expect(
+        projectService.linkDealToProject('deal-oracle', 999999, db, { id: editorA }),
+      ).rejects.toMatchObject({ code: 'PROJECT_NOT_FOUND' });
+    });
+
+    it('leaves super_admin unrestricted on a foreign destination', async () => {
+      const victimProject = await mkProject('root-destination', editorB);
+      const quoteId = await mkQuote('deal-root-dest', null);
+
+      await projectService.linkDealToProject('deal-root-dest', victimProject, db, {
+        id: superAdmin, roleName: 'super_admin',
+      });
+
+      const q = await db('quotes').where({ id: quoteId }).first('project_id');
+      expect(Number(q.project_id)).toBe(Number(victimProject));
+    });
+  });
 });
