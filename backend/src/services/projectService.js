@@ -268,47 +268,7 @@ async function isSuperAdmin(actor, conn = db) {
  * destination, while this function re-points the deal's events into it.
  */
 async function linkDealToProject(dealUuid, projectId, conn = db, actor = null) {
-  if (!dealUuid || !projectId) return;
-
-  // Collect ALL the deal's customers across its quote/contract/invoice lineage
-  // AND every event it converted into — BEFORE mutating anything, so a link
-  // with no matching customer is rejected before we re-point data across tenants.
-  const eventIds = new Set();
-  const dealCustomerIds = new Set();
-  const quotesHaveDeal = await hasColumnCached('quotes', 'deal_uuid');
-  if (quotesHaveDeal) {
-    for (const q of await conn('quotes').where({ deal_uuid: dealUuid }).select('converted_event_id', 'customer_account_id')) {
-      if (q.converted_event_id) eventIds.add(q.converted_event_id);
-      if (q.customer_account_id != null) dealCustomerIds.add(Number(q.customer_account_id));
-    }
-  }
-  const contractsHaveDeal = await hasColumnCached('contracts', 'deal_uuid');
-  if (contractsHaveDeal && await hasColumnCached('contracts', 'converted_event_id')) {
-    for (const c of await conn('contracts').where({ deal_uuid: dealUuid }).select('converted_event_id', 'customer_account_id')) {
-      if (c.converted_event_id) eventIds.add(c.converted_event_id);
-      if (c.customer_account_id != null) dealCustomerIds.add(Number(c.customer_account_id));
-    }
-  }
-  if (await hasColumnCached('invoices', 'deal_uuid')) {
-    for (const inv of await conn('invoices').where({ deal_uuid: dealUuid }).select('event_id', 'customer_account_id')) {
-      if (inv.event_id) eventIds.add(inv.event_id);
-      if (inv.customer_account_id != null) dealCustomerIds.add(Number(inv.customer_account_id));
-    }
-  }
-
-  // Single-customer projects, "one customer matches" rule: a customer-assigned
-  // project rejects the deal only when NONE of the deal's customers is the
-  // project's customer. An *unassigned* project (customer_account_id null)
-  // ADOPTS the deal's customer below — "drop the first deal on an empty project".
-  const project = await conn('projects').where({ id: projectId }).select('customer_account_id').first();
-  if (!project) throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
-  if (
-    project.customer_account_id != null &&
-    dealCustomerIds.size &&
-    !dealCustomerIds.has(Number(project.customer_account_id))
-  ) {
-    throw new AppError('That belongs to a different customer than this project', 422, 'PROJECT_CUSTOMER_MISMATCH');
-  }
+  if (!projectId) return;
 
   // Ownership of the DESTINATION. `attachDocumentToProject` reaches here behind
   // requireProjectOwnership, but the quote/contract create+update paths do not:
@@ -355,6 +315,53 @@ async function linkDealToProject(dealUuid, projectId, conn = db, actor = null) {
     if (!owned) {
       throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
     }
+  }
+
+  // Nothing to cascade without a deal, but the destination above still had
+  // to be vetted: every caller writes `project_id` onto its own row BEFORE
+  // calling us, and `deal_uuid` is nullable (migration 107). A legacy quote
+  // with no deal would otherwise return here having bypassed the check while
+  // its foreign project link stood.
+  if (!dealUuid) return;
+
+  // Collect ALL the deal's customers across its quote/contract/invoice lineage
+  // AND every event it converted into — BEFORE mutating anything, so a link
+  // with no matching customer is rejected before we re-point data across tenants.
+  const eventIds = new Set();
+  const dealCustomerIds = new Set();
+  const quotesHaveDeal = await hasColumnCached('quotes', 'deal_uuid');
+  if (quotesHaveDeal) {
+    for (const q of await conn('quotes').where({ deal_uuid: dealUuid }).select('converted_event_id', 'customer_account_id')) {
+      if (q.converted_event_id) eventIds.add(q.converted_event_id);
+      if (q.customer_account_id != null) dealCustomerIds.add(Number(q.customer_account_id));
+    }
+  }
+  const contractsHaveDeal = await hasColumnCached('contracts', 'deal_uuid');
+  if (contractsHaveDeal && await hasColumnCached('contracts', 'converted_event_id')) {
+    for (const c of await conn('contracts').where({ deal_uuid: dealUuid }).select('converted_event_id', 'customer_account_id')) {
+      if (c.converted_event_id) eventIds.add(c.converted_event_id);
+      if (c.customer_account_id != null) dealCustomerIds.add(Number(c.customer_account_id));
+    }
+  }
+  if (await hasColumnCached('invoices', 'deal_uuid')) {
+    for (const inv of await conn('invoices').where({ deal_uuid: dealUuid }).select('event_id', 'customer_account_id')) {
+      if (inv.event_id) eventIds.add(inv.event_id);
+      if (inv.customer_account_id != null) dealCustomerIds.add(Number(inv.customer_account_id));
+    }
+  }
+
+  // Single-customer projects, "one customer matches" rule: a customer-assigned
+  // project rejects the deal only when NONE of the deal's customers is the
+  // project's customer. An *unassigned* project (customer_account_id null)
+  // ADOPTS the deal's customer below — "drop the first deal on an empty project".
+  const project = await conn('projects').where({ id: projectId }).select('customer_account_id').first();
+  if (!project) throw new AppError('Project not found', 404, 'PROJECT_NOT_FOUND');
+  if (
+    project.customer_account_id != null &&
+    dealCustomerIds.size &&
+    !dealCustomerIds.has(Number(project.customer_account_id))
+  ) {
+    throw new AppError('That belongs to a different customer than this project', 422, 'PROJECT_CUSTOMER_MISMATCH');
   }
 
   // Ownership of the LINEAGE, not just the destination (GHSA-wrg5). The writes
