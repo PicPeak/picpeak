@@ -124,7 +124,8 @@
     "saveChanges": "Shrani spremembe",
     "resetChanges": "Ponastavi spremembe",
     "dismiss": "Zapri",
-    "discard": "Zavrzi"
+    "discard": "Zavrzi",
+    "poweredBy": "Poganja"
   },
   "upload": {
     "photoCategory": "Kategorija fotografije",
@@ -334,7 +335,6 @@
     },
     "photosCount_one": "{{count}} fotografija",
     "photosCount_other": "{{count}} fotografij",
-    "poweredBy": "Poganja PicPeak",
     "photosSelected_one": "Izbrana {{count}} fotografija",
     "photosSelected_other": "Izbranih {{count}} fotografij",
     "downloadSelected_one": "Prenesi {{count}} fotografijo",
@@ -2671,7 +2671,6 @@
     "invalidCredentials": "Neveljavna e-pošta ali geslo",
     "generalError": "Prišlo je do napake. Poskusite znova.",
     "needHelp": "Potrebujete pomoč? Kontakt",
-    "poweredBy": "Poganja PicPeak",
     "devModeHint": "Razvojni način: uporabite e-pošto: admin@example.com, geslo: admin123"
   },
   "clientAccess": {
@@ -2751,8 +2750,7 @@
       "adminHint": "Iščete administratorsko ploščo? Obiščite /admin/login.",
       "emailPlaceholder": "vi@example.com",
       "passwordPlaceholder": "Vaše geslo",
-      "needHelp": "Potrebujete pomoč?",
-      "poweredBy": "Poganja PicPeak"
+      "needHelp": "Potrebujete pomoč?"
     },
     "acceptInvite": {
       "title": "Nastavite svoj račun",

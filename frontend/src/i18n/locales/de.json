@@ -152,7 +152,8 @@
     "duplicate": "Duplizieren",
     "showAll": "Alle anzeigen",
     "confirm": "Bestätigen",
-    "show": "Einblenden"
+    "show": "Einblenden",
+    "poweredBy": "Bereitgestellt von"
   },
   "upload": {
     "photoCategory": "Fotokategorie",
@@ -936,8 +937,7 @@
       "socials": "Soziale Netzwerke"
     },
     "photosCount_one": "{{count}} Foto",
-    "photosCount_other": "{{count}} Fotos",
-    "poweredBy": "Bereitgestellt von PicPeak"
+    "photosCount_other": "{{count}} Fotos"
   },
   "categories": {
     "title": "Fotokategorien",
@@ -3792,7 +3792,6 @@
     "invalidCredentials": "Ungültige E-Mail oder Passwort",
     "generalError": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.",
     "needHelp": "Hilfe benötigt? Kontakt",
-    "poweredBy": "Bereitgestellt von PicPeak",
     "devModeHint": "Entwicklungsmodus: E-Mail: admin@example.com, Passwort: admin123",
     "mfa": {
       "title": "Zwei-Faktor-Authentifizierung",
@@ -3889,8 +3888,7 @@
       "adminHint": "Sie suchen das Admin-Panel? Besuchen Sie /admin/login.",
       "emailPlaceholder": "du@beispiel.de",
       "passwordPlaceholder": "Dein Passwort",
-      "needHelp": "Brauchst du Hilfe?",
-      "poweredBy": "Bereitgestellt von PicPeak"
+      "needHelp": "Brauchst du Hilfe?"
     },
     "acceptInvite": {
       "title": "Konto einrichten",

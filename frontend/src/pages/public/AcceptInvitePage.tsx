@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
-import { Button, Input, Card, Loading } from '../../components/common';
+import { Button, Input, Card, Loading, PoweredBy } from '../../components/common';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { api } from '../../config/api';
 
@@ -537,9 +537,7 @@ export const AcceptInvitePage: React.FC = () => {
               {t('acceptInvitation.signIn')}
             </a>
           </p>
-          <p className="text-xs mt-2" style={{ color: 'var(--color-text, #171717)', opacity: 0.5 }}>
-            {t('adminLogin.poweredBy')}
-          </p>
+          <PoweredBy className="text-xs mt-2" style={{ color: 'var(--color-text, #171717)', opacity: 0.5 }} />
         </div>
       </div>
     </div>

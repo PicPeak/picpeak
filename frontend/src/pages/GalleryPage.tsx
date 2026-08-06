@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../hooks/useLocalizedDate';
 import { usePublicSettings } from '../hooks/usePublicSettings';
 
-import { Card, CardContent, Input, Button, ReCaptcha, CMSContentBlock } from '../components/common';
+import { Card, CardContent, Input, Button, ReCaptcha, CMSContentBlock, PoweredBy } from '../components/common';
 import { useGalleryAuth, useTheme } from '../contexts';
 import { useGalleryInfo } from '../hooks/useGallery';
 import { GalleryView } from '../components/gallery';
@@ -386,9 +386,7 @@ export const GalleryPage: React.FC = () => {
                 {t('legal.datenschutz')}
               </Link>
             </div>
-            <p className="text-xs mt-2 text-neutral-500">
-              Powered by <span className="font-semibold">PicPeak</span>
-            </p>
+            <PoweredBy className="text-xs mt-2 text-neutral-500" />
           </div>
         </div>
       </div>
@@ -594,9 +592,7 @@ export const GalleryPage: React.FC = () => {
                 {t('legal.datenschutz')}
               </Link>
             </div>
-            <p className="text-xs mt-2 text-neutral-500">
-              Powered by <span className="font-semibold">PicPeak</span>
-            </p>
+            <PoweredBy className="text-xs mt-2 text-neutral-500" />
           </div>
         </div>
       </div>

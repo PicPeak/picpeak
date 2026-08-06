@@ -119,7 +119,8 @@
     "select": "Seleccionar",
     "selected": "Seleccionado",
     "chunk": "Fragmento",
-    "optional": "opcional"
+    "optional": "opcional",
+    "poweredBy": "Desarrollado por"
   },
   "upload": {
     "photoCategory": "Categoría de foto",
@@ -2458,7 +2459,6 @@
     "invalidCredentials": "Correo o contraseña inválidos",
     "generalError": "Ocurrió un error. Por favor, inténtalo de nuevo.",
     "needHelp": "¿Necesitas ayuda? Contacta",
-    "poweredBy": "Desarrollado por PicPeak",
     "devModeHint": "Modo desarrollo: usa admin@example.com, contraseña: admin123"
   },
   "clientAccess": {

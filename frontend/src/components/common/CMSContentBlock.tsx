@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import DOMPurify from 'dompurify';
 import { Card } from './Card';
 import { Loading } from './Loading';
+import { PoweredBy } from './PoweredBy';
 import { cmsService } from '../../services/cms.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { buildResourceUrl } from '../../utils/url';
@@ -132,11 +133,7 @@ export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback
             {lang === 'de' ? 'Datenschutz' : 'Privacy Policy'}
           </Link>
         </div>
-        {!settings?.branding_hide_powered_by && (
-          <p className="mt-2">
-            Powered by <span className="font-semibold">PicPeak</span>
-          </p>
-        )}
+        <PoweredBy className="mt-2" />
       </footer>
     </div>
   );

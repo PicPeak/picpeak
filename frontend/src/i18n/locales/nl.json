@@ -124,7 +124,8 @@
     "saveChanges": "Wijzigingen opslaan",
     "resetChanges": "Wijzigingen ongedaan maken",
     "dismiss": "Sluiten",
-    "discard": "Verwerpen"
+    "discard": "Verwerpen",
+    "poweredBy": "Mogelijk gemaakt door"
   },
   "upload": {
     "photoCategory": "Fotocategorie",
@@ -337,8 +338,7 @@
       "socials": "Sociale media"
     },
     "photosCount_one": "{{count}} foto",
-    "photosCount_other": "{{count}} foto's",
-    "poweredBy": "Mogelijk gemaakt door PicPeak"
+    "photosCount_other": "{{count}} foto's"
   },
   "categories": {
     "title": "Fotocategorieen",
@@ -2680,7 +2680,6 @@
     "invalidCredentials": "Ongeldige e-mail of wachtwoord",
     "generalError": "Er is een fout opgetreden. Probeer het opnieuw.",
     "needHelp": "Hulp nodig? Neem contact op met",
-    "poweredBy": "Powered by PicPeak",
     "devModeHint": "Ontwikkelmodus: Gebruik e-mail: admin@example.com, wachtwoord: admin123"
   },
   "clientAccess": {
@@ -2751,8 +2750,7 @@
       "adminHint": "Op zoek naar het beheerderspaneel? Ga naar /admin/login.",
       "emailPlaceholder": "jij@voorbeeld.com",
       "passwordPlaceholder": "Je wachtwoord",
-      "needHelp": "Hulp nodig?",
-      "poweredBy": "Mogelijk gemaakt door PicPeak"
+      "needHelp": "Hulp nodig?"
     },
     "acceptInvite": {
       "title": "Account aanmaken",

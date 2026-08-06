@@ -152,7 +152,8 @@
     "duplicate": "Duplicate",
     "showAll": "Show all",
     "confirm": "Confirm",
-    "show": "Show"
+    "show": "Show",
+    "poweredBy": "Powered by"
   },
   "upload": {
     "photoCategory": "Photo Category",
@@ -478,7 +479,6 @@
     },
     "photosCount_one": "{{count}} photo",
     "photosCount_other": "{{count}} photos",
-    "poweredBy": "Powered by PicPeak",
     "photosSelected_one": "{{count}} photo selected",
     "photosSelected_other": "{{count}} photos selected",
     "downloadSelected_one": "Download {{count}} photo",
@@ -3678,7 +3678,6 @@
     "invalidCredentials": "Invalid email or password",
     "generalError": "An error occurred. Please try again.",
     "needHelp": "Need help? Contact",
-    "poweredBy": "Powered by PicPeak",
     "devModeHint": "Development Mode: Use email: admin@example.com, password: admin123",
     "mfa": {
       "title": "Two-factor authentication",
@@ -3889,8 +3888,7 @@
       "adminHint": "Looking for the admin panel? Visit /admin/login.",
       "emailPlaceholder": "you@example.com",
       "passwordPlaceholder": "Your password",
-      "needHelp": "Need help?",
-      "poweredBy": "Powered by PicPeak"
+      "needHelp": "Need help?"
     },
     "acceptInvite": {
       "title": "Set up your account",

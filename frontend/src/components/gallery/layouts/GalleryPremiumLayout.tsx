@@ -18,7 +18,7 @@ import { useInView } from 'react-intersection-observer';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
-import { AuthenticatedImage } from '../../common';
+import { AuthenticatedImage, PoweredBy } from '../../common';
 import { feedbackService } from '../../../services/feedback.service';
 import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
@@ -598,7 +598,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
 
       {/* Footer */}
       <footer className="gallery-premium-footer">
-        <p>{t('gallery.poweredBy', 'Powered by PicPeak')}</p>
+        <PoweredBy />
         <p>© {new Date().getFullYear()} {t('gallery.allRightsReserved', 'All rights reserved')}</p>
       </footer>
 

@@ -124,7 +124,8 @@
     "saveChanges": "Salvar alterações",
     "resetChanges": "Repor alterações",
     "dismiss": "Dispensar",
-    "discard": "Descartar"
+    "discard": "Descartar",
+    "poweredBy": "Desenvolvido por"
   },
   "upload": {
     "photoCategory": "Categoria da Foto",
@@ -345,8 +346,7 @@
     },
     "photosCount_many": "{{count}} fotos",
     "photosCount_one": "{{count}} foto",
-    "photosCount_other": "{{count}} fotos",
-    "poweredBy": "Desenvolvido por PicPeak"
+    "photosCount_other": "{{count}} fotos"
   },
   "categories": {
     "title": "Categorias de Fotos",
@@ -2701,7 +2701,6 @@
     "invalidCredentials": "E-mail ou senha inválidos",
     "generalError": "Ocorreu um erro. Tente novamente.",
     "needHelp": "Precisa de ajuda? Contate",
-    "poweredBy": "Distribuído por PicPeak",
     "devModeHint": "Modo Desenvolvimento: E-mail: admin@exemplo.com, Senha: admin123"
   },
   "clientAccess": {
@@ -2784,8 +2783,7 @@
       "adminHint": "Procurando o painel de administração? Acesse /admin/login.",
       "emailPlaceholder": "voce@exemplo.com",
       "passwordPlaceholder": "Sua senha",
-      "needHelp": "Precisa de ajuda?",
-      "poweredBy": "Desenvolvido por PicPeak"
+      "needHelp": "Precisa de ajuda?"
     },
     "acceptInvite": {
       "title": "Configure sua conta",

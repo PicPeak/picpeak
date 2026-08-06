@@ -3,7 +3,7 @@ import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { AlertCircle, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { Card, CardContent, Input, Button, Loading } from '../components/common';
+import { Card, CardContent, Input, Button, Loading, PoweredBy } from '../components/common';
 import { useGalleryAuth } from '../contexts';
 import { useGalleryInfo } from '../hooks/useGallery';
 import { usePublicSettings } from '../hooks/usePublicSettings';
@@ -197,9 +197,7 @@ export const ClientAccessPage: React.FC = () => {
               {t('legal.datenschutz')}
             </Link>
           </div>
-          <p className="text-xs mt-2 text-neutral-500">
-            Powered by <span className="font-semibold">PicPeak</span>
-          </p>
+          <PoweredBy className="text-xs mt-2 text-neutral-500" />
         </div>
       </div>
     </div>

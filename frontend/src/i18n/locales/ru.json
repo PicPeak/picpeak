@@ -124,7 +124,8 @@
     "saveChanges": "Сохранить изменения",
     "resetChanges": "Сбросить изменения",
     "dismiss": "Закрыть",
-    "discard": "Отменить"
+    "discard": "Отменить",
+    "poweredBy": "Работает на"
   },
   "upload": {
     "photoCategory": "Категория фото",
@@ -353,8 +354,7 @@
     "photosCount_few": "{{count}} фото",
     "photosCount_many": "{{count}} фото",
     "photosCount_one": "{{count}} фото",
-    "photosCount_other": "{{count}} фото",
-    "poweredBy": "Работает на PicPeak"
+    "photosCount_other": "{{count}} фото"
   },
   "categories": {
     "title": "Категории фото",
@@ -2731,7 +2731,6 @@
     "invalidCredentials": "Неверный email или пароль",
     "generalError": "Произошла ошибка. Попробуйте снова.",
     "needHelp": "Нужна помощь? Свяжитесь",
-    "poweredBy": "Работает на PicPeak",
     "devModeHint": "Режим разработки: используйте email: admin@example.com, пароль: admin123"
   },
   "clientAccess": {
@@ -2817,8 +2816,7 @@
       "adminHint": "Ищете админ-панель? Перейдите на /admin/login.",
       "emailPlaceholder": "you@example.com",
       "passwordPlaceholder": "Ваш пароль",
-      "needHelp": "Нужна помощь?",
-      "poweredBy": "Работает на PicPeak"
+      "needHelp": "Нужна помощь?"
     },
     "acceptInvite": {
       "title": "Создайте учётную запись",

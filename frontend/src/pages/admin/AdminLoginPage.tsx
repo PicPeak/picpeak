@@ -5,7 +5,7 @@ import { Lock, Mail, Eye, EyeOff, AlertCircle, ShieldCheck, KeyRound, ArrowLeft 
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Card, ReCaptcha } from '../../components/common';
+import { Button, Input, Card, ReCaptcha, PoweredBy } from '../../components/common';
 import { useAdminAuth } from '../../contexts';
 import { authService } from '../../services/auth.service';
 import { isMfaChallenge } from '../../types';
@@ -486,9 +486,7 @@ export const AdminLoginPage: React.FC = () => {
               {settingsData?.branding_support_email || 'support@example.com'}
             </a>
           </p>
-          <p className="text-xs mt-2" style={{ color: 'var(--color-text, #171717)', opacity: 0.5 }}>
-            {t('adminLogin.poweredBy')}
-          </p>
+          <PoweredBy className="text-xs mt-2" style={{ color: 'var(--color-text, #171717)', opacity: 0.5 }} />
         </div>
 
         {/* Development Hint */}

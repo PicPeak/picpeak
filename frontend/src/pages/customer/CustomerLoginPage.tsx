@@ -10,7 +10,7 @@ import { Lock, Mail, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Input, Card, ReCaptcha } from '../../components/common';
+import { Button, Input, Card, ReCaptcha, PoweredBy } from '../../components/common';
 import { useCustomerAuth } from '../../contexts/CustomerAuthContext';
 import { customerService } from '../../services/customer.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
@@ -261,9 +261,7 @@ export const CustomerLoginPage: React.FC = () => {
               {settingsData?.branding_support_email || 'support@example.com'}
             </a>
           </p>
-          <p className="text-xs mt-2" style={{ color: 'var(--color-text, #171717)', opacity: 0.5 }}>
-            {t('customer.login.poweredBy', 'Powered by PicPeak')}
-          </p>
+          <PoweredBy className="text-xs mt-2" style={{ color: 'var(--color-text, #171717)', opacity: 0.5 }} />
         </div>
       </div>
     </div>

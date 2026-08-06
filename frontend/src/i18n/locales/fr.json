@@ -124,7 +124,8 @@
     "saveChanges": "Enregistrer les modifications",
     "resetChanges": "Réinitialiser les modifications",
     "dismiss": "Ignorer",
-    "discard": "Abandonner"
+    "discard": "Abandonner",
+    "poweredBy": "Propulsé par"
   },
   "upload": {
     "photoCategory": "Catégorie de la photo",
@@ -334,7 +335,6 @@
     },
     "photosCount_one": "{{count}} photo",
     "photosCount_other": "{{count}} photos",
-    "poweredBy": "Propulsé par PicPeak",
     "photosSelected_one": "{{count}} photo sélectionnée",
     "photosSelected_other": "{{count}} photos sélectionnées",
     "downloadSelected_one": "Télécharger {{count}} photo",
@@ -2682,7 +2682,6 @@
     "invalidCredentials": "E-mail ou mot de passe invalide",
     "generalError": "Une erreur est survenue. Veuillez réessayer.",
     "needHelp": "Besoin d'aide ? Contactez",
-    "poweredBy": "Propulsé par PicPeak",
     "devModeHint": "Mode développement : Utilisez l'e-mail : admin@example.com, mot de passe : admin123"
   },
   "clientAccess": {
@@ -2762,8 +2761,7 @@
       "adminHint": "Vous cherchez le panneau d'administration ? Visitez /admin/login.",
       "emailPlaceholder": "vous@example.com",
       "passwordPlaceholder": "Votre mot de passe",
-      "needHelp": "Besoin d'aide ?",
-      "poweredBy": "Propulsé par PicPeak"
+      "needHelp": "Besoin d'aide ?"
     },
     "acceptInvite": {
       "title": "Configurer votre compte",
