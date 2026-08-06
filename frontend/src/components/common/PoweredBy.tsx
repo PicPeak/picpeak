@@ -13,7 +13,9 @@ export const PoweredBy: React.FC<PoweredByProps> = ({ className, style }) => {
   const { t } = useTranslation();
   const { data: settings } = usePublicSettings();
 
-  if (settings?.branding_hide_powered_by) return null;
+  // Hide while settings are still loading too, otherwise a white-labelled
+  // instance flashes the attribution before branding_hide_powered_by resolves.
+  if (!settings || settings.branding_hide_powered_by) return null;
 
   return (
     <p className={className} style={style}>

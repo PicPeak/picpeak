@@ -33,10 +33,11 @@ describe('PoweredBy', () => {
     expect(screen.getByText('PicPeak')).toBeInTheDocument();
   });
 
-  it('still renders while settings are loading (data undefined)', () => {
+  it('renders nothing while settings are still loading (no attribution flash)', () => {
     setSettings(undefined);
-    render(<PoweredBy />);
-    expect(screen.getByText('PicPeak')).toBeInTheDocument();
+    const { container } = render(<PoweredBy />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText('PicPeak')).not.toBeInTheDocument();
   });
 
   it('renders nothing when branding_hide_powered_by is enabled (white-label)', () => {
