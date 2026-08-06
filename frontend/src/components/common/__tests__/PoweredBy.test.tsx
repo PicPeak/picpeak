@@ -4,8 +4,7 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { PoweredBy } from '../PoweredBy';
 import { usePublicSettings } from '../../../hooks/usePublicSettings';
 
-// Only the "Powered by" prefix goes through i18n; the brand name is rendered
-// verbatim by the component. Map the key to English so assertions read clearly.
+// stub i18n so the prefix comes back as plain English for the assertions
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => (key === 'common.poweredBy' ? 'Powered by' : key),
@@ -31,7 +30,6 @@ describe('PoweredBy', () => {
     setSettings({});
     render(<PoweredBy />);
     expect(screen.getByText(/Powered by/)).toBeInTheDocument();
-    // Brand name lives in its own (bold) span and is never translated.
     expect(screen.getByText('PicPeak')).toBeInTheDocument();
   });
 
