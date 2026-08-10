@@ -589,7 +589,17 @@
     "photosSelected_one": "{{count}} photo selected",
     "photosSelected_other": "{{count}} photos selected",
     "downloadSelected_one": "Download {{count}} photo",
-    "downloadSelected_other": "Download {{count}} photos"
+    "downloadSelected_other": "Download {{count}} photos",
+    "chooseResolution": "Choose a download size",
+    "resolutionUpTo": "up to {{width}} × {{height}} px",
+    "prepareDownload": "Prepare download",
+    "preparingDownload": "Preparing your download…",
+    "preparingHint": "Resizing photos — this can take a moment for large galleries.",
+    "preparingProgress": "{{count}} photos packaged",
+    "downloadReady": "Your download is ready",
+    "downloadNow": "Download",
+    "downloadPrepFailed": "Preparation failed",
+    "downloadPrepTimeout": "This is taking longer than expected. Please try again."
   },
   "categories": {
     "title": "Photo Categories",

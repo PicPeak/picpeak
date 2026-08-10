@@ -35,8 +35,17 @@ const { handleAsync, errorResponse } = require('../utils/routeHelpers');
 const { isGalleryHidden, guestBlockedByReveal, blockHiddenGallery } = require('../utils/revealMode');
 const { toIso } = require('../utils/dateNormalize');
 const { NotFoundError } = require('../utils/errors');
-const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../services/imageProcessor');
+const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy, resizeToBox } = require('../services/imageProcessor');
 const downloadZipService = require('../services/downloadZipService');
+const { renderPhotoForDownload } = require('../services/downloadRendition');
+const downloadJobService = require('../services/downloadJobService');
+// Download resolutions (#858) — the standard size a gallery hands out, plus
+// validation of any guest-picked override.
+const {
+  resolveEventDownloadPolicy,
+  pickRequestedResolution,
+  parseResolution,
+} = require('../utils/downloadResolutions');
 const { applyPhotoVisibilityFilter, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 const {
   getUseOriginalFilenames,
@@ -885,6 +894,7 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     const useOriginalFilenames = await getUseOriginalFilenames();
     const globalHeroLogoVisible = await getAppSetting('branding_logo_display_hero', true);
     const globalLogoSize = await getAppSetting('branding_logo_size', 'medium');
+    const downloadPolicy = await resolveEventDownloadPolicy(req.event);
 
     res.json({
       event: {
@@ -898,6 +908,14 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         hero_photo_id: req.event.hero_photo_id,
         allow_downloads: req.event.allow_downloads !== false,
         allow_user_uploads: req.event.allow_user_uploads === true,
+        // Download resolutions (#858). `choices` drives the picker modal and is
+        // empty when the picker is off, so the UI can never offer a size the
+        // server would reject.
+        download_resolution: {
+          standard: downloadPolicy.standard,
+          picker_enabled: downloadPolicy.pickerEnabled,
+          choices: downloadPolicy.pickerEnabled ? downloadPolicy.choices : [],
+        },
         // Reveal mode (#838): armed flag lets an open VISIBLE gallery keep
         // polling so a re-hide propagates without a manual reload.
         reveal_armed: req.event.reveal_mode === true || req.event.reveal_mode === 1 || req.event.reveal_mode === '1',
@@ -1169,23 +1187,43 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     const downloadName = pickRawDownloadName(photo, useOriginal);
     const contentDisposition = buildContentDisposition(downloadName);
 
-    if (shouldApplyWatermark) {
-      // Apply watermark and send
-      // Use event watermark text if available, otherwise fall back to global settings
-      const effectiveSettings = {
-        ...watermarkSettings,
-        enabled: true,
-        text: req.event.watermark_text || watermarkSettings?.text || 'Protected'
-      };
-      const watermarkedBuffer = await watermarkService.applyWatermark(filePath, effectiveSettings);
+    // Download resolution (#858). The gallery's standard applies to EVERY
+    // ordinary download, single photos included — otherwise a lowered standard
+    // is trivially bypassed by downloading photos one at a time. Videos have
+    // no resize path and always ship as-is.
+    const isVideo = photo.media_type === 'video'
+      || (photo.mime_type && photo.mime_type.startsWith('video/'));
+    const policy = await resolveEventDownloadPolicy(req.event);
+    const requested = pickRequestedResolution(policy, req.query.resolution);
+    if (requested === null) {
+      return res.status(400).json({ error: 'Resolution not available for this gallery' });
+    }
+    const box = isVideo ? null : parseResolution(requested);
+
+    if (shouldApplyWatermark || box) {
+      // Resize BEFORE watermarking: applyWatermark sizes the mark relative to
+      // its input's width, so watermarking the original and then shrinking
+      // would resample the mark and waste work on discarded pixels.
+      let buffer = await fs.promises.readFile(filePath);
+      buffer = await resizeToBox(buffer, box);
+
+      if (shouldApplyWatermark) {
+        // Use event watermark text if available, otherwise fall back to global settings
+        const effectiveSettings = {
+          ...watermarkSettings,
+          enabled: true,
+          text: req.event.watermark_text || watermarkSettings?.text || 'Protected'
+        };
+        buffer = await watermarkService.applyWatermark(buffer, effectiveSettings);
+      }
 
       res.set({
         'Content-Type': photo.mime_type || 'image/jpeg',
         'Content-Disposition': contentDisposition,
-        'Content-Length': watermarkedBuffer.length
+        'Content-Length': buffer.length
       });
 
-      res.send(watermarkedBuffer);
+      res.send(buffer);
     } else {
       // res.download() builds Content-Disposition itself but doesn't emit the
       // RFC 5987 filename* parameter, so unicode camera filenames would lose
@@ -1515,6 +1553,15 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
       return res.status(404).json({ error: 'No photos found for selected IDs' });
     }
 
+    // Download resolution (#858). Resolve BEFORE any header goes out — once
+    // the archive starts streaming we can no longer return a JSON error.
+    const selectedPolicy = await resolveEventDownloadPolicy(req.event);
+    const selectedResolution = pickRequestedResolution(selectedPolicy, req.body?.resolution);
+    if (selectedResolution === null) {
+      return res.status(400).json({ error: 'Resolution not available for this gallery' });
+    }
+    const selectedBox = parseResolution(selectedResolution);
+
     const archiveName = `${req.event.slug}-selected.zip`;
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
@@ -1545,7 +1592,6 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     } : null;
 
     const { resolvePhotoStorageKey: resolveSelectedKey } = require('../services/photoResolver');
-    const { withLocalCopy: withSelectedLocalCopy } = require('../services/imageProcessor');
     const selectedStorage = getStorage();
     // #493: same display-name resolution as bulk download, with dedup.
     const useOriginalSelected = await getUseOriginalFilenames();
@@ -1570,13 +1616,12 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           throw new Error('Photo file missing on disk');
         }
 
-        if (shouldApplyWatermark && effectiveSettings) {
-          const buf = storageKey
-            ? await withSelectedLocalCopy(storageKey, (lp) =>
-              watermarkService.applyWatermark(lp, effectiveSettings)
-            )
-            : await watermarkService.applyWatermark(resolvePhotoFilePath(req.event, photo), effectiveSettings);
-          archive.append(buf, { name });
+        // Resize (#858) and/or watermark. renderPhotoForDownload returns null
+        // when neither applies, so the untransformed case still streams from
+        // storage rather than buffering the whole photo.
+        const rendered = await renderPhotoForDownload(req.event, photo, selectedBox, effectiveSettings);
+        if (rendered) {
+          archive.append(rendered, { name });
         } else if (storageKey) {
           const stream = await selectedStorage.get(storageKey);
           archive.append(stream, { name });
@@ -1622,6 +1667,112 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
   }
 });
 
+
+// ──────────────────────────────────────────────────────────────────────────
+// Custom-resolution download jobs (#858).
+//
+// The plain download-all is served from the pre-built cache at the gallery's
+// STANDARD resolution. Picking a different size has nothing to cache against,
+// and resizing a whole gallery inside one request would sit far past any
+// reverse-proxy timeout — so those archives are built as a job the client
+// polls. Same access rules as the download routes above.
+// ──────────────────────────────────────────────────────────────────────────
+
+// Kick off (or join) a build. Returns the polling token.
+router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
+  try {
+    if (req.event.allow_downloads === false) {
+      return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
+    }
+
+    const policy = await resolveEventDownloadPolicy(req.event);
+    if (!policy.pickerEnabled) {
+      return res.status(403).json({ error: 'Resolution choice is not enabled for this gallery' });
+    }
+    const resolution = pickRequestedResolution(policy, req.body?.resolution);
+    if (resolution === null) {
+      return res.status(400).json({ error: 'Resolution not available for this gallery' });
+    }
+
+    // Optional subset. Absent = the whole visible gallery.
+    let photoIds = null;
+    if (Array.isArray(req.body?.photo_ids) && req.body.photo_ids.length) {
+      photoIds = req.body.photo_ids
+        .map((v) => parseInt(v, 10))
+        .filter((v) => Number.isInteger(v))
+        .slice(0, 500);
+      if (photoIds.length === 0) {
+        return res.status(400).json({ error: 'No valid photo IDs provided' });
+      }
+    }
+
+    const job = await downloadJobService.createJob({
+      event: req.event,
+      resolution,
+      photoIds,
+      accessLevel: req.accessLevel,
+    });
+
+    res.status(202).json({
+      token: job.token,
+      status: job.status,
+      resolution: job.resolution,
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to start download preparation');
+  }
+});
+
+// Poll. The token is unguessable, but it is never sufficient on its own —
+// verifyGalleryAccess still runs and the job must belong to THIS event.
+router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
+  try {
+    const job = await downloadJobService.getStatus(req.params.token);
+    if (!job || job.event_id !== req.event.id) {
+      return res.status(404).json({ error: 'Download job not found' });
+    }
+    res.json({
+      status: job.status,
+      resolution: job.resolution,
+      photo_count: job.photo_count || 0,
+      size_bytes: job.size_bytes || null,
+      error: job.status === 'failed' ? (job.error || 'Preparation failed') : undefined,
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to read download job');
+  }
+});
+
+// Deliver the finished archive.
+router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
+  try {
+    const job = await downloadJobService.getStatus(req.params.token);
+    if (!job || job.event_id !== req.event.id) {
+      return res.status(404).json({ error: 'Download job not found' });
+    }
+    if (job.status !== 'ready' || !job.zip_path) {
+      return res.status(409).json({ error: 'Download is not ready yet', status: job.status });
+    }
+    if (new Date(job.expires_at).getTime() <= Date.now()) {
+      return res.status(410).json({ error: 'This download has expired — please request it again' });
+    }
+
+    const storage = getStorage();
+    const stat = await storage.stat(job.zip_path);
+    if (!stat) {
+      return res.status(410).json({ error: 'This download is no longer available' });
+    }
+
+    const suffix = job.resolution === 'original' ? 'original' : job.resolution;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Disposition', `attachment; filename="${req.event.slug}-${suffix}.zip"`);
+    const stream = await storage.get(job.zip_path);
+    stream.pipe(res);
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to serve prepared download');
+  }
+});
 
 // Explicit per-photo view beacon (#895). Counting views on the image-
 // serving routes is wrong in both directions: the lightbox preloads the

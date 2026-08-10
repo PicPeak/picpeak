@@ -173,6 +173,24 @@ export interface Photo {
   favorite_count?: number;
 }
 
+// Download resolutions (#858).
+export type DownloadJobStatus = 'pending' | 'building' | 'ready' | 'failed';
+
+export interface DownloadResolutionChoice {
+  id: string; // 'original' | '<width>x<height>'
+  label: string;
+  width: number | null;
+  height: number | null;
+}
+
+export interface DownloadJobState {
+  status: DownloadJobStatus;
+  resolution: string;
+  photo_count: number;
+  size_bytes: number | null;
+  error?: string;
+}
+
 export interface PhotoCategory {
   id: number | string;
   name: string;
@@ -187,6 +205,13 @@ export interface GalleryData {
     event_name: string;
     event_type: string;
     event_date: string | null;
+    // Download resolutions (#858). `choices` is empty when the picker is off,
+    // so the UI never offers a size the server would reject.
+    download_resolution?: {
+      standard: string;
+      picker_enabled: boolean;
+      choices: DownloadResolutionChoice[];
+    };
     welcome_message?: string;
     color_theme?: string;
     expires_at: string | null;

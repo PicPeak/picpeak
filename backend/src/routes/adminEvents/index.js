@@ -10,6 +10,7 @@ const router = express.Router();
 
 require('./crud')(router);
 require('./slideshow')(router);
+require('./downloadResolutions')(router);
 require('./resets')(router);
 require('./archiveBulk')(router);
 require('./logo')(router);

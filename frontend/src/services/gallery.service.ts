@@ -1,5 +1,8 @@
 import { api } from '../config/api';
-import type { GalleryInfo, GalleryData, GalleryStats, ResolvedGalleryIdentifier } from '../types';
+import type {
+  GalleryInfo, GalleryData, GalleryStats, ResolvedGalleryIdentifier,
+  DownloadJobStatus, DownloadJobState,
+} from '../types';
 import { normalizeRequirePassword } from '../utils/accessControl';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
 
@@ -278,6 +281,39 @@ export const galleryService = {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(url);
+  },
+
+  // ── Custom-resolution downloads (#858) ──────────────────────────────────
+  // A non-standard resolution has nothing cached behind it and can take
+  // minutes to build, so the server does it as a job we poll rather than
+  // holding a request open past the proxy timeout.
+
+  // Kick off a build. `photoIds` omitted = the whole gallery.
+  async startDownloadJob(
+    slug: string,
+    resolution: string,
+    photoIds?: number[]
+  ): Promise<{ token: string; status: DownloadJobStatus }> {
+    const body: Record<string, unknown> = { resolution };
+    if (photoIds && photoIds.length) body.photo_ids = photoIds;
+    const response = await api.post(`/gallery/${slug}/download-jobs`, body);
+    return response.data;
+  },
+
+  async getDownloadJob(slug: string, token: string): Promise<DownloadJobState> {
+    const response = await api.get(`/gallery/${slug}/download-jobs/${token}`);
+    return response.data;
+  },
+
+  // Native browser download so the archive streams with Content-Length
+  // (real progress bar, no in-memory blob for a multi-GB gallery).
+  downloadJobFile(slug: string, token: string, filename: string): void {
+    const link = document.createElement('a');
+    link.href = withAdminPreview(`/api/gallery/${slug}/download-jobs/${token}/file`);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   },
 
   // iOS-only Web Share path for a selection of photos.

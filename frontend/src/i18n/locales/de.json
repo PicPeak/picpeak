@@ -1044,7 +1044,17 @@
       "socials": "Soziale Netzwerke"
     },
     "photosCount_one": "{{count}} Foto",
-    "photosCount_other": "{{count}} Fotos"
+    "photosCount_other": "{{count}} Fotos",
+    "chooseResolution": "Downloadgröße wählen",
+    "resolutionUpTo": "bis zu {{width}} × {{height}} px",
+    "prepareDownload": "Download vorbereiten",
+    "preparingDownload": "Download wird vorbereitet…",
+    "preparingHint": "Fotos werden verkleinert — bei großen Galerien kann das einen Moment dauern.",
+    "preparingProgress": "{{count}} Fotos verpackt",
+    "downloadReady": "Ihr Download ist bereit",
+    "downloadNow": "Herunterladen",
+    "downloadPrepFailed": "Vorbereitung fehlgeschlagen",
+    "downloadPrepTimeout": "Das dauert länger als erwartet. Bitte erneut versuchen."
   },
   "categories": {
     "title": "Fotokategorien",

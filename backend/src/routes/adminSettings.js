@@ -51,7 +51,13 @@ const RESERVED_SETTING_KEYS = [
 // clobbered with plaintext, and the policy/mapping keys carry invariants
 // (role targets exist, break-glass account present) that only the dedicated
 // PUT /sso validates — a generic upsert would bypass all of them.
-const isReservedSettingKey = (key) => RESERVED_SETTING_KEYS.includes(key) || key.startsWith('oidc_');
+// Every download_* key is reserved too (#858): the cached download-all zip is
+// built AT the standard resolution, so changing it has to invalidate those
+// zips and re-validate the value against the preset list. A generic upsert
+// would do neither, leaving galleries handing out archives at the old size.
+const isReservedSettingKey = (key) => RESERVED_SETTING_KEYS.includes(key)
+  || key.startsWith('oidc_')
+  || key.startsWith('download_');
 const stripReservedSettingKeys = (settings) => {
   for (const key of Object.keys(settings)) {
     if (isReservedSettingKey(key)) delete settings[key];
@@ -440,6 +446,98 @@ router.put('/slideshow', adminAuth, requirePermission('settings.edit'), async (r
     res.json({ message: 'Slideshow settings updated', updated: updates.map((u) => u.setting_key) });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to save slideshow settings');
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// Download resolutions (#858). The standard resolution is what every ordinary
+// download hands out; the picker is an opt-in modal letting guests choose a
+// different size. Dedicated endpoints because a change here has to invalidate
+// the pre-built download-all zips, which are built AT the standard resolution.
+// ──────────────────────────────────────────────────────────────────────────
+
+router.get('/downloads', adminAuth, requirePermission('settings.view'), async (req, res) => {
+  try {
+    const { getDownloadGlobals } = require('../utils/downloadResolutions');
+    res.json(await getDownloadGlobals());
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to load download settings');
+  }
+});
+
+router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (req, res) => {
+  try {
+    const {
+      invalidateDownloadGlobals, getDownloadGlobals, ORIGINAL,
+    } = require('../utils/downloadResolutions');
+    const has = (k) => Object.prototype.hasOwnProperty.call(req.body, k);
+    const updates = [];
+    const push = (key, value) => updates.push({
+      setting_key: key, setting_value: JSON.stringify(value), setting_type: 'download',
+    });
+
+    // Presets first — the standard is validated against the resulting list,
+    // so a single request can add a size and select it in one go.
+    let presets = (await getDownloadGlobals()).resolutions;
+    if (has('download_resolutions')) {
+      const raw = Array.isArray(req.body.download_resolutions) ? req.body.download_resolutions : [];
+      const cleaned = [];
+      const seen = new Set();
+      for (const p of raw) {
+        const width = Math.round(Number(p?.width));
+        const height = Math.round(Number(p?.height));
+        // 20000px ceiling keeps a typo ("30000000") from asking sharp for a
+        // multi-terabyte canvas on every subsequent download.
+        if (!width || !height || width < 1 || height < 1 || width > 20000 || height > 20000) continue;
+        const id = `${width}x${height}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        cleaned.push({ label: String(p.label || id).slice(0, 40), width, height });
+      }
+      if (cleaned.length === 0) {
+        return res.status(400).json({ error: 'At least one valid resolution is required' });
+      }
+      push('download_resolutions', cleaned);
+      presets = cleaned.map((p) => ({ ...p, id: `${p.width}x${p.height}` }));
+    }
+
+    if (has('download_standard_resolution')) {
+      const v = String(req.body.download_standard_resolution || ORIGINAL);
+      if (v !== ORIGINAL && !presets.some((p) => p.id === v)) {
+        return res.status(400).json({ error: `Unknown resolution "${v}"` });
+      }
+      push('download_standard_resolution', v);
+    }
+    if (has('download_resolution_picker_enabled')) {
+      push('download_resolution_picker_enabled', !!req.body.download_resolution_picker_enabled);
+    }
+    if (has('download_allow_original')) {
+      push('download_allow_original', !!req.body.download_allow_original);
+    }
+
+    for (const u of updates) {
+      await upsertAppSetting(u.setting_key, u.setting_value, u.setting_type);
+    }
+    invalidateDownloadGlobals();
+
+    // The cached download-all zip is built at the standard resolution, so a
+    // change to the GLOBAL standard makes every INHERITING gallery's zip
+    // stale. Events with their own override are unaffected and keep theirs.
+    let invalidatedZips = 0;
+    if (updates.some((u) => u.setting_key === 'download_standard_resolution')) {
+      invalidatedZips = await db('events')
+        .whereNull('download_standard_resolution')
+        .whereNotNull('download_zip_path')
+        .update({ download_zip_path: null, download_zip_generated_at: null });
+    }
+
+    res.json({
+      message: 'Download settings updated',
+      updated: updates.map((u) => u.setting_key),
+      invalidated_zips: invalidatedZips,
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to save download settings');
   }
 });
 

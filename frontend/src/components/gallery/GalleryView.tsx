@@ -8,6 +8,7 @@ import { GallerySkeleton } from './GallerySkeleton';
 import { useGalleryAuth, useTheme } from '../../contexts';
 import { useGalleryPhotos, useDownloadAllPhotos } from '../../hooks/useGallery';
 import { PhotoGridWithLayouts } from './PhotoGridWithLayouts';
+import { DownloadResolutionModal } from './DownloadResolutionModal';
 import { ExpirationBanner } from './ExpirationBanner';
 import { CountdownTimer } from './CountdownTimer';
 import { GalleryLayout } from './GalleryLayout';
@@ -73,6 +74,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
+  // Download size picker for "download all" (#858).
+  const [showResolutionPicker, setShowResolutionPicker] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'size' | 'rating' | 'capture_date'>('date');
   const [sortDesc, setSortDesc] = useState(true);
@@ -607,12 +610,25 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   // Check if downloads are allowed (both event setting and not expired)
   const allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
 
+  // Resolution picker choices (#858). More than one option means there is an
+  // actual choice to make; a single option is just the standard size, so skip
+  // the modal and download straight away.
+  const downloadChoices = data?.event?.download_resolution?.picker_enabled
+    ? (data.event.download_resolution.choices || [])
+    : [];
+
   const handleDownloadAll = () => {
     // Prevent downloads if gallery is expired or downloads disabled
     if (!allowDownloads) {
       return;
     }
-    
+
+    // Hand off to the picker; it builds the archive as a job and downloads it.
+    if (downloadChoices.length > 1) {
+      setShowResolutionPicker(true);
+      return;
+    }
+
     downloadAllMutation.mutate({ slug, zipReady: data?.event?.download_zip_ready });
     
     // Track download all action
@@ -771,6 +787,15 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
             onClose={() => setShowUploadModal(false)}
           />
         )}
+
+        {/* Download size picker (#858) — "download all" with a choice of size. */}
+        {showResolutionPicker && (
+          <DownloadResolutionModal
+            slug={slug}
+            choices={downloadChoices}
+            onClose={() => setShowResolutionPicker(false)}
+          />
+        )}
       </GalleryLayout>
     );
   }
@@ -814,6 +839,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           eventDate={event.event_date}
           expiresAt={event.expires_at}
           allowDownloads={allowDownloads}
+          downloadChoices={downloadChoices}
           protectionLevel={protectionLevel}
           useEnhancedProtection={protectionLevel !== 'basic'}
           disableRightClick={disableRightClick}
@@ -840,6 +866,15 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
               window.location.reload();
             }}
             onClose={() => setShowUploadModal(false)}
+          />
+        )}
+
+        {/* Download size picker (#858) — "download all" with a choice of size. */}
+        {showResolutionPicker && (
+          <DownloadResolutionModal
+            slug={slug}
+            choices={downloadChoices}
+            onClose={() => setShowResolutionPicker(false)}
           />
         )}
       </>
@@ -875,6 +910,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           onDownloadSelected={handleDownloadSelected}
           isDownloading={downloadAllMutation.isPending}
           allowDownloads={allowDownloads}
+          downloadChoices={downloadChoices}
           photoCounts={photoCounts}
           totalPhotos={data?.photos.length || 0}
           isMobile={isMobile}
@@ -1071,6 +1107,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
             eventDate={event.event_date}
             expiresAt={event.expires_at}
             allowDownloads={allowDownloads}
+            downloadChoices={downloadChoices}
             protectionLevel={protectionLevel}
             useEnhancedProtection={protectionLevel !== 'basic'}
             disableRightClick={disableRightClick}
@@ -1100,6 +1137,15 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
               window.location.reload(); // Simple reload for now
             }}
             onClose={() => setShowUploadModal(false)}
+          />
+        )}
+
+        {/* Download size picker (#858) — "download all" with a choice of size. */}
+        {showResolutionPicker && (
+          <DownloadResolutionModal
+            slug={slug}
+            choices={downloadChoices}
+            onClose={() => setShowResolutionPicker(false)}
           />
         )}
       </GalleryLayout>

@@ -21,6 +21,7 @@ const { initializeDatabase, db } = require('./src/database/db');
 const { startFileWatcher } = require('./src/services/fileWatcher');
 const { startExpirationChecker } = require('./src/services/expirationChecker');
 const { startTransferCleanup } = require('./src/services/transferCleanupService');
+const { startDownloadJobCleanup } = require('./src/services/downloadJobCleanupService');
 const { startRevealScheduler } = require('./src/services/revealScheduler');
 const { startInvoiceScheduler } = require('./src/services/invoiceSchedulerService');
 const { initializeTransporter, startEmailQueueProcessor } = require('./src/services/emailProcessor');
@@ -912,6 +913,9 @@ async function startServer() {
     // PicTransfer retention sweep (#997): expire links, notify admins, and
     // hard-delete client uploads once the grace window elapses.
     startTransferCleanup();
+    // Custom-resolution download archives (#858) are disposable renditions —
+    // sweep them once their TTL passes so .download-cache doesn't grow forever.
+    startDownloadJobCleanup();
     // Reveal-mode scheduler (#838): minutely stamp for scheduled reveals.
     startRevealScheduler();
     // CRM invoice scheduler: hourly tick to flush scheduled-send invoices

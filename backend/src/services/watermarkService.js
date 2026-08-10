@@ -90,18 +90,29 @@ class WatermarkService {
   /**
    * Apply watermark to an image
    */
+  /**
+   * `imagePath` may be a path OR an in-memory Buffer (#858). Buffers let the
+   * download paths resize first and watermark second without a second tmp
+   * file — which matters because the mark is sized relative to the input's
+   * own width, so it has to be applied at the OUTPUT size to come out right.
+   */
   async applyWatermark(imagePath, settings) {
+    const isBuffer = Buffer.isBuffer(imagePath);
     try {
       if (!settings || !settings.enabled) {
         // Return original image if watermarking is disabled
-        return await fs.readFile(imagePath);
+        return isBuffer ? imagePath : await fs.readFile(imagePath);
       }
 
-      // Check cache first
-      const cacheKey = `${imagePath}_${JSON.stringify(settings)}`;
-      const cached = this.cache.get(cacheKey);
-      if (cached && Date.now() - cached.timestamp < this.cacheMaxAge) {
-        return cached.buffer;
+      // Check cache first. Buffer inputs are already-resized intermediates:
+      // they have no stable key (hashing megabytes per photo would cost more
+      // than the watermark) and no reuse across requests, so skip the cache.
+      const cacheKey = isBuffer ? null : `${imagePath}_${JSON.stringify(settings)}`;
+      if (cacheKey) {
+        const cached = this.cache.get(cacheKey);
+        if (cached && Date.now() - cached.timestamp < this.cacheMaxAge) {
+          return cached.buffer;
+        }
       }
 
       // Load the main image
@@ -199,20 +210,24 @@ class WatermarkService {
         watermarkedBuffer = await watermarkedImage.jpeg({ quality: 100, mozjpeg: true }).toBuffer();
       }
 
-      // Cache the result
-      this.cache.set(cacheKey, {
-        buffer: watermarkedBuffer,
-        timestamp: Date.now()
-      });
+      // Cache the result (path inputs only — see cacheKey above)
+      if (cacheKey) {
+        this.cache.set(cacheKey, {
+          buffer: watermarkedBuffer,
+          timestamp: Date.now()
+        });
 
-      // Clean old cache entries
-      this.cleanCache();
+        // Clean old cache entries
+        this.cleanCache();
+      }
 
       return watermarkedBuffer;
     } catch (error) {
       logger.error('Error applying watermark:', error);
-      // Return original image on error
-      return await fs.readFile(imagePath);
+      // Return the un-watermarked input on error. Buffer inputs are already
+      // in memory — readFile() would treat the Buffer as a path and throw,
+      // turning a cosmetic watermark failure into a failed download.
+      return isBuffer ? imagePath : await fs.readFile(imagePath);
     }
   }
 

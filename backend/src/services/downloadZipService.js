@@ -24,6 +24,8 @@ const watermarkService = require('./watermarkService');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { getStorage } = require('./storage');
 const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenameService');
+const { renderPhotoForDownload } = require('./downloadRendition');
+const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const logger = require('../utils/logger');
 
 const DEBOUNCE_MS = 5000;
@@ -137,6 +139,12 @@ class DownloadZipService {
         text: event.watermark_text || watermarkSettings?.text || 'Protected',
       } : null;
 
+      // The cached archive is built AT the gallery's standard resolution
+      // (#858) — 'original' keeps the historical behaviour. Any change to the
+      // standard invalidates this zip via the settings write paths, so a
+      // cached archive always matches the currently configured size.
+      const { standardBox } = await resolveEventDownloadPolicy(event);
+
       const finalKey = this.getCacheKey(event.slug);
 
       tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-zipbuild-'));
@@ -182,26 +190,20 @@ class DownloadZipService {
             // for external, in which case fall back to resolvePhotoFilePath.
             const storageKey = resolvePhotoStorageKey(event, photo);
 
-            if (shouldApplyWatermark && effectiveSettings) {
-              try {
-                let sourcePath;
-                if (storageKey) {
-                  // Stream the original to a tmp file just long enough for sharp
-                  // (watermarkService) to operate on it. Avoids buffering the
-                  // entire image in memory for huge originals.
-                  sourcePath = path.join(tmpDir, `wm-${crypto.randomBytes(4).toString('hex')}`);
-                  await storage.getToFile(storageKey, sourcePath);
-                } else {
-                  sourcePath = resolvePhotoFilePath(event, photo);
-                }
-                const buf = await watermarkService.applyWatermark(sourcePath, effectiveSettings);
-                archive.append(buf, { name: archiveName });
-                if (storageKey) {
-                  await fsp.unlink(sourcePath).catch(() => {});
-                }
-              } catch (err) {
-                logger.warn('Skipping watermark in pre-zip', { photoId: photo.id, error: err.message });
-              }
+            // Resize to the gallery's standard resolution (#858) and/or
+            // watermark. Returns null when neither applies, so an
+            // original-size unwatermarked gallery still streams straight
+            // from storage with nothing buffered.
+            let rendered = null;
+            try {
+              rendered = await renderPhotoForDownload(event, photo, standardBox, effectiveSettings);
+            } catch (err) {
+              logger.warn('Skipping photo in pre-zip', { photoId: photo.id, error: err.message });
+              continue;
+            }
+
+            if (rendered) {
+              archive.append(rendered, { name: archiveName });
             } else if (storageKey) {
               const stream = await storage.get(storageKey);
               archive.append(stream, { name: archiveName });
