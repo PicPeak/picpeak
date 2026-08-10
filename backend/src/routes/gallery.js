@@ -959,6 +959,17 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
             && (!photo.mime_type || !photo.mime_type.startsWith('video/'))
             ? `/api/gallery/${req.params.slug}/preview/${photo.id}${wmQuery}`
             : null,
+          // Slideshow source (#1015). Same preview tier, but emitted
+          // unconditionally: the slideshow has no `url` fallback worth
+          // taking (originals are projector-sized) and must never land on
+          // `hero_url`, which is cover-cropped to 16:9 — that made the
+          // "no crop" fit letterbox an already-cropped frame. The preview
+          // route generates lazily and redirects to the original on any
+          // failure, so this is safe even where no preview exists yet.
+          slideshow_url: photo.media_type !== 'video'
+            && (!photo.mime_type || !photo.mime_type.startsWith('video/'))
+            ? `/api/gallery/${req.params.slug}/preview/${photo.id}${wmQuery}`
+            : null,
           secure_url_template: `/api/secure-images/${req.params.slug}/secure/${photo.id}/{{token}}`,
           download_url_template: `/api/secure-images/${req.params.slug}/secure-download/${photo.id}/{{token}}`,
           type: photo.type,

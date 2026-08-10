@@ -128,6 +128,11 @@ export interface Photo {
   // ≤1920px JPEG; the lightbox prefers it over `url` for image photos
   // and falls back to `url` when null (off, video, or not yet generated).
   preview_url?: string | null;
+  // Aspect-preserved ≤1920px source for the fullscreen slideshow (#1015).
+  // Always set for image photos, unlike `preview_url` — the slideshow must
+  // never fall back to `hero_url`, which is a 16:9 centre crop and makes
+  // the "Black Bars (No crop)" fit letterbox an already-cropped frame.
+  slideshow_url?: string | null;
   secure_url_template?: string;
   download_url_template?: string;
   requires_token?: boolean;

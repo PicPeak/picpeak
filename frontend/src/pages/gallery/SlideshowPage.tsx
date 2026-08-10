@@ -25,8 +25,15 @@ const STATE_POLL_MS = 3000;
 // Prefer the aspect-preserved preview (≤1920px) over the full original; fall
 // back to the standard url. Always absolutised so it works whether the API is
 // same-origin or an explicit absolute base.
+//
+// Deliberately never `hero_url` (#1015): that tier is cover-cropped to 16:9
+// for gallery header banners, so with fit='contain' the show letterboxed an
+// already-cropped frame — portrait photos lost their top and bottom and the
+// "Black Bars (No crop)" setting looked broken. `slideshow_url` is the same
+// aspect-preserved preview as `preview_url` but is always emitted, so the
+// crop can't come back when lightbox previews are off (the default).
 function photoSrc(photo: Photo): string {
-  return buildResourceUrl(photo.preview_url || photo.hero_url || photo.url);
+  return buildResourceUrl(photo.slideshow_url || photo.preview_url || photo.url);
 }
 
 // CSS `filter` applied directly to the image for filters that are pure tone
