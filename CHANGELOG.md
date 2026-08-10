@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.101.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.101.0-beta.0...v3.101.1-beta.0) (2026-08-10)
+
+
+### Documentation
+
+* slim README to a lean router, stage deep content for docs-site migration ([#1001](https://github.com/PicPeak/picpeak/issues/1001)) ([ddebd50](https://github.com/PicPeak/picpeak/commit/ddebd50d3fd3750f97f13a07afb38447601e3889))
+
 ## [3.101.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.100.2-beta.0...v3.101.0-beta.0) (2026-08-09)
 
 
