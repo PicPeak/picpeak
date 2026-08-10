@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.101.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.101.1-beta.0...v3.101.2-beta.0) (2026-08-10)
+
+
+### Bug Fixes
+
+* **branding:** route the gallery footer through &lt;PoweredBy /&gt; ([#1008](https://github.com/PicPeak/picpeak/issues/1008)) ([1bf19a7](https://github.com/PicPeak/picpeak/commit/1bf19a7caf45b7f800b3650b2cd2365ea89cb169))
+
 ## [3.101.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.101.0-beta.0...v3.101.1-beta.0) (2026-08-10)
 
 
