@@ -41,10 +41,16 @@ async function renderPhotoForDownload(event, photo, box, watermarkSettings) {
   const storageKey = resolvePhotoStorageKey(event, photo);
 
   const transform = async (localPath) => {
-    let buffer = await fs.promises.readFile(localPath);
-    if (wantsResize) buffer = await resizeToBox(buffer, box);
-    if (wantsWatermark) buffer = await watermarkService.applyWatermark(buffer, watermarkSettings);
-    return buffer;
+    // No resize → hand applyWatermark the PATH. Buffer inputs intentionally
+    // bypass its cache, so buffering here would re-run sharp over the
+    // full-size original for every download of an unresized gallery.
+    if (!wantsResize) {
+      return watermarkService.applyWatermark(localPath, watermarkSettings);
+    }
+    const buffer = await resizeToBox(await fs.promises.readFile(localPath), box);
+    return wantsWatermark
+      ? watermarkService.applyWatermark(buffer, watermarkSettings)
+      : buffer;
   };
 
   // Managed photos live behind the storage abstraction (possibly S3); external

@@ -1207,17 +1207,25 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       // Resize BEFORE watermarking: applyWatermark sizes the mark relative to
       // its input's width, so watermarking the original and then shrinking
       // would resample the mark and waste work on discarded pixels.
-      let buffer = await fs.promises.readFile(filePath);
-      buffer = await resizeToBox(buffer, box);
+      //
+      // With no resize (the default 'original' standard) hand applyWatermark
+      // the PATH, not a buffer: buffer inputs deliberately skip its cache, so
+      // buffering here would re-run sharp over the full-size original on every
+      // download and regress the pre-#858 watermark performance.
+      const effectiveSettings = shouldApplyWatermark ? {
+        ...watermarkSettings,
+        enabled: true,
+        text: req.event.watermark_text || watermarkSettings?.text || 'Protected'
+      } : null;
 
-      if (shouldApplyWatermark) {
-        // Use event watermark text if available, otherwise fall back to global settings
-        const effectiveSettings = {
-          ...watermarkSettings,
-          enabled: true,
-          text: req.event.watermark_text || watermarkSettings?.text || 'Protected'
-        };
-        buffer = await watermarkService.applyWatermark(buffer, effectiveSettings);
+      let buffer;
+      if (!box) {
+        buffer = await watermarkService.applyWatermark(filePath, effectiveSettings);
+      } else {
+        buffer = await resizeToBox(await fs.promises.readFile(filePath), box);
+        if (shouldApplyWatermark) {
+          buffer = await watermarkService.applyWatermark(buffer, effectiveSettings);
+        }
       }
 
       res.set({
@@ -1782,7 +1790,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     // A photo hidden AFTER this archive was built is still inside it, and the
     // scope check above can't see that — both sides remain 'public'. Re-run
     // the visibility query over the packaged set before handing it over.
-    if (!(await downloadJobService.isStillDeliverable(job, req.accessLevel))) {
+    if (!(await downloadJobService.isStillDeliverable(job, req.event, req.accessLevel))) {
       return res.status(409).json({
         error: 'This gallery changed since the download was prepared — please request it again',
         status: 'stale',
@@ -1799,9 +1807,11 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     // response actually completed, and keep admin previews out of guest stats.
     res.on('finish', () => {
       if (res.statusCode >= 400 || req.isAdminPreview) return;
+      // The DELIVERED set, not the requested one: a photo whose source was
+      // missing at build time isn't in the zip and must not be counted.
       let ids = [];
       try {
-        ids = JSON.parse(job.photo_ids || '[]');
+        ids = JSON.parse(job.delivered_photo_ids || job.photo_ids || '[]');
       } catch (_) { /* malformed row — skip counting rather than fail */ }
       if (ids.length > 0) {
         db('photos').whereIn('id', ids).increment('download_count', 1).catch(() => {});

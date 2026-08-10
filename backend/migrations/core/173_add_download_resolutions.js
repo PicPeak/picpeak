@@ -66,6 +66,10 @@ exports.up = async function (knex) {
       // NULL = the whole visible gallery; otherwise the selected photo ids.
       // Stored as JSON text so both SQLite and PG round-trip it identically.
       table.text('photo_ids');
+      // The subset that actually made it into the archive (a missing source is
+      // skipped). Drives download counts; photo_ids stays the REQUESTED set so
+      // the delivery fingerprint still matches.
+      table.text('delivered_photo_ids');
       // Stable hash of (resolution, visibility scope, resolved photo id set,
       // watermark flag) — lets a second requester join an in-flight build
       // instead of duplicating it. The scope is part of the hash so a client

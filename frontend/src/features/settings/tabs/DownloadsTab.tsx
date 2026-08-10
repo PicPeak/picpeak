@@ -72,8 +72,16 @@ export const DownloadsTab: React.FC = () => {
   if (isLoading || !form) return <Loading />;
 
   const setPreset = (i: number, patch: Partial<Preset>) => {
-    const resolutions = form.resolutions.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
-    setForm({ ...form, resolutions });
+    const old = form.resolutions[i];
+    const next = { ...old, ...patch };
+    const resolutions = form.resolutions.map((r, idx) => (idx === i ? next : r));
+    // A preset's id IS its dimensions, so editing width/height of the preset
+    // that is currently the standard would leave standard_resolution pointing
+    // at an id that no longer exists and the save would 400. Follow the edit.
+    const standard = `${old.width}x${old.height}` === form.standard_resolution
+      ? `${next.width}x${next.height}`
+      : form.standard_resolution;
+    setForm({ ...form, resolutions, standard_resolution: standard });
   };
 
   const removePreset = (i: number) => {

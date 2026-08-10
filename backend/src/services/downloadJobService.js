@@ -64,6 +64,9 @@ class DownloadJobService {
     // jobId -> in-flight build promise. Only jobs present here are safe to
     // rejoin; rows left 'pending'/'building' by a previous process are not.
     this.liveBuilds = new Map();
+    // Slots claimed between the admission check and the liveBuilds entry.
+    // Without it, concurrent requests all pass the check before any registers.
+    this.reserved = 0;
   }
 
   cacheDir(slug) {
@@ -162,38 +165,48 @@ class DownloadJobService {
     // Refuse rather than queue without bound. The client shows this as a
     // retryable error, which is far better than accepting work the box can't
     // absorb and timing the user out anyway.
-    if (this.liveBuilds.size >= MAX_QUEUED_BUILDS) {
+    //
+    // The slot is reserved SYNCHRONOUSLY here — checking liveBuilds.size and
+    // only populating it after the awaited insert let a burst of concurrent
+    // requests all pass the check before any of them registered.
+    if (this.reserved + this.liveBuilds.size >= MAX_QUEUED_BUILDS) {
       const err = new Error('Too many downloads are being prepared right now');
       err.code = 'BUSY';
       throw err;
     }
+    this.reserved += 1;
 
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + JOB_TTL_MS).toISOString();
+    try {
+      const token = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + JOB_TTL_MS).toISOString();
 
-    const inserted = await db('download_jobs').insert({
-      token,
-      event_id: event.id,
-      resolution,
-      photo_ids: JSON.stringify(resolvedIds),
-      dedup_key: dedupKey,
-      visibility_scope: scope,
-      status: 'pending',
-      heartbeat_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-      expires_at: expiresAt,
-    }).returning('id');
-    const id = inserted[0]?.id ?? inserted[0];
+      const inserted = await db('download_jobs').insert({
+        token,
+        event_id: event.id,
+        resolution,
+        photo_ids: JSON.stringify(resolvedIds),
+        dedup_key: dedupKey,
+        visibility_scope: scope,
+        status: 'pending',
+        heartbeat_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        expires_at: expiresAt,
+      }).returning('id');
+      const id = inserted[0]?.id ?? inserted[0];
 
-    // Fire and forget — the row is the source of truth for progress. The
-    // liveBuilds entry is what makes a pending/building row reusable; a row
-    // without one is an orphan from a previous process.
-    const promise = this._build(id, event, resolution, resolvedIds, watermark, accessLevel)
-      .catch((err) => logger.error('Download job build failed', { jobId: id, error: err.message }))
-      .finally(() => this.liveBuilds.delete(id));
-    this.liveBuilds.set(id, promise);
+      // Fire and forget — the row is the source of truth for progress. The
+      // liveBuilds entry is what makes a pending/building row reusable; a row
+      // without one is an orphan from a previous process.
+      const promise = this._build(id, event, resolution, resolvedIds, watermark, accessLevel)
+        .catch((err) => logger.error('Download job build failed', { jobId: id, error: err.message }))
+        .finally(() => this.liveBuilds.delete(id));
+      this.liveBuilds.set(id, promise);
 
-    return db('download_jobs').where({ id }).first();
+      return await db('download_jobs').where({ id }).first();
+    } finally {
+      // The slot is now accounted for by liveBuilds (or the insert failed).
+      this.reserved -= 1;
+    }
   }
 
   async getStatus(token) {
@@ -213,7 +226,7 @@ class DownloadJobService {
    * 'public', so the archive would keep serving it for the rest of its TTL.
    * Re-running the visibility query at delivery closes that window.
    */
-  async isStillDeliverable(job, accessLevel) {
+  async isStillDeliverable(job, event, accessLevel) {
     let ids;
     try {
       ids = JSON.parse(job.photo_ids || '[]');
@@ -221,8 +234,21 @@ class DownloadJobService {
       return false;
     }
     if (!Array.isArray(ids) || ids.length === 0) return false;
+
+    // Every packaged photo must still be visible to this requester.
     const visible = await this.photoQuery(job.event_id, ids, accessLevel).select('photos.id');
-    return visible.length === ids.length;
+    if (visible.length !== ids.length) return false;
+
+    // …and the archive must still match the CURRENT rendition policy. Turning
+    // a watermark on, editing it, or revoking a resolution after the job went
+    // ready would otherwise keep serving the old bytes for the rest of the
+    // TTL. Recomputing the identity is the cheapest way to notice: any input
+    // that changes the archive changes the key.
+    const watermark = await resolveWatermarkSettings(event);
+    const expected = this.dedupKey(
+      job.event_id, job.resolution, ids, watermark, visibilityScope(accessLevel)
+    );
+    return expected === job.dedup_key;
   }
 
   async _fail(id, message) {
@@ -266,6 +292,7 @@ class DownloadJobService {
       const tmpPath = path.join(tmpDir, `${crypto.randomBytes(4).toString('hex')}.zip`);
 
       let appended = 0;
+      const appendedIds = [];
       await new Promise((resolve, reject) => {
         const output = fs.createWriteStream(tmpPath);
         // level 0 — photos are already compressed, so deflate only burns CPU.
@@ -291,6 +318,7 @@ class DownloadJobService {
                 }
               }
               appended += 1;
+              appendedIds.push(photo.id);
               // Progress is coarse (photo count, not bytes) but it is what the
               // modal needs to show movement on a long build.
               if (appended % 10 === 0 || appended === photos.length) {
@@ -320,6 +348,13 @@ class DownloadJobService {
         zip_path: key,
         size_bytes: stat.size,
         photo_count: appended,
+        // Only what actually landed in the zip: a missing/corrupt source is
+        // skipped, and counting it as downloaded would inflate that photo's
+        // stats for a file the guest never received. Kept SEPARATE from
+        // photo_ids, which is the requested set the dedup fingerprint was
+        // computed from — overwriting it would make every job with a skipped
+        // photo fail the delivery fingerprint check.
+        delivered_photo_ids: JSON.stringify(appendedIds),
         completed_at: new Date().toISOString(),
       });
       logger.info('Download job ready', { jobId: id, photos: appended, bytes: stat.size });
