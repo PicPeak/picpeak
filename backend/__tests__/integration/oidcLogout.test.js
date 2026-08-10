@@ -187,7 +187,7 @@ describe('OIDC logout-to-IdP (#798 phase 3)', () => {
     }
   });
 
-  it('stores a bare marker for oversized ID tokens; logout still round-trips, without a hint', async () => {
+  it('stores an issuer-tagged marker for oversized ID tokens; logout still round-trips, without a hint', async () => {
     idp.setNextUser({
       sub: 'logout-sub-5',
       email: 'logout5@example.com',
@@ -198,7 +198,10 @@ describe('OIDC logout-to-IdP (#798 phase 3)', () => {
     const cbRes = await ssoRoundTrip();
     const cookie = idTokenCookie(cbRes);
     expect(cookie).toBeTruthy();
-    expect(decodeURIComponent(cookie.replace('oidc_id_token=', ''))).toBe('sso');
+    // Issuer-tagged marker, not the (oversized) token itself.
+    const marker = decodeURIComponent(cookie.replace('oidc_id_token=', ''));
+    expect(marker.startsWith('sso.')).toBe(true);
+    expect(Buffer.from(marker.split('.')[1], 'base64url').toString('utf8')).toBe(idp.issuer);
 
     const res = await request(app)
       .post('/api/auth/logout')
@@ -208,6 +211,15 @@ describe('OIDC logout-to-IdP (#798 phase 3)', () => {
     const url = new URL(res.body.ssoLogoutUrl);
     expect(url.searchParams.get('id_token_hint')).toBeNull();
     expect(url.searchParams.get('client_id')).toBe(idp.clientId);
+  });
+
+  it('skips the round-trip for an oversized-token marker from a DIFFERENT issuer', async () => {
+    const foreignMarker = `sso.${Buffer.from('http://other-idp.example').toString('base64url')}`;
+    const res = await request(app)
+      .post('/api/auth/logout')
+      .set('Cookie', `oidc_id_token=${foreignMarker}`)
+      .expect(200);
+    expect(res.body.ssoLogoutUrl).toBeUndefined();
   });
 
   it('a fresh local-password login clears a stale SSO marker', async () => {

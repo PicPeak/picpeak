@@ -374,28 +374,48 @@ function decodeJwtPayload(token) {
   }
 }
 
-async function buildEndSessionUrl(idTokenHint) {
+/**
+ * Marker for SSO sessions whose ID token is too large for a cookie:
+ * `sso.<base64url(issuer)>`. Keeps the issuer identity so /logout can still
+ * validate the marker against the current config — a bare marker would
+ * round-trip to the wrong IdP after an issuer change.
+ */
+function buildOversizeSsoMarker(issuer) {
+  return `sso.${Buffer.from(String(issuer || '')).toString('base64url')}`;
+}
+
+async function buildEndSessionUrl(sessionMarker) {
   try {
     const cfg = await getOidcConfig();
     if (!cfg.enabled || !cfg.logoutFromIdp || !isConfigured(cfg)) return null;
     const { client, issuerMetadata } = await getClient(cfg);
     if (!issuerMetadata.end_session_endpoint) return null;
 
-    // The hint comes from a cookie minted at login — the OIDC config may
-    // have changed since. A token from a DIFFERENT issuer means the session
-    // belongs to another IdP entirely: skip the round-trip (ending the new
-    // IdP's session would be wrong, and providers that validate the hint
-    // would strand the user on an error page). Same issuer but a different
-    // client (aud): the hint is unusable, but the browser's IdP session is
-    // real — round-trip without the hint.
-    let hint = idTokenHint;
-    if (hint) {
-      const payload = decodeJwtPayload(hint);
-      if (!payload || payload.iss !== issuerMetadata.issuer) return null;
-      const audMatches = Array.isArray(payload.aud)
-        ? payload.aud.includes(cfg.clientId)
-        : payload.aud === cfg.clientId;
-      if (!audMatches) hint = undefined;
+    // The marker comes from a cookie minted at login — the OIDC config may
+    // have changed since. A session from a DIFFERENT issuer must not be
+    // round-tripped: ending the newly configured IdP's session would be
+    // wrong, and providers that validate the hint would strand the user on
+    // an error page. Same issuer but a different client (aud): the hint is
+    // unusable, but the browser's IdP session is real — round-trip without
+    // the hint. A marker whose origin can't be determined is skipped.
+    let hint;
+    if (sessionMarker) {
+      const parts = String(sessionMarker).split('.');
+      if (parts.length === 3) {
+        // Raw ID token.
+        const payload = decodeJwtPayload(sessionMarker);
+        if (!payload || payload.iss !== issuerMetadata.issuer) return null;
+        const audMatches = Array.isArray(payload.aud)
+          ? payload.aud.includes(cfg.clientId)
+          : payload.aud === cfg.clientId;
+        if (audMatches) hint = sessionMarker;
+      } else if (parts.length === 2 && parts[0] === 'sso') {
+        // Oversized-token marker — issuer identity only, never a hint.
+        const iss = Buffer.from(parts[1], 'base64url').toString('utf8');
+        if (iss !== issuerMetadata.issuer) return null;
+      } else {
+        return null;
+      }
     }
 
     const postLogoutRedirectUri = await getPostLogoutRedirectUri();
@@ -732,6 +752,7 @@ module.exports = {
   buildAuthorizationRequest,
   handleCallback,
   buildEndSessionUrl,
+  buildOversizeSsoMarker,
   resolveAdminFromClaims,
   saveOidcSettings,
   invalidateDiscoveryCache,

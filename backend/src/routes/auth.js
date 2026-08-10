@@ -353,10 +353,10 @@ router.post('/logout', async (req, res) => {
     const oidcIdToken = req.cookies?.[OIDC_ID_TOKEN_COOKIE];
     if (oidcIdToken) {
       res.clearCookie(OIDC_ID_TOKEN_COOKIE, oidcIdTokenClearOptions());
-      // The bare 'sso' marker (oversized ID token at login) still triggers
-      // the round-trip, just without an id_token_hint.
-      const hint = oidcIdToken.split('.').length === 3 ? oidcIdToken : undefined;
-      ssoLogoutUrl = await require('../services/oidcService').buildEndSessionUrl(hint);
+      // The service interprets the marker itself: raw ID token → hint
+      // (iss/aud-validated), issuer-tagged 'sso.<b64>' marker (oversized
+      // token) → round-trip without a hint, unknown/foreign origin → null.
+      ssoLogoutUrl = await require('../services/oidcService').buildEndSessionUrl(oidcIdToken);
     }
 
     res.json({ message: 'Logged out successfully', ...(ssoLogoutUrl ? { ssoLogoutUrl } : {}) });
@@ -1065,11 +1065,14 @@ router.get('/admin/sso/callback', async (req, res) => {
 
     // Cookie limit is 4KB — an oversized ID token (huge group lists) can't
     // be stored, but the SSO-session marker must survive or logout-to-IdP
-    // silently turns off for exactly those users. Store the bare marker
-    // 'sso' instead; logout then sends the end-session request without an
-    // id_token_hint (costs one IdP confirmation click).
+    // silently turns off for exactly those users. Store an issuer-tagged
+    // marker instead; logout then sends the end-session request without an
+    // id_token_hint (costs one IdP confirmation click), and the tag still
+    // lets buildEndSessionUrl refuse the round-trip after an issuer change.
     if (idToken) {
-      const cookieValue = idToken.length <= 3900 ? idToken : 'sso';
+      const cookieValue = idToken.length <= 3900
+        ? idToken
+        : oidcService.buildOversizeSsoMarker(claims.iss);
       res.cookie(OIDC_ID_TOKEN_COOKIE, cookieValue, oidcIdTokenCookieOptions(res));
     }
 
