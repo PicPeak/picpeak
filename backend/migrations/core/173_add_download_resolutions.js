@@ -81,6 +81,10 @@ exports.up = async function (knex) {
       table.bigInteger('size_bytes');
       table.integer('photo_count');
       table.text('error');
+      // Lease heartbeat: a live worker stamps this while building. Recovery
+      // only fails rows whose heartbeat has gone stale, so a rolling restart
+      // can't kill jobs another replica is still working on.
+      table.timestamp('heartbeat_at');
       table.timestamp('created_at').defaultTo(knex.fn.now());
       table.timestamp('completed_at');
       // Swept by downloadJobCleanupService once this passes.

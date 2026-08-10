@@ -778,6 +778,15 @@ async function resizeToBox(inputBuffer, box, options = {}) {
     // Re-encode in the SOURCE format. The download routes keep the original
     // filename and mime type, so emitting JPEG for a .gif would ship
     // mislabelled bytes. GIF is an accepted upload format (multerConfig.photos).
+    //
+    // HEIC/HEIF is the exception: sharp builds generally cannot ENCODE it, and
+    // the browser can't display the original anyway (see originalNeedsPreview
+    // in gallery.js). Rather than emit JPEG bytes under a .heic name, leave
+    // those downloads at original size — correct-but-larger beats
+    // mislabelled-and-broken.
+    if (format === 'heif' || format === 'heic') {
+      return inputBuffer;
+    }
     if (format === 'png') {
       pipeline = pipeline.png({ compressionLevel: 6 });
     } else if (format === 'webp') {

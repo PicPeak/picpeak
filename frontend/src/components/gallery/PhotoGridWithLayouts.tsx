@@ -46,6 +46,7 @@ interface PhotoGridWithLayoutsProps {
   // Resolution picker choices (#858). Empty/absent = no picker, download
   // straight at the gallery's standard size.
   downloadChoices?: DownloadResolutionChoice[];
+  downloadStandard?: string;
   protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
   useCanvasRendering?: boolean;
@@ -92,6 +93,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   onFeedbackChange,
   allowDownloads = true,
   downloadChoices,
+  downloadStandard,
   protectionLevel = 'standard',
   useEnhancedProtection = false,
   useCanvasRendering = false,
@@ -413,6 +415,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
         <DownloadResolutionModal
           slug={slug}
           choices={downloadChoices}
+          standardResolution={downloadStandard}
           photoIds={resolutionPickerIds}
           onClose={() => {
             setResolutionPickerIds(null);

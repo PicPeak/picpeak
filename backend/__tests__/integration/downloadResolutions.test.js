@@ -104,6 +104,18 @@ describe('Download resolutions (#858)', () => {
       expect(choices.some((c) => c.id === '3000x2000')).toBe(false);
     });
 
+    it('bounds EACH dimension, not the pixel area (codex review round 2)', async () => {
+      // 2000x700 is 1.4MP — under 1500x1000's 1.5MP — so an area comparison
+      // would offer it and hand back a 2000px-wide file despite a 1500px cap.
+      await setGlobal('download_resolutions', [
+        ...PRESETS,
+        { label: 'Wide', width: 2000, height: 700 },
+      ]);
+      await setGlobal('download_standard_resolution', '1500x1000');
+      const { choices } = await resolveEventDownloadPolicy({});
+      expect(choices.some((c) => c.id === '2000x700')).toBe(false);
+    });
+
     it('omits Original when the standard is capped and the admin has not allowed it', async () => {
       await setGlobal('download_standard_resolution', '1500x1000');
       const { choices } = await resolveEventDownloadPolicy({});
@@ -223,6 +235,17 @@ describe('Download resolutions (#858)', () => {
     it('passes the buffer through untouched for the original size', async () => {
       const src = await make(4000, 3000);
       expect(await resizeToBox(src, null)).toBe(src);
+    });
+
+    it('keeps the source format so the filename and mime type stay honest', async () => {
+      // A .gif re-encoded as JPEG would ship mislabelled bytes, since the
+      // download routes keep the original filename and mime type.
+      const gif = await sharp({
+        create: { width: 4000, height: 3000, channels: 3, background: { r: 1, g: 2, b: 3 } },
+      }).gif().toBuffer();
+      const out = await sharp(await resizeToBox(gif, box)).metadata();
+      expect(out.format).toBe('gif');
+      expect(out.width).toBe(1333);
     });
 
     it('returns the input rather than throwing on an undecodable source', async () => {

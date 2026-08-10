@@ -132,13 +132,13 @@ async function resolveEventDownloadPolicy(event) {
     globals.allow_original
   );
 
-  // Never offer a size above the standard. When the standard IS original,
-  // every preset is below it and they all qualify.
-  const standardPixels = standardBox
-    ? standardBox.width * standardBox.height
-    : Number.POSITIVE_INFINITY;
-  const choices = globals.resolutions
-    .filter((r) => (r.width * r.height) <= standardPixels);
+  // Never offer a size above the standard, bounding EACH dimension rather
+  // than the pixel area: with mixed aspect ratios an area comparison lets
+  // e.g. 2000x700 (1.4MP) through under a 1500x1000 (1.5MP) standard, and the
+  // guest then gets a 2000px-wide rendition despite the stated 1500px cap.
+  // When the standard IS original, every preset qualifies.
+  const choices = globals.resolutions.filter((r) => !standardBox
+    || (r.width <= standardBox.width && r.height <= standardBox.height));
 
   if (allowOriginal && standardBox) {
     // The standard is capped but the admin opted into full-res downloads.

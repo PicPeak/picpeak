@@ -31,6 +31,8 @@ type Phase = 'choose' | 'preparing' | 'ready' | 'error';
 interface DownloadResolutionModalProps {
   slug: string;
   choices: DownloadResolutionChoice[];
+  /** The gallery's own standard size — served from the pre-built archive. */
+  standardResolution?: string;
   /** Omitted = the whole gallery. */
   photoIds?: number[];
   onClose: () => void;
@@ -39,6 +41,7 @@ interface DownloadResolutionModalProps {
 export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = ({
   slug,
   choices,
+  standardResolution,
   photoIds,
   onClose,
 }) => {
@@ -83,6 +86,15 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
   }, [slug, t]);
 
   const start = useCallback(async () => {
+    // Whole-gallery download at the gallery's OWN standard size is exactly
+    // what the pre-built archive already contains — take it instead of
+    // re-resizing and re-packaging the entire gallery for the same bytes.
+    if (!photoIds && selected === standardResolution) {
+      await galleryService.downloadAllPhotos(slug, true);
+      onClose();
+      return;
+    }
+
     setPhase('preparing');
     setError(null);
     try {
@@ -99,7 +111,7 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
       setError(t('gallery.downloadPrepFailed', 'Preparation failed'));
       setPhase('error');
     }
-  }, [slug, selected, photoIds, poll, t]);
+  }, [slug, selected, photoIds, poll, t, standardResolution, onClose]);
 
   const download = useCallback(() => {
     if (!tokenRef.current) return;

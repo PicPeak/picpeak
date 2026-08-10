@@ -803,6 +803,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           <DownloadResolutionModal
             slug={slug}
             choices={downloadChoices}
+            standardResolution={data?.event?.download_resolution?.standard}
             photoIds={resolutionPickerIds || undefined}
             onClose={() => {
               setShowResolutionPicker(false);
@@ -854,6 +855,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           expiresAt={event.expires_at}
           allowDownloads={allowDownloads}
           downloadChoices={downloadChoices}
+          downloadStandard={data?.event?.download_resolution?.standard}
           protectionLevel={protectionLevel}
           useEnhancedProtection={protectionLevel !== 'basic'}
           disableRightClick={disableRightClick}
@@ -888,6 +890,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           <DownloadResolutionModal
             slug={slug}
             choices={downloadChoices}
+            standardResolution={data?.event?.download_resolution?.standard}
             photoIds={resolutionPickerIds || undefined}
             onClose={() => {
               setShowResolutionPicker(false);
@@ -1125,6 +1128,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
             expiresAt={event.expires_at}
             allowDownloads={allowDownloads}
             downloadChoices={downloadChoices}
+            downloadStandard={data?.event?.download_resolution?.standard}
             protectionLevel={protectionLevel}
             useEnhancedProtection={protectionLevel !== 'basic'}
             disableRightClick={disableRightClick}
@@ -1162,6 +1166,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           <DownloadResolutionModal
             slug={slug}
             choices={downloadChoices}
+            standardResolution={data?.event?.download_resolution?.standard}
             photoIds={resolutionPickerIds || undefined}
             onClose={() => {
               setShowResolutionPicker(false);

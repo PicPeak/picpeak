@@ -2294,6 +2294,21 @@
         "logoutFromIdpHint": "Die Abmeldung von PicPeak beendet auch die IdP-Sitzung (RP-initiated Logout). Gilt nur für Sitzungen, die per SSO angemeldet wurden; ohne diese Option bleibt die IdP-Sitzung bestehen und der nächste SSO-Klick meldet direkt wieder an.",
         "postLogoutRedirectUri": "Post-Logout-Redirect-URI (beim IdP-Client registrieren, z. B. Keycloak „Valid post logout redirect URIs“)"
       }
+    },
+    "downloads": {
+      "title": "Download-Auflösungen",
+      "intro": "Die Standardgröße gibt jede Galerie standardmäßig heraus. Einzelne Galerien können das überschreiben.",
+      "standard": "Standardauflösung",
+      "original": "Original (volle Größe)",
+      "picker": "Gäste die Downloadgröße wählen lassen",
+      "pickerHint": "Fügt Sammel-Downloads eine Größenauswahl hinzu. Eigene Größen werden bei Bedarf erzeugt und sind nie größer als der Standard.",
+      "allowOriginal": "„Original“ in der Auswahl anbieten",
+      "allowOriginalHint": "Standardmäßig aus: Wer die Standardgröße reduziert, möchte in der Regel keine Dateien in voller Auflösung herausgeben.",
+      "presets": "Verfügbare Größen",
+      "presetsHint": "Größen sind eine Obergrenze — das Seitenverhältnis bleibt erhalten und Fotos werden nie vergrößert.",
+      "label": "Bezeichnung",
+      "width": "Breite",
+      "height": "Höhe"
     }
   },
   "branding": {

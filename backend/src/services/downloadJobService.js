@@ -39,6 +39,14 @@ const logger = require('../utils/logger');
 const JOB_TTL_MS = 60 * 60 * 1000; // 1 hour
 // Guards against a handful of guests each kicking off a whole-gallery resize.
 const MAX_CONCURRENT_BUILDS = 2;
+// Hard ceiling on queued+running builds. Gallery routes are not behind the
+// general rate limiter, so without this a token holder could vary the photo
+// subset to enqueue unbounded 500-photo resizes — each one parking a promise
+// and eventually a full gallery's worth of CPU and disk.
+const MAX_QUEUED_BUILDS = 8;
+// A build heartbeats while it works. A row whose heartbeat is older than this
+// has no live worker (crashed or restarted) and may be failed by recovery.
+const LEASE_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
  * Collapse an access level to the visibility scope that decides WHICH photos a
@@ -77,10 +85,16 @@ class DownloadJobService {
    * id. Hashing the resolved id set also stops a stale archive being reused
    * after photos are added, removed or hidden.
    */
-  dedupKey(eventId, resolution, resolvedPhotoIds, watermarked, visibilityScope) {
+  dedupKey(eventId, resolution, resolvedPhotoIds, watermark, visibilityScope) {
     const ids = [...resolvedPhotoIds].map(Number).sort((a, b) => a - b).join(',');
+    // The full watermark SETTINGS, not just the on/off flag: an admin who
+    // edits the watermark text or logo while it stays enabled would otherwise
+    // have the old mark served from a ready job for the rest of its TTL.
+    const wm = watermark
+      ? crypto.createHash('sha256').update(JSON.stringify(watermark)).digest('hex').slice(0, 16)
+      : 'raw';
     return crypto.createHash('sha256')
-      .update(`${eventId}|${resolution}|${visibilityScope}|${ids}|${watermarked ? 'wm' : 'raw'}`)
+      .update(`${eventId}|${resolution}|${visibilityScope}|${ids}|${wm}`)
       .digest('hex')
       .slice(0, 64);
   }
@@ -140,10 +154,19 @@ class DownloadJobService {
     }
 
     const scope = visibilityScope(accessLevel);
-    const dedupKey = this.dedupKey(event.id, resolution, resolvedIds, !!watermark, scope);
+    const dedupKey = this.dedupKey(event.id, resolution, resolvedIds, watermark, scope);
 
     const existing = await this.findReusable(event.id, dedupKey);
     if (existing) return existing;
+
+    // Refuse rather than queue without bound. The client shows this as a
+    // retryable error, which is far better than accepting work the box can't
+    // absorb and timing the user out anyway.
+    if (this.liveBuilds.size >= MAX_QUEUED_BUILDS) {
+      const err = new Error('Too many downloads are being prepared right now');
+      err.code = 'BUSY';
+      throw err;
+    }
 
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + JOB_TTL_MS).toISOString();
@@ -156,6 +179,7 @@ class DownloadJobService {
       dedup_key: dedupKey,
       visibility_scope: scope,
       status: 'pending',
+      heartbeat_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       expires_at: expiresAt,
     }).returning('id');
@@ -181,6 +205,26 @@ class DownloadJobService {
     return visibilityScope(accessLevel);
   }
 
+  /**
+   * Is every photo in this finished archive STILL visible to the requester?
+   *
+   * The scope check alone isn't enough: a photo hidden after a public job went
+   * ready stays inside that zip, and both job and requester are still
+   * 'public', so the archive would keep serving it for the rest of its TTL.
+   * Re-running the visibility query at delivery closes that window.
+   */
+  async isStillDeliverable(job, accessLevel) {
+    let ids;
+    try {
+      ids = JSON.parse(job.photo_ids || '[]');
+    } catch (_) {
+      return false;
+    }
+    if (!Array.isArray(ids) || ids.length === 0) return false;
+    const visible = await this.photoQuery(job.event_id, ids, accessLevel).select('photos.id');
+    return visible.length === ids.length;
+  }
+
   async _fail(id, message) {
     await db('download_jobs').where({ id }).update({
       status: 'failed',
@@ -200,7 +244,7 @@ class DownloadJobService {
 
     let tmpDir;
     try {
-      await db('download_jobs').where({ id }).update({ status: 'building' });
+      await db('download_jobs').where({ id }).update({ status: 'building', heartbeat_at: new Date().toISOString() });
 
       // Same query that produced the dedup identity, so the archive can never
       // contain photos the requester wasn't entitled to at creation time.
@@ -250,7 +294,9 @@ class DownloadJobService {
               // Progress is coarse (photo count, not bytes) but it is what the
               // modal needs to show movement on a long build.
               if (appended % 10 === 0 || appended === photos.length) {
-                await db('download_jobs').where({ id }).update({ photo_count: appended });
+                // Doubles as the lease heartbeat — see LEASE_TIMEOUT_MS.
+                await db('download_jobs').where({ id })
+                  .update({ photo_count: appended, heartbeat_at: new Date().toISOString() });
               }
             } catch (err) {
               logger.warn('Skipping photo in download job', { jobId: id, photoId: photo.id, error: err.message });
@@ -293,8 +339,16 @@ class DownloadJobService {
    * finish. Called once at startup.
    */
   async recoverOrphanedJobs() {
+    // Only rows whose LEASE has expired. A live worker heartbeats while it
+    // builds, so in a multi-replica deployment a rolling restart can't have
+    // one replica fail jobs another is still working on — which a blanket
+    // "fail everything pending" would do.
+    const staleBefore = new Date(Date.now() - LEASE_TIMEOUT_MS).toISOString();
     const orphaned = await db('download_jobs')
       .whereIn('status', ['pending', 'building'])
+      .where(function () {
+        this.whereNull('heartbeat_at').orWhere('heartbeat_at', '<', staleBefore);
+      })
       .update({
         status: 'failed',
         error: 'Interrupted by a server restart — please request the download again',

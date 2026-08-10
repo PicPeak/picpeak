@@ -1839,6 +1839,21 @@
         "logoutFromIdpHint": "Logging out of PicPeak also ends the IdP session (RP-initiated logout). Only applies to sessions that signed in via SSO; without this, logging out of PicPeak leaves the IdP session alive and the next SSO click signs straight back in.",
         "postLogoutRedirectUri": "Post-logout redirect URI (register this on your IdP client, e.g. Keycloak \"Valid post logout redirect URIs\")"
       }
+    },
+    "downloads": {
+      "title": "Download resolutions",
+      "intro": "The standard size is what every gallery hands out by default. Individual galleries can override this.",
+      "standard": "Standard resolution",
+      "original": "Original (full size)",
+      "picker": "Let guests choose a download size",
+      "pickerHint": "Adds a size picker to bulk downloads. Custom sizes are prepared on demand and are never larger than the standard.",
+      "allowOriginal": "Offer \"Original\" in the picker",
+      "allowOriginalHint": "Off by default: lowering the standard size normally means full-resolution files should not be handed out.",
+      "presets": "Available sizes",
+      "presetsHint": "Sizes are an upper bound — the aspect ratio is kept and photos are never enlarged.",
+      "label": "Label",
+      "width": "Width",
+      "height": "Height"
     }
   },
   "analytics": {

@@ -478,7 +478,9 @@ router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (r
 
     // Presets first — the standard is validated against the resulting list,
     // so a single request can add a size and select it in one go.
-    let presets = (await getDownloadGlobals()).resolutions;
+    const before = await getDownloadGlobals();
+    const previousStandard = before.standard_resolution;
+    let presets = before.resolutions;
     if (has('download_resolutions')) {
       const raw = Array.isArray(req.body.download_resolutions) ? req.body.download_resolutions : [];
       const cleaned = [];
@@ -511,10 +513,9 @@ router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (r
       // Replacing the preset list without naming a standard can orphan the
       // CURRENT standard — galleries would keep handing out a size the picker
       // no longer offers, breaking the "standard is always a preset" invariant.
-      const current = (await getDownloadGlobals()).standard_resolution;
-      if (current !== ORIGINAL && !presets.some((p) => p.id === current)) {
+      if (previousStandard !== ORIGINAL && !presets.some((p) => p.id === previousStandard)) {
         return res.status(400).json({
-          error: `The current standard resolution "${current}" is not in the new list — set download_standard_resolution in the same request`,
+          error: `The current standard resolution "${previousStandard}" is not in the new list — set download_standard_resolution in the same request`,
         });
       }
     }
@@ -533,8 +534,16 @@ router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (r
     // The cached download-all zip is built at the standard resolution, so a
     // change to the GLOBAL standard makes every INHERITING gallery's zip
     // stale. Events with their own override are unaffected and keep theirs.
+    // Only a REAL change to the standard invalidates. The settings form
+    // submits every field on every save, so keying off "was it present" would
+    // schedule a rebuild of every inheriting gallery each time an admin
+    // renamed a preset — a stampede on installs with many galleries.
+    const standardUpdate = updates.find((u) => u.setting_key === 'download_standard_resolution');
+    const standardChanged = standardUpdate
+      && JSON.parse(standardUpdate.setting_value) !== previousStandard;
+
     let invalidatedZips = 0;
-    if (updates.some((u) => u.setting_key === 'download_standard_resolution')) {
+    if (standardChanged) {
       // Every inheriting event, whether or not it currently HAS a cached zip:
       // one may be mid-build against the old standard right now. Going through
       // downloadZipService.invalidate bumps its generation counter, which

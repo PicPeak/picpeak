@@ -1139,6 +1139,18 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       }
     }
 
+    // Download resolution (#858). Resolved BEFORE the counters below: a
+    // rejected resolution must not inflate download stats, which a guest
+    // could otherwise do by replaying ?resolution=bogus.
+    const isVideo = photo.media_type === 'video'
+      || (photo.mime_type && photo.mime_type.startsWith('video/'));
+    const policy = await resolveEventDownloadPolicy(req.event);
+    const requested = pickRequestedResolution(policy, req.query.resolution);
+    if (requested === null) {
+      return res.status(400).json({ error: 'Resolution not available for this gallery' });
+    }
+    const box = isVideo ? null : parseResolution(requested);
+
     // Admin preview (#868) downloads are excluded from the download count +
     // guest analytics — kept out of client-facing stats.
     if (!req.isAdminPreview) {
@@ -1187,19 +1199,10 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     const downloadName = pickRawDownloadName(photo, useOriginal);
     const contentDisposition = buildContentDisposition(downloadName);
 
-    // Download resolution (#858). The gallery's standard applies to EVERY
-    // ordinary download, single photos included — otherwise a lowered standard
-    // is trivially bypassed by downloading photos one at a time. Videos have
-    // no resize path and always ship as-is.
-    const isVideo = photo.media_type === 'video'
-      || (photo.mime_type && photo.mime_type.startsWith('video/'));
-    const policy = await resolveEventDownloadPolicy(req.event);
-    const requested = pickRequestedResolution(policy, req.query.resolution);
-    if (requested === null) {
-      return res.status(400).json({ error: 'Resolution not available for this gallery' });
-    }
-    const box = isVideo ? null : parseResolution(requested);
-
+    // The gallery's standard applies to EVERY ordinary download, single photos
+    // included — otherwise a lowered standard is trivially bypassed by
+    // downloading photos one at a time. `box` was resolved above, before the
+    // counters. Videos have no resize path and always ship as-is.
     if (shouldApplyWatermark || box) {
       // Resize BEFORE watermarking: applyWatermark sizes the mark relative to
       // its input's width, so watermarking the original and then shrinking
@@ -1715,6 +1718,9 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
       if (err.code === 'NO_PHOTOS') {
         return res.status(404).json({ error: 'No photos available for this selection' });
       }
+      if (err.code === 'BUSY') {
+        return res.status(429).json({ error: 'Too many downloads are being prepared right now — please try again shortly' });
+      }
       throw err;
     }
 
@@ -1772,6 +1778,15 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     }
     if (new Date(job.expires_at).getTime() <= Date.now()) {
       return res.status(410).json({ error: 'This download has expired — please request it again' });
+    }
+    // A photo hidden AFTER this archive was built is still inside it, and the
+    // scope check above can't see that — both sides remain 'public'. Re-run
+    // the visibility query over the packaged set before handing it over.
+    if (!(await downloadJobService.isStillDeliverable(job, req.accessLevel))) {
+      return res.status(409).json({
+        error: 'This gallery changed since the download was prepared — please request it again',
+        status: 'stale',
+      });
     }
 
     const storage = getStorage();
