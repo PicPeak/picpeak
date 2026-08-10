@@ -153,7 +153,9 @@
     "showAll": "Alle anzeigen",
     "confirm": "Bestätigen",
     "show": "Einblenden",
-    "poweredBy": "Bereitgestellt von"
+    "poweredBy": "Bereitgestellt von",
+    "on": "an",
+    "off": "aus"
   },
   "upload": {
     "photoCategory": "Fotokategorie",
@@ -2308,7 +2310,12 @@
       "presetsHint": "Größen sind eine Obergrenze — das Seitenverhältnis bleibt erhalten und Fotos werden nie vergrößert.",
       "label": "Bezeichnung",
       "width": "Breite",
-      "height": "Höhe"
+      "height": "Höhe",
+      "eventTitle": "Download-Auflösung",
+      "eventIntro": "Überschreibt die globalen Download-Einstellungen nur für diese Galerie. „Erben“ folgt Einstellungen → Download-Auflösungen.",
+      "inheritWith": "Erben ({{value}})",
+      "effective": "Gibt derzeit heraus: {{standard}}",
+      "pickerOn": "Gäste dürfen eine andere Größe wählen"
     }
   },
   "branding": {

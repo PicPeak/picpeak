@@ -3,6 +3,7 @@ import type { Event } from '../../../types';
 import { FeedbackModerationPanel } from '../../../components/admin';
 import { EventReminderOverrideCard } from '../../../components/admin/EventReminderOverrideCard';
 import { SlideshowSettingsCard } from '../../../components/admin/SlideshowSettingsCard';
+import { DownloadResolutionCard } from '../../../components/admin/DownloadResolutionCard';
 import { ShortUrlsCard } from '../../../components/admin/ShortUrlsCard';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import type { AdminPhoto } from '../../../services/photos.service';
@@ -115,6 +116,10 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
         {/* Client Access (#172) */}
         <ClientAccessCard event={event} refetchEvent={refetchEvent} />
+
+        {/* Per-gallery download resolution override (#858). Sits with the
+            other "what the customer receives" controls. */}
+        <DownloadResolutionCard eventId={event.id} onChanged={() => refetchEvent()} />
 
         {/* Live Slideshow ("Diashow") link + live display settings (migrations 138/139).
             Gated behind the `slideshow` feature flag. */}

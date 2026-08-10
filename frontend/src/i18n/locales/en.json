@@ -153,7 +153,9 @@
     "showAll": "Show all",
     "confirm": "Confirm",
     "show": "Show",
-    "poweredBy": "Powered by"
+    "poweredBy": "Powered by",
+    "on": "on",
+    "off": "off"
   },
   "upload": {
     "photoCategory": "Photo Category",
@@ -1853,7 +1855,12 @@
       "presetsHint": "Sizes are an upper bound — the aspect ratio is kept and photos are never enlarged.",
       "label": "Label",
       "width": "Width",
-      "height": "Height"
+      "height": "Height",
+      "eventTitle": "Download resolution",
+      "eventIntro": "Override the site-wide download settings for this gallery only. \"Inherit\" follows Settings → Download resolutions.",
+      "inheritWith": "Inherit ({{value}})",
+      "effective": "Currently hands out: {{standard}}",
+      "pickerOn": "guests may choose another size"
     }
   },
   "analytics": {

@@ -69,6 +69,10 @@ export const DownloadsTab: React.FC = () => {
     },
   });
 
+  // Matches SlideshowStyleFields' input styling — the explicit text colour
+  // matters, without it the select renders muted and looks disabled.
+  const selectClass = 'w-full px-3 py-2 bg-neutral-50 dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 text-neutral-900 dark:text-neutral-100 rounded-lg text-sm';
+
   if (isLoading || !form) return <Loading />;
 
   const setPreset = (i: number, patch: Partial<Preset>) => {
@@ -118,7 +122,7 @@ export const DownloadsTab: React.FC = () => {
           {t('settings.downloads.standard', 'Standard resolution')}
         </label>
         <select
-          className="w-full mb-5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-2 text-sm"
+          className={`mb-5 ${selectClass}`}
           value={form.standard_resolution}
           onChange={(e) => setForm({ ...form, standard_resolution: e.target.value })}
         >
