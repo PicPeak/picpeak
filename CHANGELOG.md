@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.101.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.101.2-beta.0...v3.101.3-beta.0) (2026-08-10)
+
+
+### Bug Fixes
+
+* **auth:** issuer-tag the oversize SSO logout marker ([#798](https://github.com/PicPeak/picpeak/issues/798)) ([#1010](https://github.com/PicPeak/picpeak/issues/1010)) ([a607cea](https://github.com/PicPeak/picpeak/commit/a607cea11018e68aea8797160dbde7f34b8eca44))
+
 ## [3.101.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.101.1-beta.0...v3.101.2-beta.0) (2026-08-10)
 
 
