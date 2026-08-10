@@ -753,23 +753,37 @@ async function extractCaptureDate(imagePath) {
 async function resizeToBox(inputBuffer, box, options = {}) {
   if (!box || !box.width || !box.height) return inputBuffer;
   try {
-    const image = sharp(inputBuffer, { limitInputPixels: 268402689, failOn: 'none' });
-    const metadata = await image.metadata();
+    const probe = sharp(inputBuffer, { limitInputPixels: 268402689, failOn: 'none' });
+    const metadata = await probe.metadata();
     // Already inside the box — hand back the original bytes rather than
     // re-encoding, which would only cost quality and CPU.
     if (metadata.width && metadata.height
       && metadata.width <= box.width && metadata.height <= box.height) {
       return inputBuffer;
     }
-    let pipeline = image
-      .rotate() // honour EXIF orientation before resizing
-      .resize(box.width, box.height, { fit: 'inside', withoutEnlargement: true });
 
     const format = (metadata.format || '').toLowerCase();
+    // Animated sources must be re-opened with `animated: true`, otherwise
+    // sharp keeps only the first frame and the download silently loses its
+    // animation. `.rotate()` would flatten an animated source, so it is
+    // applied only to stills (where EXIF orientation actually exists).
+    const animated = (metadata.pages || 1) > 1;
+    const image = animated
+      ? sharp(inputBuffer, { limitInputPixels: 268402689, failOn: 'none', animated: true })
+      : probe.rotate();
+
+    let pipeline = image
+      .resize(box.width, box.height, { fit: 'inside', withoutEnlargement: true });
+
+    // Re-encode in the SOURCE format. The download routes keep the original
+    // filename and mime type, so emitting JPEG for a .gif would ship
+    // mislabelled bytes. GIF is an accepted upload format (multerConfig.photos).
     if (format === 'png') {
       pipeline = pipeline.png({ compressionLevel: 6 });
     } else if (format === 'webp') {
       pipeline = pipeline.webp({ quality: options.quality || 90 });
+    } else if (format === 'gif') {
+      pipeline = pipeline.gif();
     } else {
       pipeline = pipeline.jpeg({ quality: options.quality || 90, mozjpeg: true });
     }

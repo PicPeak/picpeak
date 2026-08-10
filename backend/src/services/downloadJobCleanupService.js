@@ -17,6 +17,11 @@ const logger = require('../utils/logger');
 const downloadJobService = require('./downloadJobService');
 
 function startDownloadJobCleanup() {
+  // A restart leaves any in-flight build with no worker. Fail those rows once
+  // at startup so their owners get a clear error instead of polling forever.
+  downloadJobService.recoverOrphanedJobs().catch((err) =>
+    logger.error('Download job recovery failed', { error: err.message }));
+
   cron.schedule('7,27,47 * * * *', async () => {
     await runDownloadJobCleanup();
   });

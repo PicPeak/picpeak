@@ -16,6 +16,7 @@ export { ModerationTab } from './tabs/ModerationTab';
 export { StylingTab } from './tabs/StylingTab';
 export { SEOTab } from './tabs/SEOTab';
 export { ThumbnailsTab } from './tabs/ThumbnailsTab';
+export { DownloadsTab } from './tabs/DownloadsTab';
 export { ApiTokensTab } from './tabs/ApiTokensTab';
 export { WebhooksTab } from './tabs/WebhooksTab';
 export { AccountingTab } from './tabs/AccountingTab';

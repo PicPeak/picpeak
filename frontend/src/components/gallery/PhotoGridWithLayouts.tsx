@@ -230,6 +230,11 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   const layoutProps = {
     photos,
     slug,
+    // Full-page layouts own their bulk-download control, so the resolution
+    // picker has to reach them too (#858) — otherwise premium/story galleries
+    // silently skip the choice the admin enabled.
+    downloadChoices,
+    onPickResolution: (ids: number[]) => setResolutionPickerIds(ids),
     onPhotoClick: handlePhotoClick,
     onOpenPhotoWithFeedback: handleOpenWithFeedback,
     onFeedbackChange: onFeedbackChange,

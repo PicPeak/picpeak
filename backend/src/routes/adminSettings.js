@@ -507,6 +507,16 @@ router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (r
         return res.status(400).json({ error: `Unknown resolution "${v}"` });
       }
       push('download_standard_resolution', v);
+    } else if (has('download_resolutions')) {
+      // Replacing the preset list without naming a standard can orphan the
+      // CURRENT standard — galleries would keep handing out a size the picker
+      // no longer offers, breaking the "standard is always a preset" invariant.
+      const current = (await getDownloadGlobals()).standard_resolution;
+      if (current !== ORIGINAL && !presets.some((p) => p.id === current)) {
+        return res.status(400).json({
+          error: `The current standard resolution "${current}" is not in the new list — set download_standard_resolution in the same request`,
+        });
+      }
     }
     if (has('download_resolution_picker_enabled')) {
       push('download_resolution_picker_enabled', !!req.body.download_resolution_picker_enabled);
@@ -525,10 +535,19 @@ router.put('/downloads', adminAuth, requirePermission('settings.edit'), async (r
     // stale. Events with their own override are unaffected and keep theirs.
     let invalidatedZips = 0;
     if (updates.some((u) => u.setting_key === 'download_standard_resolution')) {
-      invalidatedZips = await db('events')
+      // Every inheriting event, whether or not it currently HAS a cached zip:
+      // one may be mid-build against the old standard right now. Going through
+      // downloadZipService.invalidate bumps its generation counter, which
+      // aborts that build — a raw UPDATE would let it finish and re-publish a
+      // permanently stale archive.
+      const downloadZipService = require('../services/downloadZipService');
+      const inheriting = await db('events')
         .whereNull('download_standard_resolution')
-        .whereNotNull('download_zip_path')
-        .update({ download_zip_path: null, download_zip_generated_at: null });
+        .select('id');
+      for (const ev of inheriting) {
+        downloadZipService.invalidate(ev.id);
+      }
+      invalidatedZips = inheriting.length;
     }
 
     res.json({

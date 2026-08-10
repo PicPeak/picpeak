@@ -1406,6 +1406,10 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       text: req.event.watermark_text || watermarkSettings?.text || 'Protected'
     } : null;
 
+    // The gallery's standard resolution applies to the streamed archive too,
+    // not only the cached one (#858).
+    const { standardBox: bulkBox } = await resolveEventDownloadPolicy(req.event);
+
     // Add photos to archive — managed photos via storage backend, external via local path.
     const { resolvePhotoStorageKey } = require('../services/photoResolver');
     const storage = getStorage();
@@ -1446,21 +1450,14 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
           throw new Error('Photo file missing on disk');
         }
 
-        if (shouldApplyWatermark && effectiveSettings) {
-          // Watermark service operates on a local path. For managed photos in
-          // S3 mode, materialize a tmp local copy first.
-          const { withLocalCopy } = require('../services/imageProcessor');
-          const sourceForWatermark = storageKey
-            ? null
-            : resolvePhotoFilePath(req.event, photo);
-
-          const watermarkedBuffer = storageKey
-            ? await withLocalCopy(storageKey, (localPath) =>
-              watermarkService.applyWatermark(localPath, effectiveSettings)
-            )
-            : await watermarkService.applyWatermark(sourceForWatermark, effectiveSettings);
-
-          archive.append(watermarkedBuffer, { name: archiveName });
+        // Resize to the gallery's standard resolution (#858) and/or watermark.
+        // This branch runs whenever the cached zip isn't usable — the first
+        // download after an invalidation, PIN clients, and galleries with
+        // hidden photos all land here, so skipping the cap would leak
+        // full-resolution files for exactly those cases.
+        const rendered = await renderPhotoForDownload(req.event, photo, bulkBox, effectiveSettings);
+        if (rendered) {
+          archive.append(rendered, { name: archiveName });
         } else if (storageKey) {
           const stream = await storage.get(storageKey);
           archive.append(stream, { name: archiveName });
@@ -1706,12 +1703,20 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
       }
     }
 
-    const job = await downloadJobService.createJob({
-      event: req.event,
-      resolution,
-      photoIds,
-      accessLevel: req.accessLevel,
-    });
+    let job;
+    try {
+      job = await downloadJobService.createJob({
+        event: req.event,
+        resolution,
+        photoIds,
+        accessLevel: req.accessLevel,
+      });
+    } catch (err) {
+      if (err.code === 'NO_PHOTOS') {
+        return res.status(404).json({ error: 'No photos available for this selection' });
+      }
+      throw err;
+    }
 
     res.status(202).json({
       token: job.token,
@@ -1746,8 +1751,20 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
 // Deliver the finished archive.
 router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
+    // Downloads can be switched off after a job was created — every other
+    // download route re-checks this per request, so this one must too.
+    if (req.event.allow_downloads === false) {
+      return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
+    }
+
     const job = await downloadJobService.getStatus(req.params.token);
     if (!job || job.event_id !== req.event.id) {
+      return res.status(404).json({ error: 'Download job not found' });
+    }
+    // The token alone never grants access: the archive was built under one
+    // visibility scope, and only a requester still in that scope may take it.
+    // Without this, a leaked client token would hand hidden photos to a guest.
+    if (job.visibility_scope !== downloadJobService.visibilityScopeFor(req.accessLevel)) {
       return res.status(404).json({ error: 'Download job not found' });
     }
     if (job.status !== 'ready' || !job.zip_path) {
@@ -1762,6 +1779,28 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
     if (!stat) {
       return res.status(410).json({ error: 'This download is no longer available' });
     }
+
+    // Stats parity with the other bulk paths (#895): only count once the
+    // response actually completed, and keep admin previews out of guest stats.
+    res.on('finish', () => {
+      if (res.statusCode >= 400 || req.isAdminPreview) return;
+      let ids = [];
+      try {
+        ids = JSON.parse(job.photo_ids || '[]');
+      } catch (_) { /* malformed row — skip counting rather than fail */ }
+      if (ids.length > 0) {
+        db('photos').whereIn('id', ids).increment('download_count', 1).catch(() => {});
+      }
+      db('access_logs').insert({
+        event_id: req.event.id,
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent'],
+        action: 'download',
+        photo_id: null,
+      }).catch(() => {});
+      logActivity('gallery_downloaded', { scope: 'all', resolution: job.resolution },
+        req.event.id, galleryActor(req));
+    });
 
     const suffix = job.resolution === 'original' ? 'original' : job.resolution;
     res.setHeader('Content-Type', 'application/zip');

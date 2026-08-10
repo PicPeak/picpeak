@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Photo } from '../../../types';
+import type { Photo, DownloadResolutionChoice } from '../../../types';
 
 export interface BaseGalleryLayoutProps {
   photos: Photo[];
@@ -20,6 +20,11 @@ export interface BaseGalleryLayoutProps {
   eventDate?: string | null;
   expiresAt?: string | null;
   allowDownloads?: boolean;
+  // Resolution picker choices (#858). More than one entry means the gallery
+  // offers a real choice, so bulk downloads must route through the modal
+  // instead of calling downloadSelectedPhotos directly.
+  downloadChoices?: DownloadResolutionChoice[];
+  onPickResolution?: (photoIds: number[]) => void;
   protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
   useCanvasRendering?: boolean;

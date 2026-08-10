@@ -74,8 +74,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
-  // Download size picker for "download all" (#858).
+  // Download size picker (#858). `showResolutionPicker` covers "download all";
+  // `resolutionPickerIds` covers a selection (sidebar / full-page layouts).
   const [showResolutionPicker, setShowResolutionPicker] = useState(false);
+  const [resolutionPickerIds, setResolutionPickerIds] = useState<number[] | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'name' | 'size' | 'rating' | 'capture_date'>('date');
   const [sortDesc, setSortDesc] = useState(true);
@@ -641,12 +643,20 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
 
   const handleDownloadSelected = async () => {
     if (selectedPhotos.size === 0) return;
-    
+
     // Prevent downloads if gallery is expired or downloads disabled
     if (!allowDownloads) {
       return;
     }
-    
+
+    // Resolution picker (#858): sidebar-driven selections get the same choice
+    // as the grid's own control, rather than silently downloading at the
+    // gallery standard.
+    if (downloadChoices.length > 1) {
+      setResolutionPickerIds(Array.from(selectedPhotos));
+      return;
+    }
+
     const selectedPhotosList = filteredPhotos.filter(p => selectedPhotos.has(p.id));
     
     // Track bulk download
@@ -788,12 +798,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           />
         )}
 
-        {/* Download size picker (#858) — "download all" with a choice of size. */}
-        {showResolutionPicker && (
+        {/* Download size picker (#858) — "download all", or a selection. */}
+        {(showResolutionPicker || resolutionPickerIds) && (
           <DownloadResolutionModal
             slug={slug}
             choices={downloadChoices}
-            onClose={() => setShowResolutionPicker(false)}
+            photoIds={resolutionPickerIds || undefined}
+            onClose={() => {
+              setShowResolutionPicker(false);
+              setResolutionPickerIds(null);
+            }}
           />
         )}
       </GalleryLayout>
@@ -869,12 +883,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           />
         )}
 
-        {/* Download size picker (#858) — "download all" with a choice of size. */}
-        {showResolutionPicker && (
+        {/* Download size picker (#858) — "download all", or a selection. */}
+        {(showResolutionPicker || resolutionPickerIds) && (
           <DownloadResolutionModal
             slug={slug}
             choices={downloadChoices}
-            onClose={() => setShowResolutionPicker(false)}
+            photoIds={resolutionPickerIds || undefined}
+            onClose={() => {
+              setShowResolutionPicker(false);
+              setResolutionPickerIds(null);
+            }}
           />
         )}
       </>
@@ -910,7 +928,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           onDownloadSelected={handleDownloadSelected}
           isDownloading={downloadAllMutation.isPending}
           allowDownloads={allowDownloads}
-          downloadChoices={downloadChoices}
           photoCounts={photoCounts}
           totalPhotos={data?.photos.length || 0}
           isMobile={isMobile}
@@ -1140,12 +1157,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           />
         )}
 
-        {/* Download size picker (#858) — "download all" with a choice of size. */}
-        {showResolutionPicker && (
+        {/* Download size picker (#858) — "download all", or a selection. */}
+        {(showResolutionPicker || resolutionPickerIds) && (
           <DownloadResolutionModal
             slug={slug}
             choices={downloadChoices}
-            onClose={() => setShowResolutionPicker(false)}
+            photoIds={resolutionPickerIds || undefined}
+            onClose={() => {
+              setShowResolutionPicker(false);
+              setResolutionPickerIds(null);
+            }}
           />
         )}
       </GalleryLayout>

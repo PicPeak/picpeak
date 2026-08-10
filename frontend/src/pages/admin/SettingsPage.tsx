@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   Search,
   Tags,
+  Download as DownloadIcon,
   Tag,
   BarChart3,
   Flag,
@@ -38,6 +39,7 @@ import {
   StylingTab,
   SEOTab,
   ThumbnailsTab,
+  DownloadsTab,
   ApiTokensTab,
   WebhooksTab,
   AccountingTab,
@@ -68,6 +70,7 @@ type TabType =
   | 'branding'
   | 'categories'
   | 'thumbnails'
+  | 'downloads'
   | 'styling'
   | 'cms'
   | 'email'
@@ -104,7 +107,7 @@ interface NavGroup {
 
 const ALL_TAB_KEYS: TabType[] = [
   'features', 'general', 'events', 'eventTypes',
-  'branding', 'categories', 'thumbnails', 'styling', 'cms',
+  'branding', 'categories', 'thumbnails', 'downloads', 'styling', 'cms',
   'email', 'moderation',
   'security', 'sso', 'imageSecurity', 'seo',
   'apiTokens', 'webhooks',
@@ -244,6 +247,7 @@ export const SettingsPage: React.FC = () => {
         { key: 'branding',   label: t('settings.branding.title',   'Branding'),    icon: Palette },
         { key: 'categories', label: t('settings.categories.title'),                 icon: Tags },
         { key: 'thumbnails', label: t('settings.thumbnails.title', 'Thumbnails'),  icon: ImageIcon },
+        { key: 'downloads', label: t('settings.downloads.title', 'Download resolutions'), icon: DownloadIcon },
         { key: 'styling',    label: t('settings.styling.title',    'Custom CSS'),  icon: Code },
         { key: 'cms',        label: t('settings.cms.title',        'CMS Pages'),   icon: FileText },
         ...(flags.slideshow
@@ -495,6 +499,7 @@ export const SettingsPage: React.FC = () => {
 
           {activeTab === 'imageSecurity' && <ImageSecurityTab />}
           {activeTab === 'thumbnails' && <ThumbnailsTab />}
+          {activeTab === 'downloads' && <DownloadsTab />}
           {activeTab === 'categories' && <CategoriesTab />}
 
           {activeTab === 'analytics' && (

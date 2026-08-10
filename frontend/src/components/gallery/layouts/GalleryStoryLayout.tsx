@@ -51,6 +51,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   eventName,
   eventDate,
   allowDownloads = true,
+  downloadChoices,
+  onPickResolution,
   protectionLevel = 'standard',
   useEnhancedProtection = false,
   useCanvasRendering = false,
@@ -232,15 +234,20 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }, [selectedPhotoForFeedback, ratings, slug, savedIdentity, onFeedbackChange]);
 
   const handleDownloadAll = useCallback(async () => {
+    const ids = photos.map(p => p.id);
+    // #858: hand off to the resolution picker when the gallery offers a choice.
+    if (downloadChoices && downloadChoices.length > 1 && onPickResolution) {
+      onPickResolution(ids);
+      return;
+    }
     toast.info(t('gallery.downloading', { count: photos.length }));
     try {
-      const ids = photos.map(p => p.id);
       await galleryService.downloadSelectedPhotos(slug, ids);
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch {
       toast.error(t('gallery.downloadError'));
     }
-  }, [photos, slug, t]);
+  }, [photos, slug, t, downloadChoices, onPickResolution]);
 
   if (photos.length === 0) {
     return (

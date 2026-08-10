@@ -183,6 +183,8 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   eventName,
   eventDate,
   allowDownloads = true,
+  downloadChoices,
+  onPickResolution,
   protectionLevel = 'standard',
   useEnhancedProtection = false,
   useCanvasRendering = false,
@@ -398,6 +400,11 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   const handleDownloadSelected = useCallback(async () => {
     if (selectedPhotos.size === 0) return;
     const ids = Array.from(selectedPhotos);
+    // #858: hand off to the resolution picker when the gallery offers a choice.
+    if (downloadChoices && downloadChoices.length > 1 && onPickResolution) {
+      onPickResolution(ids);
+      return;
+    }
     toast.info(t('gallery.downloading', { count: ids.length }));
 
     try {
@@ -406,7 +413,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     } catch {
       toast.error(t('gallery.downloadError'));
     }
-  }, [selectedPhotos, slug, t]);
+  }, [selectedPhotos, slug, t, downloadChoices, onPickResolution]);
 
   const handleDownloadFromLightbox = useCallback((slide: { src?: string }) => {
     if (!allowDownloads || !slide.src) return;

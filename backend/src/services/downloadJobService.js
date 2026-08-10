@@ -32,7 +32,7 @@ const { getUseOriginalFilenames, getZipEntryNames } = require('./downloadFilenam
 const { renderPhotoForDownload, resolveWatermarkSettings } = require('./downloadRendition');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 const { parseResolution } = require('../utils/downloadResolutions');
-const { applyPhotoVisibilityFilter } = require('../utils/photoVisibility');
+const { applyPhotoVisibilityFilter, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 const logger = require('../utils/logger');
 
 // How long a finished archive stays downloadable before the sweep deletes it.
@@ -40,9 +40,22 @@ const JOB_TTL_MS = 60 * 60 * 1000; // 1 hour
 // Guards against a handful of guests each kicking off a whole-gallery resize.
 const MAX_CONCURRENT_BUILDS = 2;
 
+/**
+ * Collapse an access level to the visibility scope that decides WHICH photos a
+ * requester may receive. Anything that can see hidden photos is one scope;
+ * ordinary guests are another. Part of the job dedup identity so archives are
+ * never shared across the boundary.
+ */
+function visibilityScope(accessLevel) {
+  return canSeeHiddenPhotos(accessLevel) ? 'hidden' : 'public';
+}
+
 class DownloadJobService {
   constructor() {
     this.running = 0;
+    // jobId -> in-flight build promise. Only jobs present here are safe to
+    // rejoin; rows left 'pending'/'building' by a previous process are not.
+    this.liveBuilds = new Map();
   }
 
   cacheDir(slug) {
@@ -54,30 +67,59 @@ class DownloadJobService {
   }
 
   /**
-   * Stable identity for "the same archive": same event, same size, same photo
-   * set, same watermark decision. A second requester joins an in-flight or
-   * still-valid job instead of paying for the resize twice.
+   * Stable identity for "the same archive".
+   *
+   * SECURITY: `visibilityScope` and the RESOLVED photo id list are part of the
+   * identity, not just the requested one. A PIN client sees hidden photos that
+   * an ordinary guest must not; without the scope in the key, a guest asking
+   * for the same size would be handed the client's job token and could
+   * download hidden photos, because the delivery route only checks the event
+   * id. Hashing the resolved id set also stops a stale archive being reused
+   * after photos are added, removed or hidden.
    */
-  dedupKey(eventId, resolution, photoIds, watermarked) {
-    const ids = photoIds ? [...photoIds].map(Number).sort((a, b) => a - b).join(',') : 'all';
+  dedupKey(eventId, resolution, resolvedPhotoIds, watermarked, visibilityScope) {
+    const ids = [...resolvedPhotoIds].map(Number).sort((a, b) => a - b).join(',');
     return crypto.createHash('sha256')
-      .update(`${eventId}|${resolution}|${ids}|${watermarked ? 'wm' : 'raw'}`)
+      .update(`${eventId}|${resolution}|${visibilityScope}|${ids}|${watermarked ? 'wm' : 'raw'}`)
       .digest('hex')
       .slice(0, 64);
+  }
+
+  /**
+   * The photos a given requester would actually receive. Used both to build
+   * the dedup identity and to build the archive, so the two can never drift.
+   */
+  photoQuery(eventId, photoIds, accessLevel) {
+    let query = db('photos')
+      .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
+      .where('photos.event_id', eventId)
+      .where(function () {
+        this.whereNull('photos.category_id')
+          .orWhere('photo_categories.allow_downloads', true)
+          .orWhereNull('photo_categories.allow_downloads');
+      });
+    if (photoIds && photoIds.length) {
+      query = query.whereIn('photos.id', photoIds);
+    }
+    return applyPhotoVisibilityFilter(query, accessLevel);
   }
 
   /**
    * Find a job that already satisfies this request — either still building or
    * finished and not yet expired. Failed jobs are ignored so a transient error
    * doesn't poison every later attempt.
+   *
+   * `pending`/`building` rows are only reusable while THIS process is actually
+   * building them: after a restart those rows have no live worker, so rejoining
+   * one would leave the client polling until the TTL expires.
    */
   async findReusable(eventId, dedupKey) {
-    return db('download_jobs')
+    const rows = await db('download_jobs')
       .where({ event_id: eventId, dedup_key: dedupKey })
       .whereIn('status', ['pending', 'building', 'ready'])
       .where('expires_at', '>', new Date().toISOString())
-      .orderBy('id', 'desc')
-      .first();
+      .orderBy('id', 'desc');
+    return rows.find((r) => r.status === 'ready' || this.liveBuilds.has(r.id)) || null;
   }
 
   /**
@@ -86,7 +128,19 @@ class DownloadJobService {
    */
   async createJob({ event, resolution, photoIds, accessLevel }) {
     const watermark = await resolveWatermarkSettings(event);
-    const dedupKey = this.dedupKey(event.id, resolution, photoIds, !!watermark);
+
+    // Resolve the photo set up front, under THIS requester's visibility, so
+    // the dedup identity reflects what they may actually receive.
+    const resolved = await this.photoQuery(event.id, photoIds, accessLevel).select('photos.id');
+    const resolvedIds = resolved.map((r) => r.id);
+    if (resolvedIds.length === 0) {
+      const err = new Error('No photos available for this selection');
+      err.code = 'NO_PHOTOS';
+      throw err;
+    }
+
+    const scope = visibilityScope(accessLevel);
+    const dedupKey = this.dedupKey(event.id, resolution, resolvedIds, !!watermark, scope);
 
     const existing = await this.findReusable(event.id, dedupKey);
     if (existing) return existing;
@@ -98,23 +152,33 @@ class DownloadJobService {
       token,
       event_id: event.id,
       resolution,
-      photo_ids: photoIds ? JSON.stringify(photoIds) : null,
+      photo_ids: JSON.stringify(resolvedIds),
       dedup_key: dedupKey,
+      visibility_scope: scope,
       status: 'pending',
       created_at: new Date().toISOString(),
       expires_at: expiresAt,
     }).returning('id');
     const id = inserted[0]?.id ?? inserted[0];
 
-    // Fire and forget — the row is the source of truth for progress.
-    this._build(id, event, resolution, photoIds, watermark, accessLevel)
-      .catch((err) => logger.error('Download job build failed', { jobId: id, error: err.message }));
+    // Fire and forget — the row is the source of truth for progress. The
+    // liveBuilds entry is what makes a pending/building row reusable; a row
+    // without one is an orphan from a previous process.
+    const promise = this._build(id, event, resolution, resolvedIds, watermark, accessLevel)
+      .catch((err) => logger.error('Download job build failed', { jobId: id, error: err.message }))
+      .finally(() => this.liveBuilds.delete(id));
+    this.liveBuilds.set(id, promise);
 
     return db('download_jobs').where({ id }).first();
   }
 
   async getStatus(token) {
     return db('download_jobs').where({ token }).first();
+  }
+
+  /** Exposed so the delivery route can re-check the requester's scope. */
+  visibilityScopeFor(accessLevel) {
+    return visibilityScope(accessLevel);
   }
 
   async _fail(id, message) {
@@ -138,20 +202,9 @@ class DownloadJobService {
     try {
       await db('download_jobs').where({ id }).update({ status: 'building' });
 
-      let query = db('photos')
-        .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
-        .where('photos.event_id', event.id)
-        .where(function () {
-          this.whereNull('photos.category_id')
-            .orWhere('photo_categories.allow_downloads', true)
-            .orWhereNull('photo_categories.allow_downloads');
-        });
-      if (photoIds && photoIds.length) {
-        query = query.whereIn('photos.id', photoIds);
-      }
-      // Same visibility rules as the live download routes — a job must never
-      // become a way to collect photos the requester can't otherwise see.
-      const photos = await applyPhotoVisibilityFilter(query, accessLevel)
+      // Same query that produced the dedup identity, so the archive can never
+      // contain photos the requester wasn't entitled to at creation time.
+      const photos = await this.photoQuery(event.id, photoIds, accessLevel)
         .select('photos.*')
         .orderBy('photos.uploaded_at', 'desc');
 
@@ -231,6 +284,26 @@ class DownloadJobService {
       this.running -= 1;
       if (tmpDir) await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
+  }
+
+  /**
+   * Fail rows left mid-build by a previous process. Without this they linger
+   * as 'pending'/'building' until the TTL, and although findReusable now skips
+   * them, the client that owns such a token would poll a job that can never
+   * finish. Called once at startup.
+   */
+  async recoverOrphanedJobs() {
+    const orphaned = await db('download_jobs')
+      .whereIn('status', ['pending', 'building'])
+      .update({
+        status: 'failed',
+        error: 'Interrupted by a server restart — please request the download again',
+        completed_at: new Date().toISOString(),
+      });
+    if (orphaned > 0) {
+      logger.info(`Failed ${orphaned} download job(s) orphaned by a restart`);
+    }
+    return orphaned;
   }
 
   /** Delete expired jobs and their artifacts. Returns how many were removed. */

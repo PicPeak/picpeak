@@ -156,6 +156,42 @@ describe('Download resolutions (#858)', () => {
     });
   });
 
+  describe('job dedup identity (codex review round 1)', () => {
+    // The leak this pins: a PIN client's archive contains hidden photos. If the
+    // dedup key ignored the visibility scope, a guest asking for the same size
+    // would be handed the client's job token — and the delivery route only
+    // checked the event id.
+    let jobService;
+
+    beforeAll(() => {
+      jobService = require('../../src/services/downloadJobService');
+    });
+
+    it('separates client and guest archives of the same size and photo set', () => {
+      const guest = jobService.dedupKey(1, '1500x1000', [1, 2, 3], false, 'public');
+      const client = jobService.dedupKey(1, '1500x1000', [1, 2, 3], false, 'hidden');
+      expect(guest).not.toBe(client);
+    });
+
+    it('keys on the RESOLVED photo set, so a stale archive is not reused', () => {
+      const before = jobService.dedupKey(1, '1500x1000', [1, 2, 3], false, 'public');
+      const afterUpload = jobService.dedupKey(1, '1500x1000', [1, 2, 3, 4], false, 'public');
+      const afterHide = jobService.dedupKey(1, '1500x1000', [1, 2], false, 'public');
+      expect(new Set([before, afterUpload, afterHide]).size).toBe(3);
+    });
+
+    it('is order-independent for the same set', () => {
+      expect(jobService.dedupKey(1, 'original', [3, 1, 2], true, 'public'))
+        .toBe(jobService.dedupKey(1, 'original', [1, 2, 3], true, 'public'));
+    });
+
+    it('maps access levels onto the two visibility scopes', () => {
+      expect(jobService.visibilityScopeFor('client')).toBe('hidden');
+      expect(jobService.visibilityScopeFor('guest')).toBe('public');
+      expect(jobService.visibilityScopeFor(undefined)).toBe('public');
+    });
+  });
+
   describe('resize semantics', () => {
     const make = (w, h) => sharp({
       create: { width: w, height: h, channels: 3, background: { r: 10, g: 100, b: 200 } },
