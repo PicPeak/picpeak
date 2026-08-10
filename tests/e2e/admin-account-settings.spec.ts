@@ -13,7 +13,7 @@ test('admin can update account email via settings page', async ({ page }, testIn
   await page.goto('/admin/login');
   await page.getByLabel(/Email|E-Mail/i).fill(ADMIN_EMAIL);
   await page.getByLabel(/Password|Passwort/i).fill(ADMIN_PASSWORD);
-  await page.getByRole('button', { name: /Sign In|Log in|Anmelden/i }).click();
+  await page.getByRole('button', { name: /^(Sign In|Log in|Anmelden)$/i }).click();
   await expect(page.getByRole('heading', { name: /Dashboard|Übersicht/i })).toBeVisible({ timeout: 20000 });
 
   await page.goto('/admin/settings');
