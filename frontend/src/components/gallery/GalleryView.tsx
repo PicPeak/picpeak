@@ -316,7 +316,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         logo_display_header: settingsData.branding_logo_display_header !== false,
         logo_display_hero: settingsData.branding_logo_display_hero !== false,
         logo_display_mode: settingsData.branding_logo_display_mode || 'logo_and_text',
-        hide_powered_by: settingsData.branding_hide_powered_by === true,
         // Footer overhaul (#441 + #440). All five socials are optional;
         // empty strings → that icon is hidden. promo_markdown is the
         // global default; per-event override happens in GalleryLayout.

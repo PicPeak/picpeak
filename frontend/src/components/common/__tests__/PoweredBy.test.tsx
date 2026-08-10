@@ -60,4 +60,38 @@ describe('PoweredBy', () => {
     expect(paragraph).toHaveClass('text-xs', 'mt-2');
     expect(paragraph).toHaveStyle({ opacity: '0.5' });
   });
+
+  // The gallery footer appends the attribution to its copyright line, inside an
+  // existing <p>. A nested <p> is invalid HTML, so that call site needs a span
+  // and the leading separator (#1003).
+  describe('inline variant', () => {
+    it('renders a span, not a paragraph, so it can live inside one', () => {
+      setSettings({});
+      const { container } = render(<PoweredBy inline />);
+      expect(screen.getByText('PicPeak').closest('p')).toBeNull();
+      expect(container.querySelector('span')).not.toBeNull();
+    });
+
+    it('carries its own separator', () => {
+      setSettings({});
+      const { container } = render(<PoweredBy inline />);
+      expect(container.textContent).toContain('| Powered by');
+    });
+
+    it('hides the separator along with the attribution when white-labelled', () => {
+      // The separator has to be inside the component: a caller rendering its
+      // own " | " would need to repeat the visibility guard, and would leave a
+      // dangling separator the moment it drifted.
+      setSettings({ branding_hide_powered_by: true });
+      const { container } = render(<PoweredBy inline />);
+      expect(container).toBeEmptyDOMElement();
+      expect(container.textContent).not.toContain('|');
+    });
+
+    it('hides while settings are still loading, like the block variant', () => {
+      setSettings(undefined);
+      const { container } = render(<PoweredBy inline />);
+      expect(container).toBeEmptyDOMElement();
+    });
+  });
 });

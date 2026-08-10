@@ -5,7 +5,7 @@ import { Calendar, Clock, Download, LogOut, Facebook, Instagram, Twitter, Youtub
 import { parseISO } from 'date-fns';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
-import { Button, MarkdownContent } from '../common';
+import { Button, MarkdownContent, PoweredBy } from '../common';
 import { DynamicFavicon } from '../common/DynamicFavicon';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
@@ -48,7 +48,6 @@ interface GalleryLayoutProps {
     logo_display_header?: boolean;
     logo_display_hero?: boolean;
     logo_display_mode?: 'logo_only' | 'text_only' | 'logo_and_text';
-    hide_powered_by?: boolean;
     // Footer overhaul (#441 + #440). Empty strings hide each socials icon.
     facebook_url?: string;
     instagram_url?: string;
@@ -702,9 +701,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
           )}
           <p className="text-xs sm:text-sm text-muted-theme">
             {brandingSettings?.footer_text || `© ${new Date().getFullYear()}${brandingSettings?.company_name ? ` ${brandingSettings.company_name}` : ''}. All rights reserved.`}
-            {!brandingSettings?.hide_powered_by && (
-              <> | Powered by <span className="font-semibold">PicPeak</span></>
-            )}
+            <PoweredBy inline />
           </p>
           {brandingSettings?.company_name && brandingSettings?.company_tagline && (
             <p className="text-xs text-muted-theme mt-2">
