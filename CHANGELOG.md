@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.102.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.102.0-beta.0...v3.102.1-beta.0) (2026-08-11)
+
+
+### Documentation
+
+* flip README links to docs.picpeak.app + delete docs/_to-migrate ([#1000](https://github.com/PicPeak/picpeak/issues/1000) phase 3) ([#1023](https://github.com/PicPeak/picpeak/issues/1023)) ([27dedb1](https://github.com/PicPeak/picpeak/commit/27dedb13f390f956690e667d41ed532bce697eb4))
+
 ## [3.102.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.101.5-beta.0...v3.102.0-beta.0) (2026-08-11)
 
 
