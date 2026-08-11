@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.102.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.101.5-beta.0...v3.102.0-beta.0) (2026-08-11)
+
+
+### Features
+
+* **downloads:** per-gallery download resolutions ([#858](https://github.com/PicPeak/picpeak/issues/858)) ([#1022](https://github.com/PicPeak/picpeak/issues/1022)) ([8e35737](https://github.com/PicPeak/picpeak/commit/8e3573788b1bde8768d023e779ea3361c91f6223))
+
 ## [3.101.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.101.4-beta.0...v3.101.5-beta.0) (2026-08-10)
 
 
