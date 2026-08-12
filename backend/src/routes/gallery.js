@@ -2,6 +2,11 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
+// SQLite stores booleans as 0/1, Postgres as true/false (#1028). Strict
+// comparisons against `true`/`false` therefore read every flag backwards on
+// SQLite — parseBooleanInput normalises both engines and takes the per-column
+// default for legacy NULL rows.
+const { parseBooleanInput } = require('../utils/parsers');
 const { getAppSetting } = require('../utils/appSettings');
 const archiver = require('archiver');
 const path = require('path');
@@ -759,7 +764,7 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     // Check if feedback should be visible to guests
     const feedbackService = require('../services/feedbackService');
     const feedbackSettings = await feedbackService.getEventFeedbackSettings(req.event.id);
-    const showFeedbackToGuests = isClient || feedbackSettings.show_feedback_to_guests !== false;
+    const showFeedbackToGuests = isClient || parseBooleanInput(feedbackSettings.show_feedback_to_guests, true);
 
     // Then get comment counts separately
     const commentCounts = await db('photo_feedback')
@@ -826,7 +831,7 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         // Per-category download flag (#640). false explicitly disables; the
         // gallery hides the download button. Defaults true so categories
         // created before migration 135 keep working.
-        allow_downloads: cat.allow_downloads !== false
+        allow_downloads: parseBooleanInput(cat.allow_downloads, true)
       }));
     }
 
@@ -856,9 +861,9 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     const protectionSettings = {
       protection_level: req.event.protection_level || 'standard',
       image_quality: req.event.image_quality || 85,
-      use_canvas_rendering: req.event.use_canvas_rendering === true,
+      use_canvas_rendering: parseBooleanInput(req.event.use_canvas_rendering, false),
       fragmentation_level: req.event.fragmentation_level || 3,
-      overlay_protection: req.event.overlay_protection !== false
+      overlay_protection: parseBooleanInput(req.event.overlay_protection, true)
     };
 
     // Lightbox preview tier (#492). When the admin opts in, the
@@ -906,8 +911,10 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         color_theme: req.event.color_theme,
         expires_at: req.event.expires_at,
         hero_photo_id: req.event.hero_photo_id,
-        allow_downloads: req.event.allow_downloads !== false,
-        allow_user_uploads: req.event.allow_user_uploads === true,
+        // Defaults match /info: downloads on unless explicitly disabled,
+        // uploads off unless explicitly enabled (#1028).
+        allow_downloads: parseBooleanInput(req.event.allow_downloads, true),
+        allow_user_uploads: parseBooleanInput(req.event.allow_user_uploads, false),
         // Download resolutions (#858). `choices` drives the picker modal and is
         // empty when the picker is off, so the UI can never offer a size the
         // server would reject.
@@ -918,12 +925,12 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         },
         // Reveal mode (#838): armed flag lets an open VISIBLE gallery keep
         // polling so a re-hide propagates without a manual reload.
-        reveal_armed: req.event.reveal_mode === true || req.event.reveal_mode === 1 || req.event.reveal_mode === '1',
-        disable_right_click: req.event.disable_right_click === true,
-        watermark_downloads: req.event.watermark_downloads === true,
+        reveal_armed: parseBooleanInput(req.event.reveal_mode, false),
+        disable_right_click: parseBooleanInput(req.event.disable_right_click, false),
+        watermark_downloads: parseBooleanInput(req.event.watermark_downloads, false),
         watermark_text: req.event.watermark_text,
-        enable_devtools_protection: req.event.enable_devtools_protection === true,
-        use_canvas_rendering: req.event.use_canvas_rendering === true,
+        enable_devtools_protection: parseBooleanInput(req.event.enable_devtools_protection, false),
+        use_canvas_rendering: parseBooleanInput(req.event.use_canvas_rendering, false),
         hero_logo_visible: resolveHeroLogoVisible(req.event.hero_logo_visible, globalHeroLogoVisible),
         hero_logo_size: req.event.hero_logo_size || globalLogoSize || 'medium',
         hero_logo_position: req.event.hero_logo_position || 'top',
@@ -996,7 +1003,7 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
           // Per-category download permission (#640). Defaults true for photos
           // without a category or for categories that pre-date migration 135.
           category_allow_downloads: photo.category_id && categoryMap[photo.category_id]
-            ? categoryMap[photo.category_id].allow_downloads !== false
+            ? parseBooleanInput(categoryMap[photo.category_id].allow_downloads, true)
             : true,
           category_slug: photo.category_id && categoryMap[photo.category_id] ? categoryMap[photo.category_id].slug : null,
           size: photo.size_bytes,
@@ -1110,7 +1117,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     const { photoId } = req.params;
 
     // Check if downloads are allowed for this event
-    if (req.event.allow_downloads === false) {
+    if (!parseBooleanInput(req.event.allow_downloads, true)) {
       return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
     }
 
@@ -1134,7 +1141,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       const cat = await db('photo_categories')
         .where('id', photo.category_id)
         .first('allow_downloads');
-      if (cat && cat.allow_downloads === false) {
+      if (cat && !parseBooleanInput(cat.allow_downloads, true)) {
         return res.status(403).json({ error: 'Downloads are disabled for this category' });
       }
     }
@@ -1280,7 +1287,7 @@ async function bumpEventDownloadCounts(eventId) {
 router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
     // Check if downloads are allowed for this event
-    if (req.event.allow_downloads === false) {
+    if (!parseBooleanInput(req.event.allow_downloads, true)) {
       return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
     }
 
@@ -1521,7 +1528,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
 router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
     // Check if downloads are allowed for this event
-    if (req.event.allow_downloads === false) {
+    if (!parseBooleanInput(req.event.allow_downloads, true)) {
       return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
     }
 
@@ -1689,7 +1696,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
 // Kick off (or join) a build. Returns the polling token.
 router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
   try {
-    if (req.event.allow_downloads === false) {
+    if (!parseBooleanInput(req.event.allow_downloads, true)) {
       return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
     }
 
@@ -1767,7 +1774,7 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
   try {
     // Downloads can be switched off after a job was created — every other
     // download route re-checks this per request, so this one must too.
-    if (req.event.allow_downloads === false) {
+    if (!parseBooleanInput(req.event.allow_downloads, true)) {
       return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
     }
 

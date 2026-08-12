@@ -6,6 +6,7 @@ const secureImageService = require('../services/secureImageService');
 const secureImageMiddleware = require('../middleware/secureImageMiddleware');
 const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
+const { parseBooleanInput } = require('../utils/parsers');
 const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
 const { withLocalCopy } = require('../services/imageProcessor');
 const { getStorage } = require('../services/storage');
@@ -334,8 +335,9 @@ router.get('/:slug/secure-download/:photoId/:token',
     try {
       const { photoId, token } = req.params;
 
-      // Check if downloads are allowed
-      if (req.event.allow_downloads === false) {
+      // Check if downloads are allowed. SQLite stores the flag as 0/1, so a
+      // strict `=== false` never fired there and the guard was inert (#1028).
+      if (!parseBooleanInput(req.event.allow_downloads, true)) {
         return res.status(403).json({ error: 'Downloads are disabled for this gallery' });
       }
 
