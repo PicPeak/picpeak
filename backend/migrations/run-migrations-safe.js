@@ -276,11 +276,27 @@ async function runMigrations() {
 }
 
 // Add delay for database readiness in production
+// Engine guard (#1038). Runs BEFORE any schema work: names the resolved engine
+// in the log and refuses to start against a virgin Postgres while a populated
+// SQLite database is sitting on disk (an install that has been unknowingly
+// running on SQLite would otherwise come up empty and look like data loss).
+async function assertEngine() {
+  const knexConfig = require('../knexfile');
+  const logger = require('../src/utils/logger');
+  const { checkDatabaseEngine } = require('../src/utils/databaseEngine');
+  const { ok, message } = await checkDatabaseEngine({ knexConfig, db, logger });
+  if (!ok) {
+    console.error(message);
+    process.exit(1);
+  }
+}
+
 async function waitAndRun() {
   if (process.env.NODE_ENV === 'production') {
     console.log('Waiting 2 seconds for database readiness...');
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
+  await assertEngine();
   await runMigrations();
 }
 

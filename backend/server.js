@@ -9,6 +9,10 @@ const logger = require('./src/utils/logger');
 logger.info('Server starting up', {
   nodeVersion: process.version,
   environment: process.env.NODE_ENV || 'development',
+  // Which database this process actually talks to (#1038). Nothing logged this
+  // before, so an install silently running on SQLite with Postgres configured
+  // had no way to notice.
+  database: require('./src/utils/databaseEngine').describeEngine(require('./knexfile')),
   timestamp: new Date().toISOString()
 });
 
