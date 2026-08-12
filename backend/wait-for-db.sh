@@ -120,6 +120,18 @@ echo "Ensuring storage directories exist..."
 STORAGE_BASE="${STORAGE_PATH:-/app/storage}"
 mkdir -p "$STORAGE_BASE/events/active" "$STORAGE_BASE/events/archived" "$STORAGE_BASE/thumbnails" 2>/dev/null || true
 
+# Resolve which database engine this boot should use (#1038) BEFORE migrations
+# run, while the Postgres target is still untouched. An install that has been
+# unknowingly running on SQLite (the image used to leave NODE_ENV unset, so
+# knexfile.js fell back to sqlite3 and ignored DB_HOST/DB_USER/DB_PASSWORD)
+# keeps serving from its SQLite file instead of coming up against an empty
+# Postgres. The exported value survives the `exec` below, so the migration
+# runner and the server agree on the engine.
+RESOLVED_DB_CLIENT="$(node scripts/resolve-db-engine.js)"
+if [ -n "$RESOLVED_DB_CLIENT" ]; then
+  export DATABASE_CLIENT="$RESOLVED_DB_CLIENT"
+fi
+
 # Run migrations (use safe runner in production). Invoked via node directly —
 # the runtime image no longer ships npm (see Dockerfile: its bundled deps kept
 # tripping CVE scanners while npm itself never runs in production).
