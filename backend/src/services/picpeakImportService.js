@@ -45,7 +45,7 @@ async function readManifestFromZip(picpeakPath) {
 }
 
 // Returns an array of human-readable blockers ([] = OK to restore).
-async function validateManifest(manifest) {
+async function validateManifest(manifest, { allowEngineSwitch = false } = {}) {
   const errors = [];
   if (!manifest || manifest.kind !== 'picpeak-backup') {
     return ['This file is not a PicPeak backup (.picpeak).'];
@@ -54,7 +54,13 @@ async function validateManifest(manifest) {
     errors.push('This backup was created by a newer version of PicPeak. Update this instance first.');
   }
   const engine = isPostgres() ? 'pg' : 'sqlite';
-  if (manifest.database && manifest.database.engine && manifest.database.engine !== engine) {
+  // Cross-engine loads are opt-in and CLI-only (#1038). The archive format is
+  // engine-neutral NDJSON, but this path had never been exercised, so the
+  // upload/restore surface keeps refusing it — only
+  // scripts/migrate-sqlite-to-postgres.js, which exists to move an install
+  // between engines, passes allowEngineSwitch.
+  if (!allowEngineSwitch
+      && manifest.database && manifest.database.engine && manifest.database.engine !== engine) {
     errors.push(`Database engine mismatch: the backup is "${manifest.database.engine}" but this instance is "${engine}". Restore is only supported between matching engines.`);
   }
   // Forward-only: the target schema must be at least as new as the backup's.
@@ -264,11 +270,62 @@ function serialiseJsonColumns(rows, jsonCols) {
   });
 }
 
+// Cross-engine loads only (#1038): SQLite has no real date or boolean types, so
+// its rows carry epoch numbers where Postgres wants a timestamp and 0/1 where
+// Postgres wants a boolean. Both are rejected outright by pg
+// ("date/time field value out of range: 1786548038763"). Coerce per column,
+// driven by the TARGET schema so nothing is guessed from the value alone.
+// Same-engine restores never call this and are byte-for-byte unchanged.
+async function typedColumnsFor(trx, table) {
+  const info = await trx(table).columnInfo();
+  const timestamps = [];
+  const booleans = [];
+  for (const [name, meta] of Object.entries(info)) {
+    const type = String(meta.type || '').toLowerCase();
+    if (type.includes('timestamp') || type === 'date' || type === 'datetime') timestamps.push(name);
+    else if (type === 'boolean' || type === 'bool') booleans.push(name);
+  }
+  return { timestamps, booleans };
+}
+
+// SQLite writes Date objects as epoch MILLISECONDS in production, but some rows
+// (and older installs) carry epoch seconds. 1e11 sits far past any plausible
+// seconds value and far below any plausible ms value, so it separates them
+// cleanly for every date this application will ever see.
+function epochToIso(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value;
+  const ms = Math.abs(n) < 1e11 ? n * 1000 : n;
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? value : d.toISOString();
+}
+
+function coerceForTargetEngine(rows, { timestamps, booleans }) {
+  if (!timestamps.length && !booleans.length) return rows;
+  return rows.map((row) => {
+    const out = { ...row };
+    for (const col of timestamps) {
+      const v = out[col];
+      if (v === null || v === undefined || v === '') continue;
+      if (typeof v === 'number' || (typeof v === 'string' && /^-?\d+$/.test(v))) {
+        out[col] = epochToIso(v);
+      }
+    }
+    for (const col of booleans) {
+      const v = out[col];
+      if (v === null || v === undefined) continue;
+      if (typeof v === 'number') out[col] = v !== 0;
+      else if (typeof v === 'string') out[col] = !['0', 'false', ''].includes(v.toLowerCase());
+    }
+    return out;
+  });
+}
+
 // Whole-DB replace in one transaction with FK enforcement suspended (pg:
 // session_replication_role=replica on the trx connection, reset before commit;
 // sqlite: defer_foreign_keys so checks run at commit). knex_migrations is never
 // in the data set, so the target's schema/migration state is left intact.
-async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot) {
+async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine = false } = {}) {
   await db.transaction(async (trx) => {
     if (isPostgres()) {
       try {
@@ -295,7 +352,11 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot) {
       const rows = parseNdjson(path.join(dataDir, `${table}.ndjson`));
       if (!rows.length) continue;
       const jsonCols = await jsonColumnsFor(trx, table);
-      await trx.batchInsert(table, serialiseJsonColumns(rows, jsonCols), 100);
+      let prepared = serialiseJsonColumns(rows, jsonCols);
+      if (crossEngine) {
+        prepared = coerceForTargetEngine(prepared, await typedColumnsFor(trx, table));
+      }
+      await trx.batchInsert(table, prepared, 100);
     }
 
     const operatorId = await reinjectCurrentAdmin(trx, currentAdmin);
@@ -358,9 +419,9 @@ async function detectExternalMedia() {
  * @param {number} [opts.currentAdminId]  admin to preserve across the wipe
  * @returns {Promise<{restored:boolean, tables:number, filesRestored:number, usesExternalMedia:boolean, manifest:object}>}
  */
-async function importFromPicpeak({ picpeakPath, currentAdminId }) {
+async function importFromPicpeak({ picpeakPath, currentAdminId, allowEngineSwitch = false }) {
   const manifest = await readManifestFromZip(picpeakPath);
-  const blockers = await validateManifest(manifest);
+  const blockers = await validateManifest(manifest, { allowEngineSwitch });
   if (blockers.length) {
     const err = new Error(blockers[0]);
     err.statusCode = 400;
@@ -402,7 +463,7 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
       logger.warn(`[picpeak-import] ignoring ${skipped.length} backup table(s) not present in this DB (or protected): ${skipped.join(', ')}`);
     }
 
-    await replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot);
+    await replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine: allowEngineSwitch });
 
     // Post-commit fixups (must NOT run inside the restore transaction):
     //  - resync Postgres identity sequences left behind by the explicit-id
@@ -428,6 +489,9 @@ module.exports = {
   importFromPicpeak,
   readManifestFromZip,
   validateManifest,
+  // exported for testing — the cross-engine coercion (#1038)
+  epochToIso,
+  coerceForTargetEngine,
   reinjectCurrentAdmin,
   captureOperatorRole,
   preserveOperatorRole,

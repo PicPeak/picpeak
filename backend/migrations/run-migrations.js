@@ -46,17 +46,23 @@ async function runMigration(filepath) {
   }
 }
 
-// Engine guard (#1038). Runs BEFORE any schema work: names the resolved engine
-// in the log and refuses to start against a virgin Postgres while a populated
-// SQLite database is sitting on disk (an install that has been unknowingly
-// running on SQLite would otherwise come up empty and look like data loss).
+// Engine consistency check (#1038). The entrypoint resolves the engine before
+// migrations run and exports DATABASE_CLIENT, so this normally agrees and does
+// nothing. It bites on a MANUAL migration run: without that env, an install
+// that is really on SQLite would resolve to Postgres here and build a schema in
+// the empty database, which then hides the SQLite data from the boot-time
+// check. Stop instead, and say which env to set.
 async function assertEngine() {
   const knexConfig = require('../knexfile');
   const logger = require('../src/utils/logger');
-  const { checkDatabaseEngine } = require('../src/utils/databaseEngine');
-  const { ok, message } = await checkDatabaseEngine({ knexConfig, db, logger });
-  if (!ok) {
-    console.error(message);
+  const { resolveBootEngine } = require('../src/utils/databaseEngine');
+  const decision = await resolveBootEngine({ knexConfig, logger });
+  if (decision.client !== knexConfig.client) {
+    console.error(
+      `Refusing to migrate ${knexConfig.client} — this install's data is in ${decision.client}.\n`
+      + `Run migrations through the container entrypoint, or set DATABASE_CLIENT=${decision.client} explicitly.\n`
+      + 'To move the data across instead: node scripts/migrate-sqlite-to-postgres.js'
+    );
     process.exit(1);
   }
 }

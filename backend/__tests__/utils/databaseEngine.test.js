@@ -20,8 +20,12 @@ const fs = require('fs');
 const {
   resolveSqlitePath,
   describeEngine,
-  evaluateEngineState,
+  decideBootEngine,
 } = require('../../src/utils/databaseEngine');
+const {
+  epochToIso,
+  coerceForTargetEngine,
+} = require('../../src/services/picpeakImportService');
 
 describe('knexfile engine selection (#1038)', () => {
   // Resolved in a child process with a clean cwd: knexfile calls
@@ -105,41 +109,109 @@ describe('resolveSqlitePath', () => {
   });
 });
 
-describe('evaluateEngineState — the upgrade guard', () => {
-  test('BLOCKS: pointed at an empty Postgres while SQLite holds data', () => {
-    const r = evaluateEngineState({
-      client: 'pg', pgEnvPresent: true, sqliteHasData: true, pgHasTables: false,
+describe('decideBootEngine — what an existing install gets after the fix', () => {
+  test('STAYS on SQLite when Postgres is configured but holds no galleries', () => {
+    // The install that has been unknowingly running on SQLite. Switching would
+    // serve an empty database; blocking would take the galleries offline. It
+    // keeps running exactly as before, loudly.
+    const r = decideBootEngine({
+      configuredClient: 'pg', explicitClient: null, pgHasData: false, sqliteHasData: true,
     });
-    expect(r.block).toBe(true);
+    expect(r.client).toBe('sqlite3');
+    expect(r.overridden).toBe(true);
     expect(r.reason).toBe('stranded-sqlite-data');
   });
 
-  test('allows a normal Postgres install that already has schema', () => {
-    expect(evaluateEngineState({
-      client: 'pg', pgEnvPresent: true, sqliteHasData: true, pgHasTables: true,
-    }).block).toBe(false);
-  });
-
-  test('allows a fresh Postgres install with no SQLite file', () => {
-    expect(evaluateEngineState({
-      client: 'pg', pgEnvPresent: true, sqliteHasData: false, pgHasTables: false,
-    }).block).toBe(false);
-  });
-
-  test('WARNS but boots when Postgres is configured yet SQLite is in use', () => {
-    const r = evaluateEngineState({
-      client: 'sqlite3', pgEnvPresent: true, sqliteHasData: true, pgHasTables: false,
+  test('switches to Postgres by itself once the data is there', () => {
+    // i.e. straight after scripts/migrate-sqlite-to-postgres.js — no further
+    // operator action needed on the next restart.
+    const r = decideBootEngine({
+      configuredClient: 'pg', explicitClient: null, pgHasData: true, sqliteHasData: true,
     });
-    expect(r.block).toBe(false);
-    expect(r.warn).toBe(true);
-    expect(r.reason).toBe('pg-env-but-sqlite');
+    expect(r.client).toBe('pg');
+    expect(r.overridden).toBe(false);
   });
 
-  test('stays quiet for a deliberate SQLite install with no Postgres settings', () => {
-    const r = evaluateEngineState({
-      client: 'sqlite3', pgEnvPresent: false, sqliteHasData: true, pgHasTables: false,
+  test('a fresh install with no SQLite file goes straight to Postgres', () => {
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: null, pgHasData: false, sqliteHasData: false,
+    }).client).toBe('pg');
+  });
+
+  test('an explicit DATABASE_CLIENT is always honoured', () => {
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: 'sqlite3', pgHasData: true, sqliteHasData: true,
+    }).client).toBe('sqlite3');
+    expect(decideBootEngine({
+      configuredClient: 'sqlite3', explicitClient: 'pg', pgHasData: false, sqliteHasData: false,
+    }).client).toBe('pg');
+  });
+
+  test('forcing pg while SQLite still holds data is allowed, but flagged', () => {
+    const r = decideBootEngine({
+      configuredClient: 'pg', explicitClient: 'pg', pgHasData: false, sqliteHasData: true,
     });
-    expect(r.block).toBe(false);
-    expect(r.warn).toBe(false);
+    expect(r.client).toBe('pg');
+    expect(r.reason).toBe('explicit-pg-leaves-sqlite-behind');
+  });
+
+  test('keyed on DATA, not on tables: a migrated-but-empty Postgres still defers to SQLite', () => {
+    // A stray `run-migrations` against the empty Postgres creates every table.
+    // Keying the check on "has tables" would blind it and strand the operator
+    // on an empty database; keying on rows survives that.
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: null, pgHasData: false, sqliteHasData: true,
+    }).client).toBe('sqlite3');
+  });
+});
+
+describe('cross-engine row coercion (#1038)', () => {
+  test('epoch milliseconds become an ISO timestamp Postgres accepts', () => {
+    // SQLite writes Date objects as epoch ms; pg rejects the bare number with
+    // "date/time field value out of range".
+    expect(epochToIso(1786548038763)).toBe('2026-08-12T15:20:38.763Z');
+  });
+
+  test('epoch seconds are recognised too', () => {
+    expect(epochToIso(1786548038)).toBe('2026-08-12T15:20:38.000Z');
+  });
+
+  test('a non-numeric value is left alone', () => {
+    expect(epochToIso('not-a-date')).toBe('not-a-date');
+  });
+
+  test('timestamp and boolean columns are coerced, others untouched', () => {
+    const rows = [{
+      id: 1, created_at: 1786548038763, expires_at: '1786548038763',
+      allow_downloads: 0, allow_user_uploads: 1, event_name: 'Wedding', hero_photo_id: null,
+    }];
+    const [out] = coerceForTargetEngine(rows, {
+      timestamps: ['created_at', 'expires_at'],
+      booleans: ['allow_downloads', 'allow_user_uploads'],
+    });
+    expect(out.created_at).toBe('2026-08-12T15:20:38.763Z');
+    expect(out.expires_at).toBe('2026-08-12T15:20:38.763Z');
+    expect(out.allow_downloads).toBe(false);
+    expect(out.allow_user_uploads).toBe(true);
+    expect(out.event_name).toBe('Wedding');
+    expect(out.hero_photo_id).toBeNull();
+    expect(out.id).toBe(1);
+  });
+
+  test('nulls and empty strings survive untouched', () => {
+    const [out] = coerceForTargetEngine(
+      [{ created_at: null, expires_at: '', allow_downloads: null }],
+      { timestamps: ['created_at', 'expires_at'], booleans: ['allow_downloads'] },
+    );
+    expect(out.created_at).toBeNull();
+    expect(out.expires_at).toBe('');
+    expect(out.allow_downloads).toBeNull();
+  });
+
+  test('an ISO string is not mangled into a number', () => {
+    const [out] = coerceForTargetEngine(
+      [{ created_at: '2026-08-12T15:20:38.763Z' }], { timestamps: ['created_at'], booleans: [] },
+    );
+    expect(out.created_at).toBe('2026-08-12T15:20:38.763Z');
   });
 });

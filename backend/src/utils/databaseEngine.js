@@ -12,22 +12,15 @@
  * directly, so the same container happily reported "PostgreSQL is up" while
  * the app wrote to a SQLite file.
  *
- * Two pieces here:
+ * Now that the image pins NODE_ENV=production, those installs would resolve to
+ * Postgres on their next pull — and come up against an EMPTY database, which
+ * reads as total data loss. Blocking the boot would protect the data but take
+ * the galleries offline for an operator who did nothing wrong, so instead we
+ * STAY on SQLite (the engine that holds their data), say so loudly, and point
+ * at the migration script. Nothing moves until the operator decides.
  *
- *   describeEngine()  — one line at boot naming the engine and target. Nothing
- *                       logged this before, which is why the misconfiguration
- *                       was invisible for so long.
- *
- *   shouldBlockBoot() — the upgrade guard. Now that the image pins
- *                       NODE_ENV=production, an affected install would flip to
- *                       Postgres on its next pull and come up against an EMPTY
- *                       database — indistinguishable from total data loss. So
- *                       when we are pointed at a virgin Postgres while a
- *                       populated SQLite file sits on disk, refuse to start and
- *                       say how to migrate.
- *
- * Kept as a pure decision function plus thin probes so the interesting part is
- * testable without a live Postgres.
+ * decideBootEngine() is pure so the matrix is testable; the probes around it
+ * are deliberately thin.
  */
 
 const fs = require('fs');
@@ -54,33 +47,38 @@ function describeEngine(knexConfig) {
 }
 
 /**
- * The decision, isolated from IO.
+ * Which engine should this boot actually use?
  *
  * @param {object}  state
- * @param {string}  state.client          resolved knex client
- * @param {boolean} state.pgEnvPresent    DB_HOST / DB_PASSWORD supplied
- * @param {boolean} state.sqliteHasData   a SQLite file exists AND holds events
- * @param {boolean} state.pgHasTables     the Postgres target already has schema
- * @returns {{ block: boolean, warn: boolean, reason: string|null }}
+ * @param {string}  state.configuredClient  what knexfile resolved to
+ * @param {string=} state.explicitClient    DATABASE_CLIENT, if the operator set it
+ * @param {boolean} state.pgHasData         the Postgres target already holds galleries
+ * @param {boolean} state.sqliteHasData     a SQLite file exists AND holds events
+ * @returns {{ client: string, overridden: boolean, reason: string|null }}
  */
-function evaluateEngineState({ client, pgEnvPresent, sqliteHasData, pgHasTables }) {
-  // Configured for Postgres, Postgres is empty, and there is real data sitting
-  // in a SQLite file: this is an install that has been unknowingly running on
-  // SQLite. Booting would silently start from zero.
-  if (client === 'pg' && !pgHasTables && sqliteHasData) {
-    return { block: true, warn: false, reason: 'stranded-sqlite-data' };
+function decideBootEngine({ configuredClient, explicitClient, pgHasData, sqliteHasData }) {
+  // An explicit DATABASE_CLIENT is an instruction, not a guess. Never override
+  // it — this is also the documented way to force Postgres and start fresh.
+  if (explicitClient) {
+    return {
+      client: explicitClient,
+      overridden: false,
+      reason: explicitClient === 'pg' && sqliteHasData && !pgHasData
+        ? 'explicit-pg-leaves-sqlite-behind'
+        : null,
+    };
   }
-  // Postgres was configured but we are on SQLite anyway — the original bug.
-  // Warn rather than block: an operator may genuinely want SQLite and simply
-  // have stale PG variables lying around.
-  if (client !== 'pg' && pgEnvPresent) {
-    return { block: false, warn: true, reason: 'pg-env-but-sqlite' };
-  }
-  return { block: false, warn: false, reason: null };
-}
 
-function pgEnvPresent() {
-  return Boolean(process.env.DB_HOST || process.env.DB_PASSWORD);
+  // Configured for Postgres, Postgres holds no galleries, and real data sits in
+  // a SQLite file: this install has been unknowingly running on SQLite. Keep
+  // serving from where the data actually is. Deliberately keyed on DATA, not on
+  // "has tables" — a stray migration run against the empty Postgres would
+  // otherwise blind this check and strand the operator on an empty database.
+  if (configuredClient === 'pg' && !pgHasData && sqliteHasData) {
+    return { client: 'sqlite3', overridden: true, reason: 'stranded-sqlite-data' };
+  }
+
+  return { client: configuredClient, overridden: false, reason: null };
 }
 
 /** True when a SQLite file exists and carries gallery data. */
@@ -97,7 +95,7 @@ async function probeSqliteData(sqlitePath = resolveSqlitePath()) {
     const row = await probe('events').count('id as count').first();
     return Number(row?.count || 0) > 0;
   } catch (_) {
-    // Unreadable/corrupt file — not our call to make here, let the normal
+    // Unreadable/corrupt file — not our call to make here; let the normal
     // startup path surface it.
     return false;
   } finally {
@@ -105,77 +103,82 @@ async function probeSqliteData(sqlitePath = resolveSqlitePath()) {
   }
 }
 
-async function probePgTables(db) {
+/** True when the configured Postgres target already holds galleries. */
+async function probePgData(pgConnection) {
+  const knex = require('knex');
+  const probe = knex({ client: 'pg', connection: pgConnection, pool: { min: 0, max: 1 } });
   try {
-    return await db.schema.hasTable('events');
+    if (!(await probe.schema.hasTable('events'))) return false;
+    const row = await probe('events').count('id as count').first();
+    return Number(row?.count || 0) > 0;
   } catch (_) {
-    return false;
+    // Unreachable Postgres is the entrypoint's problem (it exits before we get
+    // here); treat as "has data" so we never divert a healthy pg install.
+    return true;
+  } finally {
+    await probe.destroy();
   }
 }
 
-const BLOCK_MESSAGE = (sqlitePath, target) => `
-REFUSING TO START — this instance is configured for ${target}, but that
-database is empty while a populated SQLite database exists at:
+const STRANDED_WARNING = (sqlitePath, pgTarget) => `
+${'='.repeat(78)}
+STILL RUNNING ON SQLITE — Postgres is configured but empty.
 
-  ${sqlitePath}
+  data in use : ${sqlitePath}
+  configured  : ${pgTarget} (no galleries in it)
 
-That means this install has been running on SQLite, not Postgres (see
-knexfile.js: the config block is chosen by NODE_ENV, and the image used to
-leave it unset — https://github.com/PicPeak/picpeak/issues/1038). Starting now
-would come up against an empty database and look like total data loss.
+This install has been running on SQLite. Until now the image left NODE_ENV
+unset, so knexfile.js fell back to its development block and ignored DB_HOST /
+DB_USER / DB_PASSWORD — see https://github.com/PicPeak/picpeak/issues/1038.
 
-Your data is intact in the file above. To move it to Postgres:
+Nothing has changed for you: your galleries are served from the SQLite file
+above, exactly as before. Switching engines now would start from an empty
+database, so PicPeak will not do that on its own.
 
-  1. Start this container again with NODE_ENV unset (or DATABASE_CLIENT=sqlite3)
-     so it comes back up on SQLite with your data.
-  2. Admin → Backup → "Export .picpeak" and download the archive. The format is
-     engine-neutral, so it restores onto Postgres.
-  3. Restart with NODE_ENV=production (the new default) and import the archive
-     through the setup/restore screen.
+To move your data to Postgres when you are ready:
 
-To deliberately start fresh on Postgres and leave the SQLite file behind, set
-PICPEAK_ALLOW_EMPTY_PG=true.
+  node scripts/migrate-sqlite-to-postgres.js
+
+It copies every row into Postgres and leaves the SQLite file untouched as a
+fallback. To go to Postgres WITHOUT the data, set DATABASE_CLIENT=pg.
+${'='.repeat(78)}
 `.trim();
 
 /**
- * Run before migrations touch anything. Logs the resolved engine, blocks the
- * dangerous case, warns on the misconfigured one.
- *
- * @returns {Promise<{ ok: boolean, message: string|null }>}
+ * Resolve the engine for this boot, log what happened, and return the client
+ * the process should use. Called before migrations touch anything.
  */
-async function checkDatabaseEngine({ knexConfig, db, logger }) {
-  const client = knexConfig?.client;
-  const target = describeEngine(knexConfig);
-  logger.info(`Database engine: ${target}`);
-
-  if (process.env.PICPEAK_ALLOW_EMPTY_PG === 'true') {
-    return { ok: true, message: null };
-  }
-
+async function resolveBootEngine({ knexConfig, logger }) {
+  const explicitClient = process.env.DATABASE_CLIENT || null;
+  const configuredClient = knexConfig?.client;
   const sqlitePath = resolveSqlitePath();
-  const state = evaluateEngineState({
-    client,
-    pgEnvPresent: pgEnvPresent(),
-    sqliteHasData: client === 'pg' ? await probeSqliteData(sqlitePath) : false,
-    pgHasTables: client === 'pg' ? await probePgTables(db) : true,
+
+  const needsProbe = !explicitClient && configuredClient === 'pg';
+  const decision = decideBootEngine({
+    configuredClient,
+    explicitClient,
+    pgHasData: needsProbe ? await probePgData(knexConfig.connection) : true,
+    sqliteHasData: needsProbe ? await probeSqliteData(sqlitePath) : false,
   });
 
-  if (state.block) {
-    return { ok: false, message: BLOCK_MESSAGE(sqlitePath, target) };
-  }
-  if (state.warn) {
+  if (decision.overridden && decision.reason === 'stranded-sqlite-data') {
+    logger.warn(STRANDED_WARNING(sqlitePath, describeEngine(knexConfig)));
+  } else if (decision.reason === 'explicit-pg-leaves-sqlite-behind') {
     logger.warn(
-      `PostgreSQL settings (DB_HOST/DB_PASSWORD) are present, but this instance is using ${target}. `
-      + 'Set NODE_ENV=production (or DATABASE_CLIENT=pg) if Postgres was intended — '
-      + 'https://github.com/PicPeak/picpeak/issues/1038'
+      'DATABASE_CLIENT=pg is set explicitly, so PicPeak is starting on an empty Postgres while '
+      + `gallery data exists at ${sqlitePath}. Run scripts/migrate-sqlite-to-postgres.js to bring it across.`
     );
   }
-  return { ok: true, message: null };
+
+  logger.info(`Database engine: ${decision.client === 'pg' ? describeEngine(knexConfig) : `sqlite (${sqlitePath})`}`);
+  return decision;
 }
 
 module.exports = {
   resolveSqlitePath,
   describeEngine,
-  evaluateEngineState,
-  checkDatabaseEngine,
+  decideBootEngine,
+  probeSqliteData,
+  probePgData,
+  resolveBootEngine,
 };
