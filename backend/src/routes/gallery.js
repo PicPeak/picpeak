@@ -1883,26 +1883,11 @@ router.get('/:slug/preview/:photoId',
   }
 );
 
-// Get feedback settings for gallery
-router.get('/:slug/feedback-settings', verifyGalleryAccess, async (req, res) => {
-  try {
-    const feedbackService = require('../services/feedbackService');
-    const settings = await feedbackService.getEventFeedbackSettings(req.event.id);
-    
-    res.json({
-      feedback_enabled: settings.feedback_enabled || false,
-      allow_ratings: settings.allow_ratings,
-      allow_likes: settings.allow_likes,
-      allow_comments: settings.allow_comments,
-      allow_favorites: settings.allow_favorites,
-      show_feedback_to_guests: settings.show_feedback_to_guests,
-      require_name_email: settings.require_name_email || false,
-      identity_mode: settings.identity_mode || 'simple'
-    });
-  } catch (error) {
-    errorResponse(res, error, 500, 'Failed to fetch feedback settings');
-  }
-});
+// GET /:slug/feedback-settings lives in galleryFeedback.js. A duplicate of it
+// used to sit here, and since server.js mounts galleryRoutes before
+// galleryFeedback it shadowed the real handler — dropping the per-guest caps
+// (#655) from the guest payload, so the gallery could never render the
+// favorite/like limits or their counters (#1030).
 
 // Get photo stats
 router.get('/:slug/stats', verifyGalleryAccess, async (req, res) => {
