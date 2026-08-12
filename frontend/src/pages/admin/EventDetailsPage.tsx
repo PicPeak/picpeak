@@ -551,11 +551,18 @@ export const EventDetailsPage: React.FC = () => {
     // Update event details
     updateMutation.mutate(updateData);
 
-    // Update feedback settings separately
+    // Update feedback settings separately. This is its own request, so a
+    // failure here is NOT covered by updateMutation's onError (#1030) — the
+    // old bare catch left the admin looking at "Event updated successfully"
+    // while the Guest Feedback toggle silently never persisted.
     try {
       await feedbackService.updateEventFeedbackSettings(id!, feedbackSettings);
-    } catch {
-      // Error already handled by mutation
+      queryClient.invalidateQueries({ queryKey: ['admin-event-feedback-settings', id] });
+    } catch (error: any) {
+      toast.error(
+        error?.response?.data?.error
+        || t('feedback.settingsUpdateError', 'Failed to update settings')
+      );
     }
   };
 

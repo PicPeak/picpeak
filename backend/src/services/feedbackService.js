@@ -3,6 +3,39 @@ const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
 const { REACTION_EMOJIS } = require('../constants/reactions');
 
+// Every writable column on event_feedback_settings (#1030). The admin form
+// posts its whole client-side state back, including UI-only keys that were
+// never columns — `enable_rate_limiting`, `rate_limit_window_minutes`,
+// `rate_limit_max_requests` — and spreading those into the UPDATE made knex
+// throw, so the request 500'd and the "Enable feedback" toggle silently
+// never persisted. Identity columns (id/event_id) and the timestamps stay
+// server-managed. New columns MUST be added here.
+const FEEDBACK_SETTINGS_COLUMNS = [
+  'feedback_enabled',
+  'allow_ratings',
+  'allow_likes',
+  'allow_comments',
+  'allow_favorites',
+  'allow_reactions',
+  'require_name_email',
+  'moderate_comments',
+  'require_moderation',
+  'show_feedback_to_guests',
+  'identity_mode',
+  'max_favorites_per_guest',
+  'max_likes_per_guest'
+];
+
+function pickSettingsColumns(settings) {
+  const picked = {};
+  for (const column of FEEDBACK_SETTINGS_COLUMNS) {
+    if (Object.prototype.hasOwnProperty.call(settings || {}, column)) {
+      picked[column] = settings[column];
+    }
+  }
+  return picked;
+}
+
 class FeedbackService {
   /**
    * Get feedback settings for an event
@@ -55,25 +88,27 @@ class FeedbackService {
       const existing = await db('event_feedback_settings')
         .where('event_id', eventId)
         .first();
-      
+
+      const writable = pickSettingsColumns(settings);
+
       if (existing) {
         await db('event_feedback_settings')
           .where('event_id', eventId)
           .update({
-            ...settings,
-            updated_at: new Date()
+            ...writable,
+            updated_at: new Date().toISOString()
           });
       } else {
         await db('event_feedback_settings').insert({
           event_id: eventId,
-          ...settings,
-          created_at: new Date(),
-          updated_at: new Date()
+          ...writable,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         });
       }
-      
-      await logActivity('feedback_settings_updated', settings, eventId);
-      
+
+      await logActivity('feedback_settings_updated', writable, eventId);
+
       return this.getEventFeedbackSettings(eventId);
     } catch (error) {
       logger.error('Error updating feedback settings:', error);
