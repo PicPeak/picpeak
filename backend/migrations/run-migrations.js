@@ -46,10 +46,26 @@ async function runMigration(filepath) {
   }
 }
 
+// Engine guard (#1038). Runs BEFORE any schema work: names the resolved engine
+// in the log and refuses to start against a virgin Postgres while a populated
+// SQLite database is sitting on disk (an install that has been unknowingly
+// running on SQLite would otherwise come up empty and look like data loss).
+async function assertEngine() {
+  const knexConfig = require('../knexfile');
+  const logger = require('../src/utils/logger');
+  const { checkDatabaseEngine } = require('../src/utils/databaseEngine');
+  const { ok, message } = await checkDatabaseEngine({ knexConfig, db, logger });
+  if (!ok) {
+    console.error(message);
+    process.exit(1);
+  }
+}
+
 // Main migration runner
 async function runMigrations() {
   try {
     console.log('Starting database migrations...');
+    await assertEngine();
     
     // First run the init.js if it exists but only if migrations table doesn't exist
     const tableExists = await db.schema.hasTable('migrations');
