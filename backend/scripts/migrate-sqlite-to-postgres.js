@@ -387,11 +387,25 @@ async function main() {
   // rows has not lost anything.
   const missing = [];
   const gained = [];
+  const skipped = [];
   for (const [table, src] of Object.entries(sqliteBefore)) {
     const dst = targetAfter[table];
-    if (!dst) { missing.push(`${table}: table absent in Postgres`); continue; }
+    if (!dst) {
+      // SQLite-only tables exist: initializeDatabase() builds an `events_new`
+      // scratch table and, if its legacy copy throws, the catch leaves the empty
+      // table behind (db.js). The importer correctly skips tables Postgres does
+      // not have — so an ABSENT table only matters if it actually held rows.
+      // Flagging empty ones failed the whole migration after the data had
+      // already landed, leaving the install pinned to SQLite forever.
+      if (src.count > 0) missing.push(`${table}: ${src.count} rows, no such table in Postgres`);
+      else skipped.push(table);
+      continue;
+    }
     if (dst.count < src.count) missing.push(`${table}: ${src.count} rows → ${dst.count}`);
     else if (dst.count > src.count) gained.push(`${table}: ${src.count} → ${dst.count}`);
+  }
+  if (skipped.length) {
+    console.log(`  (empty SQLite-only tables with no Postgres counterpart, skipped: ${skipped.join(', ')})`);
   }
   if (gained.length) console.log(`  (rows added by the import itself: ${gained.join(', ')})`);
   console.log(`\n  PostgreSQL now holds ${summariseUserData(JSON.parse(runPhase('user-data', 'pg')))}.`);
