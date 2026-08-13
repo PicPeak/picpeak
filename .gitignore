@@ -130,5 +130,8 @@ docker-compose.dev.yml
 # New layout development files
 new-layouts/
 
-# Generated CRM/accounting documents (runtime) — never commit
-backend/storage/business-docs/
+# Backend runtime storage (generated media, previews, thumbnails,
+# CRM/accounting documents) — never commit. Matches main: a dev instance
+# writes event photos into backend/storage/, and the narrower
+# business-docs-only rule let `git add -A` sweep them into a commit.
+backend/storage/
