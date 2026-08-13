@@ -137,15 +137,28 @@ const USER_DATA_TABLES = [
   'quotes', 'invoices', 'projects', 'expenses', 'incoming_invoices',
 ];
 
-// Seeded by core/001_init.js when ADMIN_PASSWORD is set, so its presence proves
-// nothing about a Postgres target having been used.
-const SEEDED_ON_BOOTSTRAP = ['admin_users'];
+// core/001_init.js seeds an admin with must_change_password = true when
+// ADMIN_PASSWORD is set; setupService writes false once a human completes
+// first-run setup. So the FLAG, not the table, is what distinguishes an
+// untouched bootstrap row from a real account. Dropping the whole table (as an
+// earlier revision did) made a legitimately set-up Postgres look empty, which
+// would hand the install to a stale SQLite file and lose the admin's
+// credentials and configuration.
+const isUntouchedBootstrapRow = (v) => v === true || v === 1 || v === '1';
 
-async function anyUserData(conn, tables = USER_DATA_TABLES) {
-  for (const table of tables) {
+async function countsAsUse(conn, table, { ignoreBootstrapAdmins }) {
+  if (table === 'admin_users' && ignoreBootstrapAdmins) {
+    const rows = await conn('admin_users').select('must_change_password');
+    return rows.some((r) => !isUntouchedBootstrapRow(r.must_change_password));
+  }
+  const row = await conn(table).count('* as count').first();
+  return Number(row?.count || 0) > 0;
+}
+
+async function anyUserData(conn, { ignoreBootstrapAdmins = false } = {}) {
+  for (const table of USER_DATA_TABLES) {
     if (!(await conn.schema.hasTable(table))) continue;
-    const row = await conn(table).count('* as count').first();
-    if (Number(row?.count || 0) > 0) return true;
+    if (await countsAsUse(conn, table, { ignoreBootstrapAdmins })) return true;
   }
   return false;
 }
@@ -181,8 +194,9 @@ async function probePgData(pgConnection) {
   const knex = require('knex');
   const probe = knex({ client: 'pg', connection: pgConnection, pool: { min: 0, max: 1 } });
   try {
-    // Substantive data only — see SEEDED_ON_BOOTSTRAP.
-    return await anyUserData(probe, USER_DATA_TABLES.filter((t) => !SEEDED_ON_BOOTSTRAP.includes(t)));
+    // Substantive use only: an untouched bootstrap admin does not make a
+    // Postgres target worth switching to, but a completed setup does.
+    return await anyUserData(probe, { ignoreBootstrapAdmins: true });
   } catch (_) {
     // Unreachable Postgres is the entrypoint's problem (it exits before we get
     // here); treat as "has data" so we never divert a healthy pg install.
@@ -262,6 +276,7 @@ async function resolveBootEngine({ knexConfig, logger }) {
 
 module.exports = {
   resolveSqlitePath,
+  isUntouchedBootstrapRow,
   migrationMarkerPath,
   hasMigrationMarker,
   migrationInProgressPath,
