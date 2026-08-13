@@ -411,18 +411,32 @@ async function main() {
   const { migrationMarkerPath } = require('../src/utils/databaseEngine');
   const marker = migrationMarkerPath(sqlitePath);
   const retired = `${sqlitePath}.pre-postgres-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+
+  // Marker FIRST, rename second. The other order has a window where a failure
+  // (a full disk, say) leaves the source renamed away with no success marker:
+  // the next run reports "No SQLite database", the in-progress pin is still
+  // there, and the operator never sees the rollback path. Writing the marker
+  // first means a failure here leaves everything exactly where it was.
+  fs.writeFileSync(marker, JSON.stringify({
+    migrated_at: new Date().toISOString(),
+    retired_sqlite_file: null,
+    target: `${process.env.DB_HOST}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'picpeak'}`,
+  }, null, 2));
+
   let retiredTo = null;
   try {
     fs.renameSync(sqlitePath, retired);
     retiredTo = retired;
+    fs.writeFileSync(marker, JSON.stringify({
+      migrated_at: new Date().toISOString(),
+      retired_sqlite_file: retiredTo,
+      target: `${process.env.DB_HOST}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'picpeak'}`,
+    }, null, 2));
   } catch (err) {
+    // The marker already pins the engine to Postgres, so leaving the file in
+    // place is safe — it just is not renamed out of the way.
     console.log(`  (could not rename the SQLite file: ${err.message} — leaving it in place)`);
   }
-  fs.writeFileSync(marker, JSON.stringify({
-    migrated_at: new Date().toISOString(),
-    retired_sqlite_file: retiredTo,
-    target: `${process.env.DB_HOST}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'picpeak'}`,
-  }, null, 2));
   // Success — release the pin. Order matters: the success marker exists before
   // the pin is dropped, so no restart in between can pick the wrong engine.
   fs.rmSync(inProgress, { force: true });

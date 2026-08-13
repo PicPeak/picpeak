@@ -203,17 +203,40 @@ async function probeSqliteData(sqlitePath = resolveSqlitePath(), onWarn = warnTo
 }
 
 /** True when the configured Postgres target already holds user data. */
-async function probePgData(pgConnection) {
+async function probePgData(pgConnection, onWarn = warnToStderr) {
   const knex = require('knex');
   const probe = knex({ client: 'pg', connection: pgConnection, pool: { min: 0, max: 1 } });
   try {
-    // Substantive use only: an untouched bootstrap admin does not make a
-    // Postgres target worth switching to, but a completed setup does.
-    return await anyUserData(probe, { ignoreBootstrapAdmins: true });
-  } catch (_) {
-    // Unreachable Postgres is the entrypoint's problem (it exits before we get
-    // here); treat as "has data" so we never divert a healthy pg install.
-    return true;
+    // Two very different failures hide behind one catch, and they need opposite
+    // answers, so establish reachability first.
+    let reachable = false;
+    try {
+      await probe.raw('SELECT 1');
+      reachable = true;
+    } catch (err) {
+      // Cannot reach Postgres at all. The app could not run on it either way,
+      // so report "occupied" to avoid diverting a healthy pg install to a stale
+      // SQLite file over a transient network blip — startup then fails with the
+      // real connection error, exactly as it always has.
+      onWarn(`[database-engine] Postgres unreachable while probing (${err.message}); leaving the configured engine alone.`);
+      return true;
+    }
+
+    try {
+      // Substantive use only: an untouched bootstrap admin does not make a
+      // Postgres target worth switching to, but a completed setup does.
+      return await anyUserData(probe, { ignoreBootstrapAdmins: true });
+    } catch (err) {
+      // Connected, but the query failed — a half-built or damaged schema. That
+      // is NOT evidence of data: reporting "occupied" here would boot the empty
+      // Postgres and hide a populated SQLite file, the exact failure this guard
+      // exists to prevent. Say "not proven occupied" and let the SQLite side win
+      // if it actually holds data.
+      if (reachable) {
+        onWarn(`[database-engine] Postgres reachable but could not be inspected (${err.message}); treating it as unproven rather than occupied.`);
+      }
+      return false;
+    }
   } finally {
     await probe.destroy();
   }
@@ -262,7 +285,7 @@ async function resolveBootEngine({ knexConfig, logger }) {
   const decision = decideBootEngine({
     configuredClient,
     explicitClient,
-    pgHasData: probing ? await probePgData(knexConfig.connection) : true,
+    pgHasData: probing ? await probePgData(knexConfig.connection, (m) => logger.warn(m)) : true,
     sqliteHasData: probing ? await probeSqliteData(sqlitePath, (m) => logger.warn(m)) : false,
     migrationInProgress,
   });

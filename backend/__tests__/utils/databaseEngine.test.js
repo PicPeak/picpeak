@@ -416,3 +416,19 @@ describe('cross-engine JSON columns pass through untouched (#1038 review r8)', (
     expect(out.flag).toBe(true);
   });
 });
+
+describe('Postgres probe: unreachable vs unusable (#1038 review r9)', () => {
+  const { probePgData } = require('../../src/utils/databaseEngine');
+
+  test('an unreachable Postgres reports "occupied" so a healthy install is not diverted', async () => {
+    // A transient network failure must not hand a live pg install over to a
+    // stale SQLite file; startup should surface the real connection error.
+    const warnings = [];
+    const result = await probePgData(
+      { host: '127.0.0.1', port: 59999, user: 'nobody', password: 'x', database: 'nope' },
+      (m) => warnings.push(m),
+    );
+    expect(result).toBe(true);
+    expect(warnings.join(' ')).toMatch(/unreachable/i);
+  }, 30000);
+});
