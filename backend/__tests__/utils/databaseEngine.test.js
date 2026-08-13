@@ -350,3 +350,38 @@ describe('an unfinished migration pins the boot to SQLite (#1038 review)', () =>
     expect(hasMigrationInProgress('/nonexistent/photo_sharing.db')).toBe(false);
   });
 });
+
+describe('the migration pin outranks an explicit client (#1038 review r6)', () => {
+  // docker-compose sets DATABASE_CLIENT=pg, so without this an unfinished
+  // migration would be ignored on exactly the deployments that pin it, and a
+  // half-written Postgres would be served.
+  test('explicit pg loses to an unfinished migration while SQLite holds data', () => {
+    const r = decideBootEngine({
+      configuredClient: 'pg', explicitClient: 'pg',
+      pgHasData: true, sqliteHasData: true, migrationInProgress: true,
+    });
+    expect(r.client).toBe('sqlite3');
+    expect(r.reason).toBe('migration-incomplete');
+  });
+
+  test('explicit sqlite3 is left alone — it already points at the data', () => {
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: 'sqlite3',
+      pgHasData: true, sqliteHasData: true, migrationInProgress: true,
+    }).client).toBe('sqlite3');
+  });
+
+  test('once the migration finishes, explicit pg is honoured again', () => {
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: 'pg',
+      pgHasData: true, sqliteHasData: true, migrationInProgress: false,
+    }).client).toBe('pg');
+  });
+
+  test('a pin with no SQLite data left does not strand the install', () => {
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: 'pg',
+      pgHasData: true, sqliteHasData: false, migrationInProgress: true,
+    }).client).toBe('pg');
+  });
+});

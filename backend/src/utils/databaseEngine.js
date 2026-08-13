@@ -62,6 +62,14 @@ function describeEngine(knexConfig) {
 function decideBootEngine({
   configuredClient, explicitClient, pgHasData, sqliteHasData, migrationInProgress = false,
 }) {
+  // A migration that never finished outranks everything, including an explicit
+  // DATABASE_CLIENT=pg: Postgres may hold a half-written copy while SQLite is
+  // still the database of record. Deleting the marker is the documented
+  // override. (Explicit sqlite3 already points at the data, so leave it alone.)
+  if (migrationInProgress && sqliteHasData && explicitClient !== 'sqlite3') {
+    return { client: 'sqlite3', overridden: true, reason: 'migration-incomplete' };
+  }
+
   // An explicit DATABASE_CLIENT is an instruction, not a guess. Never override
   // it — this is also the documented way to force Postgres and start fresh.
   if (explicitClient) {
@@ -220,13 +228,16 @@ async function resolveBootEngine({ knexConfig, logger }) {
   // Probe whenever Postgres is the engine in play — including when it was named
   // explicitly, otherwise the "leaving SQLite behind" warning is unreachable.
   const effectiveClient = explicitClient || configuredClient;
-  const probing = effectiveClient === 'pg';
+  const migrationInProgress = hasMigrationInProgress(sqlitePath);
+  // Probe when Postgres is in play, and also whenever a migration is pinned —
+  // the pin decision needs to know whether the SQLite side still holds data.
+  const probing = effectiveClient === 'pg' || migrationInProgress;
   const decision = decideBootEngine({
     configuredClient,
     explicitClient,
     pgHasData: probing ? await probePgData(knexConfig.connection) : true,
     sqliteHasData: probing ? await probeSqliteData(sqlitePath, (m) => logger.warn(m)) : false,
-    migrationInProgress: hasMigrationInProgress(sqlitePath),
+    migrationInProgress,
   });
 
   if (decision.reason === 'migration-incomplete') {
