@@ -17,10 +17,14 @@
 const path = require('path');
 const fs = require('fs');
 
+const os = require('os');
 const {
   resolveSqlitePath,
   describeEngine,
   decideBootEngine,
+  probeSqliteData,
+  migrationMarkerPath,
+  hasMigrationMarker,
 } = require('../../src/utils/databaseEngine');
 const {
   epochToIso,
@@ -262,5 +266,41 @@ describe('SQLite JSON text is decoded before Postgres serialisation (#1038 revie
     expect(out.created_at).toBe('2026-08-12T15:20:38.763Z');
     expect(out.feedback_enabled).toBe(true);
     expect(out.name).toBe('plain');
+  });
+});
+
+describe('probeSqliteData fails closed (#1038 review)', () => {
+  function tmpDb(contents) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-probe-'));
+    const file = path.join(dir, 'photo_sharing.db');
+    fs.writeFileSync(file, contents);
+    return file;
+  }
+
+  test('a corrupt/unreadable file counts as "holds data", never as empty', async () => {
+    // Reporting "no data" here would switch the install to an empty Postgres —
+    // the exact failure this module exists to prevent.
+    await expect(probeSqliteData(tmpDb('this is not a sqlite database'))).resolves.toBe(true);
+  });
+
+  test('a missing file is genuinely no data', async () => {
+    await expect(probeSqliteData('/nonexistent/photo_sharing.db')).resolves.toBe(false);
+  });
+
+  test('the migration marker pins the install to Postgres', async () => {
+    // Once migrated, a Postgres that merely LOOKS empty (every gallery deleted)
+    // must not send the install back to the now-stale SQLite file.
+    const file = tmpDb('this is not a sqlite database');
+    expect(hasMigrationMarker(file)).toBe(false);
+    expect(await probeSqliteData(file)).toBe(true);
+
+    fs.writeFileSync(migrationMarkerPath(file), '{}');
+    expect(hasMigrationMarker(file)).toBe(true);
+    expect(await probeSqliteData(file)).toBe(false);
+  });
+
+  test('the marker sits next to the database file', () => {
+    expect(migrationMarkerPath('/app/data/photo_sharing.db'))
+      .toBe('/app/data/photo_sharing.db.migrated-to-postgres');
   });
 });

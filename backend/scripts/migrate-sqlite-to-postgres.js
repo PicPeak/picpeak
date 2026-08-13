@@ -80,20 +80,55 @@ async function phaseExport() {
   return filePath;
 }
 
-// Tables whose contents an operator would notice losing. Used both to decide
-// whether a database "has data" and to detect writes landing DURING the
-// migration (#1038 review): if the backend is still running, uploads, feedback
-// or admin edits made after the export would never reach Postgres, and after
-// the engine switch they would be invisible.
-const FINGERPRINT_TABLES = ['events', 'photos', 'photo_feedback', 'admin_users'];
+// Tables that are EMPTY on a freshly migrated schema, so any row in them means
+// a human has used this install. Used to protect the target from being wiped
+// and to decide whether the source is worth migrating (#1038 review). Tables
+// missing on a given branch are skipped.
+const USER_DATA_TABLES = [
+  'events', 'photos', 'photo_feedback', 'admin_users', 'customer_accounts',
+  'quotes', 'invoices', 'projects', 'expenses', 'incoming_invoices',
+];
 
+async function tablesWithData(db, tables) {
+  const found = {};
+  for (const table of tables) {
+    if (!(await db.schema.hasTable(table))) continue;
+    const row = await db(table).count('* as count').first();
+    const count = Number(row?.count || 0);
+    if (count > 0) found[table] = count;
+  }
+  return found;
+}
+
+async function phaseUserData() {
+  const { db } = require('../src/database/db');
+  return JSON.stringify(await tablesWithData(db, USER_DATA_TABLES));
+}
+
+// Fingerprint EVERY table the export carries, not a hand-picked few: writes to
+// an unlisted table were invisible, and count+maxId alone misses in-place
+// UPDATEs (an event edit, a password change). max(updated_at) covers those
+// wherever the column exists. Still not a substitute for stopping the backend —
+// a table with neither `id` nor `updated_at` can be edited unnoticed — which is
+// why the script says so up front.
 async function phaseFingerprint() {
   const { db } = require('../src/database/db');
+  const { listDataTables } = require('../src/services/picpeakExportService');
   const out = {};
-  for (const table of FINGERPRINT_TABLES) {
-    if (!(await db.schema.hasTable(table))) continue;
-    const row = await db(table).count('id as count').max('id as maxId').first();
-    out[table] = { count: Number(row?.count || 0), maxId: Number(row?.maxId || 0) };
+  for (const table of await listDataTables()) {
+    const entry = {};
+    try {
+      entry.count = Number((await db(table).count('* as count').first())?.count || 0);
+    } catch (_) {
+      continue; // table vanished mid-run; the export would fail on it anyway
+    }
+    for (const [key, col] of [['maxId', 'id'], ['maxUpdated', 'updated_at']]) {
+      try {
+        const row = await db(table).max(`${col} as v`).first();
+        if (row && row.v !== null && row.v !== undefined) entry[key] = String(row.v);
+      } catch (_) { /* column doesn't exist on this table */ }
+    }
+    out[table] = entry;
   }
   return JSON.stringify(out);
 }
@@ -115,18 +150,20 @@ async function phaseImport(archivePath) {
   return JSON.stringify(summary || {});
 }
 
-function galleryCount(fingerprint) {
-  return fingerprint.events ? fingerprint.events.count : 0;
+function summariseUserData(found) {
+  return Object.entries(found).map(([t, n]) => `${t}=${n}`).join(', ');
 }
 
 function describeDrift(before, after) {
   const drifted = [];
-  for (const table of Object.keys(before)) {
-    const a = before[table];
-    const b = after[table];
-    if (!b) continue;
-    if (a.count !== b.count || a.maxId !== b.maxId) {
-      drifted.push(`${table}: ${a.count} rows/max id ${a.maxId} → ${b.count}/${b.maxId}`);
+  for (const table of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    const a = before[table] || {};
+    const b = after[table] || {};
+    if (a.count !== b.count) {
+      drifted.push(`${table}: ${a.count ?? 0} rows → ${b.count ?? 0}`);
+    } else if (a.maxId !== b.maxId || a.maxUpdated !== b.maxUpdated) {
+      drifted.push(`${table}: rows edited in place (max id ${a.maxId ?? '-'} → ${b.maxId ?? '-'}, `
+        + `last update ${a.maxUpdated ?? '-'} → ${b.maxUpdated ?? '-'})`);
     }
   }
   return drifted;
@@ -143,8 +180,9 @@ async function main() {
   if (args.phase) {
     const payload = args.phase === 'export' ? await phaseExport()
       : args.phase === 'fingerprint' ? await phaseFingerprint()
-        : args.phase === 'import' ? await phaseImport(args.archive)
-          : await phaseMigrateSchema();
+        : args.phase === 'user-data' ? await phaseUserData()
+          : args.phase === 'import' ? await phaseImport(args.archive)
+            : await phaseMigrateSchema();
     if (args.resultFile) fs.writeFileSync(args.resultFile, String(payload ?? ''));
     // The knex pool holds the event loop open; exit explicitly or the parent's
     // spawnSync waits on a process that will never end by itself.
@@ -176,25 +214,30 @@ async function main() {
     + 'but stopping the container first is the only way to be sure.\n'
   );
 
-  const sqliteBefore = JSON.parse(runPhase('fingerprint', 'sqlite3'));
-  const sqliteCount = galleryCount(sqliteBefore);
-  console.log(`  source : ${sqlitePath} — ${sqliteCount} galler${sqliteCount === 1 ? 'y' : 'ies'}`);
-  if (!sqliteCount) {
-    console.error('\nThe SQLite database holds no galleries. Refusing to overwrite Postgres with it.');
+  const sourceData = JSON.parse(runPhase('user-data', 'sqlite3'));
+  console.log(`  source : ${sqlitePath} — ${summariseUserData(sourceData) || 'no user data'}`);
+  if (!Object.keys(sourceData).length) {
+    console.error(
+      '\nThe SQLite database holds no user data at all (no galleries, admins, customers or\n'
+      + 'accounting records). There is nothing to migrate.'
+    );
     process.exit(1);
   }
+  const sqliteBefore = JSON.parse(runPhase('fingerprint', 'sqlite3'));
 
   // Build the Postgres schema first — a fresh database has no tables at all,
   // and the import replaces table CONTENTS, it does not create them.
   console.log('\n  Preparing PostgreSQL schema…');
   runPhase('migrate-schema', 'pg');
 
-  const pgCount = galleryCount(JSON.parse(runPhase('fingerprint', 'pg')));
-  console.log(`  target : postgres — ${pgCount} galler${pgCount === 1 ? 'y' : 'ies'}`);
-  if (pgCount > 0 && !args.force) {
+  const targetData = JSON.parse(runPhase('user-data', 'pg'));
+  console.log(`  target : postgres — ${summariseUserData(targetData) || 'empty'}`);
+  if (Object.keys(targetData).length && !args.force) {
     console.error(
-      `\nPostgreSQL already holds ${pgCount} galleries. The import REPLACES every table,\n`
-      + 'so this would discard them. Re-run with --force if that is what you want.'
+      `\nPostgreSQL already holds user data (${summariseUserData(targetData)}).\n`
+      + 'The import REPLACES every table, so this would delete it — including admins,\n'
+      + 'customers and accounting records that have no galleries attached.\n'
+      + 'Re-run with --force only if you are certain you want that data gone.'
     );
     process.exit(1);
   }
@@ -234,16 +277,51 @@ async function main() {
     process.exit(1);
   }
 
-  const finalCount = galleryCount(JSON.parse(runPhase('fingerprint', 'pg')));
-  console.log(`\n  PostgreSQL now holds ${finalCount} galler${finalCount === 1 ? 'y' : 'ies'}.`);
+  // Row-for-row comparison of the whole database, not just galleries: every
+  // table the export carried must have arrived with the same row count.
+  const targetAfter = JSON.parse(runPhase('fingerprint', 'pg'));
+  // Only a SHORTFALL is a problem. The import legitimately adds rows of its own
+  // afterwards — setSessionsValidAfter() writes an app_settings row so tokens
+  // minted before the restore stop authenticating — and a target that gained
+  // rows has not lost anything.
+  const missing = [];
+  const gained = [];
+  for (const [table, src] of Object.entries(sqliteBefore)) {
+    const dst = targetAfter[table];
+    if (!dst) { missing.push(`${table}: table absent in Postgres`); continue; }
+    if (dst.count < src.count) missing.push(`${table}: ${src.count} rows → ${dst.count}`);
+    else if (dst.count > src.count) gained.push(`${table}: ${src.count} → ${dst.count}`);
+  }
+  if (gained.length) console.log(`  (rows added by the import itself: ${gained.join(', ')})`);
+  console.log(`\n  PostgreSQL now holds ${summariseUserData(JSON.parse(runPhase('user-data', 'pg')))}.`);
 
-  if (finalCount !== sqliteCount) {
+  if (missing.length) {
     console.error(
-      `\nWARNING: source had ${sqliteCount} galleries, target has ${finalCount}. Check the log above`
-      + '\nbefore switching over — the SQLite file has not been modified.'
+      '\nROW COUNTS DO NOT MATCH — Postgres did not receive everything:\n'
+      + missing.map((m) => `  ${m}`).join('\n')
+      + '\n\nYour SQLite data is untouched and still the one being served. Do not switch\n'
+      + 'engines; report this with the list above.'
     );
     process.exit(1);
   }
+
+  // Pin the engine choice so a later "Postgres looks empty" moment can never
+  // send the install back to this now-stale file.
+  const { migrationMarkerPath } = require('../src/utils/databaseEngine');
+  const marker = migrationMarkerPath(sqlitePath);
+  const retired = `${sqlitePath}.pre-postgres-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  let retiredTo = null;
+  try {
+    fs.renameSync(sqlitePath, retired);
+    retiredTo = retired;
+  } catch (err) {
+    console.log(`  (could not rename the SQLite file: ${err.message} — leaving it in place)`);
+  }
+  fs.writeFileSync(marker, JSON.stringify({
+    migrated_at: new Date().toISOString(),
+    retired_sqlite_file: retiredTo,
+    target: `${process.env.DB_HOST}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'picpeak'}`,
+  }, null, 2));
 
   if (!args.keepArchive) {
     fs.rmSync(path.dirname(archive), { recursive: true, force: true });
@@ -252,12 +330,14 @@ async function main() {
   }
 
   console.log(`
-Done. Your data is now in PostgreSQL and the SQLite file is untouched at:
+Done. Your data is now in PostgreSQL.
 
-  ${sqlitePath}
+  rollback copy : ${retiredTo || sqlitePath}
+  marker        : ${marker}
 
-Restart the container to pick up PostgreSQL. Keep that file until you have
-confirmed the galleries look right — it is your rollback.
+Restart the container to pick up PostgreSQL. Keep the rollback copy until you
+have confirmed the galleries look right; to go back, delete the marker and
+rename that file to ${sqlitePath}.
 `);
 }
 

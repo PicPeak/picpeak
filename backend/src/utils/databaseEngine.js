@@ -25,6 +25,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const logger = require('./logger');
 
 /** Absolute path of the SQLite file this install would use. */
 function resolveSqlitePath() {
@@ -81,8 +82,22 @@ function decideBootEngine({ configuredClient, explicitClient, pgHasData, sqliteH
   return { client: configuredClient, overridden: false, reason: null };
 }
 
+/** Marker written by scripts/migrate-sqlite-to-postgres.js once the data is in
+ *  Postgres. Its presence pins the install to Postgres for good: without it, a
+ *  Postgres that is merely EMPTY (every gallery deleted, say) would look
+ *  identical to one that was never migrated, and the boot would fall back to a
+ *  stale SQLite file that has been out of date since the migration. */
+function migrationMarkerPath(sqlitePath = resolveSqlitePath()) {
+  return `${sqlitePath}.migrated-to-postgres`;
+}
+
+function hasMigrationMarker(sqlitePath = resolveSqlitePath()) {
+  return fs.existsSync(migrationMarkerPath(sqlitePath));
+}
+
 /** True when a SQLite file exists and carries gallery data. */
 async function probeSqliteData(sqlitePath = resolveSqlitePath()) {
+  if (hasMigrationMarker(sqlitePath)) return false;
   if (!fs.existsSync(sqlitePath)) return false;
   const knex = require('knex');
   const probe = knex({
@@ -94,10 +109,15 @@ async function probeSqliteData(sqlitePath = resolveSqlitePath()) {
     if (!(await probe.schema.hasTable('events'))) return false;
     const row = await probe('events').count('id as count').first();
     return Number(row?.count || 0) > 0;
-  } catch (_) {
-    // Unreadable/corrupt file — not our call to make here; let the normal
-    // startup path surface it.
-    return false;
+  } catch (err) {
+    // Unreadable or corrupt: fail CLOSED. Reporting "no data" here would switch
+    // the install to an empty Postgres — the precise failure this module exists
+    // to prevent. Staying on SQLite surfaces the real error instead.
+    logger.warn(
+      `[database-engine] SQLite at ${sqlitePath} exists but could not be probed (${err.message}); `
+      + 'assuming it holds data and staying on it.'
+    );
+    return true;
   } finally {
     await probe.destroy();
   }
@@ -153,12 +173,15 @@ async function resolveBootEngine({ knexConfig, logger }) {
   const configuredClient = knexConfig?.client;
   const sqlitePath = resolveSqlitePath();
 
-  const needsProbe = !explicitClient && configuredClient === 'pg';
+  // Probe whenever Postgres is the engine in play — including when it was named
+  // explicitly, otherwise the "leaving SQLite behind" warning is unreachable.
+  const effectiveClient = explicitClient || configuredClient;
+  const probing = effectiveClient === 'pg';
   const decision = decideBootEngine({
     configuredClient,
     explicitClient,
-    pgHasData: needsProbe ? await probePgData(knexConfig.connection) : true,
-    sqliteHasData: needsProbe ? await probeSqliteData(sqlitePath) : false,
+    pgHasData: probing ? await probePgData(knexConfig.connection) : true,
+    sqliteHasData: probing ? await probeSqliteData(sqlitePath) : false,
   });
 
   if (decision.overridden && decision.reason === 'stranded-sqlite-data') {
@@ -176,6 +199,8 @@ async function resolveBootEngine({ knexConfig, logger }) {
 
 module.exports = {
   resolveSqlitePath,
+  migrationMarkerPath,
+  hasMigrationMarker,
   describeEngine,
   decideBootEngine,
   probeSqliteData,
