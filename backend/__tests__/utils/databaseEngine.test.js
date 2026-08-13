@@ -432,3 +432,43 @@ describe('Postgres probe: unreachable vs unusable (#1038 review r9)', () => {
     expect(warnings.join(' ')).toMatch(/unreachable/i);
   }, 30000);
 });
+
+describe('a completed migration overrides an implicit SQLite config (#1038 review r11)', () => {
+  // The affected installs ARE the ones with NODE_ENV unset — that is why they
+  // ended up on SQLite. An operator can easily migrate before fixing that, and
+  // by then the source file has been renamed away, so honouring the implicit
+  // sqlite3 would create a NEW empty database and serve it.
+  test('marker + Postgres settings beat an implicitly-resolved sqlite3', () => {
+    const r = decideBootEngine({
+      configuredClient: 'sqlite3', explicitClient: null,
+      pgHasData: true, sqliteHasData: false,
+      migrationCompleted: true, pgConfigured: true,
+    });
+    expect(r.client).toBe('pg');
+    expect(r.reason).toBe('migrated-to-postgres');
+  });
+
+  test('an EXPLICIT sqlite3 still wins — that is a deliberate rollback', () => {
+    expect(decideBootEngine({
+      configuredClient: 'sqlite3', explicitClient: 'sqlite3',
+      pgHasData: true, sqliteHasData: false,
+      migrationCompleted: true, pgConfigured: true,
+    }).client).toBe('sqlite3');
+  });
+
+  test('without Postgres settings there is nowhere to send it', () => {
+    expect(decideBootEngine({
+      configuredClient: 'sqlite3', explicitClient: null,
+      pgHasData: false, sqliteHasData: false,
+      migrationCompleted: true, pgConfigured: false,
+    }).client).toBe('sqlite3');
+  });
+
+  test('no marker, no override — a plain SQLite install is left alone', () => {
+    expect(decideBootEngine({
+      configuredClient: 'sqlite3', explicitClient: null,
+      pgHasData: false, sqliteHasData: true,
+      migrationCompleted: false, pgConfigured: true,
+    }).client).toBe('sqlite3');
+  });
+});

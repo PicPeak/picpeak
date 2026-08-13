@@ -60,7 +60,8 @@ function describeEngine(knexConfig) {
  * @returns {{ client: string, overridden: boolean, reason: string|null }}
  */
 function decideBootEngine({
-  configuredClient, explicitClient, pgHasData, sqliteHasData, migrationInProgress = false,
+  configuredClient, explicitClient, pgHasData, sqliteHasData,
+  migrationInProgress = false, migrationCompleted = false, pgConfigured = false,
 }) {
   // A migration that never finished outranks everything, including an explicit
   // DATABASE_CLIENT=pg: Postgres may hold a half-written copy while SQLite is
@@ -68,6 +69,17 @@ function decideBootEngine({
   // override. (Explicit sqlite3 already points at the data, so leave it alone.)
   if (migrationInProgress && sqliteHasData && explicitClient !== 'sqlite3') {
     return { client: 'sqlite3', overridden: true, reason: 'migration-incomplete' };
+  }
+
+  // The data was migrated to Postgres, but nothing in the environment says so:
+  // DATABASE_CLIENT is unset and NODE_ENV still resolves to the development
+  // block, i.e. sqlite3. That is the state the affected installs are IN — it is
+  // why they ended up on SQLite in the first place — so an operator can easily
+  // migrate before fixing it. The source file has been renamed away by then, so
+  // honouring the implicit sqlite3 would create a NEW, empty database and serve
+  // it. The marker is durable proof of where the data actually is.
+  if (!explicitClient && configuredClient !== 'pg' && migrationCompleted && pgConfigured) {
+    return { client: 'pg', overridden: true, reason: 'migrated-to-postgres' };
   }
 
   // An explicit DATABASE_CLIENT is an instruction, not a guess. Never override
@@ -279,18 +291,28 @@ async function resolveBootEngine({ knexConfig, logger }) {
   // explicitly, otherwise the "leaving SQLite behind" warning is unreachable.
   const effectiveClient = explicitClient || configuredClient;
   const migrationInProgress = hasMigrationInProgress(sqlitePath);
-  // Probe when Postgres is in play, and also whenever a migration is pinned —
-  // the pin decision needs to know whether the SQLite side still holds data.
-  const probing = effectiveClient === 'pg' || migrationInProgress;
+  const migrationCompleted = hasMigrationMarker(sqlitePath);
+  const pgConfigured = Boolean(process.env.DB_HOST || process.env.DB_PASSWORD);
+  // Probe when Postgres is in play, and also whenever a migration is pinned or
+  // finished — those decisions need to know what each side holds.
+  const probing = effectiveClient === 'pg' || migrationInProgress || migrationCompleted;
   const decision = decideBootEngine({
     configuredClient,
     explicitClient,
     pgHasData: probing ? await probePgData(knexConfig.connection, (m) => logger.warn(m)) : true,
     sqliteHasData: probing ? await probeSqliteData(sqlitePath, (m) => logger.warn(m)) : false,
     migrationInProgress,
+    migrationCompleted,
+    pgConfigured,
   });
 
-  if (decision.reason === 'migration-incomplete') {
+  if (decision.reason === 'migrated-to-postgres') {
+    logger.warn(
+      `This install's data was migrated to PostgreSQL (${migrationMarkerPath(sqlitePath)}), but the `
+      + 'environment still resolves to SQLite. Using PostgreSQL — set NODE_ENV=production (or '
+      + 'DATABASE_CLIENT=pg) to make that explicit.'
+    );
+  } else if (decision.reason === 'migration-incomplete') {
     logger.warn(
       `A SQLite → PostgreSQL migration did not finish (${migrationInProgressPath(sqlitePath)} is still `
       + 'present), so PostgreSQL may hold a partial copy. Staying on SQLite, which is still the '
