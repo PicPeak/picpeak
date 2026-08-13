@@ -220,10 +220,28 @@ function epochToIso(value) {
   return Number.isNaN(d.getTime()) ? value : d.toISOString();
 }
 
-function coerceForTargetEngine(rows, { timestamps, booleans }) {
-  if (!timestamps.length && !booleans.length) return rows;
+function parseJsonText(value) {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  // Only decode what is unambiguously JSON. A bare word stays a bare word, so a
+  // TEXT column that merely looks jsonish is never reinterpreted.
+  if (!/^[[{"]/.test(trimmed) && !/^-?\d/.test(trimmed)
+      && !['true', 'false', 'null'].includes(trimmed)) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch (_) {
+    return value;
+  }
+}
+
+function coerceForTargetEngine(rows, { timestamps, booleans, jsonCols = new Set() }) {
+  if (!timestamps.length && !booleans.length && !jsonCols.size) return rows;
   return rows.map((row) => {
     const out = { ...row };
+    for (const col of jsonCols) {
+      if (out[col] !== undefined && out[col] !== null) out[col] = parseJsonText(out[col]);
+    }
     for (const col of timestamps) {
       const v = out[col];
       if (v === null || v === undefined || v === '') continue;
@@ -292,10 +310,12 @@ async function replaceAllTables(tables, dataDir, currentAdmin, { crossEngine = f
       const rows = parseNdjson(path.join(dataDir, `${table}.ndjson`));
       if (!rows.length) continue;
       const jsonCols = await jsonColumnsFor(trx, table);
-      let prepared = serialiseJsonColumns(rows, jsonCols);
+      let prepared = rows;
       if (crossEngine) {
-        prepared = coerceForTargetEngine(prepared, await typedColumnsFor(trx, table));
+        const typed = await typedColumnsFor(trx, table);
+        prepared = coerceForTargetEngine(prepared, { ...typed, jsonCols });
       }
+      prepared = serialiseJsonColumns(prepared, jsonCols);
       await trx.batchInsert(table, prepared, 100);
     }
 
@@ -423,6 +443,7 @@ module.exports = {
   validateManifest,
   // exported for testing — the cross-engine coercion (#1038)
   epochToIso,
+  parseJsonText,
   coerceForTargetEngine,
   reinjectCurrentAdmin,
 };

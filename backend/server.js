@@ -4,6 +4,31 @@ require('dotenv').config();
 const { validateEnvironment } = require('./src/config/validateEnv');
 validateEnvironment();
 
+// Resolve which database engine this process should use, BEFORE anything
+// requires knexfile/db (#1038). wait-for-db.sh normally does this and exports
+// DATABASE_CLIENT, but a Kubernetes manifest that sets `command`/`args`, or a
+// plain `docker run … node server.js`, bypasses the entrypoint entirely — and
+// those are exactly the deployments this fix is for. Without this, such an
+// install would resolve to Postgres (NODE_ENV is baked into the image now) and
+// come up against an empty database while its SQLite data sat there unseen.
+//
+// spawnSync because the decision needs an async Postgres probe and this must
+// happen before the first `require` of knexfile. It short-circuits without
+// probing when DATABASE_CLIENT is already set, so the entrypoint path pays
+// nothing.
+if (!process.env.DATABASE_CLIENT) {
+  const { spawnSync } = require('child_process');
+  const probe = spawnSync(
+    process.execPath,
+    [require('path').join(__dirname, 'scripts', 'resolve-db-engine.js')],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }
+  );
+  const resolved = (probe.stdout || '').trim();
+  if (probe.status === 0 && resolved) {
+    process.env.DATABASE_CLIENT = resolved;
+  }
+}
+
 // Initialize logger early to capture startup logs
 const logger = require('./src/utils/logger');
 logger.info('Server starting up', {
