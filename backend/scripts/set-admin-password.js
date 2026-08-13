@@ -14,17 +14,14 @@ const bcrypt = require('bcrypt');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
-const knex = require('knex');
-const db = knex({
-  client: process.env.DB_CLIENT || 'pg',
-  connection: {
-    host: process.env.DB_HOST || 'localhost',
-    port: process.env.DB_PORT || 5432,
-    user: process.env.DB_USER || 'picpeak',
-    password: process.env.DB_PASSWORD || 'picpeak',
-    database: process.env.DB_NAME || 'picpeak_dev'
-  }
-});
+// Use the application's own connection, like every sibling script here
+// (reset-admin-password, create-admin, show-admin-credentials, reset-admin-mfa).
+// This file used to hand-roll its own knex config, which meant: it read
+// DB_CLIENT — a variable nothing else in the codebase sets — and so defaulted
+// to Postgres on SQLite installs; and it defaulted to database `picpeak_dev`,
+// a name no other component uses. Setting a password could therefore silently
+// target a different database than the one the application serves (#1038).
+const { db } = require('../src/database/db');
 
 /**
  * Validate password strength
@@ -111,8 +108,10 @@ async function setAdminPassword() {
       .where('username', 'admin')
       .update({
         password_hash: hashedPassword,
-        password_changed_at: new Date(),
-        updated_at: new Date()
+        // ISO strings, not Date objects — they round-trip on both engines, and
+        // this script now runs on SQLite installs too.
+        password_changed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
 
     if (updated === 0) {
