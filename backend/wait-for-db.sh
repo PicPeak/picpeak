@@ -138,6 +138,13 @@ mkdir -p "$STORAGE_BASE/events/active" "$STORAGE_BASE/events/archived" "$STORAGE
 # Postgres. The exported value survives the `exec` below, so the migration
 # runner and the server agree on the engine.
 RESOLVED_DB_CLIENT="$(node scripts/resolve-db-engine.js)"
+RESOLVER_STATUS=$?
+# Exit 3 means two populated databases with no record of which is current
+# (#1038). Starting either would hide the other's data, so stop here — the
+# resolver has already printed what to do.
+if [ "$RESOLVER_STATUS" = "3" ]; then
+  exit 1
+fi
 # Validate rather than trust: anything unexpected on stdout (a stray log line
 # from a library that writes to the console) must not become DATABASE_CLIENT,
 # which would break knexfile for every process that follows.

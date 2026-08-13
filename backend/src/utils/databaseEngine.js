@@ -101,6 +101,16 @@ function decideBootEngine({
     return { client: 'sqlite3', overridden: true, reason: 'migration-incomplete' };
   }
 
+  // Both sides hold data and nothing records which is authoritative. This is
+  // the shape of an install that ran on Postgres, silently fell to SQLite when
+  // NODE_ENV was lost, and kept working there: the Postgres rows are real but
+  // stale, and the SQLite rows are real and newer. A completed migration would
+  // have left a marker; without one, guessing either way hides data and splits
+  // subsequent writes across two databases. Stop and let a human decide.
+  if (configuredClient === 'pg' && !migrationCompleted && pgHasData && sqliteHasData) {
+    return { client: null, overridden: false, reason: 'ambiguous-both-populated' };
+  }
+
   // Configured for Postgres, Postgres holds no galleries, and real data sits in
   // a SQLite file: this install has been unknowingly running on SQLite. Keep
   // serving from where the data actually is. Deliberately keyed on DATA, not on
@@ -214,6 +224,21 @@ async function probeSqliteData(sqlitePath = resolveSqlitePath(), onWarn = warnTo
   }
 }
 
+// The Postgres target described by the environment. Needed because the resolver
+// may have to probe Postgres while knexfile has resolved to SQLite (a completed
+// migration whose environment still says sqlite3). Mirrors knexfile's production
+// block — keep the defaults in step with it.
+function pgConnectionFromEnv() {
+  return {
+    host: process.env.DB_HOST || 'db',
+    port: process.env.DB_PORT || 5432,
+    user: process.env.DB_USER || 'picpeak',
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME || 'picpeak',
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+  };
+}
+
 /** True when the configured Postgres target already holds user data. */
 async function probePgData(pgConnection, onWarn = warnToStderr) {
   const knex = require('knex');
@@ -250,6 +275,30 @@ async function probePgData(pgConnection, onWarn = warnToStderr) {
     await probe.destroy();
   }
 }
+
+const CONFLICT_MESSAGE = (sqlitePath, pgTarget) => `
+${'='.repeat(78)}
+REFUSING TO START — two databases, both with data, and no record of which is current.
+
+  sqlite   : ${sqlitePath}
+  postgres : ${pgTarget}
+
+This is what an install looks like after it ran on PostgreSQL, lost NODE_ENV or
+DATABASE_CLIENT, and kept working on SQLite without anyone noticing (see
+https://github.com/PicPeak/picpeak/issues/1038). The PostgreSQL rows are real
+but probably old; the SQLite rows are real and probably newer.
+
+Starting either one would hide the other's galleries and split every new upload
+across two databases, so PicPeak will not choose for you. Compare them, then say
+which is authoritative:
+
+  DATABASE_CLIENT=sqlite3   keep serving the SQLite file (its data is newer)
+  DATABASE_CLIENT=pg        keep serving PostgreSQL
+
+To combine them, start on SQLite and run:  node scripts/migrate-sqlite-to-postgres.js
+(it replaces the PostgreSQL contents with the SQLite data and records the switch).
+${'='.repeat(78)}
+`.trim();
 
 const STRANDED_WARNING = (sqlitePath, pgTarget) => `
 ${'='.repeat(78)}
@@ -296,12 +345,24 @@ async function resolveBootEngine({ knexConfig, logger }) {
   const decision = decideBootEngine({
     configuredClient,
     explicitClient,
-    pgHasData: probing ? await probePgData(knexConfig.connection, (m) => logger.warn(m)) : true,
+    pgHasData: probing
+      ? await probePgData(
+        knexConfig.client === 'pg' ? knexConfig.connection : pgConnectionFromEnv(),
+        (m) => logger.warn(m),
+      )
+      : true,
     sqliteHasData: probing ? await probeSqliteData(sqlitePath, (m) => logger.warn(m)) : false,
     migrationInProgress,
     migrationCompleted,
     pgConfigured,
   });
+
+  if (decision.reason === 'ambiguous-both-populated') {
+    logger.error(CONFLICT_MESSAGE(sqlitePath, describeEngine({
+      client: 'pg', connection: pgConnectionFromEnv(),
+    })));
+    return decision;
+  }
 
   if (decision.reason === 'migrated-to-postgres') {
     logger.warn(
@@ -331,6 +392,7 @@ async function resolveBootEngine({ knexConfig, logger }) {
 
 module.exports = {
   resolveSqlitePath,
+  pgConnectionFromEnv,
   isUntouchedBootstrapRow,
   adminsIndicateUse,
   migrationMarkerPath,
