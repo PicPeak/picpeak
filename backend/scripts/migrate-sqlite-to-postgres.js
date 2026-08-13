@@ -259,6 +259,19 @@ async function main() {
     process.exit(1);
   }
 
+  // Not a refusal: an unset NODE_ENV is exactly the state the affected installs
+  // are in, and refusing would block the people this script is for. The success
+  // marker makes the boot resolve to Postgres regardless; this just tells the
+  // operator to make it explicit.
+  if (!process.env.DATABASE_CLIENT && require('../knexfile').client !== 'pg') {
+    console.log(
+      'Note: this environment resolves to SQLite (NODE_ENV is not "production" and\n'
+      + 'DATABASE_CLIENT is unset). The migration will still complete and the marker it\n'
+      + 'writes makes the app use PostgreSQL afterwards, but set NODE_ENV=production (or\n'
+      + 'DATABASE_CLIENT=pg) so the configuration says what is actually happening.\n'
+    );
+  }
+
   if (!process.env.DB_HOST && !process.env.DB_PASSWORD) {
     console.error(
       'No PostgreSQL settings found (DB_HOST / DB_PASSWORD). Set them the way the\n'
