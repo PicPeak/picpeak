@@ -25,6 +25,9 @@
 
 const fs = require('fs');
 const { resolveSqliteFilename } = require('./sqlitePath');
+// Shared with knexfile so the engine guard can never probe a different target
+// than the application opens (#1038).
+const { pgConnectionFromEnv } = require('./pgConnection');
 
 // Diagnostics go through an injected sink, never a module-level logger: the
 // resolver's STDOUT is a protocol channel (wait-for-db.sh captures it), and the
@@ -227,26 +230,6 @@ async function probeSqliteData(sqlitePath = resolveSqlitePath(), onWarn = warnTo
   } finally {
     await probe.destroy();
   }
-}
-
-// The Postgres target described by the environment. Needed because the resolver
-// may have to probe Postgres while knexfile has resolved to SQLite (a completed
-// migration whose environment still says sqlite3). Mirrors knexfile's production
-// block — keep the defaults in step with it.
-function pgConnectionFromEnv() {
-  return {
-    // `postgres`, not knexfile's `db`: wait-for-db.sh resolves DB_HOST to
-    // `postgres` and exports it, so that is the host a running container is
-    // actually on. A CLI invoked with `docker exec` inherits nothing, and
-    // defaulting to `db` here would migrate into a different server than the
-    // application opens.
-    host: process.env.DB_HOST || 'postgres',
-    port: process.env.DB_PORT || 5432,
-    user: process.env.DB_USER || 'picpeak',
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME || 'picpeak',
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  };
 }
 
 /** True when the configured Postgres target already holds user data. */
