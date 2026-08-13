@@ -33,6 +33,20 @@ const { spawnSync } = require('child_process');
 
 const BACKEND_ROOT = path.resolve(__dirname, '..');
 
+// Same configuration sources the running backend uses. Without these, invoking
+// this CLI directly (or via `docker exec`, which does not inherit the exports
+// wait-for-db.sh performs) would fail the pre-flight checks below even though
+// the child phases would happily read backend/.env through knexfile.
+require('dotenv').config({ path: path.join(BACKEND_ROOT, '.env') });
+for (const [varName, file] of [['DB_PASSWORD', 'db_password'], ['JWT_SECRET', 'jwt_secret']]) {
+  const secretFile = `/run/secrets/${file}`;
+  if (!process.env[varName] && fs.existsSync(secretFile)) {
+    try {
+      process.env[varName] = fs.readFileSync(secretFile, 'utf8').trim();
+    } catch (_) { /* unreadable secret — the checks below report it */ }
+  }
+}
+
 function parseArgs(argv) {
   return {
     force: argv.includes('--force'),
@@ -40,6 +54,7 @@ function parseArgs(argv) {
     phase: (argv.find((a) => a.startsWith('--phase=')) || '').split('=')[1] || null,
     archive: (argv.find((a) => a.startsWith('--archive=')) || '').split('=')[1] || null,
     resultFile: (argv.find((a) => a.startsWith('--result-file=')) || '').split('=')[1] || null,
+    ignoreBootstrapAdmins: argv.includes('--ignore-bootstrap-admins'),
   };
 }
 
@@ -98,10 +113,20 @@ const USER_DATA_TABLES = [
   'quotes', 'invoices', 'projects', 'expenses', 'incoming_invoices',
 ];
 
-async function tablesWithData(db, tables) {
+async function tablesWithData(db, tables, { ignoreBootstrapAdmins = false } = {}) {
+  const { adminsIndicateUse } = require('../src/utils/databaseEngine');
   const found = {};
   for (const table of tables) {
     if (!(await db.schema.hasTable(table))) continue;
+    if (table === 'admin_users' && ignoreBootstrapAdmins) {
+      // Match probePgData: one never-used seeded admin is not "user data", or
+      // the migration would demand --force against an empty target.
+      const cols = ['must_change_password'];
+      if (await db.schema.hasColumn('admin_users', 'last_login')) cols.push('last_login');
+      const rows = await db('admin_users').select(cols);
+      if (adminsIndicateUse(rows)) found[table] = rows.length;
+      continue;
+    }
     const row = await db(table).count('* as count').first();
     const count = Number(row?.count || 0);
     if (count > 0) found[table] = count;
@@ -109,9 +134,9 @@ async function tablesWithData(db, tables) {
   return found;
 }
 
-async function phaseUserData() {
+async function phaseUserData(ignoreBootstrapAdmins) {
   const { db } = require('../src/database/db');
-  return JSON.stringify(await tablesWithData(db, USER_DATA_TABLES));
+  return JSON.stringify(await tablesWithData(db, USER_DATA_TABLES, { ignoreBootstrapAdmins }));
 }
 
 // Fingerprint EVERY table the export carries, not a hand-picked few: writes to
@@ -204,7 +229,7 @@ async function main() {
   if (args.phase) {
     const payload = args.phase === 'export' ? await phaseExport()
       : args.phase === 'fingerprint' ? await phaseFingerprint()
-        : args.phase === 'user-data' ? await phaseUserData()
+        : args.phase === 'user-data' ? await phaseUserData(args.ignoreBootstrapAdmins)
           : args.phase === 'import' ? await phaseImport(args.archive)
             : await phaseMigrateSchema();
     if (args.resultFile) fs.writeFileSync(args.resultFile, String(payload ?? ''));
@@ -282,7 +307,7 @@ async function main() {
       retryingOwnRun = false; // unreadable pin — treat as unknown, require --force
     }
   }
-  const targetData = JSON.parse(runPhase('user-data', 'pg'));
+  const targetData = JSON.parse(runPhase('user-data', 'pg', ['--ignore-bootstrap-admins']));
   console.log(`  target : postgres — ${summariseUserData(targetData) || 'empty'}`);
   if (retryingOwnRun && Object.keys(targetData).length) {
     // Whatever is in Postgres came from a previous attempt of THIS script that

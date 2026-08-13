@@ -300,28 +300,10 @@ function epochToIso(value) {
   return Number.isNaN(d.getTime()) ? value : d.toISOString();
 }
 
-function parseJsonText(value) {
-  if (typeof value !== 'string') return value;
-  const trimmed = value.trim();
-  if (!trimmed) return value;
-  // Only decode what is unambiguously JSON. A bare word stays a bare word, so a
-  // TEXT column that merely looks jsonish is never reinterpreted.
-  if (!/^[[{"]/.test(trimmed) && !/^-?\d/.test(trimmed)
-      && !['true', 'false', 'null'].includes(trimmed)) return value;
-  try {
-    return JSON.parse(trimmed);
-  } catch (_) {
-    return value;
-  }
-}
-
-function coerceForTargetEngine(rows, { timestamps, booleans, jsonCols = new Set() }) {
-  if (!timestamps.length && !booleans.length && !jsonCols.size) return rows;
+function coerceForTargetEngine(rows, { timestamps, booleans }) {
+  if (!timestamps.length && !booleans.length) return rows;
   return rows.map((row) => {
     const out = { ...row };
-    for (const col of jsonCols) {
-      if (out[col] !== undefined && out[col] !== null) out[col] = parseJsonText(out[col]);
-    }
     for (const col of timestamps) {
       const v = out[col];
       if (v === null || v === undefined || v === '') continue;
@@ -371,11 +353,16 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       if (!rows.length) continue;
       const jsonCols = await jsonColumnsFor(trx, table);
       let prepared = rows;
+      let toSerialise = jsonCols;
       if (crossEngine) {
-        const typed = await typedColumnsFor(trx, table);
-        prepared = coerceForTargetEngine(prepared, { ...typed, jsonCols });
+        prepared = coerceForTargetEngine(prepared, await typedColumnsFor(trx, table));
+        // A sqlite-sourced archive already carries JSON columns as valid JSON
+        // TEXT, which is exactly what pg wants. Serialising again would store
+        // `{"a":1}` as the scalar string "{\"a\":1}" and would turn the JSON
+        // literal `null` into SQL NULL.
+        toSerialise = new Set();
       }
-      prepared = serialiseJsonColumns(prepared, jsonCols);
+      prepared = serialiseJsonColumns(prepared, toSerialise);
       await trx.batchInsert(table, prepared, 100);
     }
 
@@ -511,7 +498,6 @@ module.exports = {
   validateManifest,
   // exported for testing — the cross-engine coercion (#1038)
   epochToIso,
-  parseJsonText,
   coerceForTargetEngine,
   reinjectCurrentAdmin,
   captureOperatorRole,
