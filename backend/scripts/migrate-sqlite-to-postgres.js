@@ -78,8 +78,15 @@ async function phaseExport() {
   // Rows only. This moves an install between engines on the SAME machine, so
   // every file is already where it belongs; hauling business docs through /tmp
   // would just risk filling the temp disk.
-  const { filePath } = await createPicpeak({ includePhotos: false, includeFiles: false, outDir });
-  return filePath;
+  try {
+    const { filePath } = await createPicpeak({ includePhotos: false, includeFiles: false, outDir });
+    return filePath;
+  } catch (err) {
+    // createPicpeak leaves a caller-supplied outDir alone on failure, and a
+    // partial archive still contains password hashes and credentials.
+    fs.rmSync(outDir, { recursive: true, force: true });
+    throw err;
+  }
 }
 
 // Tables that are EMPTY on a freshly migrated schema, so any row in them means
@@ -216,6 +223,17 @@ async function main() {
     process.exit(1);
   }
 
+  if (process.env.DATABASE_CLIENT && process.env.DATABASE_CLIENT !== 'pg') {
+    console.error(
+      `This deployment pins DATABASE_CLIENT=${process.env.DATABASE_CLIENT}.\n`
+      + 'After the migration the application must run on PostgreSQL — the SQLite file is\n'
+      + 'renamed out of the way, so a restart with this setting would create a NEW, empty\n'
+      + 'SQLite database and serve that instead of your data.\n\n'
+      + 'Set DATABASE_CLIENT=pg (or remove it) in your deployment, then run this again.'
+    );
+    process.exit(1);
+  }
+
   if (!process.env.DB_HOST && !process.env.DB_PASSWORD) {
     console.error(
       'No PostgreSQL settings found (DB_HOST / DB_PASSWORD). Set them the way the\n'
@@ -246,8 +264,24 @@ async function main() {
   // admin when ADMIN_PASSWORD is set (common on legacy installs), and counting
   // that as "user data" would refuse a migration into a genuinely empty
   // database — pushing the operator towards --force for no reason.
-  const { hasMigrationInProgress } = require('../src/utils/databaseEngine');
-  const retryingOwnRun = hasMigrationInProgress(sqlitePath);
+  const { hasMigrationInProgress, migrationInProgressPath } = require('../src/utils/databaseEngine');
+  // The retry allowance is bound to the TARGET, not just to this SQLite file:
+  // if the operator repointed DB_HOST/DB_NAME since the failed attempt, the
+  // rows in front of us belong to some other database and must not be replaced
+  // without an explicit --force.
+  const targetId = `${process.env.DB_HOST}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'picpeak'}`;
+  let retryingOwnRun = false;
+  if (hasMigrationInProgress(sqlitePath)) {
+    try {
+      const pin = JSON.parse(fs.readFileSync(migrationInProgressPath(sqlitePath), 'utf8'));
+      retryingOwnRun = pin.target === targetId;
+      if (!retryingOwnRun) {
+        console.log(`  (an earlier attempt targeted ${pin.target}; this run targets ${targetId})`);
+      }
+    } catch (_) {
+      retryingOwnRun = false; // unreadable pin — treat as unknown, require --force
+    }
+  }
   const targetData = JSON.parse(runPhase('user-data', 'pg'));
   console.log(`  target : postgres — ${summariseUserData(targetData) || 'empty'}`);
   if (retryingOwnRun && Object.keys(targetData).length) {
@@ -269,9 +303,11 @@ async function main() {
   // Postgres — schema creation alone seeds a bootstrap admin when
   // ADMIN_PASSWORD is set — and a run that dies half way would otherwise leave
   // Postgres looking occupied enough for the next restart to switch to it.
-  const { migrationInProgressPath } = require('../src/utils/databaseEngine');
   const inProgress = migrationInProgressPath(sqlitePath);
-  fs.writeFileSync(inProgress, JSON.stringify({ started_at: new Date().toISOString() }, null, 2));
+  fs.writeFileSync(inProgress, JSON.stringify({
+    started_at: new Date().toISOString(),
+    target: targetId,
+  }, null, 2));
 
   // Now build the schema — the import replaces table CONTENTS, it never creates
   // them, and a fresh database has no tables at all.
@@ -379,8 +415,14 @@ Done. Your data is now in PostgreSQL.
   marker        : ${marker}
 
 Restart the container to pick up PostgreSQL. Keep the rollback copy until you
-have confirmed the galleries look right; to go back, delete the marker and
-rename that file to ${sqlitePath}.
+have confirmed the galleries look right.
+
+To roll back, all three steps are needed — with data on both sides the boot
+picks PostgreSQL, so restoring the file alone changes nothing:
+
+  1. rm ${marker}
+  2. mv ${retiredTo || sqlitePath} ${sqlitePath}
+  3. set DATABASE_CLIENT=sqlite3 in your deployment
 `);
 }
 
