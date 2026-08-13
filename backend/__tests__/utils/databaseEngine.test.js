@@ -28,10 +28,10 @@ const {
   migrationInProgressPath,
   hasMigrationInProgress,
   isUntouchedBootstrapRow,
+  adminsIndicateUse,
 } = require('../../src/utils/databaseEngine');
 const {
   epochToIso,
-  parseJsonText,
   coerceForTargetEngine,
 } = require('../../src/services/picpeakImportService');
 
@@ -224,54 +224,6 @@ describe('cross-engine row coercion (#1038)', () => {
   });
 });
 
-describe('SQLite JSON text is decoded before Postgres serialisation (#1038 review)', () => {
-  // SQLite has no json type: its json columns are TEXT holding JSON. The export
-  // dumps that as a STRING, and serialiseJsonColumns would then stringify it a
-  // SECOND time, so Postgres stored `true` as the scalar string "true".
-  // app_settings.setting_value is json on every install, so this reshaped every
-  // migrated setting.
-  test('a JSON object in text form is decoded', () => {
-    expect(parseJsonText('{"primaryColor":"#123456"}')).toEqual({ primaryColor: '#123456' });
-  });
-
-  test('JSON scalars are decoded to their real type', () => {
-    expect(parseJsonText('true')).toBe(true);
-    expect(parseJsonText('42')).toBe(42);
-    expect(parseJsonText('[1,2]')).toEqual([1, 2]);
-  });
-
-  test('a plain word stays a plain word — text columns are not reinterpreted', () => {
-    expect(parseJsonText('PicPeak')).toBe('PicPeak');
-    expect(parseJsonText('hero')).toBe('hero');
-    expect(parseJsonText('')).toBe('');
-  });
-
-  test('malformed JSON is left untouched rather than thrown away', () => {
-    expect(parseJsonText('{not json')).toBe('{not json');
-  });
-
-  test('non-strings pass through', () => {
-    expect(parseJsonText(null)).toBeNull();
-    expect(parseJsonText(7)).toBe(7);
-    expect(parseJsonText({ a: 1 })).toEqual({ a: 1 });
-  });
-
-  test('json columns are decoded alongside the timestamp/boolean coercion', () => {
-    const [out] = coerceForTargetEngine(
-      [{ setting_value: 'true', created_at: 1786548038763, feedback_enabled: 1, name: 'plain' }],
-      {
-        timestamps: ['created_at'],
-        booleans: ['feedback_enabled'],
-        jsonCols: new Set(['setting_value']),
-      },
-    );
-    expect(out.setting_value).toBe(true);
-    expect(out.created_at).toBe('2026-08-12T15:20:38.763Z');
-    expect(out.feedback_enabled).toBe(true);
-    expect(out.name).toBe('plain');
-  });
-});
-
 describe('probeSqliteData fails closed (#1038 review)', () => {
   function tmpDb(contents) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-probe-'));
@@ -408,5 +360,59 @@ describe('bootstrap admin vs real admin (#1038 review r7)', () => {
   test('a legacy NULL counts as a real admin, not a seed', () => {
     expect(isUntouchedBootstrapRow(null)).toBe(false);
     expect(isUntouchedBootstrapRow(undefined)).toBe(false);
+  });
+});
+
+describe('admin rows: bootstrap seed vs real use (#1038 review r7/r8)', () => {
+  // must_change_password alone is mutable — resetAdminPassword() sets it on real
+  // accounts — so it cannot be the only signal. Only the exact shape
+  // core/001_init.js leaves behind reads as an untouched seed.
+  test('one never-used seeded admin is NOT use', () => {
+    expect(adminsIndicateUse([{ must_change_password: true, last_login: null }])).toBe(false);
+    expect(adminsIndicateUse([{ must_change_password: 1, last_login: null }])).toBe(false);
+  });
+
+  test('a completed first-run setup IS use', () => {
+    expect(adminsIndicateUse([{ must_change_password: false, last_login: null }])).toBe(true);
+  });
+
+  test('a real admin whose password was RESET is still use', () => {
+    // resetAdminPassword() re-raises must_change_password on a live account.
+    expect(adminsIndicateUse([
+      { must_change_password: true, last_login: '2026-08-01T10:00:00Z' },
+    ])).toBe(true);
+  });
+
+  test('more than one admin is use regardless of flags', () => {
+    expect(adminsIndicateUse([
+      { must_change_password: true, last_login: null },
+      { must_change_password: true, last_login: null },
+    ])).toBe(true);
+  });
+
+  test('no admins at all is not use', () => {
+    expect(adminsIndicateUse([])).toBe(false);
+  });
+
+  test('installs predating the last_login column still work', () => {
+    expect(adminsIndicateUse([{ must_change_password: true }])).toBe(false);
+    expect(adminsIndicateUse([{ must_change_password: false }])).toBe(true);
+  });
+});
+
+describe('cross-engine JSON columns pass through untouched (#1038 review r8)', () => {
+  // SQLite keeps json columns as TEXT holding valid JSON, and pg accepts JSON
+  // text directly, so the coercion must not touch them at all: serialising
+  // would store `{"a":1}` as a scalar string, and parse-then-serialise turned
+  // the JSON literal `null` into SQL NULL, breaking NOT NULL json columns.
+  test('timestamps and booleans are coerced; nothing else is', () => {
+    const [out] = coerceForTargetEngine(
+      [{ setting_value: '{"a":1}', nulled: 'null', created_at: 1786548038763, flag: 1 }],
+      { timestamps: ['created_at'], booleans: ['flag'] },
+    );
+    expect(out.setting_value).toBe('{"a":1}');
+    expect(out.nulled).toBe('null');
+    expect(out.created_at).toBe('2026-08-12T15:20:38.763Z');
+    expect(out.flag).toBe(true);
   });
 });

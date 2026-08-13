@@ -146,10 +146,23 @@ const USER_DATA_TABLES = [
 // credentials and configuration.
 const isUntouchedBootstrapRow = (v) => v === true || v === 1 || v === '1';
 
+// Has anyone actually USED this install's admin accounts? Layered, because no
+// single column survives every path:
+//   - more than one admin  → somebody created accounts
+//   - any admin has logged in → real use, even if the password was later reset
+//   - must_change_password false → first-run setup was completed
+// Only the exact shape core/001_init.js leaves behind — one admin, never logged
+// in, still flagged — reads as an untouched bootstrap seed.
+function adminsIndicateUse(rows) {
+  if (rows.length > 1) return true;
+  return rows.some((r) => r.last_login || !isUntouchedBootstrapRow(r.must_change_password));
+}
+
 async function countsAsUse(conn, table, { ignoreBootstrapAdmins }) {
   if (table === 'admin_users' && ignoreBootstrapAdmins) {
-    const rows = await conn('admin_users').select('must_change_password');
-    return rows.some((r) => !isUntouchedBootstrapRow(r.must_change_password));
+    const cols = ['must_change_password'];
+    if (await conn.schema.hasColumn('admin_users', 'last_login')) cols.push('last_login');
+    return adminsIndicateUse(await conn('admin_users').select(cols));
   }
   const row = await conn(table).count('* as count').first();
   return Number(row?.count || 0) > 0;
@@ -277,6 +290,7 @@ async function resolveBootEngine({ knexConfig, logger }) {
 module.exports = {
   resolveSqlitePath,
   isUntouchedBootstrapRow,
+  adminsIndicateUse,
   migrationMarkerPath,
   hasMigrationMarker,
   migrationInProgressPath,
