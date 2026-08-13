@@ -36,6 +36,17 @@ if (!process.env.DATABASE_CLIENT
   const resolved = (probe.stdout || '').trim();
   if (probe.status === 0 && resolved) {
     process.env.DATABASE_CLIENT = resolved;
+    // Pin the CONNECTION too, not just the client. knexfile's development block
+    // defaults Postgres to localhost/postgres/photo_sharing and production to
+    // db/picpeak/picpeak, so naming only the client can point this process at a
+    // different database than the resolver probed — with SQLite already retired.
+    if (resolved === 'pg') {
+      const conn = require('./src/utils/databaseEngine').pgConnectionFromEnv();
+      process.env.DB_HOST = String(conn.host);
+      process.env.DB_PORT = String(conn.port);
+      process.env.DB_USER = String(conn.user);
+      process.env.DB_NAME = String(conn.database);
+    }
   }
 }
 

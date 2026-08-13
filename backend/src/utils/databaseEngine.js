@@ -235,7 +235,12 @@ async function probeSqliteData(sqlitePath = resolveSqlitePath(), onWarn = warnTo
 // block — keep the defaults in step with it.
 function pgConnectionFromEnv() {
   return {
-    host: process.env.DB_HOST || 'db',
+    // `postgres`, not knexfile's `db`: wait-for-db.sh resolves DB_HOST to
+    // `postgres` and exports it, so that is the host a running container is
+    // actually on. A CLI invoked with `docker exec` inherits nothing, and
+    // defaulting to `db` here would migrate into a different server than the
+    // application opens.
+    host: process.env.DB_HOST || 'postgres',
     port: process.env.DB_PORT || 5432,
     user: process.env.DB_USER || 'picpeak',
     password: process.env.DB_PASSWORD,
@@ -391,7 +396,11 @@ async function resolveBootEngine({ knexConfig, logger }) {
     );
   }
 
-  logger.info(`Database engine: ${decision.client === 'pg' ? describeEngine(knexConfig) : `sqlite (${sqlitePath})`}`);
+  // Describe what was DECIDED, not what knexfile said: after a marker override
+  // knexConfig still describes SQLite while the process goes to Postgres.
+  logger.info(`Database engine: ${decision.client === 'pg'
+    ? describeEngine(knexConfig.client === 'pg' ? knexConfig : { client: 'pg', connection: pgConnectionFromEnv() })
+    : `sqlite (${sqlitePath})`}`);
   return decision;
 }
 

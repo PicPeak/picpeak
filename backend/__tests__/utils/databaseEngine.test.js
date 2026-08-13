@@ -544,12 +544,17 @@ describe('the target is resolved once, with production defaults (#1038 review r1
   // in a database the running application never opens.
   const { pgConnectionFromEnv } = require('../../src/utils/databaseEngine');
 
-  test('falls back to the production defaults, not the development ones', () => {
+  test('falls back to what a running container actually uses', () => {
+    // Host is `postgres`, matching wait-for-db.sh, which resolves and EXPORTS
+    // that value — so it is the host a bare container really runs against.
+    // knexfile's production block says `db`, but that default is only reached
+    // when the entrypoint did not run; a `docker exec` CLI has to agree with
+    // the runtime, not with the dormant default (#1038 review r14).
     const prev = { ...process.env };
     delete process.env.DB_HOST; delete process.env.DB_USER; delete process.env.DB_NAME;
     try {
       const c = pgConnectionFromEnv();
-      expect(c.host).toBe('db');
+      expect(c.host).toBe('postgres');
       expect(c.user).toBe('picpeak');
       expect(c.database).toBe('picpeak');
     } finally {
