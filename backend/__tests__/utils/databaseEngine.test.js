@@ -536,3 +536,36 @@ describe('two populated databases is a conflict, not a guess (#1038 review r12)'
     }
   });
 });
+
+describe('the target is resolved once, with production defaults (#1038 review r13)', () => {
+  // knexfile's DEVELOPMENT block defaults pg to localhost/postgres/photo_sharing
+  // while production uses db/picpeak/picpeak. The CLI runs in the NODE_ENV-unset
+  // state by design, so without an explicit resolution the migration could land
+  // in a database the running application never opens.
+  const { pgConnectionFromEnv } = require('../../src/utils/databaseEngine');
+
+  test('falls back to the production defaults, not the development ones', () => {
+    const prev = { ...process.env };
+    delete process.env.DB_HOST; delete process.env.DB_USER; delete process.env.DB_NAME;
+    try {
+      const c = pgConnectionFromEnv();
+      expect(c.host).toBe('db');
+      expect(c.user).toBe('picpeak');
+      expect(c.database).toBe('picpeak');
+    } finally {
+      Object.assign(process.env, prev);
+    }
+  });
+
+  test('explicit settings always win', () => {
+    const prev = { ...process.env };
+    process.env.DB_HOST = 'pg.example'; process.env.DB_NAME = 'mypics';
+    try {
+      const c = pgConnectionFromEnv();
+      expect(c.host).toBe('pg.example');
+      expect(c.database).toBe('mypics');
+    } finally {
+      Object.assign(process.env, prev);
+    }
+  });
+});

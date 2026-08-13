@@ -58,6 +58,21 @@ function parseArgs(argv) {
   };
 }
 
+// Resolve the Postgres target ONCE, with production defaults, and hand the same
+// explicit values to every child. Otherwise the block knexfile happens to pick
+// decides the database name, and the migration can land somewhere the running
+// application will never open (#1038 review).
+function normalisedPgEnv() {
+  const { pgConnectionFromEnv } = require('../src/utils/databaseEngine');
+  const c = pgConnectionFromEnv();
+  return {
+    DB_HOST: String(c.host),
+    DB_PORT: String(c.port),
+    DB_USER: String(c.user),
+    DB_NAME: String(c.database),
+  };
+}
+
 function runPhase(phase, client, extraArgs = []) {
   // The child's stdout is NOT a private channel: winston logs to the console
   // outside production and whenever LOG_TO_CONSOLE=true, so the payload comes
@@ -71,7 +86,7 @@ function runPhase(phase, client, extraArgs = []) {
       [__filename, `--phase=${phase}`, `--result-file=${resultFile}`, ...extraArgs],
       {
         cwd: BACKEND_ROOT,
-        env: { ...process.env, DATABASE_CLIENT: client },
+        env: { ...process.env, ...normalisedPgEnv(), DATABASE_CLIENT: client },
         stdio: ['ignore', 'inherit', 'inherit'],
         encoding: 'utf8',
       },
@@ -307,7 +322,8 @@ async function main() {
   // if the operator repointed DB_HOST/DB_NAME since the failed attempt, the
   // rows in front of us belong to some other database and must not be replaced
   // without an explicit --force.
-  const targetId = `${process.env.DB_HOST}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'picpeak'}`;
+  const pgEnv = normalisedPgEnv();
+  const targetId = `${pgEnv.DB_HOST}:${pgEnv.DB_PORT}/${pgEnv.DB_NAME}`;
   let retryingOwnRun = false;
   if (hasMigrationInProgress(sqlitePath)) {
     try {
@@ -447,7 +463,7 @@ async function main() {
   fs.writeFileSync(marker, JSON.stringify({
     migrated_at: new Date().toISOString(),
     retired_sqlite_file: null,
-    target: `${process.env.DB_HOST}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'picpeak'}`,
+    target: targetId,
   }, null, 2));
 
   let retiredTo = null;
@@ -457,7 +473,7 @@ async function main() {
     fs.writeFileSync(marker, JSON.stringify({
       migrated_at: new Date().toISOString(),
       retired_sqlite_file: retiredTo,
-      target: `${process.env.DB_HOST}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'picpeak'}`,
+      target: targetId,
     }, null, 2));
   } catch (err) {
     // The marker already pins the engine to Postgres, so leaving the file in

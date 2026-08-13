@@ -209,7 +209,12 @@ async function probeSqliteData(sqlitePath = resolveSqlitePath(), onWarn = warnTo
     useNullAsDefault: true,
   });
   try {
-    return await anyUserData(probe);
+    // Same discrimination as the Postgres side. An accidental SQLite database
+    // gets a seeded admin from core/001_init.js when ADMIN_PASSWORD is set, and
+    // counting that as use would make a healthy Postgres install look like a
+    // both-populated conflict and refuse to boot. A setup-completed or
+    // logged-in admin still counts.
+    return await anyUserData(probe, { ignoreBootstrapAdmins: true });
   } catch (err) {
     // Unreadable or corrupt: fail CLOSED. Reporting "no data" here would switch
     // the install to an empty Postgres — the precise failure this module exists
