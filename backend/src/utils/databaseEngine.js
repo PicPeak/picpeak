@@ -220,11 +220,10 @@ async function probePgData(pgConnection, onWarn = warnToStderr) {
   const probe = knex({ client: 'pg', connection: pgConnection, pool: { min: 0, max: 1 } });
   try {
     // Two very different failures hide behind one catch, and they need opposite
-    // answers, so establish reachability first.
-    let reachable = false;
+    // answers, so establish reachability first — this branch returns, so
+    // everything below it is reachable-by-construction.
     try {
       await probe.raw('SELECT 1');
-      reachable = true;
     } catch (err) {
       // Cannot reach Postgres at all. The app could not run on it either way,
       // so report "occupied" to avoid diverting a healthy pg install to a stale
@@ -244,9 +243,7 @@ async function probePgData(pgConnection, onWarn = warnToStderr) {
       // Postgres and hide a populated SQLite file, the exact failure this guard
       // exists to prevent. Say "not proven occupied" and let the SQLite side win
       // if it actually holds data.
-      if (reachable) {
-        onWarn(`[database-engine] Postgres reachable but could not be inspected (${err.message}); treating it as unproven rather than occupied.`);
-      }
+      onWarn(`[database-engine] Postgres reachable but could not be inspected (${err.message}); treating it as unproven rather than occupied.`);
       return false;
     }
   } finally {
