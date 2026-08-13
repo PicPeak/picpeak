@@ -24,20 +24,18 @@
  */
 
 const fs = require('fs');
-const path = require('path');
+const { resolveSqliteFilename } = require('./sqlitePath');
 
 // Diagnostics go through an injected sink, never a module-level logger: the
 // resolver's STDOUT is a protocol channel (wait-for-db.sh captures it), and the
 // app logger writes there whenever LOG_TO_CONSOLE=true.
 const warnToStderr = (msg) => process.stderr.write(`${msg}\n`);
 
-/** Absolute path of the SQLite file this install would use. */
+/** Absolute path of the SQLite file this install would use — the SAME
+ *  resolution knexfile performs, so the guard can never probe a different file
+ *  than the one knex opens. */
 function resolveSqlitePath() {
-  const configured = process.env.DATABASE_PATH || './data/photo_sharing.db';
-  const backendRoot = path.resolve(__dirname, '..', '..');
-  return path.isAbsolute(configured)
-    ? path.normalize(configured)
-    : path.normalize(path.resolve(backendRoot, configured));
+  return resolveSqliteFilename(process.env.DATABASE_PATH || './data/photo_sharing.db');
 }
 
 /** Human-readable "engine + target", safe to log — never includes credentials. */
@@ -131,8 +129,12 @@ const USER_DATA_TABLES = [
   'quotes', 'invoices', 'projects', 'expenses', 'incoming_invoices',
 ];
 
-async function anyUserData(conn) {
-  for (const table of USER_DATA_TABLES) {
+// Seeded by core/001_init.js when ADMIN_PASSWORD is set, so its presence proves
+// nothing about a Postgres target having been used.
+const SEEDED_ON_BOOTSTRAP = ['admin_users'];
+
+async function anyUserData(conn, tables = USER_DATA_TABLES) {
+  for (const table of tables) {
     if (!(await conn.schema.hasTable(table))) continue;
     const row = await conn(table).count('* as count').first();
     if (Number(row?.count || 0) > 0) return true;
@@ -171,7 +173,8 @@ async function probePgData(pgConnection) {
   const knex = require('knex');
   const probe = knex({ client: 'pg', connection: pgConnection, pool: { min: 0, max: 1 } });
   try {
-    return await anyUserData(probe);
+    // Substantive data only — see SEEDED_ON_BOOTSTRAP.
+    return await anyUserData(probe, USER_DATA_TABLES.filter((t) => !SEEDED_ON_BOOTSTRAP.includes(t)));
   } catch (_) {
     // Unreachable Postgres is the entrypoint's problem (it exits before we get
     // here); treat as "has data" so we never divert a healthy pg install.
