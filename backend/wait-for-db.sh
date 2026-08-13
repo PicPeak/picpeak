@@ -59,6 +59,16 @@ host="${DB_HOST:-postgres}"
 port="${DB_PORT:-5432}"
 user="${DB_USER:-picpeak}"
 target_db="${DB_NAME:-picpeak}"
+
+# Hand the app EXACTLY the connection this script verified. knexfile's
+# production block defaults DB_HOST to `db` while this script defaults to
+# `postgres`, so a bare `docker run` with no DB_HOST would have had the
+# readiness check pass against one host and the app then dial another (#1038
+# review). Compose sets DB_HOST explicitly and is unaffected.
+export DB_HOST="$host"
+export DB_PORT="$port"
+export DB_USER="$user"
+export DB_NAME="$target_db"
 # Use target database for checks - the picpeak user may not have access to 'postgres' database
 default_db="${DB_CHECK_DB:-$target_db}"
 

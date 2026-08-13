@@ -246,9 +246,16 @@ async function main() {
   // admin when ADMIN_PASSWORD is set (common on legacy installs), and counting
   // that as "user data" would refuse a migration into a genuinely empty
   // database — pushing the operator towards --force for no reason.
+  const { hasMigrationInProgress } = require('../src/utils/databaseEngine');
+  const retryingOwnRun = hasMigrationInProgress(sqlitePath);
   const targetData = JSON.parse(runPhase('user-data', 'pg'));
   console.log(`  target : postgres — ${summariseUserData(targetData) || 'empty'}`);
-  if (Object.keys(targetData).length && !args.force) {
+  if (retryingOwnRun && Object.keys(targetData).length) {
+    // Whatever is in Postgres came from a previous attempt of THIS script that
+    // never completed — re-running is the documented recovery, so don't make
+    // the operator reach for a destructive-sounding flag to do it.
+    console.log('  (an earlier migration did not finish; re-running replaces what it left behind)');
+  } else if (Object.keys(targetData).length && !args.force) {
     console.error(
       `\nPostgreSQL already holds user data (${summariseUserData(targetData)}).\n`
       + 'The import REPLACES every table, so this would delete it — including admins,\n'
