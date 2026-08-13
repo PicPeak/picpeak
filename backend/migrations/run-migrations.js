@@ -46,10 +46,50 @@ async function runMigration(filepath) {
   }
 }
 
+// Engine consistency check (#1038). The entrypoint resolves the engine before
+// migrations run and exports DATABASE_CLIENT, so this normally agrees and does
+// nothing. It bites on a MANUAL migration run: without that env, an install
+// that is really on SQLite would resolve to Postgres here and build a schema in
+// the empty database, which then hides the SQLite data from the boot-time
+// check. Stop instead, and say which env to set.
+async function assertEngine() {
+  const knexConfig = require('../knexfile');
+  const logger = require('../src/utils/logger');
+  const { resolveBootEngine } = require('../src/utils/databaseEngine');
+  const decision = await resolveBootEngine({ knexConfig, logger });
+  if (decision.reason === 'marker-target-mismatch') {
+    console.error(
+      'Refusing to migrate: this install was migrated to a different PostgreSQL than the\n'
+      + 'one currently configured. The resolver printed both targets above.'
+    );
+    process.exit(1);
+  }
+  if (decision.reason === 'ambiguous-both-populated') {
+    // Both databases hold data and nothing records which is current; the
+    // resolver has already printed the comparison. There is no client to
+    // recommend here — the operator has to pick one.
+    console.error(
+      'Refusing to migrate: SQLite and PostgreSQL both hold data and neither is marked\n'
+      + 'as current. Set DATABASE_CLIENT=pg or DATABASE_CLIENT=sqlite3 to say which one\n'
+      + 'this command should touch.'
+    );
+    process.exit(1);
+  }
+  if (decision.client !== knexConfig.client) {
+    console.error(
+      `Refusing to migrate ${knexConfig.client} — this install's data is in ${decision.client}.\n`
+      + `Run migrations through the container entrypoint, or set DATABASE_CLIENT=${decision.client} explicitly.\n`
+      + 'To move the data across instead: node scripts/migrate-sqlite-to-postgres.js'
+    );
+    process.exit(1);
+  }
+}
+
 // Main migration runner
 async function runMigrations() {
   try {
     console.log('Starting database migrations...');
+    await assertEngine();
     
     // First run the init.js if it exists but only if migrations table doesn't exist
     const tableExists = await db.schema.hasTable('migrations');

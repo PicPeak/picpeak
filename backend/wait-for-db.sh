@@ -59,6 +59,16 @@ host="${DB_HOST:-postgres}"
 port="${DB_PORT:-5432}"
 user="${DB_USER:-picpeak}"
 target_db="${DB_NAME:-picpeak}"
+
+# Hand the app EXACTLY the connection this script verified. knexfile's
+# production block defaults DB_HOST to `db` while this script defaults to
+# `postgres`, so a bare `docker run` with no DB_HOST would have had the
+# readiness check pass against one host and the app then dial another (#1038
+# review). Compose sets DB_HOST explicitly and is unaffected.
+export DB_HOST="$host"
+export DB_PORT="$port"
+export DB_USER="$user"
+export DB_NAME="$target_db"
 # Use target database for checks - the picpeak user may not have access to 'postgres' database
 default_db="${DB_CHECK_DB:-$target_db}"
 
@@ -119,6 +129,36 @@ done
 echo "Ensuring storage directories exist..."
 STORAGE_BASE="${STORAGE_PATH:-/app/storage}"
 mkdir -p "$STORAGE_BASE/events/active" "$STORAGE_BASE/events/archived" "$STORAGE_BASE/thumbnails" 2>/dev/null || true
+
+# Resolve which database engine this boot should use (#1038) BEFORE migrations
+# run, while the Postgres target is still untouched. An install that has been
+# unknowingly running on SQLite (the image used to leave NODE_ENV unset, so
+# knexfile.js fell back to sqlite3 and ignored DB_HOST/DB_USER/DB_PASSWORD)
+# keeps serving from its SQLite file instead of coming up against an empty
+# Postgres. The exported value survives the `exec` below, so the migration
+# runner and the server agree on the engine.
+RESOLVED_DB_CLIENT="$(node scripts/resolve-db-engine.js)"
+RESOLVER_STATUS=$?
+# Exit 3 means two populated databases with no record of which is current
+# (#1038). Starting either would hide the other's data, so stop here — the
+# resolver has already printed what to do.
+if [ "$RESOLVER_STATUS" = "3" ]; then
+  exit 1
+fi
+# Validate rather than trust: anything unexpected on stdout (a stray log line
+# from a library that writes to the console) must not become DATABASE_CLIENT,
+# which would break knexfile for every process that follows.
+case "$RESOLVED_DB_CLIENT" in
+  pg|sqlite3)
+    export DATABASE_CLIENT="$RESOLVED_DB_CLIENT"
+    ;;
+  "")
+    >&2 echo "Database engine resolver returned nothing; falling back to the configured client."
+    ;;
+  *)
+    >&2 echo "Database engine resolver returned an unexpected value; ignoring it and falling back to the configured client."
+    ;;
+esac
 
 # Run migrations (use safe runner in production). Invoked via node directly —
 # the runtime image no longer ships npm (see Dockerfile: its bundled deps kept

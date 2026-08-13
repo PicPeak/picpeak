@@ -4,11 +4,61 @@ require('dotenv').config();
 const { validateEnvironment } = require('./src/config/validateEnv');
 validateEnvironment();
 
+// Resolve which database engine this process should use, BEFORE anything
+// requires knexfile/db (#1038). wait-for-db.sh normally does this and exports
+// DATABASE_CLIENT, but a Kubernetes manifest that sets `command`/`args`, or a
+// plain `docker run … node server.js`, bypasses the entrypoint entirely — and
+// those are exactly the deployments this fix is for. Without this, such an
+// install would resolve to Postgres (NODE_ENV is baked into the image now) and
+// come up against an empty database while its SQLite data sat there unseen.
+//
+// spawnSync because the decision needs an async Postgres probe and this must
+// happen before the first `require` of knexfile. It short-circuits without
+// probing when DATABASE_CLIENT is already set, so the entrypoint path pays
+// nothing.
+// Also run it when a migration pin exists: an explicit DATABASE_CLIENT=pg
+// would otherwise skip the check and start against a half-migrated Postgres
+// while SQLite is still the database of record.
+if (!process.env.DATABASE_CLIENT
+    || require('./src/utils/databaseEngine').hasMigrationInProgress()) {
+  const { spawnSync } = require('child_process');
+  const probe = spawnSync(
+    process.execPath,
+    [require('path').join(__dirname, 'scripts', 'resolve-db-engine.js')],
+    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }
+  );
+  // Exit 3: two populated databases and no record of which is authoritative.
+  // The resolver has printed the comparison and the two ways to resolve it;
+  // starting either engine would hide the other's data.
+  if (probe.status === 3) {
+    process.exit(1);
+  }
+  const resolved = (probe.stdout || '').trim();
+  if (probe.status === 0 && resolved) {
+    process.env.DATABASE_CLIENT = resolved;
+    // Pin the CONNECTION too, not just the client. knexfile's development block
+    // defaults Postgres to localhost/postgres/photo_sharing and production to
+    // db/picpeak/picpeak, so naming only the client can point this process at a
+    // different database than the resolver probed — with SQLite already retired.
+    if (resolved === 'pg') {
+      const conn = require('./src/utils/databaseEngine').pgConnectionFromEnv();
+      process.env.DB_HOST = String(conn.host);
+      process.env.DB_PORT = String(conn.port);
+      process.env.DB_USER = String(conn.user);
+      process.env.DB_NAME = String(conn.database);
+    }
+  }
+}
+
 // Initialize logger early to capture startup logs
 const logger = require('./src/utils/logger');
 logger.info('Server starting up', {
   nodeVersion: process.version,
   environment: process.env.NODE_ENV || 'development',
+  // Which database this process actually talks to (#1038). Nothing logged this
+  // before, so an install silently running on SQLite with Postgres configured
+  // had no way to notice.
+  database: require('./src/utils/databaseEngine').describeEngine(require('./knexfile')),
   timestamp: new Date().toISOString()
 });
 

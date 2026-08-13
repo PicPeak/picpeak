@@ -7,6 +7,7 @@ const path = require('path');
 const os = require('os');
 const { formatBoolean } = require('../utils/dbCompat');
 const logger = require('../utils/logger');
+const { resolveSqlitePath } = require('../utils/databaseEngine');
 const { checkForUpdates, getCurrentChannel, getCurrentVersion, getReleasesSince, compareVersions } = require('../services/updateCheckService');
 const { getAppSetting, upsertAppSetting } = require('../utils/appSettings');
 const { parseWhatsNew } = require('../utils/whatsNew');
@@ -218,26 +219,25 @@ router.get('/updates/instructions', adminAuth, requirePermission('settings.view'
 // Get comprehensive system status
 router.get('/status', adminAuth, requirePermission('settings.view'), async (req, res) => {
   try {
-    // Database size - check if PostgreSQL or SQLite
+    // Database size. Read the LIVE connection rather than re-deriving any of
+    // this from the environment (#1038): DATABASE_CLIENT is not the only thing
+    // that decides the engine, DB_NAME is not the only thing that decides the
+    // database, and DATABASE_PATH was ignored outright here — so a SQLite
+    // install with a custom path, or a Postgres install without an explicit
+    // DATABASE_CLIENT, reported the size of something it was not using.
     let dbSize = 0;
-    const dbClient = process.env.DATABASE_CLIENT || 'sqlite3';
-    
-    if (dbClient === 'pg') {
-      // PostgreSQL - query database size
+    const liveConnection = db.client.config.connection || {};
+
+    if (db.client.config.client === 'pg') {
       try {
-        const dbName = process.env.DB_NAME || 'picpeak';
-        const result = await db.raw(`
-          SELECT pg_database_size(?) as size
-        `, [dbName]);
+        const result = await db.raw('SELECT pg_database_size(current_database()) as size');
         dbSize = result.rows[0]?.size || 0;
       } catch (error) {
         logger.error('Error getting PostgreSQL database size:', error);
       }
     } else {
-      // SQLite - check file size
-      const dbPath = path.join(__dirname, '../../data/photo_sharing.db');
       try {
-        const stats = await fs.stat(dbPath);
+        const stats = await fs.stat(liveConnection.filename || resolveSqlitePath());
         dbSize = stats.size;
       } catch (error) {
         logger.error('Error getting SQLite database size:', error);

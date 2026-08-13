@@ -27,6 +27,15 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# knexfile.js picks its config block by NODE_ENV, and the `development` block
+# defaults to sqlite3. Leaving NODE_ENV unset here meant every deployment that
+# doesn't go through our compose files — Kubernetes, Helm, plain `docker run` —
+# silently ran on SQLite and ignored DB_HOST/DB_USER/DB_PASSWORD, while
+# wait-for-db.sh (shell, reads DB_HOST directly) reported "PostgreSQL is up" in
+# the same log. The compose files still override this, so nothing changes for
+# compose users. See #1038.
+ENV NODE_ENV=production
+
 # Redeclare CACHEBUST — ARGs don't cross stage boundaries, so the builder
 # stage's declaration never reached this stage. Consuming it in the RUN below
 # busts that layer's cache every CI run (CACHEBUST=github.run_number), so the
