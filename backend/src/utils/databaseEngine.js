@@ -61,7 +61,9 @@ function describeEngine(knexConfig) {
  * @param {boolean} state.sqliteHasData     a SQLite file exists AND holds events
  * @returns {{ client: string, overridden: boolean, reason: string|null }}
  */
-function decideBootEngine({ configuredClient, explicitClient, pgHasData, sqliteHasData }) {
+function decideBootEngine({
+  configuredClient, explicitClient, pgHasData, sqliteHasData, migrationInProgress = false,
+}) {
   // An explicit DATABASE_CLIENT is an instruction, not a guess. Never override
   // it — this is also the documented way to force Postgres and start fresh.
   if (explicitClient) {
@@ -72,6 +74,13 @@ function decideBootEngine({ configuredClient, explicitClient, pgHasData, sqliteH
         ? 'explicit-pg-leaves-sqlite-behind'
         : null,
     };
+  }
+
+  // A migration started and never finished. Postgres may hold a partial copy,
+  // which would otherwise read as "occupied" and win — while SQLite is still
+  // the database of record.
+  if (configuredClient === 'pg' && migrationInProgress && sqliteHasData) {
+    return { client: 'sqlite3', overridden: true, reason: 'migration-incomplete' };
   }
 
   // Configured for Postgres, Postgres holds no galleries, and real data sits in
@@ -97,6 +106,19 @@ function migrationMarkerPath(sqlitePath = resolveSqlitePath()) {
 
 function hasMigrationMarker(sqlitePath = resolveSqlitePath()) {
   return fs.existsSync(migrationMarkerPath(sqlitePath));
+}
+
+/** Written before the migration touches Postgres, cleared only on success.
+ *  While it exists, Postgres may hold a PARTIAL copy — or just the bootstrap
+ *  admin that schema creation seeds — and SQLite is still the authoritative
+ *  database. Without this pin, a migration that failed after writing anything
+ *  to Postgres would make the next boot switch engines and hide the real data. */
+function migrationInProgressPath(sqlitePath = resolveSqlitePath()) {
+  return `${sqlitePath}.migration-in-progress`;
+}
+
+function hasMigrationInProgress(sqlitePath = resolveSqlitePath()) {
+  return fs.existsSync(migrationInProgressPath(sqlitePath));
 }
 
 // Tables that are EMPTY on a freshly migrated schema, so a row in any of them
@@ -201,9 +223,17 @@ async function resolveBootEngine({ knexConfig, logger }) {
     explicitClient,
     pgHasData: probing ? await probePgData(knexConfig.connection) : true,
     sqliteHasData: probing ? await probeSqliteData(sqlitePath, (m) => logger.warn(m)) : false,
+    migrationInProgress: hasMigrationInProgress(sqlitePath),
   });
 
-  if (decision.overridden && decision.reason === 'stranded-sqlite-data') {
+  if (decision.reason === 'migration-incomplete') {
+    logger.warn(
+      `A SQLite → PostgreSQL migration did not finish (${migrationInProgressPath(sqlitePath)} is still `
+      + 'present), so PostgreSQL may hold a partial copy. Staying on SQLite, which is still the '
+      + 'database of record. Re-run scripts/migrate-sqlite-to-postgres.js with the backend stopped; '
+      + 'delete that file only if you have decided to abandon the migration.'
+    );
+  } else if (decision.overridden && decision.reason === 'stranded-sqlite-data') {
     logger.warn(STRANDED_WARNING(sqlitePath, describeEngine(knexConfig)));
   } else if (decision.reason === 'explicit-pg-leaves-sqlite-behind') {
     logger.warn(
@@ -220,6 +250,8 @@ module.exports = {
   resolveSqlitePath,
   migrationMarkerPath,
   hasMigrationMarker,
+  migrationInProgressPath,
+  hasMigrationInProgress,
   describeEngine,
   decideBootEngine,
   probeSqliteData,

@@ -258,6 +258,14 @@ async function main() {
     process.exit(1);
   }
 
+  // Pin the boot to SQLite for the duration. Everything below writes to
+  // Postgres — schema creation alone seeds a bootstrap admin when
+  // ADMIN_PASSWORD is set — and a run that dies half way would otherwise leave
+  // Postgres looking occupied enough for the next restart to switch to it.
+  const { migrationInProgressPath } = require('../src/utils/databaseEngine');
+  const inProgress = migrationInProgressPath(sqlitePath);
+  fs.writeFileSync(inProgress, JSON.stringify({ started_at: new Date().toISOString() }, null, 2));
+
   // Now build the schema — the import replaces table CONTENTS, it never creates
   // them, and a fresh database has no tables at all.
   console.log('\n  Preparing PostgreSQL schema…');
@@ -279,7 +287,8 @@ async function main() {
     console.error(
       '\nSQLite CHANGED WHILE THE EXPORT RAN — the backend is still writing to it:\n'
       + driftDuringExport.map((d) => `  ${d}`).join('\n')
-      + '\n\nNothing was written to Postgres. Stop the backend and run this again.'
+      + '\n\nNothing was loaded into Postgres, and this install stays pinned to SQLite\n'
+      + 'until a run completes. Stop the backend and run this again.'
     );
     process.exit(1);
   }
@@ -294,9 +303,9 @@ async function main() {
     console.error(
       '\nSQLite CHANGED WHILE THE IMPORT RAN — the backend is still writing to it:\n'
       + driftDuringImport.map((d) => `  ${d}`).join('\n')
-      + '\n\nPostgres now holds an incomplete copy. Your SQLite data is still intact and\n'
-      + 'still the one being served. Stop the backend and run this again; the import\n'
-      + 'replaces every table, so re-running is safe.'
+      + '\n\nPostgres now holds an incomplete copy. Your SQLite data is intact and stays\n'
+      + 'the one being served — the boot is pinned to it until a run completes. Stop the\n'
+      + 'backend and run this again; the import replaces every table, so re-running is safe.'
     );
     process.exit(1);
   }
@@ -323,8 +332,8 @@ async function main() {
     console.error(
       '\nROW COUNTS DO NOT MATCH — Postgres did not receive everything:\n'
       + missing.map((m) => `  ${m}`).join('\n')
-      + '\n\nYour SQLite data is untouched and still the one being served. Do not switch\n'
-      + 'engines; report this with the list above.'
+      + '\n\nYour SQLite data is untouched and stays the one being served — the boot is\n'
+      + 'pinned to it until a run completes. Report this with the list above.'
     );
     process.exit(1);
   }
@@ -346,6 +355,9 @@ async function main() {
     retired_sqlite_file: retiredTo,
     target: `${process.env.DB_HOST}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'picpeak'}`,
   }, null, 2));
+  // Success — release the pin. Order matters: the success marker exists before
+  // the pin is dropped, so no restart in between can pick the wrong engine.
+  fs.rmSync(inProgress, { force: true });
 
   if (args.keepArchive) {
     console.log(`  archive kept at ${archive} — it contains plaintext secrets, delete it when done`);

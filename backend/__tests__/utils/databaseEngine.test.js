@@ -25,6 +25,8 @@ const {
   probeSqliteData,
   migrationMarkerPath,
   hasMigrationMarker,
+  migrationInProgressPath,
+  hasMigrationInProgress,
 } = require('../../src/utils/databaseEngine');
 const {
   epochToIso,
@@ -302,5 +304,49 @@ describe('probeSqliteData fails closed (#1038 review)', () => {
   test('the marker sits next to the database file', () => {
     expect(migrationMarkerPath('/app/data/photo_sharing.db'))
       .toBe('/app/data/photo_sharing.db.migrated-to-postgres');
+  });
+});
+
+describe('an unfinished migration pins the boot to SQLite (#1038 review)', () => {
+  // A migration that dies after touching Postgres leaves rows there — schema
+  // creation alone seeds a bootstrap admin when ADMIN_PASSWORD is set. Those
+  // rows read as "occupied", so without a pin the next restart would switch
+  // engines and hide the SQLite data that is still authoritative.
+  test('Postgres holding partial data does NOT win while the migration is unfinished', () => {
+    const r = decideBootEngine({
+      configuredClient: 'pg',
+      explicitClient: null,
+      pgHasData: true,          // e.g. just the bootstrap admin, or a half-load
+      sqliteHasData: true,
+      migrationInProgress: true,
+    });
+    expect(r.client).toBe('sqlite3');
+    expect(r.reason).toBe('migration-incomplete');
+  });
+
+  test('once the migration completes, Postgres wins again', () => {
+    expect(decideBootEngine({
+      configuredClient: 'pg',
+      explicitClient: null,
+      pgHasData: true,
+      sqliteHasData: true,
+      migrationInProgress: false,
+    }).client).toBe('pg');
+  });
+
+  test('the pin is irrelevant when there is no SQLite data to protect', () => {
+    expect(decideBootEngine({
+      configuredClient: 'pg',
+      explicitClient: null,
+      pgHasData: true,
+      sqliteHasData: false,
+      migrationInProgress: true,
+    }).client).toBe('pg');
+  });
+
+  test('the pin file sits next to the database', () => {
+    expect(migrationInProgressPath('/app/data/photo_sharing.db'))
+      .toBe('/app/data/photo_sharing.db.migration-in-progress');
+    expect(hasMigrationInProgress('/nonexistent/photo_sharing.db')).toBe(false);
   });
 });
