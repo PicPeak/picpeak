@@ -5,6 +5,16 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.102.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.102.1-beta.0...v3.102.2-beta.0) (2026-08-13)
+
+
+### Bug Fixes
+
+* **docker:** default NODE_ENV=production so non-compose deploys don't fall back to SQLite ([#1038](https://github.com/PicPeak/picpeak/issues/1038)) ([#1039](https://github.com/PicPeak/picpeak/issues/1039)) ([6de30e5](https://github.com/PicPeak/picpeak/commit/6de30e5bf17b54601e64d1b0b6a31d8877aa642d))
+* **events:** make event_date/expires_at nullable on SQLite ([#1029](https://github.com/PicPeak/picpeak/issues/1029)) ([#1035](https://github.com/PicPeak/picpeak/issues/1035)) ([671c4db](https://github.com/PicPeak/picpeak/commit/671c4dbd56fde69d512c09af2e928f1899c5ad8a))
+* **feedback:** persist guest feedback settings, unshadow the guest route ([#1030](https://github.com/PicPeak/picpeak/issues/1030)) ([#1031](https://github.com/PicPeak/picpeak/issues/1031)) ([89dc962](https://github.com/PicPeak/picpeak/commit/89dc9623c154493eb50f94a25da3e774e8c215b1))
+* **gallery:** coerce SQLite 0/1 booleans in the guest surface ([#1028](https://github.com/PicPeak/picpeak/issues/1028)) ([#1034](https://github.com/PicPeak/picpeak/issues/1034)) ([34ee311](https://github.com/PicPeak/picpeak/commit/34ee31141b0e6b93c75ea91fd6d82ca35f72eacb))
+
 ## [3.102.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.102.0-beta.0...v3.102.1-beta.0) (2026-08-11)
 
 
