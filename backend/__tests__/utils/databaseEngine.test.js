@@ -132,9 +132,11 @@ describe('decideBootEngine — what an existing install gets after the fix', () 
 
   test('switches to Postgres by itself once the data is there', () => {
     // i.e. straight after scripts/migrate-sqlite-to-postgres.js — no further
-    // operator action needed on the next restart.
+    // operator action needed on the next restart. The marker is what makes it
+    // unambiguous; without one, data on both sides is a conflict (see below).
     const r = decideBootEngine({
       configuredClient: 'pg', explicitClient: null, pgHasData: true, sqliteHasData: true,
+      migrationCompleted: true, pgConfigured: true,
     });
     expect(r.client).toBe('pg');
     expect(r.overridden).toBe(false);
@@ -278,12 +280,16 @@ describe('an unfinished migration pins the boot to SQLite (#1038 review)', () =>
   });
 
   test('once the migration completes, Postgres wins again', () => {
+    // Completed means the marker exists — that is what distinguishes this from
+    // two populated databases nobody has reconciled.
     expect(decideBootEngine({
       configuredClient: 'pg',
       explicitClient: null,
       pgHasData: true,
       sqliteHasData: true,
       migrationInProgress: false,
+      migrationCompleted: true,
+      pgConfigured: true,
     }).client).toBe('pg');
   });
 
@@ -470,5 +476,63 @@ describe('a completed migration overrides an implicit SQLite config (#1038 revie
       pgHasData: false, sqliteHasData: true,
       migrationCompleted: false, pgConfigured: true,
     }).client).toBe('sqlite3');
+  });
+});
+
+describe('two populated databases is a conflict, not a guess (#1038 review r12)', () => {
+  // An install that ran on Postgres, lost NODE_ENV, and kept working on SQLite
+  // has real data on BOTH sides: the Postgres rows are old, the SQLite rows are
+  // newer. Picking either hides galleries and splits future writes.
+  test('no marker + data on both sides refuses to choose', () => {
+    const r = decideBootEngine({
+      configuredClient: 'pg', explicitClient: null,
+      pgHasData: true, sqliteHasData: true, migrationCompleted: false,
+    });
+    expect(r.client).toBeNull();
+    expect(r.reason).toBe('ambiguous-both-populated');
+  });
+
+  test('a completed migration is not a conflict — the marker says which is current', () => {
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: null,
+      pgHasData: true, sqliteHasData: true, migrationCompleted: true, pgConfigured: true,
+    }).client).toBe('pg');
+  });
+
+  test('an explicit choice always resolves it', () => {
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: 'sqlite3',
+      pgHasData: true, sqliteHasData: true, migrationCompleted: false,
+    }).client).toBe('sqlite3');
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: 'pg',
+      pgHasData: true, sqliteHasData: true, migrationCompleted: false,
+    }).client).toBe('pg');
+  });
+
+  test('only one side populated is not a conflict', () => {
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: null,
+      pgHasData: true, sqliteHasData: false, migrationCompleted: false,
+    }).client).toBe('pg');
+    expect(decideBootEngine({
+      configuredClient: 'pg', explicitClient: null,
+      pgHasData: false, sqliteHasData: true, migrationCompleted: false,
+    }).client).toBe('sqlite3');
+  });
+
+  test('the pg probe target comes from the environment, not a sqlite config', () => {
+    const { pgConnectionFromEnv } = require('../../src/utils/databaseEngine');
+    const prev = { ...process.env };
+    process.env.DB_HOST = 'db.internal';
+    process.env.DB_NAME = 'picpeak_prod';
+    try {
+      const c = pgConnectionFromEnv();
+      expect(c.host).toBe('db.internal');
+      expect(c.database).toBe('picpeak_prod');
+    } finally {
+      process.env.DB_HOST = prev.DB_HOST;
+      process.env.DB_NAME = prev.DB_NAME;
+    }
   });
 });

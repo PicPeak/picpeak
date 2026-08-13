@@ -27,6 +27,12 @@ if (!process.env.DATABASE_CLIENT
     [require('path').join(__dirname, 'scripts', 'resolve-db-engine.js')],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] }
   );
+  // Exit 3: two populated databases and no record of which is authoritative.
+  // The resolver has printed the comparison and the two ways to resolve it;
+  // starting either engine would hide the other's data.
+  if (probe.status === 3) {
+    process.exit(1);
+  }
   const resolved = (probe.stdout || '').trim();
   if (probe.status === 0 && resolved) {
     process.env.DATABASE_CLIENT = resolved;
