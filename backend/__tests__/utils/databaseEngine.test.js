@@ -574,3 +574,36 @@ describe('the target is resolved once, with production defaults (#1038 review r1
     }
   });
 });
+
+describe('the marker is bound to the target it describes (#1038 review r15)', () => {
+  const { currentPgTargetId, readMigrationMarker } = require('../../src/utils/databaseEngine');
+
+  test('the target id has the shape the migration records', () => {
+    const prev = { ...process.env };
+    process.env.DB_HOST = 'pg.host'; process.env.DB_PORT = '6543'; process.env.DB_NAME = 'picpeak_prod';
+    try {
+      expect(currentPgTargetId()).toBe('pg.host:6543/picpeak_prod');
+    } finally {
+      Object.assign(process.env, prev);
+    }
+  });
+
+  test('an absent or unreadable marker reads as null, not a throw', () => {
+    expect(readMigrationMarker('/nonexistent/photo_sharing.db')).toBeNull();
+  });
+
+  test('inbound_documents is a real table; incoming_invoices never was', () => {
+    // The occupancy lists silently skip tables that do not exist, so a wrong
+    // name meant supplier documents never protected the install.
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '..', '..', 'src', 'utils', 'databaseEngine.js'), 'utf8',
+    );
+    const cli = fs.readFileSync(
+      path.resolve(__dirname, '..', '..', 'scripts', 'migrate-sqlite-to-postgres.js'), 'utf8',
+    );
+    for (const text of [src, cli]) {
+      expect(text).toContain("'inbound_documents'");
+      expect(text).not.toContain("'incoming_invoices'");
+    }
+  });
+});

@@ -57,6 +57,13 @@ async function assertEngine() {
   const logger = require('../src/utils/logger');
   const { resolveBootEngine } = require('../src/utils/databaseEngine');
   const decision = await resolveBootEngine({ knexConfig, logger });
+  if (decision.reason === 'marker-target-mismatch') {
+    console.error(
+      'Refusing to migrate: this install was migrated to a different PostgreSQL than the\n'
+      + 'one currently configured. The resolver printed both targets above.'
+    );
+    process.exit(1);
+  }
   if (decision.reason === 'ambiguous-both-populated') {
     // Both databases hold data and nothing records which is current; the
     // resolver has already printed the comparison. There is no client to

@@ -139,6 +139,21 @@ function hasMigrationMarker(sqlitePath = resolveSqlitePath()) {
   return fs.existsSync(migrationMarkerPath(sqlitePath));
 }
 
+/** The marker's contents, or null when absent/unreadable. */
+function readMigrationMarker(sqlitePath = resolveSqlitePath()) {
+  try {
+    return JSON.parse(fs.readFileSync(migrationMarkerPath(sqlitePath), 'utf8'));
+  } catch (_) {
+    return null;
+  }
+}
+
+/** `host:port/database`, the identity the migration records and compares. */
+function currentPgTargetId() {
+  const c = pgConnectionFromEnv();
+  return `${c.host}:${c.port}/${c.database}`;
+}
+
 /** Written before the migration touches Postgres, cleared only on success.
  *  While it exists, Postgres may hold a PARTIAL copy — or just the bootstrap
  *  admin that schema creation seeds — and SQLite is still the authoritative
@@ -159,7 +174,7 @@ function hasMigrationInProgress(sqlitePath = resolveSqlitePath()) {
 // Mirrors USER_DATA_TABLES in scripts/migrate-sqlite-to-postgres.js.
 const USER_DATA_TABLES = [
   'events', 'photos', 'photo_feedback', 'admin_users', 'customer_accounts',
-  'quotes', 'invoices', 'projects', 'expenses', 'incoming_invoices',
+  'quotes', 'invoices', 'projects', 'expenses', 'inbound_documents',
 ];
 
 // core/001_init.js seeds an admin with must_change_password = true when
@@ -330,7 +345,15 @@ async function resolveBootEngine({ knexConfig, logger }) {
   // explicitly, otherwise the "leaving SQLite behind" warning is unreachable.
   const effectiveClient = explicitClient || configuredClient;
   const migrationInProgress = hasMigrationInProgress(sqlitePath);
+  const marker = readMigrationMarker(sqlitePath);
   const migrationCompleted = hasMigrationMarker(sqlitePath);
+  // The marker vouches for ONE Postgres. If the configuration now points at a
+  // different one, it says nothing about that target — and trusting it would
+  // boot an unrelated empty database while the real data sits in the recorded
+  // one and in the renamed rollback copy.
+  const markerTargetMismatch = Boolean(
+    migrationCompleted && marker && marker.target && marker.target !== currentPgTargetId(),
+  );
   const pgConfigured = Boolean(process.env.DB_HOST || process.env.DB_PASSWORD);
   // Probe when Postgres is in play, and also whenever a migration is pinned or
   // finished — those decisions need to know what each side holds.
@@ -349,6 +372,26 @@ async function resolveBootEngine({ knexConfig, logger }) {
     migrationCompleted,
     pgConfigured,
   });
+
+  if (markerTargetMismatch) {
+    logger.error(`
+${'='.repeat(78)}
+REFUSING TO START — this install was migrated to a different PostgreSQL.
+
+  migrated to : ${marker.target}
+  configured  : ${currentPgTargetId()}
+
+${migrationMarkerPath(sqlitePath)} records where the data was moved. The current
+settings point somewhere else, so starting would open an unrelated database and
+present an empty installation while your galleries stay in the one above.
+
+Either restore the original connection settings, or — if this move is deliberate
+and the data is already in the new target — update the "target" field in that
+marker file to match.
+${'='.repeat(78)}
+`.trim());
+    return { client: null, overridden: false, reason: 'marker-target-mismatch' };
+  }
 
   if (decision.reason === 'ambiguous-both-populated') {
     logger.error(CONFLICT_MESSAGE(sqlitePath, describeEngine({
@@ -394,6 +437,8 @@ module.exports = {
   adminsIndicateUse,
   migrationMarkerPath,
   hasMigrationMarker,
+  readMigrationMarker,
+  currentPgTargetId,
   migrationInProgressPath,
   hasMigrationInProgress,
   describeEngine,
