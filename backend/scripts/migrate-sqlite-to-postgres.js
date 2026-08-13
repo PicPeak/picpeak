@@ -39,24 +39,35 @@ function parseArgs(argv) {
     keepArchive: argv.includes('--keep-archive'),
     phase: (argv.find((a) => a.startsWith('--phase=')) || '').split('=')[1] || null,
     archive: (argv.find((a) => a.startsWith('--archive=')) || '').split('=')[1] || null,
+    resultFile: (argv.find((a) => a.startsWith('--result-file=')) || '').split('=')[1] || null,
   };
 }
 
 function runPhase(phase, client, extraArgs = []) {
-  const res = spawnSync(
-    process.execPath,
-    [__filename, `--phase=${phase}`, ...extraArgs],
-    {
-      cwd: BACKEND_ROOT,
-      env: { ...process.env, DATABASE_CLIENT: client },
-      stdio: ['ignore', 'pipe', 'inherit'],
-      encoding: 'utf8',
-    },
+  // The child's stdout is NOT a private channel: winston logs to the console
+  // outside production and whenever LOG_TO_CONSOLE=true, so the payload comes
+  // back through a file instead.
+  const resultFile = path.join(
+    fs.mkdtempSync(path.join(os.tmpdir(), `picpeak-phase-${phase}-`)), 'result',
   );
-  if (res.status !== 0) {
-    throw new Error(`${phase} phase failed (exit ${res.status})`);
+  try {
+    const res = spawnSync(
+      process.execPath,
+      [__filename, `--phase=${phase}`, `--result-file=${resultFile}`, ...extraArgs],
+      {
+        cwd: BACKEND_ROOT,
+        env: { ...process.env, DATABASE_CLIENT: client },
+        stdio: ['ignore', 'inherit', 'inherit'],
+        encoding: 'utf8',
+      },
+    );
+    if (res.status !== 0) {
+      throw new Error(`${phase} phase failed (exit ${res.status})`);
+    }
+    return fs.existsSync(resultFile) ? fs.readFileSync(resultFile, 'utf8').trim() : '';
+  } finally {
+    fs.rmSync(path.dirname(resultFile), { recursive: true, force: true });
   }
-  return (res.stdout || '').trim();
 }
 
 // ── phases (each runs in its own process, with DATABASE_CLIENT pinned) ────────
@@ -69,11 +80,22 @@ async function phaseExport() {
   return filePath;
 }
 
-async function phaseCount() {
+// Tables whose contents an operator would notice losing. Used both to decide
+// whether a database "has data" and to detect writes landing DURING the
+// migration (#1038 review): if the backend is still running, uploads, feedback
+// or admin edits made after the export would never reach Postgres, and after
+// the engine switch they would be invisible.
+const FINGERPRINT_TABLES = ['events', 'photos', 'photo_feedback', 'admin_users'];
+
+async function phaseFingerprint() {
   const { db } = require('../src/database/db');
-  const has = await db.schema.hasTable('events');
-  const count = has ? Number((await db('events').count('id as count').first())?.count || 0) : 0;
-  return String(count);
+  const out = {};
+  for (const table of FINGERPRINT_TABLES) {
+    if (!(await db.schema.hasTable(table))) continue;
+    const row = await db(table).count('id as count').max('id as maxId').first();
+    out[table] = { count: Number(row?.count || 0), maxId: Number(row?.maxId || 0) };
+  }
+  return JSON.stringify(out);
 }
 
 async function phaseMigrateSchema() {
@@ -93,6 +115,23 @@ async function phaseImport(archivePath) {
   return JSON.stringify(summary || {});
 }
 
+function galleryCount(fingerprint) {
+  return fingerprint.events ? fingerprint.events.count : 0;
+}
+
+function describeDrift(before, after) {
+  const drifted = [];
+  for (const table of Object.keys(before)) {
+    const a = before[table];
+    const b = after[table];
+    if (!b) continue;
+    if (a.count !== b.count || a.maxId !== b.maxId) {
+      drifted.push(`${table}: ${a.count} rows/max id ${a.maxId} → ${b.count}/${b.maxId}`);
+    }
+  }
+  return drifted;
+}
+
 // ── orchestration ────────────────────────────────────────────────────────────
 
 async function main() {
@@ -103,10 +142,12 @@ async function main() {
   // process that will never end by itself.
   if (args.phase) {
     const payload = args.phase === 'export' ? await phaseExport()
-      : args.phase === 'count' ? await phaseCount()
+      : args.phase === 'fingerprint' ? await phaseFingerprint()
         : args.phase === 'import' ? await phaseImport(args.archive)
           : await phaseMigrateSchema();
-    await new Promise((resolve) => process.stdout.write(String(payload ?? ''), resolve));
+    if (args.resultFile) fs.writeFileSync(args.resultFile, String(payload ?? ''));
+    // The knex pool holds the event loop open; exit explicitly or the parent's
+    // spawnSync waits on a process that will never end by itself.
     process.exit(0);
   }
 
@@ -128,7 +169,15 @@ async function main() {
     process.exit(1);
   }
 
-  const sqliteCount = Number(runPhase('count', 'sqlite3'));
+  console.log(
+    'Stop the backend before running this. If it keeps serving while the copy runs,\n'
+    + 'anything written after the export is left behind in SQLite and becomes invisible\n'
+    + 'once the engine switches. This script checks for that afterwards and fails loudly,\n'
+    + 'but stopping the container first is the only way to be sure.\n'
+  );
+
+  const sqliteBefore = JSON.parse(runPhase('fingerprint', 'sqlite3'));
+  const sqliteCount = galleryCount(sqliteBefore);
   console.log(`  source : ${sqlitePath} — ${sqliteCount} galler${sqliteCount === 1 ? 'y' : 'ies'}`);
   if (!sqliteCount) {
     console.error('\nThe SQLite database holds no galleries. Refusing to overwrite Postgres with it.');
@@ -140,7 +189,7 @@ async function main() {
   console.log('\n  Preparing PostgreSQL schema…');
   runPhase('migrate-schema', 'pg');
 
-  const pgCount = Number(runPhase('count', 'pg'));
+  const pgCount = galleryCount(JSON.parse(runPhase('fingerprint', 'pg')));
   console.log(`  target : postgres — ${pgCount} galler${pgCount === 1 ? 'y' : 'ies'}`);
   if (pgCount > 0 && !args.force) {
     console.error(
@@ -155,10 +204,37 @@ async function main() {
   const sizeMb = (fs.statSync(archive).size / 1024 / 1024).toFixed(1);
   console.log(`  archive: ${archive} (${sizeMb} MB)`);
 
+  // Check BEFORE touching Postgres: if the backend wrote to SQLite while the
+  // export ran, the snapshot is already incomplete and there is no reason to
+  // load it. Bailing here leaves Postgres exactly as it was.
+  const driftDuringExport = describeDrift(sqliteBefore, JSON.parse(runPhase('fingerprint', 'sqlite3')));
+  if (driftDuringExport.length) {
+    console.error(
+      '\nSQLite CHANGED WHILE THE EXPORT RAN — the backend is still writing to it:\n'
+      + driftDuringExport.map((d) => `  ${d}`).join('\n')
+      + '\n\nNothing was written to Postgres. Stop the backend and run this again.'
+    );
+    process.exit(1);
+  }
+
   console.log('\n  Loading into PostgreSQL…');
   runPhase('import', 'pg', [`--archive=${archive}`]);
 
-  const finalCount = Number(runPhase('count', 'pg'));
+  // And again afterwards: writes can also land while the load runs, and those
+  // rows would vanish from view the moment the engine switches.
+  const driftDuringImport = describeDrift(sqliteBefore, JSON.parse(runPhase('fingerprint', 'sqlite3')));
+  if (driftDuringImport.length) {
+    console.error(
+      '\nSQLite CHANGED WHILE THE IMPORT RAN — the backend is still writing to it:\n'
+      + driftDuringImport.map((d) => `  ${d}`).join('\n')
+      + '\n\nPostgres now holds an incomplete copy. Your SQLite data is still intact and\n'
+      + 'still the one being served. Stop the backend and run this again; the import\n'
+      + 'replaces every table, so re-running is safe.'
+    );
+    process.exit(1);
+  }
+
+  const finalCount = galleryCount(JSON.parse(runPhase('fingerprint', 'pg')));
   console.log(`\n  PostgreSQL now holds ${finalCount} galler${finalCount === 1 ? 'y' : 'ies'}.`);
 
   if (finalCount !== sqliteCount) {

@@ -24,6 +24,7 @@ const {
 } = require('../../src/utils/databaseEngine');
 const {
   epochToIso,
+  parseJsonText,
   coerceForTargetEngine,
 } = require('../../src/services/picpeakImportService');
 
@@ -213,5 +214,53 @@ describe('cross-engine row coercion (#1038)', () => {
       [{ created_at: '2026-08-12T15:20:38.763Z' }], { timestamps: ['created_at'], booleans: [] },
     );
     expect(out.created_at).toBe('2026-08-12T15:20:38.763Z');
+  });
+});
+
+describe('SQLite JSON text is decoded before Postgres serialisation (#1038 review)', () => {
+  // SQLite has no json type: its json columns are TEXT holding JSON. The export
+  // dumps that as a STRING, and serialiseJsonColumns would then stringify it a
+  // SECOND time, so Postgres stored `true` as the scalar string "true".
+  // app_settings.setting_value is json on every install, so this reshaped every
+  // migrated setting.
+  test('a JSON object in text form is decoded', () => {
+    expect(parseJsonText('{"primaryColor":"#123456"}')).toEqual({ primaryColor: '#123456' });
+  });
+
+  test('JSON scalars are decoded to their real type', () => {
+    expect(parseJsonText('true')).toBe(true);
+    expect(parseJsonText('42')).toBe(42);
+    expect(parseJsonText('[1,2]')).toEqual([1, 2]);
+  });
+
+  test('a plain word stays a plain word — text columns are not reinterpreted', () => {
+    expect(parseJsonText('PicPeak')).toBe('PicPeak');
+    expect(parseJsonText('hero')).toBe('hero');
+    expect(parseJsonText('')).toBe('');
+  });
+
+  test('malformed JSON is left untouched rather than thrown away', () => {
+    expect(parseJsonText('{not json')).toBe('{not json');
+  });
+
+  test('non-strings pass through', () => {
+    expect(parseJsonText(null)).toBeNull();
+    expect(parseJsonText(7)).toBe(7);
+    expect(parseJsonText({ a: 1 })).toEqual({ a: 1 });
+  });
+
+  test('json columns are decoded alongside the timestamp/boolean coercion', () => {
+    const [out] = coerceForTargetEngine(
+      [{ setting_value: 'true', created_at: 1786548038763, feedback_enabled: 1, name: 'plain' }],
+      {
+        timestamps: ['created_at'],
+        booleans: ['feedback_enabled'],
+        jsonCols: new Set(['setting_value']),
+      },
+    );
+    expect(out.setting_value).toBe(true);
+    expect(out.created_at).toBe('2026-08-12T15:20:38.763Z');
+    expect(out.feedback_enabled).toBe(true);
+    expect(out.name).toBe('plain');
   });
 });
