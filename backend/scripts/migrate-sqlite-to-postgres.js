@@ -133,7 +133,7 @@ async function phaseExport() {
 // missing on a given branch are skipped.
 const USER_DATA_TABLES = [
   'events', 'photos', 'photo_feedback', 'admin_users', 'customer_accounts',
-  'quotes', 'invoices', 'projects', 'expenses', 'incoming_invoices',
+  'quotes', 'invoices', 'projects', 'expenses', 'inbound_documents',
 ];
 
 async function tablesWithData(db, tables, { ignoreBootstrapAdmins = false } = {}) {

@@ -36,7 +36,8 @@ const CONFLICT_EXIT = 3;
   try {
     const { resolveBootEngine } = require('../src/utils/databaseEngine');
     const decision = await resolveBootEngine({ knexConfig, logger });
-    if (decision.reason === 'ambiguous-both-populated') {
+    if (decision.reason === 'ambiguous-both-populated'
+        || decision.reason === 'marker-target-mismatch') {
       process.exit(CONFLICT_EXIT);
     }
     ({ client } = decision);
