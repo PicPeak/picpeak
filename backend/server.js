@@ -16,7 +16,11 @@ validateEnvironment();
 // happen before the first `require` of knexfile. It short-circuits without
 // probing when DATABASE_CLIENT is already set, so the entrypoint path pays
 // nothing.
-if (!process.env.DATABASE_CLIENT) {
+// Also run it when a migration pin exists: an explicit DATABASE_CLIENT=pg
+// would otherwise skip the check and start against a half-migrated Postgres
+// while SQLite is still the database of record.
+if (!process.env.DATABASE_CLIENT
+    || require('./src/utils/databaseEngine').hasMigrationInProgress()) {
   const { spawnSync } = require('child_process');
   const probe = spawnSync(
     process.execPath,

@@ -27,6 +27,7 @@ const {
   hasMigrationMarker,
   migrationInProgressPath,
   hasMigrationInProgress,
+  isUntouchedBootstrapRow,
 } = require('../../src/utils/databaseEngine');
 const {
   epochToIso,
@@ -383,5 +384,29 @@ describe('the migration pin outranks an explicit client (#1038 review r6)', () =
       configuredClient: 'pg', explicitClient: 'pg',
       pgHasData: true, sqliteHasData: false, migrationInProgress: true,
     }).client).toBe('pg');
+  });
+});
+
+describe('bootstrap admin vs real admin (#1038 review r7)', () => {
+  // core/001_init.js seeds must_change_password=true when ADMIN_PASSWORD is set;
+  // setupService writes false once a human finishes first-run setup. Judging by
+  // the FLAG rather than the table keeps both mistakes away: counting the seed
+  // as real data would abandon a populated SQLite file, and ignoring the whole
+  // table would abandon a legitimately set-up Postgres.
+  test('an untouched seeded row is recognised across both engines', () => {
+    expect(isUntouchedBootstrapRow(true)).toBe(true);
+    expect(isUntouchedBootstrapRow(1)).toBe(true);
+    expect(isUntouchedBootstrapRow('1')).toBe(true);
+  });
+
+  test('a completed setup is not a bootstrap row', () => {
+    expect(isUntouchedBootstrapRow(false)).toBe(false);
+    expect(isUntouchedBootstrapRow(0)).toBe(false);
+    expect(isUntouchedBootstrapRow('0')).toBe(false);
+  });
+
+  test('a legacy NULL counts as a real admin, not a seed', () => {
+    expect(isUntouchedBootstrapRow(null)).toBe(false);
+    expect(isUntouchedBootstrapRow(undefined)).toBe(false);
   });
 });
