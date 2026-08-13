@@ -75,8 +75,10 @@ function runPhase(phase, client, extraArgs = []) {
 async function phaseExport() {
   const { createPicpeak } = require('../src/services/picpeakExportService');
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-sqlite-migration-'));
-  // includePhotos:false — photo files stay on the volume untouched; only rows move.
-  const { filePath } = await createPicpeak({ includePhotos: false, outDir });
+  // Rows only. This moves an install between engines on the SAME machine, so
+  // every file is already where it belongs; hauling business docs through /tmp
+  // would just risk filling the temp disk.
+  const { filePath } = await createPicpeak({ includePhotos: false, includeFiles: false, outDir });
   return filePath;
 }
 
@@ -169,6 +171,21 @@ function describeDrift(before, after) {
   return drifted;
 }
 
+// Set once the export exists; every failure path clears it (the archive holds
+// plaintext secrets, so leaving it behind on error is not acceptable).
+let archiveToClean = null;
+
+function cleanupArchive() {
+  if (!archiveToClean) return;
+  try {
+    fs.rmSync(path.dirname(archiveToClean), { recursive: true, force: true });
+  } catch (err) {
+    console.error(`  WARNING: could not remove ${archiveToClean} (${err.message}) — it contains`
+      + ' plaintext secrets, delete it by hand.');
+  }
+  archiveToClean = null;
+}
+
 // ── orchestration ────────────────────────────────────────────────────────────
 
 async function main() {
@@ -225,11 +242,10 @@ async function main() {
   }
   const sqliteBefore = JSON.parse(runPhase('fingerprint', 'sqlite3'));
 
-  // Build the Postgres schema first — a fresh database has no tables at all,
-  // and the import replaces table CONTENTS, it does not create them.
-  console.log('\n  Preparing PostgreSQL schema…');
-  runPhase('migrate-schema', 'pg');
-
+  // Read the target BEFORE creating the schema: migration 001 seeds a bootstrap
+  // admin when ADMIN_PASSWORD is set (common on legacy installs), and counting
+  // that as "user data" would refuse a migration into a genuinely empty
+  // database — pushing the operator towards --force for no reason.
   const targetData = JSON.parse(runPhase('user-data', 'pg'));
   console.log(`  target : postgres — ${summariseUserData(targetData) || 'empty'}`);
   if (Object.keys(targetData).length && !args.force) {
@@ -242,8 +258,16 @@ async function main() {
     process.exit(1);
   }
 
+  // Now build the schema — the import replaces table CONTENTS, it never creates
+  // them, and a fresh database has no tables at all.
+  console.log('\n  Preparing PostgreSQL schema…');
+  runPhase('migrate-schema', 'pg');
+
   console.log('\n  Exporting rows from SQLite…');
   const archive = runPhase('export', 'sqlite3');
+  // From here on, every exit path must remove the archive: it holds password
+  // hashes, SMTP credentials and API keys in plaintext.
+  archiveToClean = args.keepArchive ? null : archive;
   const sizeMb = (fs.statSync(archive).size / 1024 / 1024).toFixed(1);
   console.log(`  archive: ${archive} (${sizeMb} MB)`);
 
@@ -323,10 +347,10 @@ async function main() {
     target: `${process.env.DB_HOST}:${process.env.DB_PORT || 5432}/${process.env.DB_NAME || 'picpeak'}`,
   }, null, 2));
 
-  if (!args.keepArchive) {
-    fs.rmSync(path.dirname(archive), { recursive: true, force: true });
+  if (args.keepArchive) {
+    console.log(`  archive kept at ${archive} — it contains plaintext secrets, delete it when done`);
   } else {
-    console.log(`  archive kept at ${archive}`);
+    cleanupArchive();
   }
 
   console.log(`
@@ -340,6 +364,8 @@ have confirmed the galleries look right; to go back, delete the marker and
 rename that file to ${sqlitePath}.
 `);
 }
+
+process.on('exit', cleanupArchive);
 
 main().catch((err) => {
   console.error(`\nMigration failed: ${err.message}`);

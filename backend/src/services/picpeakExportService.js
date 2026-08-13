@@ -135,7 +135,7 @@ async function collectFiles(includePhotos) {
  * @param {string}  [opts.outDir] where to write the file (defaults to a temp dir)
  * @returns {Promise<{ filePath: string, manifest: object }>}
  */
-async function createPicpeak({ includePhotos = false, outDir } = {}) {
+async function createPicpeak({ includePhotos = false, includeFiles = true, outDir } = {}) {
   const staging = await fsp.mkdtemp(path.join(os.tmpdir(), 'picpeak-export-'));
   const dataDir = path.join(staging, 'data');
   await fsp.mkdir(dataDir, { recursive: true });
@@ -150,7 +150,11 @@ async function createPicpeak({ includePhotos = false, outDir } = {}) {
 
     // 2. Gather the non-recalculable blobs (PDFs, business-docs, uploads, and
     //    optionally original photos).
-    const files = await collectFiles(includePhotos);
+    // includeFiles:false is for the SQLite → Postgres migration (#1038): it moves
+    // rows between engines on the SAME install, so the storage volume is already
+    // correct. Copying every business doc through /tmp and back would only risk
+    // filling the temp disk.
+    const files = includeFiles ? await collectFiles(includePhotos) : [];
 
     // 3. Manifest — everything the importer needs to validate + reconstruct.
     const manifest = {
@@ -162,7 +166,7 @@ async function createPicpeak({ includePhotos = false, outDir } = {}) {
         engine: isPostgres() ? 'pg' : 'sqlite',
         latest_migration: await getLatestMigration(),
       },
-      options: { includePhotos: !!includePhotos },
+      options: { includePhotos: !!includePhotos, includeFiles: !!includeFiles },
       tables: tableMeta,
       file_count: files.length,
       // NOTE: contains secrets (SMTP password, admin hashes, API keys) in plain
