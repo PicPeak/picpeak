@@ -57,6 +57,17 @@ async function assertEngine() {
   const logger = require('../src/utils/logger');
   const { resolveBootEngine } = require('../src/utils/databaseEngine');
   const decision = await resolveBootEngine({ knexConfig, logger });
+  if (decision.reason === 'ambiguous-both-populated') {
+    // Both databases hold data and nothing records which is current; the
+    // resolver has already printed the comparison. There is no client to
+    // recommend here — the operator has to pick one.
+    console.error(
+      'Refusing to migrate: SQLite and PostgreSQL both hold data and neither is marked\n'
+      + 'as current. Set DATABASE_CLIENT=pg or DATABASE_CLIENT=sqlite3 to say which one\n'
+      + 'this command should touch.'
+    );
+    process.exit(1);
+  }
   if (decision.client !== knexConfig.client) {
     console.error(
       `Refusing to migrate ${knexConfig.client} — this install's data is in ${decision.client}.\n`

@@ -86,7 +86,15 @@ function runPhase(phase, client, extraArgs = []) {
       [__filename, `--phase=${phase}`, `--result-file=${resultFile}`, ...extraArgs],
       {
         cwd: BACKEND_ROOT,
-        env: { ...process.env, ...normalisedPgEnv(), DATABASE_CLIENT: client },
+        env: {
+          ...process.env,
+          ...normalisedPgEnv(),
+          DATABASE_CLIENT: client,
+          // Production semantics for the child regardless of how the CLI was
+          // invoked: the development block ignores DB_SSL, so a managed Postgres
+          // that requires TLS could not be migrated into at all.
+          NODE_ENV: 'production',
+        },
         stdio: ['ignore', 'inherit', 'inherit'],
         encoding: 'utf8',
       },
@@ -365,8 +373,20 @@ async function main() {
 
   // Now build the schema — the import replaces table CONTENTS, it never creates
   // them, and a fresh database has no tables at all.
+  //
+  // core/001_init.js writes data/ADMIN_CREDENTIALS.txt when ADMIN_PASSWORD is
+  // set, and that data directory belongs to the SOURCE install — so bootstrapping
+  // the schema would replace the operator's real credentials file with ones for
+  // a temporary admin the import then discards. Preserve it across the phase.
+  const credFile = path.join(BACKEND_ROOT, 'data', 'ADMIN_CREDENTIALS.txt');
+  const credBefore = fs.existsSync(credFile) ? fs.readFileSync(credFile) : null;
   console.log('\n  Preparing PostgreSQL schema…');
-  runPhase('migrate-schema', 'pg');
+  try {
+    runPhase('migrate-schema', 'pg');
+  } finally {
+    if (credBefore !== null) fs.writeFileSync(credFile, credBefore);
+    else fs.rmSync(credFile, { force: true });
+  }
 
   console.log('\n  Exporting rows from SQLite…');
   const archive = runPhase('export', 'sqlite3');
