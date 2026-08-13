@@ -25,7 +25,11 @@
 
 const fs = require('fs');
 const path = require('path');
-const logger = require('./logger');
+
+// Diagnostics go through an injected sink, never a module-level logger: the
+// resolver's STDOUT is a protocol channel (wait-for-db.sh captures it), and the
+// app logger writes there whenever LOG_TO_CONSOLE=true.
+const warnToStderr = (msg) => process.stderr.write(`${msg}\n`);
 
 /** Absolute path of the SQLite file this install would use. */
 function resolveSqlitePath() {
@@ -95,8 +99,27 @@ function hasMigrationMarker(sqlitePath = resolveSqlitePath()) {
   return fs.existsSync(migrationMarkerPath(sqlitePath));
 }
 
-/** True when a SQLite file exists and carries gallery data. */
-async function probeSqliteData(sqlitePath = resolveSqlitePath()) {
+// Tables that are EMPTY on a freshly migrated schema, so a row in any of them
+// means a human has used this install. Deliberately wider than `events`:
+// judging occupancy by galleries alone would abandon an install whose galleries
+// were all deleted but whose admins, customers and accounting records remain.
+// Mirrors USER_DATA_TABLES in scripts/migrate-sqlite-to-postgres.js.
+const USER_DATA_TABLES = [
+  'events', 'photos', 'photo_feedback', 'admin_users', 'customer_accounts',
+  'quotes', 'invoices', 'projects', 'expenses', 'incoming_invoices',
+];
+
+async function anyUserData(conn) {
+  for (const table of USER_DATA_TABLES) {
+    if (!(await conn.schema.hasTable(table))) continue;
+    const row = await conn(table).count('* as count').first();
+    if (Number(row?.count || 0) > 0) return true;
+  }
+  return false;
+}
+
+/** True when a SQLite file exists and carries user data. */
+async function probeSqliteData(sqlitePath = resolveSqlitePath(), onWarn = warnToStderr) {
   if (hasMigrationMarker(sqlitePath)) return false;
   if (!fs.existsSync(sqlitePath)) return false;
   const knex = require('knex');
@@ -106,14 +129,12 @@ async function probeSqliteData(sqlitePath = resolveSqlitePath()) {
     useNullAsDefault: true,
   });
   try {
-    if (!(await probe.schema.hasTable('events'))) return false;
-    const row = await probe('events').count('id as count').first();
-    return Number(row?.count || 0) > 0;
+    return await anyUserData(probe);
   } catch (err) {
     // Unreadable or corrupt: fail CLOSED. Reporting "no data" here would switch
     // the install to an empty Postgres — the precise failure this module exists
     // to prevent. Staying on SQLite surfaces the real error instead.
-    logger.warn(
+    onWarn(
       `[database-engine] SQLite at ${sqlitePath} exists but could not be probed (${err.message}); `
       + 'assuming it holds data and staying on it.'
     );
@@ -123,14 +144,12 @@ async function probeSqliteData(sqlitePath = resolveSqlitePath()) {
   }
 }
 
-/** True when the configured Postgres target already holds galleries. */
+/** True when the configured Postgres target already holds user data. */
 async function probePgData(pgConnection) {
   const knex = require('knex');
   const probe = knex({ client: 'pg', connection: pgConnection, pool: { min: 0, max: 1 } });
   try {
-    if (!(await probe.schema.hasTable('events'))) return false;
-    const row = await probe('events').count('id as count').first();
-    return Number(row?.count || 0) > 0;
+    return await anyUserData(probe);
   } catch (_) {
     // Unreachable Postgres is the entrypoint's problem (it exits before we get
     // here); treat as "has data" so we never divert a healthy pg install.
@@ -181,7 +200,7 @@ async function resolveBootEngine({ knexConfig, logger }) {
     configuredClient,
     explicitClient,
     pgHasData: probing ? await probePgData(knexConfig.connection) : true,
-    sqliteHasData: probing ? await probeSqliteData(sqlitePath) : false,
+    sqliteHasData: probing ? await probeSqliteData(sqlitePath, (m) => logger.warn(m)) : false,
   });
 
   if (decision.overridden && decision.reason === 'stranded-sqlite-data') {

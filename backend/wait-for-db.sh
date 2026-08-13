@@ -128,9 +128,20 @@ mkdir -p "$STORAGE_BASE/events/active" "$STORAGE_BASE/events/archived" "$STORAGE
 # Postgres. The exported value survives the `exec` below, so the migration
 # runner and the server agree on the engine.
 RESOLVED_DB_CLIENT="$(node scripts/resolve-db-engine.js)"
-if [ -n "$RESOLVED_DB_CLIENT" ]; then
-  export DATABASE_CLIENT="$RESOLVED_DB_CLIENT"
-fi
+# Validate rather than trust: anything unexpected on stdout (a stray log line
+# from a library that writes to the console) must not become DATABASE_CLIENT,
+# which would break knexfile for every process that follows.
+case "$RESOLVED_DB_CLIENT" in
+  pg|sqlite3)
+    export DATABASE_CLIENT="$RESOLVED_DB_CLIENT"
+    ;;
+  "")
+    >&2 echo "Database engine resolver returned nothing; falling back to the configured client."
+    ;;
+  *)
+    >&2 echo "Database engine resolver returned an unexpected value; ignoring it and falling back to the configured client."
+    ;;
+esac
 
 # Run migrations (use safe runner in production). Invoked via node directly —
 # the runtime image no longer ships npm (see Dockerfile: its bundled deps kept
