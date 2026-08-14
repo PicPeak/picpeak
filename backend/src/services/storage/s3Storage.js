@@ -40,8 +40,8 @@ class S3StorageAdapter extends stream.EventEmitter {
    * @param {number} [config.partSize=10485760] - Part size for multipart upload (default 10MB)
    * @param {number} [config.maxRetries=3] - Maximum number of retry attempts
    * @param {number} [config.retryDelay=1000] - Initial retry delay in milliseconds
-   * @param {number} [config.connectionTimeout=10000] - Ms to wait for a connection to establish
-   * @param {number} [config.socketTimeout=10000] - Ms of socket inactivity before a request fails
+   * @param {number} [config.connectionTimeout=120000] - Ms to acquire+establish a socket
+   * @param {number} [config.socketTimeout=60000] - Ms of socket inactivity before a request fails
    */
   constructor(config) {
     super();
@@ -60,8 +60,8 @@ class S3StorageAdapter extends stream.EventEmitter {
       partSize: 10 * 1024 * 1024, // 10MB
       maxRetries: 3,
       retryDelay: 1000,
-      connectionTimeout: 10000,
-      socketTimeout: 10000,
+      connectionTimeout: 120000,
+      socketTimeout: 60000,
       ...config
     };
     
@@ -78,6 +78,16 @@ class S3StorageAdapter extends stream.EventEmitter {
       // throwOnRequestTimeout to abort at all). socketTimeout fires on
       // socket INACTIVITY and destroys the request with a TimeoutError, so
       // an active transfer of any size is safe and only a dead line trips.
+      //
+      // Both values are deliberately GENEROUS. connectionTimeout starts
+      // when the request object is created and only clears once a socket
+      // is both assigned and connected — so time spent queuing for a free
+      // socket from the agent pool (maxSockets 50) counts against it. A
+      // 10s value looks reasonable and is not: under concurrent uploads
+      // it expires while merely waiting in line, and every read (photo
+      // download, thumbnail, background thumbnailing) fails with
+      // TimeoutError. These timeouts exist to convert an INFINITE hang
+      // into a bounded failure, not to enforce latency targets.
       requestHandler: {
         connectionTimeout: this.config.connectionTimeout,
         socketTimeout: this.config.socketTimeout

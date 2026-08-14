@@ -70,11 +70,22 @@ describe('S3StorageAdapter', () => {
       expect(S3Client).toHaveBeenCalledWith(
         expect.objectContaining({
           requestHandler: {
-            connectionTimeout: 10000,
-            socketTimeout: 10000
+            connectionTimeout: 120000,
+            socketTimeout: 60000
           }
         })
       );
+    });
+
+    it('should keep connectionTimeout generous enough to survive socket-pool queuing', () => {
+      // connectionTimeout starts at request creation and only clears once a
+      // socket is assigned AND connected, so waiting for a free socket from
+      // the agent pool counts against it. A short value (e.g. 10s) fails
+      // every read under concurrent upload load. These timeouts bound an
+      // infinite hang; they are not latency targets.
+      const [[config]] = S3Client.mock.calls;
+      expect(config.requestHandler.connectionTimeout).toBeGreaterThanOrEqual(60000);
+      expect(config.requestHandler.socketTimeout).toBeGreaterThanOrEqual(30000);
     });
 
     it('should not set requestTimeout, which caps total duration and only warns', () => {
