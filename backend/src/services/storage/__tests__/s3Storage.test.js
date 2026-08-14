@@ -65,6 +65,34 @@ describe('S3StorageAdapter', () => {
         })
       );
     });
+
+    it('should configure connection and socket-inactivity timeouts by default', () => {
+      expect(S3Client).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestHandler: {
+            connectionTimeout: 10000,
+            requestTimeout: 10000
+          }
+        })
+      );
+    });
+
+    it('should allow overriding timeouts via config', () => {
+      new S3StorageAdapter({
+        bucket: 'test-bucket',
+        connectionTimeout: 5000,
+        requestTimeout: 30000
+      });
+
+      expect(S3Client).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          requestHandler: {
+            connectionTimeout: 5000,
+            requestTimeout: 30000
+          }
+        })
+      );
+    });
   });
   
   describe('testConnection', () => {
@@ -239,6 +267,30 @@ describe('S3StorageAdapter', () => {
       s3Storage.config.retryDelay = originalDelay;
     });
     
+    it('should retry when the request handler times out a dead connection', async () => {
+      // @smithy/node-http-handler rejects with name 'TimeoutError' for both
+      // its connection-timeout and socket-inactivity timeouts
+      const timeoutError = new Error('Connection timed out after 10000ms');
+      timeoutError.name = 'TimeoutError';
+
+      const operation = jest.fn()
+        .mockRejectedValueOnce(timeoutError)
+        .mockResolvedValueOnce('success');
+
+      const originalRandom = Math.random;
+      const originalDelay = s3Storage.config.retryDelay;
+      Math.random = jest.fn(() => 0);
+      s3Storage.config.retryDelay = 0;
+
+      const result = await s3Storage._retryOperation(operation);
+
+      expect(result).toBe('success');
+      expect(operation).toHaveBeenCalledTimes(2);
+
+      Math.random = originalRandom;
+      s3Storage.config.retryDelay = originalDelay;
+    });
+
     it('should not retry on non-retryable errors', async () => {
       const nonRetryableError = new Error('Invalid credentials');
       nonRetryableError.code = 'InvalidCredentials';

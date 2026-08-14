@@ -27,6 +27,9 @@ let instance = null;
  *   STORAGE_S3_PREFIX        — namespace prefix inside the bucket
  *   STORAGE_S3_FORCE_PATH_STYLE=true|false (default: auto when endpoint set)
  *   STORAGE_S3_SSL=true|false (default: true)
+ *   STORAGE_S3_CONNECTION_TIMEOUT — ms to establish a connection (default 10000)
+ *   STORAGE_S3_REQUEST_TIMEOUT    — ms of socket inactivity before a request
+ *                                   fails and is retried (default 10000)
  */
 function buildStorage() {
   const backend = (process.env.STORAGE_BACKEND || 'local').toLowerCase();
@@ -48,6 +51,8 @@ function buildStorage() {
       prefix: process.env.STORAGE_S3_PREFIX,
       forcePathStyle: process.env.STORAGE_S3_FORCE_PATH_STYLE === 'true' ? true : undefined,
       sslEnabled: process.env.STORAGE_S3_SSL !== 'false',
+      connectionTimeout: parseInt(process.env.STORAGE_S3_CONNECTION_TIMEOUT || '10000', 10),
+      requestTimeout: parseInt(process.env.STORAGE_S3_REQUEST_TIMEOUT || '10000', 10),
     });
   }
 

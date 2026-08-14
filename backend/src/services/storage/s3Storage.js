@@ -40,6 +40,8 @@ class S3StorageAdapter extends stream.EventEmitter {
    * @param {number} [config.partSize=10485760] - Part size for multipart upload (default 10MB)
    * @param {number} [config.maxRetries=3] - Maximum number of retry attempts
    * @param {number} [config.retryDelay=1000] - Initial retry delay in milliseconds
+   * @param {number} [config.connectionTimeout=10000] - Ms to wait for a connection to establish
+   * @param {number} [config.requestTimeout=10000] - Ms of socket inactivity before a request fails
    */
   constructor(config) {
     super();
@@ -58,13 +60,23 @@ class S3StorageAdapter extends stream.EventEmitter {
       partSize: 10 * 1024 * 1024, // 10MB
       maxRetries: 3,
       retryDelay: 1000,
+      connectionTimeout: 10000,
+      requestTimeout: 10000,
       ...config
     };
     
     // Initialize S3 client
     const s3Config = {
       region: this.config.region,
-      forcePathStyle: this.config.forcePathStyle
+      forcePathStyle: this.config.forcePathStyle,
+      // Without timeouts a silently dropped connection leaves the request —
+      // and with it every queued upload — hanging forever. requestTimeout is
+      // socket INACTIVITY, not total duration: an active transfer of any
+      // size never trips it, only a dead line does.
+      requestHandler: {
+        connectionTimeout: this.config.connectionTimeout,
+        requestTimeout: this.config.requestTimeout
+      }
     };
     
     // Add credentials if provided
@@ -671,7 +683,9 @@ class S3StorageAdapter extends stream.EventEmitter {
       }
       
       // Check if error is retryable
-      const retryableErrors = ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ESOCKETTIMEDOUT', 'RequestTimeout', 'SlowDown', 'ServiceUnavailable', 'InternalError'];
+      // 'TimeoutError' is what @smithy/node-http-handler names both its
+      // connection-timeout and socket-inactivity rejections.
+      const retryableErrors = ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ESOCKETTIMEDOUT', 'RequestTimeout', 'TimeoutError', 'SlowDown', 'ServiceUnavailable', 'InternalError'];
       const isRetryable = retryableErrors.some(code => 
         error.code === code || 
         error.name === code || 
