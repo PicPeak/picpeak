@@ -230,9 +230,43 @@ async function deleteEventCascade(eventId, adminContext) {
   // transaction is about to delete. So they are read here, while the rows
   // still exist, and swept after the commit; miss that window and every tier
   // this event generated is orphaned with nothing left to derive its key from.
+  //
+  // The managed objects themselves need exactly the same window (#1051), so
+  // one query serves both. On an S3/R2 backend the filesystem sweep below
+  // removes nothing at all — those paths don't exist locally, `fs.rm` happily
+  // succeeds against them, and every originally-uploaded photo stays in the
+  // bucket unreferenced and billable. Measured on a 403-photo event: object
+  // count unchanged, 679 rows gone.
   const tieredPhotos = await db('photos')
     .where('event_id', eventId)
-    .select('id', 'path', 'filename', 'source_origin', 'external_relpath');
+    .select('id', 'path', 'filename', 'source_origin', 'external_relpath',
+      'thumbnail_path', 'hero_path', 'preview_path');
+
+  const storageKeys = [];
+  try {
+    const { resolvePhotoStorageKey } = require('../../services/photoResolver');
+    for (const photo of tieredPhotos) {
+      try {
+        // Returns null for reference/external photos, which live on a mount
+        // outside the managed backend and must NOT be deleted — PicPeak does
+        // not own those bytes.
+        const originalKey = resolvePhotoStorageKey(event, photo);
+        if (originalKey) storageKeys.push(originalKey);
+      } catch (keyErr) {
+        logger.warn('Could not resolve storage key during cascade delete', {
+          eventId, photoId: photo.id, error: keyErr.message
+        });
+      }
+      // Derived tiers are stored as canonical keys and pass through verbatim.
+      for (const derived of [photo.thumbnail_path, photo.hero_path, photo.preview_path]) {
+        if (derived) storageKeys.push(derived);
+      }
+    }
+  } catch (collectErr) {
+    logger.warn('Could not enumerate stored objects before cascade delete', {
+      eventId, error: collectErr.message
+    });
+  }
 
   await db.transaction(async (trx) => {
     // 1. Delete activity logs (audit trail)
@@ -321,6 +355,34 @@ async function deleteEventCascade(eventId, adminContext) {
     }
   } catch (tierErr) {
     logger.warn('Failed to delete responsive tiers during cascade delete', { eventId, error: tierErr.message });
+  }
+
+  // Managed objects, post-commit for the same reason: a rolled-back
+  // transaction must never leave files destroyed for an event that still
+  // exists.
+  if (storageKeys.length > 0) {
+    const { getStorage } = require('../../services/storage');
+    let removed = 0;
+    try {
+      const storage = getStorage();
+      for (const key of storageKeys) {
+        try {
+          await storage.delete(key);
+          removed++;
+        } catch (delErr) {
+          logger.warn('Failed to delete stored object during cascade delete', {
+            eventId, key, error: delErr.message
+          });
+        }
+      }
+    } catch (storageErr) {
+      logger.warn('Storage backend unavailable during cascade delete', {
+        eventId, error: storageErr.message
+      });
+    }
+    logger.info('Cascade delete removed stored objects', {
+      eventId, removed, total: storageKeys.length
+    });
   }
 
   // Audit trail (outside the transaction so a logging failure can't undo
