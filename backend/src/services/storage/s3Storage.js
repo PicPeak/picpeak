@@ -41,7 +41,7 @@ class S3StorageAdapter extends stream.EventEmitter {
    * @param {number} [config.maxRetries=3] - Maximum number of retry attempts
    * @param {number} [config.retryDelay=1000] - Initial retry delay in milliseconds
    * @param {number} [config.connectionTimeout=10000] - Ms to wait for a connection to establish
-   * @param {number} [config.requestTimeout=10000] - Ms of socket inactivity before a request fails
+   * @param {number} [config.socketTimeout=10000] - Ms of socket inactivity before a request fails
    */
   constructor(config) {
     super();
@@ -61,7 +61,7 @@ class S3StorageAdapter extends stream.EventEmitter {
       maxRetries: 3,
       retryDelay: 1000,
       connectionTimeout: 10000,
-      requestTimeout: 10000,
+      socketTimeout: 10000,
       ...config
     };
     
@@ -70,12 +70,17 @@ class S3StorageAdapter extends stream.EventEmitter {
       region: this.config.region,
       forcePathStyle: this.config.forcePathStyle,
       // Without timeouts a silently dropped connection leaves the request —
-      // and with it every queued upload — hanging forever. requestTimeout is
-      // socket INACTIVITY, not total duration: an active transfer of any
-      // size never trips it, only a dead line does.
+      // and with it every queued upload — hanging forever.
+      //
+      // socketTimeout, NOT requestTimeout, is the right knob here:
+      // requestTimeout is a total-duration cap that would kill legitimate
+      // large uploads, and by default it only logs a warning (it needs
+      // throwOnRequestTimeout to abort at all). socketTimeout fires on
+      // socket INACTIVITY and destroys the request with a TimeoutError, so
+      // an active transfer of any size is safe and only a dead line trips.
       requestHandler: {
         connectionTimeout: this.config.connectionTimeout,
-        requestTimeout: this.config.requestTimeout
+        socketTimeout: this.config.socketTimeout
       }
     };
     

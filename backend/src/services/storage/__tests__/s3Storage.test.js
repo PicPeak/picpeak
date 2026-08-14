@@ -71,24 +71,32 @@ describe('S3StorageAdapter', () => {
         expect.objectContaining({
           requestHandler: {
             connectionTimeout: 10000,
-            requestTimeout: 10000
+            socketTimeout: 10000
           }
         })
       );
+    });
+
+    it('should not set requestTimeout, which caps total duration and only warns', () => {
+      // requestTimeout would abort legitimate large uploads (it is a
+      // total-duration cap, not inactivity) and by default only logs a
+      // warning — it needs throwOnRequestTimeout to abort at all.
+      const [[config]] = S3Client.mock.calls;
+      expect(config.requestHandler).not.toHaveProperty('requestTimeout');
     });
 
     it('should allow overriding timeouts via config', () => {
       new S3StorageAdapter({
         bucket: 'test-bucket',
         connectionTimeout: 5000,
-        requestTimeout: 30000
+        socketTimeout: 30000
       });
 
       expect(S3Client).toHaveBeenLastCalledWith(
         expect.objectContaining({
           requestHandler: {
             connectionTimeout: 5000,
-            requestTimeout: 30000
+            socketTimeout: 30000
           }
         })
       );
