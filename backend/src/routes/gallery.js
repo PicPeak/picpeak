@@ -945,6 +945,12 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         hero_divider_style: req.event.hero_divider_style || 'wave',
         hero_image_anchor: req.event.hero_image_anchor || 'center',
         default_photo_sort: req.event.default_photo_sort || 'upload_date_desc',
+        // Promo banner override (#440). GalleryView has always read
+        // promo_mode from THIS payload, but it was never sent — so every
+        // per-event promo override silently resolved to 'inherit' and a
+        // gallery set to 'off' still showed the global banner.
+        promo_mode: req.event.promo_mode || 'inherit',
+        promo_markdown: req.event.promo_markdown || null,
         // Info banner override (#932). GalleryAuthContext refreshes its cached
         // event from THIS payload, so the fields have to travel here — /info
         // alone isn't enough, the context stops reading it once the guest is

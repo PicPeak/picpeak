@@ -196,7 +196,12 @@ module.exports = (router) => {
         // Draft mode
         is_draft = true,
         // Default photo sort
-        default_photo_sort = 'upload_date_desc'
+        default_photo_sort = 'upload_date_desc',
+        // Banner overrides (#440 / #932) — see the insert below.
+        promo_mode = 'inherit',
+        promo_markdown = null,
+        info_mode = 'inherit',
+        info_markdown = null
       } = req.body;
 
       const customerName = getCustomerNameFromPayload(req.body);
@@ -448,6 +453,16 @@ module.exports = (router) => {
         hero_logo_visible: effectiveHeroLogoVisible,
         hero_logo_size: effectiveHeroLogoSize,
         hero_logo_position: effectiveHeroLogoPosition,
+        // Banner overrides. Both were accepted by the validators above and
+        // then dropped here, so an API client could POST info_mode:'off' or a
+        // custom banner, get 201, and find the row still on 'inherit'.
+        // Markdown is only stored for 'custom' — same rule the PUT applies.
+        promo_mode: ['inherit', 'custom', 'off'].includes(promo_mode) ? promo_mode : 'inherit',
+        promo_markdown: promo_mode === 'custom' && typeof promo_markdown === 'string' && promo_markdown.trim()
+          ? promo_markdown.trim() : null,
+        info_mode: ['inherit', 'custom', 'off'].includes(info_mode) ? info_mode : 'inherit',
+        info_markdown: info_mode === 'custom' && typeof info_markdown === 'string' && info_markdown.trim()
+          ? info_markdown.trim() : null,
         header_style: effectiveHeaderStyle || 'standard',
         hero_divider_style: effectiveDividerStyle || 'wave',
         hero_image_anchor: hero_image_anchor || 'center',
@@ -1098,6 +1113,14 @@ module.exports = (router) => {
         hero_logo_visible: source.hero_logo_visible,
         hero_logo_size: source.hero_logo_size,
         hero_logo_position: source.hero_logo_position,
+        // Banner overrides travel with the copy: the duplicate dialog promises
+        // the new gallery 'inherits the branding, behaviour, feedback, and
+        // category configuration', and a gallery muted with 'off' silently
+        // un-muting on duplication is the opposite of that.
+        promo_mode: source.promo_mode || 'inherit',
+        promo_markdown: source.promo_markdown || null,
+        info_mode: source.info_mode || 'inherit',
+        info_markdown: source.info_markdown || null,
         login_logo_visible: source.login_logo_visible,
         header_style: source.header_style || 'standard',
         hero_divider_style: source.hero_divider_style || 'wave',
@@ -1537,30 +1560,44 @@ module.exports = (router) => {
       // NULL when mode is anything other than 'custom' so we don't carry
       // stale text after the admin switches modes. Empty markdown also
       // becomes NULL.
-      if (Object.prototype.hasOwnProperty.call(updates, 'promo_mode')
-      || Object.prototype.hasOwnProperty.call(updates, 'promo_markdown')) {
-        const mode = updates.promo_mode;
-        if (mode && mode !== 'custom') {
-          updates.promo_markdown = null;
-        } else if (Object.prototype.hasOwnProperty.call(updates, 'promo_markdown')) {
-          const md = typeof updates.promo_markdown === 'string' ? updates.promo_markdown.trim() : '';
-          updates.promo_markdown = md || null;
+      // Banner overrides (#440 promo / #932 info). Markdown is stored ONLY
+      // while the mode is 'custom', so switching modes can't leave stale copy
+      // that reappears later.
+      //
+      // The mode must be resolved against the STORED row when a partial PUT
+      // sends only the markdown: reading updates.promo_mode alone leaves it
+      // undefined, which used to fall through to the "store it" branch and
+      // park hidden text on an 'inherit'/'off' gallery — text that then
+      // resurfaced the moment someone switched that gallery to 'custom'.
+      let storedBannerModes = null;
+      for (const field of ['promo', 'info']) {
+        const modeKey = `${field}_mode`;
+        const mdKey = `${field}_markdown`;
+        if (!Object.prototype.hasOwnProperty.call(updates, modeKey)
+        && !Object.prototype.hasOwnProperty.call(updates, mdKey)) continue;
+
+        let effectiveMode = updates[modeKey];
+        if (!Object.prototype.hasOwnProperty.call(updates, modeKey)) {
+          // Partial PUT that sent only the markdown — read the stored mode.
+          // Fetched at most once per request, and only on this path.
+          if (storedBannerModes === null) {
+            storedBannerModes = await db('events')
+              .where('id', id)
+              .select('promo_mode', 'info_mode')
+              .first() || {};
+          }
+          effectiveMode = storedBannerModes[modeKey];
+        }
+
+        if (effectiveMode !== 'custom') {
+          updates[mdKey] = null;
+        } else if (Object.prototype.hasOwnProperty.call(updates, mdKey)) {
+          const md = typeof updates[mdKey] === 'string' ? updates[mdKey].trim() : '';
+          updates[mdKey] = md || null;
         }
       }
 
-      // Per-event info-banner override (#932). Identical normalisation to
-      // promo above — mode != custom drops the stored text so switching
-      // modes can't leave stale copy behind.
-      if (Object.prototype.hasOwnProperty.call(updates, 'info_mode')
-      || Object.prototype.hasOwnProperty.call(updates, 'info_markdown')) {
-        const mode = updates.info_mode;
-        if (mode && mode !== 'custom') {
-          updates.info_markdown = null;
-        } else if (Object.prototype.hasOwnProperty.call(updates, 'info_markdown')) {
-          const md = typeof updates.info_markdown === 'string' ? updates.info_markdown.trim() : '';
-          updates.info_markdown = md || null;
-        }
-      }
+
 
       // Sync header_style / hero_divider_style from color_theme JSON when not
       // explicitly provided in the request body (#158).  This ensures the
