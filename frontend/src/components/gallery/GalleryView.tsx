@@ -762,7 +762,19 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   if (hiddenUntilReveal) {
     const uploadsOn = Boolean(data?.event?.allow_user_uploads || event?.allow_user_uploads);
     return (
-      <GalleryLayout event={event} brandingSettings={brandingSettings}>
+      <GalleryLayout
+        event={{
+          ...event,
+          // The reveal-hidden view still renders the chrome, so the info
+          // banner resolves here too. The context `event` comes from the
+          // gallery login response and carries no banner fields, which would
+          // silently downgrade a per-event 'off' to 'inherit' and show the
+          // global banner on a gallery the admin muted (#932).
+          info_mode: (data?.event as { info_mode?: 'inherit' | 'custom' | 'off' })?.info_mode,
+          info_markdown: (data?.event as { info_markdown?: string | null })?.info_markdown,
+        }}
+        brandingSettings={brandingSettings}
+      >
         <div className="max-w-xl mx-auto text-center py-16 px-4">
           <div className="mx-auto mb-5 w-16 h-16 rounded-full bg-surface flex items-center justify-center">
             <EyeOff className="w-8 h-8 text-muted-theme" />
