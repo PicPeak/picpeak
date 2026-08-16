@@ -54,6 +54,11 @@ export interface BrandingSettings {
   // Per-install promo banner alignment (#482). Defaults to center
   // so the banner aligns with the gallery footer.
   promo_alignment?: 'left' | 'center' | 'right';
+  // Gallery info banner (#932). Must also be mapped in
+  // formatBrandingSettings below — a field declared here but missing
+  // from the read mapper loads empty and the next save wipes it (see
+  // the note on the footer/promo block there).
+  info_markdown?: string;
 }
 
 export interface ThemeSettings {
@@ -376,6 +381,7 @@ export const settingsService = {
       twitter_url: rawSettings.branding_twitter_url || '',
       youtube_url: rawSettings.branding_youtube_url || '',
       promo_markdown: rawSettings.branding_promo_markdown || '',
+      info_markdown: rawSettings.branding_info_markdown || '',
       promo_position: rawSettings.branding_promo_position === 'below_footer' ? 'below_footer' : 'above_footer',
       promo_alignment: ['left', 'center', 'right'].includes(rawSettings.branding_promo_alignment)
         ? rawSettings.branding_promo_alignment
