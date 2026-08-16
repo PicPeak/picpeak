@@ -76,7 +76,18 @@ describe('#1024 — PDF Content-Disposition with non-ASCII customer names', () =
     const res = await request(buildApp({ company_name: company })).get('/pdf');
 
     expect(res.status).toBe(200);
-    expect(res.headers['content-disposition']).toContain(RFC5987_PREFIX);
+    const cd = res.headers['content-disposition'];
+    expect(cd).toContain(RFC5987_PREFIX);
+    // The legacy filename= token drops non-ASCII, so a name written entirely
+    // in another script degrades to just the document number
+    // (`Q-2026-0042_.pdf`). That's the intended trade — filename* carries the
+    // real name — but the fallback must still be a legal, non-empty,
+    // ASCII-only token, since that is what a client without RFC 5987 support
+    // ends up saving.
+    const fallback = /filename="([^"]*)"/.exec(cd)[1];
+    expect(fallback.length).toBeGreaterThan(0);
+    expect(fallback).toMatch(/^[\x20-\x7e]+$/);
+    expect(fallback).toContain('Q-2026-0042');
   });
 
   it('leaves a plain ASCII name on the familiar filename= form', async () => {
