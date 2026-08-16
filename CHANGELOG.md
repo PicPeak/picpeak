@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.46.0](https://github.com/PicPeak/picpeak/compare/v3.45.16...v3.46.0) (2026-08-16)
+
+
+### Features
+
+* **backup:** open sqlite → pg .picpeak restore as the supported upgrade direction ([#1041](https://github.com/PicPeak/picpeak/issues/1041)) ([#1059](https://github.com/PicPeak/picpeak/issues/1059)) ([980378a](https://github.com/PicPeak/picpeak/commit/980378a17ba873d0e2f3d76048dacb3b8d7a4eb2))
+
+
+### Bug Fixes
+
+* **pdf:** RFC 6266-encode Content-Disposition on quote/invoice PDFs ([#1024](https://github.com/PicPeak/picpeak/issues/1024)) ([#1062](https://github.com/PicPeak/picpeak/issues/1062)) ([376311c](https://github.com/PicPeak/picpeak/commit/376311cb9091ff1726e8b383312f22c607dcc8a0))
+* **storage:** add S3 client timeouts so a dropped connection can't wedge uploads ([#1049](https://github.com/PicPeak/picpeak/issues/1049)) ([#1054](https://github.com/PicPeak/picpeak/issues/1054)) ([88fa3c5](https://github.com/PicPeak/picpeak/commit/88fa3c52973fa122f8d4e7b21ba1ffc89f9f9c2e))
+
 ## [3.45.16](https://github.com/PicPeak/picpeak/compare/v3.45.15...v3.45.16) (2026-08-13)
 
 
