@@ -90,7 +90,12 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 #   exiftool — pulls the embedded preview out of RAW/DNG uploads
 #   dumb-init — PID 1 signal handling
 #   su-exec — the root → nodejs privilege drop in wait-for-db.sh (#484)
-RUN apk add --no-cache dumb-init postgresql-client ffmpeg su-exec \
+#   sqlite — DatabaseBackupService.createSQLiteBackup() spawns the `sqlite3`
+#     CLI for `.backup` and PRAGMA integrity_check. The npm sqlite3 module does
+#     not provide that executable. The compose backend image omits it because
+#     it always runs Postgres; this image defaults to SQLite, so without it the
+#     built-in database backup fails with ENOENT.
+RUN apk add --no-cache dumb-init postgresql-client sqlite ffmpeg su-exec \
     fontconfig ttf-dejavu ttf-liberation poppler-utils exiftool && \
     fc-cache -f
 
@@ -101,6 +106,16 @@ COPY --chown=nodejs:nodejs backend/ ./
 
 # The built SPA. SERVE_FRONTEND/FRONTEND_DIR below point server.js at it.
 COPY --from=frontend-builder --chown=nodejs:nodejs /build/dist ./public
+
+# index.html ships with ${BRAND_TITLE} / ${BRAND_DESCRIPTION} placeholders that
+# frontend/docker-entrypoint.sh substitutes at container start. This image runs
+# no nginx and therefore never runs that entrypoint, so without this every AIO
+# install would serve a literal "${BRAND_TITLE}" as its <title> and in every
+# og:/twitter: card. Render them here with the same defaults that entrypoint
+# applies when the vars are unset.
+RUN sed -i 's/\${BRAND_TITLE}/PicPeak/g; s/\${BRAND_DESCRIPTION}/Photo gallery shared with PicPeak./g' \
+      ./public/index.html && \
+    ! grep -q '\${BRAND_' ./public/index.html
 
 RUN chmod -R a+r /app && chmod +x wait-for-db.sh
 
@@ -129,8 +144,14 @@ ENV SERVE_FRONTEND=true \
     LOG_DIR=/data/logs \
     PORT=3000
 
+# /backup is where migrations 029 + 030 seed the built-in backup destinations
+# (/backup/picpeak and /backup/database). Nothing mounts it here, so it is
+# symlinked into the volume: the seeded defaults keep working AND the archives
+# land on /data instead of inside a container that gets replaced on upgrade.
 RUN mkdir -p /data/db /data/storage/events/active /data/storage/events/archived \
-             /data/storage/thumbnails /data/logs && \
+             /data/storage/thumbnails /data/logs \
+             /data/backup/picpeak /data/backup/database && \
+    ln -s /data/backup /backup && \
     chown -R nodejs:nodejs /data
 
 VOLUME ["/data"]

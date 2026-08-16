@@ -436,11 +436,11 @@ jobs:
         file: ./Dockerfile.aio
         platforms: ${{ matrix.platform }}
         labels: ${{ steps.meta-backend.outputs.labels }}
-        cache-from: type=gha,scope=backend-${{ env.PLATFORM_PAIR }}
+        cache-from: type=gha,scope=aio-${{ env.PLATFORM_PAIR }}
         # ignore-error: a flaky GitHub Actions cache write ("error writing
         # layer blob: not_found") must not fail an otherwise-successful build
         # that already pushed the image.
-        cache-to: type=gha,mode=max,scope=backend-${{ env.PLATFORM_PAIR }},ignore-error=true
+        cache-to: type=gha,mode=max,scope=aio-${{ env.PLATFORM_PAIR }},ignore-error=true
         outputs: ${{ steps.push-decision.outputs.push == 'true' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.AIO_IMAGE_NAME) || 'type=cacheonly' }}
         build-args: |
           CACHEBUST=${{ github.run_number }}
@@ -505,7 +505,7 @@ jobs:
         # Distinct category per arch so the Security tab surfaces
         # per-platform findings independently — an amd64-only CVE in
         # a base layer doesn't get masked by the arm64 scan.
-        category: 'backend-vulnerabilities-${{ env.PLATFORM_PAIR }}'
+        category: 'aio-vulnerabilities-${{ env.PLATFORM_PAIR }}'
 
   merge-aio:
     needs: build-aio

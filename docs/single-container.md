@@ -62,6 +62,7 @@ Everything that must survive a container replacement lives under `/data`:
 | `/data/db` | `picpeak.db` (+ `-wal`/`-shm`) and `SETUP_TOKEN` |
 | `/data/storage` | originals, thumbnails, archives |
 | `/data/logs` | application logs |
+| `/data/backup` | built-in backup output (`/backup` is symlinked here) |
 
 One mount point is the whole point. Back up `/data` and you have backed up the
 install.
@@ -80,7 +81,8 @@ Only `JWT_SECRET` is required. Everything else has a working default.
 | `PORT` | `3000` | Listen port inside the container. |
 | `FRONTEND_URL` | — | Public URL. Set it once you are behind a domain, so emails and share links point at the right host. |
 | `SMTP_*` | — | Outbound email. Without it, PicPeak runs fine but sends nothing. |
-| `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | — | Point at an **external** PostgreSQL. Setting these switches the engine off SQLite. |
+| `DATABASE_CLIENT` | `sqlite3` | Set to `pg` to use an external PostgreSQL. Required — the image declares `sqlite3`, and the boot resolver treats a declared client as an explicit instruction, so `DB_*` alone will **not** switch engines. |
+| `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | — | Connection details, used when `DATABASE_CLIENT=pg`. |
 
 ### Using an external PostgreSQL
 

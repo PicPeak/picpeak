@@ -962,8 +962,14 @@ app.use('/api', notFoundHandler);
 // which is exactly what try_files means. GET/HEAD only: a stray POST should
 // still 404 rather than be handed an HTML page.
 if (typeof serveFrontendIndexPath === 'string') {
+  // nginx carves these out as their own `location` blocks, so try_files never
+  // applies to them. The fallback has to mirror that: /photos, /thumbnails and
+  // /uploads are backend-owned file routes whose middleware calls next() when
+  // the file is missing, and swallowing that into a 200 index.html would turn
+  // a missing photo into an HTML body served under an image URL.
+  const BACKEND_OWNED = ['/api/', '/photos/', '/thumbnails/', '/uploads/', '/health'];
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/')) return next();
+    if (BACKEND_OWNED.some((prefix) => req.path.startsWith(prefix))) return next();
     return res.sendFile(serveFrontendIndexPath);
   });
 }
