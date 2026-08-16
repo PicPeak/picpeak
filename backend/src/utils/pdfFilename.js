@@ -20,6 +20,19 @@
  *   - The PDF's internal `Title` metadata (Chrome's PDF viewer
  *     uses this as the default name when saving from a blob URL,
  *     where Content-Disposition can't reach)
+ *
+ * IMPORTANT (#1024): the preserved non-ASCII is exactly what a raw
+ * `filename="${...}"` header cannot carry. HTTP header values are
+ * latin1, so a customer label reaching a header directly either
+ * mangles (U+0080-U+00FF — every German umlaut: `Müller` is sent as
+ * the byte 0xFC and read back as garbage) or throws ERR_INVALID_CHAR
+ * and 500s the request (anything above U+00FF — Polish ł, Czech ř,
+ * Turkish ş, €, Cyrillic, CJK, emoji).
+ *
+ * Never interpolate this result into a header. Pass it through
+ * `buildContentDisposition()` in utils/filenameSanitizer, which emits
+ * an ASCII fallback plus the RFC 5987 `filename*=UTF-8''…` form so the
+ * unicode name survives in browsers and the header stays legal.
  */
 
 function sanitiseSegment(input, maxLen = 80) {
@@ -33,7 +46,18 @@ function sanitiseSegment(input, maxLen = 80) {
   s = s.replace(/-+/g, '-');
   // Trim leading/trailing dashes + dots.
   s = s.replace(/^[-.]+|[-.]+$/g, '');
-  if (s.length > maxLen) s = s.slice(0, maxLen);
+  if (s.length > maxLen) {
+    s = s.slice(0, maxLen);
+    // slice() cuts UTF-16 code units, so a boundary landing inside an astral
+    // character (emoji, rarer CJK) leaves a dangling high surrogate. That is
+    // not merely cosmetic: the lone surrogate makes encodeURIComponent throw
+    // `URIError: URI malformed` inside buildContentDisposition, which 500s
+    // the PDF endpoint — the exact failure #1024 set out to remove, just via
+    // a different route. Drop the orphan rather than widening the cap, so the
+    // byte budget this limit exists to protect is unchanged.
+    const lastUnit = s.charCodeAt(s.length - 1);
+    if (lastUnit >= 0xD800 && lastUnit <= 0xDBFF) s = s.slice(0, -1);
+  }
   return s;
 }
 
