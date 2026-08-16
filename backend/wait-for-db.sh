@@ -31,6 +31,15 @@ unset _pair _var _file _cur
 # hard-coding /app — otherwise the checks below guard directories nothing uses.
 DATA_DIRS="${STORAGE_PATH:-/app/storage} ${DATA_DIR:-/app/data} ${LOG_DIR:-/app/logs}"
 
+# Create the roots before touching them. With the compose layout each of the
+# three is its own mount point, so they always exist — but the single-container
+# image (#1042) mounts ONE volume at /data, and a bind-mounted host directory
+# hides the tree baked into the image. chown would then fail on paths that do
+# not exist and report "the filesystem rejects chown", which is both wrong and
+# a dead end for the NAS users this image is aimed at.
+# shellcheck disable=SC2086 — intentional word-splitting over the three roots
+mkdir -p $DATA_DIRS 2>/dev/null || true
+
 if [ "$(id -u)" = "0" ]; then
   # shellcheck disable=SC2086 — intentional word-splitting over the three roots
   if ! chown -R nodejs:nodejs $DATA_DIRS 2>/dev/null; then
