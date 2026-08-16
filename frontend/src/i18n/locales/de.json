@@ -1462,6 +1462,15 @@
       "placeholder": "Markdown-Inhalt (z. B. **Aktion:** [jetzt Termin buchen](https://example.com))",
       "preview": "Vorschau"
     },
+    "infoBanner": {
+      "title": "Info-Banner",
+      "help": "Ein kurzer Hinweis oberhalb der Fotos in dieser Galerie. „Übernehmen“ nutzt die globale Vorgabe, „Eigener Text“ überschreibt sie für dieses Event, „Aus“ blendet ihn aus.",
+      "mode_inherit": "Globale Vorgabe übernehmen",
+      "mode_custom": "Eigener Text für dieses Event",
+      "mode_off": "Aus (für dieses Event ausblenden)",
+      "placeholder": "Über die Menü-Schaltfläche oben links lassen sich die Fotos filtern.",
+      "preview": "Vorschau"
+    },
     "ogShare": {
       "title": "Heldenbild als Vorschau für geteilte Links verwenden",
       "help": "Beim Teilen der Galerie-URL auf WhatsApp, Facebook, Slack usw. wird das oben gewählte Heldenbild als Link-Vorschau angezeigt. Das Thumbnail wird von Link-Preview-Crawlern ohne Authentifizierung abgerufen — wer die URL teilt, macht damit faktisch dieses Bild öffentlich. Standardmäßig aus; wähle erst ein Heldenbild, das du bewusst öffentlich zeigen möchtest, bevor du diese Option aktivierst.",
@@ -2593,6 +2602,14 @@
       "alignLeft": "Links",
       "alignCenter": "Zentriert (Standard – wie der Footer)",
       "alignRight": "Rechts"
+    },
+    "infoBanner": {
+      "title": "Info-Banner der Galerie",
+      "description": "Ein kurzer Hinweis oberhalb der Fotos in jeder Galerie — praktisch für Bedienhinweise. Leer lassen, um ihn auszublenden. Einzelne Events können ihn überschreiben oder abschalten.",
+      "content": "Inhalt (Markdown)",
+      "placeholder": "Über die Menü-Schaltfläche oben links lassen sich die Fotos filtern.",
+      "markdownHelp": "Fett, kursiv, Links, Listen und Überschriften werden unterstützt. HTML wird entfernt.",
+      "preview": "Vorschau"
     }
   },
   "admin": {

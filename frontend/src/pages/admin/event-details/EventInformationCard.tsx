@@ -524,6 +524,54 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
             )}
           </div>
 
+          {/* Info Banner Override (#932) — three-way: inherit / custom / off.
+              Mirrors the promotional override above, but this banner renders
+              at the TOP of the gallery, above the photos. */}
+          <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
+              {t('events.infoBanner.title', 'Info Banner')}
+            </h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+              {t('events.infoBanner.help', 'A short note shown above the photos in this gallery. "Inherit" uses your global default; "Custom" overrides it for this event; "Off" hides it entirely.')}
+            </p>
+            <div className="space-y-2">
+              {(['inherit', 'custom', 'off'] as const).map((mode) => (
+                <label key={mode} className="flex items-center">
+                  <input
+                    type="radio"
+                    name="info_mode"
+                    value={mode}
+                    checked={editForm.info_mode === mode}
+                    onChange={() => setEditForm(prev => ({ ...prev, info_mode: mode }))}
+                    className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 focus:ring-primary-500"
+                  />
+                  <span className="ml-2 text-sm text-neutral-700 dark:text-neutral-300">
+                    {t(`events.infoBanner.mode_${mode}`, mode === 'inherit' ? 'Inherit global default' : mode === 'custom' ? 'Custom override for this event' : 'Off (hide for this event)')}
+                  </span>
+                </label>
+              ))}
+            </div>
+            {editForm.info_mode === 'custom' && (
+              <div className="mt-3 space-y-2">
+                <textarea
+                  value={editForm.info_markdown}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, info_markdown: e.target.value }))}
+                  rows={3}
+                  placeholder={t('events.infoBanner.placeholder', 'Use the menu button in the top-left corner to filter the photos.')}
+                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark font-mono text-sm"
+                />
+                {editForm.info_markdown.trim() && (
+                  <div className="border border-neutral-200 dark:border-neutral-700 rounded-lg p-3 bg-neutral-50 dark:bg-neutral-900">
+                    <p className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400 mb-2">
+                      {t('events.infoBanner.preview', 'Preview')}
+                    </p>
+                    <MarkdownContent source={editForm.info_markdown} className="text-sm text-neutral-800 dark:text-neutral-200 prose-sm prose-a:text-primary-600 dark:prose-a:text-primary-400" />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Download Protection Settings */}
           <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
             <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3 flex items-center gap-2">

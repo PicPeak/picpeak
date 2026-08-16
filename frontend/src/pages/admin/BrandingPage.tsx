@@ -51,6 +51,7 @@ export const BrandingPage: React.FC = () => {
     promo_markdown: '',
     promo_position: 'above_footer',
     promo_alignment: 'center',
+    info_markdown: '',
   });
 
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig>(theme);
@@ -566,6 +567,50 @@ export const BrandingPage: React.FC = () => {
                         : brandingSettings.promo_alignment === 'right' ? 'text-right'
                         : 'text-center'
                     }`}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Gallery info banner (#932) — markdown rendered ABOVE the photo
+              grid, so guests see it on load. Distinct from the promotional
+              banner above, which stays by the footer for marketing copy.
+              Per-event override lives on the Edit Event form; this is the
+              global default that applies to every gallery. */}
+          <div className="mt-6 pt-6 border-t border-neutral-200 dark:border-neutral-700">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
+              {t('branding.infoBanner.title', 'Gallery Info Banner')}
+            </h3>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
+              {t('branding.infoBanner.description', 'A short note shown at the top of every gallery, above the photos — useful for usage hints. Leave empty to hide it. Individual events can override or switch it off.')}
+            </p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+                  {t('branding.infoBanner.content', 'Content (markdown)')}
+                </label>
+                <textarea
+                  value={brandingSettings.info_markdown || ''}
+                  onChange={(e) => handleBrandingChange('info_markdown', e.target.value)}
+                  className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 font-mono text-sm"
+                  rows={3}
+                  placeholder={t('branding.infoBanner.placeholder', 'Use the menu button in the top-left corner to filter the photos.')}
+                />
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                  {t('branding.infoBanner.markdownHelp', 'Bold, italic, links, lists, and headings supported. HTML is stripped.')}
+                </p>
+              </div>
+              {brandingSettings.info_markdown && brandingSettings.info_markdown.trim() && (
+                <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 p-4 bg-neutral-50 dark:bg-neutral-800/40">
+                  <div className="text-xs uppercase tracking-wider text-neutral-500 dark:text-neutral-400 mb-2">
+                    {t('branding.infoBanner.preview', 'Preview')}
+                  </div>
+                  {/* Mirrors the live gallery render — centred, same prose
+                      classes — so the admin sees what guests will see. */}
+                  <MarkdownContent
+                    source={brandingSettings.info_markdown}
+                    className="text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm prose-a:text-primary-600 dark:prose-a:text-primary-400 text-center"
                   />
                 </div>
               )}

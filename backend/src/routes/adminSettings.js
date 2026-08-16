@@ -927,7 +927,9 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
       youtube_url,
       promo_markdown,
       promo_position,
-      promo_alignment
+      promo_alignment,
+      // Info banner (#932). Markdown only, same sanitiser path as promo.
+      info_markdown
     } = req.body;
 
     // Normalize force_color_mode: only 'dark' | 'light' | null are valid.
@@ -995,6 +997,7 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
       ...(twitter_url !== undefined   && { twitter_url:   String(twitter_url   || '').trim() }),
       ...(youtube_url !== undefined   && { youtube_url:   String(youtube_url   || '').trim() }),
       ...(promo_markdown !== undefined && { promo_markdown: typeof promo_markdown === 'string' ? promo_markdown : '' }),
+      ...(info_markdown !== undefined && { info_markdown: typeof info_markdown === 'string' ? info_markdown : '' }),
       ...(promo_position !== undefined && { promo_position: normalizedPromoPosition }),
       ...(promo_alignment !== undefined && { promo_alignment: normalizedPromoAlignment })
     };

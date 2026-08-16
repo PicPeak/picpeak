@@ -1003,6 +1003,15 @@
       "placeholder": "Markdown content (e.g. **Special offer:** [book your next session](https://example.com))",
       "preview": "Preview"
     },
+    "infoBanner": {
+      "title": "Info Banner",
+      "help": "A short note shown above the photos in this gallery. \"Inherit\" uses your global default; \"Custom\" overrides it for this event; \"Off\" hides it entirely.",
+      "mode_inherit": "Inherit global default",
+      "mode_custom": "Custom override for this event",
+      "mode_off": "Off (hide for this event)",
+      "placeholder": "Use the menu button in the top-left corner to filter the photos.",
+      "preview": "Preview"
+    },
     "ogShare": {
       "title": "Use hero photo as social-share preview",
       "help": "When this gallery URL is shared on WhatsApp, Facebook, Slack, etc., the link preview will show the hero photo above. The thumbnail is fetched unauthenticated by link-preview crawlers — anyone with the URL effectively makes this image public. Off by default; pick a hero you are comfortable surfacing publicly before enabling.",
@@ -2165,6 +2174,14 @@
       "alignLeft": "Left",
       "alignCenter": "Center (default — matches footer)",
       "alignRight": "Right"
+    },
+    "infoBanner": {
+      "title": "Gallery Info Banner",
+      "description": "A short note shown at the top of every gallery, above the photos — useful for usage hints. Leave empty to hide it. Individual events can override or switch it off.",
+      "content": "Content (markdown)",
+      "placeholder": "Use the menu button in the top-left corner to filter the photos.",
+      "markdownHelp": "Bold, italic, links, lists, and headings supported. HTML is stripped.",
+      "preview": "Preview"
     }
   },
   "admin": {

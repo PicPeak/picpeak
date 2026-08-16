@@ -45,6 +45,9 @@ export type EditFormState = {
   //   off     → no promo for this event regardless of global
   promo_mode: 'inherit' | 'custom' | 'off';
   promo_markdown: string;
+  // Info banner (#932) — same three-way mode, rendered above the grid.
+  info_mode: 'inherit' | 'custom' | 'off';
+  info_markdown: string;
   // Customer accounts assigned to this event (#354). Hydrated from
   // the GET /admin/events/:id response and sent back as a flat id
   // array on save.
@@ -93,6 +96,8 @@ export const INITIAL_EDIT_FORM: EditFormState = {
   // Per-event promotional override (#440)
   promo_mode: 'inherit',
   promo_markdown: '',
+  info_mode: 'inherit',
+  info_markdown: '',
   // Customer accounts (#354) — hydrated from event response.
   customer_accounts: [],
   // Per-event social-share opt-in (#474). Default false everywhere

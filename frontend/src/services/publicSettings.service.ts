@@ -44,6 +44,8 @@ export interface PublicSettings {
   branding_twitter_url?: string;
   branding_youtube_url?: string;
   branding_promo_markdown?: string;
+  // Global default for the gallery info banner (#932).
+  branding_info_markdown?: string;
   branding_promo_position?: 'above_footer' | 'below_footer';
   // Per-install promo banner alignment (#482). Defaults to 'center'
   // so the banner aligns with the gallery footer's centering.

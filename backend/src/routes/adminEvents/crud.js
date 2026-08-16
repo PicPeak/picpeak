@@ -117,6 +117,10 @@ module.exports = (router) => {
     //   off     → suppress entirely for this event
     body('promo_mode').optional().isIn(['inherit', 'custom', 'off']),
     body('promo_markdown').optional({ nullable: true }).isString(),
+    // Per-event info-banner override (#932). Same three-way mode as promo,
+    // but resolved against branding_info_markdown and rendered above the grid.
+    body('info_mode').optional().isIn(['inherit', 'custom', 'off']),
+    body('info_markdown').optional({ nullable: true }).isString(),
     // Per-event opt-in for using hero photo as the social-share preview
     // image (#474). When false (default), galleryOgService falls back to
     // the brand logo for og:image / Twitter Card.
@@ -1264,6 +1268,10 @@ module.exports = (router) => {
     //   off     → suppress entirely for this event
     body('promo_mode').optional().isIn(['inherit', 'custom', 'off']),
     body('promo_markdown').optional({ nullable: true }).isString(),
+    // Per-event info-banner override (#932). Same three-way mode as promo,
+    // but resolved against branding_info_markdown and rendered above the grid.
+    body('info_mode').optional().isIn(['inherit', 'custom', 'off']),
+    body('info_markdown').optional({ nullable: true }).isString(),
     // Per-event opt-in for using hero photo as the social-share preview
     // image (#474). When false (default), galleryOgService falls back to
     // the brand logo for og:image / Twitter Card.
@@ -1537,6 +1545,20 @@ module.exports = (router) => {
         } else if (Object.prototype.hasOwnProperty.call(updates, 'promo_markdown')) {
           const md = typeof updates.promo_markdown === 'string' ? updates.promo_markdown.trim() : '';
           updates.promo_markdown = md || null;
+        }
+      }
+
+      // Per-event info-banner override (#932). Identical normalisation to
+      // promo above — mode != custom drops the stored text so switching
+      // modes can't leave stale copy behind.
+      if (Object.prototype.hasOwnProperty.call(updates, 'info_mode')
+      || Object.prototype.hasOwnProperty.call(updates, 'info_markdown')) {
+        const mode = updates.info_mode;
+        if (mode && mode !== 'custom') {
+          updates.info_markdown = null;
+        } else if (Object.prototype.hasOwnProperty.call(updates, 'info_markdown')) {
+          const md = typeof updates.info_markdown === 'string' ? updates.info_markdown.trim() : '';
+          updates.info_markdown = md || null;
         }
       }
 

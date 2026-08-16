@@ -261,7 +261,9 @@ router.get('/:slug/info', async (req, res) => {
         // ready-to-render markdown string happens below so the
         // frontend doesn't have to know about modes.
         'promo_mode',
-        'promo_markdown'
+        'promo_markdown',
+        'info_mode',
+        'info_markdown'
       )
       .first();
 
@@ -342,7 +344,11 @@ router.get('/:slug/info', async (req, res) => {
       // Per-event promotional override (#440). Frontend resolves
       // 'inherit' against branding_promo_markdown from public settings.
       promo_mode: event.promo_mode || 'inherit',
-      promo_markdown: event.promo_markdown || null
+      promo_markdown: event.promo_markdown || null,
+      // Info banner (#932). Same inherit/custom/off semantics as promo,
+      // resolved against branding_info_markdown from public settings.
+      info_mode: event.info_mode || 'inherit',
+      info_markdown: event.info_markdown || null
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to fetch gallery info');
@@ -939,6 +945,12 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         hero_divider_style: req.event.hero_divider_style || 'wave',
         hero_image_anchor: req.event.hero_image_anchor || 'center',
         default_photo_sort: req.event.default_photo_sort || 'upload_date_desc',
+        // Info banner override (#932). GalleryAuthContext refreshes its cached
+        // event from THIS payload, so the fields have to travel here — /info
+        // alone isn't enough, the context stops reading it once the guest is
+        // authenticated.
+        info_mode: req.event.info_mode || 'inherit',
+        info_markdown: req.event.info_markdown || null,
         download_zip_ready: !!(req.event.download_zip_path && req.event.download_zip_generated_at),
         // Mirror of the admin-side toggle so the lightbox can decide
         // whether to surface original camera filenames (#508).

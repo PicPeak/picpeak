@@ -354,7 +354,9 @@ export const EventDetailsPage: React.FC = () => {
       default_photo_sort: event.default_photo_sort || 'upload_date_desc',
       // Per-event promotional override (#440)
       promo_mode: ((event as { promo_mode?: 'inherit' | 'custom' | 'off' }).promo_mode) || 'inherit',
+      info_mode: ((event as { info_mode?: 'inherit' | 'custom' | 'off' }).info_mode) || 'inherit',
       promo_markdown: (event as { promo_markdown?: string }).promo_markdown || '',
+      info_markdown: (event as { info_markdown?: string }).info_markdown || '',
       // Customer accounts (#354). The backend returns
       // `customer_accounts: [{ id, email, display_name, ... }]`; map to
       // the picker's shape.
@@ -493,6 +495,8 @@ export const EventDetailsPage: React.FC = () => {
       // promo_markdown automatically when mode != 'custom'.
       promo_mode: editForm.promo_mode,
       promo_markdown: editForm.promo_mode === 'custom' ? editForm.promo_markdown : null,
+      info_mode: editForm.info_mode,
+      info_markdown: editForm.info_mode === 'custom' ? editForm.info_markdown : null,
       // Customer accounts (#354) — flat array of ids. Backend diffs
       // against existing assignments in one transaction.
       customer_account_ids: editForm.customer_accounts.map((c) => c.id),

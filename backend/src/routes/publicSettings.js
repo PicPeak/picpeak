@@ -95,6 +95,10 @@ router.get('/', async (req, res) => {
       branding_twitter_url: settingsObject.branding_twitter_url || '',
       branding_youtube_url: settingsObject.branding_youtube_url || '',
       branding_promo_markdown: settingsObject.branding_promo_markdown || '',
+      // Info banner (#932). Rendered ABOVE the photo grid, unlike the promo
+      // banner by the footer — an onboarding hint is useless below a gallery
+      // the guest has to scroll past. Empty = off everywhere.
+      branding_info_markdown: settingsObject.branding_info_markdown || '',
       branding_promo_position: settingsObject.branding_promo_position === 'below_footer'
         ? 'below_footer'
         : 'above_footer',

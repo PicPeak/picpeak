@@ -24,6 +24,10 @@ interface GalleryLayoutProps {
     // 'off' hides the promo slot entirely for this event.
     promo_mode?: 'inherit' | 'custom' | 'off';
     promo_markdown?: string | null;
+    // Per-event info-banner override (#932). Same three-way mode as promo,
+    // but the slot renders above the photo grid instead of by the footer.
+    info_mode?: 'inherit' | 'custom' | 'off';
+    info_markdown?: string | null;
   };
   // Effective hero-logo visibility for THIS gallery, already resolved by the
   // backend (per-event override, else the global branding toggle) (#756).
@@ -59,6 +63,8 @@ interface GalleryLayoutProps {
     // Horizontal alignment for the promo content (#482). Defaults
     // to 'center' so the banner aligns with the footer.
     promo_alignment?: 'left' | 'center' | 'right';
+    // Global default for the info banner (#932). Empty = off everywhere.
+    info_markdown?: string;
   };
   showLogout?: boolean;
   onLogout?: () => void;
@@ -284,6 +290,32 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
         <MarkdownContent
           source={promoMarkdown}
           className={`prose prose-sm max-w-none mx-auto text-sm text-theme prose-a:text-accent ${promoTextAlignClass}`}
+        />
+      </div>
+    </div>
+  ) : null;
+
+  // Info banner (#932). Resolved exactly like promo above, but rendered
+  // above the photo grid: the reporter's case is an onboarding hint ("use
+  // the menu button to filter"), which a guest must see on load rather than
+  // after scrolling the whole gallery. No alignment knob — this is short
+  // helper copy, not marketing content, so it stays centred with the grid.
+  const infoMode = event.info_mode || 'inherit';
+  const infoMarkdown = (() => {
+    if (infoMode === 'off') return '';
+    if (infoMode === 'custom') {
+      const eventMd = (event.info_markdown || '').trim();
+      return eventMd || (brandingSettings?.info_markdown || '');
+    }
+    return brandingSettings?.info_markdown || '';
+  })().trim();
+
+  const infoSlot = infoMarkdown ? (
+    <div className="gallery-info-banner border-b border-surface bg-surface/50">
+      <div className="container py-3 sm:py-4 px-4">
+        <MarkdownContent
+          source={infoMarkdown}
+          className="prose prose-sm max-w-none text-sm text-theme prose-a:text-accent text-center"
         />
       </div>
     </div>
@@ -677,6 +709,9 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
           </div>
         </div>
       )}
+
+      {/* Info banner (#932) — above the grid so guests see it on load. */}
+      {infoSlot}
 
       {/* Main Content */}
       <main className="container">{children}</main>
