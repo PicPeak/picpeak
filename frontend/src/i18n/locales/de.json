@@ -352,6 +352,10 @@
     }
   },
   "backup": {
+    "picpeak": {
+      "restoreIntro": "Laden Sie eine .picpeak-Datei von dieser oder einer anderen Instanz hoch. Die Wiederherstellung eines SQLite-Backups auf einer PostgreSQL-Instanz wird unterstützt (Upgrade-Pfad); ansonsten müssen die Datenbank-Engines übereinstimmen.",
+      "crossEngineNote": "Engine-übergreifende Wiederherstellung: Ein SQLite-Backup wurde auf diese PostgreSQL-Instanz übernommen."
+    },
     "title": "Backup-Verwaltung",
     "subtitle": "Verwalten Sie System-Backups, konfigurieren Sie automatisierte Backups und stellen Sie vorherige Backups wieder her.",
     "tabs": {
@@ -1795,27 +1799,7 @@
       "title": "E-Mail-Einstellungen"
     },
     "backup": {
-      "title": "Backup",
-      "picpeak": {
-        "title": "Portables Backup (.picpeak)",
-        "intro": "Laden Sie eine einzelne, in sich geschlossene Datei herunter und laden Sie sie auf einer anderen Instanz hoch, um diese zu klonen — komplett im Browser.",
-        "includePhotos": "Original-Galeriefotos einschließen (größere Datei)",
-        "secretsWarning": "Diese Datei enthält Geheimnisse im Klartext (E-Mail-Passwort, Admin-Zugangsdaten, API-Schlüssel). Bewahren Sie sie sicher auf und übertragen Sie sie nur über vertrauenswürdige Kanäle.",
-        "download": ".picpeak herunterladen",
-        "downloadFailed": "Die Backup-Datei konnte nicht erstellt werden.",
-        "restoreTitle": "Aus einer .picpeak wiederherstellen",
-        "restoreIntro": "Laden Sie eine .picpeak von dieser oder einer anderen Instanz hoch. Nur dieselbe Datenbank-Engine.",
-        "chooseFile": ".picpeak-Datei auswählen…",
-        "restoreDone": "Backup wiederhergestellt.",
-        "restoreFailed": "Wiederherstellung fehlgeschlagen.",
-        "restoreSummary": "{{tables}} Tabellen und {{files}} Dateien wiederhergestellt.",
-        "externalMediaNote": "Dieses Backup verweist auf eine externe Medienbibliothek. Stellen Sie sicher, dass das externe Medien-Routing auf dieser Instanz konfiguriert ist.",
-        "externalMediaLink": "Einrichtungsanleitung",
-        "reload": "App neu laden",
-        "confirmTitle": "Die Wiederherstellung löscht alle aktuellen Daten",
-        "confirmBody": "Dies ersetzt ALLE Daten auf dieser Instanz dauerhaft durch das hochgeladene Backup, mit Ausnahme Ihres aktuellen Kontos. Dies kann nicht rückgängig gemacht werden.",
-        "confirmRestore": "Löschen & wiederherstellen"
-      }
+      "title": "Backup"
     },
     "branding": {
       "title": "Branding"
