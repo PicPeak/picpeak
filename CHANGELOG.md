@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.103.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.102.2-beta.0...v3.103.0-beta.0) (2026-08-16)
+
+
+### Features
+
+* **permissions:** granular permission gating + role editor & presets ([#747](https://github.com/PicPeak/picpeak/issues/747), phase 1 of [#743](https://github.com/PicPeak/picpeak/issues/743)) ([#1045](https://github.com/PicPeak/picpeak/issues/1045)) ([b118695](https://github.com/PicPeak/picpeak/commit/b118695474b30f848e79d0ce8f52e051b5b8217b))
+
 ## [3.102.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.102.1-beta.0...v3.102.2-beta.0) (2026-08-13)
 
 
