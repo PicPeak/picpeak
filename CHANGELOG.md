@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.105.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.104.1-beta.0...v3.105.0-beta.0) (2026-08-16)
+
+
+### Features
+
+* **gallery:** info banner above the photo grid ([#932](https://github.com/PicPeak/picpeak/issues/932)) ([#1063](https://github.com/PicPeak/picpeak/issues/1063)) ([b48fa62](https://github.com/PicPeak/picpeak/commit/b48fa62eea5117c3e09bb6c8a7d3dc02931ee8f9))
+
 ## [3.104.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.104.0-beta.0...v3.104.1-beta.0) (2026-08-16)
 
 
