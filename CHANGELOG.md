@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.103.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.103.0-beta.0...v3.103.1-beta.0) (2026-08-16)
+
+
+### Bug Fixes
+
+* **storage:** add S3 client timeouts so a dropped connection can't wedge uploads ([#1049](https://github.com/PicPeak/picpeak/issues/1049)) ([3600231](https://github.com/PicPeak/picpeak/commit/3600231d5f059cb7fd7250430a26bf0b0396a87f))
+
 ## [3.103.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.102.2-beta.0...v3.103.0-beta.0) (2026-08-16)
 
 
