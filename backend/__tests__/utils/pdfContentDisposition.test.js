@@ -27,7 +27,7 @@
 const express = require('express');
 const request = require('supertest');
 
-const { buildPdfFilename } = require('../../src/utils/pdfFilename');
+const { buildPdfFilename, sanitiseSegment } = require('../../src/utils/pdfFilename');
 const { buildContentDisposition } = require('../../src/utils/filenameSanitizer');
 
 // The RFC 5987 parameter prefix, i.e. filename*=UTF-8'' — the two trailing
@@ -103,6 +103,31 @@ describe('#1024 — PDF Content-Disposition with non-ASCII customer names', () =
 
     expect(res.status).toBe(200);
     expect(res.headers['content-disposition']).toContain('quote-preview_customer.pdf');
+  });
+
+  // sanitiseSegment caps each segment at 80 UTF-16 code units. A cap landing
+  // inside an astral character used to leave a dangling high surrogate, which
+  // makes encodeURIComponent throw URIError inside buildContentDisposition —
+  // a 500 on the very endpoint this PR fixes, reached a different way.
+  it.each([
+    ['emoji on the 80-char boundary',      `${'a'.repeat(79)}🎉`],
+    ['astral CJK on the boundary',         `${'a'.repeat(79)}𠜎`],
+    ['a label that is entirely astral',    '🎉'.repeat(60)],
+  ])('does not 500 when truncation splits a surrogate pair — %s', async (_label, company) => {
+    const res = await request(buildApp({ company_name: company })).get('/pdf');
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-disposition']).toContain(RFC5987_PREFIX);
+  });
+
+  it('drops the orphaned surrogate rather than widening the length cap', () => {
+    const seg = sanitiseSegment(`${'a'.repeat(79)}🎉`);
+
+    // 79 'a's + a half-emoji would be 80; the orphan is dropped, not kept.
+    expect(seg).toHaveLength(79);
+    expect(seg).toBe('a'.repeat(79));
+    // Nothing in the result may be an unpaired surrogate.
+    expect(seg).toBe(seg.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, ''));
   });
 
   it('the raw interpolation these routes used to do really does throw', () => {

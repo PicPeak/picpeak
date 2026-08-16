@@ -46,7 +46,18 @@ function sanitiseSegment(input, maxLen = 80) {
   s = s.replace(/-+/g, '-');
   // Trim leading/trailing dashes + dots.
   s = s.replace(/^[-.]+|[-.]+$/g, '');
-  if (s.length > maxLen) s = s.slice(0, maxLen);
+  if (s.length > maxLen) {
+    s = s.slice(0, maxLen);
+    // slice() cuts UTF-16 code units, so a boundary landing inside an astral
+    // character (emoji, rarer CJK) leaves a dangling high surrogate. That is
+    // not merely cosmetic: the lone surrogate makes encodeURIComponent throw
+    // `URIError: URI malformed` inside buildContentDisposition, which 500s
+    // the PDF endpoint — the exact failure #1024 set out to remove, just via
+    // a different route. Drop the orphan rather than widening the cap, so the
+    // byte budget this limit exists to protect is unchanged.
+    const lastUnit = s.charCodeAt(s.length - 1);
+    if (lastUnit >= 0xD800 && lastUnit <= 0xDBFF) s = s.slice(0, -1);
+  }
   return s;
 }
 
