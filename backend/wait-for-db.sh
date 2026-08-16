@@ -29,7 +29,18 @@ unset _pair _var _file _cur
 # single-container image (#1042) points all three under one mounted volume,
 # so these must follow the same env vars the app itself reads rather than
 # hard-coding /app — otherwise the checks below guard directories nothing uses.
-DATA_DIRS="${STORAGE_PATH:-/app/storage} ${DATA_DIR:-/app/data} ${LOG_DIR:-/app/logs} ${BACKUP_DIR:-/backup}"
+DATA_DIRS="${STORAGE_PATH:-/app/storage} ${DATA_DIR:-/app/data} ${LOG_DIR:-/app/logs}"
+
+# The backup root is adopted when it exists, but never gates startup. It is
+# optional: docker-compose.production.yml does not mount /backup, so a hardened
+# non-root deployment would fail `mkdir -p /backup` against a root-owned / and
+# stop booting over a directory it never needed. Only a path the operator has
+# explicitly configured (BACKUP_DIR, which the AIO image sets) joins the
+# adopted set.
+BACKUP_ROOT="${BACKUP_DIR:-}"
+if [ -n "$BACKUP_ROOT" ]; then
+  DATA_DIRS="$DATA_DIRS $BACKUP_ROOT"
+fi
 
 # Create the roots before touching them. With the compose layout each of the
 # three is its own mount point, so they always exist — but the single-container
@@ -170,7 +181,9 @@ mkdir -p "$STORAGE_BASE/events/active" "$STORAGE_BASE/events/archived" "$STORAGE
 # subdirectories baked into the image are hidden, and the backup services do not
 # create them, so a scheduled or manual backup fails with ENOENT.
 BACKUP_BASE="${BACKUP_DIR:-/backup}"
-mkdir -p "$BACKUP_BASE/picpeak" "$BACKUP_BASE/database" 2>/dev/null || true
+if [ -d "$BACKUP_BASE" ]; then
+  mkdir -p "$BACKUP_BASE/picpeak" "$BACKUP_BASE/database" 2>/dev/null || true
+fi
 
 # Resolve which database engine this boot should use (#1038) BEFORE migrations
 # run, while the Postgres target is still untouched. An install that has been

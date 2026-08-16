@@ -170,10 +170,17 @@ EXPOSE 3000
 # than just a live socket. No start-period padding for a Postgres wait is
 # needed on the default SQLite path, but external-Postgres users get the same
 # 60s grace as the compose image.
+# Shell form so it resolves $PORT: the docs advertise PORT as configurable, and
+# a hard-coded 3000 would mark an otherwise healthy container unhealthy forever
+# the moment someone changed it.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-3000}/health" || exit 1
 
 # No USER directive: the container starts as root so wait-for-db.sh can chown a
 # bind-mounted /data to UID 1001 before dropping privileges via su-exec (#484).
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["/usr/local/bin/docker-entrypoint.aio.sh", "node", "server.js"]
+# --max-http-header-size matches nginx's `large_client_header_buffers 4 32k`.
+# Node defaults to 16 KiB, and requests reach it directly here — a guest who has
+# accumulated several per-gallery JWT cookies would be rejected before Express
+# ever saw the request, with no way out but clearing cookies.
+CMD ["/usr/local/bin/docker-entrypoint.aio.sh", "node", "--max-http-header-size=32768", "server.js"]
