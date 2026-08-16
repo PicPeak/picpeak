@@ -240,6 +240,7 @@ router.post('/picpeak/import', adminAuth, requirePermission('backup.restore'), p
       tables: result.tables,
       filesRestored: result.filesRestored,
       usesExternalMedia: result.usesExternalMedia,
+      crossEngine: result.crossEngine,
       sessionInvalidated: true,
     });
   } catch (error) {

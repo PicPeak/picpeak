@@ -16,6 +16,7 @@ interface RestoreResult {
   tables: number;
   filesRestored: number;
   usesExternalMedia: boolean;
+  crossEngine?: boolean;
   sessionInvalidated?: boolean;
 }
 
@@ -137,7 +138,7 @@ export const PicpeakRestoreCard: React.FC = () => {
         {t('backup.picpeak.restoreTitle', 'Restore from a .picpeak')}
       </h3>
       <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-        {t('backup.picpeak.restoreIntro', 'Upload a .picpeak taken from this or another instance. Same database engine only.')}
+        {t('backup.picpeak.restoreIntro', 'Upload a .picpeak taken from this or another instance. Restoring a SQLite backup onto a PostgreSQL instance is supported (the upgrade path); other engine combinations must match.')}
       </p>
       <input ref={fileRef} type="file" accept=".picpeak,application/zip" className="hidden" onChange={onFilePick} />
       <Button
@@ -163,6 +164,11 @@ export const PicpeakRestoreCard: React.FC = () => {
                   files: result.filesRestored,
                 })}
               </p>
+              {result.crossEngine && (
+                <p className="mt-0.5 text-xs text-green-700 dark:text-green-300">
+                  {t('backup.picpeak.crossEngineNote', 'Cross-engine restore: a SQLite backup was converted onto this PostgreSQL instance.')}
+                </p>
+              )}
               {result.usesExternalMedia && (
                 <p className="mt-2 flex items-start gap-1 text-xs text-amber-800 dark:text-amber-300">
                   <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />

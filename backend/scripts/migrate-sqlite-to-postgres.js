@@ -201,9 +201,9 @@ async function phaseImport(archivePath) {
   const { importFromPicpeak } = require('../src/services/picpeakImportService');
   // No currentAdminId: this is a CLI, there is no operator session to preserve.
   // The SQLite install's own admin accounts come across with everything else.
-  // allowEngineSwitch: moving between engines is the whole point here. The
-  // upload/restore UI keeps refusing it.
-  const summary = await importFromPicpeak({ picpeakPath: archivePath, allowEngineSwitch: true });
+  // sqlite → pg is allowed by validateManifest's direction policy (#1041) —
+  // the same gate the upload/restore UI uses, no separate opt-in flag.
+  const summary = await importFromPicpeak({ picpeakPath: archivePath });
   return JSON.stringify(summary || {});
 }
 
