@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.104.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.104.0-beta.0...v3.104.1-beta.0) (2026-08-16)
+
+
+### Bug Fixes
+
+* **pdf:** RFC 6266-encode Content-Disposition on quote/invoice PDFs ([#1024](https://github.com/PicPeak/picpeak/issues/1024)) ([#1055](https://github.com/PicPeak/picpeak/issues/1055)) ([3a11e6e](https://github.com/PicPeak/picpeak/commit/3a11e6ebb5542a526a92c66f12e13d5a30aba7b2))
+
 ## [3.104.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.103.1-beta.0...v3.104.0-beta.0) (2026-08-16)
 
 
