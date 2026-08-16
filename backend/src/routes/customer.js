@@ -566,6 +566,7 @@ router.get('/quotes/:id/pdf', customerAuth, async (req, res) => {
     const quoteService = require('../services/quoteService');
     const buf = await quoteService.renderQuotePdfBuffer(quote.id);
     const { buildPdfFilename } = require('../utils/pdfFilename');
+    const { buildContentDisposition } = require('../utils/filenameSanitizer');
     const customer = await dbi('customer_accounts').where({ id: req.customer.id }).first();
     const filename = buildPdfFilename({
       docNumber: quote.quote_number,
@@ -573,7 +574,7 @@ router.get('/quotes/:id/pdf', customerAuth, async (req, res) => {
       fallback: `quote-${quote.id}`,
     });
     res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', `inline; filename="${filename}"`);
+    res.set('Content-Disposition', buildContentDisposition(filename, 'inline'));
     res.send(buf);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to render quote PDF');
@@ -597,6 +598,7 @@ router.get('/invoices/:id/pdf', customerAuth, async (req, res) => {
     const invoiceService = require('../services/invoiceService');
     const buf = await invoiceService.renderInvoicePdfBuffer(invoice.id);
     const { buildPdfFilename } = require('../utils/pdfFilename');
+    const { buildContentDisposition } = require('../utils/filenameSanitizer');
     const customer = await dbi('customer_accounts').where({ id: req.customer.id }).first();
     const filename = buildPdfFilename({
       docNumber: invoice.invoice_number,
@@ -604,7 +606,7 @@ router.get('/invoices/:id/pdf', customerAuth, async (req, res) => {
       fallback: `invoice-${invoice.id}`,
     });
     res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', `inline; filename="${filename}"`);
+    res.set('Content-Disposition', buildContentDisposition(filename, 'inline'));
     res.send(buf);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to render invoice PDF');
