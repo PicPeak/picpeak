@@ -20,6 +20,19 @@
  *   - The PDF's internal `Title` metadata (Chrome's PDF viewer
  *     uses this as the default name when saving from a blob URL,
  *     where Content-Disposition can't reach)
+ *
+ * IMPORTANT (#1024): the preserved non-ASCII is exactly what a raw
+ * `filename="${...}"` header cannot carry. HTTP header values are
+ * latin1, so a customer label reaching a header directly either
+ * mangles (U+0080-U+00FF — every German umlaut: `Müller` is sent as
+ * the byte 0xFC and read back as garbage) or throws ERR_INVALID_CHAR
+ * and 500s the request (anything above U+00FF — Polish ł, Czech ř,
+ * Turkish ş, €, Cyrillic, CJK, emoji).
+ *
+ * Never interpolate this result into a header. Pass it through
+ * `buildContentDisposition()` in utils/filenameSanitizer, which emits
+ * an ASCII fallback plus the RFC 5987 `filename*=UTF-8''…` form so the
+ * unicode name survives in browsers and the header stays legal.
  */
 
 function sanitiseSegment(input, maxLen = 80) {

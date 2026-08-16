@@ -537,6 +537,7 @@ router.get(
     const id = parseInt(req.params.id, 10);
     const buf = await quoteService.renderQuotePdfBuffer(id);
     const { buildPdfFilename } = require('../utils/pdfFilename');
+    const { buildContentDisposition } = require('../utils/filenameSanitizer');
     const quote = await db('quotes').where({ id }).first();
     const customer = quote ? await db('customer_accounts').where({ id: quote.customer_account_id }).first() : null;
     const filename = buildPdfFilename({
@@ -545,7 +546,7 @@ router.get(
       fallback: `quote-${id}`,
     });
     res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', `inline; filename="${filename}"`);
+    res.set('Content-Disposition', buildContentDisposition(filename, 'inline'));
     res.send(buf);
   })
 );
@@ -559,6 +560,7 @@ router.post(
     const payload = mapPayloadToService(req.body);
     const buf = await quoteService.renderQuotePdfFromPayload(payload);
     const { buildPdfFilename } = require('../utils/pdfFilename');
+    const { buildContentDisposition } = require('../utils/filenameSanitizer');
     const customer = payload.customerAccountId
       ? await db('customer_accounts').where({ id: payload.customerAccountId }).first()
       : null;
@@ -568,7 +570,7 @@ router.post(
       fallback: 'quote-preview',
     });
     res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', `inline; filename="${filename}"`);
+    res.set('Content-Disposition', buildContentDisposition(filename, 'inline'));
     res.send(buf);
   })
 );
