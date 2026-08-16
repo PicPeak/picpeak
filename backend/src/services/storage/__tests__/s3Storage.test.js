@@ -65,6 +65,53 @@ describe('S3StorageAdapter', () => {
         })
       );
     });
+
+    it('should configure connection and socket-inactivity timeouts by default', () => {
+      expect(S3Client).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestHandler: {
+            connectionTimeout: 120000,
+            socketTimeout: 60000
+          }
+        })
+      );
+    });
+
+    it('should keep connectionTimeout generous enough to survive socket-pool queuing', () => {
+      // connectionTimeout starts at request creation and only clears once a
+      // socket is assigned AND connected, so waiting for a free socket from
+      // the agent pool counts against it. A short value (e.g. 10s) fails
+      // every read under concurrent upload load. These timeouts bound an
+      // infinite hang; they are not latency targets.
+      const [[config]] = S3Client.mock.calls;
+      expect(config.requestHandler.connectionTimeout).toBeGreaterThanOrEqual(60000);
+      expect(config.requestHandler.socketTimeout).toBeGreaterThanOrEqual(30000);
+    });
+
+    it('should not set requestTimeout, which caps total duration and only warns', () => {
+      // requestTimeout would abort legitimate large uploads (it is a
+      // total-duration cap, not inactivity) and by default only logs a
+      // warning — it needs throwOnRequestTimeout to abort at all.
+      const [[config]] = S3Client.mock.calls;
+      expect(config.requestHandler).not.toHaveProperty('requestTimeout');
+    });
+
+    it('should allow overriding timeouts via config', () => {
+      new S3StorageAdapter({
+        bucket: 'test-bucket',
+        connectionTimeout: 5000,
+        socketTimeout: 30000
+      });
+
+      expect(S3Client).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          requestHandler: {
+            connectionTimeout: 5000,
+            socketTimeout: 30000
+          }
+        })
+      );
+    });
   });
   
   describe('testConnection', () => {
@@ -239,6 +286,30 @@ describe('S3StorageAdapter', () => {
       s3Storage.config.retryDelay = originalDelay;
     });
     
+    it('should retry when the request handler times out a dead connection', async () => {
+      // @smithy/node-http-handler rejects with name 'TimeoutError' for both
+      // its connection-timeout and socket-inactivity timeouts
+      const timeoutError = new Error('Connection timed out after 10000ms');
+      timeoutError.name = 'TimeoutError';
+
+      const operation = jest.fn()
+        .mockRejectedValueOnce(timeoutError)
+        .mockResolvedValueOnce('success');
+
+      const originalRandom = Math.random;
+      const originalDelay = s3Storage.config.retryDelay;
+      Math.random = jest.fn(() => 0);
+      s3Storage.config.retryDelay = 0;
+
+      const result = await s3Storage._retryOperation(operation);
+
+      expect(result).toBe('success');
+      expect(operation).toHaveBeenCalledTimes(2);
+
+      Math.random = originalRandom;
+      s3Storage.config.retryDelay = originalDelay;
+    });
+
     it('should not retry on non-retryable errors', async () => {
       const nonRetryableError = new Error('Invalid credentials');
       nonRetryableError.code = 'InvalidCredentials';
