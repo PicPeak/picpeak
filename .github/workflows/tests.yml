@@ -30,6 +30,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    # The .picpeak restore suites gate their real-Postgres cases behind
+    # PICPEAK_PG_TEST_URL and `describe.skip` themselves out when it is
+    # unset — so until now they never ran here. That hid the half that
+    # matters: sequence resync, operator/role preservation across a
+    # cross-instance restore, and (with #1041) whether a SQLite-shaped
+    # row actually lands in Postgres with the right STORED VALUES rather
+    # than merely not throwing. Everything else in the suite still runs
+    # on SQLite; this service only un-gates those cases.
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: picpeak
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: picpeak_test
+        options: >-
+          --health-cmd "pg_isready -U picpeak -d picpeak_test"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+        ports:
+          - 5432:5432
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -52,6 +75,9 @@ jobs:
           # The S3 path itself is covered separately by the integration
           # suite when MinIO is provisioned.
           SKIP_S3_TESTS: 'true'
+          # Un-gates the real-Postgres cases in the .picpeak restore suites
+          # (see the `services:` note above). Absent it they silently skip.
+          PICPEAK_PG_TEST_URL: 'postgres://picpeak:testpass@127.0.0.1:5432/picpeak_test'
         run: |
           # Excluded suites — fail on upstream/beta too, tracked
           # separately as test-infra debt:
