@@ -765,11 +765,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
       <GalleryLayout
         event={{
           ...event,
-          // The reveal-hidden view still renders the chrome, so the info
-          // banner resolves here too. The context `event` comes from the
+          // The reveal-hidden view still renders the chrome, so BOTH
+          // banners resolve here too. The context `event` comes from the
           // gallery login response and carries no banner fields, which would
           // silently downgrade a per-event 'off' to 'inherit' and show the
-          // global banner on a gallery the admin muted (#932).
+          // global banner on a gallery the admin muted (#440 promo / #932 info).
+          promo_mode: (data?.event as { promo_mode?: 'inherit' | 'custom' | 'off' })?.promo_mode,
+          promo_markdown: (data?.event as { promo_markdown?: string | null })?.promo_markdown,
           info_mode: (data?.event as { info_mode?: 'inherit' | 'custom' | 'off' })?.info_mode,
           info_markdown: (data?.event as { info_markdown?: string | null })?.info_markdown,
         }}

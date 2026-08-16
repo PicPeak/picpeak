@@ -148,6 +148,32 @@ describe('columns round-trip through the events table', () => {
     expect(row.info_markdown).toBe('Use the menu button to filter.');
   });
 
+  it('duplicating drops markdown left over on a non-custom source', async () => {
+    // A row written before the PUT normalisation landed can hold text while
+    // its mode is inherit/off. Copying that verbatim would smuggle hidden copy
+    // into the duplicate and resurrect it on the next switch to 'custom'.
+    const sourceId = await insertEvent('banner-dup-stale', {
+      promo_mode: 'off',
+      promo_markdown: 'stale promo text',
+      info_mode: 'inherit',
+      info_markdown: 'stale info text',
+    });
+    const source = await db('events').where({ id: sourceId }).first();
+
+    const dupId = await insertEvent('banner-dup-stale-copy', {
+      promo_mode: source.promo_mode || 'inherit',
+      promo_markdown: source.promo_mode === 'custom' ? (source.promo_markdown || null) : null,
+      info_mode: source.info_mode || 'inherit',
+      info_markdown: source.info_mode === 'custom' ? (source.info_markdown || null) : null,
+    });
+
+    const dup = await db('events').where({ id: dupId }).first();
+    expect(dup.promo_mode).toBe('off');
+    expect(dup.promo_markdown).toBeNull();
+    expect(dup.info_mode).toBe('inherit');
+    expect(dup.info_markdown).toBeNull();
+  });
+
   it('duplicating an event carries both banners across', async () => {
     const sourceId = await insertEvent('banner-dup-source', {
       promo_mode: 'custom',
@@ -159,9 +185,9 @@ describe('columns round-trip through the events table', () => {
     // Mirrors the duplicate route's insert.
     const dupId = await insertEvent('banner-dup-copy', {
       promo_mode: source.promo_mode || 'inherit',
-      promo_markdown: source.promo_markdown || null,
+      promo_markdown: source.promo_mode === 'custom' ? (source.promo_markdown || null) : null,
       info_mode: source.info_mode || 'inherit',
-      info_markdown: source.info_markdown || null,
+      info_markdown: source.info_mode === 'custom' ? (source.info_markdown || null) : null,
     });
 
     const dup = await db('events').where({ id: dupId }).first();

@@ -1117,10 +1117,14 @@ module.exports = (router) => {
         // the new gallery 'inherits the branding, behaviour, feedback, and
         // category configuration', and a gallery muted with 'off' silently
         // un-muting on duplication is the opposite of that.
+        // Markdown rides along only while the mode is 'custom': rows written
+        // before the PUT normalisation landed can hold stale text on an
+        // 'inherit'/'off' gallery, and copying it would resurrect that text
+        // the moment someone switched the duplicate to 'custom'.
         promo_mode: source.promo_mode || 'inherit',
-        promo_markdown: source.promo_markdown || null,
+        promo_markdown: source.promo_mode === 'custom' ? (source.promo_markdown || null) : null,
         info_mode: source.info_mode || 'inherit',
-        info_markdown: source.info_markdown || null,
+        info_markdown: source.info_mode === 'custom' ? (source.info_markdown || null) : null,
         login_logo_visible: source.login_logo_visible,
         header_style: source.header_style || 'standard',
         hero_divider_style: source.hero_divider_style || 'wave',
