@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.104.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.103.1-beta.0...v3.104.0-beta.0) (2026-08-16)
+
+
+### Features
+
+* **backup:** open sqlite → pg .picpeak restore as the supported upgrade direction ([#1041](https://github.com/PicPeak/picpeak/issues/1041)) ([#1043](https://github.com/PicPeak/picpeak/issues/1043)) ([8809564](https://github.com/PicPeak/picpeak/commit/8809564aadc1782484e0369ddbf03850530680a6))
+
 ## [3.103.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.103.0-beta.0...v3.103.1-beta.0) (2026-08-16)
 
 
