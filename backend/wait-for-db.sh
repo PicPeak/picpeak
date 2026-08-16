@@ -29,7 +29,7 @@ unset _pair _var _file _cur
 # single-container image (#1042) points all three under one mounted volume,
 # so these must follow the same env vars the app itself reads rather than
 # hard-coding /app — otherwise the checks below guard directories nothing uses.
-DATA_DIRS="${STORAGE_PATH:-/app/storage} ${DATA_DIR:-/app/data} ${LOG_DIR:-/app/logs}"
+DATA_DIRS="${STORAGE_PATH:-/app/storage} ${DATA_DIR:-/app/data} ${LOG_DIR:-/app/logs} ${BACKUP_DIR:-/backup}"
 
 # Create the roots before touching them. With the compose layout each of the
 # three is its own mount point, so they always exist — but the single-container
@@ -72,46 +72,20 @@ for _dir in $DATA_DIRS; do
   fi
 done
 
-# Resolve which database engine this boot should use (#1038) BEFORE migrations
-# run — and, since #1042, before the PostgreSQL readiness wait below, so a
-# SQLite install never blocks on a Postgres that will never answer.
+# Everything below this point is PostgreSQL readiness. On SQLite the database is
+# a file this process opens itself — there is no daemon to wait for — so the
+# loop would block forever on a host that will never answer. That is the
+# single-container case (#1042), where the image DECLARES sqlite3.
 #
-# An install that has been unknowingly running on SQLite (the image used to
-# leave NODE_ENV unset, so
-# knexfile.js fell back to sqlite3 and ignored DB_HOST/DB_USER/DB_PASSWORD)
-# keeps serving from its SQLite file instead of coming up against an empty
-# Postgres. The exported value survives the `exec` below, so the migration
-# runner and the server agree on the engine.
-RESOLVED_DB_CLIENT="$(node scripts/resolve-db-engine.js)"
-RESOLVER_STATUS=$?
-# Exit 3 means two populated databases with no record of which is current
-# (#1038). Starting either would hide the other's data, so stop here — the
-# resolver has already printed what to do.
-if [ "$RESOLVER_STATUS" = "3" ]; then
-  exit 1
-fi
-# Validate rather than trust: anything unexpected on stdout (a stray log line
-# from a library that writes to the console) must not become DATABASE_CLIENT,
-# which would break knexfile for every process that follows.
-case "$RESOLVED_DB_CLIENT" in
-  pg|sqlite3)
-    export DATABASE_CLIENT="$RESOLVED_DB_CLIENT"
-    ;;
-  "")
-    >&2 echo "Database engine resolver returned nothing; falling back to the configured client."
-    ;;
-  *)
-    >&2 echo "Database engine resolver returned an unexpected value; ignoring it and falling back to the configured client."
-    ;;
-esac
-
-# Everything below this point is PostgreSQL readiness. On SQLite the
-# database is a file this process opens itself — there is no daemon to
-# wait for — so the wait loop would block forever on a host that will
-# never answer. That is exactly the single-container case (#1042), where
-# SQLite is the documented default and no DB_HOST is set.
+# The test is deliberately the raw env var, not the resolver's answer. Resolving
+# first would change behaviour for installs that declare nothing: probePgData
+# reports "occupied" when Postgres is unreachable, and the target database may
+# not exist until the loop below creates it — so an unset-client install with a
+# populated legacy SQLite file would resolve to ambiguous-both-populated and
+# refuse to start. Those installs keep today's ordering exactly: wait, create,
+# then resolve.
 if [ "${DATABASE_CLIENT:-}" = "sqlite3" ]; then
-  echo "Database engine: sqlite3 — skipping the PostgreSQL readiness wait."
+  echo "Database engine: sqlite3 declared — skipping the PostgreSQL readiness wait."
 else
 
 host="${DB_HOST:-postgres}"
@@ -191,8 +165,48 @@ echo "Ensuring storage directories exist..."
 STORAGE_BASE="${STORAGE_PATH:-/app/storage}"
 mkdir -p "$STORAGE_BASE/events/active" "$STORAGE_BASE/events/archived" "$STORAGE_BASE/thumbnails" 2>/dev/null || true
 
+# Backup destinations seeded by migrations 029 + 030 (/backup/picpeak and
+# /backup/database). Creating the root alone is not enough: on a bind mount the
+# subdirectories baked into the image are hidden, and the backup services do not
+# create them, so a scheduled or manual backup fails with ENOENT.
+BACKUP_BASE="${BACKUP_DIR:-/backup}"
+mkdir -p "$BACKUP_BASE/picpeak" "$BACKUP_BASE/database" 2>/dev/null || true
+
 # Resolve which database engine this boot should use (#1038) BEFORE migrations
 # run, while the Postgres target is still untouched. An install that has been
+
+# Resolve which database engine this boot should use (#1038) BEFORE migrations
+# run — and, since #1042, before the PostgreSQL readiness wait below, so a
+# SQLite install never blocks on a Postgres that will never answer.
+#
+# An install that has been unknowingly running on SQLite (the image used to
+# leave NODE_ENV unset, so
+# knexfile.js fell back to sqlite3 and ignored DB_HOST/DB_USER/DB_PASSWORD)
+# keeps serving from its SQLite file instead of coming up against an empty
+# Postgres. The exported value survives the `exec` below, so the migration
+# runner and the server agree on the engine.
+RESOLVED_DB_CLIENT="$(node scripts/resolve-db-engine.js)"
+RESOLVER_STATUS=$?
+# Exit 3 means two populated databases with no record of which is current
+# (#1038). Starting either would hide the other's data, so stop here — the
+# resolver has already printed what to do.
+if [ "$RESOLVER_STATUS" = "3" ]; then
+  exit 1
+fi
+# Validate rather than trust: anything unexpected on stdout (a stray log line
+# from a library that writes to the console) must not become DATABASE_CLIENT,
+# which would break knexfile for every process that follows.
+case "$RESOLVED_DB_CLIENT" in
+  pg|sqlite3)
+    export DATABASE_CLIENT="$RESOLVED_DB_CLIENT"
+    ;;
+  "")
+    >&2 echo "Database engine resolver returned nothing; falling back to the configured client."
+    ;;
+  *)
+    >&2 echo "Database engine resolver returned an unexpected value; ignoring it and falling back to the configured client."
+    ;;
+esac
 
 # Run migrations (use safe runner in production). Invoked via node directly —
 # the runtime image no longer ships npm (see Dockerfile: its bundled deps kept

@@ -967,7 +967,7 @@ if (typeof serveFrontendIndexPath === 'string') {
   // /uploads are backend-owned file routes whose middleware calls next() when
   // the file is missing, and swallowing that into a 200 index.html would turn
   // a missing photo into an HTML body served under an image URL.
-  const BACKEND_OWNED = ['/api/', '/photos/', '/thumbnails/', '/uploads/', '/health'];
+  const BACKEND_OWNED = ['/api/', '/photos/', '/thumbnails/', '/uploads/', '/fonts/', '/health'];
   app.get('*', (req, res, next) => {
     if (BACKEND_OWNED.some((prefix) => req.path.startsWith(prefix))) return next();
     return res.sendFile(serveFrontendIndexPath);

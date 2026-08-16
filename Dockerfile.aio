@@ -95,7 +95,8 @@ RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 #     not provide that executable. The compose backend image omits it because
 #     it always runs Postgres; this image defaults to SQLite, so without it the
 #     built-in database backup fails with ENOENT.
-RUN apk add --no-cache dumb-init postgresql-client sqlite ffmpeg su-exec \
+#   gettext — envsubst, used by docker-entrypoint.aio.sh to render index.html
+RUN apk add --no-cache dumb-init postgresql-client sqlite ffmpeg su-exec gettext \
     fontconfig ttf-dejavu ttf-liberation poppler-utils exiftool && \
     fc-cache -f
 
@@ -108,14 +109,15 @@ COPY --chown=nodejs:nodejs backend/ ./
 COPY --from=frontend-builder --chown=nodejs:nodejs /build/dist ./public
 
 # index.html ships with ${BRAND_TITLE} / ${BRAND_DESCRIPTION} placeholders that
-# frontend/docker-entrypoint.sh substitutes at container start. This image runs
-# no nginx and therefore never runs that entrypoint, so without this every AIO
-# install would serve a literal "${BRAND_TITLE}" as its <title> and in every
-# og:/twitter: card. Render them here with the same defaults that entrypoint
-# applies when the vars are unset.
-RUN sed -i 's/\${BRAND_TITLE}/PicPeak/g; s/\${BRAND_DESCRIPTION}/Photo gallery shared with PicPeak./g' \
-      ./public/index.html && \
-    ! grep -q '\${BRAND_' ./public/index.html
+# frontend/docker-entrypoint.sh renders at container start. This image runs no
+# nginx and never invokes that entrypoint, so keep the built file as a template
+# and render it on startup instead (docker-entrypoint.aio.sh) — baking the
+# defaults at build time would fix the literal-token bug but silently make
+# BRAND_TITLE/BRAND_DESCRIPTION inert for this image.
+RUN mv ./public/index.html ./public/index.html.template
+
+COPY --chown=nodejs:nodejs docker-entrypoint.aio.sh /usr/local/bin/docker-entrypoint.aio.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.aio.sh
 
 RUN chmod -R a+r /app && chmod +x wait-for-db.sh
 
@@ -142,6 +144,11 @@ ENV SERVE_FRONTEND=true \
     DATABASE_PATH=/data/db/picpeak.db \
     STORAGE_PATH=/data/storage \
     LOG_DIR=/data/logs \
+    # Point the startup chown/preflight at the REAL directory, not the /backup
+    # symlink: `chown -R` on a symlink argument acts on the link itself, so the
+    # target under a bind-mounted /data would never be adopted and the
+    # writability preflight would fail as UID 1001.
+    BACKUP_DIR=/data/backup \
     PORT=3000
 
 # /backup is where migrations 029 + 030 seed the built-in backup destinations
@@ -169,4 +176,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
 # No USER directive: the container starts as root so wait-for-db.sh can chown a
 # bind-mounted /data to UID 1001 before dropping privileges via su-exec (#484).
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["./wait-for-db.sh", "node", "server.js"]
+CMD ["/usr/local/bin/docker-entrypoint.aio.sh", "node", "server.js"]
