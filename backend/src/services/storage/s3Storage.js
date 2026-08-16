@@ -40,6 +40,8 @@ class S3StorageAdapter extends stream.EventEmitter {
    * @param {number} [config.partSize=10485760] - Part size for multipart upload (default 10MB)
    * @param {number} [config.maxRetries=3] - Maximum number of retry attempts
    * @param {number} [config.retryDelay=1000] - Initial retry delay in milliseconds
+   * @param {number} [config.connectionTimeout=120000] - Ms to acquire+establish a socket
+   * @param {number} [config.socketTimeout=60000] - Ms of socket inactivity before a request fails
    */
   constructor(config) {
     super();
@@ -58,13 +60,38 @@ class S3StorageAdapter extends stream.EventEmitter {
       partSize: 10 * 1024 * 1024, // 10MB
       maxRetries: 3,
       retryDelay: 1000,
+      connectionTimeout: 120000,
+      socketTimeout: 60000,
       ...config
     };
     
     // Initialize S3 client
     const s3Config = {
       region: this.config.region,
-      forcePathStyle: this.config.forcePathStyle
+      forcePathStyle: this.config.forcePathStyle,
+      // Without timeouts a silently dropped connection leaves the request —
+      // and with it every queued upload — hanging forever.
+      //
+      // socketTimeout, NOT requestTimeout, is the right knob here:
+      // requestTimeout is a total-duration cap that would kill legitimate
+      // large uploads, and by default it only logs a warning (it needs
+      // throwOnRequestTimeout to abort at all). socketTimeout fires on
+      // socket INACTIVITY and destroys the request with a TimeoutError, so
+      // an active transfer of any size is safe and only a dead line trips.
+      //
+      // Both values are deliberately GENEROUS. connectionTimeout starts
+      // when the request object is created and only clears once a socket
+      // is both assigned and connected — so time spent queuing for a free
+      // socket from the agent pool (maxSockets 50) counts against it. A
+      // 10s value looks reasonable and is not: under concurrent uploads
+      // it expires while merely waiting in line, and every read (photo
+      // download, thumbnail, background thumbnailing) fails with
+      // TimeoutError. These timeouts exist to convert an INFINITE hang
+      // into a bounded failure, not to enforce latency targets.
+      requestHandler: {
+        connectionTimeout: this.config.connectionTimeout,
+        socketTimeout: this.config.socketTimeout
+      }
     };
     
     // Add credentials if provided
@@ -671,7 +698,9 @@ class S3StorageAdapter extends stream.EventEmitter {
       }
       
       // Check if error is retryable
-      const retryableErrors = ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ESOCKETTIMEDOUT', 'RequestTimeout', 'SlowDown', 'ServiceUnavailable', 'InternalError'];
+      // 'TimeoutError' is what @smithy/node-http-handler names both its
+      // connection-timeout and socket-inactivity rejections.
+      const retryableErrors = ['ECONNRESET', 'ETIMEDOUT', 'ENOTFOUND', 'ESOCKETTIMEDOUT', 'RequestTimeout', 'TimeoutError', 'SlowDown', 'ServiceUnavailable', 'InternalError'];
       const isRetryable = retryableErrors.some(code => 
         error.code === code || 
         error.name === code || 
