@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.105.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.105.0-beta.0...v3.105.1-beta.0) (2026-08-16)
+
+
+### Bug Fixes
+
+* **gallery:** make per-event banner overrides actually work, both banners ([#440](https://github.com/PicPeak/picpeak/issues/440), [#932](https://github.com/PicPeak/picpeak/issues/932)) ([#1064](https://github.com/PicPeak/picpeak/issues/1064)) ([52db982](https://github.com/PicPeak/picpeak/commit/52db9826610a41f156b4878c142abfc71dea8b07))
+
 ## [3.105.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.104.1-beta.0...v3.105.0-beta.0) (2026-08-16)
 
 
