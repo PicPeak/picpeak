@@ -876,6 +876,7 @@ app.use('/api/images', require('./src/routes/protectedImages'));
 app.use('/api/secure-images', secureImagesRoutes);
 
 // Optional: Serve built frontend (native installs)
+let serveFrontendIndexPath = null;
 try {
   const serveFrontendEnv = process.env.SERVE_FRONTEND; // 'true' | 'false' | undefined
   const frontendDir = process.env.FRONTEND_DIR || path.join(__dirname, '../frontend/dist');
@@ -883,9 +884,30 @@ try {
   // Auto-serve when dist exists unless explicitly disabled
   const shouldServe = (serveFrontendEnv === 'true') || ((serveFrontendEnv === undefined || serveFrontendEnv === 'auto') && fs.existsSync(indexPath));
   if (shouldServe) {
+    // Hoisted for the SPA history fallback registered after the API routes.
+    serveFrontendIndexPath = indexPath;
     logger.info(`Serving frontend from ${frontendDir}`);
     // Serve pre-built assets
-    app.use(express.static(frontendDir));
+    // Cache-Control parity with frontend/nginx.conf (#1042). Without nginx
+    // in front — the single-container image — express.static sends no
+    // Cache-Control at all, which gets both tiers wrong:
+    //
+    //   * Vite emits content-hashed files under /assets/. Those are safe to
+    //     cache forever, and not doing so re-downloads the bundle every visit.
+    //   * index.html must NEVER be cached: it names the current hashed
+    //     chunks, so a stale copy after an upgrade points at files that no
+    //     longer exist and the app won't boot until a hard refresh.
+    app.use(express.static(frontendDir, {
+      setHeaders: (res, filePath) => {
+        if (/[\\/]assets[\\/]/.test(filePath)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.endsWith('index.html')) {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+        }
+      },
+    }));
 
     // Landing page handler or SPA fallback
     app.get('/', handlePublicSiteRequest, (req, res) => {
@@ -926,6 +948,25 @@ try {
 
 // 404 handler for undefined API routes
 app.use('/api', notFoundHandler);
+
+// SPA history fallback (#1042). nginx does `try_files $uri $uri/ /index.html`,
+// so behind the compose stack every client-side route survives a reload or a
+// pasted link. The Express side only listed /admin/* and /gallery/*, which was
+// invisible while nginx sat in front — but the single-container image has no
+// nginx, and a direct hit on /setup, /impressum, /quote/:id, /transfer/:id,
+// /invite/:token, /customer, /contract/:id, /payment-check or a CMS /:slug
+// returned a bare 404. /setup is the very first URL a new install visits.
+//
+// Registered here, AFTER the API routes and their JSON 404 handler above, so
+// /api/* still answers with JSON — this only catches what nothing else did,
+// which is exactly what try_files means. GET/HEAD only: a stray POST should
+// still 404 rather than be handed an HTML page.
+if (typeof serveFrontendIndexPath === 'string') {
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    return res.sendFile(serveFrontendIndexPath);
+  });
+}
 
 // Global error handler (must be last)
 app.use(errorHandler);

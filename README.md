@@ -45,6 +45,11 @@ Try PicPeak without installing anything — [demo.picpeak.app](https://demo.picp
 
 ## 🚀 Quick Start
 
+> **On a NAS or a small VPS?** There's a single-container image — one
+> `docker run`, one volume, SQLite by default, no compose file:
+> **[docs/single-container.md](docs/single-container.md)**. You can move to the
+> full stack later via a `.picpeak` export/import; it isn't a dead end.
+
 Get PicPeak running in under 5 minutes:
 
 ```bash

@@ -25,9 +25,16 @@ unset _pair _var _file _cur
 # hard-coded nodejs user. Compose deployments that pin `user:` to something
 # other than root skip this branch — they own permissions themselves and hit
 # the preflight check below instead.
+# The three writable roots. Defaults are the compose layout (/app/*); the
+# single-container image (#1042) points all three under one mounted volume,
+# so these must follow the same env vars the app itself reads rather than
+# hard-coding /app — otherwise the checks below guard directories nothing uses.
+DATA_DIRS="${STORAGE_PATH:-/app/storage} ${DATA_DIR:-/app/data} ${LOG_DIR:-/app/logs}"
+
 if [ "$(id -u)" = "0" ]; then
-  if ! chown -R nodejs:nodejs /app/storage /app/data /app/logs 2>/dev/null; then
-    echo "ERROR: failed to chown /app/storage, /app/data, /app/logs to nodejs (UID 1001)." >&2
+  # shellcheck disable=SC2086 — intentional word-splitting over the three roots
+  if ! chown -R nodejs:nodejs $DATA_DIRS 2>/dev/null; then
+    echo "ERROR: failed to chown $DATA_DIRS to nodejs (UID 1001)." >&2
     echo "  This usually means the host filesystem rejects chown (e.g. NFS without root squash" >&2
     echo "  disabled, or a SELinux/AppArmor policy blocking the operation)." >&2
     echo "  Workaround: pre-chown the host directories to 1001:1001 and pin 'user: \"1001:1001\"'" >&2
@@ -44,7 +51,8 @@ fi
 # followed by a confusing migration error and a restart loop.
 _uid="$(id -u)"
 _gid="$(id -g)"
-for _dir in /app/storage /app/data /app/logs; do
+# shellcheck disable=SC2086 — intentional word-splitting over the three roots
+for _dir in $DATA_DIRS; do
   if [ ! -w "$_dir" ]; then
     echo "ERROR: $_dir is not writable by UID $_uid." >&2
     echo "  Either drop the 'user:' override from your compose file so the container starts as" >&2
@@ -54,6 +62,48 @@ for _dir in /app/storage /app/data /app/logs; do
     exit 1
   fi
 done
+
+# Resolve which database engine this boot should use (#1038) BEFORE migrations
+# run — and, since #1042, before the PostgreSQL readiness wait below, so a
+# SQLite install never blocks on a Postgres that will never answer.
+#
+# An install that has been unknowingly running on SQLite (the image used to
+# leave NODE_ENV unset, so
+# knexfile.js fell back to sqlite3 and ignored DB_HOST/DB_USER/DB_PASSWORD)
+# keeps serving from its SQLite file instead of coming up against an empty
+# Postgres. The exported value survives the `exec` below, so the migration
+# runner and the server agree on the engine.
+RESOLVED_DB_CLIENT="$(node scripts/resolve-db-engine.js)"
+RESOLVER_STATUS=$?
+# Exit 3 means two populated databases with no record of which is current
+# (#1038). Starting either would hide the other's data, so stop here — the
+# resolver has already printed what to do.
+if [ "$RESOLVER_STATUS" = "3" ]; then
+  exit 1
+fi
+# Validate rather than trust: anything unexpected on stdout (a stray log line
+# from a library that writes to the console) must not become DATABASE_CLIENT,
+# which would break knexfile for every process that follows.
+case "$RESOLVED_DB_CLIENT" in
+  pg|sqlite3)
+    export DATABASE_CLIENT="$RESOLVED_DB_CLIENT"
+    ;;
+  "")
+    >&2 echo "Database engine resolver returned nothing; falling back to the configured client."
+    ;;
+  *)
+    >&2 echo "Database engine resolver returned an unexpected value; ignoring it and falling back to the configured client."
+    ;;
+esac
+
+# Everything below this point is PostgreSQL readiness. On SQLite the
+# database is a file this process opens itself — there is no daemon to
+# wait for — so the wait loop would block forever on a host that will
+# never answer. That is exactly the single-container case (#1042), where
+# SQLite is the documented default and no DB_HOST is set.
+if [ "${DATABASE_CLIENT:-}" = "sqlite3" ]; then
+  echo "Database engine: sqlite3 — skipping the PostgreSQL readiness wait."
+else
 
 host="${DB_HOST:-postgres}"
 port="${DB_PORT:-5432}"
@@ -123,6 +173,8 @@ done
 
 >&2 echo "Target database \"$target_db\" is ready."
 
+fi
+
 # Ensure storage directories exist with proper permissions (Issue #67 fix)
 # When host directories are bind-mounted, the container's built-in directories are overridden
 # This ensures the required directory structure exists before the application starts
@@ -132,33 +184,6 @@ mkdir -p "$STORAGE_BASE/events/active" "$STORAGE_BASE/events/archived" "$STORAGE
 
 # Resolve which database engine this boot should use (#1038) BEFORE migrations
 # run, while the Postgres target is still untouched. An install that has been
-# unknowingly running on SQLite (the image used to leave NODE_ENV unset, so
-# knexfile.js fell back to sqlite3 and ignored DB_HOST/DB_USER/DB_PASSWORD)
-# keeps serving from its SQLite file instead of coming up against an empty
-# Postgres. The exported value survives the `exec` below, so the migration
-# runner and the server agree on the engine.
-RESOLVED_DB_CLIENT="$(node scripts/resolve-db-engine.js)"
-RESOLVER_STATUS=$?
-# Exit 3 means two populated databases with no record of which is current
-# (#1038). Starting either would hide the other's data, so stop here — the
-# resolver has already printed what to do.
-if [ "$RESOLVER_STATUS" = "3" ]; then
-  exit 1
-fi
-# Validate rather than trust: anything unexpected on stdout (a stray log line
-# from a library that writes to the console) must not become DATABASE_CLIENT,
-# which would break knexfile for every process that follows.
-case "$RESOLVED_DB_CLIENT" in
-  pg|sqlite3)
-    export DATABASE_CLIENT="$RESOLVED_DB_CLIENT"
-    ;;
-  "")
-    >&2 echo "Database engine resolver returned nothing; falling back to the configured client."
-    ;;
-  *)
-    >&2 echo "Database engine resolver returned an unexpected value; ignoring it and falling back to the configured client."
-    ;;
-esac
 
 # Run migrations (use safe runner in production). Invoked via node directly —
 # the runtime image no longer ships npm (see Dockerfile: its bundled deps kept
