@@ -93,28 +93,34 @@ describe('business documents honour STORAGE_PATH', () => {
     expect(() => assertContractPdfPath(foreign)).toThrow(/outside the storage roots/i);
   });
 
-  it('writer and guard agree on the root when STORAGE_PATH is unset', () => {
-    // The fallbacks used to differ: getStoragePath() resolves module-relative
-    // (<repo>/storage) while the guard resolved <cwd>/storage, and the backend
-    // is normally started from backend/ — so with no STORAGE_PATH set the guard
-    // refused the very files the writers had just produced. Both sides must
-    // come from the one resolver.
-    delete process.env.STORAGE_PATH;
+  it('the guard takes its root from the shared resolver, not its own fallback', () => {
+    // The regression this pins: the guard used to compute
+    // `STORAGE_PATH || <cwd>/storage` itself. That agrees with getStoragePath()
+    // only while STORAGE_PATH is set — unset, the shared resolver falls back
+    // module-relative to <repo>/storage while the guard fell back to
+    // <cwd>/storage, and the backend is normally started from backend/. Writers
+    // and guard then disagreed and contract downloads 403'd.
+    //
+    // Mocking the resolver is what makes this provable AND safe. If the guard
+    // consumes getStoragePath(), the mock moves its root; if it rolled its own
+    // expression, the mock would have no effect and the assertion fails. It
+    // also keeps every path inside the tmpdir — an earlier version of this test
+    // deleted `<resolved root>/business-docs` in cleanup, which with
+    // STORAGE_PATH unset resolves to a developer's real, gitignored
+    // <repo>/storage and would have destroyed local documents on `npm test`.
     jest.resetModules();
+    jest.doMock('../../src/config/storage', () => ({ getStoragePath: () => tmpRoot }));
 
-    const { getStoragePath } = require('../../src/config/storage');
     const { assertContractPdfPath } = require('../../src/utils/safePath');
 
-    const root = path.join(getStoragePath(), 'business-docs', 'contract', '2026');
+    const root = path.join(tmpRoot, 'business-docs', 'contract', '2026');
     fs.mkdirSync(root, { recursive: true });
     const generated = path.join(root, 'C-2026-0002.pdf');
     fs.writeFileSync(generated, 'bytes');
 
-    try {
-      expect(() => assertContractPdfPath(generated)).not.toThrow();
-    } finally {
-      fs.rmSync(path.join(getStoragePath(), 'business-docs'), { recursive: true, force: true });
-    }
+    expect(() => assertContractPdfPath(generated)).not.toThrow();
+
+    jest.dontMock('../../src/config/storage');
   });
 
   it('writes land under STORAGE_PATH, not the working directory', () => {
