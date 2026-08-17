@@ -93,6 +93,30 @@ describe('business documents honour STORAGE_PATH', () => {
     expect(() => assertContractPdfPath(foreign)).toThrow(/outside the storage roots/i);
   });
 
+  it('writer and guard agree on the root when STORAGE_PATH is unset', () => {
+    // The fallbacks used to differ: getStoragePath() resolves module-relative
+    // (<repo>/storage) while the guard resolved <cwd>/storage, and the backend
+    // is normally started from backend/ — so with no STORAGE_PATH set the guard
+    // refused the very files the writers had just produced. Both sides must
+    // come from the one resolver.
+    delete process.env.STORAGE_PATH;
+    jest.resetModules();
+
+    const { getStoragePath } = require('../../src/config/storage');
+    const { assertContractPdfPath } = require('../../src/utils/safePath');
+
+    const root = path.join(getStoragePath(), 'business-docs', 'contract', '2026');
+    fs.mkdirSync(root, { recursive: true });
+    const generated = path.join(root, 'C-2026-0002.pdf');
+    fs.writeFileSync(generated, 'bytes');
+
+    try {
+      expect(() => assertContractPdfPath(generated)).not.toThrow();
+    } finally {
+      fs.rmSync(path.join(getStoragePath(), 'business-docs'), { recursive: true, force: true });
+    }
+  });
+
   it('writes land under STORAGE_PATH, not the working directory', () => {
     const { getStoragePath } = require('../../src/config/storage');
 
