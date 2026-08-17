@@ -113,6 +113,13 @@ function assertContractPdfPath(filePath) {
   const cwd = process.cwd();
   const storageRoot = process.env.STORAGE_PATH || path.join(cwd, 'storage');
   return assertPathInside(filePath, [
+    // The configured storage root is where the contract writers persist, so it
+    // has to be allowed here or every generated PDF is refused with
+    // PATH_OUTSIDE_STORAGE the moment STORAGE_PATH is not <cwd>/storage. The
+    // cwd root stays alongside it: contracts written before the writers moved
+    // still live there, and their absolute paths are recorded in the database.
+    // Both collapse to the same directory on a stock compose install.
+    path.join(storageRoot, 'business-docs', 'contract'),
     path.join(cwd, 'storage', 'business-docs', 'contract'),
     path.join(storageRoot, 'uploads', 'contracts', 'signed'),
   ]);

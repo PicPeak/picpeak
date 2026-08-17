@@ -43,9 +43,11 @@ describe('business documents honour STORAGE_PATH', () => {
   });
 
   it('no business-document writer still targets process.cwd()/storage', () => {
-    // The bug was a literal, and a literal is what regresses. Every writer that
-    // persists a business document is covered here; a new one that copies the
-    // old pattern fails this immediately.
+    // Whitespace is collapsed before matching on purpose. The first version of
+    // this test compared against the single-line literal and therefore missed
+    // persistSignatureImage(), whose identical path.join was simply spread over
+    // seven lines — it reported green while signature PNGs still wrote outside
+    // STORAGE_PATH. Formatting must not decide whether a bug is visible.
     const writers = [
       'src/services/quoteService.js',
       'src/services/invoice/sending.js',
@@ -55,9 +57,40 @@ describe('business documents honour STORAGE_PATH', () => {
     ];
     const offenders = writers.filter((rel) => {
       const source = fs.readFileSync(path.join(__dirname, '../../', rel), 'utf8');
-      return source.includes("process.cwd(), 'storage', 'business-docs'");
+      return /process\.cwd\(\),'storage'/.test(source.replace(/\s+/g, ''));
     });
     expect(offenders).toEqual([]);
+  });
+
+  it('generated contract PDFs pass the containment check that serves them', () => {
+    // assertContractPdfPath guards the admin and public contract download
+    // routes. It listed only <cwd>/storage/business-docs/contract, so once the
+    // writers moved to STORAGE_PATH every freshly generated contract was
+    // refused with PATH_OUTSIDE_STORAGE — a worse failure than the bug being
+    // fixed. Both roots must be accepted.
+    const { assertContractPdfPath } = require('../../src/utils/safePath');
+    const { getStoragePath } = require('../../src/config/storage');
+
+    // assertPathInside realpaths both the file and each root, so the guard only
+    // means anything against a filesystem that actually has them — write them.
+    const write = (...segments) => {
+      const p = path.join(getStoragePath(), 'business-docs', 'contract', ...segments);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, 'bytes');
+      return p;
+    };
+
+    const generated = write('2026', 'C-2026-0001.pdf');
+    expect(() => assertContractPdfPath(generated)).not.toThrow();
+
+    // Signature PNGs live under the same root and are served by the same guard.
+    const signature = write('signatures', '7', 'customer-1.png');
+    expect(() => assertContractPdfPath(signature)).not.toThrow();
+
+    // And the guard still refuses a real file outside every allowed root.
+    const foreign = path.join(tmpRoot, 'outside.pdf');
+    fs.writeFileSync(foreign, 'bytes');
+    expect(() => assertContractPdfPath(foreign)).toThrow(/outside the storage roots/i);
   });
 
   it('writes land under STORAGE_PATH, not the working directory', () => {

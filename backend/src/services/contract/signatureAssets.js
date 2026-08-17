@@ -93,8 +93,7 @@ async function persistSignatureImage(contract, role, dataUrl) {
   }
   const ext = match[1] === 'jpeg' ? 'jpg' : 'png';
   const root = path.join(
-    process.cwd(),
-    'storage',
+    getStoragePath(),
     'business-docs',
     'contract',
     'signatures',
