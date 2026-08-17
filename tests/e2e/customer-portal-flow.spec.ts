@@ -40,9 +40,14 @@ async function adminLogin(page: Page): Promise<string> {
     failOnStatusCode: false,
   });
   expect(res.ok()).toBeTruthy();
-  const json = await res.json();
-  expect(json.token).toBeTruthy();
-  return json.token;
+  // The admin JWT is delivered as the httpOnly `admin_token` cookie, not in
+  // the response body. Server-side the cookie and an Authorization: Bearer
+  // header are interchangeable, so read it back out of the context jar and
+  // keep threading it as a Bearer — every downstream call stays as it was.
+  const cookies = await page.context().cookies();
+  const token = cookies.find((c) => c.name === 'admin_token')?.value;
+  expect(token, 'admin_token cookie missing from the login response').toBeTruthy();
+  return token as string;
 }
 
 async function setCustomerPortalEnabled(page: Page, adminToken: string, enabled: boolean) {
