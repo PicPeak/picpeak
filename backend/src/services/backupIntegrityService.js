@@ -49,12 +49,18 @@
  */
 
 const fs = require('fs');
+const { getStoragePath } = require('../config/storage');
 const crypto = require('crypto');
 const path = require('path');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 
-const STORAGE_ROOT = () => process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+// The shared resolver, not a second `STORAGE_PATH || cwd` expression. With
+// STORAGE_PATH unset the two disagree — getStoragePath() falls back
+// module-relative while cwd is normally backend/ — and this diagnostic would
+// then report the business-docs tree as missing while the backup walker, which
+// uses the module-relative root, was backing it up correctly.
+const STORAGE_ROOT = () => getStoragePath();
 
 /**
  * Every column the verifier walks, declared once so the test suite
