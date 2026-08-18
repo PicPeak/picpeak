@@ -20,16 +20,14 @@ exports.up = async function (knex) {
   if (!(await knex.schema.hasTable('photos'))) return;
   if (await knex.schema.hasColumn('photos', 'auto_categorized')) return;
 
+  // Column and index in ONE statement — this replays in ~90 test suites that
+  // build a database from scratch, and each separate ALTER costs a statement
+  // and an fsync there. See the note in 177.
   await knex.schema.alterTable('photos', (table) => {
     table.boolean('auto_categorized');
-  });
-
-  // The undo path filters on this alone across a whole event, so it is worth
-  // an index on installs where most photos are NOT auto-categorised.
-  await knex.schema.alterTable('photos', (table) => {
+    // The undo path filters on this alone across a whole event, so it is
+    // worth an index on installs where most photos are NOT auto-categorised.
     table.index(['auto_categorized'], 'photos_auto_categorized_idx');
-  }).catch(() => {
-    // Already present on a re-run against a partially migrated database.
   });
 };
 

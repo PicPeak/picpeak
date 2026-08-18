@@ -154,68 +154,85 @@ exports.up = async function (knex) {
   }
 
   // --- photos -------------------------------------------------------------
+  //
+  // Every column added in ONE alterTable, not one call each. This migration
+  // replays in ~90 test suites that boot a database from scratch, and each
+  // ALTER is its own statement and its own fsync — the per-column version of
+  // this was measurably slower on CI's shared disk than the whole rest of the
+  // chain. Same reason the settings seed below is one round trip.
   if (await knex.schema.hasTable('photos')) {
-    const cols = [
+    const wanted = {
       // NULL = never queued. See note 2 — this migration enqueues nothing.
       // pending | processing | done | failed | skipped
-      ['face_status', (t) => t.string('face_status', 16)],
-      ['face_count', (t) => t.integer('face_count')],
+      face_status: (t) => t.string('face_status', 16),
+      face_count: (t) => t.integer('face_count'),
       // Set when a row is claimed, so the janitor can recover it after a
       // worker dies mid-photo. Mirrors photos.processing_started_at.
-      ['face_started_at', (t) => t.timestamp('face_started_at')],
-      ['face_error', (t) => t.text('face_error')],
-    ];
-    for (const [name, add] of cols) {
-      if (!(await knex.schema.hasColumn('photos', name))) {
-        await knex.schema.alterTable('photos', add);
-      }
+      face_started_at: (t) => t.timestamp('face_started_at'),
+      face_error: (t) => t.text('face_error'),
+    };
+    const missing = [];
+    for (const name of Object.keys(wanted)) {
+      if (!(await knex.schema.hasColumn('photos', name))) missing.push(name);
     }
-    // Partial-ish index for the queue claim. The worker polls for
-    // face_status='pending' constantly; without this it is a full scan of
-    // the photos table on every tick.
-    await knex.schema.alterTable('photos', (t) => {
-      t.index(['face_status'], 'photos_face_status_idx');
-    }).catch(() => {
-      // Index already present (re-run on a partially migrated DB).
-    });
+    if (missing.length) {
+      await knex.schema.alterTable('photos', (table) => {
+        for (const name of missing) wanted[name](table);
+        // Index for the queue claim, added in the same statement. The worker
+        // polls face_status='pending' constantly; without it that is a full
+        // scan of `photos` on every tick.
+        if (missing.includes('face_status')) {
+          table.index(['face_status'], 'photos_face_status_idx');
+        }
+      });
+    }
   }
 
   // --- events -------------------------------------------------------------
   if (await knex.schema.hasTable('events')) {
-    const cols = [
+    const wanted = {
       // Per-event opt-in. NULL and false both mean off; the column is
       // nullable only so an existing row doesn't need backfilling.
-      ['face_recognition_enabled', (t) => t.boolean('face_recognition_enabled')],
+      face_recognition_enabled: (t) => t.boolean('face_recognition_enabled'),
       // When detection is on, does the GUEST see the people strip? Off means
       // the photographer gets the tool and guests see an unchanged gallery.
       // Defaults to on, but only matters once the above is enabled.
-      ['faces_visible_to_guests', (t) => t.boolean('faces_visible_to_guests')],
-      ['faces_last_scan_at', (t) => t.timestamp('faces_last_scan_at')],
-    ];
-    for (const [name, add] of cols) {
-      if (!(await knex.schema.hasColumn('events', name))) {
-        await knex.schema.alterTable('events', add);
-      }
+      faces_visible_to_guests: (t) => t.boolean('faces_visible_to_guests'),
+      faces_last_scan_at: (t) => t.timestamp('faces_last_scan_at'),
+    };
+    const missing = [];
+    for (const name of Object.keys(wanted)) {
+      if (!(await knex.schema.hasColumn('events', name))) missing.push(name);
+    }
+    if (missing.length) {
+      await knex.schema.alterTable('events', (table) => {
+        for (const name of missing) wanted[name](table);
+      });
     }
   }
 
   // --- app_settings -------------------------------------------------------
   if (!(await knex.schema.hasTable('app_settings'))) return;
-  for (const [key, value] of GLOBAL_DEFAULTS) {
-    const existing = await knex('app_settings').where('setting_key', key).first();
-    if (!existing) {
-      await knex('app_settings').insert({
-        setting_key: key,
-        // JSON-stringified so SQLite (TEXT) and Postgres (JSONB) round-trip
-        // the same shape — matches migrations 104 and 173.
-        setting_value: JSON.stringify(value),
-        setting_type: 'faces',
-        // ISO string, not a Date: under Jest, Date objects handed to the
-        // sqlite3 binding store as the literal "[object Object]".
-        updated_at: new Date().toISOString(),
-      });
-    }
-  }
+
+  // One SELECT and at most one INSERT, rather than a SELECT+INSERT per key.
+  const keys = GLOBAL_DEFAULTS.map(([k]) => k);
+  const present = new Set(
+    (await knex('app_settings').whereIn('setting_key', keys).select('setting_key'))
+      .map((r) => r.setting_key)
+  );
+  const rows = GLOBAL_DEFAULTS
+    .filter(([key]) => !present.has(key))
+    .map(([key, value]) => ({
+      setting_key: key,
+      // JSON-stringified so SQLite (TEXT) and Postgres (JSONB) round-trip
+      // the same shape — matches migrations 104 and 173.
+      setting_value: JSON.stringify(value),
+      setting_type: 'faces',
+      // ISO string, not a Date: under Jest, Date objects handed to the
+      // sqlite3 binding store as the literal "[object Object]".
+      updated_at: new Date().toISOString(),
+    }));
+  if (rows.length) await knex('app_settings').insert(rows);
 };
 
 exports.down = async function (knex) {

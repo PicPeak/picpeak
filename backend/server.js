@@ -78,7 +78,6 @@ const { initializeTransporter, startEmailQueueProcessor } = require('./src/servi
 const { startBackupService } = require('./src/services/backupService');
 const { startScheduledBackups } = require('./src/services/databaseBackup');
 const backgroundProcessor = require('./src/services/backgroundProcessor');
-const faceQueue = require('./src/services/faceQueue');
 const { maintenanceMiddleware } = require('./src/middleware/maintenance');
 const { sessionTimeoutMiddleware } = require('./src/middleware/sessionTimeout');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
@@ -1111,7 +1110,12 @@ async function startServer() {
     // idle — every worker tick re-checks the `faces` feature flag, which is
     // off by default. It is safe to start unconditionally precisely because
     // it never touches FACE_ML_URL until that flag is on.
-    faceQueue.start();
+    //
+    // Required HERE rather than at module scope: the face stack pulls in
+    // axios and (via imageProcessor) sharp, and server.js is imported by a
+    // large number of supertest suites that never start a worker. Keeping it
+    // lazy means they don't pay for a module graph they never use.
+    require('./src/services/faceQueue').start();
 
     app.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
