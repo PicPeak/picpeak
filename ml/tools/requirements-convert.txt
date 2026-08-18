@@ -1,0 +1,11 @@
+# Dependencies for tools/convert_facenet.py ONLY. These never enter the
+# picpeak-ml image — the conversion runs once, by hand, and only its output
+# (facenet512.onnx) is shipped.
+#
+# Unpinned deliberately: this is a one-shot developer tool, and the artifact
+# it produces is verified by SHA-256 at image-build time, so a dependency
+# drift shows up as a checksum mismatch rather than a silent change.
+tensorflow
+tf2onnx
+onnx
+deepface

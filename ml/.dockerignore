@@ -1,0 +1,16 @@
+# The conversion tool and its TensorFlow dependency never belong in the image.
+tools/
+tests/
+README.md
+LICENSES.md
+
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# Locally-produced model artifacts — the image fetches these by pinned URL
+# and checksum in the `models` build stage instead.
+*.onnx
+*.h5

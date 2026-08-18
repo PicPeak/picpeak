@@ -102,6 +102,13 @@ services:
       - PICPEAK_RELEASE_CHANNEL=${PICPEAK_CHANNEL:-stable}
       # Watch-folder auto-import: max photos processed in parallel (default 2).
       - FILE_WATCHER_CONCURRENCY=${FILE_WATCHER_CONCURRENCY:-2}
+      # Face recognition (#1074). Defaults to the sidecar's compose service
+      # name; nothing touches it until the `faces` feature flag is enabled in
+      # admin settings, so installs without the picpeak-ml container are
+      # unaffected. Start the sidecar with `--profile faces`.
+      - FACE_ML_URL=${FACE_ML_URL:-http://picpeak-ml:8000}
+      - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
+      - FACE_PROCESSOR_CONCURRENCY=${FACE_PROCESSOR_CONCURRENCY:-}
     volumes:
       - ${APP_STORAGE}:/app/storage
       - ${LOGS}:/app/logs
@@ -139,6 +146,36 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # Optional face-detection sidecar (#1074). Gated behind the `faces` profile:
+  # `docker compose --profile faces up -d`. Nothing depends on it, and the
+  # backend never calls it while the `faces` feature flag is off.
+  #
+  # The service name is `picpeak-ml` because it doubles as the hostname in
+  # FACE_ML_URL's default. Renaming it breaks that default for every install
+  # that never set the variable.
+  picpeak-ml:
+    image: ghcr.io/picpeak/picpeak/ml:${PICPEAK_CHANNEL:-stable}
+    container_name: picpeak-ml
+    profiles:
+      - faces
+    environment:
+      # The container refuses to start without this rather than serving
+      # anonymously — it must match the backend's FACE_ML_TOKEN.
+      - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
+      - FACE_ORT_THREADS=${FACE_ORT_THREADS:-1}
+      - TZ=${TZ:-UTC}
+    # No volumes and no published ports: stateless, and reachable only from
+    # the backend on picpeak-network.
+    networks:
+      - picpeak-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   frontend:
     # Use pre-built image from GitHub Container Registry

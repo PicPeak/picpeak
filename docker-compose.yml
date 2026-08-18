@@ -73,6 +73,14 @@ services:
       - STORAGE_PATH=/app/storage
       # Watch-folder auto-import: max photos processed in parallel (default 2).
       - FILE_WATCHER_CONCURRENCY=${FILE_WATCHER_CONCURRENCY:-2}
+      # Face recognition (#1074). The URL defaults to the sidecar's compose
+      # service name, so the common case needs no configuration. None of this
+      # is touched until the `faces` feature flag is enabled in admin
+      # settings — an install without the picpeak-ml container never attempts
+      # a connection.
+      - FACE_ML_URL=${FACE_ML_URL:-http://picpeak-ml:8000}
+      - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
+      - FACE_PROCESSOR_CONCURRENCY=${FACE_PROCESSOR_CONCURRENCY:-}
     # No `user:` directive — as of #484, the container starts as root,
     # chowns the bind mounts to nodejs (UID 1001), then drops privileges
     # via su-exec. PUID/PGID env vars are no longer read; if you need
@@ -164,6 +172,46 @@ services:
     ports:
       - "${MAILHOG_SMTP_PORT:-1025}:1025"
       - "${MAILHOG_UI_PORT:-8025}:8025"
+    networks:
+      - picpeak-network
+
+  # Optional face-detection sidecar (#1074). Gated behind the `faces` profile
+  # so a plain `docker compose up -d` does NOT start it — opt in with
+  # `docker compose --profile faces up -d`. Nothing depends on it: the backend
+  # only ever calls it when the `faces` feature flag is on, so an install that
+  # skips this service behaves exactly as it did before the feature existed.
+  #
+  # The service name is `picpeak-ml` (not `ml`) because it doubles as the
+  # hostname in FACE_ML_URL's default, `http://picpeak-ml:8000`. Renaming this
+  # service silently breaks that default for every install that never set the
+  # variable.
+  #
+  # Requires FACENET_ONNX_URL / FACENET_ONNX_SHA256 at build time — see
+  # ml/README.md. The image publishes no host port and mounts no volumes; it
+  # is reachable only from the backend on picpeak-network.
+  picpeak-ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+      args:
+        - FACENET_ONNX_URL=${FACENET_ONNX_URL:-}
+        - FACENET_ONNX_SHA256=${FACENET_ONNX_SHA256:-}
+    container_name: picpeak-ml
+    restart: unless-stopped
+    profiles:
+      - faces
+    environment:
+      # Shared secret with the backend. The container refuses to start
+      # without it rather than serving anonymously.
+      - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
+      - FACE_ORT_THREADS=${FACE_ORT_THREADS:-1}
+      - TZ=${TZ:-UTC}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - picpeak-network
 

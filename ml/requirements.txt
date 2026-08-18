@@ -1,0 +1,24 @@
+# picpeak-ml runtime dependencies (#1074).
+#
+# Pinned exactly. This image bakes in model weights and is meant to produce
+# byte-identical embeddings across rebuilds — a floating dependency that
+# changes how an image is decoded or resized would silently shift the
+# embedding space and invalidate every stored cluster.
+#
+# opencv-python-HEADLESS, not opencv-python: the GUI build pulls in X11/GTK
+# for highgui, which this service never calls and which is pure attack
+# surface in a container. Pinned to the 4.x line — cv2.FaceDetectorYN is
+# what loads YuNet, and 5.x reworks parts of that API.
+opencv-python-headless==4.14.0.94
+
+# CPU execution provider only. Wheels exist for manylinux x86_64 AND
+# aarch64, so both legs of the multi-arch build install a prebuilt wheel
+# and neither compiles from source.
+onnxruntime==1.29.0
+
+numpy==2.5.2
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+# Required by FastAPI to parse multipart/form-data — the only way images
+# reach this service.
+python-multipart==0.0.32

@@ -113,3 +113,33 @@ jobs:
       - name: Run Vitest suite
         working-directory: ./frontend
         run: npm test -- --run
+
+  # Optional face-detection sidecar (#1074). Runs on every PR regardless of
+  # whether the feature is enabled anywhere — these tests need no model
+  # weights (they stub the pipeline out) and cover the auth boundary, the
+  # request guards and the alignment geometry, which is where a mistake is a
+  # security problem or a silent accuracy problem rather than a visible bug.
+  ml:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Matches ml/Dockerfile's base image, so a wheel that resolves here
+          # resolves in the image too.
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: ml/requirements.txt
+
+      - name: Install ml deps
+        working-directory: ./ml
+        run: pip install -r requirements.txt pytest httpx
+
+      - name: Run pytest suite
+        working-directory: ./ml
+        run: python -m pytest tests/ -q

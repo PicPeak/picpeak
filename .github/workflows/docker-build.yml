@@ -599,8 +599,245 @@ jobs:
       run: |
         docker buildx imagetools inspect docker.io/picpeak/frontend:${{ steps.meta-frontend.outputs.version }}
 
+  # -----------------------------------------------------------------------------
+  # ML sidecar (#1074): per-arch build, then merge into a multi-arch manifest
+  # -----------------------------------------------------------------------------
+  # Gated on the FACENET_ONNX_URL repository *variable* (Settings → Variables,
+  # not Secrets — it's a public release-asset URL). While it is unset, both ML
+  # jobs skip and the workflow behaves exactly as it did before this feature.
+  #
+  # Why a gate at all: deepface distributes FaceNet-512 as Keras .h5 only, so
+  # the ONNX has to be produced once by ml/tools/convert_facenet.py and
+  # published as a release asset before anything can build. Converting inside
+  # this workflow would drag TensorFlow (~600MB) through BOTH architecture legs
+  # of EVERY build to produce a file that is byte-identical each time.
+  #
+  # To activate, set two repository variables:
+  #   FACENET_ONNX_URL     https://github.com/PicPeak/picpeak/releases/download/<tag>/facenet512.onnx
+  #   FACENET_ONNX_SHA256  <sha256 of that file>
+  # See ml/README.md for producing them.
+  build-ml:
+    if: vars.FACENET_ONNX_URL != ''
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Compute image names (lowercase for GHCR)
+      run: |
+        repo_lc="${GITHUB_REPOSITORY,,}"
+        echo "ML_IMAGE_NAME=${repo_lc}/ml" >> "$GITHUB_ENV"
+
+    - name: Prepare platform pair
+      run: |
+        platform="${{ matrix.platform }}"
+        echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+      id: login-ghcr
+      continue-on-error: true
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Determine if pushing
+      id: push-decision
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
+          echo "push=false" >> "$GITHUB_OUTPUT"
+        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
+          echo "push=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "push=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Extract metadata for ML (labels only)
+      id: meta-ml
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}
+        labels: |
+          org.opencontainers.image.title=PicPeak ML
+          org.opencontainers.image.description=PicPeak face detection and embedding sidecar
+          org.opencontainers.image.vendor=PicPeak
+          maintainer=${{ github.repository_owner }}
+
+    - name: Build ML image (push by digest)
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: ./ml
+        file: ./ml/Dockerfile
+        platforms: ${{ matrix.platform }}
+        labels: ${{ steps.meta-ml.outputs.labels }}
+        cache-from: type=gha,scope=ml-${{ env.PLATFORM_PAIR }}
+        cache-to: type=gha,mode=max,scope=ml-${{ env.PLATFORM_PAIR }},ignore-error=true
+        outputs: ${{ steps.push-decision.outputs.push == 'true' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.ML_IMAGE_NAME) || 'type=cacheonly' }}
+        build-args: |
+          CACHEBUST=${{ github.run_number }}
+          BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          VCS_REF=${{ github.sha }}
+          VERSION=${{ steps.meta-ml.outputs.version }}
+          FACENET_ONNX_URL=${{ vars.FACENET_ONNX_URL }}
+          FACENET_ONNX_SHA256=${{ vars.FACENET_ONNX_SHA256 }}
+
+    - name: Export digest
+      if: steps.push-decision.outputs.push == 'true'
+      run: |
+        mkdir -p /tmp/digests
+        digest="${{ steps.build.outputs.digest }}"
+        touch "/tmp/digests/${digest#sha256:}"
+
+    - name: Upload digest artifact
+      if: steps.push-decision.outputs.push == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: digests-ml-${{ env.PLATFORM_PAIR }}
+        path: /tmp/digests/*
+        if-no-files-found: error
+        retention-days: 1
+
+    # Per-arch scan by digest, same reasoning as the backend leg (#476).
+    # This image carries a Python/Debian dependency surface the other two
+    # don't, so it gets its own Security-tab category.
+    - name: Run Trivy vulnerability scanner (per-arch, by digest)
+      if: steps.push-decision.outputs.push == 'true'
+      uses: aquasecurity/trivy-action@v0.36.0
+      env:
+        TRIVY_PLATFORM: ${{ matrix.platform }}
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        format: 'sarif'
+        output: 'trivy-ml-${{ env.PLATFORM_PAIR }}.sarif'
+        severity: 'CRITICAL,HIGH'
+        timeout: '10m'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      if: steps.push-decision.outputs.push == 'true'
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: 'trivy-ml-${{ env.PLATFORM_PAIR }}.sarif'
+        category: 'ml-vulnerabilities-${{ env.PLATFORM_PAIR }}'
+
+  merge-ml:
+    needs: build-ml
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    if: vars.FACENET_ONNX_URL != '' && (github.event_name != 'pull_request' || github.event.inputs.push == 'true')
+
+    steps:
+    - name: Compute image names (lowercase for GHCR)
+      run: |
+        repo_lc="${GITHUB_REPOSITORY,,}"
+        echo "ML_IMAGE_NAME=${repo_lc}/ml" >> "$GITHUB_ENV"
+        if [[ "$GITHUB_REPOSITORY" == "PicPeak/picpeak" ]]; then
+          echo "DOCKERHUB_ENABLED=true" >> "$GITHUB_ENV"
+        else
+          echo "DOCKERHUB_ENABLED=false" >> "$GITHUB_ENV"
+        fi
+
+    - name: Download digest artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: /tmp/digests
+        pattern: digests-ml-*
+        merge-multiple: true
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      id: login-ghcr
+      continue-on-error: true
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Determine build context
+      id: context
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
+          echo "channel=beta" >> $GITHUB_OUTPUT
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+        else
+          echo "channel=stable" >> $GITHUB_OUTPUT
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Log in to Docker Hub
+      if: env.DOCKERHUB_ENABLED == 'true'
+      uses: docker/login-action@v3
+      with:
+        registry: docker.io
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Extract metadata for ML
+      id: meta-ml
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}
+          ${{ env.DOCKERHUB_ENABLED == 'true' && 'docker.io/picpeak/ml' || '' }}
+        labels: |
+          org.opencontainers.image.title=PicPeak ML
+          org.opencontainers.image.description=PicPeak face detection and embedding sidecar
+          org.opencontainers.image.vendor=PicPeak
+          maintainer=${{ github.repository_owner }}
+        # Identical tag scheme to backend/frontend: the sidecar's API contract
+        # is versioned with the backend that calls it, so PICPEAK_CHANNEL
+        # resolves the same string across all three images.
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
+          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
+          type=ref,event=tag
+          type=sha,format=short
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
+          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
+
+    - name: Create and push multi-arch manifest
+      working-directory: /tmp/digests
+      run: |
+        docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          $(printf "${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}@sha256:%s " *)
+
+    - name: Inspect manifest (GHCR)
+      run: |
+        docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}:${{ steps.meta-ml.outputs.version }}
+
+    - name: Inspect manifest (Docker Hub)
+      if: env.DOCKERHUB_ENABLED == 'true'
+      run: |
+        docker buildx imagetools inspect docker.io/picpeak/ml:${{ steps.meta-ml.outputs.version }}
+
   summary:
-    needs: [build-backend, merge-backend, build-frontend, merge-frontend]
+    needs: [build-backend, merge-backend, build-frontend, merge-frontend, build-ml, merge-ml]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -612,6 +849,7 @@ jobs:
         repo_lc="${GITHUB_REPOSITORY,,}"
         echo "BACKEND_IMAGE_NAME=${repo_lc}/backend" >> "$GITHUB_ENV"
         echo "FRONTEND_IMAGE_NAME=${repo_lc}/frontend" >> "$GITHUB_ENV"
+        echo "ML_IMAGE_NAME=${repo_lc}/ml" >> "$GITHUB_ENV"
         # Mirror manifests to Docker Hub (picpeak/{backend,frontend}) only on the
         # canonical org repo, where the DOCKERHUB_* secrets live. Forks (and any
         # other owner) fall back to GHCR-only — the Docker Hub image line and login
@@ -655,10 +893,32 @@ jobs:
           echo "❌ **Frontend manifest merge**: ${{ needs.merge-frontend.result }}" >> $GITHUB_STEP_SUMMARY
         fi
 
+        # The ML sidecar (#1074) is optional and only builds once the
+        # FACENET_ONNX_URL repository variable is set — "skipped" is the
+        # expected state, not a failure, so report it as such.
+        if [[ "${{ needs.build-ml.result }}" == "success" ]]; then
+          echo "✅ **ML sidecar build (per-arch)**: Successfully built" >> $GITHUB_STEP_SUMMARY
+        elif [[ "${{ needs.build-ml.result }}" == "skipped" ]]; then
+          echo "ℹ️ **ML sidecar build**: Skipped (FACENET_ONNX_URL repository variable not set — see ml/README.md)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **ML sidecar build (per-arch)**: ${{ needs.build-ml.result }}" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        if [[ "${{ needs.merge-ml.result }}" == "success" ]]; then
+          echo "✅ **ML sidecar manifest merge**: Successfully published" >> $GITHUB_STEP_SUMMARY
+        elif [[ "${{ needs.merge-ml.result }}" == "skipped" ]]; then
+          echo "ℹ️ **ML sidecar manifest merge**: Skipped" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **ML sidecar manifest merge**: ${{ needs.merge-ml.result }}" >> $GITHUB_STEP_SUMMARY
+        fi
+
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📦 Images" >> $GITHUB_STEP_SUMMARY
         echo "- Backend: \`${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
         echo "- Frontend: \`${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ needs.merge-ml.result }}" == "success" ]]; then
+          echo "- ML sidecar (optional): \`${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+        fi
         if [[ "$DOCKERHUB_ENABLED" == "true" ]]; then
           echo "- Backend (Docker Hub): \`docker.io/picpeak/backend\`" >> $GITHUB_STEP_SUMMARY
           echo "- Frontend (Docker Hub): \`docker.io/picpeak/frontend\`" >> $GITHUB_STEP_SUMMARY

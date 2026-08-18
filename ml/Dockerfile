@@ -1,0 +1,104 @@
+# picpeak-ml — optional face-detection sidecar (#1074).
+#
+# Debian slim rather than Alpine: onnxruntime publishes manylinux wheels for
+# x86_64 and aarch64 but nothing for musl, so Alpine would mean compiling ORT
+# from source on both legs of the multi-arch build. The slim base costs ~40MB
+# over Alpine and saves an hour of CI per build.
+
+# ---------------------------------------------------------------------------
+# Stage 1 — fetch and verify model weights
+# ---------------------------------------------------------------------------
+# Weights are baked in, never downloaded at runtime: airgapped installs must
+# work, and a model that changes under a running deployment would silently
+# invalidate every stored embedding.
+#
+# Both artifacts are pinned by URL *and* SHA-256. The checksum is the point —
+# an immutable-looking URL that starts serving different bytes must fail the
+# build rather than quietly reshape the embedding space.
+FROM python:3.12-slim AS models
+
+ARG YUNET_URL=https://media.githubusercontent.com/media/opencv/opencv_zoo/f12e12798e8314f7c074a6656816c048dcc95b7a/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+ARG YUNET_SHA256=8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4
+
+# FaceNet-512 as ONNX. deepface distributes this model as Keras .h5 only, so
+# the ONNX is produced once by `tools/convert_facenet.py` and published as a
+# release asset — converting inside this build would drag TensorFlow (~600MB)
+# through both architecture legs to produce a file that is byte-identical on
+# each. There is deliberately NO default: an unset value fails the build with
+# the message below rather than producing an image whose embedder is missing.
+ARG FACENET_ONNX_URL=
+ARG FACENET_ONNX_SHA256=
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /models
+
+RUN curl -fsSL -o face_detection_yunet_2023mar.onnx "${YUNET_URL}" \
+    && echo "${YUNET_SHA256}  face_detection_yunet_2023mar.onnx" | sha256sum -c -
+
+RUN if [ -z "${FACENET_ONNX_URL}" ] || [ -z "${FACENET_ONNX_SHA256}" ]; then \
+      echo "ERROR: FACENET_ONNX_URL and FACENET_ONNX_SHA256 build args are required." >&2; \
+      echo "       Produce the artifact with ml/tools/convert_facenet.py, publish it," >&2; \
+      echo "       then pass both args. See ml/README.md." >&2; \
+      exit 1; \
+    fi \
+    && curl -fsSL -o facenet512.onnx "${FACENET_ONNX_URL}" \
+    && echo "${FACENET_ONNX_SHA256}  facenet512.onnx" | sha256sum -c -
+
+# ---------------------------------------------------------------------------
+# Stage 2 — runtime
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim
+
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION
+
+LABEL org.opencontainers.image.source="https://github.com/PicPeak/picpeak"
+LABEL org.opencontainers.image.description="PicPeak ML sidecar — face detection and embedding"
+LABEL org.opencontainers.image.licenses="MIT"
+
+# Busts the apt layer each CI run so the image picks up current Debian
+# security updates instead of reusing a stale cached upgrade layer — same
+# reasoning as backend/Dockerfile.
+ARG CACHEBUST=1
+RUN echo "cachebust=${CACHEBUST}" \
+    && apt-get update \
+    && apt-get upgrade -y \
+    # libGL and libglib are opencv-python-headless's remaining shared-library
+    # deps. The headless wheel drops the GUI toolkits but still links libGL.
+    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY --from=models /models /models
+COPY app ./app
+
+# Non-root. Nothing in this container writes anything — no volumes, no
+# database, no model download — so the whole filesystem can stay read-only to
+# the service account.
+RUN useradd --system --uid 1001 --create-home picpeak \
+    && chown -R picpeak:picpeak /app /models
+USER picpeak
+
+ENV FACE_MODEL_DIR=/models \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+EXPOSE 8000
+
+# Mirrors the backend's healthcheck shape. /health is unauthenticated so this
+# needs no secret; it reports liveness only, because a failed model load
+# aborts startup and the container never serves at all.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"
+
+# Single worker on purpose: the models are loaded per process, so a second
+# worker doubles RSS for a service the backend calls at concurrency 1.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

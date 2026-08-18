@@ -133,3 +133,15 @@ new-layouts/
 # Backend runtime storage (generated media, previews, thumbnails,
 # CRM/accounting documents) — never commit
 backend/storage/
+
+# Python artifacts — the picpeak-ml sidecar (#1074) is the only Python in
+# this tree, but bytecode and virtualenvs must never be committed.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+ml/.venv/
+ml/venv/
+# Locally produced model weights. The image fetches these by pinned URL and
+# SHA-256 at build time; a 90MB blob must not end up in git history.
+ml/*.onnx
+ml/*.h5
