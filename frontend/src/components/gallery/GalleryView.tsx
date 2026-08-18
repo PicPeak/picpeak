@@ -1210,7 +1210,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
                 current selection is stated, so "why am I seeing 97 photos"
                 is always answerable at a glance. */}
             {selectedPersonIds.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 py-2 border-t border-neutral-100">
+              <div
+                className="flex flex-wrap items-center gap-2 py-2 border-t"
+                style={{ borderColor: 'var(--color-surface-border)' }}
+              >
                 {selectedPersonIds.map((id) => {
                   const person = people.find((p) => p.id === id);
                   if (!person) return null;
@@ -1235,7 +1238,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
                   <button
                     type="button"
                     onClick={() => setPeopleMatchAny((v) => !v)}
-                    className="px-2.5 py-1 rounded-full border border-neutral-200 text-xs text-neutral-600 hover:bg-neutral-50"
+                    className="px-2.5 py-1 rounded-full border text-xs"
+                    style={{
+                      color: 'var(--color-text)',
+                      borderColor: 'var(--color-surface-border)',
+                    }}
                   >
                     {peopleMatchAny
                       ? t('gallery.people.matchAny', { defaultValue: 'Either person' })
@@ -1243,7 +1250,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
                   </button>
                 )}
 
-                <span className="text-sm text-neutral-500 ml-auto">
+                <span className="text-sm ml-auto" style={{ color: 'var(--color-muted-text)' }}>
                   {t('gallery.people.matchCount', {
                     count: filteredPhotos.length,
                     total: totalCount,
@@ -1254,7 +1261,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
                 <button
                   type="button"
                   onClick={() => { setSelectedPersonIds([]); setPeopleMatchAny(false); }}
-                  className="text-sm text-neutral-500 hover:text-neutral-700 underline"
+                  className="text-sm underline"
+                  style={{ color: 'var(--color-muted-text)' }}
                 >
                   {t('gallery.people.clear', { defaultValue: 'Clear' })}
                 </button>

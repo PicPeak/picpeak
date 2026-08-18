@@ -28,8 +28,9 @@ const logger = require('../utils/logger');
 const FLAG_KEY = 'faces';
 
 const DEFAULTS = {
-  // Measured on LFW through this exact pipeline — see migration 177.
-  face_match_threshold: 0.50,
+  // Measured on a real gallery, not just on LFW pairs — see migration 177
+  // for why those two disagree and why cluster purity wins.
+  face_match_threshold: 0.60,
   face_min_cluster_size: 3,
   face_quality_min_score: 0.7,
   face_quality_min_px: 40,

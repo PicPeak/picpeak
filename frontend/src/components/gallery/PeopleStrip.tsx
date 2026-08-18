@@ -110,17 +110,23 @@ const PersonAvatar: React.FC<PersonAvatarProps> = ({
       </span>
 
       <span className="w-full text-center leading-tight">
+        {/* Colours come from the gallery theme tokens, not fixed neutrals:
+            galleries can be dark, and hardcoded `text-neutral-800` renders
+            a named person's label almost invisibly against one. */}
         <span
-          className={[
-            'block truncate text-xs',
-            person.label ? 'font-medium text-neutral-800' : 'text-neutral-500',
-            selected ? 'text-primary-700' : '',
-          ].join(' ')}
+          className="block truncate text-xs"
+          style={{
+            color: selected ? 'var(--color-accent)' : 'var(--color-text)',
+            fontWeight: person.label ? 500 : 400,
+            opacity: person.label ? 1 : 0.75,
+          }}
         >
           {label}
         </span>
         {person.label && (
-          <span className="block text-[11px] text-neutral-400">{person.face_count}</span>
+          <span className="block text-[11px]" style={{ color: 'var(--color-muted-text)' }}>
+            {person.face_count}
+          </span>
         )}
       </span>
     </button>
@@ -162,7 +168,7 @@ export const PeopleStrip: React.FC<PeopleStripProps> = ({
   if (collapsed) {
     return (
       <div className="flex items-center justify-between px-1 py-2 text-sm">
-        <span className="text-neutral-500">
+        <span style={{ color: 'var(--color-muted-text)' }}>
           {t('gallery.people.collapsedSummary', {
             count: people.length,
             defaultValue: `${people.length} people found`,
@@ -185,7 +191,7 @@ export const PeopleStrip: React.FC<PeopleStripProps> = ({
   return (
     <div className="py-3">
       <div className="flex items-center justify-between mb-2 px-1">
-        <h3 className="text-sm font-medium text-neutral-700">
+        <h3 className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
           {t('gallery.people.title', { defaultValue: 'People in this gallery' })}
         </h3>
 
@@ -220,7 +226,7 @@ export const PeopleStrip: React.FC<PeopleStripProps> = ({
       {scan?.in_progress && (
         <div className="px-1 pb-2">
           <div className="flex items-center justify-between text-xs text-neutral-500 mb-1">
-            <span>
+            <span style={{ color: 'var(--color-muted-text)' }}>
               {t('gallery.people.scanning', {
                 scanned: scan.scanned,
                 total: scan.total,
