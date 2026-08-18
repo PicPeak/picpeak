@@ -2,6 +2,7 @@
 // module-level overview. Do not add behavior here without updating the entry re-exports.
 
 const crypto = require('crypto');
+const { getStoragePath } = require('../../config/storage');
 const fs = require('fs');
 const path = require('path');
 const logger = require('../../utils/logger');
@@ -42,7 +43,7 @@ function sha256OfFile(filePath) {
 async function persistContractPdf(contract, buffer, suffix = '') {
   if (!contract.contract_number) return { filePath: null, sha256: null };
   const year = (contract.issue_date ? new Date(contract.issue_date) : new Date()).getFullYear();
-  const root = path.join(process.cwd(), 'storage', 'business-docs', 'contract', String(year));
+  const root = path.join(getStoragePath(), 'business-docs', 'contract', String(year));
   fs.mkdirSync(root, { recursive: true });
   // Always append a millisecond timestamp to the filename so writes
   // never overwrite an earlier version on disk. Forensic preservation.
@@ -92,8 +93,7 @@ async function persistSignatureImage(contract, role, dataUrl) {
   }
   const ext = match[1] === 'jpeg' ? 'jpg' : 'png';
   const root = path.join(
-    process.cwd(),
-    'storage',
+    getStoragePath(),
     'business-docs',
     'contract',
     'signatures',
@@ -194,7 +194,7 @@ async function persistAuditCertificate(contract) {
   try {
     const { buffer } = await pdfStampService.renderAuditCertificate(ctx);
     const year = (contract.issue_date ? new Date(contract.issue_date) : new Date()).getFullYear();
-    const root = path.join(process.cwd(), 'storage', 'business-docs', 'contract', String(year));
+    const root = path.join(getStoragePath(), 'business-docs', 'contract', String(year));
     fs.mkdirSync(root, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filePath = path.join(root, `${contract.contract_number}_audit_${stamp}.pdf`);
