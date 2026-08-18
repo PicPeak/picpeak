@@ -15,5 +15,6 @@ require('./resets')(router);
 require('./archiveBulk')(router);
 require('./logo')(router);
 require('./qr')(router);
+require('./faces')(router);
 
 module.exports = router;

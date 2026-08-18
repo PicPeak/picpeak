@@ -78,6 +78,7 @@ const { initializeTransporter, startEmailQueueProcessor } = require('./src/servi
 const { startBackupService } = require('./src/services/backupService');
 const { startScheduledBackups } = require('./src/services/databaseBackup');
 const backgroundProcessor = require('./src/services/backgroundProcessor');
+const faceQueue = require('./src/services/faceQueue');
 const { maintenanceMiddleware } = require('./src/middleware/maintenance');
 const { sessionTimeoutMiddleware } = require('./src/middleware/sessionTimeout');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
@@ -1105,6 +1106,12 @@ async function startServer() {
     // photos in 'pending' state (from POST /upload) and runs the
     // sharp/ffmpeg/EXIF pipeline off the request thread.
     backgroundProcessor.start();
+
+    // Face detection (#1074). Starts alongside the photo processor but stays
+    // idle — every worker tick re-checks the `faces` feature flag, which is
+    // off by default. It is safe to start unconditionally precisely because
+    // it never touches FACE_ML_URL until that flag is on.
+    faceQueue.start();
 
     app.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);

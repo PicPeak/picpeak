@@ -541,6 +541,23 @@ async function processPhoto(photoId) {
   // Mark complete
   updateData.processing_status = 'complete';
   updateData.processing_error = null;
+
+  // Face detection (#1074): this is the only correct place to enqueue.
+  // Earlier and there is no preview rendition to scan; later and there is no
+  // hook at all. Same UPDATE rather than a follow-up write, so a crash
+  // between the two can't leave a complete photo permanently unqueued.
+  // Guarded on BOTH the global flag and the per-event toggle, so installs
+  // without the feature never write a face_status at all.
+  try {
+    const { isEnabledForEvent } = require('./faceSettings');
+    if (!isVideo && await isEnabledForEvent(event)) {
+      updateData.face_status = 'pending';
+    }
+  } catch (err) {
+    // Never let the face feature block a photo from completing.
+    logger.warn(`processPhoto: face enqueue check failed for ${photoId}`, { error: err.message });
+  }
+
   await db('photos').where({ id: photoId }).update(updateData);
 
   // Side effects (best-effort, never fail the photo if these break)

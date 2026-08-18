@@ -1,0 +1,429 @@
+/**
+ * Per-event face clustering (#1074).
+ *
+ * Plain JS over a few thousand rows. A gallery is hundreds to low-thousands
+ * of faces, so this needs no vector database and no native extension — the
+ * embeddings live in a BLOB column and the maths is a dot product.
+ *
+ * Algorithm: greedy incremental assignment. A new face is compared against
+ * every existing person centroid in the event; above the match threshold it
+ * joins the nearest one and updates that centroid as a running mean,
+ * otherwise it opens a new person.
+ *
+ * Greedy assignment is order-dependent by construction — the same photos
+ * uploaded in a different order can produce different clusters. That is
+ * accepted here (it is what Immich, PhotoPrism and Ente all do) and mitigated
+ * by `consolidate()`, which merges centroid pairs that have drifted together,
+ * plus the admin merge/split tools. What it buys is that a photo can be
+ * clustered the moment it is scanned, so the strip fills in during a backfill
+ * instead of after it.
+ *
+ * Embeddings arrive L2-normalized from the sidecar, so cosine similarity is a
+ * plain dot product. Centroids are re-normalized after every update to keep
+ * that true.
+ */
+
+const { db } = require('../database/db');
+const logger = require('../utils/logger');
+const { getThresholds } = require('./faceSettings');
+
+const FLOAT_BYTES = 4;
+
+// -- serialization -----------------------------------------------------------
+
+/**
+ * Float32Array → Buffer for the BLOB column. Little-endian on every platform
+ * we ship (x86_64, aarch64), and the value never leaves the deployment, so
+ * no byte-order header is needed.
+ */
+function packEmbedding(vec) {
+  const arr = vec instanceof Float32Array ? vec : Float32Array.from(vec);
+  return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength);
+}
+
+function unpackEmbedding(buf) {
+  if (!buf) return null;
+  // Postgres bytea comes back as Buffer; SQLite may hand back a Uint8Array.
+  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  if (b.length % FLOAT_BYTES !== 0) return null;
+  // Copy rather than aliasing: a Buffer from the driver may be a view into a
+  // larger pooled allocation, and Float32Array over an unaligned offset
+  // throws.
+  const copy = Buffer.from(b);
+  return new Float32Array(copy.buffer, copy.byteOffset, copy.length / FLOAT_BYTES);
+}
+
+// -- vector maths ------------------------------------------------------------
+
+function dot(a, b) {
+  let sum = 0;
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) sum += a[i] * b[i];
+  return sum;
+}
+
+function normalize(vec) {
+  let sumSq = 0;
+  for (let i = 0; i < vec.length; i++) sumSq += vec[i] * vec[i];
+  const norm = Math.sqrt(sumSq);
+  if (norm === 0) return vec;
+  const out = new Float32Array(vec.length);
+  for (let i = 0; i < vec.length; i++) out[i] = vec[i] / norm;
+  return out;
+}
+
+/**
+ * Running mean of `count` existing vectors with one new vector, re-normalized.
+ */
+function updateCentroid(centroid, count, incoming) {
+  const out = new Float32Array(centroid.length);
+  for (let i = 0; i < centroid.length; i++) {
+    out[i] = (centroid[i] * count + incoming[i]) / (count + 1);
+  }
+  return normalize(out);
+}
+
+// -- quality -----------------------------------------------------------------
+
+/**
+ * Is this face good enough to define a person?
+ *
+ * Low-quality faces are still STORED and still shown in "this photo contains"
+ * — they just don't get assigned, so they can't spawn junk people or drag a
+ * good centroid off course. A blurry profile at 30px is a real detection and
+ * a terrible identity.
+ */
+function meetsQualityFloor(face, thresholds) {
+  if (face.det_score != null && face.det_score < thresholds.face_quality_min_score) return false;
+  const size = Math.min(face.bbox_w ?? 0, face.bbox_h ?? 0);
+  if (size < thresholds.face_quality_min_px) return false;
+  return true;
+}
+
+// -- clustering --------------------------------------------------------------
+
+/**
+ * Assign a set of freshly-inserted faces to people within one event.
+ *
+ * Loads the event's people once, mutates centroids in memory across the whole
+ * batch, then writes back — so a photo with five faces costs one read and one
+ * write pass rather than five of each.
+ */
+async function assignFaces(eventId, faceRows, options = {}) {
+  const thresholds = options.thresholds || (await getThresholds());
+  const trx = options.trx || db;
+
+  const people = await trx('event_people')
+    .where({ event_id: eventId })
+    .select('id', 'centroid', 'face_count_total', 'model_version');
+
+  const state = people.map((p) => ({
+    id: p.id,
+    centroid: unpackEmbedding(p.centroid),
+    count: p.face_count_total || 0,
+    dirty: false,
+    modelVersion: p.model_version,
+  })).filter((p) => p.centroid);
+
+  const assignments = [];
+
+  for (const face of faceRows) {
+    const embedding = unpackEmbedding(face.embedding);
+    if (!embedding) continue;
+
+    if (!meetsQualityFloor(face, thresholds)) {
+      assignments.push({ faceId: face.id, personId: null });
+      continue;
+    }
+
+    let best = null;
+    let bestScore = -Infinity;
+    for (const person of state) {
+      // Never compare across embedding spaces — a model change makes old
+      // centroids meaningless rather than merely stale.
+      if (person.modelVersion && face.model_version && person.modelVersion !== face.model_version) {
+        continue;
+      }
+      const score = dot(embedding, person.centroid);
+      if (score > bestScore) {
+        bestScore = score;
+        best = person;
+      }
+    }
+
+    if (best && bestScore >= thresholds.face_match_threshold) {
+      best.centroid = updateCentroid(best.centroid, best.count, embedding);
+      best.count += 1;
+      best.dirty = true;
+      assignments.push({ faceId: face.id, personId: best.id });
+    } else {
+      const [inserted] = await trx('event_people').insert({
+        event_id: eventId,
+        centroid: packEmbedding(embedding),
+        face_count_total: 1,
+        model_version: face.model_version,
+        cover_face_id: face.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).returning('id');
+      const personId = typeof inserted === 'object' ? inserted.id : inserted;
+
+      state.push({
+        id: personId,
+        centroid: embedding,
+        count: 1,
+        dirty: false,
+        modelVersion: face.model_version,
+      });
+      assignments.push({ faceId: face.id, personId });
+    }
+  }
+
+  for (const { faceId, personId } of assignments) {
+    await trx('photo_faces').where({ id: faceId }).update({ person_id: personId });
+  }
+
+  for (const person of state) {
+    if (!person.dirty) continue;
+    await trx('event_people').where({ id: person.id }).update({
+      centroid: packEmbedding(person.centroid),
+      face_count_total: person.count,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  return assignments;
+}
+
+/**
+ * Merge people whose centroids have drifted together.
+ *
+ * Greedy assignment can open "Anna in daylight" and "Anna at the party" as
+ * two clusters when the first few photos of each were dissimilar. Once both
+ * have absorbed enough faces their centroids converge, and this pass catches
+ * that. Runs at a slightly stricter threshold than initial assignment:
+ * merging two established clusters is a bigger claim than adding one face to
+ * one of them, and an over-eager merge is much harder for a photographer to
+ * unpick than a missed one.
+ */
+async function consolidate(eventId, options = {}) {
+  const thresholds = options.thresholds || (await getThresholds());
+  const mergeThreshold = Math.min(0.95, thresholds.face_match_threshold + 0.08);
+
+  const people = await db('event_people')
+    .where({ event_id: eventId })
+    .select('id', 'centroid', 'face_count_total', 'model_version', 'label');
+
+  const state = people
+    .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
+    .filter((p) => p.vec);
+
+  const merged = [];
+  const absorbed = new Set();
+
+  for (let i = 0; i < state.length; i++) {
+    if (absorbed.has(state[i].id)) continue;
+    for (let j = i + 1; j < state.length; j++) {
+      if (absorbed.has(state[j].id)) continue;
+      const a = state[i];
+      const b = state[j];
+      if (a.model_version !== b.model_version) continue;
+
+      // Never silently merge two people the photographer has NAMED
+      // differently — that is a human assertion this heuristic does not get
+      // to overrule.
+      if (a.label && b.label && a.label !== b.label) continue;
+
+      if (dot(a.vec, b.vec) >= mergeThreshold) {
+        await mergePeople(eventId, [b.id], a.id);
+        absorbed.add(b.id);
+        merged.push({ from: b.id, into: a.id });
+      }
+    }
+  }
+
+  if (merged.length) {
+    logger.info(`faceClustering: consolidated ${merged.length} person pair(s) in event ${eventId}`);
+  }
+  return merged;
+}
+
+/**
+ * Move every face from `sourceIds` onto `targetId` and delete the sources.
+ * Recomputes the target centroid from its actual members rather than
+ * averaging the two centroids — cheap at this scale, and exact.
+ */
+async function mergePeople(eventId, sourceIds, targetId) {
+  const ids = sourceIds.filter((id) => id !== targetId);
+  if (!ids.length) return { moved: 0 };
+
+  return db.transaction(async (trx) => {
+    const moved = await trx('photo_faces')
+      .where({ event_id: eventId })
+      .whereIn('person_id', ids)
+      .update({ person_id: targetId });
+
+    await trx('event_people').where({ event_id: eventId }).whereIn('id', ids).del();
+    await recomputeCentroid(targetId, trx);
+    return { moved };
+  });
+}
+
+/**
+ * Pull `faceIds` out of their cluster into a brand-new person.
+ */
+async function splitPerson(eventId, personId, faceIds) {
+  if (!faceIds?.length) return null;
+
+  return db.transaction(async (trx) => {
+    const faces = await trx('photo_faces')
+      .where({ event_id: eventId, person_id: personId })
+      .whereIn('id', faceIds)
+      .select('id', 'embedding', 'model_version');
+
+    if (!faces.length) return null;
+
+    const [inserted] = await trx('event_people').insert({
+      event_id: eventId,
+      face_count_total: 0,
+      model_version: faces[0].model_version,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).returning('id');
+    const newPersonId = typeof inserted === 'object' ? inserted.id : inserted;
+
+    await trx('photo_faces')
+      .whereIn('id', faces.map((f) => f.id))
+      .update({ person_id: newPersonId });
+
+    await recomputeCentroid(newPersonId, trx);
+    await recomputeCentroid(personId, trx);
+    return newPersonId;
+  });
+}
+
+/**
+ * Recompute one person's centroid and count from its member faces.
+ * Deletes the person if it has no members left.
+ */
+async function recomputeCentroid(personId, trx = db) {
+  const faces = await trx('photo_faces')
+    .where({ person_id: personId })
+    .select('id', 'embedding', 'det_score');
+
+  if (!faces.length) {
+    await trx('event_people').where({ id: personId }).del();
+    return;
+  }
+
+  const vectors = faces.map((f) => unpackEmbedding(f.embedding)).filter(Boolean);
+  if (!vectors.length) return;
+
+  const mean = new Float32Array(vectors[0].length);
+  for (const vec of vectors) {
+    for (let i = 0; i < mean.length; i++) mean[i] += vec[i];
+  }
+  for (let i = 0; i < mean.length; i++) mean[i] /= vectors.length;
+
+  // Cover face: the highest-scoring detection in the cluster, so the avatar
+  // is the sharpest available crop of that person rather than whichever face
+  // happened to arrive first.
+  const cover = faces.reduce((a, b) => ((b.det_score ?? 0) > (a.det_score ?? 0) ? b : a));
+
+  await trx('event_people').where({ id: personId }).update({
+    centroid: packEmbedding(normalize(mean)),
+    face_count_total: faces.length,
+    cover_face_id: cover.id,
+    updated_at: new Date().toISOString(),
+  });
+}
+
+/**
+ * Re-derive every cluster in an event from stored embeddings, without
+ * touching the sidecar. Needed after threshold tuning — the expensive part
+ * (inference) is already done and cached in the rows.
+ *
+ * Preserves labels by re-attaching them to whichever new cluster inherited
+ * the most faces from the old one. Without this, re-clustering a gallery
+ * would silently discard every name the photographer typed.
+ */
+async function recluster(eventId) {
+  const thresholds = await getThresholds();
+
+  const previousLabels = await db('event_people')
+    .where({ event_id: eventId })
+    .whereNotNull('label')
+    .select('id', 'label', 'is_hidden', 'is_ignored');
+
+  const priorMembership = new Map();
+  if (previousLabels.length) {
+    const rows = await db('photo_faces')
+      .where({ event_id: eventId })
+      .whereIn('person_id', previousLabels.map((p) => p.id))
+      .select('id', 'person_id');
+    for (const row of rows) priorMembership.set(row.id, row.person_id);
+  }
+
+  await db.transaction(async (trx) => {
+    await trx('photo_faces').where({ event_id: eventId }).update({ person_id: null });
+    await trx('event_people').where({ event_id: eventId }).del();
+  });
+
+  const faces = await db('photo_faces')
+    .where({ event_id: eventId })
+    .orderBy('id', 'asc')
+    .select('id', 'embedding', 'model_version', 'det_score', 'bbox_w', 'bbox_h');
+
+  const assignments = await assignFaces(eventId, faces, { thresholds });
+
+  // Re-attach labels by majority inheritance.
+  if (previousLabels.length) {
+    const tally = new Map(); // newPersonId -> Map<oldPersonId, count>
+    for (const { faceId, personId } of assignments) {
+      if (personId == null) continue;
+      const oldId = priorMembership.get(faceId);
+      if (oldId == null) continue;
+      if (!tally.has(personId)) tally.set(personId, new Map());
+      const inner = tally.get(personId);
+      inner.set(oldId, (inner.get(oldId) || 0) + 1);
+    }
+
+    const claimed = new Set();
+    for (const [newId, inner] of tally) {
+      const [bestOldId] = [...inner.entries()].sort((a, b) => b[1] - a[1])[0];
+      if (claimed.has(bestOldId)) continue;
+      const old = previousLabels.find((p) => p.id === bestOldId);
+      if (!old) continue;
+      claimed.add(bestOldId);
+      await db('event_people').where({ id: newId }).update({
+        label: old.label,
+        is_hidden: old.is_hidden,
+        is_ignored: old.is_ignored,
+        updated_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  for (const personId of new Set(assignments.map((a) => a.personId).filter(Boolean))) {
+    await recomputeCentroid(personId);
+  }
+  await consolidate(eventId, { thresholds });
+
+  const count = await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first();
+  logger.info(`faceClustering: reclustered event ${eventId} → ${count?.c ?? 0} people`);
+  return Number(count?.c ?? 0);
+}
+
+module.exports = {
+  packEmbedding,
+  unpackEmbedding,
+  dot,
+  normalize,
+  meetsQualityFloor,
+  assignFaces,
+  consolidate,
+  mergePeople,
+  splitPerson,
+  recomputeCentroid,
+  recluster,
+};

@@ -29,7 +29,20 @@ const packageJson = require('../../package.json');
 const PICPEAK_FORMAT_VERSION = 1;
 
 // Never exported as data — the target owns these (its own migrations set them).
-const EXCLUDED_TABLES = new Set(['knex_migrations', 'knex_migrations_lock']);
+//
+// photo_faces / event_people (#1074) are excluded for a different reason:
+// face embeddings are biometric data (GDPR Art. 9), and this export gets
+// handed to clients and moved between operators. The data is fully derived
+// from the photos, so the target re-scans rather than receiving biometrics it
+// has no lawful basis for. NOTE the cost of that decision: any names the
+// photographer assigned to people are lost too, since they live in
+// event_people. That is accepted — see ml/README.md and the #1074 thread.
+const EXCLUDED_TABLES = new Set([
+  'knex_migrations',
+  'knex_migrations_lock',
+  'photo_faces',
+  'event_people',
+]);
 
 // Storage subdirs holding non-recalculable blobs — always included.
 const DOC_DIRS = ['business-docs', 'uploads'];

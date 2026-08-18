@@ -809,7 +809,36 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
       const likedRows = await likeQuery.select('photo_id');
       likedRows.forEach(row => likedPhotoIds.add(row.photo_id));
     }
-    
+
+    // People in each photo (#1074). Two independent gates: the feature must
+    // be on for this event AND, for a plain guest, the photographer must have
+    // left the strip visible. A client (PIN access) is the photographer's own
+    // view, so faces_visible_to_guests doesn't restrict them.
+    //
+    // `photos` is already visibility-filtered above, and this only ever asks
+    // about ids in that set, so it cannot widen what the caller sees.
+    let peopleEnabled = false;
+    let personIdsByPhoto = new Map();
+    try {
+      const { isEnabledForEvent, areFacesVisibleToGuests } = require('../services/faceSettings');
+      if (photos.length > 0 && await isEnabledForEvent(req.event)) {
+        peopleEnabled = isClient || areFacesVisibleToGuests(req.event);
+        if (peopleEnabled) {
+          const { getPersonIdsByPhoto } = require('../services/facePeopleService');
+          personIdsByPhoto = await getPersonIdsByPhoto(
+            req.event.id,
+            photos.map(p => p.id),
+            { forAdmin: isClient }
+          );
+        }
+      }
+    } catch (err) {
+      // A face-feature failure must never take down the gallery payload.
+      logger.warn(`gallery: person_ids lookup failed for event ${req.event.id}`, { error: err.message });
+      peopleEnabled = false;
+      personIdsByPhoto = new Map();
+    }
+
     // Get actual categories used by photos in this event
     // This includes both global categories and event-specific ones
     const usedCategoryIds = hiddenForGuest ? [] : await db('photos')
@@ -961,6 +990,11 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         // Mirror of the admin-side toggle so the lightbox can decide
         // whether to surface original camera filenames (#508).
         use_original_filenames: useOriginalFilenames,
+        // "People in this gallery" (#1074). False whenever the global flag
+        // is off, detection is off for this event, or the photographer chose
+        // to keep the strip to themselves — the frontend renders no face UI
+        // at all in that case.
+        people_enabled: peopleEnabled,
         ...protectionSettings
       },
       // Reveal mode (#838): the guest UI switches to the upload-only view
@@ -1050,6 +1084,12 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
           // grid seed its lifted likedPhotoIds correctly on hard refresh.
           is_liked: showFeedbackToGuests ? likedPhotoIds.has(photo.id) : false,
           favorite_count: showFeedbackToGuests ? (photo.favorite_count || 0) : 0,
+          // People in this photo (#1074). Empty array when the feature is
+          // off for this event or hidden from guests, so the frontend has
+          // one shape to handle. Riding along on this payload is what keeps
+          // face filtering client-side and instant, like the category and
+          // liked/rated filters.
+          person_ids: personIdsByPhoto.get(photo.id) || [],
           // Visibility (only included for clients)
           ...(isClient ? { visibility: photo.visibility || 'visible' } : {})
         };
@@ -1057,6 +1097,60 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to fetch photos');
+  }
+});
+
+/**
+ * People in this gallery (#1074).
+ *
+ * Returns [] rather than 403 whenever the feature is unavailable — a guest
+ * must not be able to tell "this gallery has no people" from "this gallery
+ * has the feature switched off". Same reasoning as reveal mode returning an
+ * empty photo set rather than an error.
+ *
+ * Counts and cover faces are computed against the caller's own visibility
+ * scope inside facePeopleService; nothing here reads face_count_total.
+ */
+router.get('/:slug/people', verifyGalleryAccess, resolveGuest, async (req, res) => {
+  try {
+    const isClient = req.accessLevel === 'client';
+    const { isEnabledForEvent, areFacesVisibleToGuests, getThresholds } =
+      require('../services/faceSettings');
+
+    if (!(await isEnabledForEvent(req.event))) {
+      return res.json({ people: [] });
+    }
+    if (!isClient && !areFacesVisibleToGuests(req.event)) {
+      return res.json({ people: [] });
+    }
+    // While a gallery is hidden behind reveal mode (#838), a plain guest sees
+    // no photos — so they see no people either.
+    if (guestBlockedByReveal(req)) {
+      return res.json({ people: [] });
+    }
+
+    const { listPeople, getScanStatus } = require('../services/facePeopleService');
+    const thresholds = await getThresholds();
+
+    const people = await listPeople(req.event.id, {
+      isClient,
+      forAdmin: false,
+      minClusterSize: thresholds.face_min_cluster_size,
+    });
+
+    // Drives the "Finding people… 240/1200" progress line during a backfill.
+    const status = await getScanStatus(req.event.id);
+
+    res.json({
+      people,
+      scan: {
+        in_progress: status.in_progress,
+        scanned: status.scanned,
+        total: status.total,
+      },
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to fetch people');
   }
 });
 

@@ -16,6 +16,20 @@ const packageJson = require('../../package.json');
 const CHUNK_SIZE = 1024 * 1024; // 1MB chunks for streaming
 const PROGRESS_INTERVAL = 100; // Report progress every 100 rows
 
+// Face recognition tables (#1074). Their SCHEMA is backed up, their CONTENTS
+// are not: embeddings are biometric data (GDPR Art. 9) and fully derived from
+// the photos, so a restore re-scans instead of carrying biometrics forward.
+//
+// The schema must survive, which is why Postgres uses --exclude-table-DATA
+// rather than --exclude-table: knex_migrations records 177 as applied, so a
+// restore whose dump lacked the CREATE TABLE would fail on the first query
+// instead of merely coming back empty.
+//
+// SQLite cannot filter at all — `sqlite3 .backup` is a whole-file binary copy
+// — so the rows are deleted from the temp copy before it is finalised. See
+// createSQLiteBackup below.
+const FACE_TABLES = ['photo_faces', 'event_people'];
+
 /**
  * Database Backup Service
  * Supports both SQLite and PostgreSQL with proper escaping,
@@ -137,18 +151,20 @@ class DatabaseBackupService {
         AND name != 'knex_migrations_lock'
         ORDER BY name
       `);
-      return result.map(row => row.name);
+      return result.map(row => row.name).filter((t) => !FACE_TABLES.includes(t));
     } else {
       // PostgreSQL
       const result = await db.raw(`
-        SELECT table_name 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
         AND table_type = 'BASE TABLE'
         AND table_name NOT IN ('knex_migrations', 'knex_migrations_lock')
         ORDER BY table_name
       `);
-      return result.rows.map(row => row.table_name);
+      return result.rows
+        .map(row => row.table_name)
+        .filter((t) => !FACE_TABLES.includes(t));
     }
   }
 
@@ -162,6 +178,25 @@ class DatabaseBackupService {
     try {
       // Use SQLite's backup API for consistency
       await spawnAsync('sqlite3', [dbPath, `.backup '${tempPath}'`]);
+
+      // Strip face data from the COPY (#1074). `.backup` is a whole-file
+      // binary copy with no way to exclude a table, so the rows come out and
+      // are deleted here — the live database is never touched.
+      //
+      // VACUUM is not cosmetic: without it the deleted pages remain in the
+      // file and "not backed up" would be false on disk, which is the exact
+      // claim this code exists to make true.
+      for (const table of FACE_TABLES) {
+        await spawnAsync('sqlite3', [
+          tempPath,
+          `DELETE FROM ${table} WHERE 1=1;`,
+        ]).catch(() => {
+          // Table absent on installs that predate migration 177 — fine.
+        });
+      }
+      await spawnAsync('sqlite3', [tempPath, 'VACUUM;']).catch((err) => {
+        logger.warn(`SQLite backup: VACUUM after face-data strip failed: ${err.message}`);
+      });
 
       // Verify the backup
       const verifyResult = await spawnAsync('sqlite3', [tempPath, 'PRAGMA integrity_check']);
@@ -219,6 +254,13 @@ class DatabaseBackupService {
     // this code into the user-facing "Run Backup Now" path; prior
     // callers (scheduled cron, dedicated admin DB-backup page) hit
     // the same failure but on installs that had never exercised them.
+
+    // Face data (#1074): schema yes, rows no. --exclude-table-DATA, not
+    // --exclude-table — see the FACE_TABLES comment at the top of this file
+    // for why dropping the CREATE TABLE would break restore outright.
+    for (const table of FACE_TABLES) {
+      pgDumpOptions.push(`--exclude-table-data=public.${table}`);
+    }
 
     // Add compression if not doing it separately
     if (options.compress && !options.separateCompression) {
