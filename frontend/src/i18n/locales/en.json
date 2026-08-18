@@ -156,7 +156,10 @@
     "show": "Show",
     "poweredBy": "Powered by",
     "on": "on",
-    "off": "off"
+    "off": "off",
+    "clear": "Clear",
+    "saved": "Saved",
+    "saveFailed": "Save failed"
   },
   "upload": {
     "photoCategory": "Photo Category",
@@ -1676,6 +1679,10 @@
         "title": "Workflows",
         "description": "Build visual automations on a canvas — triggers, conditions, branches, loops and admin approval gates. Your reminder ladder and booking steps become editable flows. Strictly opt-in.",
         "sidebar": "Workflows"
+      },
+      "faces": {
+        "title": "People in galleries",
+        "description": "Group each gallery's photos by the people in them, so guests can find themselves in two taps and download just their own photos. Runs entirely on your own server in a separate, optional container — nothing is sent anywhere. Detected faces are personal data, so this stays off until you enable it per gallery too."
       }
     },
     "customerSurface": {
@@ -2704,7 +2711,26 @@
     },
     "faces": {
       "manage": "Manage people",
-      "visibleToGuests": "({{count}} shown to guests)"
+      "visibleToGuests": "({{count}} shown to guests)",
+      "title": "People in this gallery",
+      "subtitle": "Group photos by the people in them, so guests can find and download their own.",
+      "consentNotice": "Detected faces are personal data, and in the EU they count as a special category. You are the controller for this gallery: make sure you have a lawful basis for the people in these photos before switching this on. Nothing leaves your server — detection runs in your own container.",
+      "enable": "Detect people in this gallery",
+      "enableHint": "Existing photos are scanned in the background. Faces and their numeric signatures are stored in your database; they are never included in backups or exports.",
+      "visible": "Show the people bar to guests",
+      "visibleHint": "Off means you get the grouping as a private tool and guests see an unchanged gallery.",
+      "previewNotice": "Scanning works on the preview-sized copy of each photo. Galleries that have not generated previews yet will create them during the first scan, which uses additional CPU and disk space.",
+      "scanning": "Scanning… {{scanned}} of {{total}} photos",
+      "status": "{{scanned}} / {{total}} photos scanned · {{people}} people",
+      "failed": "{{count}} failed",
+      "queued": "Scanning {{count}} photos for people…",
+      "rescan": "Re-scan",
+      "rescanQueued": "Re-scan queued",
+      "recluster": "Re-group people",
+      "reclustered": "People regrouped",
+      "delete": "Delete all face data",
+      "deleted": "Face data deleted",
+      "confirmDelete": "Delete all detected people and face data for this gallery? This cannot be undone. Photos are not affected."
     }
   },
   "acceptInvitation": {

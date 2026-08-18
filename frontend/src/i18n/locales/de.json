@@ -156,7 +156,10 @@
     "show": "Einblenden",
     "poweredBy": "Bereitgestellt von",
     "on": "an",
-    "off": "aus"
+    "off": "aus",
+    "clear": "Zurücksetzen",
+    "saved": "Gespeichert",
+    "saveFailed": "Speichern fehlgeschlagen"
   },
   "upload": {
     "photoCategory": "Fotokategorie",
@@ -2135,6 +2138,10 @@
         "title": "Workflows",
         "description": "Visuelle Automatisierungen auf einer Canvas erstellen – Auslöser, Bedingungen, Verzweigungen, Schleifen und Freigabe-Gates für Admins. Deine Mahnstufen und Buchungsschritte werden zu bearbeitbaren Abläufen. Strikt optional.",
         "sidebar": "Workflows"
+      },
+      "faces": {
+        "title": "Personen in Galerien",
+        "description": "Gruppiert die Fotos jeder Galerie nach den abgebildeten Personen, damit Gäste sich mit zwei Tipps selbst finden und nur ihre eigenen Fotos herunterladen. Läuft vollständig auf Ihrem eigenen Server in einem separaten, optionalen Container — es werden keine Daten übermittelt. Erkannte Gesichter sind personenbezogene Daten; die Funktion bleibt daher aus, bis Sie sie zusätzlich pro Galerie aktivieren."
       }
     },
     "customerSurface": {
@@ -3132,7 +3139,26 @@
     },
     "faces": {
       "manage": "Personen verwalten",
-      "visibleToGuests": "({{count}} für Gäste sichtbar)"
+      "visibleToGuests": "({{count}} für Gäste sichtbar)",
+      "title": "Personen in dieser Galerie",
+      "subtitle": "Fotos nach den abgebildeten Personen gruppieren, damit Gäste ihre eigenen finden und herunterladen können.",
+      "consentNotice": "Erkannte Gesichter sind personenbezogene Daten und gelten in der EU als besondere Kategorie. Sie sind für diese Galerie verantwortlich: Stellen Sie sicher, dass Sie eine Rechtsgrundlage für die abgebildeten Personen haben, bevor Sie dies aktivieren. Nichts verlässt Ihren Server — die Erkennung läuft in Ihrem eigenen Container.",
+      "enable": "Personen in dieser Galerie erkennen",
+      "enableHint": "Vorhandene Fotos werden im Hintergrund durchsucht. Gesichter und ihre numerischen Signaturen werden in Ihrer Datenbank gespeichert; sie sind niemals in Backups oder Exporten enthalten.",
+      "visible": "Personenleiste für Gäste anzeigen",
+      "visibleHint": "Ausgeschaltet erhalten nur Sie die Gruppierung als privates Werkzeug, und Gäste sehen eine unveränderte Galerie.",
+      "previewNotice": "Die Erkennung arbeitet mit der Vorschaugröße jedes Fotos. In Galerien ohne vorhandene Vorschaubilder werden diese beim ersten Durchlauf erzeugt, was zusätzliche CPU-Last und Speicherplatz benötigt.",
+      "scanning": "Wird durchsucht… {{scanned}} von {{total}} Fotos",
+      "status": "{{scanned}} / {{total}} Fotos durchsucht · {{people}} Personen",
+      "failed": "{{count}} fehlgeschlagen",
+      "queued": "{{count}} Fotos werden nach Personen durchsucht…",
+      "rescan": "Erneut durchsuchen",
+      "rescanQueued": "Erneute Suche eingeplant",
+      "recluster": "Personen neu gruppieren",
+      "reclustered": "Personen neu gruppiert",
+      "delete": "Alle Gesichtsdaten löschen",
+      "deleted": "Gesichtsdaten gelöscht",
+      "confirmDelete": "Alle erkannten Personen und Gesichtsdaten dieser Galerie löschen? Dies kann nicht rückgängig gemacht werden. Die Fotos selbst bleiben unverändert."
     }
   },
   "acceptInvitation": {
