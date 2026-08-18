@@ -2,10 +2,21 @@
 # picpeak-ml image — the conversion runs once, by hand, and only its output
 # (facenet512.onnx) is shipped.
 #
-# Unpinned deliberately: this is a one-shot developer tool, and the artifact
-# it produces is verified by SHA-256 at image-build time, so a dependency
-# drift shows up as a checksum mismatch rather than a silent change.
-tensorflow
-tf2onnx
-onnx
-deepface
+# Pinned to the exact set that produced the published artifact, so anyone can
+# reproduce it and get the same SHA-256 rather than a file that differs for
+# reasons nobody can reconstruct later. See ml/README.md for the expected
+# checksum.
+#
+# Requires Python 3.11 (TensorFlow has no 3.12+/3.14 wheels at these
+# versions). The picpeak-ml image itself runs 3.12 — the two are unrelated,
+# since nothing from this file ships.
+tensorflow==2.21.0
+tf2onnx==1.17.0
+onnx==1.22.0
+deepface==0.0.100
+
+# Transitive, pinned because the conversion output is checksummed:
+# keras 3.15 builds the graph, protobuf serializes the ONNX.
+keras==3.15.1
+protobuf==7.35.1
+numpy==2.4.6

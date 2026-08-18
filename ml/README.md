@@ -59,7 +59,7 @@ then pass the URL and checksum:
 
 ```bash
 cd ml
-python -m venv .venv && . .venv/bin/activate
+python3.11 -m venv .venv && . .venv/bin/activate   # 3.11: TF has no 3.12+ wheels
 pip install -r tools/requirements-convert.txt
 
 curl -fsSL -o facenet512_weights.h5 \
@@ -67,10 +67,15 @@ curl -fsSL -o facenet512_weights.h5 \
 echo "3f76b5117a9ca574d536af8199e6720089eb4ad3dc7e93534496d88265de864f  facenet512_weights.h5" | sha256sum -c -
 
 python tools/convert_facenet.py facenet512_weights.h5 facenet512.onnx
-sha256sum facenet512.onnx
 ```
 
-Publish `facenet512.onnx` as a release asset, then:
+The script verifies the converted graph against the Keras original before
+writing (worst observed divergence: 2.1e-06 absolute, cosine 1.0000000000)
+and prints the SHA-256 to publish. Output is ~89.6 MB, 23,497,424 parameters.
+
+Publish `facenet512.onnx` as a release asset, set the repository variables
+`FACENET_ONNX_URL` and `FACENET_ONNX_SHA256` (Settings → Variables — it's a
+public URL, not a secret), and CI picks it up. To build locally:
 
 ```bash
 docker build -t picpeak-ml \
@@ -79,10 +84,19 @@ docker build -t picpeak-ml \
   ml/
 ```
 
-The conversion is deliberately outside the Docker build: TensorFlow is ~600MB
-of build dependency for a file that never ships in the final image, and the
-ONNX is byte-identical regardless of which machine produced it, so converting
-once beats converting on every architecture leg of every multi-arch build.
+The conversion sits outside the Docker build because TensorFlow is ~600MB of
+build dependency for a file that never ships in the final image, and the
+result is architecture-independent — no reason to run it on both legs of
+every multi-arch build.
+
+**The conversion is not byte-reproducible.** Two runs with the same pinned
+versions on the same machine produce functionally identical graphs (same 336
+nodes, same 271 initializers, weights matching to 0.000e+00) but differ in a
+few initializer names, because tf2onnx's traced-op naming is not
+deterministic. So a re-conversion **will** have a different SHA-256, and that
+is expected rather than a sign of tampering. The checksum pins one published
+artifact so its URL cannot start serving different bytes; validating a fresh
+conversion is the parity check's job, not the hash's.
 
 ## Turning it on
 
