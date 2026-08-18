@@ -600,6 +600,386 @@ jobs:
         docker buildx imagetools inspect docker.io/picpeak/frontend:${{ steps.meta-frontend.outputs.version }}
 
   # -----------------------------------------------------------------------------
+  # All-in-one (#1042): backend + built frontend in one container, SQLite default.
+  # Same per-arch build → digest merge pattern as backend/frontend. Context is
+  # the repo root (Dockerfile.aio needs backend/ AND frontend/).
+  # -----------------------------------------------------------------------------
+  build-aio:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+      # Per-arch Trivy scan by digest, same rationale as build-backend (#476).
+      security-events: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Compute image name (lowercase for GHCR)
+      run: |
+        repo_lc="${GITHUB_REPOSITORY,,}"
+        echo "AIO_IMAGE_NAME=${repo_lc}/aio" >> "$GITHUB_ENV"
+
+    - name: Prepare platform pair
+      run: |
+        platform="${{ matrix.platform }}"
+        echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+      id: login-ghcr
+      continue-on-error: true
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Determine if pushing
+      id: push-decision
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.event.inputs.push }}" != "true" ]]; then
+          echo "push=false" >> "$GITHUB_OUTPUT"
+        elif [[ "${{ steps.login-ghcr.outcome }}" != "success" ]]; then
+          echo "push=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "push=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Extract metadata for AIO (labels only)
+      id: meta-aio
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}
+        labels: |
+          org.opencontainers.image.title=PicPeak All-in-one
+          org.opencontainers.image.description=PicPeak backend + frontend in a single container (SQLite default)
+          org.opencontainers.image.vendor=PicPeak
+          maintainer=${{ github.repository_owner }}
+
+    - name: Build AIO image (push by digest)
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.aio
+        platforms: ${{ matrix.platform }}
+        labels: ${{ steps.meta-aio.outputs.labels }}
+        cache-from: type=gha,scope=aio-${{ env.PLATFORM_PAIR }}
+        # ignore-error: a flaky GitHub Actions cache write must not fail an
+        # otherwise-successful build that already pushed the image.
+        cache-to: type=gha,mode=max,scope=aio-${{ env.PLATFORM_PAIR }},ignore-error=true
+        outputs: ${{ steps.push-decision.outputs.push == 'true' && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRY, env.AIO_IMAGE_NAME) || 'type=cacheonly' }}
+        build-args: |
+          CACHEBUST=${{ github.run_number }}
+          BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          VCS_REF=${{ github.sha }}
+          VERSION=${{ steps.meta-aio.outputs.version }}
+
+    - name: Export digest
+      if: steps.push-decision.outputs.push == 'true'
+      run: |
+        mkdir -p /tmp/digests
+        digest="${{ steps.build.outputs.digest }}"
+        touch "/tmp/digests/${digest#sha256:}"
+
+    - name: Upload digest artifact
+      if: steps.push-decision.outputs.push == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: digests-aio-${{ env.PLATFORM_PAIR }}
+        path: /tmp/digests/*
+        if-no-files-found: error
+        retention-days: 1
+
+    - name: Run Trivy vulnerability scanner (per-arch, by digest)
+      if: steps.push-decision.outputs.push == 'true'
+      uses: aquasecurity/trivy-action@v0.36.0
+      env:
+        # See build-backend — pin Trivy's platform to the matrix arch so its
+        # remote-index resolver picks the right child.
+        TRIVY_PLATFORM: ${{ matrix.platform }}
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        format: 'sarif'
+        output: 'trivy-aio-${{ env.PLATFORM_PAIR }}.sarif'
+        severity: 'CRITICAL,HIGH'
+        timeout: '10m'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      if: steps.push-decision.outputs.push == 'true'
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: 'trivy-aio-${{ env.PLATFORM_PAIR }}.sarif'
+        category: 'aio-vulnerabilities-${{ env.PLATFORM_PAIR }}'
+
+  merge-aio:
+    needs: build-aio
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    if: github.event_name != 'pull_request' || github.event.inputs.push == 'true'
+
+    steps:
+    - name: Compute image name (lowercase for GHCR)
+      run: |
+        repo_lc="${GITHUB_REPOSITORY,,}"
+        echo "AIO_IMAGE_NAME=${repo_lc}/aio" >> "$GITHUB_ENV"
+
+    - name: Download digest artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: /tmp/digests
+        pattern: digests-aio-*
+        merge-multiple: true
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      id: login-ghcr
+      continue-on-error: true
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Determine build context
+      id: context
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/v*-beta* ]] || [[ "${{ github.ref }}" == refs/heads/main ]]; then
+          echo "channel=beta" >> $GITHUB_OUTPUT
+          echo "is_prerelease=true" >> $GITHUB_OUTPUT
+        else
+          echo "channel=stable" >> $GITHUB_OUTPUT
+          echo "is_prerelease=false" >> $GITHUB_OUTPUT
+        fi
+
+    # Same per-version tag scheme as backend/frontend: every Release Please
+    # version publishes a matching aio image. GHCR-only for now — the Docker
+    # Hub mirror (docker.io/picpeak/aio) is wired later once the Hub repo
+    # exists: add the images line + Docker Hub login exactly like
+    # merge-backend (#1042).
+    - name: Extract metadata for AIO
+      id: meta-aio
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}
+        labels: |
+          org.opencontainers.image.title=PicPeak All-in-one
+          org.opencontainers.image.description=PicPeak backend + frontend in a single container (SQLite default)
+          org.opencontainers.image.vendor=PicPeak
+          maintainer=${{ github.repository_owner }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
+          type=semver,pattern={{major}},enable=${{ steps.context.outputs.is_prerelease == 'false' }}
+          # #668/#783: publish the git-tag name verbatim, same as backend/frontend.
+          type=ref,event=tag
+          type=sha,format=short
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
+          type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
+
+    - name: Create and push multi-arch manifest
+      working-directory: /tmp/digests
+      run: |
+        docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          $(printf "${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}@sha256:%s " *)
+
+    - name: Inspect manifest (GHCR)
+      run: |
+        docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}:${{ steps.meta-aio.outputs.version }}
+
+  # Boot-level verification of the AIO image on every PR: build for the
+  # runner's arch, run it with no DB env (SQLite default), and assert the
+  # things nginx used to guarantee — SPA shell with the brand title rendered,
+  # immutable asset caching, /health green, and the resolver landing on
+  # SQLite. Mirrors the install-smoke workflow's build pattern.
+  smoke-aio:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build AIO image (single arch)
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.aio
+        load: true
+        tags: picpeak-aio:smoke
+        cache-from: type=gha,scope=aio-linux-amd64
+        cache-to: type=gha,mode=max,scope=aio-linux-amd64,ignore-error=true
+
+    - name: Boot container (SQLite default, no volumes)
+      run: |
+        docker run -d --name aio -p 3000:3000 \
+          -e JWT_SECRET=smoke-test-secret-at-least-32-characters-long \
+          -e BRAND_TITLE="AIO Smoke" \
+          picpeak-aio:smoke
+
+    - name: Wait for /health
+      run: |
+        for i in $(seq 1 60); do
+          if curl -fsS http://localhost:3000/health > /dev/null 2>&1; then
+            echo "healthy after ~$((i*2))s"; exit 0
+          fi
+          sleep 2
+        done
+        echo "::error::/health never came up"; docker logs aio | tail -100; exit 1
+
+    - name: Assert engine resolved to SQLite
+      run: |
+        docker exec aio ls -la /data/db/picpeak.db
+        docker logs aio 2>&1 | grep -i "sqlite" | head -5
+
+    - name: Assert SPA shell served with rendered brand title
+      run: |
+        body=$(curl -fsS http://localhost:3000/admin)
+        echo "$body" | grep -q '<div id="root">' || { echo "::error::/admin did not serve the SPA shell"; exit 1; }
+        echo "$body" | grep -q '<title>AIO Smoke</title>' || { echo "::error::BRAND_TITLE was not rendered into index.html"; exit 1; }
+        # -F on the literal token: index.html's explanatory comment mentions
+        # BRAND_TITLE in prose and Vite keeps that comment in the built shell,
+        # so a bare `grep BRAND_TITLE` always matches. Only an unsubstituted
+        # ${BRAND_TITLE}/${BRAND_DESCRIPTION} is a real leak.
+        for tok in '${BRAND_TITLE}' '${BRAND_DESCRIPTION}'; do
+          echo "$body" | grep -qF "$tok" && { echo "::error::unrendered placeholder $tok leaked"; exit 1; } || true
+        done
+
+    - name: Assert hashed assets are cached immutably
+      run: |
+        asset=$(curl -fsS http://localhost:3000/admin | grep -oE '/assets/[^"]+\.js' | head -1)
+        test -n "$asset" || { echo "::error::no asset reference found in SPA shell"; exit 1; }
+        headers=$(curl -fsSI "http://localhost:3000${asset}")
+        echo "$headers" | grep -qi 'cache-control:.*immutable' || { echo "::error::asset served without immutable cache header"; echo "$headers"; exit 1; }
+
+    - name: Assert API and root respond
+      run: |
+        curl -fsS http://localhost:3000/api/public/settings > /dev/null
+        # `/` goes to handlePublicSiteRequest, which 302s to /admin/login while
+        # the public landing site is disabled — the state of a fresh install,
+        # which is exactly what this container is. Assert the redirect target
+        # rather than a 200, so the check still proves express.static's index
+        # option isn't shadowing the handler.
+        code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/)
+        loc=$(curl -s -o /dev/null -w '%{redirect_url}' http://localhost:3000/)
+        [[ "$code" == "302" && "$loc" == *"/admin/login" ]] \
+          || { echo "::error::/ returned $code (Location: ${loc:-none}); expected 302 -> /admin/login"; exit 1; }
+
+    - name: Assert every client route survives a direct hit
+      run: |
+        # nginx did `try_files $uri $uri/ /index.html`, so behind compose these
+        # always worked and nothing caught their absence here. /setup is the
+        # first URL a new install visits.
+        for r in /setup /customer /impressum /datenschutz /payment-check \
+                 /quote/x /contract/x /invite/x /transfer/x /transfer-upload/x; do
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000${r}")
+          [[ "$code" == "200" ]] || { echo "::error::${r} returned $code, expected the SPA shell"; exit 1; }
+        done
+
+    - name: Assert the catch-all did not swallow the API or the short-URL resolver
+      run: |
+        # The SPA catch-all is registered after the /api 404 handler, so an
+        # unknown API route must still answer JSON rather than the HTML shell.
+        body=$(curl -s "http://localhost:3000/api/nope")
+        grep -q '<div id="root">' <<< "$body" && { echo "::error::unknown /api route served the SPA shell"; exit 1; } || true
+        grep -q '"error"' <<< "$body" || { echo "::error::unknown /api route did not answer JSON: $body"; exit 1; }
+        # A typo'd short URL must still 404 rather than render the shell (#699).
+        code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/s/nonexistent)
+        [[ "$code" == "404" ]] || { echo "::error::/s/<unknown> returned $code, expected 404"; exit 1; }
+
+    - name: Assert the SPA bundle is gzipped
+      run: |
+        asset=$(curl -fsS http://localhost:3000/admin | grep -oE '/assets/[^"]+\.js' | head -1)
+        # GET, not HEAD: the compression middleware skips bodyless responses,
+        # so a HEAD probe reports no Content-Encoding even when gzip is active.
+        enc=$(curl -s -o /dev/null -D - -H 'Accept-Encoding: gzip' "http://localhost:3000${asset}" | grep -i '^content-encoding:')
+        grep -qi gzip <<< "$enc" || { echo "::error::asset served uncompressed (compression middleware inactive?)"; exit 1; }
+
+    - name: Assert the one-volume layout and backup destinations
+      run: |
+        # #1042 asks for a single mountable root. Everything that must survive a
+        # container replacement lives under /data, and /backup — where migrations
+        # 029/030 seed the backup destinations — symlinks into it rather than
+        # dangling inside the container.
+        docker exec aio sh -c 'test -L /backup' || { echo "::error::/backup is not a symlink into the volume"; exit 1; }
+        for d in /data/db /data/storage /data/logs /data/backup/picpeak /data/backup/database; do
+          docker exec aio sh -c "test -d $d" || { echo "::error::$d missing from the volume layout"; exit 1; }
+        done
+        docker exec aio sh -c 'touch /backup/database/.w && rm /backup/database/.w' \
+          || { echo "::error::/backup/database is not writable by the app user"; exit 1; }
+
+    - name: Assert the sqlite3 CLI the backup service shells out to
+      run: |
+        # DatabaseBackupService spawns `sqlite3` for .backup and integrity_check;
+        # the npm module does not ship the binary.
+        docker exec aio sqlite3 --version > /dev/null \
+          || { echo "::error::sqlite3 CLI missing — database backups would fail with ENOENT"; exit 1; }
+
+    - name: Assert logs land on the volume
+      run: |
+        docker exec aio sh -c 'ls /data/logs/*.log > /dev/null 2>&1' \
+          || { echo "::error::logs are not being written under /data (LOG_DIR ignored?)"; exit 1; }
+
+    - name: Assert backend static routes still 404 instead of the SPA shell
+      run: |
+        # /photos, /thumbnails, /uploads and /fonts are backend-owned mounts whose
+        # middleware calls next() on a miss. nginx gave them their own location
+        # blocks so try_files never applied; without an explicit exclusion the
+        # catch-all answers 200 text/html under an image or font URL.
+        for r in /photos/missing.jpg /thumbnails/missing.jpg /fonts/missing.woff2; do
+          code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000${r}")
+          [[ "$code" != "200" ]] || { echo "::error::${r} returned 200 — the SPA catch-all swallowed a backend 404"; exit 1; }
+        done
+
+    - name: Assert the image carries no runtime data from the build context
+      run: |
+        # Dockerfile.aio builds from the repo root; a checkout used to run
+        # PicPeak must never bake its database, photos, logs or secrets into a
+        # layer. /app/storage is deliberately a symlink into the volume, so it
+        # is checked by shape rather than by listing it — following the link
+        # would only find the empty tree the image creates at /data/storage.
+        for leak in '/app/data/*.db' '/app/logs/*' '/app/.env' '/app/*.db' '/app/*.sqlite*'; do
+          if docker exec aio sh -c "ls $leak > /dev/null 2>&1"; then
+            echo "::error::build context leaked $leak into the image"; exit 1
+          fi
+        done
+        docker exec aio sh -c 'test -L /app/storage' \
+          || { echo "::error::/app/storage is a real directory — the build context leaked it in"; exit 1; }
+        test "$(docker exec aio sh -c 'readlink /app/storage')" = /data/storage \
+          || { echo "::error::/app/storage does not point into the mounted volume"; exit 1; }
+        # The volume's photo tree must start empty on a fresh install.
+        found=$(docker exec aio sh -c 'find /data/storage/events -type f | head -1')
+        test -z "$found" || { echo "::error::build context leaked photos into /data/storage/events: $found"; exit 1; }
+
+    - name: Dump logs on failure
+      if: failure()
+      run: docker logs aio 2>&1 | tail -200
+
+  # -----------------------------------------------------------------------------
   # ML sidecar (#1074): per-arch build, then merge into a multi-arch manifest
   # -----------------------------------------------------------------------------
   # Gated on the FACENET_ONNX_URL repository *variable* (Settings → Variables,
@@ -837,7 +1217,7 @@ jobs:
         docker buildx imagetools inspect docker.io/picpeak/ml:${{ steps.meta-ml.outputs.version }}
 
   summary:
-    needs: [build-backend, merge-backend, build-frontend, merge-frontend, build-ml, merge-ml]
+    needs: [build-backend, merge-backend, build-frontend, merge-frontend, build-aio, merge-aio, smoke-aio, build-ml, merge-ml]
     if: always()
     runs-on: ubuntu-latest
     permissions:
@@ -850,6 +1230,7 @@ jobs:
         echo "BACKEND_IMAGE_NAME=${repo_lc}/backend" >> "$GITHUB_ENV"
         echo "FRONTEND_IMAGE_NAME=${repo_lc}/frontend" >> "$GITHUB_ENV"
         echo "ML_IMAGE_NAME=${repo_lc}/ml" >> "$GITHUB_ENV"
+        echo "AIO_IMAGE_NAME=${repo_lc}/aio" >> "$GITHUB_ENV"
         # Mirror manifests to Docker Hub (picpeak/{backend,frontend}) only on the
         # canonical org repo, where the DOCKERHUB_* secrets live. Forks (and any
         # other owner) fall back to GHCR-only — the Docker Hub image line and login
@@ -893,6 +1274,26 @@ jobs:
           echo "❌ **Frontend manifest merge**: ${{ needs.merge-frontend.result }}" >> $GITHUB_STEP_SUMMARY
         fi
 
+        if [[ "${{ needs.build-aio.result }}" == "success" ]]; then
+          echo "✅ **AIO build (per-arch)**: Successfully built" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **AIO build (per-arch)**: ${{ needs.build-aio.result }}" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        if [[ "${{ needs.merge-aio.result }}" == "success" ]]; then
+          echo "✅ **AIO manifest merge**: Successfully published" >> $GITHUB_STEP_SUMMARY
+        elif [[ "${{ needs.merge-aio.result }}" == "skipped" ]]; then
+          echo "ℹ️ **AIO manifest merge**: Skipped (verify-only build)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **AIO manifest merge**: ${{ needs.merge-aio.result }}" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        if [[ "${{ needs.smoke-aio.result }}" == "success" ]]; then
+          echo "✅ **AIO boot smoke**: SQLite boot + SPA + caching verified" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **AIO boot smoke**: ${{ needs.smoke-aio.result }}" >> $GITHUB_STEP_SUMMARY
+        fi
+
         # The ML sidecar (#1074) is optional and only builds once the
         # FACENET_ONNX_URL repository variable is set — "skipped" is the
         # expected state, not a failure, so report it as such.
@@ -919,6 +1320,7 @@ jobs:
         if [[ "${{ needs.merge-ml.result }}" == "success" ]]; then
           echo "- ML sidecar (optional): \`${{ env.REGISTRY }}/${{ env.ML_IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
         fi
+        echo "- All-in-one: \`${{ env.REGISTRY }}/${{ env.AIO_IMAGE_NAME }}\` (GHCR only — Docker Hub mirror pending)" >> $GITHUB_STEP_SUMMARY
         if [[ "$DOCKERHUB_ENABLED" == "true" ]]; then
           echo "- Backend (Docker Hub): \`docker.io/picpeak/backend\`" >> $GITHUB_STEP_SUMMARY
           echo "- Frontend (Docker Hub): \`docker.io/picpeak/frontend\`" >> $GITHUB_STEP_SUMMARY

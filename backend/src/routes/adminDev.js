@@ -28,6 +28,7 @@
  */
 
 const express = require('express');
+const { getStoragePath } = require('../config/storage');
 const { body } = require('express-validator');
 const path = require('path');
 const fs = require('fs');
@@ -128,7 +129,7 @@ router.get(
 );
 
 const FRONTEND_URL_FALLBACK = 'https://app.example.com';
-const DEV_TEST_DIR = () => path.join(process.cwd(), 'storage', 'business-docs', 'dev-test');
+const DEV_TEST_DIR = () => path.join(getStoragePath(), 'business-docs', 'dev-test');
 
 function fakeMoney(major, currency, locale = 'de') {
   return new Intl.NumberFormat(locale === 'de' ? 'de-CH' : 'en-GB', {

@@ -2,8 +2,13 @@ const winston = require('winston');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure logs directory exists
-const logDir = path.join(__dirname, '../../logs');
+// Ensure logs directory exists.
+//
+// LOG_DIR lets a deployment put logs somewhere other than <backend>/logs. The
+// all-in-one image (#1042) mounts one volume at /data and points this at
+// /data/logs, so logs survive a container replacement like everything else.
+// Unset — every existing compose and native install — keeps the old path.
+const logDir = process.env.LOG_DIR || path.join(__dirname, '../../logs');
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
 }

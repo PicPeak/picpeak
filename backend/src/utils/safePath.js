@@ -35,10 +35,15 @@
  *
  * **What the contract surface uses**
  *
- * Two roots:
- *   1. `<cwd>/storage/business-docs/contract/<year>/` — system-stamped
- *      PDFs (immutable as-sent + signed copies).
- *   2. `<STORAGE_PATH or cwd/storage>/uploads/contracts/signed/` —
+ * Three roots:
+ *   1. `<storage root>/business-docs/contract/` — system-stamped PDFs
+ *      (immutable as-sent + signed copies) and the signature images
+ *      below them. This is where the writers persist.
+ *   2. `<cwd>/storage/business-docs/contract/` — the same tree as written
+ *      before the writers moved onto the shared storage resolver. Kept so
+ *      pre-existing rows, whose absolute paths are in the database, still
+ *      resolve; identical to (1) on a stock compose install.
+ *   3. `<storage root>/uploads/contracts/signed/` —
  *      wet-upload PDFs (admin or customer-supplied).
  *
  * Both roots are constants from the operator's perspective; legitimate
@@ -48,6 +53,7 @@
 const fs = require('fs');
 const path = require('path');
 const { AppError } = require('./errors');
+const { getStoragePath } = require('../config/storage');
 
 /**
  * Resolve the canonical (symlink-followed) absolute path. Throws
@@ -111,8 +117,22 @@ function assertPathInside(filePath, allowedRoots) {
  */
 function assertContractPdfPath(filePath) {
   const cwd = process.cwd();
-  const storageRoot = process.env.STORAGE_PATH || path.join(cwd, 'storage');
+  // getStoragePath() rather than a second `STORAGE_PATH || cwd` expression:
+  // the two disagree whenever STORAGE_PATH is unset, because the shared
+  // resolver falls back module-relative (<repo>/storage) while this file used
+  // to fall back to <cwd>/storage — and the backend is normally started from
+  // backend/, so those are different directories. The writers use the shared
+  // resolver, so a guard with its own idea of the root refuses exactly the
+  // files it is meant to serve.
+  const storageRoot = getStoragePath();
   return assertPathInside(filePath, [
+    // The configured storage root is where the contract writers persist, so it
+    // has to be allowed here or every generated PDF is refused with
+    // PATH_OUTSIDE_STORAGE the moment STORAGE_PATH is not <cwd>/storage. The
+    // cwd root stays alongside it: contracts written before the writers moved
+    // still live there, and their absolute paths are recorded in the database.
+    // Both collapse to the same directory on a stock compose install.
+    path.join(storageRoot, 'business-docs', 'contract'),
     path.join(cwd, 'storage', 'business-docs', 'contract'),
     path.join(storageRoot, 'uploads', 'contracts', 'signed'),
   ]);

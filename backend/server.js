@@ -65,6 +65,7 @@ logger.info('Server starting up', {
 const fs = require('fs');
 const express = require('express');
 const helmet = require('helmet');
+const compression = require('compression');
 const cors = require('cors');
 const path = require('path');
 const { initializeDatabase, db } = require('./src/database/db');
@@ -875,7 +876,11 @@ app.use('/api/public', require('./src/routes/publicCMS'));
 app.use('/api/images', require('./src/routes/protectedImages'));
 app.use('/api/secure-images', secureImagesRoutes);
 
-// Optional: Serve built frontend (native installs)
+// Optional: Serve built frontend (native installs and the all-in-one image, #1042)
+// Set when the SPA is being served, and registered as a catch-all AFTER the
+// /api 404 handler further down — see the registration site for why it cannot
+// live inside this block.
+let spaCatchAll = null;
 try {
   const serveFrontendEnv = process.env.SERVE_FRONTEND; // 'true' | 'false' | undefined
   const frontendDir = process.env.FRONTEND_DIR || path.join(__dirname, '../frontend/dist');
@@ -884,12 +889,53 @@ try {
   const shouldServe = (serveFrontendEnv === 'true') || ((serveFrontendEnv === undefined || serveFrontendEnv === 'auto') && fs.existsSync(indexPath));
   if (shouldServe) {
     logger.info(`Serving frontend from ${frontendDir}`);
-    // Serve pre-built assets
-    app.use(express.static(frontendDir));
+
+    // The built index.html carries ${BRAND_TITLE} / ${BRAND_DESCRIPTION}
+    // placeholders (#521) that the nginx image renders via envsubst in its
+    // entrypoint. Here the render happens once at boot, in memory — same
+    // semantics: locked to exactly these two vars (never the JS bundle's own
+    // template literals), defaults applied when unset, re-rendered on every
+    // process start so changing the env + restarting is enough.
+    const spaHtml = fs
+      .readFileSync(indexPath, 'utf8')
+      .split('${BRAND_TITLE}').join(process.env.BRAND_TITLE || 'PicPeak')
+      .split('${BRAND_DESCRIPTION}').join(process.env.BRAND_DESCRIPTION || 'Photo gallery shared with PicPeak.');
+    // Mirrors nginx's `location = /index.html` cache rule: the SPA shell must
+    // revalidate so a redeploy is picked up, while the hashed assets below
+    // cache immutably.
+    const sendSpa = (res) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.type('html').send(spaHtml);
+    };
+
+    // gzip for the SPA bundle (nginx parity — its server block gzips js/css/
+    // json). Mounted here, after every /api router, so API responses keep
+    // their exact current behavior; only the statics and SPA shell below
+    // pass through it.
+    app.use(compression());
+
+    // /index.html must serve the RENDERED shell, and express.static would
+    // otherwise answer first with the raw template straight off disk.
+    app.get('/index.html', (req, res) => sendSpa(res));
+
+    // Serve pre-built assets. index:false keeps `/` flowing to the landing-page
+    // handler below (nginx parity: `location = /` goes to the backend, it never
+    // serves index.html off disk) — express.static's default index option was
+    // shadowing handlePublicSiteRequest in native installs. Vite's hashed
+    // /assets/* get nginx's 1y-immutable rule; everything else keeps etag
+    // revalidation.
+    app.use(express.static(frontendDir, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (/[/\\]assets[/\\]/.test(filePath)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    }));
 
     // Landing page handler or SPA fallback
     app.get('/', handlePublicSiteRequest, (req, res) => {
-      res.sendFile(indexPath);
+      sendSpa(res);
     });
 
     // SPA fallback for admin + gallery routes. For gallery URLs we intercept
@@ -908,12 +954,22 @@ try {
       }
       return next();
     };
-    app.get('/gallery/:slug/:token?', ogIntercept, (req, res) => res.sendFile(indexPath));
-    app.get('/gallery/:slug/show/:token', ogIntercept, (req, res) => res.sendFile(indexPath));
+    app.get('/gallery/:slug/:token?', ogIntercept, (req, res) => sendSpa(res));
+    app.get('/gallery/:slug/show/:token', ogIntercept, (req, res) => sendSpa(res));
 
     app.get(['/admin', '/admin/*', '/gallery/*'], (req, res) => {
-      res.sendFile(indexPath);
+      sendSpa(res);
     });
+
+    // Everything else the router owns client-side. nginx did `try_files $uri
+    // $uri/ /index.html`, so behind compose every client route survived a
+    // reload and the short route list above was never exercised. Without
+    // nginx it is the whole contract: /setup, /customer, /impressum,
+    // /datenschutz, /payment-check, /quote/:token, /contract/:token,
+    // /invite/:token, /transfer/:token, /transfer-upload/:token and the
+    // branded short URLs all 404'd on a direct hit or a refresh. /setup is
+    // the first URL a new install visits.
+    spaCatchAll = (req, res) => sendSpa(res);
   } else {
     logger.info('Frontend static serving disabled or dist not found', { serveFrontendEnv, frontendDir });
     app.get('/', handlePublicSiteRequest, (req, res) => {
@@ -926,6 +982,30 @@ try {
 
 // 404 handler for undefined API routes
 app.use('/api', notFoundHandler);
+
+// SPA history fallback, deliberately registered here — AFTER the /api 404
+// handler, so an unknown /api/* route still answers JSON instead of being
+// handed the HTML shell, and after the short-URL resolver so a real short
+// code still redirects. GET-only: a stray POST/PUT keeps 404ing rather than
+// getting a 200 page back.
+if (spaCatchAll) {
+  // nginx gives these their own `location` blocks, so `try_files` never applied
+  // to them. The fallback has to mirror that: /photos, /thumbnails, /uploads
+  // and /fonts are backend-owned static mounts whose middleware calls next()
+  // when the file is missing, and swallowing that would answer 200 text/html
+  // under an image or font URL instead of a 404.
+  // /assets/ belongs on this list for the same reason even though it is the
+  // frontend's own bundle: after an upgrade a still-open tab requests the old
+  // hashed chunk, which no longer exists. Answering index.html would hand a
+  // JavaScript URL a 200 text/html body, so the module load fails with a MIME
+  // error instead of the plain 404 nginx returns — and the 200 hides it from
+  // any monitoring watching status codes.
+  const BACKEND_OWNED = ['/photos/', '/thumbnails/', '/uploads/', '/fonts/', '/assets/', '/health'];
+  app.get('*', (req, res, next) => {
+    if (BACKEND_OWNED.some((prefix) => req.path.startsWith(prefix))) return next();
+    return spaCatchAll(req, res);
+  });
+}
 
 // Global error handler (must be last)
 app.use(errorHandler);

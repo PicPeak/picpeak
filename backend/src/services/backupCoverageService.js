@@ -40,11 +40,17 @@
 
 const fs = require('fs').promises;
 const path = require('path');
+const { getStoragePath } = require('../config/storage');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const backupService = require('./backupService');
 
-const STORAGE_ROOT = () => process.env.STORAGE_PATH || path.join(process.cwd(), 'storage');
+// The shared resolver, not a second `STORAGE_PATH || cwd` expression. With
+// STORAGE_PATH unset the two disagree — getStoragePath() falls back
+// module-relative while cwd is normally backend/ — and this diagnostic would
+// then report the business-docs tree as missing while the backup walker, which
+// uses the module-relative root, was backing it up correctly.
+const STORAGE_ROOT = () => getStoragePath();
 
 /**
  * Top-level subdirectories we expect to find under STORAGE_PATH but

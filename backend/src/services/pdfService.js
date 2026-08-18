@@ -26,6 +26,7 @@
  */
 
 const PDFDocument = require('pdfkit');
+const { getStoragePath } = require('../config/storage');
 const { SwissQRBill, Table } = require('swissqrbill/pdf');
 const { t } = require('./pdf-i18n');
 
@@ -1361,8 +1362,16 @@ function registerCustomFonts(doc, issuer) {
   if (issuer.pdfFontTtfPath) {
     try {
       const raw = issuer.pdfFontTtfPath;
+      // The configured storage root first; process.cwd()/storage stays on as a
+      // legacy fallback so installs predating STORAGE_PATH keep resolving.
+      // Compose makes the two the same directory, which is why only a custom
+      // STORAGE_PATH ever exposed this — the font just silently was not found
+      // and the document fell back to the built-in face.
+      const storageRoot = getStoragePath();
       const candidates = [
         path.isAbsolute(raw) ? raw : null,
+        path.join(storageRoot, raw.replace(/^\/+/, '')),
+        path.join(storageRoot, 'fonts', path.basename(raw)),
         path.join(process.cwd(), 'storage', raw.replace(/^\/+/, '')),
         path.join(process.cwd(), 'storage', 'fonts', path.basename(raw)),
       ].filter(Boolean);

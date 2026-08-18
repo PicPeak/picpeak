@@ -68,6 +68,21 @@ On first start, open **http://localhost:3000/admin** and follow the in-browser s
 
 > **Updating / release channels:** set `PICPEAK_CHANNEL` (`stable` default, or `beta`) in `.env`, then `docker compose pull && docker compose up -d`. See [RELEASING.md](RELEASING.md) for the promotion cadence.
 
+### Or: one container, no compose file
+
+For a home server, a NAS, or a single small studio, the all-in-one image runs the whole app as one process with SQLite — no compose file, no separate database, no reverse proxy to wire up:
+
+```bash
+docker run -d --name picpeak -p 3000:3000 \
+  -v picpeak:/data \
+  -e JWT_SECRET="$(openssl rand -base64 48)" \
+  ghcr.io/picpeak/picpeak/aio:stable
+```
+
+Then open **http://localhost:3000/admin** and read the setup token with `docker exec picpeak cat /data/db/SETUP_TOKEN`.
+
+The compose stack above is still the right choice for anything busier — SQLite takes one writer at a time, and Postgres is what scales. You can move to it later without reinstalling: take a `.picpeak` backup and restore it into the full stack. See **[Single-container install](https://docs.picpeak.app/deployment/single-container)** for the volume layout, the external-Postgres variant, TLS, and the limits.
+
 ## 🌟 Why PicPeak?
 
 Unlike expensive SaaS solutions, PicPeak gives you:
@@ -107,6 +122,7 @@ Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** —
 | Topic | Link |
 |---|---|
 | 🚀 Deployment (Docker, env, reverse proxy, SSL) | [docs.picpeak.app/deployment](https://docs.picpeak.app/deployment) |
+| 📦 Single-container install (one `docker run`, SQLite) | [docs.picpeak.app/deployment/single-container](https://docs.picpeak.app/deployment/single-container) |
 | ⚙️ Admin settings reference | [docs.picpeak.app/guides/admin-settings](https://docs.picpeak.app/guides/admin-settings) |
 | 🎯 Creating events | [docs.picpeak.app/guides/creating-events](https://docs.picpeak.app/guides/creating-events) |
 | 📽️ Live Slideshow | [docs.picpeak.app/features/live-slideshow](https://docs.picpeak.app/features/live-slideshow) |

@@ -104,12 +104,24 @@ class DatabaseBackupService {
     
     for (const table of tables) {
       if (this.dbType === 'sqlite') {
-        // SQLite: Use aggregate of all row data
+        // SQLite has no row-to-text cast: `CAST(t.* AS TEXT)` is a syntax error
+        // (near "*"), so this threw for every table and took the whole backup
+        // with it — the .backup call further down never ran. Dormant while
+        // Postgres was the only supported engine; guaranteed on every
+        // all-in-one install, where SQLite is the default (#1042).
+        //
+        // Same 'aggregate of all row data' fingerprint, built from the actual
+        // columns. COALESCE keeps a NULL from nulling the whole sum, which
+        // would let unrelated rows collide.
+        const columns = Object.keys(await db(table).columnInfo());
+        const lengthExpr = columns.length
+          ? columns.map((c) => `LENGTH(COALESCE(CAST("${c}" AS TEXT), ''))`).join(' + ')
+          : '0';
         const result = await db.raw(`
-          SELECT 
+          SELECT
             COUNT(*) as row_count,
-            COALESCE(SUM(LENGTH(CAST(t.* AS TEXT))), 0) as data_sum
-          FROM "${table}" t
+            COALESCE(SUM(${lengthExpr}), 0) as data_sum
+          FROM "${table}"
         `);
         
         checksums[table] = {

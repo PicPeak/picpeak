@@ -18,9 +18,9 @@ async function createEventWithPhotos(page: Page, adminToken?: string, attempt = 
       },
     });
     expect(loginResponse.ok()).toBeTruthy();
-    const loginData = await loginResponse.json();
-    token = loginData.token;
-    expect(token).toBeTruthy();
+    const cookies = await page.context().cookies();
+    token = cookies.find((c) => c.name === 'admin_token')?.value;
+    expect(token, 'admin_token cookie missing from the login response').toBeTruthy();
   }
 
   const eventName = `Playwright Smoke ${Date.now()}`;

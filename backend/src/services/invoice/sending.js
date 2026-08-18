@@ -2,6 +2,7 @@
 // module-level overview. Do not add behavior here without updating the entry re-exports.
 
 const crypto = require('crypto');
+const { getStoragePath } = require('../../config/storage');
 const { db, logActivity } = require('../../database/db');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
@@ -114,7 +115,7 @@ async function sendInvoice(id, adminId, options = {}) {
   const fs = require('fs');
   const path = require('path');
   const year = new Date(invoice.issue_date).getFullYear();
-  const root = path.join(process.cwd(), 'storage', 'business-docs', 'invoice', String(year));
+  const root = path.join(getStoragePath(), 'business-docs', 'invoice', String(year));
   fs.mkdirSync(root, { recursive: true });
   const pdfPath = path.join(root, `${invoice.invoice_number}.pdf`);
   fs.writeFileSync(pdfPath, buffer);
@@ -389,7 +390,7 @@ async function sendStorno(stornoId, adminId) {
   const fs = require('fs');
   const path = require('path');
   const year = new Date(storno.issue_date).getFullYear();
-  const root = path.join(process.cwd(), 'storage', 'business-docs', 'invoice', String(year));
+  const root = path.join(getStoragePath(), 'business-docs', 'invoice', String(year));
   fs.mkdirSync(root, { recursive: true });
   const pdfPath = path.join(root, `${storno.invoice_number}.pdf`);
   fs.writeFileSync(pdfPath, buffer);

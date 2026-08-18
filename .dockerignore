@@ -5,7 +5,10 @@
 .env.*
 docker-compose*.yml
 .DS_Store
-node_modules
+# **/ so backend/node_modules and frontend/node_modules are excluded too —
+# the root-context Dockerfile.aio COPYs those directories and must get its
+# deps from its builder stages, never from the host checkout.
+**/node_modules
 npm-debug.log
 coverage
 .nyc_output
@@ -18,3 +21,31 @@ storage/events/archived/*
 storage/thumbnails/*
 data/*.db
 logs/*
+
+# Dockerfile.aio builds from the REPOSITORY ROOT and Docker reads only this
+# file — backend/.dockerignore is never consulted — so the unprefixed rules
+# above miss backend/data, backend/logs and backend/storage. A checkout that has
+# been used to run PicPeak would otherwise bake its database, photos, logs and
+# SETUP_TOKEN into a published image layer.
+# backend/data wholesale, not a suffix list. It holds only runtime state and is
+# gitignored in full (.gitignore: `data/`), while suffix rules kept letting real
+# secrets through: a used checkout here carries ADMIN_CREDENTIALS.txt alongside
+# the database, plus -journal files and any DATABASE_PATH that does not end in
+# .db. Any of those in a published layer is a credential leak.
+backend/data
+backend/logs
+backend/storage
+
+# Same root-context trap, one level deeper: the `.env`, `.env.*` and `data/*.db`
+# rules above are unanchored only in appearance — Docker matches them against the
+# path from the build context, so they catch `./.env` and never `backend/.env`.
+# A checkout that has been used to run PicPeak locally keeps its JWT_SECRET,
+# DB_PASSWORD and SMTP credentials there, and `COPY backend/ .` puts the file at
+# /app/.env in the published layer. Match at any depth instead, the way
+# **/node_modules above already does.
+**/.env
+**/.env.*
+**/*.db
+**/*.db-journal
+**/*.sqlite*
+frontend/dist

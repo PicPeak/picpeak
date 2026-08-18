@@ -91,12 +91,53 @@ async function maintenanceMiddleware(req, res, next) {
   const isStaticAsset = req.path.startsWith('/uploads/') || 
                        req.path.startsWith('/favicons/') || 
                        req.path.startsWith('/logos/');
+
+  // The SPA shell — the HTML document and its bundle, as opposed to an API or a
+  // backend-owned static mount. When the backend serves the frontend itself
+  // (SERVE_FRONTEND / the all-in-one image, #1042) these requests reach this
+  // middleware long before the static block; in the compose stack nginx answers
+  // them and they never arrive here at all, which is why neither problem below
+  // ever surfaced there.
+  //
+  // Gating them broke two things. An admin who switched maintenance mode on
+  // could not switch it back off: the login endpoints above are exempt, but
+  // /admin/login and /assets/* returned 503 JSON, so the page that calls them
+  // never loaded. And a guest hitting /gallery/... got that same raw JSON
+  // instead of the branded maintenance screen the frontend already ships.
+  //
+  // Letting the shell through costs nothing: it is inert HTML that boots, calls
+  // /api/public/settings (exempt just above) and renders MaintenanceMode on its
+  // own. Anything that carries real data stays gated.
+  //
+  // The split below is not a guess — it mirrors frontend/nginx.conf exactly.
+  // Whatever nginx answers from the frontend container never reaches this
+  // middleware in a compose deployment, and whatever it proxy_passes does; so
+  // exempting precisely the former gives the all-in-one image the same
+  // behaviour compose already has, in both directions. The proxied set is
+  // small and explicit: /api, /photos, /thumbnails, /fonts, the OG renderer,
+  // the /s/ short-link renderer, and the exact paths nginx maps one-to-one —
+  // `location = /` hands the site root to the public-CMS handler, and the
+  // robots/favicon/apple-touch entries are single `location =` proxies too.
+  // Note /og/ and /s/ in particular: those render event names and cover
+  // images, so leaving them open would publish gallery metadata from a site
+  // that is supposed to be down.
+  const BACKEND_RENDERED_PREFIXES = ['/api/', '/photos/', '/thumbnails/', '/fonts/', '/og/', '/s/'];
+  const BACKEND_RENDERED_EXACT = [
+    '/',
+    '/robots.txt',
+    '/favicon.ico',
+    '/apple-touch-icon.png',
+    '/apple-touch-icon-precomposed.png'
+  ];
+  const isBackendRendered = BACKEND_RENDERED_EXACT.includes(req.path)
+    || BACKEND_RENDERED_PREFIXES.some((prefix) => req.path.startsWith(prefix));
+  const isSpaShell = req.method === 'GET' && !isBackendRendered;
   
   // Allow admin routes if admin is authenticated
   const isAdminRoute = req.path.startsWith('/api/admin');
   const hasAdminAuth = req.headers.authorization?.startsWith('Bearer ');
   
-  if (skipPaths.includes(req.path) || isStaticAsset || (isAdminRoute && hasAdminAuth)) {
+  if (skipPaths.includes(req.path) || isStaticAsset || isSpaShell || (isAdminRoute && hasAdminAuth)) {
     return next();
   }
   

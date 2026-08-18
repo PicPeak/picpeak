@@ -2,6 +2,7 @@
 // module-level overview. Do not add behavior here without updating the entry re-exports.
 
 const { db, logActivity } = require('../../database/db');
+const { getStoragePath } = require('../../config/storage');
 const { getAppSetting } = require('../../utils/appSettings');
 const { AppError } = require('../../utils/errors');
 const { formatShortDate } = require('../../utils/dateFormatter');
@@ -132,7 +133,7 @@ async function applyReminder(invoice, lineItems, level, adminId) {
   const fs = require('fs');
   const path = require('path');
   const year = new Date(fresh.issue_date).getFullYear();
-  const root = path.join(process.cwd(), 'storage', 'business-docs', 'mahnung', String(year));
+  const root = path.join(getStoragePath(), 'business-docs', 'mahnung', String(year));
   fs.mkdirSync(root, { recursive: true });
   const mahnungPath = path.join(root, `${fresh.invoice_number}_mahnung_L${level}.pdf`);
   fs.writeFileSync(mahnungPath, buffer);

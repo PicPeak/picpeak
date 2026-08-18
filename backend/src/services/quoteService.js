@@ -27,6 +27,7 @@
  */
 
 const crypto = require('crypto');
+const { getStoragePath } = require('../config/storage');
 const { db, withRetry, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
@@ -1065,7 +1066,7 @@ async function persistDocPdf(type, doc, buffer) {
   const number = doc.quote_number || doc.invoice_number;
   if (!number) return null;
   const year = (doc.issue_date ? new Date(doc.issue_date) : new Date()).getFullYear();
-  const root = path.join(process.cwd(), 'storage', 'business-docs', type, String(year));
+  const root = path.join(getStoragePath(), 'business-docs', type, String(year));
   fs.mkdirSync(root, { recursive: true });
   const filePath = path.join(root, `${number}.pdf`);
   fs.writeFileSync(filePath, buffer);

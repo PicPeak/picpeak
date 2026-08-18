@@ -1,0 +1,178 @@
+# All-in-one image (#1042): one container, one Node process.
+#
+# The backend serves the built frontend itself via server.js's SERVE_FRONTEND
+# block (SPA fallback, OG crawler intercept, brand-title render, immutable
+# asset caching) — no nginx, no supervisor, no bundled Postgres/Redis. SQLite
+# is the explicit default engine; pointing DB_HOST/DB_USER/DB_PASSWORD (+
+# DATABASE_CLIENT=pg) at an external Postgres works exactly like the backend
+# image. Build context is the REPO ROOT (both backend/ and frontend/ are
+# needed): docker build -f Dockerfile.aio .
+#
+# KEEP IN SYNC: the runtime stage below mirrors backend/Dockerfile's
+# production stage (base image, apk set, npm removal, nodejs user, fontconfig
+# registration, directory layout, healthcheck, entrypoint). When
+# backend/Dockerfile changes, change this file too — the aio smoke job in
+# docker-build.yml catches boot-level drift, not package-level drift.
+
+# ---------------------------------------------------------------------------
+# Frontend build — mirrors frontend/Dockerfile's builder stage
+# ---------------------------------------------------------------------------
+FROM node:22-alpine AS frontend-builder
+
+ARG CACHEBUST=1
+
+WORKDIR /app
+
+COPY frontend/package*.json ./
+RUN npm ci --legacy-peer-deps
+
+COPY frontend/ .
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# Backend deps — mirrors backend/Dockerfile's builder stage
+# ---------------------------------------------------------------------------
+FROM node:22-alpine AS backend-builder
+
+ARG CACHEBUST=1
+
+WORKDIR /app
+
+COPY backend/package*.json ./
+RUN npm ci --omit=dev
+
+# ---------------------------------------------------------------------------
+# Runtime — mirrors backend/Dockerfile's production stage + the frontend dist
+# ---------------------------------------------------------------------------
+FROM node:22-alpine
+
+ARG CACHEBUST=1
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION
+
+LABEL org.opencontainers.image.source="https://github.com/PicPeak/picpeak"
+LABEL org.opencontainers.image.description="PicPeak all-in-one (backend + frontend, single container)"
+LABEL org.opencontainers.image.licenses="MIT"
+
+WORKDIR /app
+
+# Explicit engine selection (#1038/#1042): SQLite is this image's DEFAULT
+# engine — set explicitly, never inferred, and wait-for-db.sh skips its
+# Postgres readiness wait for it. Point the container at an external Postgres
+# by overriding DATABASE_CLIENT=pg and setting DB_HOST/DB_USER/DB_PASSWORD,
+# exactly like the backend image. The boot resolver still logs the engine and
+# refuses the populated-both conflict.
+# STORAGE_PATH: getStoragePath() falls back to path.join(__dirname,
+# '../../../storage') — which resolves to the container-root `/storage` here,
+# writable by root but EACCES for the nodejs user after the su-exec drop.
+# Compose masks this by setting STORAGE_PATH=/app/storage; this image must
+# pin the same path (it is the directory the Dockerfile creates and chowns).
+ENV NODE_ENV=production \
+    DATABASE_CLIENT=sqlite3
+
+# See backend/Dockerfile for the rationale of each of the following blocks.
+RUN echo "cachebust=${CACHEBUST}" && apk upgrade --no-cache
+
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
+#   sqlite — DatabaseBackupService.createSQLiteBackup() SPAWNS the `sqlite3`
+#     CLI for `.backup` and PRAGMA integrity_check; the npm module does not
+#     ship that binary. backend/Dockerfile omits it because compose always runs
+#     Postgres — this image defaults to SQLite, so without it every database
+#     backup fails with ENOENT.
+RUN apk add --no-cache dumb-init postgresql-client sqlite ffmpeg su-exec \
+    fontconfig ttf-dejavu ttf-liberation poppler-utils exiftool && \
+    fc-cache -f
+
+RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
+
+COPY --from=backend-builder --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --chown=nodejs:nodejs backend/ .
+
+RUN chmod -R a+r /app && chmod +x wait-for-db.sh
+
+RUN printf '<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n  <dir>/app/assets/fonts</dir>\n</fontconfig>\n' > /etc/fonts/conf.d/99-picpeak-fonts.conf && \
+    fc-cache -f /app/assets/fonts
+
+# ---------------------------------------------------------------------------
+# One volume, one layout (#1042 scope: "single data layout on one volume")
+# ---------------------------------------------------------------------------
+#   /data/db       picpeak.db (+ -wal/-shm) and SETUP_TOKEN
+#   /data/storage  originals, thumbnails, archives
+#   /data/logs     application logs
+#   /data/backup   built-in backup output; /backup symlinks here
+#
+# `-v picpeak:/data` and nothing else to remember — back up /data and you have
+# backed up the install. /backup is where migrations 029 + 030 seed the backup
+# destinations, so it is symlinked in rather than left dangling.
+ENV DATA_ROOT=/data \
+    DATA_DIR=/data/db \
+    DATABASE_PATH=/data/db/picpeak.db \
+    STORAGE_PATH=/data/storage \
+    LOG_DIR=/data/logs \
+    BACKUP_DIR=/data/backup
+
+# Share links are absolute only when a base URL is known: getFrontendBaseUrl()
+# reads FRONTEND_URL, falls back to the general_site_url setting, and otherwise
+# returns "" — which makes share_url come out as a bare "/gallery/<slug>/<token>"
+# in API responses, QR codes and emails. docker-compose.yml defaults this to
+# http://localhost:3000, but the documented one-liner for this image passes only
+# JWT_SECRET, so without a default here every fresh single-container install
+# would hand out unusable links. Same default as compose; override with
+# -e FRONTEND_URL=https://photos.example.com, or set the site URL in Settings.
+ENV FRONTEND_URL=http://localhost:3000
+
+# /app/storage is a second entrance to the same volume. The business-document
+# writers (quoteService, invoice sending/reminders, contract signatures) build
+# their paths from `path.join(process.cwd(), 'storage', ...)` and never consult
+# STORAGE_PATH. Compose hides that because it sets STORAGE_PATH=/app/storage
+# with WORKDIR /app, so the two happen to be the same directory; here they are
+# not, and /app is root-owned, so a quote or invoice PDF would fail to write as
+# UID 1001 — and be lost with the container even if it succeeded. Teaching
+# those services STORAGE_PATH is the real fix and belongs in its own change;
+# the symlink restores the coincidence compose already relies on.
+RUN mkdir -p /data/db /data/storage/events/active /data/storage/events/archived \
+             /data/storage/thumbnails /data/logs \
+             /data/backup/picpeak /data/backup/database && \
+    ln -s /data/backup /backup && \
+    ln -s /data/storage /app/storage && \
+    chown -R nodejs:nodejs /data
+
+VOLUME ["/data"]
+
+# The frontend bundle, served by server.js's SERVE_FRONTEND block. Explicit
+# opt-in rather than the dist-exists autodetect, so the behavior is pinned
+# even if the autodetect heuristic ever changes.
+COPY --from=frontend-builder --chown=nodejs:nodejs /app/dist /app/frontend/dist
+ENV SERVE_FRONTEND=true \
+    FRONTEND_DIR=/app/frontend/dist
+
+# Marks this as the single-container build. The backend refuses to enable face
+# recognition (#1074) when it sees this, on performance grounds: that feature
+# needs a separate ML container this image does not contain, and it would add
+# a second image-processing pipeline competing with Sharp for the CPU and
+# memory of a container sized for one photographer plus guests browsing. The
+# failure would not be loud — just a slow install that looks broken.
+#
+# An explicit marker rather than inferring it from SERVE_FRONTEND or the
+# SQLite path: legitimate multi-container deployments do both of those, and
+# none of them should lose the feature by accident.
+ENV PICPEAK_SINGLE_CONTAINER=true
+
+# No USER directive — same as backend/Dockerfile: the container starts as root
+# so wait-for-db.sh can chown bind-mounted volumes to UID 1001, then drops
+# privileges via su-exec (#484).
+
+EXPOSE 3000
+
+# Shell form so it resolves $PORT: a hard-coded 3000 marks an otherwise healthy
+# container unhealthy forever the moment anyone overrides the port.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider "http://localhost:${PORT:-3000}/health" || exit 1
+
+ENTRYPOINT ["dumb-init", "--"]
+# --max-http-header-size matches nginx's `large_client_header_buffers 4 32k`.
+# Requests reach Node directly here, and its 16 KiB default would reject a guest
+# carrying several per-gallery JWT cookies before Express ever saw them.
+CMD ["./wait-for-db.sh", "node", "--max-http-header-size=32768", "server.js"]
