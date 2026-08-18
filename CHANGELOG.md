@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.107.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.106.0-beta.0...v3.107.0-beta.0) (2026-08-18)
+
+
+### Features
+
+* **faces:** People in this gallery — face recognition via an optional ML sidecar ([#1074](https://github.com/PicPeak/picpeak/issues/1074)) ([#1075](https://github.com/PicPeak/picpeak/issues/1075)) ([b69dd13](https://github.com/PicPeak/picpeak/commit/b69dd134d0f5b1570ace261af4541d36771e62cd))
+
 ## [3.106.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.105.1-beta.0...v3.106.0-beta.0) (2026-08-18)
 
 
