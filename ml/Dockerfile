@@ -23,11 +23,17 @@ ARG YUNET_SHA256=8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa
 # FaceNet-512 as ONNX. deepface distributes this model as Keras .h5 only, so
 # the ONNX is produced once by `tools/convert_facenet.py` and published as a
 # release asset — converting inside this build would drag TensorFlow (~600MB)
-# through both architecture legs to produce a file that is byte-identical on
-# each. There is deliberately NO default: an unset value fails the build with
-# the message below rather than producing an image whose embedder is missing.
-ARG FACENET_ONNX_URL=
-ARG FACENET_ONNX_SHA256=
+# through both architecture legs to produce a file that is identical either
+# way.
+#
+# Defaults to the canonical published artifact so `docker build ml/` and
+# `docker compose --profile faces up` both work with no arguments. Override
+# both together to use a different embedder. Blanking either one still fails
+# the build loudly (below) rather than silently producing an image with no
+# embedder — the checksum is what makes the URL safe to trust, so a URL
+# without one is never acceptable.
+ARG FACENET_ONNX_URL=https://github.com/PicPeak/picpeak/releases/download/ml-models-v1/facenet512.onnx
+ARG FACENET_ONNX_SHA256=a1c06dcb79dc17a42af01d5bcbce4822caa148b9c24bf7eb8b8e556b4fd0d5db
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
@@ -75,16 +81,22 @@ RUN echo "cachebust=${CACHEBUST}" \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY --from=models /models /models
-COPY app ./app
+# pip itself is ~10MB of an image that never installs anything at runtime.
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip uninstall -y pip setuptools 2>/dev/null || true
 
 # Non-root. Nothing in this container writes anything — no volumes, no
 # database, no model download — so the whole filesystem can stay read-only to
 # the service account.
-RUN useradd --system --uid 1001 --create-home picpeak \
-    && chown -R picpeak:picpeak /app /models
+#
+# Created BEFORE the copies so ownership can be set by COPY --chown. A
+# `chown -R` afterwards would rewrite every copied file into a fresh layer,
+# duplicating the 90MB model and adding ~94MB to the image for nothing.
+RUN useradd --system --uid 1001 --create-home picpeak
+
+COPY --from=models --chown=picpeak:picpeak /models /models
+COPY --chown=picpeak:picpeak app ./app
+
 USER picpeak
 
 ENV FACE_MODEL_DIR=/models \

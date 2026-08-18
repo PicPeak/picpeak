@@ -34,11 +34,23 @@
  */
 
 const GLOBAL_DEFAULTS = [
-  // Cosine similarity above which a face joins an existing person. Stored as
-  // a setting rather than a constant because no single threshold survives
-  // contact with every library — Immich ships the same knob for the same
-  // reason, on a stronger model than this one.
-  ['face_match_threshold', 0.62],
+  // Cosine similarity above which a face joins an existing person.
+  //
+  // 0.50 is measured, not guessed: LFW's standard 1000-pair test protocol run
+  // through this exact pipeline (YuNet → Umeyama alignment → FaceNet-512)
+  // gives same-person cosine 0.696 ± 0.142 and different-person 0.085 ± 0.167.
+  // Peak accuracy is 96.6% at 0.405, but peak accuracy is the WRONG target for
+  // clustering: a false split just puts a duplicate row in the strip that the
+  // photographer can merge away, while a false merge puts a stranger into
+  // someone's "download my photos" — and until the Phase 2 merge/split UI
+  // ships there is no way to undo one. So this sits on the conservative side
+  // of the optimum: 1.0% false merge, 8.2% false split.
+  //
+  // Reproduce with ml/tools/benchmark_threshold.py. LFW is celebrity portraits
+  // — a defensible starting point, not the last word on event photography,
+  // which is why this is a setting and why "Re-group people" re-derives from
+  // stored embeddings without re-scanning.
+  ['face_match_threshold', 0.50],
   // Faces a cluster needs before it appears in the guest-facing strip. Keeps
   // one-off bystanders out of "People in this gallery".
   ['face_min_cluster_size', 3],

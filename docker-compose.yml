@@ -194,8 +194,12 @@ services:
       context: ./ml
       dockerfile: Dockerfile
       args:
-        - FACENET_ONNX_URL=${FACENET_ONNX_URL:-}
-        - FACENET_ONNX_SHA256=${FACENET_ONNX_SHA256:-}
+        # Defaults live in ml/Dockerfile and point at the canonical published
+        # model. These pass an override through from .env when set; an empty
+        # value here would BLANK the Dockerfile default and fail the build,
+        # so the fallbacks repeat it deliberately.
+        - FACENET_ONNX_URL=${FACENET_ONNX_URL:-https://github.com/PicPeak/picpeak/releases/download/ml-models-v1/facenet512.onnx}
+        - FACENET_ONNX_SHA256=${FACENET_ONNX_SHA256:-a1c06dcb79dc17a42af01d5bcbce4822caa148b9c24bf7eb8b8e556b4fd0d5db}
     container_name: picpeak-ml
     restart: unless-stopped
     profiles:
