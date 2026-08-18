@@ -92,10 +92,15 @@ async function claimNextPhoto() {
 }
 
 async function releaseToPending(photoId) {
-  await db('photos').where({ id: photoId }).update({
-    face_status: 'pending',
-    face_started_at: null,
-  });
+  // Guarded on 'processing' — the state THIS worker put the row in. If the
+  // event was purged while the sidecar request was in flight, purgeEvent has
+  // already set face_status to NULL, and an unconditional update would put it
+  // back to 'pending' and rescan it: biometric rows reappearing after the
+  // purge endpoint reported success. Same reasoning as the commit guard in
+  // faceProcessor; the retry path needed it too.
+  await db('photos')
+    .where({ id: photoId, face_status: 'processing' })
+    .update({ face_status: 'pending', face_started_at: null });
 }
 
 async function workerLoop(workerIdx) {

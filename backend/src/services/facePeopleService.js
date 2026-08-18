@@ -91,7 +91,13 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, minClus
       'photo_faces.bbox_x',
       'photo_faces.bbox_y',
       'photo_faces.bbox_w',
-      'photo_faces.bbox_h'
+      'photo_faces.bbox_h',
+      // The bbox is in ORIGINAL image pixels, so any consumer cropping it has
+      // to know what those pixels were measured against. Without these the
+      // admin manager was scaling an original-space box by a THUMBNAIL's
+      // natural size and rendering the wrong region entirely.
+      'photos.width as photo_width',
+      'photos.height as photo_height'
     );
 
   const coverByPerson = new Map();
@@ -130,6 +136,8 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, minClus
           face_id: cover.id,
           photo_id: cover.photo_id,
           bbox: [cover.bbox_x, cover.bbox_y, cover.bbox_w, cover.bbox_h],
+          photo_width: cover.photo_width ?? null,
+          photo_height: cover.photo_height ?? null,
         }
         : null,
     };

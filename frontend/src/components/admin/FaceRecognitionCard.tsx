@@ -15,7 +15,7 @@
  * provide the switch, the photographer provides the lawful basis — so it
  * renders next to the toggle rather than behind a "learn more".
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
@@ -51,6 +51,7 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
   const { t } = useTranslation();
   const [saving, setSaving] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
+  const [autoCategories, setAutoCategories] = useState(false);
 
   const { data, isLoading, refetch } = useQuery<FacesPayload>({
     queryKey: ['admin-event-faces', eventId],
@@ -59,6 +60,13 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
     // manual refresh; stop entirely once it settles.
     refetchInterval: (query) => (query.state.data?.status?.in_progress ? 5000 : false),
   });
+
+  useEffect(() => {
+    if (!data?.enabled) return;
+    api.get('/admin/events/faces/auto-categories')
+      .then((r) => setAutoCategories(!!r.data?.enabled))
+      .catch(() => { /* pre-migration or no permission — leave off */ });
+  }, [data?.enabled]);
 
   const patch = async (body: Record<string, boolean>) => {
     setSaving(true);
@@ -203,6 +211,43 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
             })}
           </p>
         </div>
+      )}
+
+      {/* Auto-categories (#1074 phase 3). Global, not per-event, which is why
+          it sits apart from the two toggles above. Without a control here the
+          rule engine had no way to be switched on at all. */}
+      {data.enabled && (
+        <label className="flex items-start gap-3 py-2 mt-2 pt-3 border-t border-neutral-100 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoCategories}
+            disabled={saving}
+            onChange={async (e) => {
+              const next = e.target.checked;
+              setSaving(true);
+              try {
+                await api.put('/admin/events/faces/auto-categories', { enabled: next });
+                setAutoCategories(next);
+                toast.success(t('common.saved', { defaultValue: 'Saved' }));
+              } catch (err: any) {
+                toast.error(err?.response?.data?.error || t('common.saveFailed', { defaultValue: 'Save failed' }));
+              } finally {
+                setSaving(false);
+              }
+            }}
+            className="mt-1 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+          />
+          <span>
+            <span className="block text-sm font-medium text-neutral-800">
+              {t('admin.faces.autoCategories', { defaultValue: 'Sort photos into categories automatically' })}
+            </span>
+            <span className="block text-xs text-neutral-500">
+              {t('admin.faces.autoCategoriesHint', {
+                defaultValue: 'Uses the number of faces to file photos as Details, Portraits, Small groups or Groups. Applies to every gallery, only ever fills an empty category, and never changes one you set yourself.',
+              })}
+            </span>
+          </span>
+        </label>
       )}
 
       {data.enabled && (

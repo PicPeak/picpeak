@@ -212,9 +212,15 @@ class RestoreService {
       switch (options.restoreType) {
       case 'full':
         restoreResult = await this.performFullRestore(localBackupPath, manifest, options);
+        // After the FILES too — see requeueFaceScans on why the ordering
+        // matters with a live worker.
+        await this.requeueFaceScans();
         break;
       case 'database':
         restoreResult = await this.performDatabaseRestore(localBackupPath, manifest, options);
+        // Database-only restore: the existing files stay in place, so there
+        // is nothing to race.
+        await this.requeueFaceScans();
         break;
       case 'files':
         restoreResult = await this.performFilesRestore(localBackupPath, manifest, options);
@@ -836,6 +842,45 @@ class RestoreService {
   /**
    * Perform full restore (database + files)
    */
+  /**
+   * Requeue face detection after a restore (#1074).
+   *
+   * Face data is deliberately excluded from backups — it is derived, and
+   * biometric data should not travel in an archive. But photos.face_status
+   * DOES restore, so without this the restored install claims every photo is
+   * scanned while photo_faces is empty, and the worker never picks them up
+   * because it only claims 'pending'. The gallery shows a finished scan and
+   * no people, forever, with nothing to indicate why.
+   *
+   * MUST run after the FILES are restored, not merely after the database.
+   * The face worker is live throughout a restore; queued earlier it races the
+   * file copy and either scans the previous instance's originals or marks
+   * photos failed for files that are not there yet — and nothing re-queues
+   * them afterwards.
+   *
+   * Only touches rows that had been scanned; NULL stays NULL, so this never
+   * switches the feature on for anyone.
+   */
+  async requeueFaceScans() {
+    try {
+      const { db: restoredDb } = require('../database/db');
+      const requeued = await restoredDb('photos')
+        .whereNotNull('face_status')
+        .update({
+          face_status: 'pending',
+          face_count: null,
+          face_started_at: null,
+          face_error: null,
+        });
+      if (requeued > 0) {
+        this.log('info', `Requeued ${requeued} photo(s) for face detection after restore`);
+      }
+    } catch (err) {
+      // Pre-migration-177 backups have no such column; not an error.
+      this.log('info', `Face state reset skipped: ${err.message}`);
+    }
+  }
+
   async performFullRestore(backupPath, manifest, options) {
     const result = {
       databaseRestored: false,
@@ -1166,33 +1211,6 @@ END $$;`
       await reinitPool();
       this.log('info', 'Knex pool re-initialized');
 
-      // Face data (#1074) is deliberately excluded from backups — it is
-      // derived, and biometric data should not travel in an archive. But the
-      // photos table DOES restore its face_status, so without this the
-      // restored install claims every photo is scanned while photo_faces is
-      // empty, and the worker never picks them up because it only claims
-      // 'pending'. The gallery then shows a finished scan and no people,
-      // forever, with nothing to indicate why.
-      //
-      // Requeue anything that had been scanned; leave never-scanned rows
-      // (NULL) alone so this does not switch the feature on for anyone.
-      try {
-        const { db: restoredDb } = require('../database/db');
-        const requeued = await restoredDb('photos')
-          .whereNotNull('face_status')
-          .update({
-            face_status: 'pending',
-            face_count: null,
-            face_started_at: null,
-            face_error: null,
-          });
-        if (requeued > 0) {
-          this.log('info', `Requeued ${requeued} photo(s) for face detection after restore`);
-        }
-      } catch (err) {
-        // Pre-migration-177 backups have no such column; not an error.
-        this.log('info', `Face state reset skipped: ${err.message}`);
-      }
 
       // NOTE: we deliberately do NOT call `db.migrate.latest()` here.
       //

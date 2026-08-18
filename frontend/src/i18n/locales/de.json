@@ -3158,7 +3158,9 @@
       "reclustered": "Personen neu gruppiert",
       "delete": "Alle Gesichtsdaten löschen",
       "deleted": "Gesichtsdaten gelöscht",
-      "confirmDelete": "Alle erkannten Personen und Gesichtsdaten dieser Galerie löschen? Dies kann nicht rückgängig gemacht werden. Die Fotos selbst bleiben unverändert."
+      "confirmDelete": "Alle erkannten Personen und Gesichtsdaten dieser Galerie löschen? Dies kann nicht rückgängig gemacht werden. Die Fotos selbst bleiben unverändert.",
+      "autoCategories": "Fotos automatisch in Kategorien einsortieren",
+      "autoCategoriesHint": "Nutzt die Anzahl der Gesichter, um Fotos als Details, Porträts, Kleine Gruppen oder Gruppen abzulegen. Gilt für alle Galerien, füllt ausschließlich leere Kategorien und ändert niemals eine von Ihnen gesetzte."
     }
   },
   "acceptInvitation": {

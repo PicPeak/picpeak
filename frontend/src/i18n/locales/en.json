@@ -2730,7 +2730,9 @@
       "reclustered": "People regrouped",
       "delete": "Delete all face data",
       "deleted": "Face data deleted",
-      "confirmDelete": "Delete all detected people and face data for this gallery? This cannot be undone. Photos are not affected."
+      "confirmDelete": "Delete all detected people and face data for this gallery? This cannot be undone. Photos are not affected.",
+      "autoCategories": "Sort photos into categories automatically",
+      "autoCategoriesHint": "Uses the number of faces to file photos as Details, Portraits, Small groups or Groups. Applies to every gallery, only ever fills an empty category, and never changes one you set yourself."
     }
   },
   "acceptInvitation": {

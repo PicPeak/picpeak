@@ -508,11 +508,18 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
     await resyncSequences(tables);
     await setSessionsValidAfter(Math.floor(Date.now() / 1000));
 
-    // Face data (#1074): the archive carries none, and the export already
-    // blanked photos.face_status. But the EVENT toggles come across enabled,
-    // so the "enable" transition that normally queues a backfill never
-    // happens here — the gallery would sit enabled, empty, and idle forever.
-    // Queue every photo belonging to an event that has detection on.
+
+    const filesRestored = await restoreFiles(staging);
+
+    // Face data (#1074): queue ONLY once the files are on disk. The archive
+    // carries no face rows and the export blanked photos.face_status, but the
+    // event toggles come across enabled, so the "enable" transition that
+    // normally triggers a backfill never happens here.
+    //
+    // Ordering matters: the worker is live during a restore. Queued before
+    // restoreFiles, it races the copy and either scans the PREVIOUS
+    // instance's files or marks photos failed for originals that are not
+    // there yet — and nothing re-queues them afterwards.
     try {
       const requeued = await db('photos')
         .whereIn('event_id', db('events').select('id').where('face_recognition_enabled', true))
@@ -523,11 +530,8 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
         logger.info(`picpeakImport: queued ${requeued} photo(s) for face detection after import`);
       }
     } catch (err) {
-      // Pre-migration-177 target: nothing to queue.
       logger.debug?.(`picpeakImport: face requeue skipped: ${err.message}`);
     }
-
-    const filesRestored = await restoreFiles(staging);
     const usesExternalMedia = await detectExternalMedia();
 
     logger.info(

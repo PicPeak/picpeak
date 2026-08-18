@@ -300,6 +300,15 @@ async function purgePhotoFaces(photoId, trx = db) {
     .distinct('person_id')
     .pluck('person_id');
 
+  // Drop any in-flight claim as well. A worker holding this photo would
+  // otherwise still satisfy its `face_status = 'processing'` commit guard and
+  // write fresh faces straight after the purge — and with FK enforcement off
+  // on SQLite, the subsequent photo delete cannot cascade them away, leaving
+  // orphaned biometric rows.
+  await trx('photos').where({ id: photoId }).update({
+    face_status: null, face_count: null, face_started_at: null, face_error: null,
+  });
+
   const removed = await trx('photo_faces').where({ photo_id: photoId }).del();
   if (!removed) return { removed: 0 };
 

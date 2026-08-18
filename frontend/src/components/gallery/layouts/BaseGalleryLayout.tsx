@@ -1,8 +1,13 @@
 import React from 'react';
-import type { Photo, DownloadResolutionChoice } from '../../../types';
+import type { Photo, DownloadResolutionChoice, GalleryPerson } from '../../../types';
 
 export interface BaseGalleryLayoutProps {
   photos: Photo[];
+  // People in this gallery (#1074) — forwarded by PhotoGridWithLayouts so
+  // full-page layouts, which render their OWN lightbox, can still show the
+  // "In this photo" chips.
+  people?: GalleryPerson[];
+  onSelectPerson?: (personId: number) => void;
   slug: string;
   onPhotoClick: (index: number) => void;
   // Optional: open the lightbox with feedback panel visible

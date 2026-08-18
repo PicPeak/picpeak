@@ -291,7 +291,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
       try {
         const { isEnabledForEvent } = require('./faceSettings');
         if (!isVideo && await isEnabledForEvent(event)) {
-          await trx('photos').where({ id: photoId }).update({ face_status: 'pending' });
+          // `db`, NOT `trx`: the transaction is committed above, so a query
+          // through it throws "Transaction query already complete" — which the
+          // catch below swallowed, making this whole enqueue a silent no-op.
+          await db('photos').where({ id: photoId }).update({ face_status: 'pending' });
         }
       } catch (err) {
         logger.warn(`processUploadedPhotos: face enqueue failed for photo ${photoId}`, {

@@ -30,13 +30,21 @@ interface AdminPerson {
   total_face_count?: number;
   is_hidden?: boolean;
   is_ignored?: boolean;
-  cover: { face_id: number; photo_id: number; bbox: [number, number, number, number] } | null;
+  cover: {
+    face_id: number;
+    photo_id: number;
+    bbox: [number, number, number, number];
+    photo_width: number | null;
+    photo_height: number | null;
+  } | null;
 }
 
 interface PersonFace {
   id: number;
   photo_id: number;
   bbox: [number, number, number, number];
+  photo_width: number | null;
+  photo_height: number | null;
   score: number | null;
   blur: number | null;
 }
@@ -64,23 +72,22 @@ const FaceThumb: React.FC<{
   eventId: number;
   photoId: number;
   bbox?: [number, number, number, number] | null;
+  photoWidth?: number | null;
+  photoHeight?: number | null;
   size?: number;
   dim?: boolean;
-}> = ({ eventId, photoId, bbox, size = 64, dim }) => {
+}> = ({ eventId, photoId, bbox, photoWidth, photoHeight, size = 64, dim }) => {
   // Crop to the face rather than showing the centred thumbnail. On a group
   // photo the uncropped version shows whoever stands in the middle, so two
   // different people whose cover is the same photo looked IDENTICAL here —
-  // which made the merge/split manager, whose whole job is telling faces
-  // apart, unusable for exactly the galleries that need it.
+  // in the manager whose whole job is telling faces apart.
   //
-  // The admin thumbnail route serves a fixed-size render, so the bbox (in
-  // original-image pixels) is applied as a ratio of the source dimensions.
-  // Those are not in the people payload, so fall back to `cover` when the
-  // ratio cannot be computed.
-  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
-  const style = bbox && natural
-    ? faceCropStyle({ bbox }, natural.w, natural.h, size)
-    : null;
+  // COORDINATE SPACE: the bbox is in ORIGINAL image pixels, so it must be
+  // scaled against the ORIGINAL dimensions (now supplied by the API), never
+  // against the thumbnail's own natural size. Mixing the two renders the
+  // wrong region entirely — the box ends up a fraction of its true size and
+  // offset toward the top-left.
+  const style = faceCropStyle(bbox ? { bbox } : null, photoWidth, photoHeight, size);
 
   return (
     <span
@@ -91,12 +98,6 @@ const FaceThumb: React.FC<{
         src={`/api/admin/photos/${eventId}/thumbnail/${photoId}`}
         alt=""
         loading="lazy"
-        onLoad={(e) => {
-          const img = e.currentTarget;
-          if (img.naturalWidth && !natural) {
-            setNatural({ w: img.naturalWidth, h: img.naturalHeight });
-          }
-        }}
         style={style || { width: '100%', height: '100%', objectFit: 'cover' }}
       />
     </span>
@@ -254,6 +255,8 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                           eventId={eventId}
                           photoId={face.photo_id}
                           bbox={face.bbox}
+                          photoWidth={face.photo_width}
+                          photoHeight={face.photo_height}
                           size={88}
                         />
                         {picked && (
@@ -314,6 +317,8 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                             eventId={eventId}
                             photoId={person.cover?.photo_id ?? 0}
                             bbox={person.cover?.bbox}
+                            photoWidth={person.cover?.photo_width}
+                            photoHeight={person.cover?.photo_height}
                             dim={person.is_ignored || person.is_hidden}
                           />
                         </button>

@@ -278,13 +278,23 @@ module.exports = (router) => {
           .where({ event_id: event.id, person_id: req.params.personId })
           .orderBy('det_score', 'desc')
           .limit(500)
-          .select('id', 'photo_id', 'bbox_x', 'bbox_y', 'bbox_w', 'bbox_h', 'det_score', 'blur');
+          .join('photos', 'photos.id', 'photo_faces.photo_id')
+          .select(
+            'photo_faces.id', 'photo_faces.photo_id',
+            'photo_faces.bbox_x', 'photo_faces.bbox_y',
+            'photo_faces.bbox_w', 'photo_faces.bbox_h',
+            'photo_faces.det_score', 'photo_faces.blur',
+            // Needed to crop the box — it is in original-image pixels.
+            'photos.width as photo_width', 'photos.height as photo_height'
+          );
 
         res.json({
           faces: faces.map((f) => ({
             id: f.id,
             photo_id: f.photo_id,
             bbox: [f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h],
+            photo_width: f.photo_width ?? null,
+            photo_height: f.photo_height ?? null,
             score: f.det_score,
             blur: f.blur,
           })),
@@ -338,6 +348,60 @@ module.exports = (router) => {
         res.json({ success: true, people });
       } catch (error) {
         errorResponse(res, error, 500, 'Failed to recluster');
+      }
+    });
+
+  /**
+   * Read/write the global auto-category setting.
+   *
+   * The migration seeds it false and nothing else ever wrote it, so the whole
+   * rule engine — and its undo endpoint — were unreachable in normal product
+   * flows: every call returned `skipped: disabled`. A feature with no way to
+   * turn it on is not shipped.
+   */
+  router.get('/faces/auto-categories', adminAuth, requirePermission('settings.view'), requireFaces,
+    async (req, res) => {
+      try {
+        const thresholds = await faceSettings.getThresholds();
+        res.json({ enabled: thresholds.face_auto_categorize_enabled === true });
+      } catch (error) {
+        errorResponse(res, error, 500, 'Failed to read the auto-category setting');
+      }
+    });
+
+  router.put('/faces/auto-categories',
+    adminAuth,
+    requirePermission('settings.edit'),
+    requireFaces,
+    [body('enabled').isBoolean()],
+    async (req, res) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+      try {
+        const enabled = parseBooleanInput(req.body.enabled, false);
+        const existing = await db('app_settings')
+          .where('setting_key', 'face_auto_categorize_enabled').first();
+
+        if (existing) {
+          await db('app_settings').where('setting_key', 'face_auto_categorize_enabled')
+            .update({ setting_value: JSON.stringify(enabled), updated_at: new Date().toISOString() });
+        } else {
+          await db('app_settings').insert({
+            setting_key: 'face_auto_categorize_enabled',
+            setting_value: JSON.stringify(enabled),
+            setting_type: 'faces',
+            updated_at: new Date().toISOString(),
+          });
+        }
+
+        await logActivity('face_auto_categories_toggled', {
+          actorType: 'admin', actorId: req.admin.id, metadata: { enabled },
+        }).catch(() => {});
+
+        res.json({ success: true, enabled });
+      } catch (error) {
+        errorResponse(res, error, 500, 'Failed to update the auto-category setting');
       }
     });
 
