@@ -238,6 +238,12 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   const layoutProps = {
     photos,
     slug,
+    // Face data (#1074) must reach the full-page layouts too — they render
+    // their OWN lightbox rather than the one below, so without this the
+    // "In this photo" chips silently vanish on gallery-premium and
+    // gallery-story even when the feature is fully enabled.
+    people,
+    onSelectPerson,
     // Full-page layouts own their bulk-download control, so the resolution
     // picker has to reach them too (#858) — otherwise premium/story galleries
     // silently skip the choice the admin enabled.

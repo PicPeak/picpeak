@@ -183,10 +183,16 @@ async function getPersonIdsByPhoto(eventId, photoIds, { forAdmin = false } = {})
  * Scan progress for the admin status line and the gallery's "Finding
  * people… 240/1200" indicator.
  */
-async function getScanStatus(eventId) {
-  const rows = await db('photos')
-    .where({ event_id: eventId })
-    .whereNotNull('face_status')
+async function getScanStatus(eventId, { isClient = true } = {}) {
+  // `isClient` defaults to TRUE (the admin/photographer view) because every
+  // existing caller is an admin surface. A guest must pass isClient:false:
+  // counting every photo with a face_status would otherwise tell them how
+  // many hidden photos the gallery holds — the same leak the people list and
+  // covers are already scoped against, arriving through the progress bar.
+  const rows = await applyVisibilityScope(
+    db('photos').where({ event_id: eventId }).whereNotNull('face_status'),
+    { isClient }
+  )
     .groupBy('face_status')
     .select('face_status')
     .count({ c: '*' });

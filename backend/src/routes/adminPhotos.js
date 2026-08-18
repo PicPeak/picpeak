@@ -846,12 +846,17 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
     // Face data (#1074), bulk path. Same reasoning as the single delete: the
     // SQLite FK cascade never fires, and event_people counts need rebuilding
     // regardless of engine.
-    for (const id of photoIds) {
+    // Iterate the VALIDATED rows, not the raw request ids. `photos` is already
+    // scoped to this event; `photoIds` is user input, and purgePhotoFaces has
+    // no event scope of its own — so looping the raw ids let an editor delete
+    // face data (and recompute people) in a gallery they do not own, even
+    // though the photo deletion below is correctly scoped.
+    for (const photo of photos) {
       try {
         const { purgePhotoFaces } = require('../services/faceProcessor');
-        await purgePhotoFaces(id);
+        await purgePhotoFaces(photo.id);
       } catch (err) {
-        logger.warn(`bulk delete: face purge failed for photo ${id}`, { error: err.message });
+        logger.warn(`bulk delete: face purge failed for photo ${photo.id}`, { error: err.message });
       }
     }
 

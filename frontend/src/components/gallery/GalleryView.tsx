@@ -968,8 +968,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         <PhotoGridWithLayouts
           photos={filteredPhotos}
           slug={slug}
-            people={peopleEnabled ? people : undefined}
-            onSelectPerson={togglePerson}
+          people={peopleEnabled ? people : undefined}
+          onSelectPerson={togglePerson}
           categoryId={selectedCategoryId}
           onFeedbackChange={() => {
             refetch();

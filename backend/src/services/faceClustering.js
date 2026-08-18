@@ -464,28 +464,46 @@ async function recluster(eventId) {
       inner.set(oldId, (inner.get(oldId) || 0) + 1);
     }
 
-    const claimed = new Set();
+    // Suppression is OR-ed across EVERY ancestor that contributed faces to a
+    // new cluster — not copied from the majority one. Reclustering can merge a
+    // visible named person with a hidden one; taking the majority ancestor's
+    // flags would then publish the hidden person's photos. Erring toward
+    // staying hidden is trivially reversible; erring toward visible is not.
+    const suppression = new Map(); // newId -> { is_hidden, is_ignored }
     for (const [newId, inner] of tally) {
-      const [bestOldId] = [...inner.entries()].sort((a, b) => b[1] - a[1])[0];
-      const old = previousLabels.find((p) => p.id === bestOldId);
-      if (!old) continue;
-
-      // The NAME goes to one cluster only — the one that inherited most of
-      // the old person's faces — because two clusters both called "Anna"
-      // would be worse than one named and one unnamed.
-      //
-      // Suppression is different: it must follow EVERY descendant. If a
-      // hidden person splits into three clusters, all three stay hidden.
-      // Applying it to only the majority cluster would expose the rest.
-      const update = {
-        is_hidden: !!old.is_hidden,
-        is_ignored: !!old.is_ignored,
-        updated_at: new Date().toISOString(),
-      };
-      if (!claimed.has(bestOldId)) {
-        update.label = old.label;
-        claimed.add(bestOldId);
+      let hidden = false;
+      let ignored = false;
+      for (const oldId of inner.keys()) {
+        const old = previousLabels.find((p) => p.id === oldId);
+        if (!old) continue;
+        if (old.is_hidden) hidden = true;
+        if (old.is_ignored) ignored = true;
       }
+      suppression.set(newId, { is_hidden: hidden, is_ignored: ignored });
+    }
+
+    // The NAME goes to exactly one cluster: the descendant that inherited the
+    // MOST of that old person's faces, chosen globally. Iterating `tally` and
+    // taking the first match gave the name to whichever cluster happened to
+    // come first — an early outlier could take it while the real majority
+    // cluster ended up unnamed.
+    const bestDescendant = new Map(); // oldId -> { newId, count }
+    for (const [newId, inner] of tally) {
+      for (const [oldId, count] of inner) {
+        const current = bestDescendant.get(oldId);
+        if (!current || count > current.count) bestDescendant.set(oldId, { newId, count });
+      }
+    }
+
+    const labelFor = new Map(); // newId -> label
+    for (const [oldId, { newId }] of bestDescendant) {
+      const old = previousLabels.find((p) => p.id === oldId);
+      if (old?.label && !labelFor.has(newId)) labelFor.set(newId, old.label);
+    }
+
+    for (const [newId, flags] of suppression) {
+      const update = { ...flags, updated_at: new Date().toISOString() };
+      if (labelFor.has(newId)) update.label = labelFor.get(newId);
       await db('event_people').where({ id: newId }).update(update);
     }
   }

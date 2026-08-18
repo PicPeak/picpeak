@@ -236,6 +236,15 @@ async function archiveEvent(event) {
     try {
       const { purgeEvent } = require('./faceProcessor');
       await purgeEvent(event.id);
+
+      // Turn detection OFF as well. purgeEvent clears the rows but leaves the
+      // toggle on, so restoring the archive would bring back a gallery that
+      // claims face detection is enabled while having no people and no queued
+      // work — indistinguishable from a broken scan. Off is the honest state:
+      // the photographer re-enables it and gets a fresh backfill, which is
+      // exactly the flow the toggle already implements.
+      await db('events').where({ id: event.id })
+        .update({ face_recognition_enabled: false, faces_last_scan_at: null });
     } catch (err) {
       // Never fail an archive over this — but say so loudly, because it
       // means biometric data outlived the gallery.

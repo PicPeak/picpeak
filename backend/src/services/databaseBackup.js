@@ -194,6 +194,17 @@ class DatabaseBackupService {
           // Table absent on installs that predate migration 177 — fine.
         });
       }
+
+      // Reset the DERIVED state on photos as well. Without this the restored
+      // database says every photo is scanned ('done') while the face tables
+      // are empty, and the worker only ever claims 'pending' — so the gallery
+      // reports a finished scan and shows nobody, permanently, until an admin
+      // works out that a manual re-scan is needed. Requeue instead.
+      await spawnAsync('sqlite3', [
+        tempPath,
+        "UPDATE photos SET face_status = CASE WHEN face_status IS NULL THEN NULL ELSE 'pending' END, "
+        + 'face_count = NULL, face_started_at = NULL, face_error = NULL;',
+      ]).catch(() => {});
       // FATAL, not a warning. Deleting rows leaves their pages in the file
       // until VACUUM rewrites it, so a backup that skipped the VACUUM can
       // still contain recoverable face embeddings. Publishing it would break
@@ -273,6 +284,10 @@ class DatabaseBackupService {
     for (const table of FACE_TABLES) {
       pgDumpOptions.push(`--exclude-table-data=public.${table}`);
     }
+    // NOTE: the Postgres path cannot rewrite rows inside pg_dump the way the
+    // SQLite path can, so photos.face_status is restored as-is here. The
+    // restore path compensates — see resetDerivedFaceState in restoreService.
+    // Both engines must end up requeued, not "done with no people".
 
     // Add compression if not doing it separately
     if (options.compress && !options.separateCompression) {

@@ -351,6 +351,21 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     for (const table of tables) {
       await trx(table).del();
     }
+
+    // Face data (#1074) is excluded from the archive, which also excludes it
+    // from `tables` — so the LOCAL rows would survive a whole-DB replace.
+    // FK enforcement is deliberately suspended during import, so those
+    // orphans can end up attached to reused photo/event ids from the incoming
+    // archive: one instance's biometric data silently adopted by another's
+    // galleries. Purge them explicitly.
+    for (const faceTable of ['photo_faces', 'event_people']) {
+      try {
+        await trx(faceTable).del();
+      } catch (err) {
+        // Absent on targets that predate migration 177 — nothing to purge.
+      }
+    }
+
     for (const table of tables) {
       const rows = parseNdjson(path.join(dataDir, `${table}.ndjson`));
       if (!rows.length) continue;
@@ -492,6 +507,25 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
     //    (admin, customer, gallery) stops authenticating — ids may have shifted.
     await resyncSequences(tables);
     await setSessionsValidAfter(Math.floor(Date.now() / 1000));
+
+    // Face data (#1074): the archive carries none, and the export already
+    // blanked photos.face_status. But the EVENT toggles come across enabled,
+    // so the "enable" transition that normally queues a backfill never
+    // happens here — the gallery would sit enabled, empty, and idle forever.
+    // Queue every photo belonging to an event that has detection on.
+    try {
+      const requeued = await db('photos')
+        .whereIn('event_id', db('events').select('id').where('face_recognition_enabled', true))
+        .update({
+          face_status: 'pending', face_count: null, face_started_at: null, face_error: null,
+        });
+      if (requeued > 0) {
+        logger.info(`picpeakImport: queued ${requeued} photo(s) for face detection after import`);
+      }
+    } catch (err) {
+      // Pre-migration-177 target: nothing to queue.
+      logger.debug?.(`picpeakImport: face requeue skipped: ${err.message}`);
+    }
 
     const filesRestored = await restoreFiles(staging);
     const usesExternalMedia = await detectExternalMedia();

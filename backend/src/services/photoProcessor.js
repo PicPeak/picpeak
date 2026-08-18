@@ -283,6 +283,22 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
         });
       } catch (e) { /* non-fatal */ }
 
+      // Face detection (#1074). processPhoto() — the ASYNC path — enqueues on
+      // completion, but this synchronous path (chunked-upload completion,
+      // watch-folder import) writes a finished photo row directly and never
+      // reaches it, so those photos stayed unscanned in a face-enabled event
+      // until someone ran a manual re-scan.
+      try {
+        const { isEnabledForEvent } = require('./faceSettings');
+        if (!isVideo && await isEnabledForEvent(event)) {
+          await trx('photos').where({ id: photoId }).update({ face_status: 'pending' });
+        }
+      } catch (err) {
+        logger.warn(`processUploadedPhotos: face enqueue failed for photo ${photoId}`, {
+          error: err.message,
+        });
+      }
+
       uploadedPhotos.push({
         id: photoId,
         filename: newFilename,

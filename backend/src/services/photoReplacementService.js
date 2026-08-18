@@ -122,6 +122,26 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       media_type: mimeType?.startsWith('video/') ? 'video' : 'image',
     };
 
+    // Face data (#1074): the row keeps its id but now points at a DIFFERENT
+    // image, so every stored face describes the old picture. Left alone the
+    // gallery would keep showing the previous subject's identities on the new
+    // photo. Drop them, then re-queue if the event has detection on.
+    try {
+      const { purgePhotoFaces } = require('./faceProcessor');
+      const { isEnabledForEvent } = require('./faceSettings');
+      await purgePhotoFaces(existingPhoto.id);
+
+      const event = await db('events').where({ id: existingPhoto.event_id }).first();
+      updates.face_status = (await isEnabledForEvent(event)) ? 'pending' : null;
+      updates.face_count = null;
+      updates.face_started_at = null;
+      updates.face_error = null;
+    } catch (err) {
+      logger.warn(`replacePhoto: face reset failed for photo ${existingPhoto.id}`, {
+        error: err.message,
+      });
+    }
+
     await db('photos').where({ id: existingPhoto.id }).update(updates);
 
     const updatedPhoto = await db('photos').where({ id: existingPhoto.id }).first();

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AuthenticatedImage } from '../common/AuthenticatedImage';
 import type { GalleryPerson, Photo } from '../../types';
+import { faceCropStyle } from './faceCrop';
 
 /**
  * "People in this gallery" (#1074).
@@ -41,32 +42,10 @@ const PersonAvatar: React.FC<PersonAvatarProps> = ({
 }) => {
   const { t } = useTranslation();
 
-  const cropStyle = useMemo<React.CSSProperties | null>(() => {
-    if (!person.cover || !photo?.width || !photo?.height) return null;
-    const [bx, by, bw, bh] = person.cover.bbox;
-    if (!bw || !bh) return null;
-
-    // Widen the box a little: detectors crop tight to the face, and a portrait
-    // that includes some hair and chin reads as a person rather than a
-    // specimen.
-    const pad = 0.45;
-    const cx = bx + bw / 2;
-    const cy = by + bh / 2;
-    const side = Math.max(bw, bh) * (1 + pad);
-
-    const zoom = photo.width / side;
-    return {
-      width: `${photo.width * (size / side)}px`,
-      height: `${photo.height * (size / side)}px`,
-      maxWidth: 'none',
-      position: 'absolute',
-      left: `${size / 2 - (cx / photo.width) * (photo.width * (size / side))}px`,
-      top: `${size / 2 - (cy / photo.height) * (photo.height * (size / side))}px`,
-      // Upscaling a small face crop is expected; keep it smooth rather than
-      // blocky.
-      imageRendering: zoom > 3 ? 'auto' : undefined,
-    };
-  }, [person.cover, photo?.width, photo?.height, size]);
+  const cropStyle = useMemo(
+    () => faceCropStyle(person.cover, photo?.width, photo?.height, size),
+    [person.cover, photo?.width, photo?.height, size],
+  );
 
   const label = person.label
     || t('gallery.people.unnamedCount', { count: person.face_count, defaultValue: `${person.face_count} photos` });

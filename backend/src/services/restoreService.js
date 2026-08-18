@@ -1166,6 +1166,34 @@ END $$;`
       await reinitPool();
       this.log('info', 'Knex pool re-initialized');
 
+      // Face data (#1074) is deliberately excluded from backups — it is
+      // derived, and biometric data should not travel in an archive. But the
+      // photos table DOES restore its face_status, so without this the
+      // restored install claims every photo is scanned while photo_faces is
+      // empty, and the worker never picks them up because it only claims
+      // 'pending'. The gallery then shows a finished scan and no people,
+      // forever, with nothing to indicate why.
+      //
+      // Requeue anything that had been scanned; leave never-scanned rows
+      // (NULL) alone so this does not switch the feature on for anyone.
+      try {
+        const { db: restoredDb } = require('../database/db');
+        const requeued = await restoredDb('photos')
+          .whereNotNull('face_status')
+          .update({
+            face_status: 'pending',
+            face_count: null,
+            face_started_at: null,
+            face_error: null,
+          });
+        if (requeued > 0) {
+          this.log('info', `Requeued ${requeued} photo(s) for face detection after restore`);
+        }
+      } catch (err) {
+        // Pre-migration-177 backups have no such column; not an error.
+        this.log('info', `Face state reset skipped: ${err.message}`);
+      }
+
       // NOTE: we deliberately do NOT call `db.migrate.latest()` here.
       //
       // The picpeak migrations directory contains `helpers.js` (a

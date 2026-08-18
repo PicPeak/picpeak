@@ -21,6 +21,7 @@ import { X, Check, Merge, Scissors, EyeOff, Ban, Loader2 } from 'lucide-react';
 
 import { Button, Loading } from '../common';
 import { api } from '../../config/api';
+import { faceCropStyle } from '../gallery/faceCrop';
 
 interface AdminPerson {
   id: number;
@@ -59,21 +60,48 @@ interface PeopleManagerModalProps {
  * authenticate from the httpOnly admin_token cookie, which a same-origin
  * <img> sends on its own.
  */
-const FaceThumb: React.FC<{ eventId: number; photoId: number; size?: number; dim?: boolean }> = ({
-  eventId, photoId, size = 64, dim,
-}) => (
-  <span
-    className="relative block rounded-full overflow-hidden bg-neutral-100 flex-shrink-0"
-    style={{ width: size, height: size, opacity: dim ? 0.4 : 1 }}
-  >
-    <img
-      src={`/api/admin/photos/${eventId}/thumbnail/${photoId}`}
-      alt=""
-      loading="lazy"
-      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-    />
-  </span>
-);
+const FaceThumb: React.FC<{
+  eventId: number;
+  photoId: number;
+  bbox?: [number, number, number, number] | null;
+  size?: number;
+  dim?: boolean;
+}> = ({ eventId, photoId, bbox, size = 64, dim }) => {
+  // Crop to the face rather than showing the centred thumbnail. On a group
+  // photo the uncropped version shows whoever stands in the middle, so two
+  // different people whose cover is the same photo looked IDENTICAL here —
+  // which made the merge/split manager, whose whole job is telling faces
+  // apart, unusable for exactly the galleries that need it.
+  //
+  // The admin thumbnail route serves a fixed-size render, so the bbox (in
+  // original-image pixels) is applied as a ratio of the source dimensions.
+  // Those are not in the people payload, so fall back to `cover` when the
+  // ratio cannot be computed.
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
+  const style = bbox && natural
+    ? faceCropStyle({ bbox }, natural.w, natural.h, size)
+    : null;
+
+  return (
+    <span
+      className="relative block rounded-full overflow-hidden bg-neutral-100 flex-shrink-0"
+      style={{ width: size, height: size, opacity: dim ? 0.4 : 1 }}
+    >
+      <img
+        src={`/api/admin/photos/${eventId}/thumbnail/${photoId}`}
+        alt=""
+        loading="lazy"
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          if (img.naturalWidth && !natural) {
+            setNatural({ w: img.naturalWidth, h: img.naturalHeight });
+          }
+        }}
+        style={style || { width: '100%', height: '100%', objectFit: 'cover' }}
+      />
+    </span>
+  );
+};
 
 export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
   eventId, open, onClose, onChanged,
@@ -222,7 +250,12 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                           picked ? 'border-primary-600' : 'border-transparent hover:border-neutral-300'
                         }`}
                       >
-                        <FaceThumb eventId={eventId} photoId={face.photo_id} size={88} />
+                        <FaceThumb
+                          eventId={eventId}
+                          photoId={face.photo_id}
+                          bbox={face.bbox}
+                          size={88}
+                        />
                         {picked && (
                           <span className="absolute top-1 right-1 bg-primary-600 text-white rounded-full p-0.5">
                             <Check size={12} />
@@ -280,6 +313,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                           <FaceThumb
                             eventId={eventId}
                             photoId={person.cover?.photo_id ?? 0}
+                            bbox={person.cover?.bbox}
                             dim={person.is_ignored || person.is_hidden}
                           />
                         </button>

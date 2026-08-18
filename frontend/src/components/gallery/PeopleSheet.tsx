@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AuthenticatedImage } from '../common/AuthenticatedImage';
 import type { GalleryPerson, Photo } from '../../types';
+import { faceCropStyle } from './faceCrop';
 
 /**
  * "Show all" people (#1074).
@@ -119,7 +120,12 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
                         photoId={photo.id}
                         requiresToken={photo.requires_token}
                         secureUrlTemplate={photo.secure_url_template}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        // Crop to the face, exactly as the strip does. Without
+                        // this a group photo shows whoever is centred — often
+                        // not the person being labelled, and identical for two
+                        // people whose cover is the same photo.
+                        style={faceCropStyle(person.cover, photo.width, photo.height, 64)
+                          || { width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                     )}
                   </span>

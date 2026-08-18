@@ -1139,7 +1139,9 @@ router.get('/:slug/people', verifyGalleryAccess, resolveGuest, async (req, res) 
     });
 
     // Drives the "Finding people… 240/1200" progress line during a backfill.
-    const status = await getScanStatus(req.event.id);
+    // Scoped to what this viewer may see — an unscoped total would leak the
+    // number of hidden photos through the progress bar.
+    const status = await getScanStatus(req.event.id, { isClient });
 
     res.json({
       people,
