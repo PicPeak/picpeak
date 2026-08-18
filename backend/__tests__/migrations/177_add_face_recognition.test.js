@@ -124,6 +124,13 @@ describe('migration 177 — face recognition schema', () => {
 
   it('cascades face rows when a photo is deleted', async () => {
     // #1074 acceptance criterion: deleting a photo removes its face rows.
+    //
+    // SQLite ignores foreign keys unless the pragma is on, and PicPeak does
+    // NOT enable it globally (a large amount of existing data and fixtures
+    // would start failing). So the cascade below proves only that the schema
+    // declares it correctly — the code does not RELY on it. Deletion paths
+    // purge face rows explicitly; see faceProcessor.purgeEvent /
+    // purgePhotoFaces and the erasure tests in facePrivacy.test.js.
     await db.raw('PRAGMA foreign_keys = ON');
 
     const [{ id: eventId }] = await db('events').insert({

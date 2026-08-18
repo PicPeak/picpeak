@@ -318,6 +318,23 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   });
   const people = peopleData?.people || [];
 
+  // The strip comes from /people, but FILTERING uses photo.person_ids, which
+  // rides on the one-shot /photos response. During a backfill those drift
+  // apart: new faces appear in the strip while the photo memberships behind
+  // them are still the set fetched on page load, so tapping a person yields
+  // zero or a partial result until a manual reload — including after the scan
+  // has finished.
+  //
+  // Refetch the photos whenever the scan's progress changes, and once more on
+  // the transition to finished.
+  const scanProgress = peopleData?.scan
+    ? `${peopleData.scan.in_progress}:${peopleData.scan.scanned}`
+    : null;
+  useEffect(() => {
+    if (!peopleEnabled || !scanProgress) return;
+    queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
+  }, [scanProgress, peopleEnabled, slug, queryClient]);
+
   // Update feedbackEnabled when settings change
   useEffect(() => {
     if (feedbackSettings) {

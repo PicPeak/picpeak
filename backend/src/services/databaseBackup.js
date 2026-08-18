@@ -194,9 +194,21 @@ class DatabaseBackupService {
           // Table absent on installs that predate migration 177 — fine.
         });
       }
-      await spawnAsync('sqlite3', [tempPath, 'VACUUM;']).catch((err) => {
-        logger.warn(`SQLite backup: VACUUM after face-data strip failed: ${err.message}`);
-      });
+      // FATAL, not a warning. Deleting rows leaves their pages in the file
+      // until VACUUM rewrites it, so a backup that skipped the VACUUM can
+      // still contain recoverable face embeddings. Publishing it would break
+      // the explicit promise that biometric data is never backed up — better
+      // to fail the backup and say so than to hand over an artifact that
+      // quietly violates it.
+      try {
+        await spawnAsync('sqlite3', [tempPath, 'VACUUM;']);
+      } catch (err) {
+        await fs.unlink(tempPath).catch(() => {});
+        throw new Error(
+          'SQLite backup aborted: could not VACUUM after removing face data, so the '
+          + `backup could still contain recoverable biometric pages (${err.message})`
+        );
+      }
 
       // Verify the backup
       const verifyResult = await spawnAsync('sqlite3', [tempPath, 'PRAGMA integrity_check']);

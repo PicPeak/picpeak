@@ -215,6 +215,47 @@ describe('faceClustering (#1074)', () => {
     });
   });
 
+  describe('regressions from external review', () => {
+    it('merge carries a name and suppression onto the survivor', async () => {
+      // A merge used to move the faces and delete the source outright, so a
+      // photographer-entered name vanished and a person they had hidden came
+      // back guest-visible.
+      const eventId = await seedEvent('merge-metadata');
+      const a = await insertFace(eventId, makeEmbedding(61));
+      const b = await insertFace(eventId, makeEmbedding(62));
+      await clustering.assignFaces(eventId, [a, b]);
+
+      const [p1, p2] = await db('event_people').where({ event_id: eventId }).orderBy('id');
+      // Target is unnamed and visible; the SOURCE carries the human state.
+      await db('event_people').where({ id: p2.id }).update({ label: 'Anna', is_hidden: true });
+
+      await clustering.mergePeople(eventId, [p2.id], p1.id);
+
+      const survivor = await db('event_people').where({ id: p1.id }).first();
+      expect(survivor.label).toBe('Anna');
+      expect(!!survivor.is_hidden).toBe(true);
+    });
+
+    it('recluster keeps hidden/ignored on people that were never named', async () => {
+      // The old query remembered only rows with a label, so a suppressed
+      // bystander came back visible after one "Re-group people".
+      const eventId = await seedEvent('recluster-suppression');
+      const faces = [];
+      for (let v = 0; v < 3; v++) faces.push(await insertFace(eventId, makeEmbedding(71, v)));
+      await clustering.assignFaces(eventId, faces);
+
+      const person = await db('event_people').where({ event_id: eventId }).first();
+      expect(person.label).toBeNull();
+      await db('event_people').where({ id: person.id }).update({ is_ignored: true });
+
+      await clustering.recluster(eventId);
+
+      const after = await db('event_people').where({ event_id: eventId });
+      expect(after.length).toBeGreaterThan(0);
+      expect(after.every((p) => !!p.is_ignored)).toBe(true);
+    });
+  });
+
   describe('recluster', () => {
     it('re-derives clusters and preserves photographer-assigned names', async () => {
       // This is the property that makes re-clustering safe to offer as a

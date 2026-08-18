@@ -11,6 +11,7 @@
  * toggle warns about it and why the face queue defaults to concurrency 1.
  */
 
+const sharp = require('sharp');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getStorage } = require('./storage');
@@ -18,8 +19,20 @@ const { ensurePreviewImage } = require('./imageProcessor');
 // SidecarUnavailableError is deliberately NOT caught here — it propagates to
 // faceQueue, which is the only layer that knows to retry rather than fail.
 const { detectFaces } = require('./faceClient');
-const { assignFaces, packEmbedding } = require('./faceClustering');
+const { assignFaces, packEmbedding, recomputeCentroid } = require('./faceClustering');
 const { getThresholds, isEnabledForEvent } = require('./faceSettings');
+
+/**
+ * Thrown when a scan finishes but the photo is no longer the row we claimed —
+ * the event was purged, archived or re-queued mid-flight. Not a failure of
+ * the photo, so the queue must not mark it 'failed'.
+ */
+class StaleScanError extends Error {
+  constructor(photoId) {
+    super(`Face scan for photo ${photoId} was superseded`);
+    this.name = 'StaleScanError';
+  }
+}
 
 async function streamToBuffer(stream) {
   if (Buffer.isBuffer(stream)) return stream;
@@ -62,6 +75,18 @@ async function processPhotoFaces(photoId) {
     return { status: 'skipped' };
   }
 
+  // External / reference photos live outside managed storage, and
+  // resolvePhotoStorageKey returns null for them by design (photoResolver.js).
+  // ensurePreviewImage therefore cannot build a preview, so scanning them is
+  // unsupported rather than broken — 'skipped', not 'failed', so an external
+  // gallery does not report every photo as an error.
+  if (photo.source_origin === 'external' || photo.source_origin === 'reference') {
+    await db('photos').where({ id: photoId }).update({
+      face_status: 'skipped', face_started_at: null, face_error: null,
+    });
+    return { status: 'skipped' };
+  }
+
   const previewKey = await ensurePreviewImage(photo);
   if (!previewKey) {
     // No preview and no way to make one — the source is missing or corrupt.
@@ -83,45 +108,111 @@ async function processPhotoFaces(photoId) {
   const faces = result?.faces || [];
   const modelVersion = result?.model_version || null;
 
+  // Bounding boxes come back in the pixel space of the image the SIDECAR was
+  // given — which is the preview (≤1920px long edge), not the original. Every
+  // consumer compares them against photos.width/height, which are the
+  // ORIGINAL dimensions: the strip's avatar crop works in ratios of them, and
+  // the auto-category portrait rule divides face area by frame area.
+  //
+  // Left unscaled, a 6000px photo yields boxes ~3x too small (and areas ~9x
+  // too small), so avatars crop to the wrong place and "Portraits" never
+  // fires. It is invisible on any photo already under 1920px, which is why
+  // the demo gallery looked correct.
+  //
+  // Scale here, once, so everything downstream can assume original-image
+  // coordinates.
+  let boxScale = 1;
+  try {
+    const previewMeta = await sharp(buffer).metadata();
+    if (previewMeta?.width && photo.width) {
+      boxScale = photo.width / previewMeta.width;
+    }
+  } catch (err) {
+    logger.warn(`faceProcessor: could not read preview dimensions for photo ${photoId}`, {
+      error: err.message,
+    });
+  }
+
   const thresholds = await getThresholds();
 
-  await db.transaction(async (trx) => {
+  try {
+    await db.transaction(async (trx) => {
     // Replace rather than append: a re-scan of the same photo must not
     // double its faces. Detaching first keeps the FK to event_people clean.
-    await trx('photo_faces').where({ photo_id: photoId }).del();
+    //
+    // Remember which people the OLD faces belonged to. Deleting the rows does
+    // not undo their contribution to event_people.face_count_total or to the
+    // running-mean centroid, so without recomputing those afterwards a
+    // re-scan inflates every count (typically doubling it) and leaves ghost
+    // people behind when a face is no longer detected.
+      const affectedPeople = await trx('photo_faces')
+        .where({ photo_id: photoId })
+        .whereNotNull('person_id')
+        .distinct('person_id')
+        .pluck('person_id');
 
-    const inserted = [];
-    for (const face of faces) {
-      const [bx, by, bw, bh] = face.bbox || [0, 0, 0, 0];
-      const row = {
-        photo_id: photoId,
-        event_id: photo.event_id,
-        bbox_x: bx, bbox_y: by, bbox_w: bw, bbox_h: bh,
-        det_score: face.score ?? null,
-        yaw: face.yaw ?? null,
-        pitch: face.pitch ?? null,
-        blur: face.blur ?? null,
-        embedding: face.embedding ? packEmbedding(face.embedding) : null,
-        model_version: modelVersion,
-        // ISO string, not a Date — under Jest a Date handed to the sqlite3
-        // binding stores as the literal "[object Object]" (see CLAUDE.md).
-        created_at: new Date().toISOString(),
-      };
-      const [id] = await trx('photo_faces').insert(row).returning('id');
-      inserted.push({ ...row, id: typeof id === 'object' ? id.id : id });
-    }
+      await trx('photo_faces').where({ photo_id: photoId }).del();
 
-    if (inserted.length) {
-      await assignFaces(photo.event_id, inserted, { thresholds, trx });
-    }
+      const inserted = [];
+      for (const face of faces) {
+        const [bx, by, bw, bh] = (face.bbox || [0, 0, 0, 0]).map((v) => v * boxScale);
+        const row = {
+          photo_id: photoId,
+          event_id: photo.event_id,
+          bbox_x: bx, bbox_y: by, bbox_w: bw, bbox_h: bh,
+          det_score: face.score ?? null,
+          yaw: face.yaw ?? null,
+          pitch: face.pitch ?? null,
+          blur: face.blur ?? null,
+          embedding: face.embedding ? packEmbedding(face.embedding) : null,
+          model_version: modelVersion,
+          // ISO string, not a Date — under Jest a Date handed to the sqlite3
+          // binding stores as the literal "[object Object]" (see CLAUDE.md).
+          created_at: new Date().toISOString(),
+        };
+        const [id] = await trx('photo_faces').insert(row).returning('id');
+        inserted.push({ ...row, id: typeof id === 'object' ? id.id : id });
+      }
 
-    await trx('photos').where({ id: photoId }).update({
-      face_status: 'done',
-      face_count: faces.length,
-      face_started_at: null,
-      face_error: null,
+      // Rebuild the people the removed faces belonged to BEFORE assigning the
+      // replacements, so assignment compares against honest centroids.
+      for (const personId of affectedPeople) {
+        await recomputeCentroid(personId, trx);
+      }
+
+      if (inserted.length) {
+        await assignFaces(photo.event_id, inserted, { thresholds, trx });
+      }
+
+      // Commit the photo only if it is STILL the row we claimed. An admin who
+      // purges or archives the event while this worker was waiting on the
+      // sidecar has already cleared face_status; without this guard the worker
+      // would write its rows back moments after "all face data deleted"
+      // reported success, so an erasure request would silently not stick.
+      const committed = await trx('photos')
+        .where({ id: photoId, face_status: 'processing' })
+        .update({
+          face_status: 'done',
+          face_count: faces.length,
+          face_started_at: null,
+          face_error: null,
+        });
+
+      if (committed === 0) {
+        logger.info(
+          `faceProcessor: photo ${photoId} was purged or re-queued while scanning — discarding results`
+        );
+        // Undo this transaction's inserts rather than leaving orphans behind.
+        throw new StaleScanError(photoId);
+      }
     });
-  });
+  } catch (err) {
+    // Losing a race with a purge is an expected outcome, not a photo that
+    // failed to scan. The transaction has already rolled back, so nothing was
+    // written; leave face_status exactly as the purge left it.
+    if (err instanceof StaleScanError) return { status: 'skipped' };
+    throw err;
+  }
 
   // Auto-categories (#1074 phase 3) run as a distinct step AFTER detection,
   // outside the transaction: they are a convenience, and a rule-engine
@@ -189,4 +280,37 @@ async function purgeEvent(eventId) {
   });
 }
 
-module.exports = { processPhotoFaces, enqueueEvent, purgeEvent };
+/**
+ * Remove the face rows belonging to one photo, and rebuild the people that
+ * lose members as a result.
+ *
+ * Called from every photo-deletion path. The schema declares ON DELETE
+ * CASCADE, but SQLite only enforces foreign keys when `PRAGMA foreign_keys`
+ * is on and PicPeak does not enable it globally — so on SQLite the cascade
+ * never fires and biometric embeddings would outlive the photo. Even where it
+ * does fire (Postgres), the cascade cannot fix up event_people counts or
+ * centroids, which is the other half of this.
+ *
+ * Safe to call for photos that were never scanned: it simply deletes nothing.
+ */
+async function purgePhotoFaces(photoId, trx = db) {
+  const affected = await trx('photo_faces')
+    .where({ photo_id: photoId })
+    .whereNotNull('person_id')
+    .distinct('person_id')
+    .pluck('person_id');
+
+  const removed = await trx('photo_faces').where({ photo_id: photoId }).del();
+  if (!removed) return { removed: 0 };
+
+  const { recomputeCentroid: recompute } = require('./faceClustering');
+  for (const personId of affected) {
+    // Deletes the person outright when it has no members left.
+    await recompute(personId, trx);
+  }
+  return { removed, peopleTouched: affected.length };
+}
+
+module.exports = {
+  processPhotoFaces, enqueueEvent, purgeEvent, purgePhotoFaces, StaleScanError,
+};

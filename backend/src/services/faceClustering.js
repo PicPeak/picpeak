@@ -109,10 +109,56 @@ function meetsQualityFloor(face, thresholds) {
  * batch, then writes back — so a photo with five faces costs one read and one
  * write pass rather than five of each.
  */
+/**
+ * Per-event serialization for cluster assignment.
+ *
+ * assignFaces is read-modify-write over an event's people: it loads every
+ * centroid, mutates them in memory across the batch, then writes back. Two
+ * workers on the same event therefore lose updates — both read the same
+ * snapshot, and the second write clobbers the first (or both open a duplicate
+ * person for the same face). The default concurrency is 1, but the queue
+ * advertises multi-pod safety and the tunable exists, so this cannot rely on
+ * there only ever being one writer.
+ *
+ * In-process mutex + (on Postgres) a transaction-scoped advisory lock keyed on
+ * the event. The advisory lock is what covers multiple pods; the mutex avoids
+ * pointless lock round-trips within one process. SQLite is single-writer
+ * anyway, so the mutex alone is sufficient there.
+ */
+const eventLocks = new Map();
+
+async function withEventLock(eventId, trx, fn) {
+  const previous = eventLocks.get(eventId) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => { release = resolve; });
+  eventLocks.set(eventId, previous.then(() => current));
+
+  await previous;
+  try {
+    // pg_advisory_xact_lock is released automatically when the transaction
+    // ends, including on rollback — no leak if the caller throws.
+    if (trx && typeof trx.raw === 'function') {
+      const client = db.client.config.client;
+      const isPg = client === 'pg' || (typeof client === 'string' && client.includes('postgres'));
+      if (isPg) {
+        await trx.raw('SELECT pg_advisory_xact_lock(?, ?)', [1074, Number(eventId)]);
+      }
+    }
+    return await fn();
+  } finally {
+    release();
+    if (eventLocks.get(eventId) === current) eventLocks.delete(eventId);
+  }
+}
+
 async function assignFaces(eventId, faceRows, options = {}) {
   const thresholds = options.thresholds || (await getThresholds());
   const trx = options.trx || db;
 
+  return withEventLock(eventId, options.trx, () => assignFacesLocked(eventId, faceRows, thresholds, trx));
+}
+
+async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
   const people = await trx('event_people')
     .where({ event_id: eventId })
     .select('id', 'centroid', 'face_count_total', 'model_version');
@@ -258,12 +304,36 @@ async function mergePeople(eventId, sourceIds, targetId) {
   if (!ids.length) return { moved: 0 };
 
   return db.transaction(async (trx) => {
+    // Carry metadata forward before the sources are deleted. Without this a
+    // merge silently discards a photographer-entered name, or un-hides a
+    // person they had suppressed — the target keeps its own values where it
+    // has them, and inherits from a source only where it does not.
+    const target = await trx('event_people').where({ id: targetId }).first();
+    const sources = await trx('event_people').whereIn('id', ids).select('label', 'is_hidden', 'is_ignored');
+
+    const inherited = {};
+    if (target && !target.label) {
+      const named = sources.find((p) => p.label);
+      if (named) inherited.label = named.label;
+    }
+    // Suppression is one-way on merge: if ANY party was hidden or ignored,
+    // the survivor stays that way. Re-exposing someone by merging is the
+    // failure that matters; leaving them hidden is trivially reversible.
+    if (sources.some((p) => p.is_hidden) || target?.is_hidden) inherited.is_hidden = true;
+    if (sources.some((p) => p.is_ignored) || target?.is_ignored) inherited.is_ignored = true;
+
     const moved = await trx('photo_faces')
       .where({ event_id: eventId })
       .whereIn('person_id', ids)
       .update({ person_id: targetId });
 
     await trx('event_people').where({ event_id: eventId }).whereIn('id', ids).del();
+
+    if (Object.keys(inherited).length) {
+      await trx('event_people').where({ id: targetId })
+        .update({ ...inherited, updated_at: new Date().toISOString() });
+    }
+
     await recomputeCentroid(targetId, trx);
     return { moved };
   });
@@ -350,9 +420,15 @@ async function recomputeCentroid(personId, trx = db) {
 async function recluster(eventId) {
   const thresholds = await getThresholds();
 
+  // Remember every person carrying HUMAN state — a name, or a hidden/ignored
+  // decision. Keying this on `label` alone silently dropped the privacy flags
+  // of unnamed people: a bystander the photographer had suppressed came back
+  // guest-visible after one "Re-group people".
   const previousLabels = await db('event_people')
     .where({ event_id: eventId })
-    .whereNotNull('label')
+    .where(function () {
+      this.whereNotNull('label').orWhere('is_hidden', true).orWhere('is_ignored', true);
+    })
     .select('id', 'label', 'is_hidden', 'is_ignored');
 
   const priorMembership = new Map();
@@ -391,16 +467,26 @@ async function recluster(eventId) {
     const claimed = new Set();
     for (const [newId, inner] of tally) {
       const [bestOldId] = [...inner.entries()].sort((a, b) => b[1] - a[1])[0];
-      if (claimed.has(bestOldId)) continue;
       const old = previousLabels.find((p) => p.id === bestOldId);
       if (!old) continue;
-      claimed.add(bestOldId);
-      await db('event_people').where({ id: newId }).update({
-        label: old.label,
-        is_hidden: old.is_hidden,
-        is_ignored: old.is_ignored,
+
+      // The NAME goes to one cluster only — the one that inherited most of
+      // the old person's faces — because two clusters both called "Anna"
+      // would be worse than one named and one unnamed.
+      //
+      // Suppression is different: it must follow EVERY descendant. If a
+      // hidden person splits into three clusters, all three stay hidden.
+      // Applying it to only the majority cluster would expose the rest.
+      const update = {
+        is_hidden: !!old.is_hidden,
+        is_ignored: !!old.is_ignored,
         updated_at: new Date().toISOString(),
-      });
+      };
+      if (!claimed.has(bestOldId)) {
+        update.label = old.label;
+        claimed.add(bestOldId);
+      }
+      await db('event_people').where({ id: newId }).update(update);
     }
   }
 

@@ -82,8 +82,15 @@ WORKDIR /app
 
 COPY requirements.txt .
 # pip itself is ~10MB of an image that never installs anything at runtime.
+#
+# The `|| true` is scoped to the uninstall ONLY. Written as
+# `pip install && pip uninstall || true` the shell parses it as
+# `(install && uninstall) || true`, so a failed requirements install still
+# produces a green layer — and CI would publish an ML image with no FastAPI,
+# no uvicorn and no onnxruntime that fails at container start instead of at
+# build time.
 RUN pip install --no-cache-dir -r requirements.txt \
-    && pip uninstall -y pip setuptools 2>/dev/null || true
+    && { pip uninstall -y pip setuptools 2>/dev/null || true; }
 
 # Non-root. Nothing in this container writes anything — no volumes, no
 # database, no model download — so the whole filesystem can stay read-only to

@@ -219,6 +219,45 @@ describe('face privacy and visibility (#1074)', () => {
       expect(photos.every((p) => p.face_status === null && p.face_count === null)).toBe(true);
     });
 
+    it('purgePhotoFaces removes face rows WITHOUT relying on the FK cascade', async () => {
+      // The regression this guards: PicPeak does not enable
+      // `PRAGMA foreign_keys` on SQLite, so ON DELETE CASCADE never fires
+      // there and biometric embeddings outlived the photo. The pragma is
+      // explicitly OFF here so the assertion can only pass if the deletion
+      // path purges the rows itself.
+      await db.raw('PRAGMA foreign_keys = OFF');
+
+      const eventId = await seedEvent('purge-no-cascade');
+      const faces = [];
+      for (let v = 0; v < 3; v++) {
+        faces.push((await addPhotoWithFace(eventId, makeEmbedding(20, v))).face);
+      }
+      await clustering.assignFaces(eventId, faces);
+
+      const person = await db('event_people').where({ event_id: eventId }).first();
+      expect(person.face_count_total).toBe(3);
+
+      const victim = faces[0];
+      await faceProcessor.purgePhotoFaces(victim.photo_id);
+
+      expect(await db('photo_faces').where({ photo_id: victim.photo_id })).toHaveLength(0);
+      // …and the person it belonged to was rebuilt, not left with a stale count.
+      const after = await db('event_people').where({ id: person.id }).first();
+      expect(after.face_count_total).toBe(2);
+    });
+
+    it('purging the last face of a person removes the person too', async () => {
+      await db.raw('PRAGMA foreign_keys = OFF');
+      const eventId = await seedEvent('purge-last-face');
+      const { face, photoId } = await addPhotoWithFace(eventId, makeEmbedding(21));
+      await clustering.assignFaces(eventId, [face]);
+      expect(await db('event_people').where({ event_id: eventId })).toHaveLength(1);
+
+      await faceProcessor.purgePhotoFaces(photoId);
+
+      expect(await db('event_people').where({ event_id: eventId })).toHaveLength(0);
+    });
+
     it('deleting an event removes its people and faces', async () => {
       await db.raw('PRAGMA foreign_keys = ON');
       const eventId = await seedEvent('event-delete');

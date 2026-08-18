@@ -6,6 +6,7 @@
  */
 
 const path = require('path');
+const logger = require('../utils/logger');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -118,6 +119,15 @@ const deletePhoto = async (photoId, options = {}) => {
         } catch (err) {
           // Thumbnail might not exist
         }
+      }
+
+      // Face data (#1074) — see purgePhotoFaces on why the FK cascade is not
+      // relied on. Must run BEFORE the photo row goes.
+      try {
+        const { purgePhotoFaces } = require('./faceProcessor');
+        await purgePhotoFaces(photoId);
+      } catch (err) {
+        logger.warn(`deletePhoto: face purge failed for photo ${photoId}`, { error: err.message });
       }
 
       // Delete from database

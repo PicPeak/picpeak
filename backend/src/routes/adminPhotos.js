@@ -684,6 +684,15 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     }
 
     // Remove from database
+    // Face data (#1074): the FK cascade is inert on SQLite, and cannot fix up
+    // event_people counts anyway. See faceProcessor.purgePhotoFaces.
+    try {
+      const { purgePhotoFaces } = require('../services/faceProcessor');
+      await purgePhotoFaces(photoId);
+    } catch (err) {
+      logger.warn(`deletePhoto: face purge failed for photo ${photoId}`, { error: err.message });
+    }
+
     await db('photos').where({ id: photoId }).delete();
 
     // Log activity (event was fetched above for storage key resolution)
@@ -751,6 +760,12 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
         updateData.category_id = null;
       }
     }
+
+    // A human just set (or cleared) this category, so it is no longer an
+    // automatic assignment (#1074 phase 3). Without resetting the flag,
+    // "undo automatic categories" would later wipe the photographer's own
+    // choice — exactly the guarantee the rule engine advertises.
+    updateData.auto_categorized = false;
 
     // Update photo
     await db('photos')
@@ -825,6 +840,18 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
       }
       if (photo.watermark_path) {
         await watermarkGeneratorService.deleteForPhoto(photo.id);
+      }
+    }
+
+    // Face data (#1074), bulk path. Same reasoning as the single delete: the
+    // SQLite FK cascade never fires, and event_people counts need rebuilding
+    // regardless of engine.
+    for (const id of photoIds) {
+      try {
+        const { purgePhotoFaces } = require('../services/faceProcessor');
+        await purgePhotoFaces(id);
+      } catch (err) {
+        logger.warn(`bulk delete: face purge failed for photo ${id}`, { error: err.message });
       }
     }
 
@@ -908,6 +935,12 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
           updateData.category_id = null;
         }
       }
+
+      // A human just set (or cleared) this category, so it is no longer an
+      // automatic assignment (#1074 phase 3). Without resetting the flag,
+      // "undo automatic categories" would later wipe the photographer's own
+      // choice — exactly the guarantee the rule engine advertises.
+      updateData.auto_categorized = false;
     }
 
     await db('photos')

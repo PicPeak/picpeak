@@ -103,7 +103,19 @@ async function writeTableNdjson(table, dataDir) {
   const hash = crypto.createHash('sha256');
   const rows = await db(table).select('*');
   const lines = rows.map((row) => {
-    const line = JSON.stringify(row);
+    // photo_faces / event_people are excluded from the export (#1074), so a
+    // restored install has no face data — but `photos.face_status = 'done'`
+    // would come across intact and the worker only ever claims 'pending'.
+    // The gallery would then report itself fully scanned while showing no
+    // people at all, permanently, with no way to tell why.
+    //
+    // Reset the derived state so the target simply re-scans once the operator
+    // enables the feature there.
+    const line = JSON.stringify(
+      table === 'photos' && (row.face_status !== null && row.face_status !== undefined)
+        ? { ...row, face_status: null, face_count: null, face_started_at: null, face_error: null }
+        : row
+    );
     hash.update(`${line}\n`);
     return line;
   });
