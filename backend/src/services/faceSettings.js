@@ -27,6 +27,30 @@ const logger = require('../utils/logger');
 // and the FeatureKey union on the frontend.
 const FLAG_KEY = 'faces';
 
+/**
+ * Is this the all-in-one single-container image (#1042 / PR #1068)?
+ *
+ * Face recognition is BLOCKED there, on performance grounds. The AIO image
+ * runs the backend, the frontend, SQLite and every background worker inside
+ * one container sized for "one photographer plus guests browsing" — it has no
+ * Redis and SQLite gives it a single writer. Face detection would add a
+ * second image-processing pipeline competing with Sharp for the same CPU and
+ * RAM, on top of an ML sidecar the image does not contain and cannot start.
+ *
+ * Enabling it there would not fail loudly; it would just make the whole
+ * install slow and appear broken, which is the worst shape for a deployment
+ * aimed at people who want one container and no decisions.
+ *
+ * Detected from an explicit marker rather than inferred from SERVE_FRONTEND
+ * or a SQLite path: plenty of legitimate multi-container setups serve the
+ * frontend from the backend or run SQLite, and none of them should lose the
+ * feature by accident.
+ */
+function isSingleContainerImage() {
+  const v = String(process.env.PICPEAK_SINGLE_CONTAINER || '').toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes';
+}
+
 const DEFAULTS = {
   // Measured on a real gallery, not just on LFW pairs — see migration 177
   // for why those two disagree and why cluster purity wins.
@@ -63,6 +87,11 @@ function parseSetting(raw, fallback) {
  * cache that could disagree with the middleware guarding the same routes.
  */
 async function isFeatureEnabled() {
+  // Hard block on the all-in-one image, ahead of the flag. Even if the row
+  // says true — restored from a backup taken on a full deployment, say — the
+  // feature stays off here.
+  if (isSingleContainerImage()) return false;
+
   try {
     return await isFlagEnabled(FLAG_KEY);
   } catch (e) {
@@ -130,6 +159,7 @@ function areFacesVisibleToGuests(event) {
 module.exports = {
   DEFAULTS,
   FLAG_KEY,
+  isSingleContainerImage,
   isFeatureEnabled,
   invalidateFeatureFlagCache,
   getSidecarUrl,

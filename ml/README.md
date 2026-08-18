@@ -98,6 +98,23 @@ is expected rather than a sign of tampering. The checksum pins one published
 artifact so its URL cannot start serving different bytes; validating a fresh
 conversion is the parity check's job, not the hash's.
 
+## Not available on the all-in-one image
+
+The single-container image (`Dockerfile.aio`) sets
+`PICPEAK_SINGLE_CONTAINER=true`, and the backend refuses to enable face
+recognition when it sees that — the feature flag cannot be switched on, and
+per-event detection stays off even if a restored database says otherwise.
+
+This is a performance decision, not a licensing or packaging one. That image
+runs the backend, the frontend, SQLite and every background worker inside one
+container aimed at "one photographer plus guests browsing". It has no Redis,
+SQLite gives it a single writer, and it contains no ML sidecar to talk to.
+Adding a second image-processing pipeline that competes with Sharp for the
+same CPU and RAM would not fail loudly — it would just make the whole install
+slow and appear broken.
+
+Run the standard multi-container deployment if you want this feature.
+
 ## Turning it on
 
 Two deliberate actions, neither of which is installing this container:

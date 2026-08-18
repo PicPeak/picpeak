@@ -26,8 +26,10 @@ import {
   Send,
   Workflow,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Button, Card } from '../../../components/common';
+import { api } from '../../../config/api';
 import { FeatureCard } from '../components/FeatureCard';
 import { SidebarPreview } from '../components/SidebarPreview';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
@@ -48,6 +50,17 @@ const Section: React.FC<SectionProps> = ({ title, children }) => (
 );
 
 export const FeaturesTab: React.FC = () => {
+  // The all-in-one image cannot run face recognition (#1074) — see
+  // faceSettings.isSingleContainerImage. Read it from the version endpoint the
+  // admin UI already calls, so the card can say WHY rather than offering a
+  // switch that refuses to stay on.
+  const { data: systemVersion } = useQuery({
+    queryKey: ['admin-system-version'],
+    queryFn: async () => (await api.get('/admin/system/version')).data,
+    staleTime: 5 * 60_000,
+  });
+  const isSingleContainer = systemVersion?.single_container === true;
+
   const { t } = useTranslation();
   const { staged, setFlag, save, reset, isDirty, isSaving } = useFeatureFlags();
 
@@ -165,8 +178,15 @@ export const FeaturesTab: React.FC = () => {
             statusLabel={statusLabel('new')}
             sidebarHidden
             sidebarHiddenLabel={sidebarHiddenLabel}
-            enabled={staged.faces}
+            enabled={staged.faces && !isSingleContainer}
             onToggle={(next) => setFlag('faces', next)}
+            disabled={isSingleContainer}
+            lockedReason={isSingleContainer
+              ? t(
+                'settings.features.faces.lockedSingleContainer',
+                'Not available on the all-in-one image. Face detection needs a separate ML container and competes with image processing for the same CPU and memory, which would slow the whole install down.',
+              )
+              : undefined}
           />
         </Section>
 

@@ -1682,7 +1682,8 @@
       },
       "faces": {
         "title": "People in galleries",
-        "description": "Group each gallery's photos by the people in them, so guests can find themselves in two taps and download just their own photos. Runs entirely on your own server in a separate, optional container — nothing is sent anywhere. Detected faces are personal data, so this stays off until you enable it per gallery too."
+        "description": "Group each gallery's photos by the people in them, so guests can find themselves in two taps and download just their own photos. Runs entirely on your own server in a separate, optional container — nothing is sent anywhere. Detected faces are personal data, so this stays off until you enable it per gallery too.",
+        "lockedSingleContainer": "Not available on the all-in-one image. Face detection needs a separate ML container and competes with image processing for the same CPU and memory, which would slow the whole install down."
       }
     },
     "customerSurface": {

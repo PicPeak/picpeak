@@ -35,12 +35,20 @@ router.get('/version', adminAuth, requirePermission(['settings.view', 'system.vi
 
     const channel = getCurrentChannel(backendVersion);
 
+    // `single_container` lets the admin UI explain why a feature is
+    // unavailable instead of rendering a switch that silently refuses to
+    // stay on. Currently only face recognition is gated this way (#1074 on
+    // the all-in-one image, #1042 / PR #1068) — see
+    // faceSettings.isSingleContainerImage for the reasoning.
+    const { isSingleContainerImage } = require('../services/faceSettings');
+
     res.json({
       backend: backendVersion,
       frontend: '1.0.0', // This will be set by frontend
       node: process.version,
       environment: process.env.NODE_ENV || 'production',
-      channel: channel
+      channel: channel,
+      single_container: isSingleContainerImage()
     });
   } catch (error) {
     logger.error('Error fetching version:', error);

@@ -160,6 +160,15 @@ function applyDependencyRules(flags) {
   const out = { ...flags };
   // Galleries is the foundation — never off.
   out.galleries = true;
+  // Face recognition is unavailable on the all-in-one single-container image
+  // (#1042 / PR #1068) for performance reasons — see
+  // faceSettings.isSingleContainerImage. Forced false in BOTH directions:
+  // GET reports it off so the UI can show it as unavailable rather than a
+  // switch that silently does nothing, and PUT cannot turn it on. The backend
+  // gate refuses independently, so this is presentation plus defence in
+  // depth, not the enforcement itself.
+  const { isSingleContainerImage } = require('../services/faceSettings');
+  if (isSingleContainerImage()) out.faces = false;
   // Sub-features can't outlive their parents.
   if (out.quotes === false) out.bills = false;
   if (out.calendar === false) out.calendarBooking = false;

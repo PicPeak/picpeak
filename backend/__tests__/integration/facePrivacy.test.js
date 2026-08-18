@@ -272,6 +272,49 @@ describe('face privacy and visibility (#1074)', () => {
     });
   });
 
+  describe('all-in-one image block (#1042 / PR #1068)', () => {
+    // Blocked for performance: the AIO image runs backend, frontend, SQLite
+    // and every worker in one container, with no ML sidecar to talk to. The
+    // failure there would not be loud — just a slow install that looks
+    // broken — so the gate is asserted rather than assumed.
+    const faceSettings = require('../../src/services/faceSettings');
+
+    afterEach(() => { delete process.env.PICPEAK_SINGLE_CONTAINER; });
+
+    it('reports the feature off regardless of the flag row', async () => {
+      process.env.PICPEAK_SINGLE_CONTAINER = 'true';
+      expect(faceSettings.isSingleContainerImage()).toBe(true);
+      // Even with the flag ON in the database.
+      await db('feature_flags').insert({ key: 'faces', value: true })
+        .onConflict('key').merge()
+        .catch(async () => {
+          await db('feature_flags').where({ key: 'faces' }).update({ value: true });
+        });
+      expect(await faceSettings.isFeatureEnabled()).toBe(false);
+    });
+
+    it('refuses per-event detection too', async () => {
+      process.env.PICPEAK_SINGLE_CONTAINER = 'true';
+      const eventId = await seedEvent('aio-block');
+      const event = await db('events').where({ id: eventId }).first();
+      expect(event.face_recognition_enabled).toBeTruthy();
+      expect(await faceSettings.isEnabledForEvent(event)).toBe(false);
+    });
+
+    it('accepts only explicit truthy markers', () => {
+      for (const v of ['true', '1', 'yes', 'TRUE']) {
+        process.env.PICPEAK_SINGLE_CONTAINER = v;
+        expect(faceSettings.isSingleContainerImage()).toBe(true);
+      }
+      for (const v of ['false', '0', '', 'no']) {
+        process.env.PICPEAK_SINGLE_CONTAINER = v;
+        expect(faceSettings.isSingleContainerImage()).toBe(false);
+      }
+      delete process.env.PICPEAK_SINGLE_CONTAINER;
+      expect(faceSettings.isSingleContainerImage()).toBe(false);
+    });
+  });
+
   describe('export and backup exclusion', () => {
     it('excludes both face tables from .picpeak exports', () => {
       const { EXCLUDED_TABLES } = require('../../src/services/picpeakExportService');

@@ -2141,7 +2141,8 @@
       },
       "faces": {
         "title": "Personen in Galerien",
-        "description": "Gruppiert die Fotos jeder Galerie nach den abgebildeten Personen, damit Gäste sich mit zwei Tipps selbst finden und nur ihre eigenen Fotos herunterladen. Läuft vollständig auf Ihrem eigenen Server in einem separaten, optionalen Container — es werden keine Daten übermittelt. Erkannte Gesichter sind personenbezogene Daten; die Funktion bleibt daher aus, bis Sie sie zusätzlich pro Galerie aktivieren."
+        "description": "Gruppiert die Fotos jeder Galerie nach den abgebildeten Personen, damit Gäste sich mit zwei Tipps selbst finden und nur ihre eigenen Fotos herunterladen. Läuft vollständig auf Ihrem eigenen Server in einem separaten, optionalen Container — es werden keine Daten übermittelt. Erkannte Gesichter sind personenbezogene Daten; die Funktion bleibt daher aus, bis Sie sie zusätzlich pro Galerie aktivieren.",
+        "lockedSingleContainer": "Im All-in-One-Image nicht verfügbar. Die Gesichtserkennung benötigt einen separaten ML-Container und konkurriert mit der Bildverarbeitung um dieselbe CPU und denselben Arbeitsspeicher, was die gesamte Installation verlangsamen würde."
       }
     },
     "customerSurface": {
