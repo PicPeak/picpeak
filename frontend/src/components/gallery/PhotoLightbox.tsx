@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { X, ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut, Minimize2, MessageSquare, Heart, Star } from 'lucide-react';
-import type { Photo } from '../../types';
+import type { Photo, GalleryPerson } from '../../types';
 import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { AuthenticatedImage } from '../common';
 import { PhotoFeedback } from './PhotoFeedback';
@@ -31,6 +32,14 @@ interface PhotoLightboxProps {
   // back to source files (#508). Tied to the admin-side toggle that
   // also drives original-filename downloads (#493).
   showOriginalFilename?: boolean;
+  // People in this gallery (#1074). Passed only when the feature is on for
+  // the event AND visible to this viewer — an empty list means "scanned,
+  // nobody found", which the chips row handles by not rendering.
+  people?: GalleryPerson[];
+  // Applying a person filter closes the lightbox and filters the grid
+  // behind it, so the guest lands on the result rather than paging through
+  // the old set.
+  onSelectPerson?: (personId: number) => void;
 }
 
 export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
@@ -48,6 +57,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   disableRightClick = false,
   enableDevtoolsProtection = false,
   showOriginalFilename = false,
+  people,
+  onSelectPerson,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [zoom, setZoom] = useState(1);
@@ -153,6 +164,17 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // leaving currentIndex past the end. The effect below re-syncs the
   // index (or closes the lightbox when nothing is left).
   const currentPhoto = photos[currentIndex] ?? photos[photos.length - 1];
+
+  const { t } = useTranslation();
+
+  // People detected in the open photo (#1074). Resolved against the list the
+  // server returned rather than the raw ids, so a person the photographer
+  // hid or ignored has no entry to match and simply never appears.
+  const peopleInPhoto = useMemo<GalleryPerson[]>(() => {
+    const ids = currentPhoto?.person_ids;
+    if (!ids?.length || !people?.length) return [];
+    return people.filter((person) => ids.includes(person.id));
+  }, [currentPhoto?.person_ids, people]);
   // Per-category download permission (#640). AND'd with the event-level
   // allowDownloads — disabling at either level hides the download button.
   // Defaults true for uncategorised photos and pre-migration-135 categories.
@@ -781,6 +803,37 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               >
                 {currentPhoto.original_filename || currentPhoto.filename}
               </p>
+            )}
+
+            {/* People in this photo (#1074). The second way into the face
+                filter: a guest looking at a photo of themselves can act on
+                it without scrolling back to the strip.
+
+                Only people the server already returned are shown, so hidden
+                and ignored ones never appear here either. Unnamed people
+                show their photo count, never an invented name. */}
+            {peopleInPhoto.length > 0 && (
+              <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                <span className="text-xs text-white opacity-60">
+                  {t('gallery.people.inThisPhoto', { defaultValue: 'In this photo:' })}
+                </span>
+                {peopleInPhoto.map((person) => (
+                  <button
+                    key={person.id}
+                    type="button"
+                    onClick={() => {
+                      onSelectPerson?.(person.id);
+                      onClose();
+                    }}
+                    className="px-2 py-0.5 rounded-full bg-white/15 hover:bg-white/25 text-white text-xs transition-colors"
+                  >
+                    {person.label || t('gallery.people.unnamedCount', {
+                      count: person.face_count,
+                      defaultValue: `${person.face_count} photos`,
+                    })}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
 

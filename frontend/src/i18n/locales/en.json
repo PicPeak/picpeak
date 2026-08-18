@@ -2677,6 +2677,34 @@
       "email_template_created": "Email template created: {{template_key}}",
       "event_duplicated": "Event duplicated from {{source_event_name}}",
       "whatsapp_config_updated": "WhatsApp configuration updated"
+    },
+    "people": {
+      "title": "People in this gallery",
+      "subtitle": "Rename, merge people who were split apart, or hide someone from guests.",
+      "select": "Select for merging",
+      "unnamed": "Add a name",
+      "namePlaceholder": "Add a name",
+      "photoCount": "{{count}} photos",
+      "hidden": "hidden from guests",
+      "ignored": "ignored",
+      "renamed": "Name saved",
+      "merged": "People merged",
+      "split": "Split into a new person",
+      "updated": "Updated",
+      "merge": "Merge",
+      "mergeHint": "Tap two or more faces to merge them into one person.",
+      "selectedCount": "{{count}} selected",
+      "splitAction": "Split out photos that are someone else",
+      "hideAction": "Hide from guests",
+      "ignoreAction": "Not a real person — ignore",
+      "splitHelp": "Pick the photos that are NOT this person. They become a new entry, and everything else stays.",
+      "splitSelected": "{{count}} selected",
+      "doSplit": "Split out",
+      "empty": "No people detected yet."
+    },
+    "faces": {
+      "manage": "Manage people",
+      "visibleToGuests": "({{count}} shown to guests)"
     }
   },
   "acceptInvitation": {

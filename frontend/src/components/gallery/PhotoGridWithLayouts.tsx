@@ -3,7 +3,7 @@ import { Package } from 'lucide-react';
 import { toast as toastify } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 
-import type { Photo, DownloadResolutionChoice } from '../../types';
+import type { Photo, DownloadResolutionChoice, GalleryPerson } from '../../types';
 import { useDownloadPhoto } from '../../hooks/useGallery';
 import { PhotoLightbox } from './PhotoLightbox';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
@@ -79,6 +79,10 @@ interface PhotoGridWithLayoutsProps {
   // Mirror of the admin original-filename toggle (#508). When true, the
   // lightbox bottom toolbar surfaces each photo's original camera name.
   showOriginalFilename?: boolean;
+  // People in this gallery (#1074) — forwarded to the lightbox so it can
+  // show "In this photo: …". Undefined when the feature is off.
+  people?: GalleryPerson[];
+  onSelectPerson?: (personId: number) => void;
 }
 
 export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
@@ -117,6 +121,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   isClient = false,
   onToggleVisibility,
   showOriginalFilename = false,
+  people,
+  onSelectPerson,
 }) => {
   const { t } = useTranslation();
   const { theme } = useTheme();
@@ -407,6 +413,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           initialShowFeedback={openFeedbackInitially}
           onFeedbackChange={onFeedbackChange}
           showOriginalFilename={showOriginalFilename}
+          people={people}
+          onSelectPerson={onSelectPerson}
         />
       )}
 

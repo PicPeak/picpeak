@@ -3105,6 +3105,34 @@
       "email_template_created": "E-Mail-Vorlage erstellt: {{template_key}}",
       "event_duplicated": "Event dupliziert aus {{source_event_name}}",
       "whatsapp_config_updated": "WhatsApp-Konfiguration aktualisiert"
+    },
+    "people": {
+      "title": "Personen in dieser Galerie",
+      "subtitle": "Umbenennen, getrennte Personen zusammenführen oder jemanden vor Gästen verbergen.",
+      "select": "Zum Zusammenführen auswählen",
+      "unnamed": "Namen hinzufügen",
+      "namePlaceholder": "Namen hinzufügen",
+      "photoCount": "{{count}} Fotos",
+      "hidden": "für Gäste verborgen",
+      "ignored": "ignoriert",
+      "renamed": "Name gespeichert",
+      "merged": "Personen zusammengeführt",
+      "split": "Als neue Person abgetrennt",
+      "updated": "Aktualisiert",
+      "merge": "Zusammenführen",
+      "mergeHint": "Tippen Sie zwei oder mehr Gesichter an, um sie zu einer Person zusammenzuführen.",
+      "selectedCount": "{{count}} ausgewählt",
+      "splitAction": "Fotos abtrennen, die jemand anderes zeigen",
+      "hideAction": "Vor Gästen verbergen",
+      "ignoreAction": "Keine echte Person — ignorieren",
+      "splitHelp": "Wählen Sie die Fotos aus, die NICHT diese Person zeigen. Sie werden zu einem neuen Eintrag, alles andere bleibt.",
+      "splitSelected": "{{count}} ausgewählt",
+      "doSplit": "Abtrennen",
+      "empty": "Noch keine Personen erkannt."
+    },
+    "faces": {
+      "manage": "Personen verwalten",
+      "visibleToGuests": "({{count}} für Gäste sichtbar)"
     }
   },
   "acceptInvitation": {

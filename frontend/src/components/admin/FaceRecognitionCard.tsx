@@ -19,7 +19,8 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Users, RefreshCw, Trash2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Users, RefreshCw, Trash2, AlertTriangle, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import { PeopleManagerModal } from './PeopleManagerModal';
 
 import { Button, Card, Loading } from '../common';
 import { api } from '../../config/api';
@@ -34,6 +35,9 @@ interface FacesPayload {
     pending: number;
     failed: number;
     people: number;
+    // What guests actually see: the minimum-cluster-size floor and the
+    // hidden/ignored flags applied. Usually lower than `people`.
+    people_visible_to_guests?: number;
     in_progress: boolean;
   };
 }
@@ -46,6 +50,7 @@ interface FaceRecognitionCardProps {
 export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventId, isArchived }) => {
   const { t } = useTranslation();
   const [saving, setSaving] = useState(false);
+  const [managerOpen, setManagerOpen] = useState(false);
 
   const { data, isLoading, refetch } = useQuery<FacesPayload>({
     queryKey: ['admin-event-faces', eventId],
@@ -220,6 +225,19 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
                   people: status.people,
                   defaultValue: `${status.scanned} / ${status.total} photos scanned · ${status.people} people`,
                 })}
+                {/* The gallery shows fewer: one-off appearances stay out of
+                    the strip. Without both numbers an admin sees the settings
+                    page and their own gallery disagree, with no explanation. */}
+                {typeof status.people_visible_to_guests === 'number'
+                  && status.people_visible_to_guests !== status.people && (
+                  <span className="text-neutral-400">
+                    {' '}
+                    {t('admin.faces.visibleToGuests', {
+                      count: status.people_visible_to_guests,
+                      defaultValue: `(${status.people_visible_to_guests} shown to guests)`,
+                    })}
+                  </span>
+                )}
                 {status.failed > 0 && (
                   <span className="text-amber-600">
                     {' · '}
@@ -234,6 +252,16 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
           </div>
 
           <div className="flex flex-wrap gap-2 mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={saving}
+              onClick={() => setManagerOpen(true)}
+              leftIcon={<SlidersHorizontal size={14} />}
+            >
+              {t('admin.faces.manage', { defaultValue: 'Manage people' })}
+            </Button>
+
             <Button
               variant="outline"
               size="sm"
@@ -268,6 +296,13 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
               {t('admin.faces.delete', { defaultValue: 'Delete all face data' })}
             </Button>
           </div>
+
+          <PeopleManagerModal
+            eventId={eventId}
+            open={managerOpen}
+            onClose={() => setManagerOpen(false)}
+            onChanged={() => refetch()}
+          />
         </>
       )}
     </Card>

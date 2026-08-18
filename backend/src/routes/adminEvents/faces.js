@@ -342,6 +342,50 @@ module.exports = (router) => {
     });
 
   /**
+   * Run the auto-category rules over this event now.
+   *
+   * Normally happens automatically after each photo is scanned; this is for
+   * applying the rules to a gallery that was scanned before the setting was
+   * turned on.
+   */
+  router.post('/:id/faces/categorize', adminAuth, requirePermission('events.edit'), requireFaces, requireEventOwnership,
+    async (req, res) => {
+      try {
+        const event = await loadOwnedEvent(req);
+        if (!event) return res.status(404).json({ error: 'Event not found' });
+
+        const { categorizeEvent } = require('../../services/faceAutoCategories');
+        const result = await categorizeEvent(event.id);
+        res.json({ success: true, ...result });
+      } catch (error) {
+        errorResponse(res, error, 500, 'Failed to apply automatic categories');
+      }
+    });
+
+  /**
+   * Undo every automatic category assignment. Only clears what the rule
+   * engine set — categories chosen by a person are untouched.
+   */
+  router.delete('/:id/faces/categorize', adminAuth, requirePermission('events.edit'), requireFaces, requireEventOwnership,
+    async (req, res) => {
+      try {
+        const event = await loadOwnedEvent(req);
+        if (!event) return res.status(404).json({ error: 'Event not found' });
+
+        const { undoEvent } = require('../../services/faceAutoCategories');
+        const result = await undoEvent(event.id);
+
+        await logActivity('event_faces_categories_undone', {
+          actorType: 'admin', actorId: req.admin.id, eventId: event.id, metadata: result,
+        }).catch(() => {});
+
+        res.json({ success: true, ...result });
+      } catch (error) {
+        errorResponse(res, error, 500, 'Failed to undo automatic categories');
+      }
+    });
+
+  /**
    * Delete all face data for this event. The GDPR erasure path.
    */
   router.delete('/:id/faces', adminAuth, requirePermission('events.edit'), requireFaces, requireEventOwnership,

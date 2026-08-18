@@ -24,7 +24,7 @@ import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { api } from '../../config/api';
-import { Upload, Menu, Eye, EyeOff, Shield, X } from 'lucide-react';
+import { Upload, Menu, Eye, EyeOff, Shield, X, Download } from 'lucide-react';
 import { galleryService } from '../../services/gallery.service';
 import { feedbackService } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
@@ -752,6 +752,40 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
     setIsSelectionMode(false);
   };
 
+  // "Download these N" (#1074) — the payoff of the people filter.
+  //
+  // Deliberately NO new endpoint or person_id selector: the filtered photo
+  // ids go through the same path as a manual selection, and the server
+  // re-applies the access level and per-category permissions on the way
+  // through. One less thing to authorize.
+  //
+  // Photos in a category with downloads disabled (#640) are excluded HERE as
+  // well as server-side, so the number on the button is the number the guest
+  // actually receives rather than an optimistic one.
+  const peopleDownloadableIds = useMemo(() => {
+    if (selectedPersonIds.length === 0) return [];
+    return filteredPhotos
+      .filter((photo) => photo.category_allow_downloads !== false)
+      .map((photo) => photo.id);
+  }, [filteredPhotos, selectedPersonIds]);
+
+  const handleDownloadPeopleFiltered = async () => {
+    if (!allowDownloads || peopleDownloadableIds.length === 0) return;
+
+    // Same resolution-picker behaviour as every other multi-photo download.
+    if (downloadChoices.length > 1) {
+      setResolutionPickerIds(peopleDownloadableIds);
+      return;
+    }
+
+    analyticsService.trackGalleryEvent('bulk_download', {
+      gallery: slug,
+      photo_count: peopleDownloadableIds.length,
+    });
+
+    await galleryService.downloadSelectedPhotos(slug, peopleDownloadableIds);
+  };
+
   // Calculate photo counts per category
   const photoCounts = useMemo(() => {
     if (!data?.photos) return {};
@@ -917,6 +951,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         <PhotoGridWithLayouts
           photos={filteredPhotos}
           slug={slug}
+            people={peopleEnabled ? people : undefined}
+            onSelectPerson={togglePerson}
           categoryId={selectedCategoryId}
           onFeedbackChange={() => {
             refetch();
@@ -1260,6 +1296,22 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
                   })}
                 </span>
 
+                {/* Hidden entirely when downloads are off for the gallery,
+                    rather than shown-and-failing. */}
+                {allowDownloads && peopleDownloadableIds.length > 0 && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleDownloadPeopleFiltered}
+                    leftIcon={<Download className="w-4 h-4" />}
+                  >
+                    {t('gallery.people.downloadThese', {
+                      count: peopleDownloadableIds.length,
+                      defaultValue: `Download these ${peopleDownloadableIds.length}`,
+                    })}
+                  </Button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => { setSelectedPersonIds([]); setPeopleMatchAny(false); }}
@@ -1280,7 +1332,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         <div className={filterBarShown && isHeroHeader ? "mt-12" : "mt-6"}>
           <PhotoGridWithLayouts 
             photos={filteredPhotos} 
-            slug={slug} 
+            slug={slug}
+            people={peopleEnabled ? people : undefined}
+            onSelectPerson={togglePerson} 
             categoryId={selectedCategoryId}
             onFeedbackChange={() => {
               refetch();

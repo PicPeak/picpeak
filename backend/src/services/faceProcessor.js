@@ -123,6 +123,19 @@ async function processPhotoFaces(photoId) {
     });
   });
 
+  // Auto-categories (#1074 phase 3) run as a distinct step AFTER detection,
+  // outside the transaction: they are a convenience, and a rule-engine
+  // failure must never roll back the faces we just paid the sidecar for.
+  // No-ops unless separately enabled.
+  try {
+    const { categorizeEvent } = require('./faceAutoCategories');
+    await categorizeEvent(photo.event_id);
+  } catch (err) {
+    logger.warn(`faceProcessor: auto-categorisation failed for event ${photo.event_id}`, {
+      error: err.message,
+    });
+  }
+
   return { status: 'done', faceCount: faces.length };
 }
 

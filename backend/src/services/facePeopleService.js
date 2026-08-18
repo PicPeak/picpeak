@@ -200,6 +200,19 @@ async function getScanStatus(eventId) {
     .count({ c: '*' })
     .first();
 
+  // Two counts, deliberately. `people` is every cluster that exists;
+  // `people_visible_to_guests` applies the minimum-cluster-size floor and the
+  // hidden/ignored flags, i.e. what the gallery strip actually shows. An
+  // admin comparing the settings page against their own gallery will
+  // otherwise see two numbers that disagree with no explanation.
+  const { getThresholds } = require('./faceSettings');
+  const thresholds = await getThresholds();
+  const visible = await listPeople(eventId, {
+    isClient: false,
+    forAdmin: false,
+    minClusterSize: thresholds.face_min_cluster_size,
+  });
+
   return {
     scanned: done,
     total,
@@ -207,6 +220,7 @@ async function getScanStatus(eventId) {
     failed: byStatus.failed || 0,
     skipped: byStatus.skipped || 0,
     people: Number(peopleRow?.c ?? 0),
+    people_visible_to_guests: visible.length,
     in_progress: ((byStatus.pending || 0) + (byStatus.processing || 0)) > 0,
   };
 }
