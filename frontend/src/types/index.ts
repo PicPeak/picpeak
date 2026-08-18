@@ -113,6 +113,36 @@ export interface GalleryInfo {
   login_logo_visible?: boolean;
 }
 
+/**
+ * A person clustered within one gallery (#1074).
+ *
+ * `face_count` is scoped to the photos THIS viewer can see, which is not the
+ * same as the number of faces stored for them — a guest must never learn how
+ * many hidden photos someone appears in. `label` is null until the
+ * photographer names them; the UI shows the count instead of inventing a
+ * "Person 7", because a number is honest and a fake name is not.
+ */
+export interface GalleryPerson {
+  id: number;
+  label: string | null;
+  face_count: number;
+  cover: {
+    face_id: number;
+    photo_id: number;
+    /** [x, y, w, h] in ORIGINAL image pixels — scale by the rendered size. */
+    bbox: [number, number, number, number];
+  } | null;
+}
+
+export interface GalleryPeopleResponse {
+  people: GalleryPerson[];
+  scan: {
+    in_progress: boolean;
+    scanned: number;
+    total: number;
+  };
+}
+
 export interface Photo {
   id: number;
   filename: string;
@@ -145,6 +175,13 @@ export interface Photo {
   // the lightbox download button when this is false (event-level allow_downloads
   // also has to be true — they AND together).
   category_allow_downloads?: boolean;
+  // People detected in this photo (#1074). Always present when the feature
+  // is on for the event — an empty array means "scanned, nobody found",
+  // which is different from the feature being off (see
+  // GalleryInfo.event.people_enabled). Hidden and ignored people are
+  // filtered out server-side, so this never reveals a person the
+  // photographer suppressed.
+  person_ids?: number[];
   size: number;
   uploaded_at: string;
   captured_at?: string; // EXIF capture date (if available)
@@ -248,6 +285,11 @@ export interface GalleryData {
     // When true, the lightbox surfaces each photo's `original_filename`
     // alongside the position counter (#508).
     use_original_filenames?: boolean;
+    // "People in this gallery" (#1074). False whenever the global `faces`
+    // flag is off, detection is off for this event, or the photographer
+    // chose to keep the people strip to themselves. The whole face UI hangs
+    // off this one boolean.
+    people_enabled?: boolean;
   };
   categories?: PhotoCategory[];
   photos: Photo[];

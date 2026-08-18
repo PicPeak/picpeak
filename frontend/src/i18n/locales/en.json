@@ -602,7 +602,27 @@
     "downloadReady": "Your download is ready",
     "downloadNow": "Download",
     "downloadPrepFailed": "Preparation failed",
-    "downloadPrepTimeout": "This is taking longer than expected. Please try again."
+    "downloadPrepTimeout": "This is taking longer than expected. Please try again.",
+    "people": {
+      "title": "People in this gallery",
+      "showAll": "Show all {{count}}",
+      "show": "Show",
+      "dismiss": "Hide the people bar",
+      "collapsedSummary": "{{count}} people found",
+      "unnamedCount": "{{count}} photos",
+      "filterBy": "Show photos of {{name}}",
+      "filterByUnnamed": "Show photos of this person",
+      "scanning": "Finding people… {{scanned}}/{{total}} photos",
+      "matchAll": "Both people",
+      "matchAny": "Either person",
+      "matchCount": "{{count}} of {{total}} photos",
+      "clear": "Clear",
+      "searchPlaceholder": "Find a person",
+      "noMatches": "No one matches that name.",
+      "privacyNote": "People are detected automatically inside this gallery. Nothing is sent to any external service.",
+      "inThisPhoto": "In this photo:",
+      "downloadThese": "Download these {{count}}"
+    }
   },
   "categories": {
     "title": "Photo Categories",

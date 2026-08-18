@@ -148,6 +148,26 @@ export const FeaturesTab: React.FC = () => {
             enabled={staged.transfers}
             onToggle={(next) => setFlag('transfers', next)}
           />
+
+          {/* Face recognition (#1074). Requires the optional picpeak-ml
+              sidecar container — with the flag on but no sidecar running,
+              photos simply stay queued and nothing breaks. Two deliberate
+              actions are still needed before any face is processed: this
+              toggle, and the per-event switch on each gallery. */}
+          <FeatureCard
+            icon={Users}
+            title={t('settings.features.faces.title', 'People in galleries')}
+            description={t(
+              'settings.features.faces.description',
+              'Group each gallery\u2019s photos by the people in them, so guests can find themselves in two taps and download just their own photos. Runs entirely on your own server in a separate, optional container \u2014 nothing is sent anywhere. Detected faces are personal data, so this stays off until you enable it per gallery too.',
+            )}
+            status="new"
+            statusLabel={statusLabel('new')}
+            sidebarHidden
+            sidebarHiddenLabel={sidebarHiddenLabel}
+            enabled={staged.faces}
+            onToggle={(next) => setFlag('faces', next)}
+          />
         </Section>
 
         {/* Automation — the visual workflow engine. Master kill-switch for the

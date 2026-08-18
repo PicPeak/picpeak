@@ -17,12 +17,14 @@ import { PhotoFilterBar } from './PhotoFilterBar';
 import { UserPhotoUpload } from './UserPhotoUpload';
 import { GuestNamePromptModal } from './GuestNamePromptModal';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
+import { PeopleStrip } from './PeopleStrip';
+import { PeopleSheet } from './PeopleSheet';
 import { GuestIdentityProvider } from '../../contexts/GuestIdentityContext';
 import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { api } from '../../config/api';
-import { Upload, Menu, Eye, EyeOff, Shield } from 'lucide-react';
+import { Upload, Menu, Eye, EyeOff, Shield, X } from 'lucide-react';
 import { galleryService } from '../../services/gallery.service';
 import { feedbackService } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
@@ -104,6 +106,41 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   // Multi-select feedback filters (#889): OR-combined; empty = "All".
   // Clicking a filter toggles it, clicking "All" clears the set.
   const [activeFilters, setActiveFilters] = useState<FeedbackFilterType[]>([]);
+
+  // People filter (#1074). Multi-select, AND by default — see the filter
+  // block below. `peopleMatchAny` only becomes reachable once a second
+  // person is picked, since the toggle is meaningless for one.
+  const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>([]);
+  const [peopleMatchAny, setPeopleMatchAny] = useState(false);
+  const [showPeopleSheet, setShowPeopleSheet] = useState(false);
+  // Dismissal is per gallery: a guest who hides the bar in one gallery has
+  // said nothing about the next one.
+  const [peopleCollapsed, setPeopleCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(`picpeak_people_collapsed_${slug}`) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const handlePeopleCollapsedChange = (collapsed: boolean) => {
+    setPeopleCollapsed(collapsed);
+    try {
+      localStorage.setItem(`picpeak_people_collapsed_${slug}`, collapsed ? '1' : '0');
+    } catch {
+      // Private-mode Safari throws on setItem; the in-memory state still works.
+    }
+  };
+  const togglePerson = (personId: number) => {
+    setSelectedPersonIds((prev) => {
+      const next = prev.includes(personId)
+        ? prev.filter((id) => id !== personId)
+        : [...prev, personId];
+      // Dropping back below two people makes the any/all toggle meaningless;
+      // reset it so it doesn't silently persist into the next selection.
+      if (next.length < 2) setPeopleMatchAny(false);
+      return next;
+    });
+  };
   const handleFilterChange = (filter: FilterType) => {
     if (filter === 'all') {
       setActiveFilters([]);
@@ -262,6 +299,24 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
     },
     enabled: !!event.id,
   });
+
+  // People in this gallery (#1074).
+  //
+  // Gated on people_enabled so an install without the feature never fires the
+  // request at all. Polls only while a backfill is running — a finished
+  // gallery has a stable people list, and polling it forever would be a
+  // request per guest per interval for no new information.
+  // From the /photos payload, not the prop: the prop's event shape comes
+  // from /info, which does not carry this flag.
+  const peopleEnabled = data?.event?.people_enabled === true;
+  const { data: peopleData } = useQuery({
+    queryKey: ['gallery-people', slug],
+    queryFn: () => galleryService.getPeople(slug),
+    enabled: peopleEnabled,
+    refetchInterval: (query) => (query.state.data?.scan?.in_progress ? 5000 : false),
+    staleTime: 30_000,
+  });
+  const people = peopleData?.people || [];
 
   // Update feedbackEnabled when settings change
   useEffect(() => {
@@ -551,7 +606,22 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
       };
       photos = photos.filter(photo => activeFilters.some(filter => matchers[filter](photo)));
     }
-    
+
+    // Apply people filter (#1074). Composes with every filter above rather
+    // than replacing them, so "photos of Anna that I liked" works.
+    //
+    // Two people selected means AND by default ("photos with both Anna and
+    // Ben") — that is what someone picking a second face is almost always
+    // asking for. `peopleMatchAny` flips it to OR for the couple-shots case.
+    if (selectedPersonIds.length > 0) {
+      photos = photos.filter(photo => {
+        const ids = photo.person_ids || [];
+        return peopleMatchAny
+          ? selectedPersonIds.some(id => ids.includes(id))
+          : selectedPersonIds.every(id => ids.includes(id));
+      });
+    }
+
     // Apply sorting
     // Each comparator defaults to its natural order (desc for dates/size/rating, asc for name).
     // The flip multiplier reverses that when sortDesc differs from the natural order.
@@ -592,7 +662,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
     }
     
     return photos;
-  }, [data?.photos, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds]);
+  }, [data?.photos, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny]);
 
   // Counts shown in the filter chips ("Liked (N)", etc.). In guest
   // mode these need to mirror the per-guest filter behaviour above —
@@ -1118,6 +1188,81 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         </div>
       ) : null}
 
+        {/* People in this gallery (#1074). Sits between the filter bar and
+            the grid. Renders nothing at all unless the photographer enabled
+            detection AND left it visible to guests — people_enabled carries
+            both decisions plus the global feature flag. */}
+        {peopleEnabled && (
+          <div className="mt-4">
+            <PeopleStrip
+              people={people}
+              photos={data.photos}
+              slug={slug}
+              selectedPersonIds={selectedPersonIds}
+              onToggle={togglePerson}
+              onShowAll={() => setShowPeopleSheet(true)}
+              scan={peopleData?.scan}
+              collapsed={peopleCollapsed}
+              onCollapsedChange={handlePeopleCollapsedChange}
+            />
+
+            {/* Active people filter. The chip row is the single place the
+                current selection is stated, so "why am I seeing 97 photos"
+                is always answerable at a glance. */}
+            {selectedPersonIds.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 py-2 border-t border-neutral-100">
+                {selectedPersonIds.map((id) => {
+                  const person = people.find((p) => p.id === id);
+                  if (!person) return null;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => togglePerson(id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-50 text-primary-700 text-sm hover:bg-primary-100"
+                    >
+                      {person.label || t('gallery.people.unnamedCount', {
+                        count: person.face_count,
+                        defaultValue: `${person.face_count} photos`,
+                      })}
+                      <X size={14} />
+                    </button>
+                  );
+                })}
+
+                {/* Only meaningful with two or more people picked. */}
+                {selectedPersonIds.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setPeopleMatchAny((v) => !v)}
+                    className="px-2.5 py-1 rounded-full border border-neutral-200 text-xs text-neutral-600 hover:bg-neutral-50"
+                  >
+                    {peopleMatchAny
+                      ? t('gallery.people.matchAny', { defaultValue: 'Either person' })
+                      : t('gallery.people.matchAll', { defaultValue: 'Both people' })}
+                  </button>
+                )}
+
+                <span className="text-sm text-neutral-500 ml-auto">
+                  {t('gallery.people.matchCount', {
+                    count: filteredPhotos.length,
+                    total: totalCount,
+                    defaultValue: `${filteredPhotos.length} of ${totalCount} photos`,
+                  })}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => { setSelectedPersonIds([]); setPeopleMatchAny(false); }}
+                  className="text-sm text-neutral-500 hover:text-neutral-700 underline"
+                >
+                  {t('gallery.people.clear', { defaultValue: 'Clear' })}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Photo Grid — when the hero header sits directly under the filter
             bar, double the wrapper margin (mt-12) so the hero's decorative
             `-mt-6` bleed leaves a visible gap instead of gluing the filter
@@ -1199,6 +1344,19 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
               setShowResolutionPicker(false);
               setResolutionPickerIds(null);
             }}
+          />
+        )}
+
+        {/* "Show all" people (#1074) — a bottom sheet on mobile. */}
+        {peopleEnabled && (
+          <PeopleSheet
+            open={showPeopleSheet}
+            onClose={() => setShowPeopleSheet(false)}
+            people={people}
+            photos={data?.photos || []}
+            slug={slug}
+            selectedPersonIds={selectedPersonIds}
+            onToggle={togglePerson}
           />
         )}
       </GalleryLayout>

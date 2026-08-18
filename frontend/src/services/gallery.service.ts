@@ -1,7 +1,7 @@
 import { api } from '../config/api';
 import type {
   GalleryInfo, GalleryData, GalleryStats, ResolvedGalleryIdentifier,
-  DownloadJobStatus, DownloadJobState,
+  DownloadJobStatus, DownloadJobState, GalleryPeopleResponse,
 } from '../types';
 import { normalizeRequirePassword } from '../utils/accessControl';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
@@ -381,6 +381,18 @@ export const galleryService = {
 
   async resolveIdentifier(identifier: string): Promise<ResolvedGalleryIdentifier> {
     const response = await api.get<ResolvedGalleryIdentifier>(`/gallery/resolve/${identifier}`);
+    return response.data;
+  },
+
+  /**
+   * People detected in this gallery (#1074).
+   *
+   * Returns an empty list rather than an error when the feature is off, so a
+   * guest can't tell "no people here" from "feature disabled". Counts and
+   * cover faces are scoped server-side to the photos this viewer may see.
+   */
+  async getPeople(slug: string): Promise<GalleryPeopleResponse> {
+    const response = await api.get<GalleryPeopleResponse>(`/gallery/${slug}/people`);
     return response.data;
   },
 };

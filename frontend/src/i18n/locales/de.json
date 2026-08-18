@@ -1061,7 +1061,27 @@
     "downloadReady": "Ihr Download ist bereit",
     "downloadNow": "Herunterladen",
     "downloadPrepFailed": "Vorbereitung fehlgeschlagen",
-    "downloadPrepTimeout": "Das dauert länger als erwartet. Bitte erneut versuchen."
+    "downloadPrepTimeout": "Das dauert länger als erwartet. Bitte erneut versuchen.",
+    "people": {
+      "title": "Personen in dieser Galerie",
+      "showAll": "Alle {{count}} anzeigen",
+      "show": "Anzeigen",
+      "dismiss": "Personenleiste ausblenden",
+      "collapsedSummary": "{{count}} Personen gefunden",
+      "unnamedCount": "{{count}} Fotos",
+      "filterBy": "Fotos von {{name}} anzeigen",
+      "filterByUnnamed": "Fotos dieser Person anzeigen",
+      "scanning": "Personen werden gesucht… {{scanned}}/{{total}} Fotos",
+      "matchAll": "Beide Personen",
+      "matchAny": "Eine der Personen",
+      "matchCount": "{{count}} von {{total}} Fotos",
+      "clear": "Zurücksetzen",
+      "searchPlaceholder": "Person suchen",
+      "noMatches": "Niemand passt zu diesem Namen.",
+      "privacyNote": "Personen werden automatisch innerhalb dieser Galerie erkannt. Es werden keine Daten an externe Dienste gesendet.",
+      "inThisPhoto": "Auf diesem Foto:",
+      "downloadThese": "Diese {{count}} herunterladen"
+    }
   },
   "categories": {
     "title": "Fotokategorien",
