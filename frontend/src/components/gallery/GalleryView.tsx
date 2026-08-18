@@ -1250,7 +1250,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
                   </button>
                 )}
 
-                <span className="text-sm ml-auto" style={{ color: 'var(--color-muted-text)' }}>
+                {/* ml-auto only once there's room for it — at 390px the count
+                    and Clear were pushed against the right edge and clipped. */}
+                <span className="text-sm sm:ml-auto" style={{ color: 'var(--color-muted-text)' }}>
                   {t('gallery.people.matchCount', {
                     count: filteredPhotos.length,
                     total: totalCount,
