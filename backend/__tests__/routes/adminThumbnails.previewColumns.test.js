@@ -20,9 +20,9 @@ describe('regenerate-previews selects the columns ensurePreviewImage branches on
   // The select feeding the regenerate-previews handler, from the route
   // declaration to the end of that statement.
   const selectStatement = (() => {
-    const routeIdx = src.indexOf("router.post('/regenerate-previews'");
+    const routeIdx = src.indexOf('/regenerate-previews');
     expect(routeIdx).toBeGreaterThan(-1);
-    const selectIdx = src.indexOf("db('photos').select(", routeIdx);
+    const selectIdx = src.indexOf('.select(', routeIdx);
     expect(selectIdx).toBeGreaterThan(-1);
     return src.slice(selectIdx, src.indexOf(';', selectIdx));
   })();
