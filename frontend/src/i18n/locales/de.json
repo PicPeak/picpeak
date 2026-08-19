@@ -3162,7 +3162,10 @@
       "confirmDelete": "Alle erkannten Personen und Gesichtsdaten dieser Galerie löschen? Dies kann nicht rückgängig gemacht werden. Die Fotos selbst bleiben unverändert.",
       "autoCategories": "Fotos automatisch in Kategorien einsortieren",
       "autoCategoriesHint": "Nutzt die Anzahl der Gesichter, um Fotos als Details, Porträts, Kleine Gruppen oder Gruppen abzulegen. Gilt für alle Galerien, füllt ausschließlich leere Kategorien und ändert niemals eine von Ihnen gesetzte.",
-      "sidecarUnreachable": "Der Gesichtserkennungs-Dienst unter {{url}} ist nicht erreichbar, deshalb werden die {{pending}} eingereihten Fotos nicht verarbeitet. Es geht nichts verloren — der Scan läuft von selbst weiter, sobald der Dienst wieder da ist. Starte ihn mit `docker compose --profile faces up -d` und prüfe, ob FACE_ML_TOKEN in beiden Containern übereinstimmt."
+      "sidecarUnreachable": "Der Gesichtserkennungs-Dienst unter {{url}} ist nicht erreichbar, deshalb werden die {{pending}} eingereihten Fotos nicht verarbeitet. Es geht nichts verloren — der Scan läuft von selbst weiter, sobald der Dienst wieder da ist. Starte ihn mit `docker compose --profile faces up -d`; er beendet sich sofort, wenn FACE_ML_TOKEN nicht auf denselben Wert wie im Backend gesetzt ist — einen Standardwert gibt es nicht.",
+      "sidecarUnauthorized": "Der Gesichtserkennungs-Dienst unter {{url}} weist unser Token zurück; Fotos werden als fehlgeschlagen markiert statt erneut versucht. Setze FACE_ML_TOKEN im Backend und im picpeak-ml-Container identisch, starte beide neu und nutze dann Neu scannen — das Token allein zu korrigieren verarbeitet die bereits fehlgeschlagenen Fotos nicht erneut.",
+      "sidecarRejected": "{{url}} antwortet, aber nicht wie der Gesichtserkennungs-Dienst — Fotos werden als fehlgeschlagen markiert statt erneut versucht. Prüfe, ob FACE_ML_URL auf den picpeak-ml-Container zeigt und kein Proxy dazwischenliegt, und nutze dann Neu scannen für die bereits fehlgeschlagenen Fotos.",
+      "sidecarStateNow": "Aktueller Zustand des Dienstes — einige der Fehler oben können eine andere Ursache haben, aber ein erneuter Scan wird erst nach der Behebung erfolgreich sein:"
     }
   },
   "acceptInvitation": {

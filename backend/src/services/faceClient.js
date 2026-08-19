@@ -107,8 +107,23 @@ async function detectFaces(buffer, filename = 'photo.jpg') {
 
 /**
  * Sidecar identity + liveness, for the admin connection test.
- * Returns { ok: true, info } or { ok: false, error } — never throws, because
- * the caller is a UI button and a stack trace helps nobody there.
+ * Returns { ok: true, info } or { ok: false, reason, error } — never throws,
+ * because the caller is a UI button and a stack trace helps nobody there.
+ *
+ * `reason` exists because the failure modes need opposite advice, and the
+ * message string is the wrong thing for a caller to match on. The split
+ * mirrors classify() above, because that is what decides whether a photo is
+ * retried or burnt:
+ *   - 'unauthorized' — 401. classify() returns SidecarRejectedError, which
+ *     workerLoop does NOT retry, so every claimed photo is marked 'failed'.
+ *     Fixing the token does not resume anything; the admin has to re-scan.
+ *   - 'rejected' — any other 4xx (a wrong FACE_ML_URL answering 404, a proxy
+ *     returning 403). classify() treats the whole 4xx range the same way, so
+ *     these burn photos exactly like a 401 does and must not be reported as
+ *     temporary.
+ *   - 'unreachable' — everything else: connection refused, DNS, timeouts,
+ *     5xx. SidecarUnavailableError, photos go back to 'pending' and the scan
+ *     picks up on its own.
  */
 async function checkHealth() {
   try {
@@ -120,9 +135,20 @@ async function checkHealth() {
   } catch (err) {
     const status = err.response?.status;
     if (status === 401) {
-      return { ok: false, error: 'Sidecar rejected the token (check FACE_ML_TOKEN on both containers)' };
+      return {
+        ok: false,
+        reason: 'unauthorized',
+        error: 'Sidecar rejected the token (check FACE_ML_TOKEN on both containers)',
+      };
     }
-    return { ok: false, error: err.message || 'Sidecar unreachable' };
+    if (status && status >= 400 && status < 500) {
+      return {
+        ok: false,
+        reason: 'rejected',
+        error: `Sidecar answered ${status} — check FACE_ML_URL points at picpeak-ml and no proxy sits in front of it`,
+      };
+    }
+    return { ok: false, reason: 'unreachable', error: err.message || 'Sidecar unreachable' };
   }
 }
 

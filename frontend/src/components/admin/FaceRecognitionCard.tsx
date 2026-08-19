@@ -15,7 +15,7 @@
  * provide the switch, the photographer provides the lawful basis — so it
  * renders next to the toggle rather than behind a "learn more".
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
@@ -45,8 +45,14 @@ interface FacesPayload {
 interface SidecarHealth {
   url: string;
   ok: boolean;
+  reason?: 'unauthorized' | 'rejected' | 'unreachable';
   error?: string;
 }
+
+// 4xx of any kind burns photos: faceClient.classify() turns the whole range
+// into SidecarRejectedError, which faceQueue does not retry. Those cases need
+// "fix it, then re-scan", never "it resumes on its own".
+const BURNS_PHOTOS = new Set(['unauthorized', 'rejected']);
 
 interface FaceRecognitionCardProps {
   eventId: number;
@@ -73,14 +79,82 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
   // picpeak-ml container looks like, indefinitely. Poll the connection test
   // while a scan is running so that case says so instead of spinning.
   const scanRunning = !!data?.enabled && !!data.status.in_progress;
-  const { data: health } = useQuery<SidecarHealth>({
+  // A 4xx burns photos with no backoff (faceQueue.js:139-152 marks failed and
+  // loops straight on), so a misconfigured token or URL can empty the queue
+  // faster than this card polls. By the time anyone looks, in_progress is
+  // false and all that is left is "N failed" — the diagnosis has to outlive
+  // the scan, so keep probing while there are failures to explain.
+  const hasFailures = !!data?.enabled && (data.status.failed ?? 0) > 0;
+  const shouldProbe = scanRunning || hasFailures;
+  const { data: health, dataUpdatedAt: healthAt } = useQuery<SidecarHealth>({
     queryKey: ['admin-faces-health'],
     queryFn: async () => (await api.get('/admin/events/faces/health')).data,
-    enabled: scanRunning,
+    enabled: shouldProbe,
+    // Only worth re-polling while work is actually moving; one probe is enough
+    // to explain a finished run.
     refetchInterval: scanRunning ? 15000 : false,
     // A failing connection test is the signal itself, not an error state.
     retry: false,
   });
+
+  // One failed probe is not enough to cry wolf. The sidecar serves /faces from
+  // an `async def` that runs inference synchronously, so a single slow photo
+  // blocks the event loop and stalls /info past its 5s timeout — a healthy,
+  // actively-working sidecar can fail a probe. Require consecutive failures
+  // AND no queue movement: `pending` draining is direct proof the sidecar is
+  // processing, whatever the probe says. (`pending`, not `scanned` — scanned
+  // counts only `done`, so a run producing skipped/failed photos is still
+  // progress the counter would miss.)
+  //
+  // Three, not two, because the streak has to outlast one whole inference: a
+  // single /faces call may legitimately run to FACE_ML_TIMEOUT_MS (30s by
+  // default) on a slow host, blocking /info the entire time, and two probes
+  // 15s apart both fit inside that window. Three spans >30s, by which point
+  // the backend's own request has timed out and freed the event loop — so a
+  // still-failing probe means the sidecar really is gone, not merely busy.
+  //
+  // The photo-burning reasons skip the liveness guard on purpose: there the
+  // queue drains too, but every photo drains into `failed`.
+  const failStreak = useRef(0);
+  const lastPending = useRef<number | null>(null);
+  const [sidecarWarning, setSidecarWarning] =
+    useState<'unauthorized' | 'rejected' | 'unreachable' | null>(null);
+
+  useEffect(() => {
+    if (!shouldProbe || !health) {
+      failStreak.current = 0;
+      lastPending.current = null;
+      setSidecarWarning(null);
+      return;
+    }
+    if (health.reason && BURNS_PHOTOS.has(health.reason)) {
+      setSidecarWarning(health.reason);
+      return;
+    }
+    if (!scanRunning) {
+      // Probing only to explain existing failures. A reachable sidecar means
+      // those failures were per-photo (undecodable images), not config — and
+      // an unreachable one leaves photos pending, not failed, so it cannot be
+      // the explanation either.
+      setSidecarWarning(null);
+      return;
+    }
+
+    const pending = data?.status.pending ?? 0;
+    const draining = lastPending.current !== null && pending < lastPending.current;
+    lastPending.current = pending;
+
+    if (health.ok || draining) {
+      failStreak.current = 0;
+      setSidecarWarning(null);
+      return;
+    }
+    failStreak.current += 1;
+    setSidecarWarning(failStreak.current >= 3 ? 'unreachable' : null);
+    // Keyed on the probe, not the status poll: the two queries tick at
+    // different rates and the streak counts probes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [healthAt, shouldProbe, scanRunning, health]);
 
   useEffect(() => {
     if (!data?.enabled) return;
@@ -148,6 +222,34 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
   if (!data) return null;
 
   const { status } = data;
+
+  // Rendered in two places — replacing the spinner mid-scan, or under the
+  // final counts once a scan has ended with failures it can explain.
+  const sidecarNotice = sidecarWarning && health ? (
+    <div className={`flex items-start gap-2 ${BURNS_PHOTOS.has(sidecarWarning) ? 'text-red-700' : 'text-amber-700'}`}>
+      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+      <p>
+        {sidecarWarning === 'unauthorized' && t('admin.faces.sidecarUnauthorized', {
+          url: health.url,
+          defaultValue: `The face-detection service at ${health.url} is rejecting our token, and photos are being marked failed rather than retried. Make FACE_ML_TOKEN identical on the backend and the picpeak-ml container, restart both, then use Re-scan — fixing the token alone will not reprocess the photos that already failed.`,
+        })}
+        {sidecarWarning === 'rejected' && t('admin.faces.sidecarRejected', {
+          url: health.url,
+          defaultValue: `${health.url} answered, but not like the face-detection service — photos are being marked failed rather than retried. Check FACE_ML_URL points at the picpeak-ml container and that nothing is proxying that address, then use Re-scan for the photos that already failed.`,
+        })}
+        {sidecarWarning === 'unreachable' && t('admin.faces.sidecarUnreachable', {
+          url: health.url,
+          pending: status.pending,
+          defaultValue: `Can't reach the face-detection service at ${health.url}, so the ${status.pending} queued photos aren't being processed. Nothing is lost — the scan resumes on its own once the service is up. Start it with \`docker compose --profile faces up -d\`, and note it exits immediately unless FACE_ML_TOKEN is set to the same value as the backend — there is no default.`,
+        })}
+        {health.error && (
+          <span className={`block mt-1 text-xs font-mono ${BURNS_PHOTOS.has(sidecarWarning) ? 'text-red-600' : 'text-amber-600'}`}>
+            {health.error}
+          </span>
+        )}
+      </p>
+    </div>
+  ) : null;
 
   return (
     <Card>
@@ -274,20 +376,12 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
       {data.enabled && (
         <>
           <div className="mt-4 pt-4 border-t border-neutral-100 text-sm text-neutral-600">
-            {status.in_progress && health && !health.ok ? (
-              <div className="flex items-start gap-2 text-amber-700">
-                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                <p>
-                  {t('admin.faces.sidecarUnreachable', {
-                    url: health.url,
-                    pending: status.pending,
-                    defaultValue: `Can't reach the face-detection service at ${health.url}, so the ${status.pending} queued photos aren't being processed. Nothing is lost — the scan resumes on its own once the service is up. Start it with \`docker compose --profile faces up -d\` and check FACE_ML_TOKEN matches on both containers.`,
-                  })}
-                  {health.error && (
-                    <span className="block mt-1 text-xs text-amber-600 font-mono">{health.error}</span>
-                  )}
-                </p>
-              </div>
+            {/* While scanning, the warning replaces the spinner — a progress
+                indicator that cannot progress is the misleading part. Once the
+                scan has ended the counts are what the admin came for, so the
+                warning renders underneath them instead (below). */}
+            {sidecarWarning && health && status.in_progress ? (
+              sidecarNotice
             ) : status.in_progress ? (
               <p className="flex items-center gap-2">
                 <RefreshCw size={14} className="animate-spin text-primary-500" />
@@ -328,6 +422,26 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
                   </span>
                 )}
               </p>
+            )}
+            {/* Scan already over: keep the counts, add the reason those photos
+                failed. Without this a misconfigured token shows only
+                "227 failed" and no way to act on it.
+
+                Deliberately worded as present-tense state rather than a claim
+                about these specific failures: this is a live probe, so it
+                cannot know whether the recorded failures came from the current
+                misconfiguration or from corrupt images at some earlier point.
+                Attributing them properly would mean reading stored face_error
+                rows — worth doing, but a bigger change than this. */}
+            {!status.in_progress && sidecarNotice && (
+              <div className="mt-2">
+                <p className="text-xs text-neutral-500 mb-1">
+                  {t('admin.faces.sidecarStateNow', {
+                    defaultValue: 'Service state right now — some of the failures above may have a different cause, but a re-scan will not succeed until this is fixed:',
+                  })}
+                </p>
+                {sidecarNotice}
+              </div>
             )}
           </div>
 
