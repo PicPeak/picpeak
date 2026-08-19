@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.107.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.1-beta.0...v3.107.2-beta.0) (2026-08-19)
+
+
+### Bug Fixes
+
+* **faces:** restore the :beta image tag and surface sidecar health ([#1087](https://github.com/PicPeak/picpeak/issues/1087)) ([37a15e3](https://github.com/PicPeak/picpeak/commit/37a15e3d49de5cad83b7e7b466153a732e64c45e))
+
 ## [3.107.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.0-beta.0...v3.107.1-beta.0) (2026-08-19)
 
 
