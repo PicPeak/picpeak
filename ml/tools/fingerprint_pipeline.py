@@ -57,30 +57,36 @@ else:
 from app import config  # noqa: E402
 from app.pipeline import FacePipeline  # noqa: E402
 
-# A fixed 48x48 PROGRESSIVE JPEG, embedded as bytes rather than encoded at
+# A fixed 64x48 PROGRESSIVE JPEG, embedded as bytes rather than encoded at
 # runtime. Production input is always the preview rendition, which the backend
 # writes with `progressive: true` (imageProcessor.js:236/480/617) — progressive
 # and baseline take different paths through libjpeg, so a baseline fixture
-# would miss a change that moves every real photo. Embedded rather than
-# encoded here because calling cv2.imencode would make the *input* depend on
-# the very encoder version we are trying to hold still.
+# would miss a change that moves every real photo. Non-square on purpose: a
+# square fixture cannot tell a width/height swap from correct behaviour.
+# Embedded rather than encoded here because calling cv2.imencode would make
+# the *input* depend on the very encoder version we are trying to hold still.
 FIXED_JPEG = base64.b64decode(
     "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsK"
     "CwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQU"
-    "FBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wgARCAAwADADASIA"
-    "AhEBAxEB/8QAFwABAQEBAAAAAAAAAAAAAAAABQQGCP/EABgBAQEBAQEAAAAAAAAAAAAAAAYFAwgC"
-    "/9oADAMBAAIQAxAAAAHm29q/zqMgygrrioMoKq+avZQ58CDXtXqq4yDKCuxmUGUOfAY17V6qwNcz"
-    "jGuH/8QAGRAAAwEBAQAAAAAAAAAAAAAAAAIEAQMF/9oACAEBAAEFAknEnEnEnEnEnEnEnEnEnEnE"
-    "nEnEnEnEnEnEnEnEnEnEnEnEnEnEnEnEnEnM4YuJOJOJOJOZwxc9Cva9/8QAHREAAwACAgMAAAAA"
-    "AAAAAAAAAAIDAQUTITFR4f/aAAgBAwEBPwGTEmJMSYkxJiTEmNluo6iPI/bZ8Y9/D//EABsRAQEA"
-    "AQUAAAAAAAAAAAAAAAQAAgEDBREx/9oACAECAQE/ATKjKjKjKjKjKjKjKuOyy38utPL/xAAdEAAB"
-    "BAIDAAAAAAAAAAAAAAABAAMRIRNBIECi/9oACAEBAAY/Au7JoDfGTQG1jbpkel//xAAbEAEBAQEB"
-    "AAMAAAAAAAAAAAAAYQERIVGB8P/aAAgBAQABPyGKKaKKKKKKKKKKKKKKKKKaKKKKKKKLY88Xd15m"
-    "Yiiim2PPF3deZmPcmj7187J+z//aAAwDAQACAAMAAAAQWh7dXqpWJ//EABwRAQABBAMAAAAAAAAA"
-    "AAAAAAERACEwQVGBwf/aAAgBAwEBPxDAqqs1eV3Xg29EqFf/xAAaEQADAQADAAAAAAAAAAAAAAAA"
-    "ITEBEVHh/9oACAECAQE/EIMgyDIMgyDIMgzBb8Yu9en/xAAbEAADAQEBAQEAAAAAAAAAAAAAATHB"
-    "ESFBgf/aAAgBAQABPxCeSYjgmJ4JiYngmJmYmJiZmJ4JieSeSYjgmJ5JiYmJiYmHKND1IF1ttxJE"
-    "xPJMRwOUaHqQLrbbiSHK7HxpJ+I+I5+n7xD/2Q=="
+    "FBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wgARCAAwAEADASIA"
+    "AhEBAxEB/8QAGQABAQEBAQEAAAAAAAAAAAAABQYEAwcI/8QAGQEBAAMBAQAAAAAAAAAAAAAABgMF"
+    "BwIE/9oADAMBAAIQAxAAAAH5t3tb+ZRkGUFduKgygqt5LnW88qWhb2UCOLjb2t6q3GQZQV3ElyrP"
+    "OM091OgygHzUbe1vVXA25mMawSU1W8ymW//EABkQAAMBAQEAAAAAAAAAAAAAAAACBAEDBf/aAAgB"
+    "AQABBQJJxJxJxJxJxJyqcScScScScScScScqnEnEnEnEnEnEnEnKpzOGLiTiTiTiTiTiTlfDFz0K"
+    "9r1JxJxJxJxJzOGLnvV7XqTiTiTiTiTmcMXPQr2vaZxJz//EACERAAEDAgcBAAAAAAAAAAAAAAIA"
+    "AQMEBRETISMxUeHw/9oACAEDAQE/AYiURKIlSFtsoiURKIlWXqG0UrSHqT8N34oiURK5XqG0Q5h6"
+    "k/Dd+J6+avPPnfF3+wZf/8QAIREAAQQBAwUAAAAAAAAAAAAABAABAgMFBjGyESIlYoL/2gAIAQIB"
+    "AT8BGKQxSGKWoCvL3fPFkMUhikMUsxKV+auZtu3iyGKQxSx0pXy6Nss3bGrK2xj68WX/xAAfEAAB"
+    "AwQDAQAAAAAAAAAAAAABAgMhABEgQRMwohD/2gAIAQEABj8CyR0I6EVcwBvNJMAXmuNuGR6yuYA3"
+    "SW24ZHrK5gDdcbcMj1SPn//EAB0QAAMAAwEBAQEAAAAAAAAAAAABYREhUcHwcYH/2gAIAQEAAT8h"
+    "iRJkSJE4u+ESJEiRIkTi74RIkSJEiROLvg440sttJIiRJkSJExHpM20ktG8jH4265PlEiRIkRxxp"
+    "ZbaSRlMYcba25PlEiRIkxxxpZbaSRvIx/W65Plzd8In/2gAMAwEAAgADAAAAEFoe/HV6rKViYv/E"
+    "ACARAQABAgYDAAAAAAAAAAAAAAERIUEAECCBobExUcH/2gAIAQMBAT8QzV53vQqtNVXqp4F23glQ"
+    "clmr7XVfBd2JUMde6CWAsFjdlVx//8QAHBEAAwEAAwEBAAAAAAAAAAAAAAEhMRFR4UHB/9oACAEC"
+    "AQE/EMKYUwp9IeFMKYUZlwlPr9zCmFEJ/Ca+vSf6XrZ//8QAHBABAQEAAgMBAAAAAAAAAAAAATEA"
+    "EcEQIUGB/9oACAEBAAE/EJ9dPI9NPJ9NPwan008n008ns8n4PTyeT2eT6aeT6+GmUUOgByqsA0+u"
+    "nkemnk+uniIKGgAlVgGZXY8IT6D4Gfp98GTyeTyeTxlFDoAcqrAN7F2XhCeAfBT9PvgyezyfXTyP"
+    "TMoodADlVYBmV2PCCfQfAz9Pvg8Op5//2Q=="
 )
 
 
@@ -161,9 +167,15 @@ def main():
     #    warpAffine, then BGR->RGB, per-image standardization, layout and the
     #    L2 normalization the backend's cosine similarity depends on.
     pipeline = FacePipeline()
+    # Emitted, not just used: the fixture is too small to trip the resize in
+    # either image, and the forced pass below overrides the value in both, so
+    # a production change from 1920 to 960 would move no hash at all. Printing
+    # it puts the change in the diff where a reviewer will see it.
     out["_thresholds"] = {
         "det_score": config.DET_SCORE_THRESHOLD,
         "nms": config.NMS_THRESHOLD,
+        "input_long_edge": config.INPUT_LONG_EDGE,
+        "top_k": config.TOP_K,
     }
 
     scene = _deterministic_bgr(256)
@@ -213,16 +225,30 @@ def main():
     #    the source, and exercises the identical code.
     _real_long_edge = config.INPUT_LONG_EDGE
     try:
-        config.INPUT_LONG_EDGE = 32  # below the fixture's 48px long edge
+        # 48 < the fixture's 64px long edge, so the resize fires; small
+        # enough to matter, large enough that YuNet still returns rows.
+        # At 32 the downscaled frame (32x24) yields nothing and the stage
+        # silently pins nothing, which is what the VACUOUS marker caught.
+        config.INPUT_LONG_EDGE = 48
         downscaled = pipeline.process(FIXED_JPEG)
     finally:
         config.INPUT_LONG_EDGE = _real_long_edge
     out["process_downscaled_count"] = len(downscaled)
-    out["process_downscaled_embedding"] = (
-        _hash(np.asarray(downscaled[0]["embedding"], dtype=np.float32))
-        if downscaled
-        else "NO-DETECTIONS-STAGE-VACUOUS"
-    )
+    if downscaled:
+        out["process_downscaled_embedding"] = _hash(
+            np.asarray(downscaled[0]["embedding"], dtype=np.float32)
+        )
+        # The bbox specifically, not just the embedding. In the pass above the
+        # scale is 1, so `row[0:4]` never goes through inverse scaling and a
+        # regression there stays hidden; the embedding here would not catch it
+        # either, because that is derived from separately scaled landmarks. A
+        # wrong bbox is what breaks avatar crops and area calculations.
+        out["process_downscaled_bbox"] = _hash(
+            np.asarray(downscaled[0]["bbox"], dtype=np.float32)
+        )
+    else:
+        out["process_downscaled_embedding"] = "NO-DETECTIONS-STAGE-VACUOUS"
+        out["process_downscaled_bbox"] = "NO-DETECTIONS-STAGE-VACUOUS"
 
     print(json.dumps(out, indent=2, sort_keys=True))
 
