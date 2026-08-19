@@ -75,18 +75,18 @@ async function processPhotoFaces(photoId) {
     return { status: 'skipped' };
   }
 
-  // External / reference photos live outside managed storage, and
-  // resolvePhotoStorageKey returns null for them by design (photoResolver.js).
-  // ensurePreviewImage therefore cannot build a preview, so scanning them is
-  // unsupported rather than broken — 'skipped', not 'failed', so an external
-  // gallery does not report every photo as an error.
-  if (photo.source_origin === 'external' || photo.source_origin === 'reference') {
-    await db('photos').where({ id: photoId }).update({
-      face_status: 'skipped', face_started_at: null, face_error: null,
-    });
-    return { status: 'skipped' };
-  }
-
+  // No external/reference guard here on purpose (#1090). One used to skip
+  // them, because resolvePhotoStorageKey returns null for photos outside
+  // managed storage and ensurePreviewImage could not build a preview. #1078
+  // removed that limitation: ensurePreviewImage now reads externals straight
+  // off the mount via resolvePhotoFilePath and writes the preview into
+  // managed storage, so the key below is readable like any other. Keeping the
+  // guard made the whole feature a no-op on external-media installs, where
+  // every photo in the library can be external.
+  //
+  // A photo whose source really is gone still returns null and lands in the
+  // 'failed' branch below, which is the honest outcome — that is a broken
+  // photo, not an unsupported one.
   const previewKey = await ensurePreviewImage(photo);
   if (!previewKey) {
     // No preview and no way to make one — the source is missing or corrupt.
