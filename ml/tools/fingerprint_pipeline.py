@@ -8,10 +8,21 @@ our ability to check it, and "the tests pass" does not check it: the API tests
 stub `FacePipeline`, so nothing compares numbers across two builds.
 
 This prints a hash per stage. Run it against the OLD image and the NEW one, on
-the SAME machine, and diff the output. Identical hashes mean stored clusters
-stay valid; any difference means existing installs need a re-scan, and the
-change has to be a deliberate, announced decision rather than a side effect of
-a base-image or dependency bump.
+the SAME machine, and diff the output.
+
+Reading the diff:
+
+  * Keys with NO prefix are the compatibility verdict. If every one matches,
+    stored clusters stay valid. If any differs, existing installs need a
+    re-scan, and the change has to be a deliberate, announced decision rather
+    than a side effect of a base-image or dependency bump.
+  * `diag_*` keys are DIAGNOSTIC ONLY and carry no verdict — they exercise a
+    path production does not run, and exist to localise the cause when a real
+    key moves. A `diag_*` change on its own is not a reason to re-scan.
+  * `_`-prefixed keys are metadata: versions, thresholds and the compatibility
+    key. They are printed rather than hashed because the fixture cannot reach
+    them, so a reviewer has to read them. A change to `_thresholds` or
+    `_effective_det_score` matters even when every hash matches.
 
 `tools/` is in .dockerignore and never ships inside the image, so mount just
 this file — NOT the whole `ml/` tree. Mounting `ml/` would put the checkout's
@@ -178,10 +189,13 @@ def main():
     out["detect_cv2_faces"] = "none" if faces is None else _hash(faces)
     out["detect_cv2_count"] = 0 if faces is None else int(faces.shape[0])
 
-    # 2b. The same model as a raw ONNX forward pass. Kept alongside 2a because
-    #     it isolates the model file plus onnxruntime from OpenCV's wrapper: if
-    #     both move together it is a model change, if only 2a moves it is
-    #     OpenCV's DNN path.
+    # 2b. The same model as a raw ONNX forward pass — DIAGNOSTIC ONLY, hence
+    #     the diag_ prefix. Production never runs YuNet through onnxruntime, so
+    #     an ORT change touching a YuNet operator moves these while real
+    #     behaviour is untouched. Treating that as "rescan needed" would cost a
+    #     full-gallery rescan for nothing. They earn their place by splitting
+    #     the cause when 2a does move: both together means the model changed,
+    #     2a alone means OpenCV's DNN path did.
     det_sess = ort.InferenceSession(det_path, providers=["CPUExecutionProvider"])
     det_in = det_sess.get_inputs()[0]
     _, _, h, w = det_in.shape
@@ -190,13 +204,19 @@ def main():
     )
     det_outs = det_sess.run(None, {det_in.name: det_tensor})
     for meta, arr in zip(det_sess.get_outputs(), det_outs):
-        out[f"detect_ort_{meta.name}"] = _hash(arr)
+        out[f"diag_ort_{meta.name}"] = _hash(arr)
 
     # 3. Alignment and embedding, through the production pipeline. This is what
     #    actually decides where a face lands in the embedding space: umeyama +
     #    warpAffine, then BGR->RGB, per-image standardization, layout and the
     #    L2 normalization the backend's cosine similarity depends on.
     pipeline = FacePipeline()
+    # Read what the detector was ACTUALLY constructed with, before the override
+    # below replaces it. _thresholds.det_score only echoes config; if
+    # FacePipeline ever stopped applying it — falling back to OpenCV's 0.9
+    # default, say — production would detect a different face set while every
+    # hash here still matched, because the override erases the evidence.
+    out["_effective_det_score"] = round(float(pipeline._detector.getScoreThreshold()), 6)
     # Emitted, not just used: the fixture is too small to trip the resize in
     # either image, and the forced pass below overrides the value in both, so
     # a production change from 1920 to 960 would move no hash at all. Printing
@@ -211,6 +231,10 @@ def main():
         # carrying a different one, so a change here forces a full rescan even
         # when every number below is identical.
         "model_version": config.MODEL_VERSION,
+        # Emitted because the fixture never reaches it: pipeline.py:138 slices
+        # to MAX_FACES, so raising 64 -> 128 changes nothing here while real
+        # group photos would persist a different face set.
+        "max_faces": config.MAX_FACES,
     }
 
     scene = _deterministic_bgr(256)
