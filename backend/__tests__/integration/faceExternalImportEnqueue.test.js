@@ -30,6 +30,9 @@ describe('external import queues faces (#1090)', () => {
   // Recorded from inside the per-photo thumbnail call, i.e. mid-loop.
   let pendingSeenDuringLoop = 0;
   let externalPathDuringLoop;
+  // When set to an event id, the mocked thumbnail call turns detection on
+  // mid-loop, standing in for an admin flipping the toggle during an import.
+  let flipFacesOnDuringLoop = null;
 
   beforeAll(async () => {
     tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'picpeak-extenq-'));
@@ -67,6 +70,10 @@ describe('external import queues faces (#1090)', () => {
         pendingSeenDuringLoop += rows.length;
         const ev = await liveDb('events').first();
         externalPathDuringLoop = ev ? ev.external_path : undefined;
+        if (flipFacesOnDuringLoop) {
+          await liveDb('events').where({ id: flipFacesOnDuringLoop })
+            .update({ face_recognition_enabled: true });
+        }
         return 'thumbnails/mock.jpg';
       }),
       ensureThumbnail: jest.fn(),
@@ -153,6 +160,22 @@ describe('external import queues faces (#1090)', () => {
     expect(ev.external_path).toBe('nas');
     expect((await db('photos').where({ event_id: eventId, face_status: 'pending' })).length)
       .toBe((await db('photos').where({ event_id: eventId })).length);
+  });
+
+  it('honours a toggle flipped DURING the import', async () => {
+    // The setting is read after the loop, not before: on a large library the
+    // loop runs for minutes, and the toggle endpoint only queues rows that
+    // already existed when it fired. Reading it up front would strand every
+    // photo imported after that moment at NULL forever.
+    const eventId = await seedEvent({ facesEnabled: false, flagOn: true });
+    flipFacesOnDuringLoop = eventId;
+
+    await runImport(eventId);
+    flipFacesOnDuringLoop = null;
+
+    const photos = await db('photos').where({ event_id: eventId });
+    expect(photos.length).toBeGreaterThan(0);
+    expect(photos.every((p) => p.face_status === 'pending')).toBe(true);
   });
 
   it('leaves face_status untouched when the per-event toggle is off', async () => {

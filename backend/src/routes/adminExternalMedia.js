@@ -106,18 +106,12 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
     // import into an already-enabled event would still sit unscanned until
     // someone pressed Re-scan.
     //
-    // Resolved once for the whole import rather than per photo: it is a
-    // per-event setting and this loop can run to a thousand files. Guarded the
-    // same way photoProcessor guards it, so installs without the feature keep
-    // writing no face_status at all.
-    let queueFaces = false;
-    try {
-      const { isEnabledForEvent } = require('../services/faceSettings');
-      queueFaces = await isEnabledForEvent(event);
-    } catch (err) {
-      // Never let the face feature break an import — the photos are the point.
-      logger.warn(`Could not resolve face settings for event ${eventId}: ${err.message}`);
-    }
+    // Ids are collected unconditionally and the setting is read at the END,
+    // not here: this loop can run for many minutes on a large library, and an
+    // admin who enables detection during it would otherwise leave every photo
+    // imported after that moment stuck at NULL forever — the toggle endpoint
+    // only queues rows that already existed when it fired.
+    //
     // Collected during the loop and marked 'pending' only AFTER
     // events.external_path is written below. Setting it on insert would publish
     // claimable rows while the event still carries the old path — or none, on a
@@ -199,7 +193,7 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
           }
         }
 
-        if (photoId != null && queueFaces) importedPhotoIds.push(photoId);
+        if (photoId != null) importedPhotoIds.push(photoId);
         imported += (inserted?.length ? 1 : 0);
       } catch (e) {
         skipped++;
@@ -210,9 +204,23 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
     await db('events').where('id', eventId).update({ source_mode: 'reference', external_path });
 
     // Only now does the event resolve to the new directory, so only now is it
-    // safe to open the queue. Chunked because SQLite caps a statement at 999
-    // bound parameters and an import can be far larger than that.
-    if (importedPhotoIds.length) {
+    // safe to open the queue. Guarded the same way photoProcessor guards it
+    // (both the global flag and the per-event toggle), so installs without the
+    // feature still never write a face_status. Re-read here rather than before
+    // the loop so a toggle flipped mid-import is honoured.
+    let queueFaces = false;
+    try {
+      const { isEnabledForEvent } = require('../services/faceSettings');
+      const freshEvent = await db('events').where('id', eventId).first();
+      queueFaces = await isEnabledForEvent(freshEvent);
+    } catch (err) {
+      // Never let the face feature break an import — the photos are the point.
+      logger.warn(`Could not resolve face settings for event ${eventId}: ${err.message}`);
+    }
+
+    // Chunked because SQLite caps a statement at 999 bound parameters and an
+    // import can be far larger than that.
+    if (queueFaces && importedPhotoIds.length) {
       for (let i = 0; i < importedPhotoIds.length; i += 500) {
         await db('photos')
           .whereIn('id', importedPhotoIds.slice(i, i + 500))
