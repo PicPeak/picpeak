@@ -118,6 +118,15 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
       // Never let the face feature break an import — the photos are the point.
       logger.warn(`Could not resolve face settings for event ${eventId}: ${err.message}`);
     }
+    // Collected during the loop and marked 'pending' only AFTER
+    // events.external_path is written below. Setting it on insert would publish
+    // claimable rows while the event still carries the old path — or none, on a
+    // first import: the face worker polls continuously, resolvePhotoFilePath
+    // would resolve against the wrong directory, and a multi-minute import
+    // would leave photos permanently 'failed', a state only an explicit
+    // Re-scan clears. No video guard needed either way: walkDir collects only
+    // jpg/jpeg/png/webp.
+    const importedPhotoIds = [];
 
     // Insert photos
     for (const f of dedupeMap.values()) {
@@ -158,10 +167,7 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
             width,
             height,
             source_origin: 'external',
-            external_relpath: f.rel,
-            // No video guard needed: walkDir only collects jpg/jpeg/png/webp,
-            // so nothing faceProcessor would skip as video can arrive here.
-            face_status: queueFaces ? 'pending' : null
+            external_relpath: f.rel
           })
           .returning('id');
 
@@ -193,6 +199,7 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
           }
         }
 
+        if (photoId != null && queueFaces) importedPhotoIds.push(photoId);
         imported += (inserted?.length ? 1 : 0);
       } catch (e) {
         skipped++;
@@ -201,6 +208,18 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
 
     // Update event fields
     await db('events').where('id', eventId).update({ source_mode: 'reference', external_path });
+
+    // Only now does the event resolve to the new directory, so only now is it
+    // safe to open the queue. Chunked because SQLite caps a statement at 999
+    // bound parameters and an import can be far larger than that.
+    if (importedPhotoIds.length) {
+      for (let i = 0; i < importedPhotoIds.length; i += 500) {
+        await db('photos')
+          .whereIn('id', importedPhotoIds.slice(i, i + 500))
+          .update({ face_status: 'pending' });
+      }
+      logger.info(`Queued ${importedPhotoIds.length} imported external photo(s) for face scanning (event ${eventId})`);
+    }
 
     await logActivity(
       'external_import_completed',
