@@ -658,17 +658,27 @@ async function isPreviewValid(previewPath) {
  * Lazy-generate the preview image for a photo if missing or invalid.
  * Returns the storage key or null on failure (callers fall back to
  * the original URL so the lightbox never shows a broken image).
+ *
+ * Handles both managed photos (via the storage backend, possibly S3) and
+ * external/reference photos (#1078 — sourced from a local mount outside the
+ * managed storage tree). Externals used to have no branch here at all:
+ * resolvePhotoStorageKey returns null for them by design, that null reached
+ * withLocalCopy, and the throw put every lightbox open back on the full-size
+ * original — the exact cost the preview tier (#492) exists to avoid.
  */
 async function ensurePreviewImage(photo) {
-  const { resolvePhotoStorageKey } = require('./photoResolver');
+  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
-  let sourceKey;
+  let event;
   try {
-    const event = await db('events').where('id', photo.event_id).first();
-    sourceKey = resolvePhotoStorageKey(event, photo);
+    event = await db('events').where('id', photo.event_id).first();
   } catch (e) {
     const msg = (e && e.message) ? e.message : String(e);
-    logger.error(`Failed to resolve original key for preview (photo ${photo.id}): ${msg}`);
+    logger.error(`Failed to load event for preview (photo ${photo.id}): ${msg}`);
+    return null;
+  }
+  if (!event) {
+    logger.error(`ensurePreviewImage: event ${photo.event_id} not found for photo ${photo.id}`);
     return null;
   }
 
@@ -678,14 +688,51 @@ async function ensurePreviewImage(photo) {
     logger.warn(`Invalid preview detected for photo ${photo.id}, regenerating…`);
   }
 
-  const newPreviewPath = await withLocalCopy(sourceKey, async (localPath) => {
-    const proc = await withProcessableImage(localPath, sourceKey);
+  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+
+  let newPreviewPath;
+  if (isExternal) {
+    // Mirrors ensureThumbnail's external branch: the source is a direct fs
+    // read off the mount, so no withLocalCopy. The per-photo outputBasename
+    // keeps two events that reference the same NAS basename from clobbering
+    // each other's preview.
+    let localPath;
     try {
-      return await generatePreviewImage(proc.path, { regenerate: true, outputBasename: proc.outputBasename });
-    } finally {
-      await proc.cleanup();
+      localPath = resolvePhotoFilePath(event, photo);
+    } catch (e) {
+      logger.error(`Failed to resolve external file for preview (photo ${photo.id}): ${e.message}`);
+      return null;
     }
-  });
+    const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
+    const outputBasename = `ext${photo.id}_${sourceBasename}`;
+    logger.info(`Ensuring preview for external photo ${photo.id} from ${localPath}`);
+    newPreviewPath = await generatePreviewImage(localPath, { regenerate: true, outputBasename });
+  } else {
+    let sourceKey;
+    try {
+      sourceKey = resolvePhotoStorageKey(event, photo);
+    } catch (e) {
+      const msg = (e && e.message) ? e.message : String(e);
+      logger.error(`Failed to resolve original key for preview (photo ${photo.id}): ${msg}`);
+      return null;
+    }
+    if (!sourceKey) {
+      // Reference-mode event holding a row with no source_origin: the mode
+      // falls back to the event's and resolvePhotoStorageKey returns null.
+      // Honour the documented null-on-failure contract instead of feeding
+      // null into withLocalCopy, which throws out of this function.
+      logger.warn(`No managed storage key for preview (photo ${photo.id}); skipping preview generation`);
+      return null;
+    }
+    newPreviewPath = await withLocalCopy(sourceKey, async (localPath) => {
+      const proc = await withProcessableImage(localPath, sourceKey);
+      try {
+        return await generatePreviewImage(proc.path, { regenerate: true, outputBasename: proc.outputBasename });
+      } finally {
+        await proc.cleanup();
+      }
+    });
+  }
 
   if (newPreviewPath) {
     await db('photos').where({ id: photo.id }).update({ preview_path: newPreviewPath });
