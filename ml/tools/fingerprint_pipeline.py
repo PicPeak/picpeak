@@ -13,10 +13,14 @@ stay valid; any difference means existing installs need a re-scan, and the
 change has to be a deliberate, announced decision rather than a side effect of
 a base-image or dependency bump.
 
-`tools/` is in .dockerignore and never ships inside the image, so mount it:
+`tools/` is in .dockerignore and never ships inside the image, so mount just
+this file — NOT the whole `ml/` tree. Mounting `ml/` would put the checkout's
+`app/` package ahead of the image's own `/app/app`, so both containers would
+run the same pipeline source and a code difference between two images would
+vanish from the comparison:
 
-    docker run --rm -v "$PWD/ml:/src" -w /src --entrypoint python \
-      <image> tools/fingerprint_pipeline.py
+    docker run --rm -v "$PWD/ml/tools:/tools:ro" --entrypoint python \
+      <image> /tools/fingerprint_pipeline.py
 
 Compare on one host only. The hashes are NOT portable across architectures —
 OpenCV and onnxruntime both dispatch to different SIMD kernels on x86 and
@@ -39,7 +43,16 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Import the app package the IMAGE ships, not the checkout's. The whole point
+# is to compare two built images; sourcing pipeline.py from a bind mount would
+# make both runs execute identical code and hide exactly the differences this
+# is meant to surface. /app is the runtime WORKDIR; the parent-of-tools
+# fallback only exists so the tool still runs from a plain source checkout.
+_IMAGE_APP_ROOT = "/app"
+if os.path.isdir(os.path.join(_IMAGE_APP_ROOT, "app")):
+    sys.path.insert(0, _IMAGE_APP_ROOT)
+else:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from app import config  # noqa: E402
 from app.pipeline import FacePipeline  # noqa: E402
@@ -83,24 +96,57 @@ def _deterministic_bgr(size):
 
 
 def main():
+    import app.pipeline
+
     out = {
         "_versions": {
             "python": sys.version.split()[0],
             "numpy": np.__version__,
             "cv2": cv2.__version__,
             "onnxruntime": ort.__version__,
-        }
+        },
+        # Which pipeline.py actually ran. If this says /tools/.. or a checkout
+        # path instead of /app, the mount is shadowing the image's own code and
+        # the comparison is not measuring what it claims to.
+        "_app_source": app.pipeline.__file__,
     }
 
     # 1. Decode. JPEG specifically: the worker only ever sees preview renditions.
     decoded = cv2.imdecode(np.frombuffer(FIXED_JPEG, np.uint8), cv2.IMREAD_COLOR)
     out["decode_jpeg"] = _hash(decoded)
 
-    # 2. Detector, as a raw forward pass. A synthetic image contains no face, so
-    #    asserting on FaceDetectorYN's post-NMS output would fingerprint an
-    #    empty result and stay green through any change to the model or its
-    #    kernels. Driving the ONNX graph directly always produces numbers.
-    det_path = os.path.join(config.MODEL_DIR, "face_detection_yunet_2023mar.onnx")
+    det_path = os.path.join(config.MODEL_DIR, config.DETECTOR_FILENAME)
+    det_scene = _deterministic_bgr(320)
+
+    # 2a. Detector through OpenCV, which is what production actually uses.
+    #     cv2.FaceDetectorYN runs its own preprocessing, its own DNN engine and
+    #     its own NMS/landmark decode — none of which onnxruntime exercises, so
+    #     an OpenCV upgrade could move real landmarks (and therefore alignment
+    #     and embeddings) while an ORT-only check stayed identical.
+    #
+    #     The threshold is dropped to the floor ON PURPOSE. Synthetic input has
+    #     no face, so at the production 0.6 this returns nothing and pins
+    #     nothing; near-zero forces candidates through the same code path and
+    #     makes the stage produce numbers. The service's real thresholds are
+    #     recorded below so a change to them is still visible in the diff.
+    yn = cv2.FaceDetectorYN.create(
+        model=det_path,
+        config="",
+        input_size=(320, 320),
+        score_threshold=1e-6,
+        nms_threshold=config.NMS_THRESHOLD,
+        top_k=config.TOP_K,
+    )
+    yn.setInputSize((320, 320))
+    retval, faces = yn.detect(det_scene)
+    out["detect_cv2_retval"] = int(retval)
+    out["detect_cv2_faces"] = "none" if faces is None else _hash(faces)
+    out["detect_cv2_count"] = 0 if faces is None else int(faces.shape[0])
+
+    # 2b. The same model as a raw ONNX forward pass. Kept alongside 2a because
+    #     it isolates the model file plus onnxruntime from OpenCV's wrapper: if
+    #     both move together it is a model change, if only 2a moves it is
+    #     OpenCV's DNN path.
     det_sess = ort.InferenceSession(det_path, providers=["CPUExecutionProvider"])
     det_in = det_sess.get_inputs()[0]
     _, _, h, w = det_in.shape
@@ -109,7 +155,7 @@ def main():
     )
     det_outs = det_sess.run(None, {det_in.name: det_tensor})
     for meta, arr in zip(det_sess.get_outputs(), det_outs):
-        out[f"detect_{meta.name}"] = _hash(arr)
+        out[f"detect_ort_{meta.name}"] = _hash(arr)
 
     # 3. Alignment and embedding, through the production pipeline. This is what
     #    actually decides where a face lands in the embedding space: umeyama +
