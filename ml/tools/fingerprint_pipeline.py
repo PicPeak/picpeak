@@ -94,6 +94,24 @@ def _hash(array):
     return hashlib.sha256(np.ascontiguousarray(array, dtype=np.float32).tobytes()).hexdigest()[:16]
 
 
+def _hash_all(faces):
+    """Hash every returned face, in order, as (embeddings, bboxes).
+
+    Every face, not just the first: the forced-low threshold yields dozens of
+    candidates, and hashing only candidate 0 would report a match while a
+    numerical change moved candidates 1..n, or while their ORDER changed —
+    both of which alter what production stores. Stacking preserves order, so
+    a reshuffle shows up too.
+    """
+    if not faces:
+        # Not fatal, but it means the stage pinned nothing — say so loudly
+        # rather than printing a reassuring hash of an empty result.
+        return "NO-DETECTIONS-STAGE-VACUOUS", "NO-DETECTIONS-STAGE-VACUOUS"
+    embeddings = np.stack([np.asarray(f["embedding"], dtype=np.float32) for f in faces])
+    bboxes = np.stack([np.asarray(f["bbox"], dtype=np.float32) for f in faces])
+    return _hash(embeddings), _hash(bboxes)
+
+
 def _deterministic_bgr(size):
     """A fixed BGR image. Arithmetic, so it cannot drift with any codec."""
     y, x = np.mgrid[0:size, 0:size]
@@ -206,15 +224,7 @@ def main():
     pipeline._detector.setScoreThreshold(1e-6)
     detected = pipeline.process(FIXED_JPEG)
     out["process_face_count"] = len(detected)
-    if detected:
-        first = detected[0]
-        out["process_embedding"] = _hash(np.asarray(first["embedding"], dtype=np.float32))
-        out["process_bbox"] = _hash(np.asarray(first["bbox"], dtype=np.float32))
-    else:
-        # Not fatal, but it means this stage pinned nothing — say so loudly
-        # rather than printing a reassuring hash of an empty result.
-        out["process_embedding"] = "NO-DETECTIONS-STAGE-VACUOUS"
-        out["process_bbox"] = "NO-DETECTIONS-STAGE-VACUOUS"
+    out["process_embedding"], out["process_bbox"] = _hash_all(detected)
 
     # 5. The same path again with the downscale branch forced. process() only
     #    resizes when the long edge exceeds INPUT_LONG_EDGE (1920), and no
@@ -234,21 +244,12 @@ def main():
     finally:
         config.INPUT_LONG_EDGE = _real_long_edge
     out["process_downscaled_count"] = len(downscaled)
-    if downscaled:
-        out["process_downscaled_embedding"] = _hash(
-            np.asarray(downscaled[0]["embedding"], dtype=np.float32)
-        )
-        # The bbox specifically, not just the embedding. In the pass above the
-        # scale is 1, so `row[0:4]` never goes through inverse scaling and a
-        # regression there stays hidden; the embedding here would not catch it
-        # either, because that is derived from separately scaled landmarks. A
-        # wrong bbox is what breaks avatar crops and area calculations.
-        out["process_downscaled_bbox"] = _hash(
-            np.asarray(downscaled[0]["bbox"], dtype=np.float32)
-        )
-    else:
-        out["process_downscaled_embedding"] = "NO-DETECTIONS-STAGE-VACUOUS"
-        out["process_downscaled_bbox"] = "NO-DETECTIONS-STAGE-VACUOUS"
+    # Bboxes as well as embeddings. In the pass above the scale is 1, so
+    # `row[0:4]` never goes through inverse scaling and a regression there
+    # stays hidden; the embeddings would not catch it either, because those
+    # are derived from separately scaled landmarks. A wrong bbox is what
+    # breaks avatar crops and area calculations.
+    out["process_downscaled_embedding"], out["process_downscaled_bbox"] = _hash_all(downscaled)
 
     print(json.dumps(out, indent=2, sort_keys=True))
 
