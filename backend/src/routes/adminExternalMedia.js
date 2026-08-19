@@ -98,6 +98,27 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
     let thumbnailsGenerated = 0;
     let thumbnailsFailed = 0;
 
+    // Face detection (#1090). Managed uploads are enqueued by photoProcessor,
+    // which sets face_status 'pending' once a photo is processed
+    // (photoProcessor.js:573) — but external media never goes through it, it
+    // is inserted directly here. Before #1090 that was invisible, because
+    // faceProcessor skipped externals anyway; now that they are scannable, an
+    // import into an already-enabled event would still sit unscanned until
+    // someone pressed Re-scan.
+    //
+    // Resolved once for the whole import rather than per photo: it is a
+    // per-event setting and this loop can run to a thousand files. Guarded the
+    // same way photoProcessor guards it, so installs without the feature keep
+    // writing no face_status at all.
+    let queueFaces = false;
+    try {
+      const { isEnabledForEvent } = require('../services/faceSettings');
+      queueFaces = await isEnabledForEvent(event);
+    } catch (err) {
+      // Never let the face feature break an import — the photos are the point.
+      logger.warn(`Could not resolve face settings for event ${eventId}: ${err.message}`);
+    }
+
     // Insert photos
     for (const f of dedupeMap.values()) {
       // Infer type by subfolder names
@@ -137,7 +158,10 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
             width,
             height,
             source_origin: 'external',
-            external_relpath: f.rel
+            external_relpath: f.rel,
+            // No video guard needed: walkDir only collects jpg/jpeg/png/webp,
+            // so nothing faceProcessor would skip as video can arrive here.
+            face_status: queueFaces ? 'pending' : null
           })
           .returning('id');
 
