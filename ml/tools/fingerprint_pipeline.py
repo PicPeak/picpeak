@@ -57,31 +57,30 @@ else:
 from app import config  # noqa: E402
 from app.pipeline import FacePipeline  # noqa: E402
 
-# A fixed 48x48 JPEG, embedded as bytes rather than encoded at runtime.
-# Production input is always the preview rendition, which the backend writes as
-# JPEG (imageProcessor.js), so the decoder under test has to be libjpeg — and
-# calling cv2.imencode here would make the *input* depend on the very encoder
-# version we are trying to hold still.
+# A fixed 48x48 PROGRESSIVE JPEG, embedded as bytes rather than encoded at
+# runtime. Production input is always the preview rendition, which the backend
+# writes with `progressive: true` (imageProcessor.js:236/480/617) — progressive
+# and baseline take different paths through libjpeg, so a baseline fixture
+# would miss a change that moves every real photo. Embedded rather than
+# encoded here because calling cv2.imencode would make the *input* depend on
+# the very encoder version we are trying to hold still.
 FIXED_JPEG = base64.b64decode(
     "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsK"
     "CwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQU"
-    "FBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAAwADADASIA"
-    "AhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQA"
-    "AAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3"
-    "ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWm"
-    "p6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEA"
-    "AwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSEx"
-    "BhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElK"
-    "U1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3"
-    "uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD827Lw"
-    "50+T9K37Lw50+WuzsvDnT5a37Lw50+X9KjLc021OrC1TjbHw50+X9K37Lw50+WuysvDnT5a6Cy8O"
-    "dPkr9Vy3NNtT6/C1TjLLw50+X9K6Cy8OdPlrsrLw50+Wt+y8OdPlr9Vy3NNtT67C1TzWy8OdPlrf"
-    "svDnT5K7Ky8OdPk/SugsvDnT5a/z4y3NNtT8JwtU4yy8OdPlrfsvDnT5f0rs7Hw50+X9K37Lw50+"
-    "Wv1XLc021PrsLVONsvDnT5a37Lw50+T9K7Oy8OdPk/St+y8OdPlr9Wy3NNtT6/C1TzSy8OdPlrfs"
-    "vDnT5a7Oy8OdPlrfsvDnT5P0r/PjLc021PwjC1TjbLw50+Wt+y8OdPlrs7Lw50+Wt+x8OdPl/Sv1"
-    "XLc021Pr8LVOMsvDnT5a3INDjtoXmmKxQxqXeRyFVVAySSegArs4NDjtoXmmKxQxqXeRyFVVAySS"
-    "egArxj4h+LpPFsx07Tt0WjRtycENcsDwzDsoPRfxPOAv7Tw7UqY+ooQdord9v+CcXEvGmC4RwX1i"
-    "u+arL4IX1k/0iur+Su2kf//Z"
+    "FBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wgARCAAwADADASIA"
+    "AhEBAxEB/8QAFwABAQEBAAAAAAAAAAAAAAAABQQGCP/EABgBAQEBAQEAAAAAAAAAAAAAAAYFAwgC"
+    "/9oADAMBAAIQAxAAAAHm29q/zqMgygrrioMoKq+avZQ58CDXtXqq4yDKCuxmUGUOfAY17V6qwNcz"
+    "jGuH/8QAGRAAAwEBAQAAAAAAAAAAAAAAAAIEAQMF/9oACAEBAAEFAknEnEnEnEnEnEnEnEnEnEnE"
+    "nEnEnEnEnEnEnEnEnEnEnEnEnEnEnEnEnEnM4YuJOJOJOJOZwxc9Cva9/8QAHREAAwACAgMAAAAA"
+    "AAAAAAAAAAIDAQUTITFR4f/aAAgBAwEBPwGTEmJMSYkxJiTEmNluo6iPI/bZ8Y9/D//EABsRAQEA"
+    "AQUAAAAAAAAAAAAAAAQAAgEDBREx/9oACAECAQE/ATKjKjKjKjKjKjKjKuOyy38utPL/xAAdEAAB"
+    "BAIDAAAAAAAAAAAAAAABAAMRIRNBIECi/9oACAEBAAY/Au7JoDfGTQG1jbpkel//xAAbEAEBAQEB"
+    "AAMAAAAAAAAAAAAAYQERIVGB8P/aAAgBAQABPyGKKaKKKKKKKKKKKKKKKKKaKKKKKKKLY88Xd15m"
+    "Yiiim2PPF3deZmPcmj7187J+z//aAAwDAQACAAMAAAAQWh7dXqpWJ//EABwRAQABBAMAAAAAAAAA"
+    "AAAAAAERACEwQVGBwf/aAAgBAwEBPxDAqqs1eV3Xg29EqFf/xAAaEQADAQADAAAAAAAAAAAAAAAA"
+    "ITEBEVHh/9oACAECAQE/EIMgyDIMgyDIMgzBb8Yu9en/xAAbEAADAQEBAQEAAAAAAAAAAAAAATHB"
+    "ESFBgf/aAAgBAQABPxCeSYjgmJ4JiYngmJmYmJiZmJ4JieSeSYjgmJ5JiYmJiYmHKND1IF1ttxJE"
+    "xPJMRwOUaHqQLrbbiSHK7HxpJ+I+I5+n7xD/2Q=="
 )
 
 
@@ -180,6 +179,50 @@ def main():
     embedding = pipeline._embed(aligned)
     out["embed"] = _hash(embedding)
     out["embed_l2"] = round(float(np.linalg.norm(embedding)), 6)
+
+    # 4. End to end, through process(). The isolated stages above cannot see the
+    #    orchestration between them: INPUT_LONG_EDGE resizing, and the row ->
+    #    landmark scaling in _one_face that turns detector output into the
+    #    coordinates _align consumes. A change there moves newly generated
+    #    embeddings relative to stored clusters while every stage hash above
+    #    holds still, because _align is handed fixed landmarks rather than the
+    #    detector's.
+    #
+    #    Same threshold trick as 2a, applied to the pipeline's own detector so
+    #    a faceless synthetic frame still produces rows to carry through the
+    #    real code path.
+    pipeline._detector.setScoreThreshold(1e-6)
+    detected = pipeline.process(FIXED_JPEG)
+    out["process_face_count"] = len(detected)
+    if detected:
+        first = detected[0]
+        out["process_embedding"] = _hash(np.asarray(first["embedding"], dtype=np.float32))
+        out["process_bbox"] = _hash(np.asarray(first["bbox"], dtype=np.float32))
+    else:
+        # Not fatal, but it means this stage pinned nothing — say so loudly
+        # rather than printing a reassuring hash of an empty result.
+        out["process_embedding"] = "NO-DETECTIONS-STAGE-VACUOUS"
+        out["process_bbox"] = "NO-DETECTIONS-STAGE-VACUOUS"
+
+    # 5. The same path again with the downscale branch forced. process() only
+    #    resizes when the long edge exceeds INPUT_LONG_EDGE (1920), and no
+    #    fixture small enough to embed here ever will — so without this the
+    #    resize and its inverse landmark scaling are never executed, and a
+    #    change to either would leave every hash above untouched. Lowering the
+    #    threshold under the fixture is cheaper than carrying a 1920px image in
+    #    the source, and exercises the identical code.
+    _real_long_edge = config.INPUT_LONG_EDGE
+    try:
+        config.INPUT_LONG_EDGE = 32  # below the fixture's 48px long edge
+        downscaled = pipeline.process(FIXED_JPEG)
+    finally:
+        config.INPUT_LONG_EDGE = _real_long_edge
+    out["process_downscaled_count"] = len(downscaled)
+    out["process_downscaled_embedding"] = (
+        _hash(np.asarray(downscaled[0]["embedding"], dtype=np.float32))
+        if downscaled
+        else "NO-DETECTIONS-STAGE-VACUOUS"
+    )
 
     print(json.dumps(out, indent=2, sort_keys=True))
 
