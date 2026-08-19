@@ -212,6 +212,14 @@ jobs:
         format: 'sarif'
         output: 'trivy-backend-${{ env.PLATFORM_PAIR }}.sarif'
         severity: 'CRITICAL,HIGH'
+        # Base-image CVEs with no released fix are not actionable: the
+        # Dockerfiles already run `apt-get upgrade -y` behind a CACHEBUST,
+        # so a fix lands in the next build automatically. Reporting them
+        # buries the findings someone can actually do something about --
+        # the ML image alone contributed 123 unfixable alerts. Dropping
+        # them is also the precondition for ever setting exit-code: 1,
+        # which build-backend's comment flags as a deliberate follow-up.
+        ignore-unfixed: true
         timeout: '10m'
 
     - name: Upload Trivy scan results to GitHub Security tab
@@ -474,6 +482,14 @@ jobs:
         format: 'sarif'
         output: 'trivy-frontend-${{ env.PLATFORM_PAIR }}.sarif'
         severity: 'CRITICAL,HIGH'
+        # Base-image CVEs with no released fix are not actionable: the
+        # Dockerfiles already run `apt-get upgrade -y` behind a CACHEBUST,
+        # so a fix lands in the next build automatically. Reporting them
+        # buries the findings someone can actually do something about --
+        # the ML image alone contributed 123 unfixable alerts. Dropping
+        # them is also the precondition for ever setting exit-code: 1,
+        # which build-backend's comment flags as a deliberate follow-up.
+        ignore-unfixed: true
         timeout: '10m'
 
     - name: Upload Trivy scan results to GitHub Security tab
@@ -716,6 +732,14 @@ jobs:
         format: 'sarif'
         output: 'trivy-aio-${{ env.PLATFORM_PAIR }}.sarif'
         severity: 'CRITICAL,HIGH'
+        # Base-image CVEs with no released fix are not actionable: the
+        # Dockerfiles already run `apt-get upgrade -y` behind a CACHEBUST,
+        # so a fix lands in the next build automatically. Reporting them
+        # buries the findings someone can actually do something about --
+        # the ML image alone contributed 123 unfixable alerts. Dropping
+        # them is also the precondition for ever setting exit-code: 1,
+        # which build-backend's comment flags as a deliberate follow-up.
+        ignore-unfixed: true
         timeout: '10m'
 
     - name: Upload Trivy scan results to GitHub Security tab
@@ -1109,6 +1133,14 @@ jobs:
         format: 'sarif'
         output: 'trivy-ml-${{ env.PLATFORM_PAIR }}.sarif'
         severity: 'CRITICAL,HIGH'
+        # Base-image CVEs with no released fix are not actionable: the
+        # Dockerfiles already run `apt-get upgrade -y` behind a CACHEBUST,
+        # so a fix lands in the next build automatically. Reporting them
+        # buries the findings someone can actually do something about --
+        # the ML image alone contributed 123 unfixable alerts. Dropping
+        # them is also the precondition for ever setting exit-code: 1,
+        # which build-backend's comment flags as a deliberate follow-up.
+        ignore-unfixed: true
         timeout: '10m'
 
     - name: Upload Trivy scan results to GitHub Security tab

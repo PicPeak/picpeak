@@ -73,10 +73,25 @@ ARG CACHEBUST=1
 RUN echo "cachebust=${CACHEBUST}" \
     && apt-get update \
     && apt-get upgrade -y \
-    # libGL and libglib are opencv-python-headless's remaining shared-library
-    # deps. The headless wheel drops the GUI toolkits but still links libGL.
-    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
+
+# No runtime apt packages at all — deliberately.
+#
+# opencv-python-headless 4.14 needs neither libgl1 nor libglib2.0-0. The
+# wheel bundles what it needs; `ldd .../cv2/cv2*.so` resolves fully on a
+# bare python:3.12-slim. Both were installed here on the assumption that
+# the headless build still links libGL, which was true of much older
+# wheels and is not true of this one.
+#
+# What they cost: libgl1 alone pulls 36 transitive packages (mesa, LLVM,
+# X11) into a service that never opens a display, and libglib2.0-0t64
+# carries a critical plus six highs. Together they accounted for 42 of
+# this image's Trivy findings — none of which have an upstream fix, so
+# not installing them is the only lever that exists.
+#
+# Before re-adding either, confirm it is actually needed: build without
+# it and run `ml/tests` plus a real FaceDetectorYN.detect() call, since
+# the API tests stub the pipeline and will pass either way.
 
 WORKDIR /app
 
