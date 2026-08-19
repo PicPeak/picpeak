@@ -201,7 +201,13 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
   try {
     const { eventId } = req.body;
 
-    let query = db('photos').select('id', 'event_id', 'path', 'media_type', 'mime_type', 'preview_path');
+    // source_origin/external_relpath/filename are what ensurePreviewImage
+    // branches on for external/reference rows (#1078) — without them every
+    // external photo looks managed here and generation is skipped.
+    let query = db('photos').select(
+      'id', 'event_id', 'path', 'media_type', 'mime_type', 'preview_path',
+      'source_origin', 'external_relpath', 'filename'
+    );
     if (eventId) query = query.where('event_id', eventId);
     // Skip videos — preview tier is image-only.
     query = query.where(function() {

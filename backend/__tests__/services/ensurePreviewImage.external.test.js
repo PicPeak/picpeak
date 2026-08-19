@@ -175,6 +175,25 @@ describe('ensurePreviewImage — external/reference sources (#1078)', () => {
     expect(db.__state.updates).toEqual([]);
   });
 
+  it('branches on source_origin, so a row selected without it looks managed', async () => {
+    // Pins why the /regenerate-previews caller must select source_origin:
+    // an external row missing that column takes the managed path, where
+    // resolvePhotoStorageKey yields null and generation is skipped.
+    const relpath = 'column-starved.jpg';
+    await writeSourceJpeg(path.join(EXTERNAL_ROOT, EVENT.external_path, relpath));
+    const starved = {
+      id: 106,
+      event_id: EVENT.id,
+      external_relpath: relpath,
+      preview_path: null,
+    };
+
+    await expect(imageProcessor.ensurePreviewImage(starved)).resolves.toBeNull();
+    await expect(
+      imageProcessor.ensurePreviewImage({ ...starved, source_origin: 'external', filename: relpath })
+    ).resolves.toBe(`previews/preview_ext106_${relpath}`);
+  });
+
   it('still routes managed photos through the storage backend', async () => {
     const sourceKey = 'events/active/managed-event/individual/managed.jpg';
     const localSource = path.join(os.tmpdir(), `picpeak-managed-${process.pid}.jpg`);
