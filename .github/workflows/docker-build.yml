@@ -331,6 +331,15 @@ jobs:
           # so `is_default_branch` no longer maps to "stable" — be explicit.
           type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
           type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
+          # `:beta` follows the active development branch. This used to happen
+          # for free via `type=ref,event=branch` back when that branch was
+          # literally named `beta`; the rename to `main` silently retired the
+          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
+          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
+          # on. The ml sidecar was added after the rename and so never had a
+          # `:beta` at all, which left docker-compose.production.yml unable to
+          # resolve the image for any documented channel.
+          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
           # `:beta` is RETIRED post-rename (Option B / #669). Active-dev pulls
           # are `:main` (auto via type=ref,event=branch). The pre-rename `:beta`
           # tag remains frozen at its last build — operators should update.
@@ -596,6 +605,15 @@ jobs:
           # so `is_default_branch` no longer maps to "stable" — be explicit.
           type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
           type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
+          # `:beta` follows the active development branch. This used to happen
+          # for free via `type=ref,event=branch` back when that branch was
+          # literally named `beta`; the rename to `main` silently retired the
+          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
+          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
+          # on. The ml sidecar was added after the rename and so never had a
+          # `:beta` at all, which left docker-compose.production.yml unable to
+          # resolve the image for any documented channel.
+          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
           # `:beta` is RETIRED post-rename (Option B / #669). Active-dev pulls
           # are `:main` (auto via type=ref,event=branch). The pre-rename `:beta`
           # tag remains frozen at its last build — operators should update.
@@ -819,6 +837,15 @@ jobs:
           type=sha,format=short
           type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
           type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
+          # `:beta` follows the active development branch. This used to happen
+          # for free via `type=ref,event=branch` back when that branch was
+          # literally named `beta`; the rename to `main` silently retired the
+          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
+          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
+          # on. The ml sidecar was added after the rename and so never had a
+          # `:beta` at all, which left docker-compose.production.yml unable to
+          # resolve the image for any documented channel.
+          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
 
     - name: Create and push multi-arch manifest
       working-directory: /tmp/digests
@@ -1232,6 +1259,15 @@ jobs:
           type=sha,format=short
           type=raw,value=latest,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
           type=raw,value=stable,enable=${{ github.ref == 'refs/heads/stable' || (startsWith(github.ref, 'refs/tags/v') && steps.context.outputs.is_prerelease == 'false') }}
+          # `:beta` follows the active development branch. This used to happen
+          # for free via `type=ref,event=branch` back when that branch was
+          # literally named `beta`; the rename to `main` silently retired the
+          # tag, so `PICPEAK_CHANNEL=beta` has been pinned to the last pre-rename
+          # build (backend:beta sat at 2026-06-29 / 448da950) while :main moved
+          # on. The ml sidecar was added after the rename and so never had a
+          # `:beta` at all, which left docker-compose.production.yml unable to
+          # resolve the image for any documented channel.
+          type=raw,value=beta,enable=${{ github.ref == 'refs/heads/main' }}
 
     - name: Create and push multi-arch manifest
       working-directory: /tmp/digests

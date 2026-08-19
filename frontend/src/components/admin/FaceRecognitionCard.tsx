@@ -42,6 +42,12 @@ interface FacesPayload {
   };
 }
 
+interface SidecarHealth {
+  url: string;
+  ok: boolean;
+  error?: string;
+}
+
 interface FaceRecognitionCardProps {
   eventId: number;
   isArchived?: boolean;
@@ -59,6 +65,21 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
     // Poll while a scan is running so the status line advances without a
     // manual refresh; stop entirely once it settles.
     refetchInterval: (query) => (query.state.data?.status?.in_progress ? 5000 : false),
+  });
+
+  // A scan that cannot reach the sidecar does not fail — faceQueue releases the
+  // photo back to `pending` and retries forever, so a restart doesn't burn the
+  // queue. The cost is that "Scanning… 0 of 227" is also what a missing
+  // picpeak-ml container looks like, indefinitely. Poll the connection test
+  // while a scan is running so that case says so instead of spinning.
+  const scanRunning = !!data?.enabled && !!data.status.in_progress;
+  const { data: health } = useQuery<SidecarHealth>({
+    queryKey: ['admin-faces-health'],
+    queryFn: async () => (await api.get('/admin/events/faces/health')).data,
+    enabled: scanRunning,
+    refetchInterval: scanRunning ? 15000 : false,
+    // A failing connection test is the signal itself, not an error state.
+    retry: false,
   });
 
   useEffect(() => {
@@ -253,7 +274,21 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
       {data.enabled && (
         <>
           <div className="mt-4 pt-4 border-t border-neutral-100 text-sm text-neutral-600">
-            {status.in_progress ? (
+            {status.in_progress && health && !health.ok ? (
+              <div className="flex items-start gap-2 text-amber-700">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <p>
+                  {t('admin.faces.sidecarUnreachable', {
+                    url: health.url,
+                    pending: status.pending,
+                    defaultValue: `Can't reach the face-detection service at ${health.url}, so the ${status.pending} queued photos aren't being processed. Nothing is lost — the scan resumes on its own once the service is up. Start it with \`docker compose --profile faces up -d\` and check FACE_ML_TOKEN matches on both containers.`,
+                  })}
+                  {health.error && (
+                    <span className="block mt-1 text-xs text-amber-600 font-mono">{health.error}</span>
+                  )}
+                </p>
+              </div>
+            ) : status.in_progress ? (
               <p className="flex items-center gap-2">
                 <RefreshCw size={14} className="animate-spin text-primary-500" />
                 {t('admin.faces.scanning', {

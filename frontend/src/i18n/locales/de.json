@@ -3161,7 +3161,8 @@
       "deleted": "Gesichtsdaten gelöscht",
       "confirmDelete": "Alle erkannten Personen und Gesichtsdaten dieser Galerie löschen? Dies kann nicht rückgängig gemacht werden. Die Fotos selbst bleiben unverändert.",
       "autoCategories": "Fotos automatisch in Kategorien einsortieren",
-      "autoCategoriesHint": "Nutzt die Anzahl der Gesichter, um Fotos als Details, Porträts, Kleine Gruppen oder Gruppen abzulegen. Gilt für alle Galerien, füllt ausschließlich leere Kategorien und ändert niemals eine von Ihnen gesetzte."
+      "autoCategoriesHint": "Nutzt die Anzahl der Gesichter, um Fotos als Details, Porträts, Kleine Gruppen oder Gruppen abzulegen. Gilt für alle Galerien, füllt ausschließlich leere Kategorien und ändert niemals eine von Ihnen gesetzte.",
+      "sidecarUnreachable": "Der Gesichtserkennungs-Dienst unter {{url}} ist nicht erreichbar, deshalb werden die {{pending}} eingereihten Fotos nicht verarbeitet. Es geht nichts verloren — der Scan läuft von selbst weiter, sobald der Dienst wieder da ist. Starte ihn mit `docker compose --profile faces up -d` und prüfe, ob FACE_ML_TOKEN in beiden Containern übereinstimmt."
     }
   },
   "acceptInvitation": {

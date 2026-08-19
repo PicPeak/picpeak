@@ -2733,7 +2733,8 @@
       "deleted": "Face data deleted",
       "confirmDelete": "Delete all detected people and face data for this gallery? This cannot be undone. Photos are not affected.",
       "autoCategories": "Sort photos into categories automatically",
-      "autoCategoriesHint": "Uses the number of faces to file photos as Details, Portraits, Small groups or Groups. Applies to every gallery, only ever fills an empty category, and never changes one you set yourself."
+      "autoCategoriesHint": "Uses the number of faces to file photos as Details, Portraits, Small groups or Groups. Applies to every gallery, only ever fills an empty category, and never changes one you set yourself.",
+      "sidecarUnreachable": "Can't reach the face-detection service at {{url}}, so the {{pending}} queued photos aren't being processed. Nothing is lost — the scan resumes on its own once the service is up. Start it with `docker compose --profile faces up -d` and check FACE_ML_TOKEN matches on both containers."
     }
   },
   "acceptInvitation": {
