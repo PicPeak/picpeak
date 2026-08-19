@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.107.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.0-beta.0...v3.107.1-beta.0) (2026-08-19)
+
+
+### Bug Fixes
+
+* **preview:** generate lightbox previews for external/reference photos ([#1078](https://github.com/PicPeak/picpeak/issues/1078)) ([#1079](https://github.com/PicPeak/picpeak/issues/1079)) ([af7970b](https://github.com/PicPeak/picpeak/commit/af7970b069d219e32d22c005dd5adf4204d0d514))
+
 ## [3.107.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.106.0-beta.0...v3.107.0-beta.0) (2026-08-18)
 
 
