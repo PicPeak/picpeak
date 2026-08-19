@@ -94,22 +94,34 @@ def _hash(array):
     return hashlib.sha256(np.ascontiguousarray(array, dtype=np.float32).tobytes()).hexdigest()[:16]
 
 
+# Every field of a face the backend actually stores (faceProcessor.js:157-167).
+# Hashing only the embedding would approve a change that leaves the vector
+# alone but moves something the backend clusters on: det_score and bbox size
+# gate meetsQualityFloor (faceClustering.js:96-100), so a face can silently
+# drop in or out of clustering with an identical embedding.
+_PERSISTED_FIELDS = ("bbox", "score", "yaw", "pitch", "blur", "embedding")
+
+
 def _hash_all(faces):
-    """Hash every returned face, in order, as (embeddings, bboxes).
+    """Hash every returned face, in order, one hash per persisted field.
 
     Every face, not just the first: the forced-low threshold yields dozens of
     candidates, and hashing only candidate 0 would report a match while a
     numerical change moved candidates 1..n, or while their ORDER changed —
     both of which alter what production stores. Stacking preserves order, so
     a reshuffle shows up too.
+
+    One hash per field rather than one combined hash, so a diff says which
+    thing moved instead of only that something did.
     """
     if not faces:
         # Not fatal, but it means the stage pinned nothing — say so loudly
         # rather than printing a reassuring hash of an empty result.
-        return "NO-DETECTIONS-STAGE-VACUOUS", "NO-DETECTIONS-STAGE-VACUOUS"
-    embeddings = np.stack([np.asarray(f["embedding"], dtype=np.float32) for f in faces])
-    bboxes = np.stack([np.asarray(f["bbox"], dtype=np.float32) for f in faces])
-    return _hash(embeddings), _hash(bboxes)
+        return {f: "NO-DETECTIONS-STAGE-VACUOUS" for f in _PERSISTED_FIELDS}
+    return {
+        field: _hash(np.stack([np.atleast_1d(np.asarray(f[field], dtype=np.float32)) for f in faces]))
+        for field in _PERSISTED_FIELDS
+    }
 
 
 def _deterministic_bgr(size):
@@ -194,6 +206,11 @@ def main():
         "nms": config.NMS_THRESHOLD,
         "input_long_edge": config.INPUT_LONG_EDGE,
         "top_k": config.TOP_K,
+        # Not a hash — a compatibility key. /faces stamps it on every result
+        # and faceClustering.js:190 refuses to compare a face against a person
+        # carrying a different one, so a change here forces a full rescan even
+        # when every number below is identical.
+        "model_version": config.MODEL_VERSION,
     }
 
     scene = _deterministic_bgr(256)
@@ -224,7 +241,8 @@ def main():
     pipeline._detector.setScoreThreshold(1e-6)
     detected = pipeline.process(FIXED_JPEG)
     out["process_face_count"] = len(detected)
-    out["process_embedding"], out["process_bbox"] = _hash_all(detected)
+    for field, digest in _hash_all(detected).items():
+        out[f"process_{field}"] = digest
 
     # 5. The same path again with the downscale branch forced. process() only
     #    resizes when the long edge exceeds INPUT_LONG_EDGE (1920), and no
@@ -249,7 +267,8 @@ def main():
     # stays hidden; the embeddings would not catch it either, because those
     # are derived from separately scaled landmarks. A wrong bbox is what
     # breaks avatar crops and area calculations.
-    out["process_downscaled_embedding"], out["process_downscaled_bbox"] = _hash_all(downscaled)
+    for field, digest in _hash_all(downscaled).items():
+        out[f"process_downscaled_{field}"] = digest
 
     print(json.dumps(out, indent=2, sort_keys=True))
 
