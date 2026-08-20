@@ -45,9 +45,13 @@ class StaleScanError extends Error {
  * a manual Re-scan.
  */
 class TransientSourceError extends Error {
-  constructor(photoId, reason) {
+  constructor(photoId, reason, eventId) {
     super(`Face scan for photo ${photoId} deferred: ${reason}`);
     this.name = 'TransientSourceError';
+    // The queue backs off per EVENT, not per photo: one dead mount makes every
+    // row in that event unreachable, and probing each of them costs a stat
+    // against storage that may be hard-mounted and slow to time out.
+    this.eventId = eventId;
   }
 }
 
@@ -164,7 +168,7 @@ async function processPhotoFaces(photoId) {
     // rather than the file. ensurePreviewImage returns null for both, but only
     // one of them is the photo's fault — see TransientSourceError.
     const unreachable = await externalSourceUnreachable(photo);
-    if (unreachable) throw new TransientSourceError(photoId, unreachable);
+    if (unreachable) throw new TransientSourceError(photoId, unreachable, photo.event_id);
 
     // No preview and no way to make one — the source is missing or corrupt.
     // That is a property of this photo, so it fails rather than retries.

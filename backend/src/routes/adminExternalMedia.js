@@ -139,14 +139,11 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
     // imported after that moment stuck at NULL forever — the toggle endpoint
     // only queues rows that already existed when it fired.
     //
-    // Collected during the loop and marked 'pending' only AFTER
-    // events.external_path is written below. Setting it on insert would publish
-    // claimable rows while the event still carries the old path — or none, on a
-    // first import: the face worker polls continuously, resolvePhotoFilePath
-    // would resolve against the wrong directory, and a multi-minute import
-    // would leave photos permanently 'failed', a state only an explicit
-    // Re-scan clears. No video guard needed either way: walkDir collects only
-    // jpg/jpeg/png/webp.
+    // The event path is already committed (above), so the enqueue below is
+    // free of the ordering hazard it used to carry. It stays at the end anyway
+    // so the setting can be read after the loop, and it only touches rows that
+    // are still untouched — see the whereNull there. No video guard needed:
+    // walkDir collects only jpg/jpeg/png/webp.
     const importedPhotoIds = [];
 
     // Insert photos
@@ -247,12 +244,20 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
     // Chunked because SQLite caps a statement at 999 bound parameters and an
     // import can be far larger than that.
     if (queueFaces && importedPhotoIds.length) {
+      let queued = 0;
       for (let i = 0; i < importedPhotoIds.length; i += 500) {
-        await db('photos')
+        // whereNull, not a blanket set. Committing the event path before the
+        // loop means a toggle or Re-scan firing mid-import can now genuinely
+        // queue and even finish some of these rows — so an unconditional
+        // update would drag 'done' rows back to 'pending' for a duplicate
+        // scan, and knock 'processing' rows out from under the worker
+        // mid-flight. Only rows nothing has touched are ours to queue.
+        queued += await db('photos')
           .whereIn('id', importedPhotoIds.slice(i, i + 500))
+          .whereNull('face_status')
           .update({ face_status: 'pending' });
       }
-      logger.info(`Queued ${importedPhotoIds.length} imported external photo(s) for face scanning (event ${eventId})`);
+      logger.info(`Queued ${queued} of ${importedPhotoIds.length} imported external photo(s) for face scanning (event ${eventId})`);
     }
 
     await logActivity(

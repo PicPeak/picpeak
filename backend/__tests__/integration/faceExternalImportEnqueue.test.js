@@ -33,6 +33,8 @@ describe('external import queues faces (#1090)', () => {
   // When set to an event id, the mocked thumbnail call turns detection on
   // mid-loop, standing in for an admin flipping the toggle during an import.
   let flipFacesOnDuringLoop = null;
+  // Stands in for a concurrent Re-scan completing a row mid-import.
+  let markDoneDuringLoop = false;
 
   beforeAll(async () => {
     tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'picpeak-extenq-'));
@@ -70,6 +72,12 @@ describe('external import queues faces (#1090)', () => {
         pendingSeenDuringLoop += rows.length;
         const ev = await liveDb('events').first();
         externalPathDuringLoop = ev ? ev.external_path : undefined;
+        if (markDoneDuringLoop) {
+          const rows = await liveDb('photos').orderBy('id', 'asc').limit(1);
+          if (rows.length) {
+            await liveDb('photos').where({ id: rows[0].id }).update({ face_status: 'done' });
+          }
+        }
         if (flipFacesOnDuringLoop) {
           await liveDb('events').where({ id: flipFacesOnDuringLoop })
             .update({ face_recognition_enabled: true });
@@ -123,6 +131,7 @@ describe('external import queues faces (#1090)', () => {
 
     pendingSeenDuringLoop = 0;
     externalPathDuringLoop = undefined;
+    markDoneDuringLoop = false;
     return typeof e === 'object' ? e.id : e;
   }
 
@@ -192,6 +201,22 @@ describe('external import queues faces (#1090)', () => {
     // Sampled from inside the per-photo thumbnail call, i.e. while rows are
     // still being inserted.
     expect(externalPathDuringLoop).toBe('nas');
+  });
+
+  it('does not re-queue rows a concurrent scan already handled', async () => {
+    // Committing the event path before the loop means a toggle or Re-scan
+    // firing mid-import can now genuinely queue and even finish some of these
+    // rows. A blanket update at the end would drag 'done' rows back to
+    // 'pending' for a duplicate sidecar scan and knock 'processing' rows out
+    // from under the worker.
+    const eventId = await seedEvent({ facesEnabled: true, flagOn: true });
+    markDoneDuringLoop = true;
+
+    await runImport(eventId);
+    markDoneDuringLoop = false;
+
+    const done = await db('photos').where({ event_id: eventId, face_status: 'done' });
+    expect(done.length).toBeGreaterThan(0); // the concurrent scan's work survived
   });
 
   it('leaves face_status untouched when the per-event toggle is off', async () => {

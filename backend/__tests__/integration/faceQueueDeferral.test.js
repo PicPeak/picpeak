@@ -128,6 +128,51 @@ describe('deferred photos do not block the queue', () => {
     expect(after.face_status).toBe('pending');
   });
 
+  it('claimNextPhoto skips events inside their backoff window', async () => {
+    // The per-event cooldown is what stops the janitor handing a whole dead
+    // gallery back every sweep. Without the exclusion the worker walks all of
+    // it again — one slow stat per photo against a possibly hard-mounted
+    // share — before reaching any healthy event.
+    const mk = async (name) => {
+      const [e] = await db('events').insert({
+        slug: `cd-${name}-${Math.random().toString(36).slice(2, 8)}`,
+        event_type: 'wedding',
+        event_name: name,
+        event_date: '2026-01-01',
+        host_email: 'h@example.com',
+        admin_email: 'a@example.com',
+        password_hash: 'x',
+        share_link: `cd-${name}-${Math.random()}`,
+        expires_at: new Date().toISOString(),
+        face_recognition_enabled: true,
+      }).returning('id');
+      const eventId = typeof e === 'object' ? e.id : e;
+      const [p2] = await db('photos').insert({
+        event_id: eventId,
+        filename: `${name}.jpg`,
+        path: `cd/${name}.jpg`,
+        type: 'individual',
+        processing_status: 'complete',
+        face_status: 'pending',
+        source_origin: 'external',
+      }).returning('id');
+      return { eventId, photoId: typeof p2 === 'object' ? p2.id : p2 };
+    };
+
+    await db('photos').del();
+    const dead = await mk('dead');     // lower id -> would win the FIFO
+    const healthy = await mk('healthy');
+
+    // Without exclusion the dead event's row is claimed first...
+    const first = await faceQueue.claimNextPhoto([]);
+    expect(first.id).toBe(dead.photoId);
+    await db('photos').where({ id: dead.photoId }).update({ face_status: 'pending' });
+
+    // ...and with it, the worker reaches the healthy event instead.
+    const second = await faceQueue.claimNextPhoto([dead.eventId]);
+    expect(second.id).toBe(healthy.photoId);
+  });
+
   it('startQueue is exported and does not throw on import', () => {
     // faceQueue requires faceProcessor for TransientSourceError while
     // faceProcessor is itself required by the routes — a circular require here

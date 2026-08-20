@@ -46,6 +46,33 @@ const UNAVAILABLE_BACKOFF_MS = parseInt(process.env.FACE_PROCESSOR_BACKOFF_MS ||
 // repeat once per claim. Rate-limited the same way faceClient limits its own
 // unavailable line, and for the same reason: one warning per outage, not one
 // per photo.
+// How long an event whose storage is unreachable is left alone. Distinct from
+// the janitor's stuck timeout on purpose: the janitor exists to rescue rows a
+// crashed worker abandoned, and reusing it here meant that every sweep handed
+// the whole dead gallery back to the worker, which then walked all of it again
+// — one slow stat per photo against a mount that may be hard-mounted — before
+// reaching any healthy event.
+const SOURCE_BACKOFF_MS = parseInt(process.env.FACE_SOURCE_BACKOFF_MS || '300000', 10);
+
+// eventId -> epoch ms before which this event's photos are not worth claiming.
+// In-memory on purpose: a restart should retry immediately, since a restart is
+// usually what follows fixing the mount.
+const deferredEvents = new Map();
+
+function deferEvent(eventId) {
+  if (eventId == null) return;
+  deferredEvents.set(eventId, Date.now() + SOURCE_BACKOFF_MS);
+}
+
+/** Event ids still inside their backoff window; also prunes expired entries. */
+function currentlyDeferredEventIds() {
+  const now = Date.now();
+  for (const [id, until] of deferredEvents) {
+    if (until <= now) deferredEvents.delete(id);
+  }
+  return [...deferredEvents.keys()];
+}
+
 const SOURCE_LOG_INTERVAL_MS = 5 * 60 * 1000;
 let lastUnreachableLogAt = 0;
 function logUnreachableSource(message) {
@@ -74,11 +101,12 @@ function isPostgres() {
  * Same two-path approach as backgroundProcessor: SKIP LOCKED on Postgres so
  * multiple pods race cleanly, a status-guarded UPDATE on SQLite.
  */
-async function claimNextPhoto() {
+async function claimNextPhoto(excludeEventIds = []) {
   if (isPostgres()) {
     return db.transaction(async (trx) => {
       const row = await trx('photos')
         .where('face_status', 'pending')
+        .modify((q) => { if (excludeEventIds.length) q.whereNotIn('event_id', excludeEventIds); })
         .orderBy('id', 'asc')
         .forUpdate()
         .skipLocked()
@@ -95,6 +123,7 @@ async function claimNextPhoto() {
   return db.transaction(async (trx) => {
     const row = await trx('photos')
       .where('face_status', 'pending')
+      .modify((q) => { if (excludeEventIds.length) q.whereNotIn('event_id', excludeEventIds); })
       .orderBy('id', 'asc')
       .first();
     if (!row) return null;
@@ -131,7 +160,7 @@ async function workerLoop(workerIdx) {
 
     let claimed;
     try {
-      claimed = await claimNextPhoto();
+      claimed = await claimNextPhoto(currentlyDeferredEventIds());
     } catch (e) {
       logger.warn(`faceQueue[${workerIdx}]: claim error`, { error: e.message });
       await sleep(POLL_INTERVAL_MS);
@@ -169,6 +198,10 @@ async function workerLoop(workerIdx) {
       // STUCK_TIMEOUT_MS — which is exactly the "try again later" this
       // needs, using machinery that already exists.
       if (err instanceof TransientSourceError) {
+        // Back the whole EVENT off, not just this row. Its siblings are on the
+        // same storage and would each cost another failed preview attempt —
+        // which also logs — before landing here again.
+        deferEvent(err.eventId);
         logUnreachableSource(err.message);
         continue;
       }
