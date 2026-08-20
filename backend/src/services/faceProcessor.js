@@ -71,35 +71,50 @@ async function externalSourceUnreachable(photo) {
   if (photo.source_origin !== 'external' && photo.source_origin !== 'reference') return null;
   try {
     const fs = require('fs').promises;
-    const path = require('path');
     const { resolvePhotoFilePath } = require('./photoResolver');
     const event = await db('events').where({ id: photo.event_id }).first();
     if (!event) return null;
 
+    const { resolveExternalPath } = require('./externalMediaService');
     const filePath = resolvePhotoFilePath(event, photo);
-    const dir = path.dirname(filePath);
+
+    // 1. The EVENT ROOT, not the photo's own directory. This is what decides
+    //    whether the storage is there, and it has to be judged separately: a
+    //    deleted or renamed subfolder (individual/ gone, collages/ still fine)
+    //    also reports ENOENT on the photo's directory, and treating that as an
+    //    outage would defer the whole event and starve the healthy siblings.
+    const eventRoot = resolveExternalPath(event, '');
     try {
-      await fs.access(dir);
+      await fs.access(eventRoot);
     } catch (e) {
-      return `source directory unreachable (${e.code || e.message})`;
+      return `source root unreachable (${e.code || e.message})`;
+    }
+    try {
+      // Unmounting an NFS or SMB share usually leaves the mountpoint behind as
+      // an ordinary empty directory, so access() succeeds on storage that is
+      // entirely gone. An empty root is that outage.
+      //
+      // The trade is deliberate: a root an admin genuinely emptied is retried
+      // rather than failed. That costs one attempt per backoff window, because
+      // a deferred row parks in 'processing' rather than returning to the front
+      // of the queue. Burning a gallery on a flapping mount is the worse one.
+      const entries = await fs.readdir(eventRoot);
+      if (entries.length === 0) return 'source root is empty (mount not attached?)';
+    } catch (e) {
+      return `source root unreadable (${e.code || e.message})`;
     }
 
-    // The directory existing is not enough. Unmounting an NFS or SMB share
-    // usually leaves the mountpoint behind as an ordinary empty directory, so
-    // fs.access succeeds on storage that is entirely gone — the exact outage
-    // this is meant to catch. An empty directory where we expect the photo to
-    // live is therefore treated as unreachable too.
-    //
-    // The trade is deliberate: a directory an admin genuinely emptied will be
-    // retried rather than failed. That costs one attempt per janitor sweep and
-    // nothing else, because a deferred row parks in 'processing' instead of
-    // going back to the front of the queue. Burning a whole gallery on a
-    // flapping mount is the worse failure.
+    // 2. The storage is up, so anything wrong from here is about this photo —
+    //    with one exception. A file that exists but cannot be READ (EACCES on a
+    //    reconnected share, EIO, or the classic NFS ESTALE handle) is a
+    //    transient condition wearing a per-file disguise; only ENOENT means the
+    //    photo is genuinely gone.
     try {
-      const entries = await fs.readdir(dir);
-      if (entries.length === 0) return 'source directory is empty (mount not attached?)';
+      await fs.access(filePath, fs.constants.R_OK);
     } catch (e) {
-      return `source directory unreadable (${e.code || e.message})`;
+      if (e.code && e.code !== 'ENOENT') {
+        return `source file unreadable (${e.code})`;
+      }
     }
     return null;
   } catch (e) {

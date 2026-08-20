@@ -109,13 +109,13 @@ describe('transient source vs dead photo', () => {
     expect(photo.face_status).not.toBe('failed');
   });
 
-  it('defers when the directory survives an unmount but is empty', async () => {
+  it('defers when the event root survives an unmount but is empty', async () => {
     // The common NFS/SMB shape: unmounting leaves the mountpoint behind as an
     // ordinary empty directory, so fs.access succeeds on storage that is
-    // entirely gone. Probing existence alone would fall through and fail the
-    // photo — the exact outage this is meant to catch.
-    const empty = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'unmounted', 'individual');
-    await fs.promises.mkdir(empty, { recursive: true });
+    // entirely gone. The EVENT ROOT is the thing that goes empty — the photo's
+    // own subdirectory vanishes with it.
+    const emptyRoot = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'unmounted');
+    await fs.promises.mkdir(emptyRoot, { recursive: true });
     const { photoId } = await seedExternalPhoto({ externalPath: 'unmounted' });
 
     await expect(faceProcessor.processPhotoFaces(photoId))
@@ -141,6 +141,39 @@ describe('transient source vs dead photo', () => {
     const photo = await db('photos').where({ id: photoId }).first();
     expect(photo.face_status).toBe('failed');
     expect(photo.face_error).toMatch(/preview/i);
+  });
+
+  it('fails a missing subdirectory rather than deferring the whole event', async () => {
+    // individual/ deleted while collages/ is fine. Probing only the photo's own
+    // directory reports ENOENT and would read as a mount-wide outage, deferring
+    // the event and starving every healthy sibling folder. The root is
+    // populated, so the mount is up and this is a broken path.
+    const root = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'partial');
+    await fs.promises.mkdir(path.join(root, 'collages'), { recursive: true });
+    await fs.promises.writeFile(path.join(root, 'collages', 'kept.jpg'), 'x');
+    const { photoId } = await seedExternalPhoto({ externalPath: 'partial' });
+
+    const result = await faceProcessor.processPhotoFaces(photoId);
+    expect(result.status).toBe('failed');
+  });
+
+  it('defers a file that exists but cannot be read', async () => {
+    // EACCES / EIO / ESTALE on the file itself, with the mount up: a transient
+    // condition wearing a per-file disguise. Only ENOENT means genuinely gone.
+    const root = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'locked');
+    const dir = path.join(root, 'individual');
+    await fs.promises.mkdir(dir, { recursive: true });
+    const file = path.join(dir, 'a.jpg');
+    await fs.promises.writeFile(file, 'x');
+    await fs.promises.chmod(file, 0o000);
+
+    const { photoId } = await seedExternalPhoto({ externalPath: 'locked' });
+    try {
+      await expect(faceProcessor.processPhotoFaces(photoId))
+        .rejects.toBeInstanceOf(faceProcessor.TransientSourceError);
+    } finally {
+      await fs.promises.chmod(file, 0o644).catch(() => {});
+    }
   });
 
   it('still fails managed photos without probing the mount', async () => {

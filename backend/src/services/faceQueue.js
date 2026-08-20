@@ -73,6 +73,22 @@ function currentlyDeferredEventIds() {
   return [...deferredEvents.keys()];
 }
 
+/**
+ * Exclude only the rows the outage actually affects.
+ *
+ * A reference event can hold managed uploads alongside its imported external
+ * ones, and those live in local storage that is fine. Excluding the whole
+ * event id would leave them unscanned for as long as external rows keep
+ * renewing the cooldown — which, during a real outage, is indefinitely.
+ */
+function applySourceBackoff(query, excludeEventIds) {
+  if (!excludeEventIds.length) return query;
+  return query.whereNot(function () {
+    this.whereIn('event_id', excludeEventIds)
+      .whereIn('source_origin', ['external', 'reference']);
+  });
+}
+
 const SOURCE_LOG_INTERVAL_MS = 5 * 60 * 1000;
 let lastUnreachableLogAt = 0;
 function logUnreachableSource(message) {
@@ -106,7 +122,7 @@ async function claimNextPhoto(excludeEventIds = []) {
     return db.transaction(async (trx) => {
       const row = await trx('photos')
         .where('face_status', 'pending')
-        .modify((q) => { if (excludeEventIds.length) q.whereNotIn('event_id', excludeEventIds); })
+        .modify((q) => applySourceBackoff(q, excludeEventIds))
         .orderBy('id', 'asc')
         .forUpdate()
         .skipLocked()
@@ -123,7 +139,7 @@ async function claimNextPhoto(excludeEventIds = []) {
   return db.transaction(async (trx) => {
     const row = await trx('photos')
       .where('face_status', 'pending')
-      .modify((q) => { if (excludeEventIds.length) q.whereNotIn('event_id', excludeEventIds); })
+      .modify((q) => applySourceBackoff(q, excludeEventIds))
       .orderBy('id', 'asc')
       .first();
     if (!row) return null;

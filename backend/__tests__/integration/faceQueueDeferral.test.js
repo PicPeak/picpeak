@@ -173,6 +173,48 @@ describe('deferred photos do not block the queue', () => {
     expect(second.id).toBe(healthy.photoId);
   });
 
+  it('backoff spares managed rows in a mixed-source event', async () => {
+    // A reference event can hold managed uploads alongside imported external
+    // ones. Excluding the whole event id would leave those unscanned for as
+    // long as external rows keep renewing the cooldown — indefinitely, during
+    // a real outage — even though their local source is fine.
+    await db('photos').del();
+    const [e] = await db('events').insert({
+      slug: `mix-${Math.random().toString(36).slice(2, 8)}`,
+      event_type: 'wedding',
+      event_name: 'mix',
+      event_date: '2026-01-01',
+      host_email: 'h@example.com',
+      admin_email: 'a@example.com',
+      password_hash: 'x',
+      share_link: `mix-${Math.random()}`,
+      expires_at: new Date().toISOString(),
+      face_recognition_enabled: true,
+      source_mode: 'reference',
+    }).returning('id');
+    const eventId = typeof e === 'object' ? e.id : e;
+
+    const add = async (origin, name) => {
+      const [p2] = await db('photos').insert({
+        event_id: eventId,
+        filename: name,
+        path: `mix/${name}`,
+        type: 'individual',
+        processing_status: 'complete',
+        face_status: 'pending',
+        source_origin: origin,
+      }).returning('id');
+      return typeof p2 === 'object' ? p2.id : p2;
+    };
+    await add('external', 'ext.jpg');            // lower id, would win the FIFO
+    const managedId = await add('managed', 'man.jpg');
+
+    // Event is in backoff: the external row is skipped, the managed one is not.
+    const claimed = await faceQueue.claimNextPhoto([eventId]);
+    expect(claimed).toBeTruthy();
+    expect(claimed.id).toBe(managedId);
+  });
+
   it('startQueue is exported and does not throw on import', () => {
     // faceQueue requires faceProcessor for TransientSourceError while
     // faceProcessor is itself required by the routes — a circular require here
