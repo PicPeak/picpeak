@@ -56,10 +56,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     [publicSettings?.allowed_file_types]
   );
 
-  //const acceptString = useMemo(
-  //  () => extensionsToAcceptString(publicSettings?.allowed_file_types),
-  //  [publicSettings?.allowed_file_types]
-  //);
+  // Force newer Android phones to fallback to file picker with camera option
   const acceptString = useMemo(() => {
     const baseAccept = extensionsToAcceptString(publicSettings?.allowed_file_types);
     // Append .pdf to force Android's system chooser (showing the Camera option)
