@@ -25,6 +25,11 @@ process.env.TEST_DATABASE_PATH = path.join(
   fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-faceext-')), 'db.sqlite',
 );
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'faceext-test-secret';
+// A real, existing media root. getExternalMediaRoot only honours the env var
+// if the directory exists and caches it on first call, so this has to be set
+// up before anything requires externalMediaService.
+process.env.EXTERNAL_MEDIA_ROOT = path.join(path.dirname(process.env.TEST_DATABASE_PATH), 'media');
+fs.mkdirSync(path.join(process.env.EXTERNAL_MEDIA_ROOT, 'share', 'individual'), { recursive: true });
 
 const sharp = require('sharp');
 
@@ -65,6 +70,7 @@ async function seedPhoto({ sourceOrigin = 'managed', sourceMode = 'managed' } = 
     expires_at: new Date().toISOString(),
     face_recognition_enabled: true,
     source_mode: sourceMode,
+    external_path: 'share',
   }).returning('id');
   const eventId = typeof e === 'object' ? e.id : e;
 
@@ -78,7 +84,7 @@ async function seedPhoto({ sourceOrigin = 'managed', sourceMode = 'managed' } = 
     processing_status: 'complete',
     face_status: 'processing',
     source_origin: sourceOrigin,
-    external_relpath: sourceOrigin === 'managed' ? null : 'nas/ext.jpg',
+    external_relpath: sourceOrigin === 'managed' ? null : 'individual/ext.jpg',
   }).returning('id');
   return { eventId, photoId: typeof p === 'object' ? p.id : p };
 }
@@ -134,6 +140,11 @@ describe('face scanning of external/reference photos (#1090)', () => {
     // A missing file is a property of that photo, so it should be visible as a
     // failure the admin can act on — not silently absorbed the way the old
     // blanket skip did.
+    //
+    // The containing directory exists here on purpose. An absent directory is
+    // a dropped mount, which defers rather than fails
+    // (faceTransientSource.test.js); this is the other case — healthy storage,
+    // dead photo.
     previewKeyResult = null;
     const { photoId } = await seedPhoto({ sourceOrigin: 'external', sourceMode: 'reference' });
 

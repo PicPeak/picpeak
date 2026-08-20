@@ -30,6 +30,7 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { processPhotoFaces } = require('./faceProcessor');
 const { SidecarUnavailableError } = require('./faceClient');
+const { TransientSourceError } = require('./faceProcessor');
 const { isFeatureEnabled } = require('./faceSettings');
 
 const POLL_INTERVAL_MS = parseInt(process.env.FACE_PROCESSOR_POLL_MS || '2000', 10);
@@ -40,6 +41,22 @@ const JANITOR_INTERVAL_MS = 60 * 1000;
 // Backoff after the sidecar goes away. Without it a down sidecar turns into a
 // hot loop: claim, fail, release, claim again, thousands of times a minute.
 const UNAVAILABLE_BACKOFF_MS = parseInt(process.env.FACE_PROCESSOR_BACKOFF_MS || '30000', 10);
+
+// A dropped mount hits every photo in the event, so the raw message would
+// repeat once per claim. Rate-limited the same way faceClient limits its own
+// unavailable line, and for the same reason: one warning per outage, not one
+// per photo.
+const SOURCE_LOG_INTERVAL_MS = 5 * 60 * 1000;
+let lastUnreachableLogAt = 0;
+function logUnreachableSource(message) {
+  const now = Date.now();
+  if (now - lastUnreachableLogAt < SOURCE_LOG_INTERVAL_MS) return;
+  lastUnreachableLogAt = now;
+  logger.warn(
+    `faceQueue: ${message}. Photos stay queued and will be retried — check the `
+    + 'external media mount. Further identical warnings are suppressed for 5 minutes.'
+  );
+}
 
 let running = false;
 let workerHandles = [];
@@ -129,8 +146,14 @@ async function workerLoop(workerIdx) {
     try {
       await processPhotoFaces(claimed.id);
     } catch (err) {
-      if (err instanceof SidecarUnavailableError) {
-        // Retry, don't fail. faceClient already rate-limits the log line.
+      // Two different "come back later" conditions, handled identically: the
+      // sidecar being down, and the photo's own storage being unreachable (a
+      // dropped NFS/SMB mount). Both clear themselves; failing the photo would
+      // strand it, because nothing re-queues a failure automatically.
+      if (err instanceof SidecarUnavailableError || err instanceof TransientSourceError) {
+        // Retry, don't fail. faceClient already rate-limits its log line; this
+        // one is rate-limited by the same backoff before the next claim.
+        if (err instanceof TransientSourceError) logUnreachableSource(err.message);
         await releaseToPending(claimed.id).catch(() => {});
         await sleep(UNAVAILABLE_BACKOFF_MS);
         continue;

@@ -94,6 +94,23 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
       }
     }
 
+    // Point the event at the new directory BEFORE inserting anything.
+    //
+    // Two reasons, both about what a half-finished import leaves behind. The
+    // update used to run after the loop, so an import that died at photo 500
+    // of 1000 left those 500 rows carrying external_relpath into the NEW tree
+    // while the event still resolved against the OLD one — every one of them
+    // unreadable. And with face detection on, enqueueEvent accepts
+    // processing_status NULL (faceProcessor.js:243-246), which these inserts
+    // leave unset, so an admin hitting the toggle or Re-scan mid-import could
+    // queue those same rows against the stale path and burn them to 'failed'.
+    //
+    // Safe to do first: the path is already validated above, and existing
+    // photos are unaffected because photo.source_origin takes precedence over
+    // event.source_mode in both resolvers (photoResolver.js:23, :52) and is
+    // NOT NULL defaulting to 'managed'.
+    await db('events').where('id', eventId).update({ source_mode: 'reference', external_path });
+
     let imported = 0;
     let thumbnailsGenerated = 0;
     let thumbnailsFailed = 0;
@@ -200,11 +217,10 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
       }
     }
 
-    // Update event fields
-    await db('events').where('id', eventId).update({ source_mode: 'reference', external_path });
-
-    // Only now does the event resolve to the new directory, so only now is it
-    // safe to open the queue. Guarded the same way photoProcessor guards it
+    // The event already resolves to the new directory (set before the loop),
+    // so the queue is safe to open. Still done here rather than on insert so
+    // the setting below is read after the loop. Guarded the same way
+    // photoProcessor guards it
     // (both the global flag and the per-event toggle), so installs without the
     // feature still never write a face_status. Re-read here rather than before
     // the loop so a toggle flipped mid-import is honoured.

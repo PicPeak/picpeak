@@ -149,11 +149,11 @@ describe('external import queues faces (#1090)', () => {
 
     await runImport(eventId);
 
-    // Observed from inside the loop: nothing may be claimable yet, because the
-    // event still resolves to the old (here: empty) directory. Marking rows on
-    // insert would make this non-zero and leave photos permanently 'failed'.
+    // Observed from inside the loop: nothing is claimable yet. The event path
+    // is already committed (see the test above), so this is no longer load
+    // bearing for correctness — but keeping the enqueue at the end is what lets
+    // the feature setting be read after the loop, so the invariant stays.
     expect(pendingSeenDuringLoop).toBe(0);
-    expect(externalPathDuringLoop).toBeFalsy();
 
     // ...and afterwards both are in place.
     const ev = await db('events').where({ id: eventId }).first();
@@ -176,6 +176,22 @@ describe('external import queues faces (#1090)', () => {
     const photos = await db('photos').where({ event_id: eventId });
     expect(photos.length).toBeGreaterThan(0);
     expect(photos.every((p) => p.face_status === 'pending')).toBe(true);
+  });
+
+  it('commits events.external_path before the first row is inserted', async () => {
+    // enqueueEvent accepts processing_status NULL (faceProcessor.js:243-246),
+    // which these inserts leave unset — so a toggle or Re-scan firing mid-import
+    // can queue partial rows. If the event still pointed at the old directory
+    // they would resolve against it and burn to 'failed'. Setting the path
+    // first also means a half-finished import leaves rows that still resolve,
+    // instead of rows stranded against the previous path.
+    const eventId = await seedEvent({ facesEnabled: true, flagOn: true });
+
+    await runImport(eventId);
+
+    // Sampled from inside the per-photo thumbnail call, i.e. while rows are
+    // still being inserted.
+    expect(externalPathDuringLoop).toBe('nas');
   });
 
   it('leaves face_status untouched when the per-event toggle is off', async () => {
