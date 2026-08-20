@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { AuthenticatedImage } from '../common/AuthenticatedImage';
 import type { GalleryPerson, Photo } from '../../types';
 import { faceCropStyle } from './faceCrop';
+import { facePreviewUrl } from './imageTiers';
 
 /**
  * "Show all" people (#1074).
@@ -113,7 +114,7 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
                   >
                     {photo && (
                       <AuthenticatedImage
-                        src={photo.thumbnail_url || photo.url}
+                        src={facePreviewUrl(slug, photo) || photo.thumbnail_url || photo.url}
                         alt=""
                         isGallery
                         slug={slug}

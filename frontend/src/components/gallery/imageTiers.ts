@@ -15,6 +15,9 @@
 
 export const PREVIEW_WIDTHS = [640, 1280, 1920] as const;
 
+/** Tier used for face avatars — the smallest whole-frame rendition available. */
+export const FACE_CROP_WIDTH = 640;
+
 // Thumbnail tiers are NOT here yet. Emitting a srcset whose candidates the
 // server ignores is worse than emitting none: the browser would pick the
 // "600w" candidate, receive the 300px image, and upscale it — the exact
@@ -102,4 +105,38 @@ export function previewUrlForViewport(
   // caches and ETags stay valid.
   if (width === PREVIEW_WIDTHS[PREVIEW_WIDTHS.length - 1]) return previewUrl;
   return withWidth(previewUrl, width);
+}
+
+/**
+ * An aspect-preserved rendition for a face avatar (#1096).
+ *
+ * NOT the thumbnail. faceCropStyle positions the crop by scaling the whole
+ * frame and offsetting so the face lands centre — which holds only while the
+ * rendition IS the whole frame. thumbnail_fit is seeded to 'cover' (migration
+ * 040_add_thumbnail_settings), so thumbnails are centre-cropped on essentially
+ * every install and every avatar rendered against one is silently offset. It
+ * presents as a bad detector: a shoulder, the back of a head, a patch of
+ * background.
+ *
+ * Previews use fit: 'inside', so they are the whole frame. 640 is plenty for a
+ * 64px avatar even at DPR 3, and face scanning has already generated a preview
+ * for any photo that has a face — faceProcessor calls ensurePreviewImage to
+ * get something to scan — so this asks for a rendition that is already there.
+ */
+export function facePreviewUrl(
+  slug: string | undefined,
+  photo: { id: number | string; preview_url?: string | null } | null | undefined,
+): string | null {
+  if (!photo) return null;
+  // preview_url carries the watermark query when the server emitted one, so
+  // prefer it; it is only absent when lightbox previews are off, in which case
+  // the route still resolves (and falls back to the original on failure).
+  if (photo.preview_url) return withWidth(photo.preview_url, FACE_CROP_WIDTH);
+  if (!slug) return null;
+  return `/api/gallery/${slug}/preview/${photo.id}?w=${FACE_CROP_WIDTH}`;
+}
+
+/** Admin equivalent — the admin API has its own preview route. */
+export function adminFacePreviewUrl(eventId: number | string, photoId: number | string): string {
+  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${FACE_CROP_WIDTH}`;
 }

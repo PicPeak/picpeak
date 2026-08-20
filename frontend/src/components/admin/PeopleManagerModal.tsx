@@ -22,6 +22,7 @@ import { X, Check, Merge, Scissors, EyeOff, Ban, Loader2 } from 'lucide-react';
 import { Button, Loading } from '../common';
 import { api } from '../../config/api';
 import { faceCropStyle } from '../gallery/faceCrop';
+import { adminFacePreviewUrl } from '../gallery/imageTiers';
 
 interface AdminPerson {
   id: number;
@@ -95,7 +96,7 @@ const FaceThumb: React.FC<{
       style={{ width: size, height: size, opacity: dim ? 0.4 : 1 }}
     >
       <img
-        src={`/api/admin/photos/${eventId}/thumbnail/${photoId}`}
+        src={adminFacePreviewUrl(eventId, photoId)}
         alt=""
         loading="lazy"
         style={style || { width: '100%', height: '100%', objectFit: 'cover' }}

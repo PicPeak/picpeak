@@ -1341,6 +1341,58 @@ router.get('/:eventId/thumbnail/:photoId', adminAuth, requirePermission('photos.
   }
 });
 
+/**
+ * Aspect-preserved rendition for admin surfaces that need one.
+ *
+ * The face avatars need this specifically. faceCropStyle positions a crop by
+ * scaling the WHOLE frame and offsetting so the face lands centre, which only
+ * works while the rendition is the entire image at a uniform scale. Thumbnails
+ * are not: thumbnail_fit is seeded to 'cover' (migration 040), so they are
+ * centre-cropped and every face avatar rendered against one is silently
+ * offset. Previews use fit: 'inside', so they are safe.
+ *
+ * ?w= is whitelisted the same way the gallery route's is — an open parameter
+ * would let anyone fill the disk with renditions.
+ */
+router.get('/:eventId/preview/:photoId', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
+  try {
+    const { eventId, photoId } = req.params;
+
+    const photo = await db('photos').where({ id: photoId, event_id: eventId }).first();
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+
+    if (photo.processing_status === 'pending' || photo.processing_status === 'processing') {
+      res.setHeader('Retry-After', '2');
+      return res.status(503).json({ error: 'Preview not ready', status: photo.processing_status });
+    }
+
+    const { PREVIEW_WIDTHS, normalizeTierWidth, ensurePreviewImageAtWidth, ensurePreviewImage } =
+      require('../services/imageProcessor');
+    const tierWidth = normalizeTierWidth(req.query.w, PREVIEW_WIDTHS);
+
+    const previewPath = tierWidth
+      ? (await ensurePreviewImageAtWidth(photo, tierWidth)) || (await ensurePreviewImage(photo))
+      : await ensurePreviewImage(photo);
+
+    if (!previewPath) {
+      return res.status(404).json({ error: 'Preview generation failed' });
+    }
+
+    const storage = getStorage();
+    const stat = await storage.stat(previewPath);
+    if (!stat) return res.status(404).json({ error: 'Preview not found' });
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Content-Length', stat.size);
+    (await storage.get(previewPath)).pipe(res);
+  } catch (error) {
+    logger.error('Error serving admin preview:', error);
+    errorResponse(res, error, 500, 'Failed to serve preview');
+  }
+});
+
 // Debug endpoint to check photo existence
 router.get('/:eventId/debug', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
   try {
