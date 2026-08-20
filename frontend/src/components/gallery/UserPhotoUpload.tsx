@@ -56,10 +56,16 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     [publicSettings?.allowed_file_types]
   );
 
-  const acceptString = useMemo(
-    () => extensionsToAcceptString(publicSettings?.allowed_file_types),
-    [publicSettings?.allowed_file_types]
-  );
+  //const acceptString = useMemo(
+  //  () => extensionsToAcceptString(publicSettings?.allowed_file_types),
+  //  [publicSettings?.allowed_file_types]
+  //);
+  const acceptString = useMemo(() => {
+    const baseAccept = extensionsToAcceptString(publicSettings?.allowed_file_types);
+    // Append .pdf to force Android's system chooser (showing the Camera option)
+    // instead of defaulting to the restricted photo picker
+    return baseAccept ? `${baseAccept}, .pdf` : 'image/*, .pdf';
+  }, [publicSettings?.allowed_file_types]);
 
   // #821 — the requirements hint used to hardcode "JPEG, PNG or WebP"; render
   // the actually-configured formats so it never contradicts what's accepted.
@@ -71,6 +77,11 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   // Shared filter pipeline for both <input> change and drag-and-drop (#504).
   const addFiles = (incoming: File[]) => {
     const validFiles = incoming.filter((file) => {
+      // Reject non-image files explicitly (e.g. if selected via the .pdf chooser workaround)
+      if (!file.type.startsWith('image/')) {
+        toast.error(`Please select an image file: ${file.name}`);
+        return false;
+      }
       if (!allowedMimeTypes.includes(file.type)) {
         toast.error(`Invalid file type: ${file.name}`);
         return false;
