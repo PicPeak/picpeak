@@ -108,6 +108,23 @@ const DEFAULT_HERO_QUALITY = 85;
 const DEFAULT_PREVIEW_LONG_EDGE = 1920;
 const DEFAULT_PREVIEW_QUALITY = 85;
 
+// Responsive tiers (#1095). A whitelist, not a free-form ?w=: an open
+// parameter lets anyone fill the disk with renditions nobody asked for, and
+// every distinct value is a permanent cache entry.
+//
+// 1920 stays the default so existing preview_path rows keep their meaning and
+// nothing regenerates on upgrade. The smaller tiers exist because a phone can
+// show ~1170px at most, so the 1920 tier ships roughly twice the bytes it can
+// use on every lightbox swipe.
+const PREVIEW_WIDTHS = [640, 1280, 1920];
+const THUMBNAIL_WIDTHS = [300, 600, 900];
+
+/** Whitelist a requested width, or null. Callers treat null as "use default". */
+function normalizeTierWidth(requested, allowed) {
+  const n = parseInt(requested, 10);
+  return Number.isFinite(n) && allowed.includes(n) ? n : null;
+}
+
 // Helper to parse setting value (handles both JSON-encoded and plain values)
 function parseSettingValue(value) {
   if (value === null || value === undefined) {
@@ -578,7 +595,12 @@ async function ensureHeroImage(photo) {
  */
 async function generatePreviewImage(imagePath, options = {}) {
   const filename = options.outputBasename || path.basename(imagePath);
-  const previewFilename = `preview_${filename}`;
+  // Non-default tiers get their own key so they cannot collide with the
+  // canonical preview the DB column points at.
+  const widthTag = options.longEdge && options.longEdge !== DEFAULT_PREVIEW_LONG_EDGE
+    ? `w${options.longEdge}_`
+    : '';
+  const previewFilename = `preview_${widthTag}${filename}`;
   const previewRelKey = path.posix.join('previews', previewFilename);
   const storage = getStorage();
 
@@ -666,6 +688,75 @@ async function isPreviewValid(previewPath) {
  * withLocalCopy, and the throw put every lightbox open back on the full-size
  * original — the exact cost the preview tier (#492) exists to avoid.
  */
+/**
+ * A preview at a specific tier width (#1095).
+ *
+ * Deliberately separate from ensurePreviewImage rather than a parameter on it.
+ * That function owns photos.preview_path — one column, one canonical rendition
+ * — and threading a width through it would either overwrite that column with
+ * whatever size was asked for last, or need a column per tier. Extra tiers are
+ * pure cache instead: keyed by width, looked up in storage, generated on miss,
+ * never written to the row.
+ *
+ * Returns null on anything unexpected so callers fall back to the default
+ * tier, which is always the honest thing to serve.
+ */
+async function ensurePreviewImageAtWidth(photo, width) {
+  if (!width || width === DEFAULT_PREVIEW_LONG_EDGE) return ensurePreviewImage(photo);
+
+  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
+  const storage = getStorage();
+
+  let event;
+  try {
+    event = await db('events').where('id', photo.event_id).first();
+  } catch (e) {
+    return null;
+  }
+  if (!event) return null;
+
+  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const sourceBasename = path.basename(
+    (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
+  );
+  const outputBasename = isExternal ? `ext${photo.id}_${sourceBasename}` : sourceBasename;
+  const key = path.posix.join('previews', `preview_w${width}_${outputBasename}`);
+
+  // Cache hit: nothing to do. This is the common path once a gallery has been
+  // browsed at a given size.
+  try {
+    if (await storage.stat(key)) return key;
+  } catch (e) {
+    // fall through and regenerate
+  }
+
+  try {
+    if (isExternal) {
+      const localPath = resolvePhotoFilePath(event, photo);
+      return await generatePreviewImage(localPath, {
+        regenerate: true, outputBasename, longEdge: width,
+      });
+    }
+    const sourceKey = resolvePhotoStorageKey(event, photo);
+    if (!sourceKey) return null;
+    return await withLocalCopy(sourceKey, async (localPath) => {
+      const proc = await withProcessableImage(localPath, sourceKey);
+      try {
+        return await generatePreviewImage(proc.path, {
+          regenerate: true,
+          outputBasename: proc.outputBasename || outputBasename,
+          longEdge: width,
+        });
+      } finally {
+        proc.cleanup();
+      }
+    });
+  } catch (e) {
+    logger.warn(`Preview tier w${width} failed for photo ${photo.id}: ${e.message}`);
+    return null;
+  }
+}
+
 async function ensurePreviewImage(photo) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
@@ -851,6 +942,10 @@ async function resizeToBox(inputBuffer, box, options = {}) {
 }
 
 module.exports = {
+  ensurePreviewImageAtWidth,
+  PREVIEW_WIDTHS,
+  THUMBNAIL_WIDTHS,
+  normalizeTierWidth,
   resizeToBox,
   generateThumbnail,
   isThumbnailValid,

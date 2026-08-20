@@ -2449,10 +2449,20 @@ router.get('/:slug/preview/:photoId',
         return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
       }
 
+      // Responsive tier (#1095). Whitelisted only — an open ?w= would let
+      // anyone fill the disk with renditions nobody asked for. An unrecognised
+      // or absent value falls through to the canonical 1920 preview, so old
+      // clients and hand-typed URLs behave exactly as before.
+      const { PREVIEW_WIDTHS, normalizeTierWidth, ensurePreviewImageAtWidth } =
+        require('../services/imageProcessor');
+      const tierWidth = normalizeTierWidth(req.query.w, PREVIEW_WIDTHS);
+
       // Lazy generation: ensurePreviewImage returns null on any
       // failure (corrupt source, sharp OOM, storage unavailable, …).
       // Fall back to the original so the lightbox always renders.
-      const previewPath = await ensurePreviewImage(photo);
+      const previewPath = tierWidth
+        ? (await ensurePreviewImageAtWidth(photo, tierWidth)) || (await ensurePreviewImage(photo))
+        : await ensurePreviewImage(photo);
       if (!previewPath) {
         logger.warn(`Failed to generate preview for photo ${photoId}, falling back to original`);
         return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
@@ -2472,7 +2482,10 @@ router.get('/:slug/preview/:photoId',
       const watermarkHash = watermarkSettings?.enabled
         ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
         : '-nowm';
-      const etag = `"preview-${photoId}-${mtimeMs}${watermarkHash}"`;
+      // Tier is part of the etag: without it a client that already holds the
+      // 1920 rendition would get a 304 for its 640 request and render the
+      // wrong size, which is the whole point of the feature inverted.
+      const etag = `"preview-${photoId}-${tierWidth || 'def'}-${mtimeMs}${watermarkHash}"`;
       if (req.headers['if-none-match'] === etag) {
         return res.status(304).end();
       }
