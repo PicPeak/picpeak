@@ -114,7 +114,7 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
                   >
                     {photo && (
                       <AuthenticatedImage
-                        src={facePreviewUrl(slug, photo) || photo.thumbnail_url || photo.url}
+                        src={facePreviewUrl(slug, photo, person.cover) || photo.thumbnail_url || photo.url}
                         alt=""
                         isGallery
                         slug={slug}

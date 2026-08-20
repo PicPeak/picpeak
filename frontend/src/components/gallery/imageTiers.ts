@@ -15,8 +15,11 @@
 
 export const PREVIEW_WIDTHS = [640, 1280, 1920] as const;
 
-/** Tier used for face avatars — the smallest whole-frame rendition available. */
+/** Fallback tier for face avatars when the face's size in frame is unknown. */
 export const FACE_CROP_WIDTH = 640;
+
+/** CSS px of the avatar the crop has to fill; used to size the tier. */
+const FACE_AVATAR_PX = 64;
 
 // Thumbnail tiers are NOT here yet. Emitting a srcset whose candidates the
 // server ignores is worse than emitting none: the browser would pick the
@@ -44,7 +47,8 @@ function smallestCovering(needed: number, tiers: readonly number[]): number {
  * and lands back on the desktop rendition, which is the thing being fixed.
  *
  * Without photo dimensions there is nothing to reason about, so it falls back
- * to the largest edge the viewport could demand — i.e. today's behaviour.
+ * to the largest edge the viewport could possibly demand — which resolves to
+ * the top tier, i.e. exactly today's behaviour.
  */
 export function viewportPreviewWidth(photo?: { width?: number | null; height?: number | null }): number {
   if (typeof window === 'undefined') return PREVIEW_WIDTHS[PREVIEW_WIDTHS.length - 1];
@@ -61,7 +65,8 @@ export function viewportPreviewWidth(photo?: { width?: number | null; height?: n
   // Contained in the viewport, so one axis binds; the rendered long edge is
   // the source long edge times that scale.
   const scale = Math.min(vw / pw, vh / ph);
-  return smallestCovering(Math.round(Math.max(pw, ph) * scale * dpr), PREVIEW_WIDTHS);
+  const renderedLongEdge = Math.max(pw, ph) * scale * dpr;
+  return smallestCovering(Math.round(renderedLongEdge), PREVIEW_WIDTHS);
 }
 
 /**
@@ -125,18 +130,68 @@ export function previewUrlForViewport(
  */
 export function facePreviewUrl(
   slug: string | undefined,
-  photo: { id: number | string; preview_url?: string | null } | null | undefined,
+  photo: {
+    id: number | string;
+    preview_url?: string | null;
+    width?: number | null;
+    height?: number | null;
+  } | null | undefined,
+  cover?: { bbox: number[] } | null,
 ): string | null {
   if (!photo) return null;
+  const width = faceTierWidth(photo, cover);
+
   // preview_url carries the watermark query when the server emitted one, so
-  // prefer it; it is only absent when lightbox previews are off, in which case
-  // the route still resolves (and falls back to the original on failure).
-  if (photo.preview_url) return withWidth(photo.preview_url, FACE_CROP_WIDTH);
+  // prefer it; it is only absent when lightbox previews are off.
+  if (photo.preview_url) return withWidth(photo.preview_url, width);
   if (!slug) return null;
-  return `/api/gallery/${slug}/preview/${photo.id}?w=${FACE_CROP_WIDTH}`;
+
+  // Carry admin_preview through. verifyGalleryAccess only accepts the admin
+  // cookie when admin_preview=1 is on the request (middleware/gallery.js:28),
+  // and the preview flow deliberately mints no gallery JWT — so a synthesized
+  // URL without it 401s, and every avatar breaks in exactly the mode an admin
+  // uses to check their gallery before sending it.
+  const adminPreview = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('admin_preview') === '1'
+    ? '&admin_preview=1'
+    : '';
+  return `/api/gallery/${slug}/preview/${photo.id}?w=${width}${adminPreview}`;
+}
+
+/**
+ * Tier for a face crop, sized by how much of the frame the face occupies.
+ *
+ * A fixed small tier is wrong for the case that matters most: in a 6000px
+ * group shot a 200px face is only ~21px at the 640 tier, and faceCropStyle
+ * then blows that up ~9x to fill a 64px avatar at DPR 3 — visibly mush, and
+ * indistinguishable from the mis-positioning bug this was meant to fix.
+ *
+ * Working back from the avatar: the frame must be large enough that the
+ * bbox's share of it still covers the avatar's device pixels. A close-up
+ * lands on 640, a face across a hall lands on 1920.
+ */
+function faceTierWidth(
+  photo: { width?: number | null; height?: number | null },
+  cover?: { bbox: number[] } | null,
+): number {
+  const avatarDevicePx = FACE_AVATAR_PX
+    * (typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 3) : 2);
+
+  const frameLongEdge = Math.max(photo.width || 0, photo.height || 0);
+  const bboxLongEdge = cover?.bbox ? Math.max(cover.bbox[2] || 0, cover.bbox[3] || 0) : 0;
+  if (!frameLongEdge || !bboxLongEdge) return FACE_CROP_WIDTH;
+
+  const faceShareOfFrame = bboxLongEdge / frameLongEdge;
+  return smallestCovering(Math.round(avatarDevicePx / faceShareOfFrame), PREVIEW_WIDTHS);
 }
 
 /** Admin equivalent — the admin API has its own preview route. */
-export function adminFacePreviewUrl(eventId: number | string, photoId: number | string): string {
-  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${FACE_CROP_WIDTH}`;
+export function adminFacePreviewUrl(
+  eventId: number | string,
+  photoId: number | string,
+  photo?: { width?: number | null; height?: number | null },
+  cover?: { bbox: number[] } | null,
+): string {
+  const width = photo ? faceTierWidth(photo, cover) : FACE_CROP_WIDTH;
+  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}`;
 }

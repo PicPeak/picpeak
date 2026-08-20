@@ -62,6 +62,37 @@ describe('face avatars use a whole-frame rendition', () => {
     expect(facePreviewUrl('wed', undefined)).toBeNull();
   });
 
+  it('sizes the tier from how much of the frame the face fills', () => {
+    Object.defineProperty(window, 'devicePixelRatio', { value: 3, configurable: true });
+    const frame = { id: 1, width: 6000, height: 4000 };
+
+    // A face across a hall: 200px in a 6000px frame is ~21px at the 640 tier,
+    // which faceCropStyle then blows up ~9x. Indistinguishable from the
+    // mis-positioning bug this whole change is about.
+    expect(facePreviewUrl('wed', frame, { bbox: [0, 0, 200, 200] })).toContain('w=1920');
+
+    // A close-up needs nothing like that.
+    expect(facePreviewUrl('wed', frame, { bbox: [0, 0, 3000, 3000] })).toContain('w=640');
+  });
+
+  it('falls back to the fixed tier when the bbox is unknown', () => {
+    expect(facePreviewUrl('wed', { id: 1, width: 6000, height: 4000 }, null))
+      .toContain(`w=${FACE_CROP_WIDTH}`);
+  });
+
+  it('carries admin_preview so avatars do not 401 in preview mode', () => {
+    // verifyGalleryAccess only accepts the admin cookie when admin_preview=1 is
+    // on the request (middleware/gallery.js:28), and the preview flow mints no
+    // gallery JWT — so without this every avatar breaks in exactly the mode an
+    // admin uses to check a gallery before sending it.
+    const orig = window.location.search;
+    Object.defineProperty(window, 'location', {
+      value: { search: '?admin_preview=1' }, configurable: true,
+    });
+    expect(facePreviewUrl('wed', { id: 5 })).toContain('admin_preview=1');
+    Object.defineProperty(window, 'location', { value: { search: orig }, configurable: true });
+  });
+
   // The helper being correct is not the contract — the call sites using it is.
   // Every assertion above passes with all three surfaces still reading
   // thumbnail_url, which is exactly the bug. So pin the call sites.
