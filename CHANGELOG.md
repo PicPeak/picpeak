@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.107.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.4-beta.0...v3.107.5-beta.0) (2026-08-20)
+
+
+### Documentation
+
+* **readme:** point the single-container install at a tag that exists ([2a84efe](https://github.com/PicPeak/picpeak/commit/2a84efef719e15998a693947f80ed2aa9931ff85))
+* **readme:** point the single-container install at a tag that exists ([e47c103](https://github.com/PicPeak/picpeak/commit/e47c103c2a9011e45cd43c8476a0683e8896db2b))
+
 ## [3.107.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.3-beta.0...v3.107.4-beta.0) (2026-08-20)
 
 
