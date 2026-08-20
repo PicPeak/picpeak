@@ -105,10 +105,20 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
     // leave unset, so an admin hitting the toggle or Re-scan mid-import could
     // queue those same rows against the stale path and burn them to 'failed'.
     //
-    // Safe to do first: the path is already validated above, and existing
-    // photos are unaffected because photo.source_origin takes precedence over
-    // event.source_mode in both resolvers (photoResolver.js:23, :52) and is
-    // NOT NULL defaulting to 'managed'.
+    // Safe to do first for existing MANAGED photos: photo.source_origin takes
+    // precedence over event.source_mode in both resolvers (photoResolver.js:23,
+    // :52) and is NOT NULL defaulting to 'managed', so flipping source_mode
+    // does not touch them.
+    //
+    // It does NOT isolate existing EXTERNAL rows — resolveExternalPath prefixes
+    // every one of them with event.external_path
+    // (externalMediaService.js:97-102), so importing folder B into an event
+    // that already references folder A rebases the A rows onto B. That is
+    // pre-existing: the update always did this, just after the loop instead of
+    // before it, so moving it changes when the window opens and not whether it
+    // exists. The underlying limitation is that an event carries a single
+    // external base path, which makes importing a second folder into it
+    // incoherent either way — worth its own fix, not this one.
     await db('events').where('id', eventId).update({ source_mode: 'reference', external_path });
 
     let imported = 0;

@@ -109,11 +109,30 @@ describe('transient source vs dead photo', () => {
     expect(photo.face_status).not.toBe('failed');
   });
 
+  it('defers when the directory survives an unmount but is empty', async () => {
+    // The common NFS/SMB shape: unmounting leaves the mountpoint behind as an
+    // ordinary empty directory, so fs.access succeeds on storage that is
+    // entirely gone. Probing existence alone would fall through and fail the
+    // photo — the exact outage this is meant to catch.
+    const empty = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'unmounted', 'individual');
+    await fs.promises.mkdir(empty, { recursive: true });
+    const { photoId } = await seedExternalPhoto({ externalPath: 'unmounted' });
+
+    await expect(faceProcessor.processPhotoFaces(photoId))
+      .rejects.toBeInstanceOf(faceProcessor.TransientSourceError);
+
+    const photo = await db('photos').where({ id: photoId }).first();
+    expect(photo.face_status).not.toBe('failed');
+  });
+
   it('fails when the directory is healthy but the file is gone', async () => {
     // Directory exists, file does not — a genuinely broken photo, which should
     // surface as a failure the admin can see rather than retry forever.
     const live = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'live-share', 'individual');
     await fs.promises.mkdir(live, { recursive: true });
+    // Non-empty: an empty directory is now read as an unmounted share, so the
+    // "healthy storage, dead photo" case needs a sibling file present.
+    await fs.promises.writeFile(path.join(live, 'sibling.jpg'), 'x');
     const { photoId } = await seedExternalPhoto({ externalPath: 'live-share' });
 
     const result = await faceProcessor.processPhotoFaces(photoId);

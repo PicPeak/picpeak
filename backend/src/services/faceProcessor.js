@@ -79,6 +79,24 @@ async function externalSourceUnreachable(photo) {
     } catch (e) {
       return `source directory unreachable (${e.code || e.message})`;
     }
+
+    // The directory existing is not enough. Unmounting an NFS or SMB share
+    // usually leaves the mountpoint behind as an ordinary empty directory, so
+    // fs.access succeeds on storage that is entirely gone — the exact outage
+    // this is meant to catch. An empty directory where we expect the photo to
+    // live is therefore treated as unreachable too.
+    //
+    // The trade is deliberate: a directory an admin genuinely emptied will be
+    // retried rather than failed. That costs one attempt per janitor sweep and
+    // nothing else, because a deferred row parks in 'processing' instead of
+    // going back to the front of the queue. Burning a whole gallery on a
+    // flapping mount is the worse failure.
+    try {
+      const entries = await fs.readdir(dir);
+      if (entries.length === 0) return 'source directory is empty (mount not attached?)';
+    } catch (e) {
+      return `source directory unreadable (${e.code || e.message})`;
+    }
     return null;
   } catch (e) {
     // Could not even resolve a path — that is a property of this row, not of

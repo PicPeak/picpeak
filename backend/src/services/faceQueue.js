@@ -146,16 +146,30 @@ async function workerLoop(workerIdx) {
     try {
       await processPhotoFaces(claimed.id);
     } catch (err) {
-      // Two different "come back later" conditions, handled identically: the
-      // sidecar being down, and the photo's own storage being unreachable (a
-      // dropped NFS/SMB mount). Both clear themselves; failing the photo would
-      // strand it, because nothing re-queues a failure automatically.
-      if (err instanceof SidecarUnavailableError || err instanceof TransientSourceError) {
-        // Retry, don't fail. faceClient already rate-limits its log line; this
-        // one is rate-limited by the same backoff before the next claim.
-        if (err instanceof TransientSourceError) logUnreachableSource(err.message);
+      // The sidecar being down stops EVERY photo, so returning this one to
+      // 'pending' and backing off costs nothing — there is no other work to
+      // get on with.
+      if (err instanceof SidecarUnavailableError) {
+        // Retry, don't fail. faceClient already rate-limits the log line.
         await releaseToPending(claimed.id).catch(() => {});
         await sleep(UNAVAILABLE_BACKOFF_MS);
+        continue;
+      }
+
+      // An unreachable source is per-EVENT, not global: other events are
+      // still perfectly scannable. Releasing to 'pending' here would be a
+      // trap — claimNextPhoto orders by id ascending, so the single default
+      // worker would reclaim this same row after every backoff and never
+      // reach any higher id. One dead mount would stall face scanning for
+      // the whole install.
+      //
+      // So leave it parked in 'processing' with its face_started_at intact.
+      // The worker moves straight on to the next claimable row, and the
+      // janitor returns this one to 'pending' once it passes
+      // STUCK_TIMEOUT_MS — which is exactly the "try again later" this
+      // needs, using machinery that already exists.
+      if (err instanceof TransientSourceError) {
+        logUnreachableSource(err.message);
         continue;
       }
 

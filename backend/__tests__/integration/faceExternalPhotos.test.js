@@ -30,6 +30,10 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'faceext-test-secret';
 // up before anything requires externalMediaService.
 process.env.EXTERNAL_MEDIA_ROOT = path.join(path.dirname(process.env.TEST_DATABASE_PATH), 'media');
 fs.mkdirSync(path.join(process.env.EXTERNAL_MEDIA_ROOT, 'share', 'individual'), { recursive: true });
+// Non-empty on purpose: an empty directory is read as an unmounted share
+// (faceTransientSource.test.js), so a "healthy storage, dead photo" fixture
+// needs a sibling present or it defers instead of failing.
+fs.writeFileSync(path.join(process.env.EXTERNAL_MEDIA_ROOT, 'share', 'individual', 'sibling.jpg'), 'x');
 
 const sharp = require('sharp');
 
