@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.107.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.2-beta.0...v3.107.3-beta.0) (2026-08-20)
+
+
+### Bug Fixes
+
+* **faces:** scan external/reference photos instead of skipping them ([#1090](https://github.com/PicPeak/picpeak/issues/1090)) ([#1091](https://github.com/PicPeak/picpeak/issues/1091)) ([576924f](https://github.com/PicPeak/picpeak/commit/576924fa574c0fdbaf167a885216ad3ee6ebf66b))
+
 ## [3.107.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.1-beta.0...v3.107.2-beta.0) (2026-08-19)
 
 
