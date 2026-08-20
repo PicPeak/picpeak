@@ -108,6 +108,43 @@ describe('preview tiers (#1095)', () => {
       return db('photos').where({ id: typeof p === 'object' ? p.id : p }).first();
     }
 
+    it('scopes keys by photo id so two galleries cannot collide', async () => {
+      // The leak: managed auto-imports keep camera basenames, so two events can
+      // each hold an IMG_0001.jpg. A tier is served straight from a cache hit
+      // without re-reading the source, so a shared key hands one gallery's
+      // photo to another.
+      const a = await seedPhoto();
+      const b = await seedPhoto();
+      await db('photos').where({ id: a.id }).update({ path: 'wedding-a/IMG_0001.jpg' });
+      await db('photos').where({ id: b.id }).update({ path: 'wedding-b/IMG_0001.jpg' });
+
+      const keyA = imageProcessor.previewTierKeys(await db('photos').where({ id: a.id }).first())[0];
+      const keyB = imageProcessor.previewTierKeys(await db('photos').where({ id: b.id }).first())[0];
+
+      expect(keyA).not.toBe(keyB);
+      expect(keyA).toContain(`p${a.id}_`);
+      expect(keyB).toContain(`p${b.id}_`);
+    });
+
+    it('derives every non-default tier key for cleanup', () => {
+      // Tiers live outside preview_path, so delete/archive/regenerate have no
+      // other way to find them. 1920 is excluded because that IS preview_path.
+      const keys = imageProcessor.previewTierKeys({ id: 5, path: 'e/a.jpg', source_origin: 'managed' });
+      expect(keys).toHaveLength(imageProcessor.PREVIEW_WIDTHS.length - 1);
+      expect(keys.some((k) => k.includes('w1920'))).toBe(false);
+      expect(keys.every((k) => k.includes('p5_'))).toBe(true);
+    });
+
+    it('deletePreviewTiers removes generated tiers from storage', async () => {
+      const photo = await seedPhoto();
+      const key = await imageProcessor.ensurePreviewImageAtWidth(photo, 640);
+      const abs = path.join(process.env.STORAGE_PATH, key);
+      expect(fs.existsSync(abs)).toBe(true);
+
+      await imageProcessor.deletePreviewTiers(await db('photos').where({ id: photo.id }).first());
+      expect(fs.existsSync(abs)).toBe(false);
+    });
+
     it('produces a distinct key per width and never touches preview_path', async () => {
       const photo = await seedPhoto();
 

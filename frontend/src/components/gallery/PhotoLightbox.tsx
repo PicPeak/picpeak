@@ -1007,7 +1007,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                     // original) when preview_url is null — happens
                     // when the toggle is off, when the photo is a
                     // video, or briefly while lazy generation runs.
-                    src={previewUrlForViewport(photo.preview_url) || photo.url}
+                    src={previewUrlForViewport(photo.preview_url, photo) || photo.url}
                     alt={photo.filename}
                     fallbackSrc={photo.thumbnail_url || undefined}
                     className="max-w-full max-h-full object-contain select-none pointer-events-none"
@@ -1032,7 +1032,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               <AuthenticatedImage
                 // Same preview-prefer-with-fallback logic as the
                 // off-screen tile above (#492).
-                src={previewUrlForViewport(photo.preview_url) || photo.url}
+                src={previewUrlForViewport(photo.preview_url, photo) || photo.url}
                 alt={photo.filename}
                 fallbackSrc={photo.thumbnail_url || undefined}
                 className="max-w-full max-h-full object-contain select-none"

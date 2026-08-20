@@ -28,17 +28,37 @@ function smallestCovering(needed: number, tiers: readonly number[]): number {
 }
 
 /**
- * Device pixels the viewport can actually show, capped.
+ * Device pixels the image's LONG EDGE will occupy, capped.
  *
- * Capped because devicePixelRatio alone overshoots badly: a DPR-3 phone at
- * 390 CSS px asks for 1170, and a DPR-2 tablet in landscape asks for more
- * than the 1920 we have. Anything above the top tier just returns the top
- * tier, which is what would have been served anyway.
+ * The long edge specifically, because that is what the server's `w` bounds:
+ * it resizes with fit:'inside', so `w` caps both dimensions. Sizing from
+ * viewport WIDTH alone undersizes portraits — on a 390x844 phone at DPR 3 a
+ * 2:3 photo is contained by height and renders ~1755 device px tall, so
+ * picking by width lands on 1280 and makes portrait photos softer than they
+ * are today. Landscape on the same phone genuinely needs only ~1170.
+ *
+ * DPR is capped at 3: uncapped, a DPR-10 device asks for thousands of pixels
+ * and lands back on the desktop rendition, which is the thing being fixed.
+ *
+ * Without photo dimensions there is nothing to reason about, so it falls back
+ * to the largest edge the viewport could demand — i.e. today's behaviour.
  */
-export function viewportPreviewWidth(): number {
+export function viewportPreviewWidth(photo?: { width?: number | null; height?: number | null }): number {
   if (typeof window === 'undefined') return PREVIEW_WIDTHS[PREVIEW_WIDTHS.length - 1];
   const dpr = Math.min(window.devicePixelRatio || 1, 3);
-  return smallestCovering(Math.round(window.innerWidth * dpr), PREVIEW_WIDTHS);
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  const pw = photo?.width;
+  const ph = photo?.height;
+  if (!pw || !ph) {
+    return smallestCovering(Math.round(Math.max(vw, vh) * dpr), PREVIEW_WIDTHS);
+  }
+
+  // Contained in the viewport, so one axis binds; the rendered long edge is
+  // the source long edge times that scale.
+  const scale = Math.min(vw / pw, vh / ph);
+  return smallestCovering(Math.round(Math.max(pw, ph) * scale * dpr), PREVIEW_WIDTHS);
 }
 
 /**
@@ -71,9 +91,12 @@ function withWidth(url: string, width: number): string {
  * there is nothing to size — a null preview_url means the caller is about to
  * fall back to the original, and adding ?w= to that would be a lie.
  */
-export function previewUrlForViewport(previewUrl: string | null | undefined): string | null {
+export function previewUrlForViewport(
+  previewUrl: string | null | undefined,
+  photo?: { width?: number | null; height?: number | null },
+): string | null {
   if (!previewUrl) return null;
-  const width = applyDataSaver(viewportPreviewWidth(), PREVIEW_WIDTHS);
+  const width = applyDataSaver(viewportPreviewWidth(photo), PREVIEW_WIDTHS);
   // The top tier is the default the server already serves; leaving the
   // parameter off keeps those URLs byte-identical to today's, so existing
   // caches and ETags stay valid.

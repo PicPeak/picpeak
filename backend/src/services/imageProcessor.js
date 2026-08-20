@@ -701,6 +701,36 @@ async function isPreviewValid(previewPath) {
  * Returns null on anything unexpected so callers fall back to the default
  * tier, which is always the honest thing to serve.
  */
+/**
+ * Storage keys for every responsive tier of a photo (#1095).
+ *
+ * Tiers live outside photos.preview_path deliberately — that column owns the
+ * canonical rendition — but that also means nothing else knows they exist.
+ * Delete, bulk-delete, archive and regenerate all operate on preview_path
+ * alone, so without this the tiers survive their own photo: orphaned on disk
+ * forever after a delete, and served stale forever after a regenerate.
+ *
+ * Derived rather than tracked: the key scheme is deterministic, so there is
+ * nothing to keep in sync and no migration.
+ */
+function previewTierKeys(photo) {
+  if (!photo) return [];
+  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const sourceBasename = path.basename(
+    (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
+  );
+  const outputBasename = `p${photo.id}_${sourceBasename}`;
+  return PREVIEW_WIDTHS
+    .filter((w) => w !== DEFAULT_PREVIEW_LONG_EDGE)
+    .map((w) => path.posix.join('previews', `preview_w${w}_${outputBasename}`));
+}
+
+/** Best-effort removal of every responsive tier for a photo. */
+async function deletePreviewTiers(photo) {
+  const storage = getStorage();
+  await Promise.all(previewTierKeys(photo).map((k) => storage.delete(k).catch(() => {})));
+}
+
 async function ensurePreviewImageAtWidth(photo, width) {
   if (!width || width === DEFAULT_PREVIEW_LONG_EDGE) return ensurePreviewImage(photo);
 
@@ -719,7 +749,12 @@ async function ensurePreviewImageAtWidth(photo, width) {
   const sourceBasename = path.basename(
     (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
   );
-  const outputBasename = isExternal ? `ext${photo.id}_${sourceBasename}` : sourceBasename;
+  // ALWAYS scoped by photo id, managed rows included. Basenames are not unique
+  // across events — two galleries can each hold an IMG_0001.jpg — and because a
+  // tier is served straight from a cache hit without re-reading the source, a
+  // collision hands one gallery's photo to another. Scoping by id is what makes
+  // the cache safe to trust; it is not a tidiness choice.
+  const outputBasename = `p${photo.id}_${sourceBasename}`;
   const key = path.posix.join('previews', `preview_w${width}_${outputBasename}`);
 
   // Cache hit: nothing to do. This is the common path once a gallery has been
@@ -742,9 +777,12 @@ async function ensurePreviewImageAtWidth(photo, width) {
     return await withLocalCopy(sourceKey, async (localPath) => {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
+        // outputBasename, not proc.outputBasename: the RAW path returns the
+        // source basename, which would drop the photo-id scoping above and
+        // reintroduce the cross-gallery collision.
         return await generatePreviewImage(proc.path, {
           regenerate: true,
-          outputBasename: proc.outputBasename || outputBasename,
+          outputBasename,
           longEdge: width,
         });
       } finally {
@@ -943,6 +981,8 @@ async function resizeToBox(inputBuffer, box, options = {}) {
 
 module.exports = {
   ensurePreviewImageAtWidth,
+  previewTierKeys,
+  deletePreviewTiers,
   PREVIEW_WIDTHS,
   THUMBNAIL_WIDTHS,
   normalizeTierWidth,

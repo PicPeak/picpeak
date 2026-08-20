@@ -232,6 +232,12 @@ router.post('/regenerate-previews', adminAuth, requirePermission('photos.edit'),
           // Force regeneration regardless of existing preview state by
           // nulling the cached path so ensurePreviewImage doesn't
           // short-circuit on a stale isPreviewValid check.
+          // Drop the responsive tiers first (#1095). They are cached by width
+          // outside preview_path, so regenerating only the canonical rendition
+          // leaves phones served the stale 640/1280 copy indefinitely — which
+          // is precisely the case this endpoint exists for (a replaced
+          // reference source, or a corrupted rendition).
+          await require('../services/imageProcessor').deletePreviewTiers(photo);
           const newPreviewPath = await ensurePreviewImage({ ...photo, preview_path: null });
           if (newPreviewPath) {
             successCount++;

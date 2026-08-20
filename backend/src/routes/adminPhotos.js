@@ -677,6 +677,11 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
     if (photo.preview_path) {
       await storage.delete(photo.preview_path).catch(() => {});
     }
+    // Outside the preview_path guard on purpose: a responsive tier (#1095) can
+    // exist when the canonical rendition never did — they are generated
+    // independently, on demand — so keying their cleanup off preview_path
+    // would strand exactly the photos that were only ever viewed on a phone.
+    await require('../services/imageProcessor').deletePreviewTiers(photo);
 
     // Delete pre-generated watermark if exists
     if (photo.watermark_path) {
@@ -838,6 +843,9 @@ router.post('/:eventId/photos/bulk-delete', adminAuth, requirePermission('photos
       if (photo.preview_path) {
         await storage.delete(photo.preview_path).catch(() => {});
       }
+      // Outside the guard: a tier can exist when the canonical rendition never
+      // did, so keying cleanup off preview_path would strand phone-only photos.
+      await require('../services/imageProcessor').deletePreviewTiers(photo);
       if (photo.watermark_path) {
         await watermarkGeneratorService.deleteForPhoto(photo.id);
       }

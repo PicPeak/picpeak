@@ -219,6 +219,9 @@ async function archiveEvent(event) {
       if (photo.preview_path) {
         await storage.delete(photo.preview_path).catch(() => {});
       }
+      // Outside the guard: a tier can exist when the canonical rendition never
+      // did, so keying cleanup off preview_path would strand phone-only photos.
+      await require('./imageProcessor').deletePreviewTiers(photo);
       // Best effort: remove watermarked variants too if a refactor added them.
       if (photo.watermark_path) {
         await storage.delete(photo.watermark_path).catch(() => {});
