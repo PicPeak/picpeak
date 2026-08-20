@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.107.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.3-beta.0...v3.107.4-beta.0) (2026-08-20)
+
+
+### Documentation
+
+* **docker:** Hub pages for aio + ml, and the image table in the README ([899c9b3](https://github.com/PicPeak/picpeak/commit/899c9b34072ca73ddc4391b74ead43ef4157b235))
+
 ## [3.107.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.2-beta.0...v3.107.3-beta.0) (2026-08-20)
 
 
