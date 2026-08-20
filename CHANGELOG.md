@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.108.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.5-beta.0...v3.108.0-beta.0) (2026-08-20)
+
+
+### Features
+
+* **gallery:** sized preview tiers so phones stop pulling 1920px ([#1095](https://github.com/PicPeak/picpeak/issues/1095)) ([#1099](https://github.com/PicPeak/picpeak/issues/1099)) ([011f6ae](https://github.com/PicPeak/picpeak/commit/011f6ae7eca48b41b98f4d4beab0aceaa9d34e6c))
+
+
+### Bug Fixes
+
+* **faces:** defer on unreachable storage, and commit the import path first ([#1097](https://github.com/PicPeak/picpeak/issues/1097)) ([0b886ed](https://github.com/PicPeak/picpeak/commit/0b886ed9428b31831c86ad4ddafd0c0a98e4ac3a))
+
 ## [3.107.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.4-beta.0...v3.107.5-beta.0) (2026-08-20)
 
 
