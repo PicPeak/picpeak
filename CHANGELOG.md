@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.108.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.108.0-beta.0...v3.108.1-beta.0) (2026-08-20)
+
+
+### Bug Fixes
+
+* **faces:** face avatars were cropped against a cropped rendition ([#1100](https://github.com/PicPeak/picpeak/issues/1100)) ([b3a7ab2](https://github.com/PicPeak/picpeak/commit/b3a7ab27ea6ecbae30f5b3eb5716c861b3660a73))
+
 ## [3.108.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.107.5-beta.0...v3.108.0-beta.0) (2026-08-20)
 
 
