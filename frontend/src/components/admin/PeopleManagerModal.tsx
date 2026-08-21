@@ -17,12 +17,13 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { X, Check, Merge, Scissors, EyeOff, Ban, Loader2, Image as ImageIcon } from 'lucide-react';
+import { X, Check, Merge, Scissors, EyeOff, Ban, Loader2, Image as ImageIcon, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { Button, Loading } from '../common';
 import { api } from '../../config/api';
 import { faceCropStyle } from '../gallery/faceCrop';
-import { adminFacePreviewUrl } from '../gallery/imageTiers';
+import { adminFacePreviewUrl, adminPhotoPreviewUrl } from '../gallery/imageTiers';
+
 
 /** Mirrors PERSON_FACES_LIMIT in adminEvents/faces.js. The endpoint caps a
  *  person's face list, so any surface that renders it has to admit when it is
@@ -110,6 +111,64 @@ const FaceThumb: React.FC<{
   );
 };
 
+/**
+ * One face shown in its source photo, with the detected box drawn (#1096).
+ *
+ * Positioned in PERCENTAGES of the original frame rather than measured pixels:
+ * the container carries the photo's aspect ratio, so the same four numbers land
+ * correctly at any rendered size with no resize listener. Same reasoning as
+ * faceCropStyle, and it holds for the same reason — provided the rendition is
+ * the whole frame, which is why this asks for a preview and never a thumbnail.
+ */
+const FaceInContext: React.FC<{
+  eventId: number;
+  face: PersonFace;
+}> = ({ eventId, face }) => {
+  const { t } = useTranslation();
+  const [bx, by, bw, bh] = face.bbox || [];
+  // Without the original dimensions there is nothing to take a ratio of. Show
+  // the photo and say so, rather than draw a box in the wrong place — the
+  // failure mode that made #1100 look like a bad detector.
+  const canBox = !!(face.photo_width && face.photo_height && bw && bh);
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      {/* max-w-full matters as much as max-h: with only a height cap a
+          panorama derives its width from the aspect ratio and overflows the
+          modal sideways, taking part of the outlined face off-screen. */}
+      <div
+        className="relative max-h-[60vh] max-w-full bg-neutral-900 rounded-lg overflow-hidden"
+        style={{ aspectRatio: `${face.photo_width || 1} / ${face.photo_height || 1}` }}
+      >
+        <img
+          src={adminPhotoPreviewUrl(eventId, face.photo_id)}
+          alt=""
+          className="block w-full h-full object-contain"
+        />
+        {canBox && (
+          <span
+            aria-hidden
+            className="absolute border-2 border-primary-400 rounded-sm"
+            style={{
+              left: `${(bx / face.photo_width!) * 100}%`,
+              top: `${(by / face.photo_height!) * 100}%`,
+              width: `${(bw / face.photo_width!) * 100}%`,
+              height: `${(bh / face.photo_height!) * 100}%`,
+            }}
+          />
+        )}
+      </div>
+      {!canBox && (
+        <p className="text-xs text-neutral-500">
+          {t('admin.people.contextNoBox', {
+            defaultValue: 'This photo has no stored dimensions, so the detected face cannot be outlined.',
+          })}
+        </p>
+      )}
+    </div>
+  );
+};
+
 export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
   eventId, open, onClose, onChanged,
 }) => {
@@ -124,6 +183,10 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
   // one and a human's do not always agree — a cluster whose avatar is softer
   // or turned away stays that way in the guest-facing strip too.
   const [coverFor, setCoverFor] = useState<AdminPerson | null>(null);
+  // Face-in-context viewer (#1096). Third mode alongside split and cover: the
+  // job is deciding whether two similar clusters are the same person, and a
+  // 64px avatar cannot answer that — who they are standing next to can.
+  const [viewing, setViewing] = useState<{ person: AdminPerson; index: number } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const { data, isLoading, refetch } = useQuery<{ people: AdminPerson[] }>({
@@ -134,7 +197,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
 
   // Both pickers browse the same face list; only the action on a click
   // differs. Keyed by person id so switching between them reuses the cache.
-  const facesFor = splitting || coverFor;
+  const facesFor = splitting || coverFor || viewing?.person || null;
 
   const { data: faceData, isLoading: facesLoading } = useQuery<{ faces: PersonFace[] }>({
     queryKey: ['admin-person-faces', eventId, facesFor?.id],
@@ -260,8 +323,83 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
           </button>
         </div>
 
-        {/* --- cover picker ------------------------------------------------ */}
-        {coverFor ? (
+        {/* --- face in context ---------------------------------------------- */}
+        {viewing ? (() => {
+          const faces = faceData?.faces || [];
+          // -1 means "whichever face the row is showing". Resolved here rather
+          // than at click time because the list is not loaded yet then — and
+          // index 0 is NOT the answer: it is the top-scoring face, which stops
+          // being the cover the moment someone picks a different one.
+          const coverIdx = faces.findIndex((f) => f.id === viewing.person.cover?.face_id);
+          const index = viewing.index >= 0
+            ? Math.min(viewing.index, Math.max(faces.length - 1, 0))
+            : Math.max(coverIdx, 0);
+          const face = faces[index];
+          const step = (delta: number) => setViewing((v) =>
+            v && faces.length ? { ...v, index: (index + delta + faces.length) % faces.length } : v);
+          // The endpoint caps a person's list; say so rather than let the
+          // counter imply this is everything they appear in.
+          // Against the person's REAL total, not the cap: someone with exactly
+          // 500 faces has a complete list and should not be told otherwise.
+          const truncated = (viewing.person.total_face_count ?? faces.length) > faces.length;
+          return (
+            <>
+              <div className="px-5 py-3 bg-neutral-50 border-b border-neutral-100 text-sm text-neutral-700">
+                {t('admin.people.contextHelp', {
+                  defaultValue: 'The detected face, outlined in its original photo — who they were standing next to is usually what settles whether two similar people are the same one.',
+                })}
+              </div>
+              <div className="flex-1 overflow-y-auto p-5">
+                {facesLoading ? <Loading /> : !face ? (
+                  // facesLoading goes false with an empty array on a zero-face
+                  // person or a failed request; without this the panel span
+                  // forever on a spinner that would never resolve.
+                  <p className="text-sm text-neutral-500 text-center py-10">
+                    {t('admin.people.contextUnavailable', {
+                      defaultValue: 'No photo could be loaded for this person.',
+                    })}
+                  </p>
+                ) : (
+                  <>
+                    <FaceInContext eventId={eventId} face={face} />
+                    {truncated && (
+                      <p className="mt-2 text-center text-xs text-neutral-500">
+                        {t('admin.people.contextTruncated', {
+                          limit: PERSON_FACES_LIMIT,
+                          defaultValue: `Showing the first ${PERSON_FACES_LIMIT} appearances of this person.`,
+                        })}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-neutral-100">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline" size="sm" disabled={faces.length < 2}
+                    onClick={() => step(-1)}
+                    aria-label={t('admin.people.contextPrev', { defaultValue: 'Previous photo of this person' })}
+                  >
+                    <ChevronLeft size={16} />
+                  </Button>
+                  <span className="text-sm text-neutral-500 tabular-nums">
+                    {faces.length ? `${index + 1} / ${faces.length}${truncated ? '+' : ''}` : '—'}
+                  </span>
+                  <Button
+                    variant="outline" size="sm" disabled={faces.length < 2}
+                    onClick={() => step(1)}
+                    aria-label={t('admin.people.contextNext', { defaultValue: 'Next photo of this person' })}
+                  >
+                    <ChevronRight size={16} />
+                  </Button>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setViewing(null)}>
+                  {t('common.back', { defaultValue: 'Back' })}
+                </Button>
+              </div>
+            </>
+          );
+        })() : coverFor ? (
           <>
             <div className="px-5 py-3 bg-neutral-50 border-b border-neutral-100 text-sm text-neutral-700">
               {t('admin.people.coverHelp', {
@@ -281,33 +419,47 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
             <div className="flex-1 overflow-y-auto p-5">
               {facesLoading ? <Loading /> : (
                 <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-                  {(faceData?.faces || []).map((face) => {
+                  {(faceData?.faces || []).map((face, idx) => {
                     const current = coverFor.cover?.face_id === face.id;
                     return (
-                      <button
-                        key={face.id}
-                        type="button"
-                        disabled={busy}
-                        title={t('admin.people.coverPick', { defaultValue: 'Use as cover' })}
-                        onClick={() => chooseCover(face.id)}
-                        className={`relative rounded-lg overflow-hidden border-2 transition-colors ${
-                          current ? 'border-primary-600' : 'border-transparent hover:border-neutral-300'
-                        }`}
-                      >
-                        <FaceThumb
-                          eventId={eventId}
-                          photoId={face.photo_id}
-                          bbox={face.bbox}
-                          photoWidth={face.photo_width}
-                          photoHeight={face.photo_height}
-                          size={88}
-                        />
+                      <div key={face.id} className="relative group">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          title={t('admin.people.coverPick', { defaultValue: 'Use as cover' })}
+                          onClick={() => chooseCover(face.id)}
+                          className={`block rounded-lg overflow-hidden border-2 transition-colors ${
+                            current ? 'border-primary-600' : 'border-transparent hover:border-neutral-300'
+                          }`}
+                        >
+                          <FaceThumb
+                            eventId={eventId}
+                            photoId={face.photo_id}
+                            bbox={face.bbox}
+                            photoWidth={face.photo_width}
+                            photoHeight={face.photo_height}
+                            size={88}
+                          />
+                        </button>
                         {current && (
-                          <span className="absolute top-1 right-1 bg-primary-600 text-white rounded-full p-0.5">
+                          <span className="absolute top-1 right-1 bg-primary-600 text-white rounded-full p-0.5 pointer-events-none">
                             <Check size={12} />
                           </span>
                         )}
-                      </button>
+                        {/* Its own affordance: the tile body already means
+                            "use as cover", so looking needs a separate target.
+                            Visible by default where there is no hover to reveal
+                            it — on a tablet the opacity-0 version was simply
+                            unreachable. */}
+                        <button
+                          type="button"
+                          title={t('admin.people.contextAction', { defaultValue: 'See this person in their photo' })}
+                          onClick={() => setViewing({ person: coverFor, index: idx })}
+                          className="absolute bottom-1 right-1 bg-white/90 text-neutral-700 rounded-full p-1 opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                        >
+                          <Maximize2 size={12} />
+                        </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -450,7 +602,22 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                           </p>
                         </div>
 
-                        <div className="flex items-center gap-1 flex-shrink-0">
+                        {/* Five 32px actions plus a 64px avatar exceed a
+                            320px row. flex-wrap alone does not help — the
+                            toolbar still claims its max-content width first
+                            and the name collapses to nothing. Capping the
+                            basis makes the buttons wrap to a second line and
+                            leaves the label its space. */}
+                        <div className="flex items-center gap-1 flex-wrap justify-end basis-[88px] sm:basis-auto">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            title={t('admin.people.contextAction', { defaultValue: 'See this person in their photo' })}
+                            onClick={() => setViewing({ person, index: -1 })}
+                            className="p-2 text-neutral-400 hover:text-neutral-700 rounded"
+                          >
+                            <Maximize2 size={16} />
+                          </button>
                           <button
                             type="button"
                             disabled={busy}

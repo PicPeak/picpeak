@@ -265,3 +265,22 @@ export function thumbnailUrlForTile(
   if (width === THUMBNAIL_WIDTHS[0]) return thumbnailUrl;
   return withWidth(thumbnailUrl, width);
 }
+
+/**
+ * The WHOLE frame at the top tier, for looking at a face in context (#1096).
+ *
+ * Preview, never thumbnail, and the distinction is load-bearing rather than a
+ * quality preference: thumbnail_fit is seeded to 'cover' on every install, so
+ * a thumbnail has had its edges removed. A bounding box expressed as ratios of
+ * the ORIGINAL frame lands nowhere on a cropped one — that was #1100, and it
+ * presented as a broken detector. Previews use fit:'inside' and are the whole
+ * frame, so the ratios hold.
+ */
+export function adminPhotoPreviewUrl(
+  eventId: number | string,
+  photoId: number | string,
+  width: number = PREVIEW_WIDTHS[PREVIEW_WIDTHS.length - 1],
+): string {
+  return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}`;
+}
+
