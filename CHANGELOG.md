@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.46.2](https://github.com/PicPeak/picpeak/compare/v3.46.1...v3.46.2) (2026-08-21)
+
+
+### Bug Fixes
+
+* **ui:** stop iOS Safari zooming in on 14px form fields ([#1114](https://github.com/PicPeak/picpeak/issues/1114)) ([32db1c8](https://github.com/PicPeak/picpeak/commit/32db1c8052d324b09462a17859c7adb5ccfe56e3))
+
 ## [3.46.1](https://github.com/PicPeak/picpeak/compare/v3.46.0...v3.46.1) (2026-08-19)
 
 
