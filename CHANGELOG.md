@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.110.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.109.0-beta.0...v3.110.0-beta.0) (2026-08-21)
+
+
+### Features
+
+* **faces:** let the photographer choose which photo represents a person ([#1119](https://github.com/PicPeak/picpeak/issues/1119)) ([bbce3cd](https://github.com/PicPeak/picpeak/commit/bbce3cd2a2822a3c53bbb9acdd60c0c3c41a5d7c))
+* **gallery:** responsive grid thumbnails ([#1095](https://github.com/PicPeak/picpeak/issues/1095)) ([#1109](https://github.com/PicPeak/picpeak/issues/1109)) ([887bdbe](https://github.com/PicPeak/picpeak/commit/887bdbe6e5cdc7db2f57674dd94b5308dfed0dff))
+
+
+### Bug Fixes
+
+* **security:** let cors() own Access-Control-Allow-Origin on protected images ([#1118](https://github.com/PicPeak/picpeak/issues/1118)) ([0077623](https://github.com/PicPeak/picpeak/commit/00776234fd6683186c08ffcb510d1145586ad7e9))
+* **ui:** stop iOS Safari zooming in on 14px form fields ([#1113](https://github.com/PicPeak/picpeak/issues/1113)) ([d241919](https://github.com/PicPeak/picpeak/commit/d24191960476d042e9c99d852db782c25e8340f9))
+
 ## [3.109.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.108.1-beta.0...v3.109.0-beta.0) (2026-08-21)
 
 
