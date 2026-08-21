@@ -2,7 +2,6 @@ const { db } = require('../database/db');
 const secureImageService = require('../services/secureImageService');
 const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
-const { getFrontendBaseUrlSync } = require('../utils/frontendUrl');
 
 /**
  * Enhanced secure image middleware with comprehensive protection
@@ -272,11 +271,18 @@ class SecureImageMiddleware {
       'X-Protected-Content': 'true',
       'X-Download-Policy': 'restricted',
       
-      // CORS restrictions
-      // Deliberately NOT derived from the request: reflecting the caller's
-      // Origin would defeat the allowlist. Env, else the configured
-      // general_site_url (cached), else the previous wildcard behaviour.
-      'Access-Control-Allow-Origin': getFrontendBaseUrlSync() || '*',
+      // Access-Control-Allow-ORIGIN is deliberately absent (#1116).
+      // cors(corsOptions) already runs on all of /api (server.js:247) and owns
+      // the whole policy: it validates the request Origin against the
+      // allowlist, sets Vary: Origin, and pairs with credentials:true. Setting
+      // the header again here only overwrote that with a worse answer —
+      //   unresolved -> '*', which combined with the credentials:true from
+      //     cors() is an invalid pair every browser rejects outright
+      //   resolved   -> the frontend origin, even when the request legitimately
+      //     came from the allowlisted ADMIN_URL, so a split admin host got a
+      //     header for the wrong origin and the read failed
+      // Methods/Headers/Max-Age stay: they are route-specific and cors() does
+      // not contradict them.
       'Access-Control-Allow-Methods': 'GET',
       'Access-Control-Allow-Headers': 'Authorization, Content-Type',
       'Access-Control-Max-Age': '3600'
