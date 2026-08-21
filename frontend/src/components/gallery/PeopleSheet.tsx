@@ -129,7 +129,13 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
                     ].join(' ')}
                     style={{
                       backgroundColor: 'var(--color-elevated)',
-                      '--tw-ring-offset-color': 'var(--color-background)',
+                      // The SHEET's surface, not the page behind it — these
+                      // avatars sit on the panel. The strip's identical ring
+                      // uses --color-background for the same reason, because
+                      // there the avatars really are on the page. Presets
+                      // where the two differ (and the light default, #ffffff
+                      // vs #fafafa) show the mismatch as a halo.
+                      '--tw-ring-offset-color': 'var(--color-surface)',
                     } as React.CSSProperties}
                   >
                     {photo && (
