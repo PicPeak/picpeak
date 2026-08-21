@@ -95,6 +95,28 @@ async function insertPersonWithFace(eventId, centroid, overrides = {}) {
   return personId;
 }
 
+/** An additional face on an existing person, so a split has something to move. */
+async function addFaceTo(eventId, personId, centroid) {
+  const [p] = await db('photos').insert({
+    event_id: eventId,
+    filename: `${Math.random()}.jpg`,
+    path: '/tmp/x.jpg',
+    type: 'individual',
+  }).returning('id');
+  const photoId = typeof p === 'object' ? p.id : p;
+  const [f] = await db('photo_faces').insert({
+    photo_id: photoId,
+    event_id: eventId,
+    person_id: personId,
+    bbox_x: 0, bbox_y: 0, bbox_w: 200, bbox_h: 200,
+    det_score: 0.99,
+    embedding: clustering.packEmbedding(centroid),
+    model_version: 'test-v1',
+    created_at: new Date().toISOString(),
+  }).returning('id');
+  return typeof f === 'object' ? f.id : f;
+}
+
 const suggest = (eventId) => clustering.suggestMerges(eventId, { thresholds: THRESHOLDS });
 
 describe('face merge suggestions (#1107)', () => {
@@ -321,6 +343,37 @@ describe('face merge suggestions (#1107)', () => {
     });
   });
 
+  describe('manual splits survive the automatic pass', () => {
+    /**
+     * The regression that matters most once consolidation runs on every scan:
+     * a photographer splitting a wrongly-merged cluster produces two people
+     * who are look-alikes BY CONSTRUCTION, so their centroids sit above the
+     * merge threshold and the very next scan would put them straight back.
+     */
+    it('records a split as a separation, so consolidation leaves it alone', async () => {
+      const eventId = await seedEvent('split-protected');
+      const base = new Float32Array(DIM); base[0] = 1;
+
+      // One cluster holding two near-identical faces.
+      const personId = await insertPersonWithFace(eventId, base);
+      const extraFaceId = await addFaceTo(eventId, personId, base);
+
+      const newPersonId = await clustering.splitPerson(eventId, personId, [extraFaceId]);
+      expect(newPersonId).toBeTruthy();
+
+      const rows = await db('event_people_merge_dismissals').where({ event_id: eventId });
+      expect(rows).toHaveLength(1);
+      expect([rows[0].person_a_id, rows[0].person_b_id].sort())
+        .toEqual([personId, newPersonId].sort());
+
+      // Identical centroids — nothing but the recorded separation can stop
+      // this merge.
+      const merged = await clustering.consolidate(eventId, { thresholds: THRESHOLDS });
+      expect(merged).toEqual([]);
+      expect(await db('event_people').where({ event_id: eventId })).toHaveLength(2);
+    });
+  });
+
   describe('consolidation reporting', () => {
     it('records what an automatic pass merged, so it is not silent', async () => {
       const eventId = await seedEvent('report-merged');
@@ -373,6 +426,14 @@ describe('face merge suggestions (#1107)', () => {
       expect(await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first())
         .toEqual(expect.objectContaining({ c: 2 }));
     });
+
+    // NOT covered by a test: reporting what a pass merged before it died
+    // partway. `consolidate` calls `mergePeople` through the module-local
+    // binding, so a spy on the export cannot intercept it, and no realistic
+    // database failure lands on the second merge only. The recording therefore
+    // sits in a `finally` — each mergePeople is its own transaction, so a pass
+    // that throws has still committed what it did, and the alternative is a
+    // real merge going unreported. Verified by reading, not by assertion.
 
     it('clears a previous count when a later pass merges nothing', async () => {
       const eventId = await seedEvent('report-cleared');

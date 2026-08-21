@@ -338,47 +338,74 @@ async function consolidate(eventId, options = {}) {
   const merged = [];
   const absorbed = new Set();
 
-  for (let i = 0; i < state.length; i++) {
-    if (absorbed.has(state[i].id)) continue;
-    for (let j = i + 1; j < state.length; j++) {
-      if (absorbed.has(state[j].id)) continue;
-      const a = state[i];
-      const b = state[j];
-      if (a.model_version !== b.model_version) continue;
+  // Each mergePeople is its own transaction, so a pass that dies halfway has
+  // still committed what it did. Reporting has to survive that: recorded in a
+  // finally, or a failure on the second pair would leave the first one merged
+  // and unreported — silent, which is the one thing this must never be. The
+  // retry then re-reports against whatever is left.
+  try {
+    for (let i = 0; i < state.length; i++) {
+      if (absorbed.has(state[i].id)) continue;
+      for (let j = i + 1; j < state.length; j++) {
+        if (absorbed.has(state[j].id)) continue;
+        const a = state[i];
+        const b = state[j];
+        if (a.model_version !== b.model_version) continue;
 
-      // Never silently merge two people the photographer has NAMED
-      // differently — that is a human assertion this heuristic does not get
-      // to overrule.
-      if (a.label && b.label && a.label !== b.label) continue;
+        // Never silently merge two people the photographer has NAMED
+        // differently — that is a human assertion this heuristic does not get
+        // to overrule.
+        if (a.label && b.label && a.label !== b.label) continue;
 
-      if (dismissed.has(pairKey(a.id, b.id))) continue;
+        if (dismissed.has(pairKey(a.id, b.id))) continue;
 
-      if (dot(a.vec, b.vec) >= mergeThreshold) {
-        await mergePeople(eventId, [b.id], a.id);
-        absorbed.add(b.id);
-        merged.push({ from: b.id, into: a.id });
+        if (dot(a.vec, b.vec) >= mergeThreshold) {
+        // Re-read this one pair immediately before acting. The set above was
+        // loaded once for the whole pass, and a photographer pressing "Not the
+        // same" during it would otherwise be overruled by a decision that was
+        // already stale when it was made. Narrows the window to a single
+        // statement rather than the length of the pass; one extra query per
+        // pair that is actually about to merge, which is rare.
+          const justDismissed = await db('event_people_merge_dismissals')
+            .where({
+              event_id: eventId,
+              person_a_id: Math.min(a.id, b.id),
+              person_b_id: Math.max(a.id, b.id),
+            })
+            .first()
+            .catch((err) => {
+              if (isMissingTable(err)) return null;
+              throw err;
+            });
+          if (justDismissed) continue;
+
+          await mergePeople(eventId, [b.id], a.id);
+          absorbed.add(b.id);
+          merged.push({ from: b.id, into: a.id });
+        }
       }
     }
-  }
 
-  if (merged.length) {
-    logger.info(`faceClustering: consolidated ${merged.length} person pair(s) in event ${eventId}`);
-  }
+  } finally {
+    if (merged.length) {
+      logger.info(`faceClustering: consolidated ${merged.length} person pair(s) in event ${eventId}`);
+    }
 
-  // Record the outcome even when it is zero. Merging biometric clusters
-  // silently is the wrong default however confident the maths is (#1107), so
-  // the admin card reports what this pass did — and a run that merged nothing
-  // has to clear a previous run's count rather than leave it standing.
-  await db('events').where({ id: eventId }).update({
-    faces_last_consolidated_count: merged.length,
-    faces_last_consolidated_at: new Date().toISOString(),
-  }).catch((err) => {
-    // Pre-migration installs simply do not report. Never let bookkeeping fail
-    // a merge that already happened.
-    logger.warn(`faceClustering: could not record consolidation for event ${eventId}`, {
-      error: err.message,
+    // Record the outcome even when it is zero. Merging biometric clusters
+    // silently is the wrong default however confident the maths is (#1107), so
+    // the admin card reports what this pass did — and a run that merged nothing
+    // has to clear a previous run's count rather than leave it standing.
+    await db('events').where({ id: eventId }).update({
+      faces_last_consolidated_count: merged.length,
+      faces_last_consolidated_at: new Date().toISOString(),
+    }).catch((err) => {
+      // Pre-migration installs simply do not report. Never let bookkeeping fail
+      // a merge that already happened.
+      logger.warn(`faceClustering: could not record consolidation for event ${eventId}`, {
+        error: err.message,
+      });
     });
-  });
+  }
 
   return merged;
 }
@@ -580,6 +607,22 @@ async function splitPerson(eventId, personId, faceIds) {
     await trx('photo_faces')
       .whereIn('id', faces.map((f) => f.id))
       .update({ person_id: newPersonId });
+
+    // A split IS a "these are not the same person" decision, and it has to be
+    // recorded as one (#1107). Consolidation now runs automatically after
+    // every scan, and two clusters a photographer pulled apart are look-alikes
+    // by construction — their centroids usually sit above the merge threshold,
+    // so the very next scan would put them straight back together and the
+    // manual correction would look like it never happened.
+    await trx('event_people_merge_dismissals').insert({
+      event_id: eventId,
+      person_a_id: Math.min(personId, newPersonId),
+      person_b_id: Math.max(personId, newPersonId),
+      created_at: new Date().toISOString(),
+    }).catch((err) => {
+      // Pre-migration install, or the pair was already separated once before.
+      if (!isMissingTable(err) && !isUniqueViolation(err)) throw err;
+    });
 
     await recomputeCentroid(newPersonId, trx);
     await recomputeCentroid(personId, trx);

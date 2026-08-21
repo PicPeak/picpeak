@@ -390,6 +390,18 @@ async function janitorLoop() {
     } catch (e) {
       logger.warn('faceQueue: janitor error', { error: e.message });
     }
+
+    // The worker only reaches its drain when it can claim NOTHING, anywhere.
+    // With the default single worker that means one gallery finishing during a
+    // large backfill waits for every other gallery — and under continuous
+    // ingestion it could wait indefinitely. Running the drain here too makes
+    // consolidation depend on the event being finished rather than the whole
+    // install being idle. It is per-event guarded, so this is a no-op for
+    // anything still in flight.
+    await drainConsolidation().catch((e) =>
+      logger.warn('faceQueue: janitor drain error', { error: e.message })
+    );
+
     await sleep(JANITOR_INTERVAL_MS);
   }
 }
