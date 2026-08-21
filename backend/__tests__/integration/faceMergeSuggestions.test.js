@@ -196,6 +196,72 @@ describe('face merge suggestions (#1107)', () => {
       expect(await suggest(eventId)).toEqual([]);
     });
 
+    /**
+     * The swallow-the-duplicate branch has to discriminate, because the failure
+     * it must NOT swallow looks identical to the caller: returning
+     * "kept separate" for a decision that was never written means the pair
+     * silently comes back after the next scan.
+     *
+     * Tested on the predicate directly — provoking a read-only database or a
+     * dropped table mid-suite would corrupt the shared fixture for every other
+     * case in this file.
+     */
+    it.each([
+      ['postgres unique violation', { code: '23505', message: 'duplicate key value violates unique constraint' }, true],
+      ['sqlite3 unique violation', { code: 'SQLITE_CONSTRAINT', message: 'UNIQUE constraint failed: event_people_merge_dismissals.event_id' }, true],
+      ['better-sqlite3 unique violation', { code: 'SQLITE_CONSTRAINT_UNIQUE', message: 'UNIQUE constraint failed' }, true],
+      ['sqlite foreign-key violation', { code: 'SQLITE_CONSTRAINT', message: 'FOREIGN KEY constraint failed' }, false],
+      ['sqlite busy', { code: 'SQLITE_BUSY', message: 'database is locked' }, false],
+      ['missing table', { code: 'SQLITE_ERROR', message: 'no such table: event_people_merge_dismissals' }, false],
+      ['postgres read-only transaction', { code: '25006', message: 'cannot execute INSERT in a read-only transaction' }, false],
+      ['no error at all', null, false],
+    ])('%s → swallowed: %s', (_name, err, expected) => {
+      expect(clustering.isUniqueViolation(err)).toBe(expected);
+    });
+
+    /**
+     * The dismissal read is the only thing standing between the automatic pass
+     * and a pair the photographer explicitly separated. If it fails open, a
+     * timeout silently restores the merge that "Not the same" was supposed to
+     * prevent — so anything other than a missing table must stop the pass.
+     */
+    it('refuses to consolidate when the dismissal list cannot be read', async () => {
+      const eventId = await seedEvent('dismissals-unreadable');
+      // Well above the auto-merge threshold, so only a refusal keeps them apart.
+      const [a, b] = pairAtSimilarity(0.97, 0);
+      await insertPersonWithFace(eventId, a);
+      await insertPersonWithFace(eventId, b);
+
+      // Break the read for real rather than mocking knex: dropping a selected
+      // column makes the query fail with something that is NOT "missing
+      // table", which is exactly the class that must not fail open.
+      await db.schema.alterTable('event_people_merge_dismissals', (t) => t.dropColumn('person_b_id'));
+      try {
+        await expect(clustering.consolidate(eventId, { thresholds: THRESHOLDS }))
+          .rejects.toThrow();
+
+        // Nothing merged: the pass gave up rather than overriding a decision
+        // it could not read.
+        expect(await db('event_people').where({ event_id: eventId })).toHaveLength(2);
+      } finally {
+        await db.schema.alterTable('event_people_merge_dismissals', (t) => {
+          t.integer('person_b_id').notNullable().defaultTo(0);
+        });
+      }
+    });
+
+    it.each([
+      ['postgres undefined_table', { code: '42P01', message: 'relation "x" does not exist' }, true],
+      ['sqlite missing table', { code: 'SQLITE_ERROR', message: 'no such table: x' }, true],
+      // The one that matters: a missing COLUMN is a broken query, not a
+      // pre-migration install, and must NOT be allowed to fail open.
+      ['postgres undefined_column', { code: '42703', message: 'column "x" does not exist' }, false],
+      ['sqlite missing column', { code: 'SQLITE_ERROR', message: 'no such column: x' }, false],
+      ['statement timeout', { code: '57014', message: 'canceling statement due to statement timeout' }, false],
+    ])('missing-table check — %s → %s', (_name, err, expected) => {
+      expect(clustering.isMissingTable(err)).toBe(expected);
+    });
+
     it('normalizes the pair so one row covers both orderings', async () => {
       const eventId = await seedEvent('dismissal-normalized');
       const [a, b] = pairAtSimilarity(0.64, 0);
@@ -269,6 +335,43 @@ describe('face merge suggestions (#1107)', () => {
       const event = await db('events').where({ id: eventId }).first();
       expect(Number(event.faces_last_consolidated_count)).toBe(1);
       expect(event.faces_last_consolidated_at).toBeTruthy();
+    });
+
+    it('never absorbs an ignored cluster — that would mark a real person ignored', async () => {
+      const eventId = await seedEvent('consolidate-ignored');
+      // Well above the auto-merge threshold: only the is_ignored flag can
+      // stop this pair.
+      const [a, b] = pairAtSimilarity(0.97, 0);
+      const real = await insertPersonWithFace(eventId, a);
+      const junk = await insertPersonWithFace(eventId, b, { is_ignored: true });
+
+      const merged = await clustering.consolidate(eventId, { thresholds: THRESHOLDS });
+
+      expect(merged).toEqual([]);
+      // Both still standing, and the real person is still guest-visible —
+      // mergePeople ORs is_ignored onto the survivor, so absorbing the junk
+      // cluster would have hidden a real person from the gallery.
+      const survivors = await db('event_people').where({ event_id: eventId }).select('id', 'is_ignored');
+      expect(survivors.map((p) => p.id).sort()).toEqual([real, junk].sort());
+      const realRow = survivors.find((p) => p.id === real);
+      expect(realRow.is_ignored === true || realRow.is_ignored === 1).toBe(false);
+    });
+
+    it('never merges a pair the photographer said was not the same person', async () => {
+      const eventId = await seedEvent('consolidate-dismissed');
+      // Also above the auto-merge threshold: the dismissal is the only thing
+      // standing between these two, which is the point — a human "no" has to
+      // outrank the automatic pass, not just the suggestion list.
+      const [a, b] = pairAtSimilarity(0.97, 0);
+      const idA = await insertPersonWithFace(eventId, a);
+      const idB = await insertPersonWithFace(eventId, b);
+
+      await clustering.dismissMergeSuggestion(eventId, idA, idB);
+      const merged = await clustering.consolidate(eventId, { thresholds: THRESHOLDS });
+
+      expect(merged).toEqual([]);
+      expect(await db('event_people').where({ event_id: eventId }).count({ c: '*' }).first())
+        .toEqual(expect.objectContaining({ c: 2 }));
     });
 
     it('clears a previous count when a later pass merges nothing', async () => {

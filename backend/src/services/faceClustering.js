@@ -248,6 +248,60 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
 }
 
 /**
+ * Does this error mean the table isn't there yet, as opposed to the query
+ * failing? Postgres reports SQLSTATE 42P01; SQLite says so in the message.
+ * The distinction decides whether a dismissal read may fail open.
+ */
+function isMissingTable(err) {
+  if (!err) return false;
+  // Postgres: undefined_table. Deliberately NOT matched on the message — its
+  // "does not exist" wording also covers a missing COLUMN, which is a broken
+  // query rather than a pre-migration install and must not fail open.
+  if (err.code === '42P01') return true;
+  return /no such table/i.test(err.message || '');
+}
+
+/**
+ * One identity for a pair regardless of which order it was produced in.
+ * Rows are stored the same way, so the two always agree.
+ */
+function pairKey(a, b) {
+  return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+/**
+ * Pairs the photographer has explicitly kept apart (#1107).
+ *
+ * Read by BOTH the automatic pass and the suggestion list: "not the same
+ * person" has to bind the thing that acts on its own even more than it binds
+ * the thing that asks. Missing table (pre-migration) reads as "nothing
+ * dismissed" rather than failing the merge that called this.
+ */
+async function loadDismissedPairs(eventId) {
+  try {
+    const rows = await db('event_people_merge_dismissals')
+      .where({ event_id: eventId })
+      .select('person_a_id', 'person_b_id');
+    return new Set(rows.map((d) => pairKey(d.person_a_id, d.person_b_id)));
+  } catch (err) {
+    // ONLY a missing table reads as "nothing dismissed" — that is a
+    // pre-migration install, where by definition nothing has been dismissed.
+    //
+    // Everything else FAILS CLOSED. Treating a timeout or a permission error
+    // as an empty set would let the automatic pass merge pairs the
+    // photographer explicitly separated, which is precisely the decision this
+    // set exists to protect. The caller defers instead: drainConsolidation
+    // backs the event off and retries.
+    if (!isMissingTable(err)) throw err;
+    logger.warn(
+      `faceClustering: merge-dismissal table absent for event ${eventId} — treating as none`,
+      { error: err.message }
+    );
+    return new Set();
+  }
+}
+
+/**
  * Merge people whose centroids have drifted together.
  *
  * Greedy assignment can open "Anna in daylight" and "Anna at the party" as
@@ -264,11 +318,22 @@ async function consolidate(eventId, options = {}) {
 
   const people = await db('event_people')
     .where({ event_id: eventId })
-    .select('id', 'centroid', 'face_count_total', 'model_version', 'label');
+    .select('id', 'centroid', 'face_count_total', 'model_version', 'label', 'is_ignored');
 
   const state = people
+    // "Not a real person" must never be merged INTO one. mergePeople ORs
+    // is_ignored onto the survivor, so absorbing a false-positive cluster
+    // would mark a real person ignored and drop them out of the guest-facing
+    // strip entirely. Cheap to skip, expensive to discover.
+    .filter((p) => !(p.is_ignored === true || p.is_ignored === 1))
     .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
     .filter((p) => p.vec);
+
+  // A pair the photographer answered "not the same" about stays not the same,
+  // however far the centroids drift afterwards. Without this the automatic
+  // pass silently overturns an explicit human decision the moment new faces
+  // push the pair over the threshold — or the moment someone tunes it.
+  const dismissed = await loadDismissedPairs(eventId);
 
   const merged = [];
   const absorbed = new Set();
@@ -285,6 +350,8 @@ async function consolidate(eventId, options = {}) {
       // differently — that is a human assertion this heuristic does not get
       // to overrule.
       if (a.label && b.label && a.label !== b.label) continue;
+
+      if (dismissed.has(pairKey(a.id, b.id))) continue;
 
       if (dot(a.vec, b.vec) >= mergeThreshold) {
         await mergePeople(eventId, [b.id], a.id);
@@ -348,13 +415,7 @@ async function suggestMerges(eventId, options = {}) {
 
   if (state.length < 2) return [];
 
-  const dismissed = new Set(
-    (await db('event_people_merge_dismissals')
-      .where({ event_id: eventId })
-      .select('person_a_id', 'person_b_id')
-      .catch(() => []))
-      .map((d) => `${d.person_a_id}:${d.person_b_id}`)
-  );
+  const dismissed = await loadDismissedPairs(eventId);
 
   const pairs = [];
   for (let i = 0; i < state.length; i++) {
@@ -366,13 +427,16 @@ async function suggestMerges(eventId, options = {}) {
       // assertion, not a question.
       if (a.label && b.label && a.label !== b.label) continue;
 
-      const [lo, hi] = a.id < b.id ? [a.id, b.id] : [b.id, a.id];
-      if (dismissed.has(`${lo}:${hi}`)) continue;
+      if (dismissed.has(pairKey(a.id, b.id))) continue;
 
       const score = dot(a.vec, b.vec);
       if (score < floor || score >= mergeThreshold) continue;
 
-      pairs.push({ person_a_id: lo, person_b_id: hi, score });
+      pairs.push({
+        person_a_id: Math.min(a.id, b.id),
+        person_b_id: Math.max(a.id, b.id),
+        score,
+      });
     }
   }
 
@@ -396,11 +460,29 @@ async function suggestMerges(eventId, options = {}) {
 }
 
 /**
+ * Is this the UNIQUE constraint firing, as opposed to a real write failure?
+ *
+ * Both engines have to be recognised: Postgres reports SQLSTATE 23505, and
+ * sqlite3 reports SQLITE_CONSTRAINT with the specific constraint named in the
+ * message (better-sqlite3 narrows the code itself). Matching too broadly here
+ * would put us back to swallowing genuine failures.
+ */
+function isUniqueViolation(err) {
+  if (!err) return false;
+  if (err.code === '23505') return true;
+  if (typeof err.code === 'string' && err.code.startsWith('SQLITE_CONSTRAINT')) {
+    return /unique/i.test(err.message || '');
+  }
+  return false;
+}
+
+/**
  * Remember that these two are NOT the same person, so the pair stops being
  * suggested. Normalized to (lower id, higher id) so the pair has one identity.
  */
 async function dismissMergeSuggestion(eventId, personAId, personBId) {
-  const [lo, hi] = personAId < personBId ? [personAId, personBId] : [personBId, personAId];
+  const lo = Math.min(personAId, personBId);
+  const hi = Math.max(personAId, personBId);
   try {
     await db('event_people_merge_dismissals').insert({
       event_id: eventId,
@@ -409,8 +491,12 @@ async function dismissMergeSuggestion(eventId, personAId, personBId) {
       created_at: new Date().toISOString(),
     });
   } catch (err) {
-    // The UNIQUE constraint doing its job — dismissing twice is not an error.
-    logger.debug?.(`faceClustering: duplicate dismissal for ${lo}/${hi}: ${err.message}`);
+    // ONLY the UNIQUE constraint doing its job — dismissing twice is a
+    // double-click, not an error. Anything else (missing table on a
+    // pre-migration install, read-only database) must reach the caller:
+    // reporting "kept separate" for a decision that was never stored is worse
+    // than an error, because the pair silently comes back next scan.
+    if (!isUniqueViolation(err)) throw err;
   }
   return { dismissed: true };
 }
@@ -674,6 +760,10 @@ module.exports = {
   consolidate,
   suggestMerges,
   dismissMergeSuggestion,
+  // Exported for the tests that pin which failures may be swallowed and which
+  // must stop the pass.
+  isUniqueViolation,
+  isMissingTable,
   mergePeople,
   splitPerson,
   recomputeCentroid,

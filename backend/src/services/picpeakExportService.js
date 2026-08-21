@@ -42,6 +42,11 @@ const EXCLUDED_TABLES = new Set([
   'knex_migrations_lock',
   'photo_faces',
   'event_people',
+  // Follows event_people out of the export (#1107): these rows are nothing but
+  // references to person ids the target will never receive. Carried across,
+  // they would attach to whatever ids the target's own re-scan happens to
+  // mint, silently suppressing merge suggestions in unrelated galleries.
+  'event_people_merge_dismissals',
 ]);
 
 // Storage subdirs holding non-recalculable blobs — always included.

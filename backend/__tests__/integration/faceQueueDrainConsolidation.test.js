@@ -37,8 +37,18 @@ async function seedEvent(slug) {
     password_hash: 'x',
     share_link: `${slug}-share`,
     expires_at: new Date().toISOString(),
+    // The drain rechecks this before consolidating, so the fixture has to be
+    // a gallery that actually has detection on.
+    face_recognition_enabled: true,
   }).returning('id');
   return typeof row === 'object' ? row.id : row;
+}
+
+/** Both halves of the "two deliberate actions" rule have to be on. */
+async function enableFacesGlobally() {
+  const existing = await db('feature_flags').where({ key: 'faces' }).first();
+  if (existing) await db('feature_flags').where({ key: 'faces' }).update({ value: true });
+  else await db('feature_flags').insert({ key: 'faces', value: true });
 }
 
 async function insertPhoto(eventId, faceStatus) {
@@ -57,12 +67,15 @@ describe('faceQueue drain consolidation (#1107)', () => {
     ({ db, cleanup } = await bootCrmDb());
     faceQueue = require('../../src/services/faceQueue');
     clustering = require('../../src/services/faceClustering');
+    await enableFacesGlobally();
   }, 120000);
 
   afterAll(async () => { if (cleanup) await cleanup(); });
 
   beforeEach(() => {
     faceQueue.touchedEvents.clear();
+    faceQueue.consolidationRetryAt.clear();
+    faceQueue.inFlightByEvent.clear();
     jest.restoreAllMocks();
   });
 
@@ -119,14 +132,73 @@ describe('faceQueue drain consolidation (#1107)', () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it('a failing consolidation never propagates into the worker loop', async () => {
+  it('a failing consolidation never propagates into the worker loop, and is retried', async () => {
     const eventId = await seedEvent('drain-throws');
     await insertPhoto(eventId, 'done');
     faceQueue.touchedEvents.add(eventId);
 
-    jest.spyOn(clustering, 'consolidate').mockRejectedValue(new Error('boom'));
+    const spy = jest.spyOn(clustering, 'consolidate').mockRejectedValue(new Error('boom'));
 
     await expect(faceQueue.drainConsolidation()).resolves.toBeUndefined();
+
+    // A transient database error must not cost the gallery its consolidation
+    // outright — the event keeps its place so a later tick retries.
+    expect(faceQueue.touchedEvents.has(eventId)).toBe(true);
+
+    // ...but not on the very next tick. The worker idles every couple of
+    // seconds, so an immediate retry would hot-loop a permanently broken event
+    // and warn every time.
+    expect(faceQueue.consolidationRetryAt.get(eventId)).toBeGreaterThan(Date.now());
+    const callsBefore = spy.mock.calls.length;
+    await faceQueue.drainConsolidation();
+    expect(spy).toHaveBeenCalledTimes(callsBefore);
+
+    // Once the backoff elapses it really does try again, and succeeds.
+    faceQueue.consolidationRetryAt.set(eventId, Date.now() - 1);
+    spy.mockResolvedValue([]);
+    await faceQueue.drainConsolidation();
+    expect(faceQueue.touchedEvents.has(eventId)).toBe(false);
+    expect(faceQueue.consolidationRetryAt.has(eventId)).toBe(false);
+  });
+
+  it('waits while another worker is still inside processPhotoFaces', async () => {
+    const eventId = await seedEvent('drain-inflight');
+    // Every row already reads as drained: the last photo is committed 'done'
+    // inside the transaction, and auto-categorisation runs afterwards. Only
+    // the in-flight count knows a worker is still there.
+    await insertPhoto(eventId, 'done');
+    faceQueue.touchedEvents.add(eventId);
+    faceQueue.inFlightByEvent.set(eventId, 1);
+
+    const spy = jest.spyOn(clustering, 'consolidate').mockResolvedValue([]);
+    await faceQueue.drainConsolidation();
+
+    // Consolidating here would record its count, and the busy worker would
+    // then re-mark the event — the next pass merges nothing and overwrites the
+    // real number with zero.
+    expect(spy).not.toHaveBeenCalled();
+    expect(faceQueue.touchedEvents.has(eventId)).toBe(true);
+
+    faceQueue.inFlightByEvent.delete(eventId);
+    await faceQueue.drainConsolidation();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not consolidate an event whose detection was switched off mid-drain', async () => {
+    const eventId = await seedEvent('drain-disabled');
+    await insertPhoto(eventId, 'done');
+    await db('events').where({ id: eventId }).update({ face_recognition_enabled: false });
+    faceQueue.touchedEvents.add(eventId);
+
+    const spy = jest.spyOn(clustering, 'consolidate').mockResolvedValue([]);
+    await faceQueue.drainConsolidation();
+
+    // An earlier photo legitimately marked the event before the toggle went
+    // off. Merging someone's clusters just after they disabled the feature is
+    // not a thing to do quietly.
+    expect(spy).not.toHaveBeenCalled();
+    // Dropped rather than retried — it is not coming back on its own.
+    expect(faceQueue.touchedEvents.has(eventId)).toBe(false);
   });
 
   it('treats events independently — a busy gallery does not hold up a finished one', async () => {

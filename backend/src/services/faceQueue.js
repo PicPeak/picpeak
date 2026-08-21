@@ -31,7 +31,7 @@ const logger = require('../utils/logger');
 const { processPhotoFaces } = require('./faceProcessor');
 const { SidecarUnavailableError } = require('./faceClient');
 const { TransientSourceError } = require('./faceProcessor');
-const { isFeatureEnabled } = require('./faceSettings');
+const { isFeatureEnabled, isEnabledForEvent } = require('./faceSettings');
 
 const POLL_INTERVAL_MS = parseInt(process.env.FACE_PROCESSOR_POLL_MS || '2000', 10);
 const CONCURRENCY = Math.max(1, parseInt(process.env.FACE_PROCESSOR_CONCURRENCY || '1', 10));
@@ -117,6 +117,29 @@ function logUnreachableSource(message) {
  */
 const touchedEvents = new Set();
 
+// A consolidation that fails keeps its place so a transient database error
+// does not cost the gallery its pass — but the worker goes idle every
+// POLL_INTERVAL_MS, so retrying immediately would hot-loop a permanently
+// broken event and emit a warning every couple of seconds. Same shape as
+// `deferredEvents` above: back it off, then try again.
+const CONSOLIDATE_RETRY_MS = parseInt(process.env.FACE_CONSOLIDATE_RETRY_MS || '60000', 10);
+const consolidationRetryAt = new Map();
+
+// eventId -> how many workers are currently inside processPhotoFaces for it.
+//
+// `face_status` alone cannot answer "is anyone still working on this event":
+// the photo is committed 'done' inside the transaction, and auto-categorisation
+// then runs before the call returns. During that window the row looks drained
+// to every other worker. Counting the callers closes it.
+const inFlightByEvent = new Map();
+
+function markInFlight(eventId, delta) {
+  if (eventId == null) return;
+  const next = (inFlightByEvent.get(eventId) || 0) + delta;
+  if (next > 0) inFlightByEvent.set(eventId, next);
+  else inFlightByEvent.delete(eventId);
+}
+
 /**
  * Consolidate every touched event that has genuinely drained.
  *
@@ -134,6 +157,9 @@ async function drainConsolidation() {
   if (!touchedEvents.size) return;
 
   for (const eventId of [...touchedEvents]) {
+    const retryAt = consolidationRetryAt.get(eventId);
+    if (retryAt && Date.now() < retryAt) continue;
+
     try {
       const outstanding = await db('photos')
         .where({ event_id: eventId })
@@ -143,12 +169,34 @@ async function drainConsolidation() {
 
       if (Number(outstanding?.c ?? 0) > 0) continue;
 
-      touchedEvents.delete(eventId);
+      // A worker may still be inside processPhotoFaces for this event: the
+      // photo is committed 'done' before auto-categorisation runs, so the row
+      // stops counting as outstanding while the call is still going. Without
+      // this, an idle worker consolidates and records its count, the busy one
+      // then re-marks the event, and the next pass overwrites the real number
+      // with zero — losing exactly the report this feature exists to give.
+      if ((inFlightByEvent.get(eventId) || 0) > 0) continue;
+
+      // Detection may have been switched off mid-drain, after an earlier
+      // photo already marked this event. Merging someone's clusters just
+      // after they turned the feature off is not a thing to do quietly.
+      const event = await db('events').where({ id: eventId }).first();
+      if (!(await isEnabledForEvent(event))) {
+        touchedEvents.delete(eventId);
+        consolidationRetryAt.delete(eventId);
+        continue;
+      }
+
       // Required here rather than at module load, matching faceProcessor's
       // call into faceAutoCategories: the binding stays late, which keeps the
       // seam this is tested through honest.
       const { consolidate } = require('./faceClustering');
       const merged = await consolidate(eventId);
+      // Dropped only once it has actually run. Removing it first meant a
+      // transient database error lost the pass entirely — no retry until the
+      // gallery happened to be scanned again.
+      touchedEvents.delete(eventId);
+      consolidationRetryAt.delete(eventId);
       if (merged.length) {
         logger.info(
           `faceQueue: scan of event ${eventId} drained — consolidated ${merged.length} look-alike pair(s)`
@@ -156,8 +204,14 @@ async function drainConsolidation() {
       }
     } catch (e) {
       // Never let a consolidation failure stop the queue. The event keeps its
-      // place in the set only if it was not already removed above.
-      logger.warn(`faceQueue: consolidation failed for event ${eventId}`, { error: e.message });
+      // place so a transient error is retried, but not before the backoff —
+      // otherwise a permanently failing event warns on every idle tick.
+      consolidationRetryAt.set(eventId, Date.now() + CONSOLIDATE_RETRY_MS);
+      logger.warn(
+        `faceQueue: consolidation failed for event ${eventId}, retrying in `
+        + `${Math.round(CONSOLIDATE_RETRY_MS / 1000)}s`,
+        { error: e.message }
+      );
     }
   }
 }
@@ -252,12 +306,20 @@ async function workerLoop(workerIdx) {
       continue;
     }
 
+    markInFlight(claimed.event_id, +1);
     try {
-      await processPhotoFaces(claimed.id);
-      // Scanned, so this event's clusters may have moved. Recorded even for a
-      // photo with no faces — it still counts toward the event draining, and
-      // the drain check is what decides whether anything actually runs.
-      if (claimed.event_id != null) touchedEvents.add(claimed.event_id);
+      const outcome = await processPhotoFaces(claimed.id);
+      // Only a photo that actually went through detection can have moved this
+      // event's clusters. 'skipped' covers videos, a purge that raced the
+      // scan, and — the one that matters — detection being switched OFF
+      // mid-drain: consolidating there would merge clusters moments after the
+      // admin turned the feature off. 'failed' produced no faces either.
+      //
+      // A photo containing no faces still reports 'done', so an event whose
+      // photos are all empty still gets its (harmless) pass.
+      if (outcome?.status === 'done' && claimed.event_id != null) {
+        touchedEvents.add(claimed.event_id);
+      }
     } catch (err) {
       // The sidecar being down stops EVERY photo, so returning this one to
       // 'pending' and backing off costs nothing — there is no other work to
@@ -305,6 +367,11 @@ async function workerLoop(workerIdx) {
           error: updateErr.message,
         });
       }
+    } finally {
+      // In a finally because the catch above returns to the loop via
+      // `continue` on two paths — a leaked count would block this event's
+      // consolidation for the lifetime of the process.
+      markInFlight(claimed.event_id, -1);
     }
   }
 }
@@ -361,7 +428,11 @@ async function stop() {
   janitorHandle = null;
 }
 
-// drainConsolidation and touchedEvents are exported for the same reason
-// claimNextPhoto is: the drain condition is the subtle part of #1107 and is
-// worth pinning directly, rather than through a running worker loop.
-module.exports = { start, stop, claimNextPhoto, drainConsolidation, touchedEvents };
+// drainConsolidation, touchedEvents and consolidationRetryAt are exported for
+// the same reason claimNextPhoto is: the drain condition and its failure
+// backoff are the subtle parts of #1107 and are worth pinning directly, rather
+// than through a running worker loop.
+module.exports = {
+  start, stop, claimNextPhoto, drainConsolidation,
+  touchedEvents, consolidationRetryAt, inFlightByEvent,
+};

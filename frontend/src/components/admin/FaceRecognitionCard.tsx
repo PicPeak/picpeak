@@ -162,6 +162,29 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [healthAt, shouldProbe, scanRunning, health]);
 
+  // Consolidation happens AFTER the last photo is marked done: the worker
+  // records the event, goes idle, then drains. So the poll that first sees
+  // `in_progress: false` also stops polling, and it read the consolidation
+  // count a moment too early — leaving the card silent about merges that did
+  // happen until the admin navigates back.
+  //
+  // Two catch-up refetches rather than one, because a consolidation that hits
+  // a transient error is retried by the queue a minute later
+  // (FACE_CONSOLIDATE_RETRY_MS): the first covers the normal case, the second
+  // covers one retry. Deliberately a fixed pair and not a poll — an event
+  // whose photos all failed never consolidates at all, and a condition-based
+  // poll would spin on it forever.
+  const wasScanning = useRef(false);
+  useEffect(() => {
+    const scanning = !!data?.status?.in_progress;
+    const justFinished = wasScanning.current && !scanning;
+    wasScanning.current = scanning;
+    if (!justFinished) return;
+
+    const timers = [8000, 70000].map((ms) => setTimeout(() => { refetch(); }, ms));
+    return () => timers.forEach(clearTimeout);
+  }, [data?.status?.in_progress, refetch]);
+
   useEffect(() => {
     if (!data?.enabled) return;
     api.get('/admin/events/faces/auto-categories')
