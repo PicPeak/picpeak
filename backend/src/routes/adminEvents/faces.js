@@ -25,6 +25,40 @@ const faceClient = require('../../services/faceClient');
 
 const requireFaces = requireFeatureFlag('faces', 'FACES_DISABLED');
 
+/** Cap on one person's face list. Surfaced so the UI can say when it bites. */
+const PERSON_FACES_LIMIT = 500;
+
+/**
+ * Every face of one person, newest-confidence first, with the ORIGINAL photo
+ * dimensions the bbox was measured against.
+ *
+ * Exported so a test can assert the shape of the SQL this actually emits. It
+ * has to stay TABLE-QUALIFIED: `photos` also has an event_id, so the bare form
+ * became ambiguous the moment the join was added — Postgres refuses it
+ * ("column reference event_id is ambiguous") and the endpoint 500s, which took
+ * the Split dialog down with it on every PG install. SQLite resolves the
+ * ambiguity silently, which is why the suite stayed green and it shipped.
+ */
+function buildPersonFacesQuery(dbi, eventId, personId) {
+  return dbi('photo_faces')
+    .where({
+      'photo_faces.event_id': eventId,
+      'photo_faces.person_id': personId,
+    })
+    .orderBy('det_score', 'desc')
+    .limit(PERSON_FACES_LIMIT)
+    .join('photos', 'photos.id', 'photo_faces.photo_id')
+    .select(
+      'photo_faces.id', 'photo_faces.photo_id',
+      'photo_faces.bbox_x', 'photo_faces.bbox_y',
+      'photo_faces.bbox_w', 'photo_faces.bbox_h',
+      'photo_faces.det_score', 'photo_faces.blur',
+      // Needed to crop the box — it is in original-image pixels.
+      'photos.width as photo_width', 'photos.height as photo_height'
+    );
+}
+
+
 async function loadOwnedEvent(req) {
   let q = db('events').where('id', req.params.id);
   if (req.admin.roleName === 'editor') {
@@ -274,19 +308,7 @@ module.exports = (router) => {
         const event = await loadOwnedEvent(req);
         if (!event) return res.status(404).json({ error: 'Event not found' });
 
-        const faces = await db('photo_faces')
-          .where({ event_id: event.id, person_id: req.params.personId })
-          .orderBy('det_score', 'desc')
-          .limit(500)
-          .join('photos', 'photos.id', 'photo_faces.photo_id')
-          .select(
-            'photo_faces.id', 'photo_faces.photo_id',
-            'photo_faces.bbox_x', 'photo_faces.bbox_y',
-            'photo_faces.bbox_w', 'photo_faces.bbox_h',
-            'photo_faces.det_score', 'photo_faces.blur',
-            // Needed to crop the box — it is in original-image pixels.
-            'photos.width as photo_width', 'photos.height as photo_height'
-          );
+        const faces = await buildPersonFacesQuery(db, event.id, req.params.personId);
 
         res.json({
           faces: faces.map((f) => ({
@@ -473,3 +495,6 @@ module.exports = (router) => {
     });
 
 };
+
+module.exports.buildPersonFacesQuery = buildPersonFacesQuery;
+module.exports.PERSON_FACES_LIMIT = PERSON_FACES_LIMIT;

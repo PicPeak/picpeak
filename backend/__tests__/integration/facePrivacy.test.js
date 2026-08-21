@@ -139,6 +139,82 @@ describe('face privacy and visibility (#1074)', () => {
       expect(guestPerson.cover.photo_id).not.toBe(hidden.photoId);
     });
 
+    it('prefers the cover the photographer chose (#1096)', async () => {
+      const eventId = await seedEvent('chosen-cover');
+      // The auto-pick would take the 0.99 face. The photographer picked the
+      // other one — without this the PATCH saved, the toast said so, and the
+      // avatar reverted on the very next read.
+      const best = await addPhotoWithFace(eventId, makeEmbedding(9, 0), { score: 0.99 });
+      const chosen = await addPhotoWithFace(eventId, makeEmbedding(9, 1), { score: 0.70 });
+      await clustering.assignFaces(eventId, [best.face, chosen.face]);
+
+      const [before] = await peopleService.listPeople(eventId, { isClient: true, minClusterSize: 1 });
+      expect(before.cover.photo_id).toBe(best.photoId);
+      // Clustering must not have written one: an automatic seed here would be
+      // indistinguishable from a real choice the moment listPeople honours it.
+      const seeded = await db('event_people').where({ id: before.id }).first();
+      expect(seeded.cover_face_id).toBeFalsy();
+
+      await db('event_people').where({ id: before.id }).update({ cover_face_id: chosen.face.id });
+
+      const [after] = await peopleService.listPeople(eventId, { isClient: true, minClusterSize: 1 });
+      expect(after.cover.photo_id).toBe(chosen.photoId);
+    });
+
+    it('carries a chosen cover through a merge', async () => {
+      const eventId = await seedEvent('cover-merge');
+      const a = await addPhotoWithFace(eventId, makeEmbedding(20, 0), { score: 0.90 });
+      const b = await addPhotoWithFace(eventId, makeEmbedding(60, 0), { score: 0.95 });
+      await clustering.assignFaces(eventId, [a.face]);
+      await clustering.assignFaces(eventId, [b.face]);
+      const people = await db('event_people').where({ event_id: eventId }).orderBy('id');
+      expect(people.length).toBeGreaterThan(1);
+
+      // The SOURCE carries the choice; the target has none.
+      await db('event_people').where({ id: people[1].id }).update({ cover_face_id: b.face.id });
+      await clustering.mergePeople(eventId, [people[1].id], people[0].id);
+
+      const target = await db('event_people').where({ id: people[0].id }).first();
+      expect(target.cover_face_id).toBe(b.face.id);
+    });
+
+    it('carries a chosen cover through a recluster', async () => {
+      const eventId = await seedEvent('cover-recluster');
+      const faces = [];
+      for (let v = 0; v < 3; v++) {
+        faces.push((await addPhotoWithFace(eventId, makeEmbedding(21, v), { score: 0.9 - v * 0.1 })).face);
+      }
+      await clustering.assignFaces(eventId, faces);
+      const [person] = await db('event_people').where({ event_id: eventId });
+      // Pick the WORST-scoring face, so an automatic re-pick would differ.
+      const chosen = faces[2].id;
+      await db('event_people').where({ id: person.id }).update({ cover_face_id: chosen });
+
+      await clustering.recluster(eventId);
+
+      const after = await db('event_people').where({ event_id: eventId }).whereNotNull('cover_face_id');
+      expect(after).toHaveLength(1);
+      expect(after[0].cover_face_id).toBe(chosen);
+    });
+
+    it('falls back to a visible face when the chosen cover is hidden from this audience', async () => {
+      const eventId = await seedEvent('chosen-cover-hidden');
+      // Choosing a cover must never override the visibility scoping — that
+      // would hand a guest a crop of a photo they cannot open.
+      const hidden = await addPhotoWithFace(eventId, makeEmbedding(10, 0), {
+        visibility: 'hidden', score: 0.99,
+      });
+      const visible = await addPhotoWithFace(eventId, makeEmbedding(10, 1), { score: 0.70 });
+      await clustering.assignFaces(eventId, [hidden.face, visible.face]);
+
+      const [person] = await peopleService.listPeople(eventId, { isClient: true, minClusterSize: 1 });
+      await db('event_people').where({ id: person.id }).update({ cover_face_id: hidden.face.id });
+
+      const [guestView] = await peopleService.listPeople(eventId, { isClient: false, minClusterSize: 1 });
+      expect(guestView.cover.photo_id).toBe(visible.photoId);
+      expect(guestView.cover.photo_id).not.toBe(hidden.photoId);
+    });
+
     it('drops a person entirely when all their photos are hidden', async () => {
       const eventId = await seedEvent('all-hidden');
       const faces = [];

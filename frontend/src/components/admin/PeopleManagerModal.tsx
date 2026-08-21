@@ -14,15 +14,20 @@
  * the control.
  */
 import React, { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { X, Check, Merge, Scissors, EyeOff, Ban, Loader2 } from 'lucide-react';
+import { X, Check, Merge, Scissors, EyeOff, Ban, Loader2, Image as ImageIcon } from 'lucide-react';
 
 import { Button, Loading } from '../common';
 import { api } from '../../config/api';
 import { faceCropStyle } from '../gallery/faceCrop';
 import { adminFacePreviewUrl } from '../gallery/imageTiers';
+
+/** Mirrors PERSON_FACES_LIMIT in adminEvents/faces.js. The endpoint caps a
+ *  person's face list, so any surface that renders it has to admit when it is
+ *  showing a truncated one rather than implying it is everything. */
+const PERSON_FACES_LIMIT = 500;
 
 interface AdminPerson {
   id: number;
@@ -109,11 +114,16 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
   eventId, open, onClose, onChanged,
 }) => {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const [selected, setSelected] = useState<number[]>([]);
   const [renaming, setRenaming] = useState<number | null>(null);
   const [draftLabel, setDraftLabel] = useState('');
   const [splitting, setSplitting] = useState<AdminPerson | null>(null);
   const [splitFaceIds, setSplitFaceIds] = useState<number[]>([]);
+  // Cover picker (#1096). Clustering picks the cover, and its idea of a good
+  // one and a human's do not always agree — a cluster whose avatar is softer
+  // or turned away stays that way in the guest-facing strip too.
+  const [coverFor, setCoverFor] = useState<AdminPerson | null>(null);
   const [busy, setBusy] = useState(false);
 
   const { data, isLoading, refetch } = useQuery<{ people: AdminPerson[] }>({
@@ -122,16 +132,25 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
     enabled: open,
   });
 
+  // Both pickers browse the same face list; only the action on a click
+  // differs. Keyed by person id so switching between them reuses the cache.
+  const facesFor = splitting || coverFor;
+
   const { data: faceData, isLoading: facesLoading } = useQuery<{ faces: PersonFace[] }>({
-    queryKey: ['admin-person-faces', eventId, splitting?.id],
+    queryKey: ['admin-person-faces', eventId, facesFor?.id],
     queryFn: async () =>
-      (await api.get(`/admin/events/${eventId}/people/${splitting!.id}/faces`)).data,
-    enabled: !!splitting,
+      (await api.get(`/admin/events/${eventId}/people/${facesFor!.id}/faces`)).data,
+    enabled: !!facesFor,
   });
 
   const people = useMemo(() => data?.people || [], [data]);
 
   const after = async (message: string) => {
+    // The face list is cached per person and split/merge move faces between
+    // them. Until the cover picker landed, the only reader closed itself after
+    // acting so nobody saw the stale copy; now a second surface reads the same
+    // key and would offer faces that are no longer this person's.
+    await queryClient.invalidateQueries({ queryKey: ['admin-person-faces'] });
     await refetch();
     onChanged?.();
     setSelected([]);
@@ -194,6 +213,18 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
     );
   };
 
+  const chooseCover = (faceId: number) => {
+    if (!coverFor) return;
+    const personId = coverFor.id;
+    setCoverFor(null);
+    run(
+      async () => {
+        await api.patch(`/admin/events/${eventId}/people/${personId}`, { cover_face_id: faceId });
+      },
+      t('admin.people.coverSet', { defaultValue: 'Cover updated' })
+    );
+  };
+
   const setFlag = (person: AdminPerson, field: 'is_hidden' | 'is_ignored', value: boolean) =>
     run(
       async () => {
@@ -229,8 +260,66 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
           </button>
         </div>
 
-        {/* --- split picker ------------------------------------------------ */}
-        {splitting ? (
+        {/* --- cover picker ------------------------------------------------ */}
+        {coverFor ? (
+          <>
+            <div className="px-5 py-3 bg-neutral-50 border-b border-neutral-100 text-sm text-neutral-700">
+              {t('admin.people.coverHelp', {
+                defaultValue: 'Pick the photo that best shows this person. It becomes their avatar here and in the guest-facing people strip.',
+              })}
+              {(faceData?.faces?.length || 0) >= Math.min(
+                PERSON_FACES_LIMIT, coverFor.total_face_count ?? PERSON_FACES_LIMIT
+              ) && (coverFor.total_face_count ?? 0) > PERSON_FACES_LIMIT && (
+                <span className="block mt-1 text-xs text-neutral-500">
+                  {t('admin.people.coverTruncated', {
+                    limit: PERSON_FACES_LIMIT,
+                    defaultValue: `Showing the ${PERSON_FACES_LIMIT} highest-confidence faces of this person.`,
+                  })}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {facesLoading ? <Loading /> : (
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+                  {(faceData?.faces || []).map((face) => {
+                    const current = coverFor.cover?.face_id === face.id;
+                    return (
+                      <button
+                        key={face.id}
+                        type="button"
+                        disabled={busy}
+                        title={t('admin.people.coverPick', { defaultValue: 'Use as cover' })}
+                        onClick={() => chooseCover(face.id)}
+                        className={`relative rounded-lg overflow-hidden border-2 transition-colors ${
+                          current ? 'border-primary-600' : 'border-transparent hover:border-neutral-300'
+                        }`}
+                      >
+                        <FaceThumb
+                          eventId={eventId}
+                          photoId={face.photo_id}
+                          bbox={face.bbox}
+                          photoWidth={face.photo_width}
+                          photoHeight={face.photo_height}
+                          size={88}
+                        />
+                        {current && (
+                          <span className="absolute top-1 right-1 bg-primary-600 text-white rounded-full p-0.5">
+                            <Check size={12} />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-neutral-100">
+              <Button variant="outline" size="sm" onClick={() => setCoverFor(null)}>
+                {t('common.cancel', { defaultValue: 'Cancel' })}
+              </Button>
+            </div>
+          </>
+        ) : splitting ? (
           <>
             <div className="px-5 py-3 bg-amber-50 border-b border-amber-100 text-sm text-amber-900">
               {t('admin.people.splitHelp', {
@@ -362,6 +451,15 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                         </div>
 
                         <div className="flex items-center gap-1 flex-shrink-0">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            title={t('admin.people.coverAction', { defaultValue: 'Choose which photo represents this person' })}
+                            onClick={() => setCoverFor(person)}
+                            className="p-2 text-neutral-400 hover:text-neutral-700 rounded"
+                          >
+                            <ImageIcon size={16} />
+                          </button>
                           <button
                             type="button"
                             disabled={busy}

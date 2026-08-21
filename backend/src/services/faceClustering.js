@@ -208,7 +208,13 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
         centroid: packEmbedding(embedding),
         face_count_total: 1,
         model_version: face.model_version,
-        cover_face_id: face.id,
+        // cover_face_id is deliberately NOT set (#1096). It means one thing
+        // now — the photographer picked this face — and seeding it with
+        // whichever face happened to start the cluster made that
+        // indistinguishable from a real choice. listPeople derives the
+        // automatic cover at read time instead, which it has to anyway: the
+        // best face for an ADMIN may sit in a photo a guest cannot open.
+        cover_face_id: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).returning('id');
@@ -309,7 +315,8 @@ async function mergePeople(eventId, sourceIds, targetId) {
     // person they had suppressed — the target keeps its own values where it
     // has them, and inherits from a source only where it does not.
     const target = await trx('event_people').where({ id: targetId }).first();
-    const sources = await trx('event_people').whereIn('id', ids).select('label', 'is_hidden', 'is_ignored');
+    const sources = await trx('event_people').whereIn('id', ids)
+      .select('label', 'is_hidden', 'is_ignored', 'cover_face_id');
 
     const inherited = {};
     if (target && !target.label) {
@@ -319,6 +326,13 @@ async function mergePeople(eventId, sourceIds, targetId) {
     // Suppression is one-way on merge: if ANY party was hidden or ignored,
     // the survivor stays that way. Re-exposing someone by merging is the
     // failure that matters; leaving them hidden is trivially reversible.
+    // A chosen cover is human state like the label, and the merged face is
+    // still in the cluster afterwards — so it survives the merge rather than
+    // reverting to the automatic pick (#1096). The target's own choice wins.
+    if (target && !target.cover_face_id) {
+      const curated = sources.find((p) => p.cover_face_id);
+      if (curated) inherited.cover_face_id = curated.cover_face_id;
+    }
     if (sources.some((p) => p.is_hidden) || target?.is_hidden) inherited.is_hidden = true;
     if (sources.some((p) => p.is_ignored) || target?.is_ignored) inherited.is_ignored = true;
 
@@ -395,15 +409,13 @@ async function recomputeCentroid(personId, trx = db) {
   }
   for (let i = 0; i < mean.length; i++) mean[i] /= vectors.length;
 
-  // Cover face: the highest-scoring detection in the cluster, so the avatar
-  // is the sharpest available crop of that person rather than whichever face
-  // happened to arrive first.
-  const cover = faces.reduce((a, b) => ((b.det_score ?? 0) > (a.det_score ?? 0) ? b : a));
-
+  // cover_face_id is left alone (#1096): it holds the photographer's pick and
+  // nothing else, so a rescan or a merge must not touch it. If the chosen face
+  // is gone the id simply dangles, and listPeople falls back to the derived
+  // cover on the next read — self-healing, no reassociation needed.
   await trx('event_people').where({ id: personId }).update({
     centroid: packEmbedding(normalize(mean)),
     face_count_total: faces.length,
-    cover_face_id: cover.id,
     updated_at: new Date().toISOString(),
   });
 }
@@ -427,9 +439,15 @@ async function recluster(eventId) {
   const previousLabels = await db('event_people')
     .where({ event_id: eventId })
     .where(function () {
-      this.whereNotNull('label').orWhere('is_hidden', true).orWhere('is_ignored', true);
+      this.whereNotNull('label')
+        .orWhere('is_hidden', true)
+        .orWhere('is_ignored', true)
+        // A chosen cover is human state too, and re-grouping used to drop it
+        // (#1096). Faces keep their ids across a recluster, so the choice can
+        // follow its FACE into whichever new cluster ends up holding it.
+        .orWhereNotNull('cover_face_id');
     })
-    .select('id', 'label', 'is_hidden', 'is_ignored');
+    .select('id', 'label', 'is_hidden', 'is_ignored', 'cover_face_id');
 
   const priorMembership = new Map();
   if (previousLabels.length) {
@@ -501,8 +519,21 @@ async function recluster(eventId) {
       if (old?.label && !labelFor.has(newId)) labelFor.set(newId, old.label);
     }
 
-    for (const [newId, flags] of suppression) {
+    // The chosen COVER follows its face, not the majority: the point of the
+    // choice is that specific photo, so it belongs to whichever cluster now
+    // holds it — which is not always the one that inherited the most faces.
+    const coverFor = new Map(); // newId -> faceId
+    const newPersonOfFace = new Map(assignments.map((a) => [a.faceId, a.personId]));
+    for (const old of previousLabels) {
+      if (!old.cover_face_id) continue;
+      const newId = newPersonOfFace.get(old.cover_face_id);
+      if (newId != null && !coverFor.has(newId)) coverFor.set(newId, old.cover_face_id);
+    }
+
+    for (const newId of new Set([...suppression.keys(), ...coverFor.keys()])) {
+      const flags = suppression.get(newId) || {};
       const update = { ...flags, updated_at: new Date().toISOString() };
+      if (coverFor.has(newId)) update.cover_face_id = coverFor.get(newId);
       if (labelFor.has(newId)) update.label = labelFor.get(newId);
       await db('event_people').where({ id: newId }).update(update);
     }

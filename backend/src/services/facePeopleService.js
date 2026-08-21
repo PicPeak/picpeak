@@ -100,10 +100,27 @@ async function listPeople(eventId, { isClient = false, forAdmin = false, minClus
       'photos.height as photo_height'
     );
 
+  // The photographer's explicit pick wins whenever this audience can see it
+  // (#1096). Without this the stored cover_face_id was loaded and discarded —
+  // the picker saved, said so, and the avatar reverted to the best-scoring
+  // face on the very next read, making the whole feature a no-op.
+  //
+  // The score-ordered fallback still stands for everything it always covered:
+  // a person who has never been curated, and a chosen cover that sits in a
+  // photo this audience is not allowed to see.
+  const chosenByPerson = new Map(
+    people.filter((p) => p.cover_face_id).map((p) => [p.id, p.cover_face_id])
+  );
+  const visibleById = new Map(covers.map((row) => [row.id, row]));
+
   const coverByPerson = new Map();
   for (const row of covers) {
     // Rows arrive best-score-first, so the first hit per person wins.
     if (!coverByPerson.has(row.person_id)) coverByPerson.set(row.person_id, row);
+  }
+  for (const [personId, faceId] of chosenByPerson) {
+    const chosen = visibleById.get(faceId);
+    if (chosen && chosen.person_id === personId) coverByPerson.set(personId, chosen);
   }
 
   const out = [];
