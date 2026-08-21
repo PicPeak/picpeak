@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.109.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.108.1-beta.0...v3.109.0-beta.0) (2026-08-21)
+
+
+### Features
+
+* **setup:** configure the public address and SMTP in the wizard, not .env ([#1104](https://github.com/PicPeak/picpeak/issues/1104)) ([9431b9f](https://github.com/PicPeak/picpeak/commit/9431b9f0949e8e51c486019224ca92f46443c50e))
+
 ## [3.108.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.108.0-beta.0...v3.108.1-beta.0) (2026-08-20)
 
 
