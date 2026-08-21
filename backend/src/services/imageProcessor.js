@@ -784,6 +784,12 @@ async function deleteThumbnailTiers(photo) {
  * served from a cache hit without re-reading the source, so an unscoped key
  * would hand one gallery's photo to another.
  */
+/**
+ * Tier storage key -> the in-flight generation for it (#1128). Module scope so
+ * every concurrent request for one tile shares a single Sharp pass.
+ */
+const inFlightThumbnailTiers = new Map();
+
 async function ensureThumbnailAtWidth(photo, width) {
   if (!width) return ensureThumbnail(photo);
 
@@ -835,28 +841,60 @@ async function ensureThumbnailAtWidth(photo, width) {
   // would visibly reframe as the tile size changes.
   const height = Math.round(width * (settings.height / canonicalWidth));
 
-  try {
-    if (isExternal) {
-      const localPath = resolvePhotoFilePath(event, photo);
-      return await generateThumbnail(localPath, {
-        regenerate: true, outputBasename, width, height,
-      });
-    }
-    const sourceKey = resolvePhotoStorageKey(event, photo);
-    if (!sourceKey) return null;
-    return await withLocalCopy(sourceKey, async (localPath) => {
-      const proc = await withProcessableImage(localPath, sourceKey);
-      try {
-        return await generateThumbnail(proc.path, {
-          regenerate: true, outputBasename, width, height,
-        });
-      } finally {
-        proc.cleanup();
+  // One generation per tier key, however many tiles ask for it (#1128).
+  //
+  // A grid issues one request per tile simultaneously, and on a cold gallery
+  // every one of them misses the stat above. Without this each would run its
+  // own Sharp pass over the same source — and for an external photo, re-read
+  // the whole original off the NFS mount to do it. 79 tiles meant 79 decodes
+  // of the same file, which is also what made the delete race easy to hit.
+  //
+  // Per-process only. Two pods still generate independently, which is
+  // harmless: the write ends in an atomic rename, so they converge on
+  // byte-identical output.
+  const pending = inFlightThumbnailTiers.get(key);
+  if (pending) return pending;
+
+  const work = (async () => {
+    try {
+      // NOT `regenerate: true` (#1128). This path is only reached on a cache
+      // MISS, so there is nothing to regenerate — but that flag makes
+      // generateThumbnail open by DELETING the target. Request A publishes the
+      // tier, B stats it and heads for storage.get(), and C — still inside
+      // generation from its own earlier miss — unlinks the file B is about to
+      // open. B's lazy ReadStream then raised an ENOENT nothing was listening
+      // for and Node exited.
+      //
+      // Without the flag the write is a plain put: LocalFsStorage stages to a
+      // temp file and renames, which is atomic, so a concurrent reader sees
+      // either the old file or the new one and never a hole.
+      if (isExternal) {
+        const localPath = resolvePhotoFilePath(event, photo);
+        return await generateThumbnail(localPath, { outputBasename, width, height });
       }
-    });
-  } catch (e) {
-    logger.warn(`Thumbnail tier w${width} failed for photo ${photo.id}: ${e.message}`);
-    return null;
+      const sourceKey = resolvePhotoStorageKey(event, photo);
+      if (!sourceKey) return null;
+      return await withLocalCopy(sourceKey, async (localPath) => {
+        const proc = await withProcessableImage(localPath, sourceKey);
+        try {
+          return await generateThumbnail(proc.path, { outputBasename, width, height });
+        } finally {
+          proc.cleanup();
+        }
+      });
+    } catch (e) {
+      logger.warn(`Thumbnail tier w${width} failed for photo ${photo.id}: ${e.message}`);
+      return null;
+    }
+  })();
+
+  inFlightThumbnailTiers.set(key, work);
+  try {
+    return await work;
+  } finally {
+    // In a finally so a rejection cannot poison the key for the process
+    // lifetime — the next request re-attempts rather than adopting a failure.
+    inFlightThumbnailTiers.delete(key);
   }
 }
 
