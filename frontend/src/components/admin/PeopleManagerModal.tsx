@@ -98,7 +98,7 @@ const FaceThumb: React.FC<{
 
   return (
     <span
-      className="relative block rounded-full overflow-hidden bg-neutral-100 flex-shrink-0"
+      className="relative block rounded-full overflow-hidden bg-neutral-100 dark:bg-neutral-800 flex-shrink-0"
       style={{ width: size, height: size, opacity: dim ? 0.4 : 1 }}
     >
       <img
@@ -159,7 +159,7 @@ const FaceInContext: React.FC<{
         )}
       </div>
       {!canBox && (
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
           {t('admin.people.contextNoBox', {
             defaultValue: 'This photo has no stored dimensions, so the detected face cannot be outlined.',
           })}
@@ -305,20 +305,20 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative bg-white text-neutral-900 rounded-xl shadow-xl w-full max-w-4xl max-h-[88vh] flex flex-col"
+        className="relative bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 rounded-xl shadow-xl w-full max-w-4xl max-h-[88vh] flex flex-col"
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 dark:border-neutral-700">
           <div>
-            <h2 className="text-lg font-medium text-neutral-900">
+            <h2 className="text-lg font-medium text-neutral-900 dark:text-neutral-100">
               {t('admin.people.title', { defaultValue: 'People in this gallery' })}
             </h2>
-            <p className="text-sm text-neutral-500">
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
               {t('admin.people.subtitle', {
                 defaultValue: 'Rename, merge people who were split apart, or hide someone from guests.',
               })}
             </p>
           </div>
-          <button type="button" onClick={onClose} className="p-2 -m-2 text-neutral-400 hover:text-neutral-600">
+          <button type="button" onClick={onClose} className="p-2 -m-2 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200">
             <X size={20} />
           </button>
         </div>
@@ -344,7 +344,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
           const truncated = (viewing.person.total_face_count ?? faces.length) > faces.length;
           return (
             <>
-              <div className="px-5 py-3 bg-neutral-50 border-b border-neutral-100 text-sm text-neutral-700">
+              <div className="px-5 py-3 bg-neutral-50 dark:bg-neutral-800 border-b border-neutral-100 dark:border-neutral-700 text-sm text-neutral-700 dark:text-neutral-300">
                 {t('admin.people.contextHelp', {
                   defaultValue: 'The detected face, outlined in its original photo — who they were standing next to is usually what settles whether two similar people are the same one.',
                 })}
@@ -354,7 +354,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                   // facesLoading goes false with an empty array on a zero-face
                   // person or a failed request; without this the panel span
                   // forever on a spinner that would never resolve.
-                  <p className="text-sm text-neutral-500 text-center py-10">
+                  <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center py-10">
                     {t('admin.people.contextUnavailable', {
                       defaultValue: 'No photo could be loaded for this person.',
                     })}
@@ -363,7 +363,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                   <>
                     <FaceInContext eventId={eventId} face={face} />
                     {truncated && (
-                      <p className="mt-2 text-center text-xs text-neutral-500">
+                      <p className="mt-2 text-center text-xs text-neutral-500 dark:text-neutral-400">
                         {t('admin.people.contextTruncated', {
                           limit: PERSON_FACES_LIMIT,
                           defaultValue: `Showing the first ${PERSON_FACES_LIMIT} appearances of this person.`,
@@ -373,7 +373,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                   </>
                 )}
               </div>
-              <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-neutral-100">
+              <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-neutral-100 dark:border-neutral-700">
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline" size="sm" disabled={faces.length < 2}
@@ -382,7 +382,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                   >
                     <ChevronLeft size={16} />
                   </Button>
-                  <span className="text-sm text-neutral-500 tabular-nums">
+                  <span className="text-sm text-neutral-500 dark:text-neutral-400 tabular-nums">
                     {faces.length ? `${index + 1} / ${faces.length}${truncated ? '+' : ''}` : '—'}
                   </span>
                   <Button
@@ -401,14 +401,14 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
           );
         })() : coverFor ? (
           <>
-            <div className="px-5 py-3 bg-neutral-50 border-b border-neutral-100 text-sm text-neutral-700">
+            <div className="px-5 py-3 bg-neutral-50 dark:bg-neutral-800 border-b border-neutral-100 dark:border-neutral-700 text-sm text-neutral-700 dark:text-neutral-300">
               {t('admin.people.coverHelp', {
                 defaultValue: 'Pick the photo that best shows this person. It becomes their avatar here and in the guest-facing people strip.',
               })}
               {(faceData?.faces?.length || 0) >= Math.min(
                 PERSON_FACES_LIMIT, coverFor.total_face_count ?? PERSON_FACES_LIMIT
               ) && (coverFor.total_face_count ?? 0) > PERSON_FACES_LIMIT && (
-                <span className="block mt-1 text-xs text-neutral-500">
+                <span className="block mt-1 text-xs text-neutral-500 dark:text-neutral-400">
                   {t('admin.people.coverTruncated', {
                     limit: PERSON_FACES_LIMIT,
                     defaultValue: `Showing the ${PERSON_FACES_LIMIT} highest-confidence faces of this person.`,
@@ -429,7 +429,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                           title={t('admin.people.coverPick', { defaultValue: 'Use as cover' })}
                           onClick={() => chooseCover(face.id)}
                           className={`block rounded-lg overflow-hidden border-2 transition-colors ${
-                            current ? 'border-primary-600' : 'border-transparent hover:border-neutral-300'
+                            current ? 'border-primary-600' : 'border-transparent hover:border-neutral-300 dark:hover:border-neutral-600'
                           }`}
                         >
                           <FaceThumb
@@ -455,7 +455,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                           type="button"
                           title={t('admin.people.contextAction', { defaultValue: 'See this person in their photo' })}
                           onClick={() => setViewing({ person: coverFor, index: idx })}
-                          className="absolute bottom-1 right-1 bg-white/90 text-neutral-700 rounded-full p-1 opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                          className="absolute bottom-1 right-1 bg-white/90 dark:bg-neutral-900/90 text-neutral-700 dark:text-neutral-200 rounded-full p-1 opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
                         >
                           <Maximize2 size={12} />
                         </button>
@@ -465,7 +465,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-neutral-100">
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-neutral-100 dark:border-neutral-700">
               <Button variant="outline" size="sm" onClick={() => setCoverFor(null)}>
                 {t('common.cancel', { defaultValue: 'Cancel' })}
               </Button>
@@ -473,7 +473,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
           </>
         ) : splitting ? (
           <>
-            <div className="px-5 py-3 bg-amber-50 border-b border-amber-100 text-sm text-amber-900">
+            <div className="px-5 py-3 bg-amber-50 dark:bg-amber-900/30 border-b border-amber-100 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-200">
               {t('admin.people.splitHelp', {
                 defaultValue: 'Pick the photos that are NOT this person. They become a new entry, and everything else stays.',
               })}
@@ -490,7 +490,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                         onClick={() => setSplitFaceIds((p) =>
                           p.includes(face.id) ? p.filter((x) => x !== face.id) : [...p, face.id])}
                         className={`relative rounded-lg overflow-hidden border-2 transition-colors ${
-                          picked ? 'border-primary-600' : 'border-transparent hover:border-neutral-300'
+                          picked ? 'border-primary-600' : 'border-transparent hover:border-neutral-300 dark:hover:border-neutral-600'
                         }`}
                       >
                         <FaceThumb
@@ -512,8 +512,8 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-neutral-100">
-              <span className="text-sm text-neutral-500">
+            <div className="flex items-center justify-between gap-2 px-5 py-4 border-t border-neutral-100 dark:border-neutral-700">
+              <span className="text-sm text-neutral-500 dark:text-neutral-400">
                 {t('admin.people.splitSelected', {
                   count: splitFaceIds.length,
                   defaultValue: `${splitFaceIds.length} selected`,
@@ -534,7 +534,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
             {/* --- people grid --------------------------------------------- */}
             <div className="flex-1 overflow-y-auto p-5">
               {isLoading ? <Loading /> : people.length === 0 ? (
-                <p className="text-sm text-neutral-500 text-center py-10">
+                <p className="text-sm text-neutral-500 dark:text-neutral-400 text-center py-10">
                   {t('admin.people.empty', { defaultValue: 'No people detected yet.' })}
                 </p>
               ) : (
@@ -545,7 +545,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                       <div
                         key={person.id}
                         className={`flex items-center gap-3 p-2 rounded-lg border transition-colors ${
-                          isSelected ? 'border-primary-400 bg-primary-50' : 'border-transparent hover:bg-neutral-50'
+                          isSelected ? 'border-primary-400 bg-primary-50 dark:bg-primary-900/30' : 'border-transparent hover:bg-neutral-50 dark:hover:bg-neutral-800'
                         }`}
                       >
                         <button
@@ -577,13 +577,13 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                                 if (e.key === 'Escape') setRenaming(null);
                               }}
                               placeholder={t('admin.people.namePlaceholder', { defaultValue: 'Add a name' })}
-                              className="w-full max-w-xs px-2 py-1 text-sm border border-neutral-300 rounded focus:outline-none focus:ring-2 focus:ring-primary-500"
+                              className="w-full max-w-xs px-2 py-1 text-sm border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded focus:outline-none focus:ring-2 focus:ring-primary-500"
                             />
                           ) : (
                             <button
                               type="button"
                               onClick={() => { setRenaming(person.id); setDraftLabel(person.label || ''); }}
-                              className="text-sm text-left text-neutral-900 hover:underline"
+                              className="text-sm text-left text-neutral-900 dark:text-neutral-100 hover:underline"
                             >
                               {person.label || (
                                 <span className="text-neutral-400 italic">
@@ -592,7 +592,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                               )}
                             </button>
                           )}
-                          <p className="text-xs text-neutral-500">
+                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
                             {t('admin.people.photoCount', {
                               count: person.total_face_count ?? person.face_count,
                               defaultValue: `${person.total_face_count ?? person.face_count} photos`,
@@ -614,7 +614,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                             disabled={busy}
                             title={t('admin.people.contextAction', { defaultValue: 'See this person in their photo' })}
                             onClick={() => setViewing({ person, index: -1 })}
-                            className="p-2 text-neutral-400 hover:text-neutral-700 rounded"
+                            className="p-2 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded"
                           >
                             <Maximize2 size={16} />
                           </button>
@@ -623,7 +623,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                             disabled={busy}
                             title={t('admin.people.coverAction', { defaultValue: 'Choose which photo represents this person' })}
                             onClick={() => setCoverFor(person)}
-                            className="p-2 text-neutral-400 hover:text-neutral-700 rounded"
+                            className="p-2 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded"
                           >
                             <ImageIcon size={16} />
                           </button>
@@ -632,7 +632,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                             disabled={busy}
                             title={t('admin.people.splitAction', { defaultValue: 'Split out photos that are someone else' })}
                             onClick={() => { setSplitting(person); setSplitFaceIds([]); }}
-                            className="p-2 text-neutral-400 hover:text-neutral-700 rounded"
+                            className="p-2 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded"
                           >
                             <Scissors size={16} />
                           </button>
@@ -641,7 +641,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                             disabled={busy}
                             title={t('admin.people.hideAction', { defaultValue: 'Hide from guests' })}
                             onClick={() => setFlag(person, 'is_hidden', !person.is_hidden)}
-                            className={`p-2 rounded ${person.is_hidden ? 'text-primary-600' : 'text-neutral-400 hover:text-neutral-700'}`}
+                            className={`p-2 rounded ${person.is_hidden ? 'text-primary-600' : 'text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}`}
                           >
                             <EyeOff size={16} />
                           </button>
@@ -650,7 +650,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                             disabled={busy}
                             title={t('admin.people.ignoreAction', { defaultValue: 'Not a real person — ignore' })}
                             onClick={() => setFlag(person, 'is_ignored', !person.is_ignored)}
-                            className={`p-2 rounded ${person.is_ignored ? 'text-red-600' : 'text-neutral-400 hover:text-neutral-700'}`}
+                            className={`p-2 rounded ${person.is_ignored ? 'text-red-600' : 'text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}`}
                           >
                             <Ban size={16} />
                           </button>
@@ -664,8 +664,8 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
 
             {/* Merge only becomes available at two, and the wording names the
                 target explicitly so nobody has to guess which name survives. */}
-            <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-neutral-100">
-              <span className="text-sm text-neutral-500">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-t border-neutral-100 dark:border-neutral-700">
+              <span className="text-sm text-neutral-500 dark:text-neutral-400">
                 {selected.length > 0
                   ? t('admin.people.selectedCount', {
                     count: selected.length,
