@@ -28,7 +28,18 @@ permissions:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20, not 10. This job normally finishes in ~3 minutes, but it is the only
+    # one that boots Postgres and runs the full integration suite, so it is the
+    # only one exposed to runner contention — observed spread has reached 9.2
+    # minutes, and a release PR (#1088) was cancelled at 10.3 with every test
+    # passing and jest still running. A cancelled job reads as a red X on a
+    # green branch, which costs a re-run and a diagnosis every time it happens.
+    #
+    # The cap is a runaway guard, not a performance budget; 20 leaves real
+    # headroom over the worst observed run while still killing a hung suite
+    # well inside the hour GitHub would otherwise allow. frontend and ml keep
+    # 10 — they take seconds and have never come close.
+    timeout-minutes: 20
 
     # The .picpeak restore suites gate their real-Postgres cases behind
     # PICPEAK_PG_TEST_URL and `describe.skip` themselves out when it is
