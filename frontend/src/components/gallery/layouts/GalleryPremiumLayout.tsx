@@ -57,7 +57,7 @@ interface PhotoCardProps {
 const PhotoCard: React.FC<PhotoCardProps> = ({
   photo,
   width,
-  height: _height,
+  height,
   onClick,
   onLike,
   onSelect,
@@ -73,8 +73,13 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   allowLikes = false,
   index
 }) => {
-  // Note: height is passed but not used as we maintain aspect ratio via width
-  void _height;
+  // The height MasonryPhotoAlbum computed from photos.width/height is used,
+  // not discarded (#1130). Letting the tile size itself from the image meant
+  // the rendered shape came from whatever rendition happened to be served —
+  // and with thumbnail_fit seeded to 'cover' (migration 040) every rendition
+  // is square, so the masonry laid out 79 identical squares and was
+  // indistinguishable from the fixed grid. The photo's real aspect ratio is
+  // in the DB and is what the album already laid out against.
   const { ref, inView } = useInView({
     triggerOnce: true,
     threshold: 0.1,
@@ -97,7 +102,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
     <motion.div
       ref={ref}
       className={`gallery-premium-photo-card group ${isSelected ? 'selected' : ''}`}
-      style={{ width: '100%', height: 'auto', display: 'block' }}
+      style={{ width: '100%', height, display: 'block' }}
       initial={{ opacity: 0, y: 20 }}
       animate={inView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
       transition={{ duration: 0.4, delay: Math.min(index * 0.05, 0.3) }}
@@ -107,8 +112,12 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
       <AuthenticatedImage
         src={tieredSrc}
         alt={photo.filename}
-        style={{ width, height: 'auto' }}
-        className="w-full h-auto object-cover"
+        // No inline height: the card now has a definite one, so the
+        // stylesheet's `.gallery-premium-photo-card img { height: 100% }` can
+        // finally apply and object-fit: cover crops a square rendition INTO
+        // the correctly-shaped tile, rather than the rendition dictating the
+        // tile's shape.
+        className="w-full h-full object-cover"
         loading="lazy"
         isGallery={true}
         slug={slug}

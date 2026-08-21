@@ -77,7 +77,12 @@ const DEFAULT_CSS_TEMPLATE = `/*
 
 .photo-card img {
   width: 100%;
-  height: 200px;
+  /* 100%, not a fixed pixel height: every aspect-ratio layout (masonry,
+     justified, mosaic, gallery-premium) gives .photo-card a definite height
+     computed from photos.width/height, and this rule's specificity (0,1,1)
+     beats the .h-full utility (0,1,0) the layouts rely on. A fixed height
+     therefore pinned every image inside a correctly-shaped card — #1131. */
+  height: 100%;
   object-fit: cover;
   transition: transform 0.3s ease;
 }
