@@ -8,7 +8,9 @@
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
-import { previewUrlForViewport, viewportPreviewWidth, PREVIEW_WIDTHS } from '../imageTiers';
+import {
+  previewUrlForViewport, viewportPreviewWidth, thumbnailSrcSet, PREVIEW_WIDTHS,
+} from '../imageTiers';
 
 const realWidth = window.innerWidth;
 const realDpr = window.devicePixelRatio;
@@ -129,5 +131,54 @@ describe('previewUrlForViewport', () => {
   it('never downshifts below the smallest tier', () => {
     setViewport(320, 1, { saveData: true }); // already at 640
     expect(previewUrlForViewport('/p', LANDSCAPE)).toBe('/p?w=640');
+  });
+});
+
+describe('thumbnailSrcSet', () => {
+  it('offers the bigger tiers when the source can fill them', () => {
+    const set = thumbnailSrcSet('/api/gallery/x/thumbnail/7', { width: 4000, height: 3000 });
+    expect(set).toContain('/api/gallery/x/thumbnail/7 300w');
+    expect(set).toContain('?w=600 600w');
+    expect(set).toContain('?w=900 900w');
+  });
+
+  it('never advertises a tier the source cannot fill', () => {
+    // Thumbnails are generated withoutEnlargement, so a 400px original asked
+    // for 900 comes back at 400. Advertising "900w" would have the browser
+    // pick that candidate and upscale it — the softness this fixes, worse.
+    // 400px short edge fills neither 600 nor 900, leaving only the canonical
+    // tier — and a single candidate is not a srcset, so it returns undefined
+    // and the plain src stands. That is the guard doing its job, not a gap.
+    expect(thumbnailSrcSet('/t', { width: 500, height: 400 })).toBeUndefined();
+
+    // A source that clears 600 but not 900 offers exactly those two.
+    const mid = thumbnailSrcSet('/t', { width: 800, height: 700 });
+    expect(mid).toContain('300w');
+    expect(mid).toContain('600w');
+    expect(mid).not.toContain('900w');
+  });
+
+  it('measures the SHORT edge, because thumbnails are square', () => {
+    // A 4000x600 panorama has plenty of width and can still only fill a 600
+    // square. Using the long edge would over-advertise every panorama.
+    const set = thumbnailSrcSet('/t', { width: 4000, height: 600 });
+    expect(set).toContain('600w');
+    expect(set).not.toContain('900w');
+  });
+
+  it('returns undefined when there is nothing to choose between', () => {
+    // A single candidate is not a srcset; emitting one just adds bytes to the
+    // markup and risks the browser second-guessing the src.
+    expect(thumbnailSrcSet('/t', { width: 320, height: 240 })).toBeUndefined();
+    expect(thumbnailSrcSet(null)).toBeUndefined();
+    expect(thumbnailSrcSet(undefined)).toBeUndefined();
+  });
+
+  it('offers every tier when dimensions are unknown', () => {
+    // No guard available; the server clamps with withoutEnlargement anyway, so
+    // the worst case is the pre-existing behaviour rather than a regression.
+    const set = thumbnailSrcSet('/t');
+    expect(set).toContain('300w');
+    expect(set).toContain('900w');
   });
 });

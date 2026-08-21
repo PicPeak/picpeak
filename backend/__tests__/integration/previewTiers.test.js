@@ -188,4 +188,69 @@ describe('preview tiers (#1095)', () => {
       expect(meta.height).toBe(Math.round(640 * (2000 / 3000)));
     });
   });
+
+  describe('thumbnail tiers', () => {
+    async function seedThumbPhoto(w = 3000, h = 2000) {
+      const [e] = await db('events').insert({
+        slug: `tt-${Math.random().toString(36).slice(2, 8)}`,
+        event_type: 'wedding', event_name: 'tt', event_date: '2026-01-01',
+        host_email: 'h@example.com', admin_email: 'a@example.com',
+        password_hash: 'x', share_link: `tt-${Math.random()}`,
+        expires_at: new Date().toISOString(),
+      }).returning('id');
+      const eventId = typeof e === 'object' ? e.id : e;
+      const rel = `events/active/tt/${Math.random().toString(36).slice(2, 8)}.jpg`;
+      const abs = path.join(process.env.STORAGE_PATH, rel);
+      await fs.promises.mkdir(path.dirname(abs), { recursive: true });
+      await sharp({ create: { width: w, height: h, channels: 3, background: { r: 5, g: 5, b: 5 } } })
+        .jpeg().toFile(abs);
+      const [p2] = await db('photos').insert({
+        event_id: eventId, filename: path.basename(rel),
+        path: rel.replace(/^events\/active\//, ''), type: 'individual',
+        width: w, height: h, processing_status: 'complete', source_origin: 'managed',
+      }).returning('id');
+      return db('photos').where({ id: typeof p2 === 'object' ? p2.id : p2 }).first();
+    }
+
+    it('scopes thumbnail tier keys by photo id', async () => {
+      // Same cross-gallery hazard the preview tiers had: a cache hit serves
+      // without re-reading the source, so a shared basename leaks across events.
+      const keys = imageProcessor.thumbnailTierKeys({ id: 42, path: 'a/IMG_0001.jpg', source_origin: 'managed' });
+      expect(keys.every((k) => k.includes('p42_'))).toBe(true);
+      expect(keys.some((k) => k.includes('w300'))).toBe(false); // canonical excluded
+    });
+
+    it('generates a tier at the requested size', async () => {
+      const photo = await seedThumbPhoto();
+      const key = await imageProcessor.ensureThumbnailAtWidth(photo, 600);
+      expect(key).toContain('thumb_w600_');
+      const meta = await sharp(path.join(process.env.STORAGE_PATH, key)).metadata();
+      expect(Math.max(meta.width, meta.height)).toBe(600);
+    });
+
+    it('does not upscale past the source, which is why srcset is guarded', async () => {
+      // The reason thumbnailSrcSet checks the short edge: ask a 400px source
+      // for 900 and withoutEnlargement caps it, so advertising 900w would be
+      // a promise the file does not keep.
+      const small = await seedThumbPhoto(500, 400);
+      const key = await imageProcessor.ensureThumbnailAtWidth(small, 900);
+      const meta = await sharp(path.join(process.env.STORAGE_PATH, key)).metadata();
+      expect(Math.max(meta.width, meta.height)).toBeLessThan(900);
+    });
+
+    it('resolves the canonical width to the normal thumbnail', async () => {
+      const photo = await seedThumbPhoto();
+      const key = await imageProcessor.ensureThumbnailAtWidth(photo, 300);
+      expect(key).not.toContain('thumb_w300_');
+    });
+
+    it('deleteThumbnailTiers removes them', async () => {
+      const photo = await seedThumbPhoto();
+      const key = await imageProcessor.ensureThumbnailAtWidth(photo, 600);
+      const abs = path.join(process.env.STORAGE_PATH, key);
+      expect(fs.existsSync(abs)).toBe(true);
+      await imageProcessor.deleteThumbnailTiers(await db('photos').where({ id: photo.id }).first());
+      expect(fs.existsSync(abs)).toBe(false);
+    });
+  });
 });

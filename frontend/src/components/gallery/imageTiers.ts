@@ -21,12 +21,7 @@ export const FACE_CROP_WIDTH = 640;
 /** CSS px of the avatar the crop has to fill; used to size the tier. */
 const FACE_AVATAR_PX = 64;
 
-// Thumbnail tiers are NOT here yet. Emitting a srcset whose candidates the
-// server ignores is worse than emitting none: the browser would pick the
-// "600w" candidate, receive the 300px image, and upscale it — the exact
-// softness #1095 reports, made slightly worse. generateThumbnail resolves its
-// width from admin settings rather than an argument, so tiering it is a
-// separate change and lands separately.
+export const THUMBNAIL_WIDTHS = [300, 600, 900] as const;
 
 /** Smallest tier that still covers `needed`, or the largest if none does. */
 function smallestCovering(needed: number, tiers: readonly number[]): number {
@@ -194,4 +189,41 @@ export function adminFacePreviewUrl(
 ): string {
   const width = photo ? faceTierWidth(photo, cover) : FACE_CROP_WIDTH;
   return `/api/admin/photos/${eventId}/preview/${photoId}?w=${width}`;
+}
+
+/**
+ * srcset for a grid thumbnail (#1095).
+ *
+ * Grid tiles are ~175 CSS px at the mobile 2-column default — about 530 device
+ * px on a DPR-3 phone — so the 300px thumbnail is upscaled ~1.8x and faces
+ * visibly mush. Offering 600 and 900 lets the browser take a sharp one there
+ * while desktop, where a tile is nearer 300, keeps the small file.
+ *
+ * Only advertises tiers the SOURCE can actually satisfy. Thumbnail generation
+ * uses withoutEnlargement, so a 400px original asked for 900 comes back at
+ * 400 — advertising "900w" for it would have the browser pick that candidate
+ * and upscale, which is the softness this fixes made slightly worse. That is
+ * the same trap that kept thumbnails out of the first pass; here the photo's
+ * own dimensions are the guard.
+ */
+export function thumbnailSrcSet(
+  thumbnailUrl: string | null | undefined,
+  photo?: { width?: number | null; height?: number | null },
+): string | undefined {
+  if (!thumbnailUrl) return undefined;
+
+  // Thumbnails are square (width === height), so the binding constraint is the
+  // SHORT edge of the source: a 4000x600 panorama can only fill a 600px tile.
+  const shortEdge = photo?.width && photo?.height
+    ? Math.min(photo.width, photo.height)
+    : null;
+
+  const usable = THUMBNAIL_WIDTHS.filter(
+    (w) => w === THUMBNAIL_WIDTHS[0] || !shortEdge || w <= shortEdge,
+  );
+  if (usable.length < 2) return undefined; // nothing to choose between
+
+  return usable
+    .map((w) => `${w === THUMBNAIL_WIDTHS[0] ? thumbnailUrl : withWidth(thumbnailUrl, w)} ${w}w`)
+    .join(', ');
 }

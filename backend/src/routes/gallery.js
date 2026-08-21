@@ -2249,7 +2249,16 @@ router.get('/:slug/thumbnail/:photoId',
       }
 
       // Ensure thumbnail exists and is valid, regenerate if needed
-      const thumbnailPath = await ensureThumbnail(photo);
+      // Responsive tier (#1095), whitelisted the same way the preview route's
+      // is. Unrecognised or absent falls through to the canonical 300px
+      // thumbnail, so existing clients are untouched.
+      const { THUMBNAIL_WIDTHS, normalizeTierWidth, ensureThumbnailAtWidth } =
+        require('../services/imageProcessor');
+      const thumbTier = normalizeTierWidth(req.query.w, THUMBNAIL_WIDTHS);
+
+      const thumbnailPath = thumbTier
+        ? (await ensureThumbnailAtWidth(photo, thumbTier)) || (await ensureThumbnail(photo))
+        : await ensureThumbnail(photo);
 
       if (!thumbnailPath) {
         logger.error(`Failed to generate thumbnail for photo ${photoId}`);
@@ -2283,7 +2292,10 @@ router.get('/:slug/thumbnail/:photoId',
       const watermarkHash = watermarkSettings?.enabled
         ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
         : '-nowm';
-      const etag = `"thumb-${photoId}-${mtimeMs}${watermarkHash}"`;
+      // Tier in the ETag, same reason as the preview route: without it a
+      // client holding the 300px thumbnail gets a 304 for its 600px request
+      // and renders the small one, which is this feature inverted.
+      const etag = `"thumb-${photoId}-${thumbTier || 'def'}-${mtimeMs}${watermarkHash}"`;
 
       // Check if client has valid cached version
       if (req.headers['if-none-match'] === etag) {

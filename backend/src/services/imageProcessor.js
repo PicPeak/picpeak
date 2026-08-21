@@ -212,7 +212,10 @@ const contentTypeFor = (format) => {
 async function generateThumbnail(imagePath, options = {}) {
   const sourceBasename = path.basename(imagePath);
   const outputBasename = options.outputBasename || sourceBasename;
-  const thumbnailFilename = `thumb_${outputBasename}`;
+  const widthTag = options.width && options.width !== DEFAULT_THUMBNAIL_WIDTH
+    ? `w${options.width}_`
+    : '';
+  const thumbnailFilename = `thumb_${widthTag}${outputBasename}`;
   const thumbnailRelKey = path.posix.join('thumbnails', thumbnailFilename);
   const storage = getStorage();
 
@@ -241,7 +244,12 @@ async function generateThumbnail(imagePath, options = {}) {
     // Strip EXIF/metadata from thumbnails (privacy: prevent GPS leak etc.)
     sharpInstance = sharpInstance.withMetadata(false);
 
-    sharpInstance = sharpInstance.resize(settings.width, settings.height, {
+    // options.width/height override the admin setting for responsive tiers
+    // (#1095). The configured `fit` is kept deliberately: the grid renders
+    // with object-cover, so every tier must be cropped the same way or the
+    // browser would swap between differently-framed images as the viewport
+    // changes.
+    sharpInstance = sharpInstance.resize(options.width || settings.width, options.height || settings.height, {
       withoutEnlargement: true,
       fit: settings.fit,
       position: 'center'
@@ -731,6 +739,89 @@ async function deletePreviewTiers(photo) {
   await Promise.all(previewTierKeys(photo).map((k) => storage.delete(k).catch(() => {})));
 }
 
+/**
+ * Thumbnail storage keys for every responsive tier of a photo (#1095).
+ * Mirrors previewTierKeys — see there for why they are derived rather than
+ * tracked, and why the canonical width is excluded.
+ */
+function thumbnailTierKeys(photo) {
+  if (!photo) return [];
+  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const sourceBasename = path.basename(
+    (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
+  );
+  const outputBasename = `p${photo.id}_${sourceBasename}`;
+  return THUMBNAIL_WIDTHS
+    .filter((w) => w !== DEFAULT_THUMBNAIL_WIDTH)
+    .map((w) => path.posix.join('thumbnails', `thumb_w${w}_${outputBasename}`));
+}
+
+async function deleteThumbnailTiers(photo) {
+  const storage = getStorage();
+  await Promise.all(thumbnailTierKeys(photo).map((k) => storage.delete(k).catch(() => {})));
+}
+
+/**
+ * A thumbnail at a specific tier width (#1095).
+ *
+ * Same contract as ensurePreviewImageAtWidth: pure cache, keyed by width,
+ * never written to photos.thumbnail_path. The key is scoped by photo id for
+ * every source type — basenames are not unique across events, and a tier is
+ * served from a cache hit without re-reading the source, so an unscoped key
+ * would hand one gallery's photo to another.
+ */
+async function ensureThumbnailAtWidth(photo, width) {
+  if (!width || width === DEFAULT_THUMBNAIL_WIDTH) return ensureThumbnail(photo);
+
+  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
+  const storage = getStorage();
+
+  let event;
+  try {
+    event = await db('events').where('id', photo.event_id).first();
+  } catch (e) {
+    return null;
+  }
+  if (!event) return null;
+
+  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+  const sourceBasename = path.basename(
+    (isExternal ? (photo.external_relpath || photo.filename) : photo.path) || `photo-${photo.id}`
+  );
+  const outputBasename = `p${photo.id}_${sourceBasename}`;
+  const key = path.posix.join('thumbnails', `thumb_w${width}_${outputBasename}`);
+
+  try {
+    if (await storage.stat(key)) return key;
+  } catch (e) {
+    // regenerate below
+  }
+
+  try {
+    if (isExternal) {
+      const localPath = resolvePhotoFilePath(event, photo);
+      return await generateThumbnail(localPath, {
+        regenerate: true, outputBasename, width, height: width,
+      });
+    }
+    const sourceKey = resolvePhotoStorageKey(event, photo);
+    if (!sourceKey) return null;
+    return await withLocalCopy(sourceKey, async (localPath) => {
+      const proc = await withProcessableImage(localPath, sourceKey);
+      try {
+        return await generateThumbnail(proc.path, {
+          regenerate: true, outputBasename, width, height: width,
+        });
+      } finally {
+        proc.cleanup();
+      }
+    });
+  } catch (e) {
+    logger.warn(`Thumbnail tier w${width} failed for photo ${photo.id}: ${e.message}`);
+    return null;
+  }
+}
+
 async function ensurePreviewImageAtWidth(photo, width) {
   if (!width || width === DEFAULT_PREVIEW_LONG_EDGE) return ensurePreviewImage(photo);
 
@@ -981,6 +1072,9 @@ async function resizeToBox(inputBuffer, box, options = {}) {
 
 module.exports = {
   ensurePreviewImageAtWidth,
+  ensureThumbnailAtWidth,
+  thumbnailTierKeys,
+  deleteThumbnailTiers,
   previewTierKeys,
   deletePreviewTiers,
   PREVIEW_WIDTHS,
