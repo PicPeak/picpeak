@@ -217,7 +217,42 @@ describe('preview tiers (#1095)', () => {
       // without re-reading the source, so a shared basename leaks across events.
       const keys = imageProcessor.thumbnailTierKeys({ id: 42, path: 'a/IMG_0001.jpg', source_origin: 'managed' });
       expect(keys.every((k) => k.includes('p42_'))).toBe(true);
-      expect(keys.some((k) => k.includes('w300'))).toBe(false); // canonical excluded
+      // Every width, canonical included: which one is canonical depends on the
+      // thumbnail_width setting, so on a 600-configured install w300 is the
+      // tier file. Deleting a key that was never written is a no-op; missing
+      // one strands it forever.
+      expect(keys).toHaveLength(3);
+    });
+
+    it('tags the tier against the configured width, not the 300 default', async () => {
+      // Regression: with thumbnail_width=600 a w=300 request wrote
+      // `thumb_<name>` while the caller probed `thumb_w300_<name>`. The cache
+      // never hit, so every request re-downloaded the original and ran Sharp,
+      // and the file it left behind was in no cleanup list.
+      await db('app_settings').where('setting_key', 'thumbnail_width')
+        .update({ setting_value: 600 });
+      try {
+        const photo = await seedThumbPhoto();
+
+        const first = await imageProcessor.ensureThumbnailAtWidth(photo, 300);
+        expect(first).toContain('thumb_w300_');
+
+        // The second call must be a cache hit on the key the first one wrote.
+        const before = fs.statSync(path.join(process.env.STORAGE_PATH, first)).mtimeMs;
+        const second = await imageProcessor.ensureThumbnailAtWidth(photo, 300);
+        expect(second).toBe(first);
+        expect(fs.statSync(path.join(process.env.STORAGE_PATH, second)).mtimeMs).toBe(before);
+
+        // ...and 600 is now the canonical, so it resolves to the plain thumbnail.
+        const canonical = await imageProcessor.ensureThumbnailAtWidth(photo, 600);
+        expect(canonical).not.toContain('thumb_w600_');
+
+        // Cleanup still reaches the w300 tier this install actually generated.
+        expect(imageProcessor.thumbnailTierKeys(photo)).toContain(first);
+      } finally {
+        await db('app_settings').where('setting_key', 'thumbnail_width')
+          .update({ setting_value: 300 });
+      }
     });
 
     it('generates a tier at the requested size', async () => {
@@ -275,6 +310,57 @@ describe('preview tiers (#1095)', () => {
 
       const key = await imageProcessor.ensureThumbnailAtWidth(video, 900);
       expect(key).not.toContain('thumb_w900_');
+    });
+
+    it('drops tiers when a rename moves the basename they are keyed on', async () => {
+      // The key embeds the basename, so the DB update in renamePhotoFiles is
+      // the point past which the old keys cannot be derived at all — a later
+      // delete or archive computes the new ones and leaves these behind.
+      const renameService = require('../../src/services/eventRenameService');
+      const photo = await seedThumbPhoto();
+      const event = await db('events').where({ id: photo.event_id }).first();
+
+      // Give it a filename the rename will actually rewrite.
+      const dir = path.join(process.env.STORAGE_PATH, 'events/active', event.slug, 'individual');
+      await fs.promises.mkdir(dir, { recursive: true });
+      await sharp({ create: { width: 1200, height: 900, channels: 3, background: { r: 7, g: 7, b: 7 } } })
+        .jpeg().toFile(path.join(dir, 'Old_Name_001.jpg'));
+      await db('photos').where({ id: photo.id }).update({
+        filename: 'Old_Name_001.jpg',
+        path: `${event.slug}/individual/Old_Name_001.jpg`,
+      });
+      const renamable = await db('photos').where({ id: photo.id }).first();
+
+      const key = await imageProcessor.ensureThumbnailAtWidth(renamable, 600);
+      const abs = path.join(process.env.STORAGE_PATH, key);
+      expect(fs.existsSync(abs)).toBe(true);
+
+      await renameService.renamePhotoFiles(
+        event.id, 'Old Name', 'New Name', event.slug, event.slug
+      );
+
+      expect(await db('photos').where({ id: photo.id }).first())
+        .toMatchObject({ filename: 'New_Name_001.jpg' });
+      expect(fs.existsSync(abs)).toBe(false);
+    });
+
+    it('leaves tiers alone when a rename does not move the basename', async () => {
+      // Four storage deletes per photo is 20k calls against S3 for a
+      // 5,000-photo event whose slug merely changed, so the sweep is gated on
+      // the filename actually moving.
+      const renameService = require('../../src/services/eventRenameService');
+      const photo = await seedThumbPhoto();
+      const event = await db('events').where({ id: photo.event_id }).first();
+
+      const key = await imageProcessor.ensureThumbnailAtWidth(photo, 600);
+      const abs = path.join(process.env.STORAGE_PATH, key);
+
+      // The photo's filename carries no event-name prefix, so nothing moves.
+      await renameService.renamePhotoFiles(
+        event.id, 'Old Name', 'New Name', event.slug, event.slug
+      );
+
+      expect(fs.existsSync(abs)).toBe(true);
     });
 
     it('deleteThumbnailTiers removes them', async () => {

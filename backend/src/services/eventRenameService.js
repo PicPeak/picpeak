@@ -181,6 +181,20 @@ class EventRenameService {
               logger.warn('Could not rename photo file', { oldFilename, error: error.message });
             }
           }
+
+          // Responsive tiers (#1095 / #492) are keyed off the basename, so the
+          // update below is the point past which the old keys can no longer be
+          // derived — a later delete or archive would compute the new ones and
+          // leave these in storage forever. Dropped rather than renamed: they
+          // are a pure cache and the next request regenerates.
+          //
+          // Inside this branch, not the loop body: only a filename change moves
+          // the key. Sweeping unconditionally would fire four storage deletes
+          // per photo on every rename, which is 20k calls against S3 for a
+          // 5,000-photo event that merely had its slug adjusted.
+          const imageProcessor = require('./imageProcessor');
+          await imageProcessor.deleteThumbnailTiers(photo);
+          await imageProcessor.deletePreviewTiers(photo);
         }
 
         // Update database record

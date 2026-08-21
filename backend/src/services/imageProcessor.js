@@ -212,15 +212,23 @@ const contentTypeFor = (format) => {
 async function generateThumbnail(imagePath, options = {}) {
   const sourceBasename = path.basename(imagePath);
   const outputBasename = options.outputBasename || sourceBasename;
-  const widthTag = options.width && options.width !== DEFAULT_THUMBNAIL_WIDTH
-    ? `w${options.width}_`
-    : '';
-  const thumbnailFilename = `thumb_${widthTag}${outputBasename}`;
-  const thumbnailRelKey = path.posix.join('thumbnails', thumbnailFilename);
   const storage = getStorage();
 
   // Get thumbnail settings
   const settings = await getThumbnailSettings();
+
+  // Tag against the CONFIGURED canonical width, not the 300 default — the tag
+  // has to agree with the key ensureThumbnailAtWidth probed for. On an install
+  // with thumbnail_width=600 a w=300 request used to write `thumb_<name>` while
+  // the caller looked for `thumb_w300_<name>`: the cache never hit, so every
+  // single request re-downloaded the original and ran Sharp, and the file it
+  // left behind was in no cleanup list.
+  const canonicalWidth = settings.width || DEFAULT_THUMBNAIL_WIDTH;
+  const widthTag = options.width && options.width !== canonicalWidth
+    ? `w${options.width}_`
+    : '';
+  const thumbnailFilename = `thumb_${widthTag}${outputBasename}`;
+  const thumbnailRelKey = path.posix.join('thumbnails', thumbnailFilename);
 
   // Force regeneration: drop the existing object before writing the new one
   if (options.regenerate) {
@@ -742,7 +750,14 @@ async function deletePreviewTiers(photo) {
 /**
  * Thumbnail storage keys for every responsive tier of a photo (#1095).
  * Mirrors previewTierKeys — see there for why they are derived rather than
- * tracked, and why the canonical width is excluded.
+ * tracked.
+ *
+ * Every width is listed, the canonical one included, and deliberately: which
+ * width is canonical depends on the thumbnail_width setting, so on a
+ * 600-configured install it is w300 that exists as a tier file. Reading the
+ * setting here would make the whole cleanup path async for no gain — deleting
+ * a key that was never written is already a swallowed no-op, so the inclusive
+ * list is both simpler and the one that cannot strand a file.
  */
 function thumbnailTierKeys(photo) {
   if (!photo) return [];
@@ -752,7 +767,6 @@ function thumbnailTierKeys(photo) {
   );
   const outputBasename = `p${photo.id}_${sourceBasename}`;
   return THUMBNAIL_WIDTHS
-    .filter((w) => w !== DEFAULT_THUMBNAIL_WIDTH)
     .map((w) => path.posix.join('thumbnails', `thumb_w${w}_${outputBasename}`));
 }
 

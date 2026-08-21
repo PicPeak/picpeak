@@ -19,6 +19,7 @@ import { useInView } from 'react-intersection-observer';
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import type { Photo } from '../../../types';
 import { AuthenticatedImage, PoweredBy } from '../../common';
+import { thumbnailUrlForTile } from '../imageTiers';
 import { feedbackService } from '../../../services/feedback.service';
 import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
@@ -79,6 +80,15 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
     threshold: 0.1,
   });
 
+  // Responsive tier (#1095). This layout has its own card rather than the
+  // shared PhotoCard, so it needs its own call — but MasonryPhotoAlbum hands
+  // the laid-out tile width straight to the render prop, so the measurement
+  // the shared card has to take is simply a parameter here.
+  const isVideo = photo.media_type === 'video' || photo.type === 'video';
+  const tieredSrc = (!isVideo && photo.thumbnail_url
+    ? thumbnailUrlForTile(photo.thumbnail_url, photo, width)
+    : null) || photo.thumbnail_url || photo.url;
+
   const likeCount = photo.like_count ?? 0;
   const averageRating = photo.average_rating ?? 0;
   const commentCount = photo.comment_count ?? 0;
@@ -95,7 +105,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
       data-testid={`photo-card-${photo.id}`}
     >
       <AuthenticatedImage
-        src={photo.thumbnail_url || photo.url}
+        src={tieredSrc}
         alt={photo.filename}
         style={{ width, height: 'auto' }}
         className="w-full h-auto object-cover"
