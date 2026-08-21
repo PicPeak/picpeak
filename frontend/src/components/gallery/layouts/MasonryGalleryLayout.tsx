@@ -527,7 +527,21 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
       className="photo-grid flex gap-4"
       style={{ gap: `${gutter}px` }}
     >
-      {photoColumns.map((column, columnIndex) => (
+      {containerWidth === 0 ? (
+        // Same gate the rows mode above already applies, for the same reason:
+        // the column count starts at 3 and the greedy distribution runs with a
+        // hardcoded 300px estimate until the container has been measured.
+        // Mounting cards into that guess costs a full remount when it settles
+        // — photos move to a different parent column, so React tears them down
+        // — and since #1095 each mount picks a tier from its own width, the two
+        // mounts request two DIFFERENT urls. On a 1440px desktop that was 45 of
+        // 62 photos downloading twice, plus 17 left on the larger file.
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {photos.slice(0, 8).map((photo) => (
+            <div key={photo.id} className="aspect-square bg-neutral-200 rounded-lg animate-pulse" />
+          ))}
+        </div>
+      ) : photoColumns.map((column, columnIndex) => (
         <div
           key={columnIndex}
           className="flex-1 flex flex-col"
