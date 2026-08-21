@@ -7,7 +7,6 @@ import { useTranslation } from 'react-i18next';
 import type { Photo } from '../../types';
 import { useDownloadPhoto } from '../../hooks/useGallery';
 import { PhotoLightbox } from './PhotoLightbox';
-import { thumbnailSrcSet } from './imageTiers';
 import { Button, AuthenticatedImage } from '../common';
 import { galleryService } from '../../services/gallery.service';
 import { analyticsService } from '../../services/analytics.service';
@@ -265,8 +264,6 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
         <>
           <AuthenticatedImage
             src={photo.thumbnail_url || photo.url}
-            srcSet={thumbnailSrcSet(photo.thumbnail_url, photo)}
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
             alt={photo.filename}
             className="w-full h-full object-cover rounded-lg transition-transform duration-200 group-hover:scale-105"
             loading="lazy"

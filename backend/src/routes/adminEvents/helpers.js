@@ -224,6 +224,16 @@ async function deleteEventCascade(eventId, adminContext) {
     throw err;
   }
 
+  // Responsive tiers (#1095 / #492) live in the top-level thumbnails/ and
+  // previews/ directories, not under the event folder the filesystem sweep
+  // below removes, and their keys are derived from the photo rows — which the
+  // transaction is about to delete. So they are read here, while the rows
+  // still exist, and swept after the commit; miss that window and every tier
+  // this event generated is orphaned with nothing left to derive its key from.
+  const tieredPhotos = await db('photos')
+    .where('event_id', eventId)
+    .select('id', 'path', 'filename', 'source_origin', 'external_relpath');
+
   await db.transaction(async (trx) => {
     // 1. Delete activity logs (audit trail)
     await trx('activity_logs').where('event_id', eventId).del();
@@ -291,6 +301,19 @@ async function deleteEventCascade(eventId, adminContext) {
       }
     }
   });
+
+  // Tier sweep, post-commit and best-effort for the same reason as the folder
+  // removal above: an orphaned derivative is recoverable noise, a rolled-back
+  // delete is not.
+  try {
+    const { deleteThumbnailTiers, deletePreviewTiers } = require('../../services/imageProcessor');
+    for (const photo of tieredPhotos) {
+      await deleteThumbnailTiers(photo);
+      await deletePreviewTiers(photo);
+    }
+  } catch (tierErr) {
+    logger.warn('Failed to delete responsive tiers during cascade delete', { eventId, error: tierErr.message });
+  }
 
   // Audit trail (outside the transaction so a logging failure can't undo
   // the actual delete).

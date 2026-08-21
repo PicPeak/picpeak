@@ -125,7 +125,11 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
   try {
     const { eventId } = req.body; // Optional: regenerate for specific event only
     
-    let query = db('photos').select('id', 'event_id', 'path');
+    // source_origin/external_relpath/filename are selected for
+    // deleteThumbnailTiers below — it derives the tier keys from the same
+    // fields ensureThumbnailAtWidth used to write them.
+    let query = db('photos')
+      .select('id', 'event_id', 'path', 'source_origin', 'external_relpath', 'filename');
     if (eventId) {
       query = query.where('event_id', eventId);
     }
@@ -151,7 +155,21 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
         try {
           const storagePath = getStoragePath();
           const originalPath = path.join(storagePath, 'events/active', photo.path);
-          
+
+          // Drop the responsive tiers first (#1095), same as the preview
+          // endpoint below. They are cached by width outside thumbnail_path
+          // and their key carries no settings version, so regenerating only
+          // the canonical rendition leaves phones served the old fit, quality
+          // or format indefinitely — which is exactly what this endpoint is
+          // invoked to undo after a settings change.
+          //
+          // Above the fs.access below, not after it: that check only passes
+          // for managed photos on a local filesystem. On S3, and for external
+          // or reference rows, it fails and skips the photo — so invalidating
+          // after it would leave stale tiers on precisely the deployments
+          // where they are hardest to notice.
+          await require('../services/imageProcessor').deleteThumbnailTiers(photo);
+
           // Check if original file exists
           try {
             await fs.access(originalPath);
@@ -160,7 +178,7 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
             errorCount++;
             continue;
           }
-          
+
           // Regenerate thumbnail
           const thumbnailPath = await generateThumbnail(originalPath, { regenerate: true });
           

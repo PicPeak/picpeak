@@ -10,7 +10,10 @@ const path = require('path');
 const fsp = require('fs/promises');
 const sharp = require('sharp');
 const { db } = require('../database/db');
-const { generateThumbnail, extractCaptureDate, withProcessableImage } = require('./imageProcessor');
+const {
+  generateThumbnail, extractCaptureDate, withProcessableImage,
+  deleteThumbnailTiers, deletePreviewTiers,
+} = require('./imageProcessor');
 const { generatePhotoFilename } = require('../utils/filenameSanitizer');
 const watermarkGeneratorService = require('./watermarkGeneratorService');
 const { getStorage } = require('./storage');
@@ -98,6 +101,12 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     if (existingPhoto.thumbnail_path && existingPhoto.thumbnail_path !== thumbnailPath) {
       await storage.delete(existingPhoto.thumbnail_path).catch(() => {});
     }
+    // Responsive tiers, keyed off the OLD row (#1095 / #492). Their key embeds
+    // the basename, which the update below replaces — so this is the last
+    // moment they can be derived at all. Miss it and a later delete or archive
+    // computes keys from the new basename and leaves them in storage forever.
+    await deleteThumbnailTiers(existingPhoto);
+    await deletePreviewTiers(existingPhoto);
     try {
       await watermarkGeneratorService.deleteForPhoto(existingPhoto.id);
     } catch {

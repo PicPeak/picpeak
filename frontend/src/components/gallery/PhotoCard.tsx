@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, Maximize2, Check, MessageSquare, Heart } from 'lucide-react';
 import { useInView } from 'react-intersection-observer';
 import { AuthenticatedImage } from '../common';
+import { thumbnailUrlForTile } from './imageTiers';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { feedbackService } from '../../services/feedback.service';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
@@ -186,7 +187,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   }, [isSelectionMode, hideOverlay]);
 
   // Lazy loading with intersection observer
-  const { ref, inView: observedInView } = useInView({
+  const { ref, inView: observedInView, entry } = useInView({
     triggerOnce: true,
     threshold: 0.1,
     rootMargin: inViewRootMargin,
@@ -322,6 +323,28 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       </button>
     ) : null;
 
+  // Responsive grid tier (#1095). Applied here rather than in each layout
+  // because six of the seven funnel their tile through this one image.
+  //
+  // The observer entry carries the tile's rendered width, which is the number
+  // that actually decides the tier — column counts vary by layout (Mosaic is
+  // 1-up on mobile where Grid is 2-up) and every layout shifts again with the
+  // thumbnailScale theme setting, so a breakpoint table would be wrong for
+  // most installs. It is measured before the first fetch: `inView` and the
+  // entry arrive on the same render, and the image is not requested until
+  // then, so nothing is fetched twice.
+  //
+  // Only when the src IS the thumbnail route: layouts fall back to photo.url
+  // when thumbnail_url is null, and ?w= on the original-photo route means
+  // something else. Videos are excluded because their thumbnail is a poster
+  // frame from the video pipeline — the tier route would hand the video file
+  // itself to Sharp.
+  const isVideo = photo.media_type === 'video' || photo.type === 'video';
+  const tileSrc = !isVideo && photo.thumbnail_url && imageProps.src === photo.thumbnail_url
+    ? (thumbnailUrlForTile(photo.thumbnail_url, photo, entry?.boundingClientRect.width)
+      ?? imageProps.src)
+    : imageProps.src;
+
   return (
     <div
       ref={lazy ? ref : undefined}
@@ -332,7 +355,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     >
       {inView ? (
         <>
-          <AuthenticatedImage {...imageProps} />
+          <AuthenticatedImage {...imageProps} src={tileSrc} />
 
           {beforeOverlay}
 

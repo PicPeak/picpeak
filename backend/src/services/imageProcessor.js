@@ -771,7 +771,24 @@ async function deleteThumbnailTiers(photo) {
  * would hand one gallery's photo to another.
  */
 async function ensureThumbnailAtWidth(photo, width) {
-  if (!width || width === DEFAULT_THUMBNAIL_WIDTH) return ensureThumbnail(photo);
+  if (!width) return ensureThumbnail(photo);
+
+  // Against the CONFIGURED canonical width, not the 300 default. An install
+  // that set thumbnail_width to 600 already has a 600px thumbnail; generating
+  // a w600 tier for it would download the original and run Sharp to produce a
+  // byte-equivalent duplicate, once per photo.
+  const settings = await getThumbnailSettings();
+  const canonicalWidth = settings.width || DEFAULT_THUMBNAIL_WIDTH;
+  if (width === canonicalWidth) return ensureThumbnail(photo);
+
+  // Videos never take the tier path. Their thumbnail is a poster frame from
+  // videoProcessor, not a resize of the stored file, so the code below would
+  // hand the video itself to Sharp — after withLocalCopy has downloaded the
+  // whole thing on an S3 backend. Nothing caches that failure, so a crawler
+  // walking ?w= over a gallery of videos repeats the download every request.
+  if (photo.media_type === 'video' || String(photo.mime_type || '').startsWith('video/')) {
+    return ensureThumbnail(photo);
+  }
 
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
   const storage = getStorage();
@@ -797,11 +814,18 @@ async function ensureThumbnailAtWidth(photo, width) {
     // regenerate below
   }
 
+  // Scale the height from the configured aspect ratio rather than forcing a
+  // square. Thumbnails are square on a default install, but the settings API
+  // accepts any width/height in 50..1000 — and with fit:'cover' a 300x200
+  // canonical next to a 600x600 tier are two different crops, so the photo
+  // would visibly reframe as the tile size changes.
+  const height = Math.round(width * (settings.height / canonicalWidth));
+
   try {
     if (isExternal) {
       const localPath = resolvePhotoFilePath(event, photo);
       return await generateThumbnail(localPath, {
-        regenerate: true, outputBasename, width, height: width,
+        regenerate: true, outputBasename, width, height,
       });
     }
     const sourceKey = resolvePhotoStorageKey(event, photo);
@@ -810,7 +834,7 @@ async function ensureThumbnailAtWidth(photo, width) {
       const proc = await withProcessableImage(localPath, sourceKey);
       try {
         return await generateThumbnail(proc.path, {
-          regenerate: true, outputBasename, width, height: width,
+          regenerate: true, outputBasename, width, height,
         });
       } finally {
         proc.cleanup();

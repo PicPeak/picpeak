@@ -228,10 +228,10 @@ describe('preview tiers (#1095)', () => {
       expect(Math.max(meta.width, meta.height)).toBe(600);
     });
 
-    it('does not upscale past the source, which is why srcset is guarded', async () => {
-      // The reason thumbnailSrcSet checks the short edge: ask a 400px source
-      // for 900 and withoutEnlargement caps it, so advertising 900w would be
-      // a promise the file does not keep.
+    it('does not upscale past the source, which is why the tier is clamped', async () => {
+      // The reason tileThumbnailWidth checks the short edge: ask a 400px
+      // source for 900 and withoutEnlargement caps it, so the request buys a
+      // Sharp run and a second cache entry for a file identical to the 300.
       const small = await seedThumbPhoto(500, 400);
       const key = await imageProcessor.ensureThumbnailAtWidth(small, 900);
       const meta = await sharp(path.join(process.env.STORAGE_PATH, key)).metadata();
@@ -242,6 +242,39 @@ describe('preview tiers (#1095)', () => {
       const photo = await seedThumbPhoto();
       const key = await imageProcessor.ensureThumbnailAtWidth(photo, 300);
       expect(key).not.toContain('thumb_w300_');
+    });
+
+    it('keeps the configured aspect ratio instead of forcing a square', async () => {
+      // Thumbnails are square by default, but the settings API takes any
+      // width/height in 50..1000. With fit:'cover' a 300x200 canonical and a
+      // 600x600 tier are two different crops, so the photo would visibly
+      // reframe as the tile size changed.
+      await db('app_settings').where('setting_key', 'thumbnail_height')
+        .update({ setting_value: 200 });
+      try {
+        const photo = await seedThumbPhoto();
+        const key = await imageProcessor.ensureThumbnailAtWidth(photo, 600);
+        const meta = await sharp(path.join(process.env.STORAGE_PATH, key)).metadata();
+        expect(meta.width).toBe(600);
+        expect(meta.height).toBe(400); // 600 * (200/300), not 600
+      } finally {
+        await db('app_settings').where('setting_key', 'thumbnail_height')
+          .update({ setting_value: 300 });
+      }
+    });
+
+    it('never hands a video to Sharp', async () => {
+      // A video's thumbnail is a poster frame from videoProcessor, not a
+      // resize of the stored file. Without the short-circuit the tier path
+      // would download the whole video (withLocalCopy, in full on S3) and
+      // then fail to decode it — every request, since nothing caches a miss.
+      const photo = await seedThumbPhoto();
+      await db('photos').where({ id: photo.id })
+        .update({ media_type: 'video', mime_type: 'video/mp4' });
+      const video = await db('photos').where({ id: photo.id }).first();
+
+      const key = await imageProcessor.ensureThumbnailAtWidth(video, 900);
+      expect(key).not.toContain('thumb_w900_');
     });
 
     it('deleteThumbnailTiers removes them', async () => {

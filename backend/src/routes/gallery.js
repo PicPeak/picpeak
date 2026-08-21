@@ -2260,6 +2260,16 @@ router.get('/:slug/thumbnail/:photoId',
         ? (await ensureThumbnailAtWidth(photo, thumbTier)) || (await ensureThumbnail(photo))
         : await ensureThumbnail(photo);
 
+      // What was actually resolved, not what was asked for. A tier request can
+      // land on the canonical thumbnail — generation failed, or the row is a
+      // video — and stamping the requested tier into the ETag below would then
+      // have the client cache a 300px image under its 900px key for the full
+      // max-age, with no way to notice.
+      const servedTier = thumbTier && thumbnailPath
+        && path.basename(thumbnailPath).startsWith(`thumb_w${thumbTier}_`)
+        ? thumbTier
+        : null;
+
       if (!thumbnailPath) {
         logger.error(`Failed to generate thumbnail for photo ${photoId}`);
         return res.status(404).json({ error: 'Thumbnail generation failed' });
@@ -2295,7 +2305,7 @@ router.get('/:slug/thumbnail/:photoId',
       // Tier in the ETag, same reason as the preview route: without it a
       // client holding the 300px thumbnail gets a 304 for its 600px request
       // and renders the small one, which is this feature inverted.
-      const etag = `"thumb-${photoId}-${thumbTier || 'def'}-${mtimeMs}${watermarkHash}"`;
+      const etag = `"thumb-${photoId}-${servedTier || 'def'}-${mtimeMs}${watermarkHash}"`;
 
       // Check if client has valid cached version
       if (req.headers['if-none-match'] === etag) {
