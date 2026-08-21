@@ -56,6 +56,13 @@ interface PersonFace {
   blur: number | null;
 }
 
+/** A pair scoring between the assignment threshold and the auto-merge one. */
+interface MergeSuggestion {
+  person_a_id: number;
+  person_b_id: number;
+  score: number;
+}
+
 interface PeopleManagerModalProps {
   eventId: number;
   open: boolean;
@@ -199,6 +206,14 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
   // differs. Keyed by person id so switching between them reuses the cache.
   const facesFor = splitting || coverFor || viewing?.person || null;
 
+  // Look-alike pairs the automatic pass deliberately did NOT merge (#1107):
+  // similar enough to ask about, not similar enough to act on unasked.
+  const { data: suggestionData } = useQuery<{ suggestions: MergeSuggestion[] }>({
+    queryKey: ['admin-people-suggestions', eventId],
+    queryFn: async () => (await api.get(`/admin/events/${eventId}/people/suggestions`)).data,
+    enabled: open,
+  });
+
   const { data: faceData, isLoading: facesLoading } = useQuery<{ faces: PersonFace[] }>({
     queryKey: ['admin-person-faces', eventId, facesFor?.id],
     queryFn: async () =>
@@ -208,12 +223,53 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
 
   const people = useMemo(() => data?.people || [], [data]);
 
+  /**
+   * Suggestions resolved against the loaded people.
+   *
+   * The endpoint returns ids and a score only — the covers are already here.
+   * Pairs whose people are missing are dropped rather than rendered blank: the
+   * two queries are invalidated together, but a suggestion computed just before
+   * a merge can name a person that no longer exists.
+   */
+  const suggestionPairs = useMemo(() => {
+    const byId = new Map(people.map((p) => [p.id, p]));
+    return (suggestionData?.suggestions || [])
+      .map((s) => ({
+        a: byId.get(s.person_a_id),
+        b: byId.get(s.person_b_id),
+        score: s.score,
+      }))
+      .filter((p): p is { a: AdminPerson; b: AdminPerson; score: number } => !!p.a && !!p.b);
+  }, [suggestionData, people]);
+
+  /**
+   * Names already used in THIS gallery, for the rename input's datalist
+   * (#1107). Naming a wedding means typing the same surname into a dozen
+   * fresh empty inputs; the second occurrence should be a keystroke.
+   *
+   * Deliberately event-scoped. Names from other events would be more useful —
+   * the same family recurs across shoots — but that would surface client names
+   * from galleries the current admin may not be allowed to open, which is a
+   * permissions decision (#743), not an implementation detail.
+   *
+   * No fetch: the people list already in front of the user IS the source.
+   */
+  const knownNames = useMemo(() => {
+    const names = people
+      .map((p) => (p.label || '').trim())
+      .filter(Boolean);
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+  }, [people]);
+
   const after = async (message: string) => {
     // The face list is cached per person and split/merge move faces between
     // them. Until the cover picker landed, the only reader closed itself after
     // acting so nobody saw the stale copy; now a second surface reads the same
     // key and would offer faces that are no longer this person's.
     await queryClient.invalidateQueries({ queryKey: ['admin-person-faces'] });
+    // Merging or splitting changes which pairs are still worth suggesting, and
+    // a suggestion naming a person that no longer exists is worse than none.
+    await queryClient.invalidateQueries({ queryKey: ['admin-people-suggestions'] });
     await refetch();
     onChanged?.();
     setSelected([]);
@@ -262,6 +318,36 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
     );
   };
 
+  /**
+   * Accept a suggestion. The named side is the target so the name survives —
+   * the same rule doMerge applies, but here the order is ours to choose rather
+   * than the click order's, so it can be chosen correctly. Falling back to the
+   * larger cluster keeps the bigger centroid as the survivor.
+   */
+  const acceptSuggestion = (a: AdminPerson, b: AdminPerson) => {
+    const target = a.label ? a : b.label ? b
+      : ((a.total_face_count ?? a.face_count) >= (b.total_face_count ?? b.face_count) ? a : b);
+    const source = target.id === a.id ? b : a;
+    run(
+      async () => {
+        await api.post(`/admin/events/${eventId}/people/merge`, {
+          source_ids: [source.id], target_id: target.id,
+        });
+      },
+      t('admin.people.merged', { count: 1, defaultValue: 'People merged' })
+    );
+  };
+
+  const dismissSuggestion = (a: AdminPerson, b: AdminPerson) =>
+    run(
+      async () => {
+        await api.post(`/admin/events/${eventId}/people/suggestions/dismiss`, {
+          person_a_id: a.id, person_b_id: b.id,
+        });
+      },
+      t('admin.people.suggestionDismissed', { defaultValue: 'Kept separate' })
+    );
+
   const doSplit = () => {
     if (!splitting || !splitFaceIds.length) return;
     const personId = splitting.id;
@@ -307,6 +393,13 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
         aria-modal="true"
         className="relative bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 rounded-xl shadow-xl w-full max-w-4xl max-h-[88vh] flex flex-col"
       >
+        {/* One datalist for every row's rename input — a per-row copy would
+            duplicate the whole name list once per person. */}
+        {knownNames.length > 0 && (
+          <datalist id="picpeak-people-names">
+            {knownNames.map((name) => <option key={name} value={name} />)}
+          </datalist>
+        )}
         <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100 dark:border-neutral-700">
           <div>
             <h2 className="text-lg font-medium text-neutral-900 dark:text-neutral-100">
@@ -539,6 +632,71 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                 </p>
               ) : (
                 <div className="space-y-1">
+                  {/* --- merge suggestions (#1107) -------------------------
+                      The band below the auto-merge threshold. These are asked
+                      rather than done: an over-eager merge of two people is
+                      much harder to unpick than a missed one, and this is
+                      biometric grouping, so the uncertain cases get a human.
+                      Dismissal is sticky — a pair told "not the same" does not
+                      come back after the next scan. */}
+                  {suggestionPairs.length > 0 && (
+                    <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 overflow-hidden">
+                      <p className="px-3 py-2 text-xs text-amber-900 dark:text-amber-200 border-b border-amber-200 dark:border-amber-800">
+                        {t('admin.people.suggestionsHeading', {
+                          count: suggestionPairs.length,
+                          defaultValue: 'These might be the same person. Grouping was not confident enough to merge them on its own.',
+                        })}
+                      </p>
+                      <div className="divide-y divide-amber-200 dark:divide-amber-800">
+                        {suggestionPairs.map(({ a, b, score }) => (
+                          <div key={`${a.id}-${b.id}`} className="flex items-center gap-3 p-3 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              {[a, b].map((person) => (
+                                <div key={person.id} className="flex items-center gap-2">
+                                  <FaceThumb
+                                    eventId={eventId}
+                                    photoId={person.cover?.photo_id ?? 0}
+                                    bbox={person.cover?.bbox}
+                                    photoWidth={person.cover?.photo_width}
+                                    photoHeight={person.cover?.photo_height}
+                                    size={48}
+                                  />
+                                  <span className="text-xs text-neutral-700 dark:text-neutral-300">
+                                    {person.label || t('admin.people.photoCount', {
+                                      count: person.total_face_count ?? person.face_count,
+                                      defaultValue: `${person.total_face_count ?? person.face_count} photos`,
+                                    })}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                            <span className="text-xs text-neutral-500 dark:text-neutral-400 tabular-nums">
+                              {t('admin.people.suggestionScore', {
+                                percent: Math.round(score * 100),
+                                defaultValue: `${Math.round(score * 100)}% alike`,
+                              })}
+                            </span>
+                            <div className="flex gap-2 ml-auto">
+                              <Button
+                                variant="outline" size="sm" disabled={busy}
+                                onClick={() => dismissSuggestion(a, b)}
+                              >
+                                {t('admin.people.suggestionReject', { defaultValue: 'Not the same' })}
+                              </Button>
+                              <Button
+                                variant="primary" size="sm" disabled={busy}
+                                onClick={() => acceptSuggestion(a, b)}
+                                leftIcon={<Merge className="w-3.5 h-3.5" />}
+                              >
+                                {t('admin.people.suggestionAccept', { defaultValue: 'Same person' })}
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {people.map((person) => {
                     const isSelected = selected.includes(person.id);
                     return (
@@ -577,6 +735,7 @@ export const PeopleManagerModal: React.FC<PeopleManagerModalProps> = ({
                                 if (e.key === 'Escape') setRenaming(null);
                               }}
                               placeholder={t('admin.people.namePlaceholder', { defaultValue: 'Add a name' })}
+                              list={knownNames.length ? 'picpeak-people-names' : undefined}
                               className="w-full max-w-xs px-2 py-1 text-sm border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded focus:outline-none focus:ring-2 focus:ring-primary-500"
                             />
                           ) : (

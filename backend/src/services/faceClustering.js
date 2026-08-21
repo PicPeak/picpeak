@@ -297,7 +297,122 @@ async function consolidate(eventId, options = {}) {
   if (merged.length) {
     logger.info(`faceClustering: consolidated ${merged.length} person pair(s) in event ${eventId}`);
   }
+
+  // Record the outcome even when it is zero. Merging biometric clusters
+  // silently is the wrong default however confident the maths is (#1107), so
+  // the admin card reports what this pass did — and a run that merged nothing
+  // has to clear a previous run's count rather than leave it standing.
+  await db('events').where({ id: eventId }).update({
+    faces_last_consolidated_count: merged.length,
+    faces_last_consolidated_at: new Date().toISOString(),
+  }).catch((err) => {
+    // Pre-migration installs simply do not report. Never let bookkeeping fail
+    // a merge that already happened.
+    logger.warn(`faceClustering: could not record consolidation for event ${eventId}`, {
+      error: err.message,
+    });
+  });
+
   return merged;
+}
+
+/**
+ * Pairs that look like the same person but not confidently enough to merge
+ * automatically (#1107).
+ *
+ * The band is [match_threshold, merge_threshold): above the top of it
+ * `consolidate()` has already merged the pair, and below the bottom the two
+ * centroids are further apart than the distance at which a single face would
+ * have joined the cluster at all — which is not a claim worth putting in front
+ * of anyone.
+ *
+ * This is the "with a warning" half of the request. An over-eager merge is much
+ * harder to unpick than a missed one, so the uncertain band never merges by
+ * itself; it asks.
+ */
+async function suggestMerges(eventId, options = {}) {
+  const thresholds = options.thresholds || (await getThresholds());
+  const mergeThreshold = Math.min(0.95, thresholds.face_match_threshold + 0.08);
+  const floor = thresholds.face_match_threshold;
+  const limit = options.limit || 20;
+
+  const people = await db('event_people')
+    .where({ event_id: eventId })
+    .select('id', 'centroid', 'face_count_total', 'model_version', 'label', 'is_ignored');
+
+  const state = people
+    // "Not a real person" is an answer already given — never ask about it again.
+    .filter((p) => !(p.is_ignored === true || p.is_ignored === 1))
+    .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
+    .filter((p) => p.vec);
+
+  if (state.length < 2) return [];
+
+  const dismissed = new Set(
+    (await db('event_people_merge_dismissals')
+      .where({ event_id: eventId })
+      .select('person_a_id', 'person_b_id')
+      .catch(() => []))
+      .map((d) => `${d.person_a_id}:${d.person_b_id}`)
+  );
+
+  const pairs = [];
+  for (let i = 0; i < state.length; i++) {
+    for (let j = i + 1; j < state.length; j++) {
+      const a = state[i];
+      const b = state[j];
+      if (a.model_version !== b.model_version) continue;
+      // Same rule consolidate() applies: two different names is a human
+      // assertion, not a question.
+      if (a.label && b.label && a.label !== b.label) continue;
+
+      const [lo, hi] = a.id < b.id ? [a.id, b.id] : [b.id, a.id];
+      if (dismissed.has(`${lo}:${hi}`)) continue;
+
+      const score = dot(a.vec, b.vec);
+      if (score < floor || score >= mergeThreshold) continue;
+
+      pairs.push({ person_a_id: lo, person_b_id: hi, score });
+    }
+  }
+
+  // Most-similar first: the strongest suggestion is the one most likely to be
+  // accepted, and a photographer working down the list should meet it first.
+  pairs.sort((x, y) => y.score - x.score);
+
+  // One suggestion per person per round. Without this a cluster that genuinely
+  // has three fragments produces A-B, A-C and B-C, and accepting A-B leaves two
+  // suggestions pointing at a person that no longer exists.
+  const used = new Set();
+  const result = [];
+  for (const pair of pairs) {
+    if (used.has(pair.person_a_id) || used.has(pair.person_b_id)) continue;
+    used.add(pair.person_a_id);
+    used.add(pair.person_b_id);
+    result.push(pair);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+/**
+ * Remember that these two are NOT the same person, so the pair stops being
+ * suggested. Normalized to (lower id, higher id) so the pair has one identity.
+ */
+async function dismissMergeSuggestion(eventId, personAId, personBId) {
+  const [lo, hi] = personAId < personBId ? [personAId, personBId] : [personBId, personAId];
+  try {
+    await db('event_people_merge_dismissals').insert({
+      event_id: eventId,
+      person_a_id: lo,
+      person_b_id: hi,
+      created_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    // The UNIQUE constraint doing its job — dismissing twice is not an error.
+    logger.debug?.(`faceClustering: duplicate dismissal for ${lo}/${hi}: ${err.message}`);
+  }
+  return { dismissed: true };
 }
 
 /**
@@ -557,6 +672,8 @@ module.exports = {
   meetsQualityFloor,
   assignFaces,
   consolidate,
+  suggestMerges,
+  dismissMergeSuggestion,
   mergePeople,
   splitPerson,
   recomputeCentroid,

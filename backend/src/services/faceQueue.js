@@ -101,6 +101,67 @@ function logUnreachableSource(message) {
   );
 }
 
+/**
+ * Events that have had a photo scanned since their last consolidation pass
+ * (#1107).
+ *
+ * There is no "scan finished" event to hook: the queue is per-photo, and a
+ * backfill is just a lot of independent claims. So a worker that finds nothing
+ * left to claim asks whether the events it touched have actually drained, and
+ * consolidates the ones that have — greedy assignment leaves "Anna in daylight"
+ * and "Anna at the party" as two clusters whose centroids have since converged,
+ * and until now nothing looked unless an admin pressed "Re-group people".
+ *
+ * In-memory, like `deferredEvents`: a restart loses at most a consolidation
+ * pass, and the next scan of that event schedules another one.
+ */
+const touchedEvents = new Set();
+
+/**
+ * Consolidate every touched event that has genuinely drained.
+ *
+ * "A worker went idle" is not the same as "the scan is done" — with
+ * FACE_PROCESSOR_CONCURRENCY > 1 the others may still be working, and photos
+ * released back to `pending` by a down sidecar are still owed. So the drain is
+ * tested directly against the queue rather than inferred, and an event that is
+ * still busy simply stays in the set for the next idle tick.
+ *
+ * Across multiple pods two workers can consolidate the same event at once.
+ * That is safe rather than coordinated: `mergePeople` is transactional, and a
+ * pair whose source was already absorbed merges nothing.
+ */
+async function drainConsolidation() {
+  if (!touchedEvents.size) return;
+
+  for (const eventId of [...touchedEvents]) {
+    try {
+      const outstanding = await db('photos')
+        .where({ event_id: eventId })
+        .whereIn('face_status', ['pending', 'processing'])
+        .count({ c: '*' })
+        .first();
+
+      if (Number(outstanding?.c ?? 0) > 0) continue;
+
+      touchedEvents.delete(eventId);
+      // Required here rather than at module load, matching faceProcessor's
+      // call into faceAutoCategories: the binding stays late, which keeps the
+      // seam this is tested through honest.
+      const { consolidate } = require('./faceClustering');
+      const merged = await consolidate(eventId);
+      if (merged.length) {
+        logger.info(
+          `faceQueue: scan of event ${eventId} drained — consolidated ${merged.length} look-alike pair(s)`
+        );
+      }
+    } catch (e) {
+      // Never let a consolidation failure stop the queue. The event keeps its
+      // place in the set only if it was not already removed above.
+      logger.warn(`faceQueue: consolidation failed for event ${eventId}`, { error: e.message });
+    }
+  }
+}
+
 let running = false;
 let workerHandles = [];
 let janitorHandle = null;
@@ -184,12 +245,19 @@ async function workerLoop(workerIdx) {
     }
 
     if (!claimed) {
+      // Nothing left to claim is the only signal this queue has that a scan
+      // may have finished. Cheap when idle: no-ops unless work happened.
+      await drainConsolidation();
       await sleep(POLL_INTERVAL_MS);
       continue;
     }
 
     try {
       await processPhotoFaces(claimed.id);
+      // Scanned, so this event's clusters may have moved. Recorded even for a
+      // photo with no faces — it still counts toward the event draining, and
+      // the drain check is what decides whether anything actually runs.
+      if (claimed.event_id != null) touchedEvents.add(claimed.event_id);
     } catch (err) {
       // The sidecar being down stops EVERY photo, so returning this one to
       // 'pending' and backing off costs nothing — there is no other work to
@@ -293,4 +361,7 @@ async function stop() {
   janitorHandle = null;
 }
 
-module.exports = { start, stop, claimNextPhoto };
+// drainConsolidation and touchedEvents are exported for the same reason
+// claimNextPhoto is: the drain condition is the subtle part of #1107 and is
+// worth pinning directly, rather than through a running worker loop.
+module.exports = { start, stop, claimNextPhoto, drainConsolidation, touchedEvents };
