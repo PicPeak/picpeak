@@ -716,3 +716,56 @@
     margin-top: 0;
   }
 }
+
+/*
+ * iOS Safari zooms the whole page in when a focused form control computes to
+ * less than 16px, and it does not zoom back out (#1105). Unlocking a gallery
+ * is a client-side transition rather than a document navigation, so the zoom
+ * the password field triggered carries straight into the gallery: the layout
+ * pans horizontally and the header actions sit off-screen until the visitor
+ * pinch-zooms out by hand.
+ *
+ * The lever is the font size, not the viewport meta — adding maximum-scale=1
+ * would suppress the zoom by disabling pinch-to-zoom for everyone, which is an
+ * accessibility regression, so index.html deliberately omits it.
+ *
+ * Keyed to the POINTER, not a width. The zoom depends on the computed font
+ * size and a touch device, never on how wide the viewport is — and a phone in
+ * landscape is 667–956 CSS px, above any width you could call "phone". A
+ * max-width query fixes portrait and leaves every landscape phone (and iPad)
+ * still zooming. `pointer: coarse` is the population that actually has the
+ * behaviour; a mouse-driven desktop reports `fine` and keeps its 14px density.
+ *
+ * Deliberately NOT inside @layer, and deliberately more specific than a single
+ * utility class: `.input` is 14px and ~440 raw controls carry their own
+ * `text-sm`, so a rule that loses to a utility fixes almost nothing. The
+ * `:not()` on each selector is what buys that specificity — without it,
+ * `select`/`textarea` (0,0,1) lose to `.text-sm` (0,1,0) and keep zooming,
+ * while `input` alone happens to win. Excluding checkbox and radio keeps
+ * font-size off controls that size their box from it.
+ *
+ * max(16px, 1em, 1rem) is a FLOOR, not a size. Writing a flat 16px would make
+ * controls that are already larger smaller: Typography -> Large sets
+ * --font-size-base to 18px on body, so anything inheriting it would be clamped
+ * down and the setting quietly ignored. Each term covers a case the others
+ * miss - 1em follows the theme's body size, 1rem follows a browser default the
+ * visitor raised themselves, 16px catches Small themes and .text-sm controls:
+ *
+ *   normal (body 16)      16px      Large theme (body 18)   18px
+ *   Small theme (body 14) 16px      browser default 20px    20px
+ *
+ * The specificity that beats a utility class also beats a gallery's custom CSS
+ * (Theme -> Custom CSS), so `.input-themed { font-size: 20px }` lands at 16px
+ * on touch. That is unavoidable here rather than an oversight: nothing in CSS
+ * distinguishes a class that sets 14px from one that sets 20px, so a rule that
+ * loses to the second also loses to the first and fixes nothing. Overriding
+ * DOWNWARD is the point; upward is the cost. `font-size: 20px !important`
+ * still wins for anyone who wants it.
+ */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select:not([hidden]),
+  textarea:not([hidden]) {
+    font-size: max(16px, 1em, 1rem);
+  }
+}
