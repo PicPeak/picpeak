@@ -3,12 +3,8 @@ const router = express.Router();
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { generateThumbnail, ensurePreviewImage } = require('../services/imageProcessor');
-const path = require('path');
-const fs = require('fs').promises;
+const { ensureThumbnail, ensurePreviewImage } = require('../services/imageProcessor');
 const logger = require('../utils/logger');
-
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
 
 // Parse JSON-encoded setting values
 function parseSettingValue(value) {
@@ -125,15 +121,26 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
   try {
     const { eventId } = req.body; // Optional: regenerate for specific event only
     
-    // source_origin/external_relpath/filename are selected for
-    // deleteThumbnailTiers below — it derives the tier keys from the same
-    // fields ensureThumbnailAtWidth used to write them.
+    // source_origin/external_relpath/filename feed BOTH deleteThumbnailTiers
+    // (which derives the tier keys from the same fields ensureThumbnailAtWidth
+    // wrote them with) and ensureThumbnail, which branches on them to resolve
+    // an external source off its mount instead of under events/active.
+    // thumbnail_path is selected so it can be nulled — see below.
     let query = db('photos')
-      .select('id', 'event_id', 'path', 'source_origin', 'external_relpath', 'filename');
+      .select(
+        'id', 'event_id', 'path', 'media_type', 'mime_type', 'thumbnail_path',
+        'source_origin', 'external_relpath', 'filename'
+      );
     if (eventId) {
       query = query.where('event_id', eventId);
     }
-    
+    // Skip videos, matching /regenerate-previews. Their thumbnail is a poster
+    // frame from videoProcessor, so handing the container file to Sharp here
+    // only ever produced an error per video row.
+    query = query.where(function() {
+      this.whereNull('media_type').orWhere('media_type', '!=', 'video');
+    });
+
     const photos = await query;
     
     if (photos.length === 0) {
@@ -153,44 +160,32 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
       
       for (const photo of photos) {
         try {
-          const storagePath = getStoragePath();
-          const originalPath = path.join(storagePath, 'events/active', photo.path);
-
           // Drop the responsive tiers first (#1095), same as the preview
           // endpoint below. They are cached by width outside thumbnail_path
           // and their key carries no settings version, so regenerating only
           // the canonical rendition leaves phones served the old fit, quality
           // or format indefinitely — which is exactly what this endpoint is
           // invoked to undo after a settings change.
-          //
-          // Above the fs.access below, not after it: that check only passes
-          // for managed photos on a local filesystem. On S3, and for external
-          // or reference rows, it fails and skips the photo — so invalidating
-          // after it would leave stale tiers on precisely the deployments
-          // where they are hardest to notice.
           await require('../services/imageProcessor').deleteThumbnailTiers(photo);
 
-          // Check if original file exists
-          try {
-            await fs.access(originalPath);
-          } catch (err) {
-            logger.warn(`Original file not found for photo ${photo.id}: ${originalPath}`);
-            errorCount++;
-            continue;
-          }
+          // Through ensureThumbnail, not a hand-rolled path (#1129). This
+          // route used to resolve the source as `storage/events/active/<path>`
+          // and fs.access it — a location that does not exist for external or
+          // reference rows, whose originals live under events.external_path.
+          // Every such photo failed the check and was counted as an error, so
+          // on a reference install the endpoint dropped every tier and
+          // rebuilt nothing, while the UI reported success (the response is
+          // sent before this loop starts).
+          //
+          // ensureThumbnail already resolves both source kinds via
+          // resolvePhotoFilePath/resolvePhotoStorageKey, uses the per-photo
+          // ext<id>_ output name so two events referencing one NAS basename
+          // cannot clobber each other, and writes thumbnail_path back itself.
+          // Nulling thumbnail_path is what stops it short-circuiting on
+          // isThumbnailValid — the same trick /regenerate-previews uses.
+          const newThumbnailPath = await ensureThumbnail({ ...photo, thumbnail_path: null });
 
-          // Regenerate thumbnail
-          const thumbnailPath = await generateThumbnail(originalPath, { regenerate: true });
-          
-          if (thumbnailPath) {
-            // Update database with new thumbnail path
-            await db('photos')
-              .where({ id: photo.id })
-              .update({ 
-                thumbnail_path: thumbnailPath,
-                updated_at: db.fn.now()
-              });
-            
+          if (newThumbnailPath) {
             successCount++;
             logger.info(`Regenerated thumbnail for photo ${photo.id}`);
           } else {
