@@ -3,12 +3,27 @@ const router = express.Router();
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { generateThumbnail, ensurePreviewImage } = require('../services/imageProcessor');
-const path = require('path');
-const fs = require('fs').promises;
+const { ensureThumbnail, ensurePreviewImage } = require('../services/imageProcessor');
+const { getStorage } = require('../services/storage');
 const logger = require('../utils/logger');
 
-const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+/**
+ * Do these two stored paths address the same object?
+ *
+ * Compared the way the storage backends do, not as raw strings.
+ * LocalFsStorage._resolve and S3StorageBackend._key both fold `\` to `/` and
+ * strip a leading `./`, so a legacy thumbnail_path in any of those shapes is
+ * the SAME file as the freshly generated POSIX key while comparing unequal —
+ * and the "the key moved, delete the old one" branch below would then delete
+ * the thumbnail that had just been written.
+ */
+function sameStorageKey(a, b) {
+  const canonical = (key) => String(key)
+    .replace(/\\/g, '/')
+    .replace(/^\.?\/+/, '')
+    .replace(/\/+/g, '/');
+  return canonical(a) === canonical(b);
+}
 
 // Parse JSON-encoded setting values
 function parseSettingValue(value) {
@@ -125,10 +140,21 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
   try {
     const { eventId } = req.body; // Optional: regenerate for specific event only
     
-    let query = db('photos').select('id', 'event_id', 'path');
+    // source_origin/external_relpath/filename are what ensureThumbnail branches
+    // on to resolve an external source off its mount instead of under
+    // events/active. thumbnail_path is selected so it can be nulled — see below.
+    let query = db('photos').select(
+      'id', 'event_id', 'path', 'media_type', 'mime_type', 'thumbnail_path',
+      'source_origin', 'external_relpath', 'filename'
+    );
     if (eventId) {
       query = query.where('event_id', eventId);
     }
+    // Skip videos: their thumbnail is a poster frame from videoProcessor, so
+    // handing the container file to Sharp only ever produced an error per row.
+    query = query.where(function() {
+      this.whereNull('media_type').orWhere('media_type', '!=', 'video');
+    });
     
     const photos = await query;
     
@@ -149,30 +175,38 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
       
       for (const photo of photos) {
         try {
-          const storagePath = getStoragePath();
-          const originalPath = path.join(storagePath, 'events/active', photo.path);
-          
-          // Check if original file exists
-          try {
-            await fs.access(originalPath);
-          } catch (err) {
-            logger.warn(`Original file not found for photo ${photo.id}: ${originalPath}`);
-            errorCount++;
-            continue;
-          }
-          
-          // Regenerate thumbnail
-          const thumbnailPath = await generateThumbnail(originalPath, { regenerate: true });
-          
-          if (thumbnailPath) {
-            // Update database with new thumbnail path
-            await db('photos')
-              .where({ id: photo.id })
-              .update({ 
-                thumbnail_path: thumbnailPath,
-                updated_at: db.fn.now()
+          // Through ensureThumbnail, not a hand-rolled path (#1129). This route
+          // used to resolve every source as `storage/events/active/<path>` and
+          // fs.access it — a location that does not exist for external or
+          // reference rows, whose originals live under events.external_path. So
+          // every one of them failed the check and was counted as an error: on a
+          // reference install the endpoint rebuilt nothing while the UI reported
+          // success, because the response is sent before this loop starts.
+          //
+          // ensureThumbnail already resolves both source kinds, uses the
+          // per-photo ext<id>_ output name so two events referencing one NAS
+          // basename cannot clobber each other, and writes thumbnail_path back
+          // itself. Nulling thumbnail_path is what stops it short-circuiting on
+          // isThumbnailValid — necessary rather than cosmetic, because the old
+          // thumbnail is normally still readable at exactly the moment someone
+          // presses regenerate.
+          const newThumbnailPath = await ensureThumbnail({ ...photo, thumbnail_path: null });
+
+          if (newThumbnailPath) {
+            // Drop the superseded rendition when the key MOVED. On S3 the source
+            // is downloaded to a randomly-named temp file and, for non-RAW input,
+            // the key is derived from that name — so it differs every run, and
+            // nulling thumbnail_path hides the old key from everything that would
+            // otherwise clean it up. Guarded on the key actually changing: local
+            // storage is stable, and deleting the equal key would delete the file
+            // just written.
+            if (photo.thumbnail_path && !sameStorageKey(photo.thumbnail_path, newThumbnailPath)) {
+              await getStorage().delete(photo.thumbnail_path).catch((err) => {
+                logger.warn(
+                  `Could not remove superseded thumbnail ${photo.thumbnail_path} for photo ${photo.id}: ${err.message}`
+                );
               });
-            
+            }
             successCount++;
             logger.info(`Regenerated thumbnail for photo ${photo.id}`);
           } else {
