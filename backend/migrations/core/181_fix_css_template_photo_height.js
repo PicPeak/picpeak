@@ -19,32 +19,52 @@
  * and read at serve time rather than copied onto the event, so fixing the row
  * fixes every gallery using it.
  *
- * SCOPE: only the exact declarations we shipped are rewritten, matched as
- * whole rule bodies. A fixed height someone deliberately wrote themselves does
- * not look like this and is left alone — and the other pixel heights in these
- * same templates (a 1px gradient divider, an 8px scrollbar) must obviously
- * survive, which is why this does not simply regex `height:\s*\d+px`.
+ * SCOPE: every `.photo-card img` rule that carries a fixed PIXEL height, in
+ * every template — not just the two we seeded, and not just their pristine
+ * copies.
+ *
+ * That is broader than it first looks, and deliberately so. It is also not the
+ * scope this started with: matching the exact seeded text missed every install
+ * where the template had ever been saved through the editor, because
+ * `sanitizeCSS` strips newlines. Those are the majority, and a migration that
+ * silently no-ops on them while being recorded as applied is worse than none.
+ *
+ * The cost is that a fixed pixel height a user wrote themselves is rewritten
+ * too. That is judged acceptable because there is no layout it can be right
+ * for: all seven give `.photo-card` a definite height and expect the image to
+ * fill it, so a pixel height on the image can only detach it from its card.
+ * Anything that is not a fixed px height — %, vh, auto — is left alone, as is
+ * every declaration outside a `.photo-card img` body.
  */
 
-// [ what shipped, what it becomes ] — full rule bodies, so a partial match
-// cannot rewrite something else that happens to share a declaration.
-const REPLACEMENTS = [
-  // 052, "Elegant Dark" (the default).
-  [
-    '.photo-card img {\n  width: 100%;\n  height: 200px;\n  object-fit: cover;',
-    '.photo-card img {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;',
-  ],
-  // 053, "Liquid Glass Dark".
-  [
-    '.photo-card img {\n  width: 100%;\n  height: 240px;\n  object-fit: cover;',
-    '.photo-card img {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;',
-  ],
-  // 053's mobile media query, same template.
-  [
-    '  .photo-card img {\n    height: 180px;\n  }',
-    '  .photo-card img {\n    height: 100%;\n  }',
-  ],
-];
+/**
+ * Every `.photo-card img { … }` rule body, however it is spaced.
+ *
+ * Matching the exact seeded text does NOT work, and the reason is worth
+ * stating: `sanitizeCSS` strips all control characters (cssSanitizer.js:61),
+ * so the moment an admin saves a template through the editor — even only to
+ * rename it or toggle it — every newline is REMOVED from the stored CSS. The
+ * shipped `.photo-card img {\n  height: 200px;` becomes
+ * `.photo-card img {  height: 200px;`. An exact-match migration would find
+ * nothing on those installs, be recorded as applied, and leave the galleries
+ * broken with no second chance.
+ *
+ * Scoped to the rule body rather than the whole stylesheet, so the other pixel
+ * heights in these same templates — a 1px gradient divider, an 8px scrollbar —
+ * are untouched.
+ */
+const PHOTO_CARD_IMG_RULE = /(\.photo-card\s+img\s*\{)([^}]*)\}/g;
+
+/** Only a fixed PIXEL height is wrong here; %, vh, auto and the rest stay. */
+const FIXED_PX_HEIGHT = /height\s*:\s*\d+(?:\.\d+)?px/gi;
+
+function relaxFixedImageHeights(css) {
+  return css.replace(PHOTO_CARD_IMG_RULE, (whole, open, body) => {
+    if (!FIXED_PX_HEIGHT.test(body)) return whole;
+    FIXED_PX_HEIGHT.lastIndex = 0;
+    return `${open}${body.replace(FIXED_PX_HEIGHT, 'height: 100%')}}`;
+  });
+}
 
 exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('css_templates'))) return;
@@ -56,10 +76,7 @@ exports.up = async function up(knex) {
     const original = row.css_content;
     if (!original || typeof original !== 'string') continue;
 
-    let updated = original;
-    for (const [from, to] of REPLACEMENTS) {
-      updated = updated.split(from).join(to);
-    }
+    const updated = relaxFixedImageHeights(original);
 
     if (updated !== original) {
       await knex('css_templates').where({ id: row.id }).update({ css_content: updated });

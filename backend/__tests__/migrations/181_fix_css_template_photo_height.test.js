@@ -116,13 +116,51 @@ describe('migration 181 — CSS template image height (#1131)', () => {
     expect(css).toContain('height: 8px');
   });
 
-  it('does not touch a template the user wrote themselves', async () => {
+  /**
+   * The case that forced the scope wider. `sanitizeCSS` strips control
+   * characters, so any template ever saved through the editor — including a
+   * save that only changed its name — has had every newline REMOVED. An
+   * exact-text migration finds nothing on those installs, is recorded as
+   * applied, and leaves them broken permanently.
+   */
+  it('fixes a template that has been through the editor, newlines and all', async () => {
+    const { sanitizeCSS } = require('../../src/utils/cssSanitizer');
+    const { sanitized } = sanitizeCSS(ELEGANT_DARK);
+    // Precondition: the sanitizer really did flatten it.
+    expect(sanitized).not.toContain('\n');
+    expect(sanitized).toContain('height: 200px');
+    await knex('css_templates').insert({ name: 'Saved Once', css_content: sanitized });
+
+    await migration.up(knex);
+
+    const css = await contentOf('Saved Once');
+    expect(css).not.toContain('200px');
+    expect(css).toContain('height: 100%');
+  });
+
+  it('relaxes a user-authored fixed height too, but only on .photo-card img', async () => {
+    // Deliberately broader than the seeded text — see the migration header. A
+    // pixel height on the image cannot be right under any of the seven
+    // layouts, whoever wrote it; a height anywhere else is none of our
+    // business.
     const mine = '.photo-card img {\n  height: 220px;\n}\n.hero { height: 400px; }';
     await knex('css_templates').insert({ name: 'My Own', css_content: mine });
 
     await migration.up(knex);
 
-    expect(await contentOf('My Own')).toBe(mine);
+    const css = await contentOf('My Own');
+    expect(css).toContain('height: 100%');
+    expect(css).not.toContain('220px');
+    expect(css).toContain('.hero { height: 400px; }');
+  });
+
+  it('leaves non-pixel heights on the image alone', async () => {
+    const mine = '.photo-card img { height: 50vh; }\n.photo-card img { height: auto; }';
+    await knex('css_templates').insert({ name: 'Relative', css_content: mine });
+
+    await migration.up(knex);
+
+    expect(await contentOf('Relative')).toBe(mine);
   });
 
   it('is idempotent and safe on a row with no CSS', async () => {
