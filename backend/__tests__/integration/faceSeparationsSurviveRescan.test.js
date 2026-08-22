@@ -301,6 +301,56 @@ describe('separations survive re-derivation (#1132)', () => {
     });
   });
 
+  describe('cleanup after the ids have already died', () => {
+    // The rows these paths must find are exactly the ones whose person ids no
+    // longer resolve — that is the state this whole feature creates. Matching
+    // on ids alone walks past them, which is worse than not cleaning up at
+    // all: the surviving row still enforces its vectors.
+
+    it('a merge clears a separation that had already outlived its ids', async () => {
+      const eventId = await seedEvent('sep-merge-stale');
+      const [a, b] = pairAtSimilarity(0.97, 0);
+      const idA = await insertPerson(eventId, a);
+      const idB = await insertPerson(eventId, b);
+      await clustering.dismissMergeSuggestion(eventId, idA, idB);
+
+      // A recluster: same vectors, brand-new people. The row now names nobody.
+      const [newA, newB] = await simulateRescan(eventId, [a, b]);
+      expect([newA, newB]).not.toContain(idA);
+
+      await clustering.mergePeople(eventId, [newB], newA);
+
+      expect(await db('event_people_merge_dismissals').where({ event_id: eventId })).toHaveLength(0);
+      // And it stays merged through the next re-derivation.
+      await simulateRescan(eventId, [a, b]);
+      expect(await clustering.consolidate(eventId, { thresholds: THRESHOLDS })).toHaveLength(1);
+    });
+
+    it('a purge clears a separation that had already outlived its ids', async () => {
+      const eventId = await seedEvent('sep-purge-stale');
+      const [a, b] = pairAtSimilarity(0.64, 0);
+      const idA = await insertPerson(eventId, a);
+      const idB = await insertPerson(eventId, b);
+      await clustering.dismissMergeSuggestion(eventId, idA, idB);
+
+      // Same recluster, then hard-delete the photo behind the B side.
+      await db('photo_faces').where({ event_id: eventId }).del();
+      await db('event_people').where({ event_id: eventId }).del();
+      const newA = await insertPerson(eventId, a);
+      await insertFace(eventId, newA, a);
+      const newB = await insertPerson(eventId, b);
+      const { photoId } = await insertFaceWithPhoto(eventId, newB, b);
+
+      const { purgePhotoFaces } = require('../../src/services/faceProcessor');
+      await purgePhotoFaces(photoId);
+
+      expect(await db('event_people').where({ id: newB }).first()).toBeUndefined();
+      // The row named idA/idB, neither of which exists — but its centroid_b is
+      // a copy of a vector derived from the photo that was just destroyed.
+      expect(await db('event_people_merge_dismissals').where({ event_id: eventId })).toHaveLength(0);
+    });
+  });
+
   describe('when the whole gallery is deleted', () => {
     it('deleteEventCascade clears the separations too', () => {
       // Source inspection, deliberately. deleteEventCascade takes an admin

@@ -735,6 +735,25 @@ async function separationSnapshot(eventId, personAId, personBId, conn = db) {
 }
 
 /**
+ * Which side of a stored separation, if any, is this person?
+ *
+ * The id is the fast exact path, but it only holds until the next recluster —
+ * which is the whole reason the row carries centroids. So a person that no
+ * longer matches by id is matched by vector, at the same threshold the
+ * constraint itself is evaluated with: if the stored side still looks like
+ * this cluster, this is the row that is about that cluster.
+ */
+function separationSideFor(row, person, vecA, vecB) {
+  if (row.person_a_id === person.id) return 'a';
+  if (row.person_b_id === person.id) return 'b';
+  if (!person.vec) return null;
+  const sa = vecA ? dot(person.vec, vecA) : -Infinity;
+  const sb = vecB ? dot(person.vec, vecB) : -Infinity;
+  if (sa < SEPARATION_MATCH_THRESHOLD && sb < SEPARATION_MATCH_THRESHOLD) return null;
+  return sa >= sb ? 'a' : 'b';
+}
+
+/**
  * Keep separation snapshots honest after a photo is hard-deleted (#1132).
  *
  * The snapshot is a COPY of a person's centroid, so it is derived from the
@@ -749,39 +768,48 @@ async function separationSnapshot(eventId, personAId, personBId, conn = db) {
  * left to constrain — the same rule the backfill applies to rows that were
  * already dangling.
  *
+ * Rows are found by centroid as well as by id. A separation that has already
+ * survived a recluster names people who no longer exist, so an id-only lookup
+ * would walk straight past exactly the rows this feature exists to keep alive —
+ * and leave the purged photo's vector sitting in them.
+ *
+ * `affected` is [{ id, before, after }] with the person's packed centroid on
+ * either side of the recompute; `after` is null when the person was deleted for
+ * having no faces left.
+ *
  * Best-effort by design. This runs inside photo deletion, and failing to tidy a
  * dismissal row must not fail the delete.
  */
-async function refreshSeparationSnapshots(eventId, personIds, conn = db) {
-  if (!eventId || !personIds?.length) return;
+async function refreshSeparationSnapshots(eventId, affected, conn = db) {
+  if (!eventId || !affected?.length) return;
   try {
+    const people = affected
+      .map((p) => ({ id: p.id, vec: unpackEmbedding(p.before), after: p.after || null }))
+      .filter((p) => p.vec || p.id != null);
+    if (!people.length) return;
+
     const rows = await conn('event_people_merge_dismissals')
       .where({ event_id: eventId })
-      .where((q) => q.whereIn('person_a_id', personIds).orWhereIn('person_b_id', personIds))
-      .select('id', 'person_a_id', 'person_b_id');
-    if (!rows.length) return;
+      .select('id', 'person_a_id', 'person_b_id', 'centroid_a', 'centroid_b');
 
     for (const row of rows) {
-      // Read the pair directly rather than through separationSnapshot: that
-      // helper folds a read failure into "no snapshot", and here that would
-      // read as "the person is gone" and delete a live decision on a transient
-      // error. An error must reach the catch below instead.
-      const people = await conn('event_people')
-        .where({ event_id: eventId })
-        .whereIn('id', [row.person_a_id, row.person_b_id])
-        .select('id', 'centroid', 'model_version');
-      const a = people.find((p) => p.id === row.person_a_id);
-      const b = people.find((p) => p.id === row.person_b_id);
+      const vecA = unpackEmbedding(row.centroid_a);
+      const vecB = unpackEmbedding(row.centroid_b);
 
-      if (!a?.centroid || !b?.centroid) {
-        await conn('event_people_merge_dismissals').where({ id: row.id }).del();
-        continue;
+      const patch = {};
+      let drop = false;
+      for (const person of people) {
+        const side = separationSideFor(row, person, vecA, vecB);
+        if (!side) continue;
+        if (!person.after) { drop = true; break; }
+        patch[side === 'a' ? 'centroid_a' : 'centroid_b'] = person.after;
       }
-      await conn('event_people_merge_dismissals').where({ id: row.id }).update({
-        centroid_a: a.centroid,
-        centroid_b: b.centroid,
-        model_version: a.model_version || b.model_version || null,
-      });
+
+      if (drop) {
+        await conn('event_people_merge_dismissals').where({ id: row.id }).del();
+      } else if (Object.keys(patch).length) {
+        await conn('event_people_merge_dismissals').where({ id: row.id }).update(patch);
+      }
     }
   } catch (err) {
     if (isMissingTable(err)) return;
@@ -837,7 +865,7 @@ async function mergePeople(eventId, sourceIds, targetId) {
     // has them, and inherits from a source only where it does not.
     const target = await trx('event_people').where({ id: targetId }).first();
     const sources = await trx('event_people').whereIn('id', ids)
-      .select('label', 'is_hidden', 'is_ignored', 'cover_face_id');
+      .select('centroid', 'label', 'is_hidden', 'is_ignored', 'cover_face_id');
 
     const inherited = {};
     if (target && !target.label) {
@@ -869,8 +897,13 @@ async function mergePeople(eventId, sourceIds, targetId) {
     // row would be worse than untidy since #1132: it is keyed on the centroids
     // too, so it outlives the ids it names and the next recluster would
     // recognise those sides and pull the merge apart again — silently undoing
-    // an explicit human action. hasTable rather than a catch, because a failed
-    // statement aborts the surrounding transaction on Postgres.
+    // an explicit human action.
+    //
+    // Matched the same way the constraint is enforced, not by id. A row that
+    // has already survived a recluster names people who are gone, and an
+    // id-only delete walks straight past precisely those rows — the ones with
+    // a live vector-keyed constraint still in them. hasTable rather than a
+    // catch, because a failed statement aborts the transaction on Postgres.
     const mergedIds = [targetId, ...ids];
     if (await trx.schema.hasTable('event_people_merge_dismissals')) {
       await trx('event_people_merge_dismissals')
@@ -878,6 +911,28 @@ async function mergePeople(eventId, sourceIds, targetId) {
         .whereIn('person_a_id', mergedIds)
         .whereIn('person_b_id', mergedIds)
         .del();
+
+      const mergedVecs = [target, ...sources]
+        .map((p) => unpackEmbedding(p?.centroid)).filter(Boolean);
+      if (mergedVecs.length > 1) {
+        const rows = await trx('event_people_merge_dismissals')
+          .where({ event_id: eventId })
+          .select('id', 'centroid_a', 'centroid_b');
+        for (const row of rows) {
+          const sep = [{
+            a: unpackEmbedding(row.centroid_a),
+            b: unpackEmbedding(row.centroid_b),
+          }];
+          if (!sep[0].a || !sep[0].b) continue;
+          // Would this row have forbidden the merge that was just performed?
+          // Then it is the decision being reversed.
+          const forbids = mergedVecs.some((x, i) => mergedVecs.slice(i + 1)
+            .some((y) => separationForbids(x, y, sep)));
+          if (forbids) {
+            await trx('event_people_merge_dismissals').where({ id: row.id }).del();
+          }
+        }
+      }
     }
 
     if (Object.keys(inherited).length) {
