@@ -251,6 +251,38 @@ describe('separations survive re-derivation (#1132)', () => {
       expect(await db('event_people_merge_dismissals').where({ event_id: eventId })).toHaveLength(0);
     });
 
+    it('keeps the constraint when a side still has another cluster on it', async () => {
+      const eventId = await seedEvent('sep-purge-descendant');
+      const [a, b] = pairAtSimilarity(0.64, 0);
+      const idA = await insertPerson(eventId, a);
+      const idB = await insertPerson(eventId, b);
+      await insertFace(eventId, idA, a);
+      await clustering.dismissMergeSuggestion(eventId, idA, idB);
+
+      // Re-derivation can leave one stored side represented by more than one
+      // current person. Deleting the photo behind ONE of them must not throw
+      // the whole decision away — the other still stands for that side, and the
+      // pair would be free to merge again.
+      const twin = new Float32Array(DIM);
+      for (let i = 0; i < DIM; i++) twin[i] = 0.98 * b[i];
+      twin[6] = Math.sqrt(1 - 0.98 ** 2);
+      const survivor = await insertPerson(eventId, twin);
+      await insertFace(eventId, survivor, twin);
+      const { photoId } = await insertFaceWithPhoto(eventId, idB, b);
+
+      const { purgePhotoFaces } = require('../../src/services/faceProcessor');
+      await purgePhotoFaces(photoId);
+
+      expect(await db('event_people').where({ id: idB }).first()).toBeUndefined();
+      const rows = await db('event_people_merge_dismissals').where({ event_id: eventId });
+      expect(rows).toHaveLength(1);
+      // Re-anchored onto the survivor, so it still binds.
+      expect(clustering.separationForbids(a, twin, [{
+        a: clustering.unpackEmbedding(rows[0].centroid_a),
+        b: clustering.unpackEmbedding(rows[0].centroid_b),
+      }])).toBe(true);
+    });
+
     it('re-takes the snapshot from what is left when the person survives', async () => {
       const eventId = await seedEvent('sep-purge-survives');
       const [a, b] = pairAtSimilarity(0.64, 0);
@@ -258,9 +290,12 @@ describe('separations survive re-derivation (#1132)', () => {
       const idB = await insertPerson(eventId, b);
       await insertFace(eventId, idA, a);
       await insertFace(eventId, idB, b);
-      // A second, different face on B — so purging the first one moves B's
-      // centroid rather than deleting the person.
-      const other = mirrorAtSimilarity(0.9, 0);
+      // A second face on B, close enough that B stays recognisably B — so
+      // purging it moves B's centroid rather than deleting the person, and the
+      // side still resolves to B afterwards.
+      const other = new Float32Array(DIM);
+      for (let i = 0; i < DIM; i++) other[i] = 0.95 * b[i];
+      other[5] = Math.sqrt(1 - 0.95 ** 2);
       const { photoId } = await insertFaceWithPhoto(eventId, idB, other);
       await clustering.recomputeCentroid(idB);
 

@@ -423,27 +423,17 @@ async function purgePhotoFaces(photoId, trx = db) {
   if (!removed) return { removed: 0 };
 
   const { recomputeCentroid: recompute, refreshSeparationSnapshots } = require('./faceClustering');
-  // The centroids as they stood BEFORE the recompute. A separation that has
-  // already survived a recluster names people who no longer exist, so these
-  // vectors — not the ids — are what identifies the rows that are about these
-  // clusters.
-  const before = await trx('event_people').whereIn('id', affected).select('id', 'centroid');
-
   for (const personId of affected) {
     // Deletes the person outright when it has no members left.
     await recompute(personId, trx);
   }
 
-  // A separation row carries a COPY of each side's centroid (#1132), and that
-  // copy was derived from the faces the person held — including the ones just
-  // deleted. Re-take it from the recomputed centroid, or drop the row if the
-  // person is gone entirely. Otherwise deleting a photo would leave a vector
-  // built from it standing in a table nothing else touches.
-  const after = await trx('event_people').whereIn('id', affected).select('id', 'centroid');
-  const afterById = new Map(after.map((r) => [r.id, r.centroid]));
-  await refreshSeparationSnapshots(eventId, before.map((r) => ({
-    id: r.id, before: r.centroid, after: afterById.get(r.id) || null,
-  })), trx);
+  // A separation row carries a COPY of each side's centroid (#1132), derived
+  // from the faces that person held — including the ones just deleted. Re-take
+  // each side from the live cluster it still describes, and drop the row if it
+  // describes nothing that is left. Otherwise deleting a photo would leave a
+  // vector built from it standing in a table nothing else touches.
+  await refreshSeparationSnapshots(eventId, trx);
 
   return { removed, peopleTouched: affected.length };
 }

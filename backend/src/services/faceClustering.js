@@ -735,81 +735,77 @@ async function separationSnapshot(eventId, personAId, personBId, conn = db) {
 }
 
 /**
- * Which side of a stored separation, if any, is this person?
+ * Re-anchor every separation in an event onto the people that are actually
+ * there, and drop the ones that no longer describe anything (#1132).
  *
- * The id is the fast exact path, but it only holds until the next recluster —
- * which is the whole reason the row carries centroids. So a person that no
- * longer matches by id is matched by vector, at the same threshold the
- * constraint itself is evaluated with: if the stored side still looks like
- * this cluster, this is the row that is about that cluster.
+ * Called after faces are destroyed — a hard photo delete recomputes or removes
+ * whole clusters. Two things have to happen, and neither can be decided from
+ * the person ids: a row that has already outlived a recluster names people who
+ * no longer exist, which is the normal state for this table rather than an
+ * exceptional one.
+ *
+ *   1. Each side is re-snapshotted from the live cluster that best matches it.
+ *      The stored vector is a COPY of a centroid, so after a purge it is the
+ *      one place a vector derived from the deleted photo would survive. Taking
+ *      it from a live centroid means it only ever describes photos that are
+ *      still here.
+ *
+ *   2. A side that matches NO live person means the row is inert — the
+ *      constraint requires a candidate to match a side, so nothing can ever
+ *      trip it again — and it is deleted. That is what bounds retention: an
+ *      abandoned snapshot cannot sit in this table indefinitely, and nothing
+ *      is lost by removing something that could never fire.
+ *
+ * Deliberately not keyed on which people the purge touched. A cluster can drift
+ * below the match threshold while still holding the deleted photo, and one
+ * stored side can be represented by several current people — checking the whole
+ * event sidesteps both, and it is a few hundred dot products on a path that
+ * runs when a photo is destroyed.
+ *
+ * Best-effort: failing to tidy a dismissal row must not fail the delete.
  */
-function separationSideFor(row, person, vecA, vecB) {
-  if (row.person_a_id === person.id) return 'a';
-  if (row.person_b_id === person.id) return 'b';
-  if (!person.vec) return null;
-  const sa = vecA ? dot(person.vec, vecA) : -Infinity;
-  const sb = vecB ? dot(person.vec, vecB) : -Infinity;
-  if (sa < SEPARATION_MATCH_THRESHOLD && sb < SEPARATION_MATCH_THRESHOLD) return null;
-  return sa >= sb ? 'a' : 'b';
-}
-
-/**
- * Keep separation snapshots honest after a photo is hard-deleted (#1132).
- *
- * The snapshot is a COPY of a person's centroid, so it is derived from the
- * faces that person held at the time. Once a photo is purged, that copy is the
- * one place a vector built partly from the deleted photo would survive — the
- * person row itself gets recomputed from what is left. Deleting a photo has to
- * mean deleting it.
- *
- * So: re-snapshot from the recomputed centroid where the person survives, and
- * drop the row where it does not. A person with no faces left is a cluster that
- * no longer exists, and a separation between clusters that are gone has nothing
- * left to constrain — the same rule the backfill applies to rows that were
- * already dangling.
- *
- * Rows are found by centroid as well as by id. A separation that has already
- * survived a recluster names people who no longer exist, so an id-only lookup
- * would walk straight past exactly the rows this feature exists to keep alive —
- * and leave the purged photo's vector sitting in them.
- *
- * `affected` is [{ id, before, after }] with the person's packed centroid on
- * either side of the recompute; `after` is null when the person was deleted for
- * having no faces left.
- *
- * Best-effort by design. This runs inside photo deletion, and failing to tidy a
- * dismissal row must not fail the delete.
- */
-async function refreshSeparationSnapshots(eventId, affected, conn = db) {
-  if (!eventId || !affected?.length) return;
+async function refreshSeparationSnapshots(eventId, conn = db) {
+  if (!eventId) return;
   try {
-    const people = affected
-      .map((p) => ({ id: p.id, vec: unpackEmbedding(p.before), after: p.after || null }))
-      .filter((p) => p.vec || p.id != null);
-    if (!people.length) return;
-
     const rows = await conn('event_people_merge_dismissals')
       .where({ event_id: eventId })
-      .select('id', 'person_a_id', 'person_b_id', 'centroid_a', 'centroid_b');
+      .select('id', 'centroid_a', 'centroid_b');
+    if (!rows.length) return;
+
+    const live = (await conn('event_people')
+      .where({ event_id: eventId })
+      .select('id', 'centroid'))
+      .map((p) => ({ id: p.id, vec: unpackEmbedding(p.centroid) }))
+      .filter((p) => p.vec);
+
+    /** The live cluster this stored side still describes, if any. */
+    const bestMatch = (vec) => {
+      if (!vec) return null;
+      let best = null;
+      let bestScore = SEPARATION_MATCH_THRESHOLD;
+      for (const person of live) {
+        const score = dot(vec, person.vec);
+        if (score >= bestScore) { bestScore = score; best = person; }
+      }
+      return best;
+    };
 
     for (const row of rows) {
-      const vecA = unpackEmbedding(row.centroid_a);
-      const vecB = unpackEmbedding(row.centroid_b);
+      const matchA = bestMatch(unpackEmbedding(row.centroid_a));
+      const matchB = bestMatch(unpackEmbedding(row.centroid_b));
 
-      const patch = {};
-      let drop = false;
-      for (const person of people) {
-        const side = separationSideFor(row, person, vecA, vecB);
-        if (!side) continue;
-        if (!person.after) { drop = true; break; }
-        patch[side === 'a' ? 'centroid_a' : 'centroid_b'] = person.after;
-      }
-
-      if (drop) {
+      // Both sides resolving to the SAME live cluster is the other way a row
+      // stops describing anything: there are no longer two things here to keep
+      // apart, so there is nothing left to enforce and no reason to keep the
+      // vectors.
+      if (!matchA || !matchB || matchA.id === matchB.id) {
         await conn('event_people_merge_dismissals').where({ id: row.id }).del();
-      } else if (Object.keys(patch).length) {
-        await conn('event_people_merge_dismissals').where({ id: row.id }).update(patch);
+        continue;
       }
+      await conn('event_people_merge_dismissals').where({ id: row.id }).update({
+        centroid_a: packEmbedding(matchA.vec),
+        centroid_b: packEmbedding(matchB.vec),
+      });
     }
   } catch (err) {
     if (isMissingTable(err)) return;
