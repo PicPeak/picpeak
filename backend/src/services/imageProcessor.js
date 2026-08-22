@@ -230,10 +230,21 @@ async function generateThumbnail(imagePath, options = {}) {
   const thumbnailFilename = `thumb_${widthTag}${outputBasename}`;
   const thumbnailRelKey = path.posix.join('thumbnails', thumbnailFilename);
 
-  // Force regeneration: drop the existing object before writing the new one
-  if (options.regenerate) {
-    await storage.delete(thumbnailRelKey).catch(() => {});
-  }
+  // `options.regenerate` deliberately does NOT delete the existing object
+  // first (#1129).
+  //
+  // It used to, and the delete ran BEFORE sharp had even opened the source —
+  // so a source that could not be read (a NAS mount that blipped, a corrupt
+  // file) left the old thumbnail already gone and returned null, with the
+  // database still pointing at it. One bulk regeneration during a mount outage
+  // could therefore strip every canonical thumbnail in a reference gallery and
+  // leave the whole library serving 404s.
+  //
+  // Nothing is lost by dropping it: LocalFsStorage.put stages to a temp file
+  // and renames over the target, which replaces atomically, and an S3 put
+  // overwrites by key. So the write replaces the old rendition either way —
+  // the only thing the delete added was a window in which there was no
+  // thumbnail at all.
 
   try {
     // First, verify the source image is complete and valid
@@ -294,9 +305,13 @@ async function generateThumbnail(imagePath, options = {}) {
     const msg = (error && error.message) ? error.message : String(error);
     logger.error(`Failed to generate thumbnail for ${sourceBasename}: ${msg}`);
 
-    // Clean up any partially uploaded object
-    await storage.delete(thumbnailRelKey).catch(() => {});
-
+    // No cleanup delete here either, for the same reason as above (#1129).
+    // This was "clean up any partially uploaded object", but there cannot be
+    // one: `storage.put` is the last statement in the try, every throw above
+    // it happens before anything is written, and put itself stages to a temp
+    // file and only renames on success. So the only object this delete could
+    // ever have removed is the PREVIOUS, perfectly good rendition — which is
+    // exactly the thumbnail a failed regeneration must leave alone.
     return null;
   }
 }
