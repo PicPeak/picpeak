@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.111.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.111.0-beta.0...v3.111.1-beta.0) (2026-08-22)
+
+
+### Bug Fixes
+
+* **faces:** dark-mode styling for the People surfaces ([#1106](https://github.com/PicPeak/picpeak/issues/1106)) ([#1126](https://github.com/PicPeak/picpeak/issues/1126)) ([24e11df](https://github.com/PicPeak/picpeak/commit/24e11df2991856753541aaaed380974a5eb267e4))
+
 ## [3.111.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.110.0-beta.0...v3.111.0-beta.0) (2026-08-21)
 
 
