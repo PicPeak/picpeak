@@ -199,6 +199,24 @@ describe('admin thumbnail regeneration (#1129)', () => {
       expect(storage.delete).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['a Windows-style legacy path', 'thumbnails\\thumb_ext1_shot.jpg'],
+      ['a leading ./', './thumbnails/thumb_ext1_shot.jpg'],
+      ['a doubled separator', 'thumbnails//thumb_ext1_shot.jpg'],
+    ])('does not delete the file it just wrote when the old path is %s', async (_name, stored) => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, { source_origin: 'managed', thumbnail_path: stored });
+      // Both storage backends fold these to the same key, so this is the SAME
+      // object — deleting it would remove the freshly generated thumbnail and
+      // leave the row pointing at nothing.
+      imageProcessor.ensureThumbnail.mockResolvedValueOnce('thumbnails/thumb_ext1_shot.jpg');
+
+      await request(app).post('/admin/thumbnails/regenerate').send({});
+      await drain();
+
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
     it('counts the photo as regenerated even if the old object cannot be removed', async () => {
       const eventId = await seedEvent();
       await seedPhoto(eventId, {

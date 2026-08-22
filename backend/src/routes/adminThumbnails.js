@@ -7,6 +7,26 @@ const { ensureThumbnail, ensurePreviewImage } = require('../services/imageProces
 const { getStorage } = require('../services/storage');
 const logger = require('../utils/logger');
 
+/**
+ * Do these two stored paths address the same object?
+ *
+ * Compared the way the storage backends do, not as raw strings.
+ * LocalFsStorage._resolve and S3StorageBackend._key both fold `\` to `/` and
+ * strip a leading `./`, so `thumbnails\thumb_x.jpg`, `./thumbnails/thumb_x.jpg`
+ * and `thumbnails/thumb_x.jpg` are all one file. A legacy thumbnail_path in
+ * any of those shapes would compare unequal to the freshly generated POSIX
+ * key — and the "the key moved, delete the old one" branch below would then
+ * delete the thumbnail that had just been written, leaving every regenerated
+ * photo pointing at nothing.
+ */
+function sameStorageKey(a, b) {
+  const canonical = (key) => String(key)
+    .replace(/\\/g, '/')
+    .replace(/^\.?\/+/, '')
+    .replace(/\/+/g, '/');
+  return canonical(a) === canonical(b);
+}
+
 // Parse JSON-encoded setting values
 function parseSettingValue(value) {
   if (value === null || value === undefined) return null;
@@ -200,7 +220,7 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
             // Guarded on the key actually changing: on local storage it is
             // stable, and deleting the equal key would delete the file that
             // was just written.
-            if (photo.thumbnail_path && photo.thumbnail_path !== newThumbnailPath) {
+            if (photo.thumbnail_path && !sameStorageKey(photo.thumbnail_path, newThumbnailPath)) {
               await getStorage().delete(photo.thumbnail_path).catch((err) => {
                 // Losing the old object is untidy, not a failed regeneration.
                 logger.warn(
