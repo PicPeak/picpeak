@@ -111,7 +111,7 @@ Unlike expensive SaaS solutions, PicPeak gives you:
 
 **For photographers** — drag & drop upload, auto-expiring & password-protected galleries, automated emails, an analytics dashboard, custom themes, a public landing page, and a [Live Slideshow](https://docs.picpeak.app/features/live-slideshow) projector view that auto-picks-up new uploads during live events.
 
-**For clients** — clean mobile-optimized galleries, one-click bulk downloads, smart search, **People in this gallery** face grouping (opt-in per gallery, needs the optional [ML sidecar](ml/README.md)), optional guest uploads, and download protection (watermarking + right-click prevention).
+**For clients** — clean mobile-optimized galleries, one-click bulk downloads, smart search, **[People in this gallery](https://docs.picpeak.app/features/face-recognition)** face grouping (opt-in per gallery, needs the optional [ML sidecar](https://github.com/PicPeak/picpeak/blob/main/ml/README.md)), optional guest uploads, and download protection (watermarking + right-click prevention).
 
 **Technical** — Docker-ready, automatic thumbnail generation, external media reference mode, smart archiving of expired galleries, S3-compatible [storage backends](https://docs.picpeak.app/features/storage-backends), [webhooks](https://docs.picpeak.app/features/webhooks), and security-first defaults (JWT, rate limiting, CORS).
 
@@ -140,6 +140,7 @@ Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** —
 | ⚙️ Admin settings reference | [docs.picpeak.app/guides/admin-settings](https://docs.picpeak.app/guides/admin-settings) |
 | 🎯 Creating events | [docs.picpeak.app/guides/creating-events](https://docs.picpeak.app/guides/creating-events) |
 | 📽️ Live Slideshow | [docs.picpeak.app/features/live-slideshow](https://docs.picpeak.app/features/live-slideshow) |
+| 🙂 People in galleries (face grouping) | [docs.picpeak.app/features/face-recognition](https://docs.picpeak.app/features/face-recognition) |
 | 💾 Backup & Restore | [docs.picpeak.app/guides/backup-restore](https://docs.picpeak.app/guides/backup-restore) |
 | 🔌 API reference | [docs.picpeak.app/api](https://docs.picpeak.app/api) |
 | 🪝 Webhooks | [docs.picpeak.app/features/webhooks](https://docs.picpeak.app/features/webhooks) |

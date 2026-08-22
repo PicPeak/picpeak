@@ -19,7 +19,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Users, RefreshCw, Trash2, AlertTriangle, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import { Users, RefreshCw, Trash2, AlertTriangle, ShieldCheck, SlidersHorizontal, ExternalLink } from 'lucide-react';
 import { PeopleManagerModal } from './PeopleManagerModal';
 
 import { Button, Card, Loading } from '../common';
@@ -280,6 +280,20 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
             defaultValue:
               'Detected faces are personal data, and in the EU they count as a special category. You are the controller for this gallery: make sure you have a lawful basis for the people in these photos before switching this on. Nothing leaves your server — detection runs in your own container.',
           })}
+          {/* The guidance is reachable from the one screen where someone is
+              about to start Art. 9 processing, rather than only from the
+              README they have not opened (#1125). Inside the consent callout
+              on purpose: next to the obligation, not filed under help. */}
+          {' '}
+          <a
+            href="https://docs.picpeak.app/features/face-recognition"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline font-medium whitespace-nowrap"
+          >
+            {t('admin.faces.consentLearnMore', { defaultValue: 'Read the guidance' })}
+            <ExternalLink size={12} className="inline-block ml-0.5 -mt-0.5" aria-hidden />
+          </a>
         </p>
       </div>
 

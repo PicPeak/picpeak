@@ -2730,6 +2730,7 @@
       "title": "People in this gallery",
       "subtitle": "Group photos by the people in them, so guests can find and download their own.",
       "consentNotice": "Detected faces are personal data, and in the EU they count as a special category. You are the controller for this gallery: make sure you have a lawful basis for the people in these photos before switching this on. Nothing leaves your server — detection runs in your own container.",
+      "consentLearnMore": "Read the guidance",
       "enable": "Detect people in this gallery",
       "enableHint": "Existing photos are scanned in the background. Faces and their numeric signatures are stored in your database; they are never included in backups or exports.",
       "visible": "Show the people bar to guests",

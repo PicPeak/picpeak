@@ -3158,6 +3158,7 @@
       "title": "Personen in dieser Galerie",
       "subtitle": "Fotos nach den abgebildeten Personen gruppieren, damit Gäste ihre eigenen finden und herunterladen können.",
       "consentNotice": "Erkannte Gesichter sind personenbezogene Daten und gelten in der EU als besondere Kategorie. Sie sind für diese Galerie verantwortlich: Stellen Sie sicher, dass Sie eine Rechtsgrundlage für die abgebildeten Personen haben, bevor Sie dies aktivieren. Nichts verlässt Ihren Server — die Erkennung läuft in Ihrem eigenen Container.",
+      "consentLearnMore": "Hinweise lesen",
       "enable": "Personen in dieser Galerie erkennen",
       "enableHint": "Vorhandene Fotos werden im Hintergrund durchsucht. Gesichter und ihre numerischen Signaturen werden in Ihrer Datenbank gespeichert; sie sind niemals in Backups oder Exporten enthalten.",
       "visible": "Personenleiste für Gäste anzeigen",
