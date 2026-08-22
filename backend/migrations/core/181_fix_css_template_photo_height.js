@@ -55,8 +55,15 @@
  */
 const PHOTO_CARD_IMG_RULE = /(\.photo-card\s+img\s*\{)([^}]*)\}/g;
 
-/** Only a fixed PIXEL height is wrong here; %, vh, auto and the rest stay. */
-const FIXED_PX_HEIGHT = /height\s*:\s*\d+(?:\.\d+)?px/gi;
+/**
+ * Only a fixed PIXEL height is wrong here; %, vh, auto and the rest stay.
+ *
+ * The lookbehind is load-bearing rather than defensive: without it the pattern
+ * matches the TAIL of `line-height`, `max-height`, `min-height` and any custom
+ * property ending in `-height`, and silently rewrites those instead — in a
+ * migration whose down() is deliberately irreversible.
+ */
+const FIXED_PX_HEIGHT = /(?<![\w-])height\s*:\s*\d+(?:\.\d+)?px/gi;
 
 function relaxFixedImageHeights(css) {
   return css.replace(PHOTO_CARD_IMG_RULE, (whole, open, body) => {

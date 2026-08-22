@@ -154,6 +154,33 @@ describe('migration 181 — CSS template image height (#1131)', () => {
     expect(css).toContain('.hero { height: 400px; }');
   });
 
+  it('does not rewrite other properties that merely end in -height', async () => {
+    // `line-height: 200px` contains `height: 200px` as a substring, so an
+    // unanchored pattern silently rewrites it — in a migration that cannot be
+    // undone.
+    const mine = [
+      '.photo-card img {',
+      '  line-height: 200px;',
+      '  max-height: 300px;',
+      '  min-height: 14px;',
+      '  --tile-height: 220px;',
+      '  height: 200px;',
+      '}',
+    ].join('\n');
+    await knex('css_templates').insert({ name: 'Adjacent Props', css_content: mine });
+
+    await migration.up(knex);
+
+    const css = await contentOf('Adjacent Props');
+    expect(css).toContain('line-height: 200px');
+    expect(css).toContain('max-height: 300px');
+    expect(css).toContain('min-height: 14px');
+    expect(css).toContain('--tile-height: 220px');
+    // Only the real one moved.
+    expect(css).toContain('height: 100%');
+    expect(css).not.toMatch(/(?<![\w-])height:\s*200px/);
+  });
+
   it('leaves non-pixel heights on the image alone', async () => {
     const mine = '.photo-card img { height: 50vh; }\n.photo-card img { height: auto; }';
     await knex('css_templates').insert({ name: 'Relative', css_content: mine });
