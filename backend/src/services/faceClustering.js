@@ -171,6 +171,16 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
     modelVersion: p.model_version,
   })).filter((p) => p.centroid);
 
+  // Loaded once for the whole batch rather than per face: a photo with five
+  // faces would otherwise re-read the same handful of rows five times, and a
+  // backfill does that for every photo in the gallery.
+  // Through the caller's trx, not the global db: assignFaces runs inside
+  // processPhotoFaces' transaction, and on SQLite a second connection reading
+  // while that write transaction is open can block on the writer lock.
+  const { vectors: separations } = await loadSeparations(
+    eventId, faceRows[0]?.model_version || null, trx
+  );
+
   const assignments = [];
 
   for (const face of faceRows) {
@@ -188,6 +198,22 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
       // Never compare across embedding spaces — a model change makes old
       // centroids meaningless rather than merely stale.
       if (person.modelVersion && face.model_version && person.modelVersion !== face.model_version) {
+        continue;
+      }
+      // Honour the photographer's separations here, not only in consolidate()
+      // (#1132). Without this the constraint was toothless across a re-scan:
+      // the faces come back with new ids, assignment puts them wherever the
+      // maths says, and the pair the photographer pulled apart is reformed
+      // before any later pass gets to object — a dismissed pair scores at
+      // least face_match_threshold by definition, that being the bottom of the
+      // suggestion band.
+      //
+      // Skipping a candidate can push a face to its SECOND-nearest centroid,
+      // or open a new person. That is the intended cost: a human said these
+      // are different people, and the alternative is silently overruling them.
+      // The threshold is strict enough that this only fires while the cluster
+      // still looks like the one that was separated.
+      if (separationForbids(embedding, person.centroid, separations)) {
         continue;
       }
       const score = dot(embedding, person.centroid);
@@ -270,19 +296,68 @@ function pairKey(a, b) {
 }
 
 /**
- * Pairs the photographer has explicitly kept apart (#1107).
+ * How closely a cluster must still resemble a separated side for the
+ * separation to bind it (#1132).
+ *
+ * Deliberately stricter than the auto-merge threshold. This is not asking "are
+ * these the same person" but "is this still the same CLUSTER the photographer
+ * pointed at" — a much narrower claim, and one that should lapse once the
+ * cluster has been reshaped enough that the original decision may no longer
+ * reflect what is in it.
+ */
+const SEPARATION_MATCH_THRESHOLD = 0.92;
+
+/**
+ * Does a stored separation forbid putting these two vectors together?
+ *
+ * A separation binds when each of its two sides still matches one of the
+ * candidates — in either orientation, since neither the stored pair nor the
+ * candidate pair has a meaningful order.
+ */
+function separationForbids(vecX, vecY, separations, threshold = SEPARATION_MATCH_THRESHOLD) {
+  if (!vecX || !vecY) return false;
+  for (const sep of separations) {
+    if (!sep.a || !sep.b) continue;
+    const straight = dot(vecX, sep.a) >= threshold && dot(vecY, sep.b) >= threshold;
+    const crossed = dot(vecX, sep.b) >= threshold && dot(vecY, sep.a) >= threshold;
+    if (straight || crossed) return true;
+  }
+  return false;
+}
+
+/**
+ * Pairs the photographer has explicitly kept apart (#1107, #1132).
  *
  * Read by BOTH the automatic pass and the suggestion list: "not the same
  * person" has to bind the thing that acts on its own even more than it binds
  * the thing that asks. Missing table (pre-migration) reads as "nothing
  * dismissed" rather than failing the merge that called this.
+ *
+ * Returns both identities. `ids` is the exact person-id pair set, valid only
+ * while those ids still mean what they meant — cheap and unambiguous within one
+ * clustering cycle. `vectors` is what survives re-derivation: person ids die on
+ * a recluster and face ids die on a full re-scan, so the embeddings are the only
+ * stable handle on "these two".
  */
-async function loadDismissedPairs(eventId) {
+async function loadSeparations(eventId, modelVersion = null, conn = db) {
   try {
-    const rows = await db('event_people_merge_dismissals')
+    const rows = await conn('event_people_merge_dismissals')
       .where({ event_id: eventId })
-      .select('person_a_id', 'person_b_id');
-    return new Set(rows.map((d) => pairKey(d.person_a_id, d.person_b_id)));
+      .select('person_a_id', 'person_b_id', 'centroid_a', 'centroid_b', 'model_version');
+
+    const ids = new Set();
+    const vectors = [];
+    for (const row of rows) {
+      ids.add(pairKey(row.person_a_id, row.person_b_id));
+      // Never compare across embedding spaces — a model change makes a stored
+      // centroid meaningless rather than merely stale, the same rule assignment
+      // and consolidation already apply to event_people.centroid.
+      if (modelVersion && row.model_version && row.model_version !== modelVersion) continue;
+      const a = unpackEmbedding(row.centroid_a);
+      const b = unpackEmbedding(row.centroid_b);
+      if (a && b) vectors.push({ a, b });
+    }
+    return { ids, vectors };
   } catch (err) {
     // ONLY a missing table reads as "nothing dismissed" — that is a
     // pre-migration install, where by definition nothing has been dismissed.
@@ -297,7 +372,7 @@ async function loadDismissedPairs(eventId) {
       `faceClustering: merge-dismissal table absent for event ${eventId} — treating as none`,
       { error: err.message }
     );
-    return new Set();
+    return { ids: new Set(), vectors: [] };
   }
 }
 
@@ -333,7 +408,7 @@ async function consolidate(eventId, options = {}) {
   // however far the centroids drift afterwards. Without this the automatic
   // pass silently overturns an explicit human decision the moment new faces
   // push the pair over the threshold — or the moment someone tunes it.
-  const dismissed = await loadDismissedPairs(eventId);
+  const separations = await loadSeparations(eventId, state[0]?.model_version || null);
 
   const merged = [];
   const absorbed = new Set();
@@ -357,15 +432,19 @@ async function consolidate(eventId, options = {}) {
         // to overrule.
         if (a.label && b.label && a.label !== b.label) continue;
 
-        if (dismissed.has(pairKey(a.id, b.id))) continue;
+        // Both identities: the exact pair while the ids still mean what they
+        // meant, and the embedding match that carries the decision across a
+        // re-derivation (#1132).
+        if (separations.ids.has(pairKey(a.id, b.id))) continue;
+        if (separationForbids(a.vec, b.vec, separations.vectors)) continue;
 
         if (dot(a.vec, b.vec) >= mergeThreshold) {
-        // Re-read this one pair immediately before acting. The set above was
-        // loaded once for the whole pass, and a photographer pressing "Not the
-        // same" during it would otherwise be overruled by a decision that was
-        // already stale when it was made. Narrows the window to a single
-        // statement rather than the length of the pass; one extra query per
-        // pair that is actually about to merge, which is rare.
+          // Re-read this one pair immediately before acting. The set above was
+          // loaded once for the whole pass, and a photographer pressing "Not
+          // the same" during it would otherwise be overruled by a decision that
+          // was already stale when it was made. Narrows the window to a single
+          // statement rather than the length of the pass; one extra query per
+          // pair that is actually about to merge, which is rare.
           const justDismissed = await db('event_people_merge_dismissals')
             .where({
               event_id: eventId,
@@ -442,7 +521,7 @@ async function suggestMerges(eventId, options = {}) {
 
   if (state.length < 2) return [];
 
-  const dismissed = await loadDismissedPairs(eventId);
+  const separations = await loadSeparations(eventId, state[0]?.model_version || null);
 
   const pairs = [];
   for (let i = 0; i < state.length; i++) {
@@ -454,7 +533,10 @@ async function suggestMerges(eventId, options = {}) {
       // assertion, not a question.
       if (a.label && b.label && a.label !== b.label) continue;
 
-      if (dismissed.has(pairKey(a.id, b.id))) continue;
+      // Exact pair while the ids still hold, plus the embedding match that
+      // carries the decision across a re-derivation (#1132).
+      if (separations.ids.has(pairKey(a.id, b.id))) continue;
+      if (separationForbids(a.vec, b.vec, separations.vectors)) continue;
 
       const score = dot(a.vec, b.vec);
       if (score < floor || score >= mergeThreshold) continue;
@@ -504,17 +586,52 @@ function isUniqueViolation(err) {
 }
 
 /**
+ * The centroids of two people, packed for storage on a separation row (#1132).
+ *
+ * Best-effort: a pre-migration install has no columns to write, and a person
+ * that vanished between the click and this read leaves the row keyed on ids
+ * alone — which is exactly what it was before, so the decision is no worse off
+ * than it used to be.
+ */
+async function separationSnapshot(eventId, personAId, personBId, conn = db) {
+  try {
+    const people = await conn('event_people')
+      .where({ event_id: eventId })
+      .whereIn('id', [personAId, personBId])
+      .select('id', 'centroid', 'model_version');
+    const a = people.find((p) => p.id === personAId);
+    const b = people.find((p) => p.id === personBId);
+    if (!a?.centroid || !b?.centroid) return {};
+    return {
+      centroid_a: a.centroid,
+      centroid_b: b.centroid,
+      model_version: a.model_version || b.model_version || null,
+    };
+  } catch (err) {
+    logger.warn(`faceClustering: could not snapshot separation ${personAId}/${personBId}`, {
+      error: err.message,
+    });
+    return {};
+  }
+}
+
+/**
  * Remember that these two are NOT the same person, so the pair stops being
  * suggested. Normalized to (lower id, higher id) so the pair has one identity.
  */
 async function dismissMergeSuggestion(eventId, personAId, personBId) {
   const lo = Math.min(personAId, personBId);
   const hi = Math.max(personAId, personBId);
+  // Snapshot what the two clusters look like RIGHT NOW (#1132). The person ids
+  // stop meaning anything the next time clustering is re-derived; these vectors
+  // are what lets the decision outlive that.
+  const snapshot = await separationSnapshot(eventId, lo, hi);
   try {
     await db('event_people_merge_dismissals').insert({
       event_id: eventId,
       person_a_id: lo,
       person_b_id: hi,
+      ...snapshot,
       created_at: new Date().toISOString(),
     });
   } catch (err) {
@@ -608,24 +725,37 @@ async function splitPerson(eventId, personId, faceIds) {
       .whereIn('id', faces.map((f) => f.id))
       .update({ person_id: newPersonId });
 
+    // Centroids FIRST, then the separation. The order is load-bearing (#1132):
+    // at this point the new person has no centroid at all (it was inserted with
+    // none) and the original still carries the faces being split out, so a
+    // snapshot taken here would record one empty vector and one stale one —
+    // and the separation would bind the wrong pair, or nothing at all.
+    await recomputeCentroid(newPersonId, trx);
+    await recomputeCentroid(personId, trx);
+
     // A split IS a "these are not the same person" decision, and it has to be
-    // recorded as one (#1107). Consolidation now runs automatically after
-    // every scan, and two clusters a photographer pulled apart are look-alikes
-    // by construction — their centroids usually sit above the merge threshold,
-    // so the very next scan would put them straight back together and the
-    // manual correction would look like it never happened.
+    // recorded as one (#1107). Consolidation runs automatically after every
+    // scan, and two clusters a photographer pulled apart are look-alikes by
+    // construction — their centroids usually sit above the merge threshold, so
+    // the very next scan would put them straight back together and the manual
+    // correction would look like it never happened.
+    //
+    // Keyed on the post-split centroids as well as the ids, so it also survives
+    // the re-derivation that kills both person and face ids (#1132).
+    const lo = Math.min(personId, newPersonId);
+    const hi = Math.max(personId, newPersonId);
+    const snapshot = await separationSnapshot(eventId, lo, hi, trx);
     await trx('event_people_merge_dismissals').insert({
       event_id: eventId,
-      person_a_id: Math.min(personId, newPersonId),
-      person_b_id: Math.max(personId, newPersonId),
+      person_a_id: lo,
+      person_b_id: hi,
+      ...snapshot,
       created_at: new Date().toISOString(),
     }).catch((err) => {
       // Pre-migration install, or the pair was already separated once before.
       if (!isMissingTable(err) && !isUniqueViolation(err)) throw err;
     });
 
-    await recomputeCentroid(newPersonId, trx);
-    await recomputeCentroid(personId, trx);
     return newPersonId;
   });
 }
@@ -807,6 +937,11 @@ module.exports = {
   // must stop the pass.
   isUniqueViolation,
   isMissingTable,
+  // Separation constraints (#1132) — exported so the tests can drive the
+  // matching directly rather than only through a full clustering pass.
+  loadSeparations,
+  separationForbids,
+  SEPARATION_MATCH_THRESHOLD,
   mergePeople,
   splitPerson,
   recomputeCentroid,
