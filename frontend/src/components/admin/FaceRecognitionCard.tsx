@@ -29,6 +29,12 @@ interface FacesPayload {
   enabled: boolean;
   visible_to_guests: boolean;
   last_scan_at: string | null;
+  // What the automatic consolidation pass merged when this gallery last
+  // finished scanning (#1107).
+  consolidation?: {
+    merged: number;
+    at: string | null;
+  };
   status: {
     scanned: number;
     total: number;
@@ -155,6 +161,29 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
     // different rates and the streak counts probes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [healthAt, shouldProbe, scanRunning, health]);
+
+  // Consolidation happens AFTER the last photo is marked done: the worker
+  // records the event, goes idle, then drains. So the poll that first sees
+  // `in_progress: false` also stops polling, and it read the consolidation
+  // count a moment too early — leaving the card silent about merges that did
+  // happen until the admin navigates back.
+  //
+  // Two catch-up refetches rather than one, because a consolidation that hits
+  // a transient error is retried by the queue a minute later
+  // (FACE_CONSOLIDATE_RETRY_MS): the first covers the normal case, the second
+  // covers one retry. Deliberately a fixed pair and not a poll — an event
+  // whose photos all failed never consolidates at all, and a condition-based
+  // poll would spin on it forever.
+  const wasScanning = useRef(false);
+  useEffect(() => {
+    const scanning = !!data?.status?.in_progress;
+    const justFinished = wasScanning.current && !scanning;
+    wasScanning.current = scanning;
+    if (!justFinished) return;
+
+    const timers = [8000, 70000].map((ms) => setTimeout(() => { refetch(); }, ms));
+    return () => timers.forEach(clearTimeout);
+  }, [data?.status?.in_progress, refetch]);
 
   useEffect(() => {
     if (!data?.enabled) return;
@@ -451,6 +480,24 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
                 misconfiguration or from corrupt images at some earlier point.
                 Attributing them properly would mean reading stored face_error
                 rows — worth doing, but a bigger change than this. */}
+            {/* Automatic consolidation (#1107). Clustering merged look-alike
+                groups on its own once the scan drained, and doing that to
+                biometric clusters without saying so is the wrong default —
+                even at the stricter-than-assignment threshold it uses. Points
+                at the tool for undoing it rather than claiming an undo we do
+                not have: Split is how a wrong merge gets unpicked. */}
+            {!status.in_progress && (data.consolidation?.merged ?? 0) > 0 && (
+              <p className="mt-2 flex items-start gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+                <Users size={14} className="mt-0.5 shrink-0 text-neutral-400" />
+                <span>
+                  {t('admin.faces.consolidated', {
+                    count: data.consolidation!.merged,
+                    defaultValue_one: 'Grouping merged {{count}} look-alike pair automatically after the last scan. Open Manage people to check it — anything merged wrongly can be separated again with Split.',
+                    defaultValue_other: 'Grouping merged {{count}} look-alike pairs automatically after the last scan. Open Manage people to check them — anything merged wrongly can be separated again with Split.',
+                  })}
+                </span>
+              </p>
+            )}
             {!status.in_progress && sidecarNotice && (
               <div className="mt-2">
                 <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">

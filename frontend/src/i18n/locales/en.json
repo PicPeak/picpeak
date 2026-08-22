@@ -2722,7 +2722,14 @@
       "splitHelp": "Pick the photos that are NOT this person. They become a new entry, and everything else stays.",
       "splitSelected": "{{count}} selected",
       "doSplit": "Split out",
-      "empty": "No people detected yet."
+      "empty": "No people detected yet.",
+      "photoCount_one": "{{count}} photo",
+      "photoCount_other": "{{count}} photos",
+      "suggestionsHeading": "These might be the same person. Grouping was not confident enough to merge them on its own.",
+      "suggestionScore": "{{percent}}% alike",
+      "suggestionAccept": "Same person",
+      "suggestionReject": "Not the same",
+      "suggestionDismissed": "Kept separate"
     },
     "faces": {
       "manage": "Manage people",
@@ -2752,7 +2759,9 @@
       "sidecarUnreachable": "Can't reach the face-detection service at {{url}}, so the {{pending}} queued photos aren't being processed. Nothing is lost — the scan resumes on its own once the service is up. Start it with `docker compose --profile faces up -d`, and note it exits immediately unless FACE_ML_TOKEN is set to the same value as the backend — there is no default.",
       "sidecarUnauthorized": "The face-detection service at {{url}} is rejecting our token, and photos are being marked failed rather than retried. Make FACE_ML_TOKEN identical on the backend and the picpeak-ml container, restart both, then use Re-scan — fixing the token alone will not reprocess the photos that already failed.",
       "sidecarRejected": "{{url}} answered, but not like the face-detection service — photos are being marked failed rather than retried. Check FACE_ML_URL points at the picpeak-ml container and that nothing is proxying that address, then use Re-scan for the photos that already failed.",
-      "sidecarStateNow": "Service state right now — some of the failures above may have a different cause, but a re-scan will not succeed until this is fixed:"
+      "sidecarStateNow": "Service state right now — some of the failures above may have a different cause, but a re-scan will not succeed until this is fixed:",
+      "consolidated_one": "Grouping merged {{count}} look-alike pair automatically after the last scan. Open Manage people to check it — anything merged wrongly can be separated again with Split.",
+      "consolidated_other": "Grouping merged {{count}} look-alike pairs automatically after the last scan. Open Manage people to check them — anything merged wrongly can be separated again with Split."
     }
   },
   "acceptInvitation": {

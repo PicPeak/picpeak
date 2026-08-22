@@ -99,6 +99,14 @@ module.exports = (router) => {
           enabled: event.face_recognition_enabled === true || event.face_recognition_enabled === 1,
           visible_to_guests: faceSettings.areFacesVisibleToGuests(event),
           last_scan_at: event.faces_last_scan_at || null,
+          // What the automatic consolidation pass did when this event last
+          // drained (#1107). Surfaced because merging biometric clusters
+          // without saying so is the wrong default, however confident the
+          // similarity was.
+          consolidation: {
+            merged: Number(event.faces_last_consolidated_count || 0),
+            at: event.faces_last_consolidated_at || null,
+          },
           status,
         });
       } catch (error) {
@@ -186,6 +194,71 @@ module.exports = (router) => {
         res.json({ people });
       } catch (error) {
         errorResponse(res, error, 500, 'Failed to fetch people');
+      }
+    });
+
+  /**
+   * Look-alike pairs in the band BELOW the auto-merge threshold (#1107).
+   *
+   * Registered before the '/:id/people/:personId' family so the literal
+   * 'suggestions' segment can never be read as a person id — see ./index.js on
+   * why registration order is load-bearing here. It would not collide today
+   * (that route has no GET), but relying on that is one refactor away from a
+   * person id of "suggestions" reaching the database.
+   *
+   * Returns ids and a score only. Every caller already holds the people list
+   * with its covers, so re-sending face crops here would duplicate a payload
+   * the modal has open in front of it.
+   */
+  router.get('/:id/people/suggestions',
+    adminAuth, requirePermission('events.view'), requireFaces, requireEventOwnership,
+    async (req, res) => {
+      try {
+        const event = await loadOwnedEvent(req);
+        if (!event) return res.status(404).json({ error: 'Event not found' });
+
+        const suggestions = await faceClustering.suggestMerges(event.id);
+        res.json({ suggestions });
+      } catch (error) {
+        errorResponse(res, error, 500, 'Failed to fetch merge suggestions');
+      }
+    });
+
+  /**
+   * "These two are not the same person." Sticky, so the pair stops coming back
+   * after every scan.
+   */
+  router.post('/:id/people/suggestions/dismiss',
+    adminAuth,
+    requirePermission('events.edit'),
+    requireFaces,
+    requireEventOwnership,
+    [body('person_a_id').isInt(), body('person_b_id').isInt()],
+    async (req, res) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+      try {
+        const event = await loadOwnedEvent(req);
+        if (!event) return res.status(404).json({ error: 'Event not found' });
+
+        // Both ids must belong to this event. Without this an admin could
+        // write dismissal rows naming people in someone else's gallery —
+        // harmless on its own, but it is other tenants' data in our table.
+        const ids = [Number(req.body.person_a_id), Number(req.body.person_b_id)];
+        if (ids[0] === ids[1]) {
+          return res.status(400).json({ error: 'A person cannot be dismissed against itself' });
+        }
+        const owned = await db('event_people')
+          .where({ event_id: event.id }).whereIn('id', ids).pluck('id');
+        if (owned.length !== 2) {
+          return res.status(400).json({ error: 'One or more people do not belong to this event' });
+        }
+
+        const result = await faceClustering.dismissMergeSuggestion(event.id, ids[0], ids[1]);
+        res.json({ success: true, ...result });
+      } catch (error) {
+        errorResponse(res, error, 500, 'Failed to dismiss suggestion');
       }
     });
 

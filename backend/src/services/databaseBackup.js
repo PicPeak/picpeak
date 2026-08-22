@@ -28,7 +28,7 @@ const PROGRESS_INTERVAL = 100; // Report progress every 100 rows
 // SQLite cannot filter at all — `sqlite3 .backup` is a whole-file binary copy
 // — so the rows are deleted from the temp copy before it is finalised. See
 // createSQLiteBackup below.
-const FACE_TABLES = ['photo_faces', 'event_people'];
+const FACE_TABLES = ['photo_faces', 'event_people', 'event_people_merge_dismissals'];
 
 /**
  * Database Backup Service

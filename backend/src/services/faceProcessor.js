@@ -371,6 +371,18 @@ async function purgeEvent(eventId) {
     await trx('photos').where({ event_id: eventId }).update({
       face_status: null, face_count: null, face_started_at: null, face_error: null,
     });
+
+    // Everything the erasure was about is gone, so the records ABOUT that
+    // grouping go too (#1107): dismissal rows name people that no longer
+    // exist, and a consolidation count left standing would have the card
+    // reporting merges beside an empty people list. Inside purgeEvent rather
+    // than the route so archival gets the same treatment.
+    await trx('event_people_merge_dismissals').where({ event_id: eventId }).del()
+      .catch(() => { /* pre-migration install — nothing to clear */ });
+    await trx('events').where({ id: eventId }).update({
+      faces_last_consolidated_count: 0,
+      faces_last_consolidated_at: null,
+    }).catch(() => { /* pre-migration install */ });
     logger.info(`faceProcessor: purged ${faces} face(s) and ${people} person(s) from event ${eventId}`);
     return { faces, people };
   });

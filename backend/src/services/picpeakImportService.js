@@ -358,7 +358,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     // orphans can end up attached to reused photo/event ids from the incoming
     // archive: one instance's biometric data silently adopted by another's
     // galleries. Purge them explicitly.
-    for (const faceTable of ['photo_faces', 'event_people']) {
+    for (const faceTable of ['photo_faces', 'event_people', 'event_people_merge_dismissals']) {
       try {
         await trx(faceTable).del();
       } catch (err) {

@@ -248,6 +248,60 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
 }
 
 /**
+ * Does this error mean the table isn't there yet, as opposed to the query
+ * failing? Postgres reports SQLSTATE 42P01; SQLite says so in the message.
+ * The distinction decides whether a dismissal read may fail open.
+ */
+function isMissingTable(err) {
+  if (!err) return false;
+  // Postgres: undefined_table. Deliberately NOT matched on the message — its
+  // "does not exist" wording also covers a missing COLUMN, which is a broken
+  // query rather than a pre-migration install and must not fail open.
+  if (err.code === '42P01') return true;
+  return /no such table/i.test(err.message || '');
+}
+
+/**
+ * One identity for a pair regardless of which order it was produced in.
+ * Rows are stored the same way, so the two always agree.
+ */
+function pairKey(a, b) {
+  return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+/**
+ * Pairs the photographer has explicitly kept apart (#1107).
+ *
+ * Read by BOTH the automatic pass and the suggestion list: "not the same
+ * person" has to bind the thing that acts on its own even more than it binds
+ * the thing that asks. Missing table (pre-migration) reads as "nothing
+ * dismissed" rather than failing the merge that called this.
+ */
+async function loadDismissedPairs(eventId) {
+  try {
+    const rows = await db('event_people_merge_dismissals')
+      .where({ event_id: eventId })
+      .select('person_a_id', 'person_b_id');
+    return new Set(rows.map((d) => pairKey(d.person_a_id, d.person_b_id)));
+  } catch (err) {
+    // ONLY a missing table reads as "nothing dismissed" — that is a
+    // pre-migration install, where by definition nothing has been dismissed.
+    //
+    // Everything else FAILS CLOSED. Treating a timeout or a permission error
+    // as an empty set would let the automatic pass merge pairs the
+    // photographer explicitly separated, which is precisely the decision this
+    // set exists to protect. The caller defers instead: drainConsolidation
+    // backs the event off and retries.
+    if (!isMissingTable(err)) throw err;
+    logger.warn(
+      `faceClustering: merge-dismissal table absent for event ${eventId} — treating as none`,
+      { error: err.message }
+    );
+    return new Set();
+  }
+}
+
+/**
  * Merge people whose centroids have drifted together.
  *
  * Greedy assignment can open "Anna in daylight" and "Anna at the party" as
@@ -264,40 +318,214 @@ async function consolidate(eventId, options = {}) {
 
   const people = await db('event_people')
     .where({ event_id: eventId })
-    .select('id', 'centroid', 'face_count_total', 'model_version', 'label');
+    .select('id', 'centroid', 'face_count_total', 'model_version', 'label', 'is_ignored');
 
   const state = people
+    // "Not a real person" must never be merged INTO one. mergePeople ORs
+    // is_ignored onto the survivor, so absorbing a false-positive cluster
+    // would mark a real person ignored and drop them out of the guest-facing
+    // strip entirely. Cheap to skip, expensive to discover.
+    .filter((p) => !(p.is_ignored === true || p.is_ignored === 1))
     .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
     .filter((p) => p.vec);
+
+  // A pair the photographer answered "not the same" about stays not the same,
+  // however far the centroids drift afterwards. Without this the automatic
+  // pass silently overturns an explicit human decision the moment new faces
+  // push the pair over the threshold — or the moment someone tunes it.
+  const dismissed = await loadDismissedPairs(eventId);
 
   const merged = [];
   const absorbed = new Set();
 
+  // Each mergePeople is its own transaction, so a pass that dies halfway has
+  // still committed what it did. Reporting has to survive that: recorded in a
+  // finally, or a failure on the second pair would leave the first one merged
+  // and unreported — silent, which is the one thing this must never be. The
+  // retry then re-reports against whatever is left.
+  try {
+    for (let i = 0; i < state.length; i++) {
+      if (absorbed.has(state[i].id)) continue;
+      for (let j = i + 1; j < state.length; j++) {
+        if (absorbed.has(state[j].id)) continue;
+        const a = state[i];
+        const b = state[j];
+        if (a.model_version !== b.model_version) continue;
+
+        // Never silently merge two people the photographer has NAMED
+        // differently — that is a human assertion this heuristic does not get
+        // to overrule.
+        if (a.label && b.label && a.label !== b.label) continue;
+
+        if (dismissed.has(pairKey(a.id, b.id))) continue;
+
+        if (dot(a.vec, b.vec) >= mergeThreshold) {
+        // Re-read this one pair immediately before acting. The set above was
+        // loaded once for the whole pass, and a photographer pressing "Not the
+        // same" during it would otherwise be overruled by a decision that was
+        // already stale when it was made. Narrows the window to a single
+        // statement rather than the length of the pass; one extra query per
+        // pair that is actually about to merge, which is rare.
+          const justDismissed = await db('event_people_merge_dismissals')
+            .where({
+              event_id: eventId,
+              person_a_id: Math.min(a.id, b.id),
+              person_b_id: Math.max(a.id, b.id),
+            })
+            .first()
+            .catch((err) => {
+              if (isMissingTable(err)) return null;
+              throw err;
+            });
+          if (justDismissed) continue;
+
+          await mergePeople(eventId, [b.id], a.id);
+          absorbed.add(b.id);
+          merged.push({ from: b.id, into: a.id });
+        }
+      }
+    }
+
+  } finally {
+    if (merged.length) {
+      logger.info(`faceClustering: consolidated ${merged.length} person pair(s) in event ${eventId}`);
+    }
+
+    // Record the outcome even when it is zero. Merging biometric clusters
+    // silently is the wrong default however confident the maths is (#1107), so
+    // the admin card reports what this pass did — and a run that merged nothing
+    // has to clear a previous run's count rather than leave it standing.
+    await db('events').where({ id: eventId }).update({
+      faces_last_consolidated_count: merged.length,
+      faces_last_consolidated_at: new Date().toISOString(),
+    }).catch((err) => {
+      // Pre-migration installs simply do not report. Never let bookkeeping fail
+      // a merge that already happened.
+      logger.warn(`faceClustering: could not record consolidation for event ${eventId}`, {
+        error: err.message,
+      });
+    });
+  }
+
+  return merged;
+}
+
+/**
+ * Pairs that look like the same person but not confidently enough to merge
+ * automatically (#1107).
+ *
+ * The band is [match_threshold, merge_threshold): above the top of it
+ * `consolidate()` has already merged the pair, and below the bottom the two
+ * centroids are further apart than the distance at which a single face would
+ * have joined the cluster at all — which is not a claim worth putting in front
+ * of anyone.
+ *
+ * This is the "with a warning" half of the request. An over-eager merge is much
+ * harder to unpick than a missed one, so the uncertain band never merges by
+ * itself; it asks.
+ */
+async function suggestMerges(eventId, options = {}) {
+  const thresholds = options.thresholds || (await getThresholds());
+  const mergeThreshold = Math.min(0.95, thresholds.face_match_threshold + 0.08);
+  const floor = thresholds.face_match_threshold;
+  const limit = options.limit || 20;
+
+  const people = await db('event_people')
+    .where({ event_id: eventId })
+    .select('id', 'centroid', 'face_count_total', 'model_version', 'label', 'is_ignored');
+
+  const state = people
+    // "Not a real person" is an answer already given — never ask about it again.
+    .filter((p) => !(p.is_ignored === true || p.is_ignored === 1))
+    .map((p) => ({ ...p, vec: unpackEmbedding(p.centroid) }))
+    .filter((p) => p.vec);
+
+  if (state.length < 2) return [];
+
+  const dismissed = await loadDismissedPairs(eventId);
+
+  const pairs = [];
   for (let i = 0; i < state.length; i++) {
-    if (absorbed.has(state[i].id)) continue;
     for (let j = i + 1; j < state.length; j++) {
-      if (absorbed.has(state[j].id)) continue;
       const a = state[i];
       const b = state[j];
       if (a.model_version !== b.model_version) continue;
-
-      // Never silently merge two people the photographer has NAMED
-      // differently — that is a human assertion this heuristic does not get
-      // to overrule.
+      // Same rule consolidate() applies: two different names is a human
+      // assertion, not a question.
       if (a.label && b.label && a.label !== b.label) continue;
 
-      if (dot(a.vec, b.vec) >= mergeThreshold) {
-        await mergePeople(eventId, [b.id], a.id);
-        absorbed.add(b.id);
-        merged.push({ from: b.id, into: a.id });
-      }
+      if (dismissed.has(pairKey(a.id, b.id))) continue;
+
+      const score = dot(a.vec, b.vec);
+      if (score < floor || score >= mergeThreshold) continue;
+
+      pairs.push({
+        person_a_id: Math.min(a.id, b.id),
+        person_b_id: Math.max(a.id, b.id),
+        score,
+      });
     }
   }
 
-  if (merged.length) {
-    logger.info(`faceClustering: consolidated ${merged.length} person pair(s) in event ${eventId}`);
+  // Most-similar first: the strongest suggestion is the one most likely to be
+  // accepted, and a photographer working down the list should meet it first.
+  pairs.sort((x, y) => y.score - x.score);
+
+  // One suggestion per person per round. Without this a cluster that genuinely
+  // has three fragments produces A-B, A-C and B-C, and accepting A-B leaves two
+  // suggestions pointing at a person that no longer exists.
+  const used = new Set();
+  const result = [];
+  for (const pair of pairs) {
+    if (used.has(pair.person_a_id) || used.has(pair.person_b_id)) continue;
+    used.add(pair.person_a_id);
+    used.add(pair.person_b_id);
+    result.push(pair);
+    if (result.length >= limit) break;
   }
-  return merged;
+  return result;
+}
+
+/**
+ * Is this the UNIQUE constraint firing, as opposed to a real write failure?
+ *
+ * Both engines have to be recognised: Postgres reports SQLSTATE 23505, and
+ * sqlite3 reports SQLITE_CONSTRAINT with the specific constraint named in the
+ * message (better-sqlite3 narrows the code itself). Matching too broadly here
+ * would put us back to swallowing genuine failures.
+ */
+function isUniqueViolation(err) {
+  if (!err) return false;
+  if (err.code === '23505') return true;
+  if (typeof err.code === 'string' && err.code.startsWith('SQLITE_CONSTRAINT')) {
+    return /unique/i.test(err.message || '');
+  }
+  return false;
+}
+
+/**
+ * Remember that these two are NOT the same person, so the pair stops being
+ * suggested. Normalized to (lower id, higher id) so the pair has one identity.
+ */
+async function dismissMergeSuggestion(eventId, personAId, personBId) {
+  const lo = Math.min(personAId, personBId);
+  const hi = Math.max(personAId, personBId);
+  try {
+    await db('event_people_merge_dismissals').insert({
+      event_id: eventId,
+      person_a_id: lo,
+      person_b_id: hi,
+      created_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    // ONLY the UNIQUE constraint doing its job — dismissing twice is a
+    // double-click, not an error. Anything else (missing table on a
+    // pre-migration install, read-only database) must reach the caller:
+    // reporting "kept separate" for a decision that was never stored is worse
+    // than an error, because the pair silently comes back next scan.
+    if (!isUniqueViolation(err)) throw err;
+  }
+  return { dismissed: true };
 }
 
 /**
@@ -379,6 +607,22 @@ async function splitPerson(eventId, personId, faceIds) {
     await trx('photo_faces')
       .whereIn('id', faces.map((f) => f.id))
       .update({ person_id: newPersonId });
+
+    // A split IS a "these are not the same person" decision, and it has to be
+    // recorded as one (#1107). Consolidation now runs automatically after
+    // every scan, and two clusters a photographer pulled apart are look-alikes
+    // by construction — their centroids usually sit above the merge threshold,
+    // so the very next scan would put them straight back together and the
+    // manual correction would look like it never happened.
+    await trx('event_people_merge_dismissals').insert({
+      event_id: eventId,
+      person_a_id: Math.min(personId, newPersonId),
+      person_b_id: Math.max(personId, newPersonId),
+      created_at: new Date().toISOString(),
+    }).catch((err) => {
+      // Pre-migration install, or the pair was already separated once before.
+      if (!isMissingTable(err) && !isUniqueViolation(err)) throw err;
+    });
 
     await recomputeCentroid(newPersonId, trx);
     await recomputeCentroid(personId, trx);
@@ -557,6 +801,12 @@ module.exports = {
   meetsQualityFloor,
   assignFaces,
   consolidate,
+  suggestMerges,
+  dismissMergeSuggestion,
+  // Exported for the tests that pin which failures may be swallowed and which
+  // must stop the pass.
+  isUniqueViolation,
+  isMissingTable,
   mergePeople,
   splitPerson,
   recomputeCentroid,

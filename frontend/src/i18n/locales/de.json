@@ -3150,7 +3150,14 @@
       "splitHelp": "Wählen Sie die Fotos aus, die NICHT diese Person zeigen. Sie werden zu einem neuen Eintrag, alles andere bleibt.",
       "splitSelected": "{{count}} ausgewählt",
       "doSplit": "Abtrennen",
-      "empty": "Noch keine Personen erkannt."
+      "empty": "Noch keine Personen erkannt.",
+      "photoCount_one": "{{count}} Foto",
+      "photoCount_other": "{{count}} Fotos",
+      "suggestionsHeading": "Das könnte dieselbe Person sein. Die Gruppierung war sich nicht sicher genug, um sie von selbst zusammenzuführen.",
+      "suggestionScore": "{{percent}}% ähnlich",
+      "suggestionAccept": "Dieselbe Person",
+      "suggestionReject": "Nicht dieselbe",
+      "suggestionDismissed": "Getrennt gelassen"
     },
     "faces": {
       "manage": "Personen verwalten",
@@ -3180,7 +3187,9 @@
       "sidecarUnreachable": "Der Gesichtserkennungs-Dienst unter {{url}} ist nicht erreichbar, deshalb werden die {{pending}} eingereihten Fotos nicht verarbeitet. Es geht nichts verloren — der Scan läuft von selbst weiter, sobald der Dienst wieder da ist. Starte ihn mit `docker compose --profile faces up -d`; er beendet sich sofort, wenn FACE_ML_TOKEN nicht auf denselben Wert wie im Backend gesetzt ist — einen Standardwert gibt es nicht.",
       "sidecarUnauthorized": "Der Gesichtserkennungs-Dienst unter {{url}} weist unser Token zurück; Fotos werden als fehlgeschlagen markiert statt erneut versucht. Setze FACE_ML_TOKEN im Backend und im picpeak-ml-Container identisch, starte beide neu und nutze dann Neu scannen — das Token allein zu korrigieren verarbeitet die bereits fehlgeschlagenen Fotos nicht erneut.",
       "sidecarRejected": "{{url}} antwortet, aber nicht wie der Gesichtserkennungs-Dienst — Fotos werden als fehlgeschlagen markiert statt erneut versucht. Prüfe, ob FACE_ML_URL auf den picpeak-ml-Container zeigt und kein Proxy dazwischenliegt, und nutze dann Neu scannen für die bereits fehlgeschlagenen Fotos.",
-      "sidecarStateNow": "Aktueller Zustand des Dienstes — einige der Fehler oben können eine andere Ursache haben, aber ein erneuter Scan wird erst nach der Behebung erfolgreich sein:"
+      "sidecarStateNow": "Aktueller Zustand des Dienstes — einige der Fehler oben können eine andere Ursache haben, aber ein erneuter Scan wird erst nach der Behebung erfolgreich sein:",
+      "consolidated_one": "Beim letzten Scan wurde {{count}} ähnliches Paar automatisch zusammengeführt. Prüfen Sie es unter „Personen verwalten“ — falsch Zusammengeführtes lässt sich mit „Trennen“ wieder aufteilen.",
+      "consolidated_other": "Beim letzten Scan wurden {{count}} ähnliche Paare automatisch zusammengeführt. Prüfen Sie sie unter „Personen verwalten“ — falsch Zusammengeführtes lässt sich mit „Trennen“ wieder aufteilen."
     }
   },
   "acceptInvitation": {
