@@ -278,6 +278,25 @@ describe('separations survive re-derivation (#1132)', () => {
     });
   });
 
+  describe('when the whole gallery is deleted', () => {
+    it('deleteEventCascade clears the separations too', () => {
+      // Source inspection, deliberately. deleteEventCascade takes an admin
+      // context and does filesystem cleanup, so driving it here would test the
+      // scaffolding rather than the contract. The contract is narrow and
+      // absolute: this table now holds centroid BLOBs, it has no event FK by
+      // design, and nothing else in the codebase would ever reach it — so the
+      // one delete has to be in the cascade or the embeddings outlive the
+      // gallery. Same approach as the contract tests added for #596.
+      const src = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'src', 'routes', 'adminEvents', 'helpers.js'), 'utf8'
+      );
+      const body = src.slice(src.indexOf('async function deleteEventCascade'));
+      expect(body).toContain('event_people_merge_dismissals\').where(\'event_id\', eventId).del()');
+      // Guarded, not caught: a failed statement aborts the transaction on PG.
+      expect(body).toContain('hasTable(\'event_people_merge_dismissals\')');
+    });
+  });
+
   describe('during assignment', () => {
     it('will not put a new face into a cluster it was separated from', async () => {
       const eventId = await seedEvent('sep-assign');
@@ -351,6 +370,50 @@ describe('separations survive re-derivation (#1132)', () => {
 
       expect(assignments[0].personId).not.toBe(idA);
       expect(assignments[0].personId).toBeTruthy();
+    });
+
+    it('binds while the clusters are still being rebuilt one face at a time', async () => {
+      const eventId = await seedEvent('sep-assign-rebuild');
+      // recluster() empties event_people and re-assigns from scratch, so for
+      // the first faces of a batch the "person" on the other side of the
+      // comparison is a cluster of ONE. A settled centroid it is not, and
+      // holding it to the strict threshold meant the pair was already merged
+      // by the time the constraint could bind — with nothing left to split it.
+      const [sideA, sideB] = pairAtSimilarity(0.7, 0);
+      const idA = await insertPerson(eventId, sideA);
+      const idB = await insertPerson(eventId, sideB);
+      await clustering.dismissMergeSuggestion(eventId, idA, idB);
+      await db('event_people').where({ event_id: eventId }).del();
+
+      // Two faces, one per side, each a little off its own side's centroid —
+      // 0.91, just under the strict bar — and 0.66 to each other, over the
+      // match threshold. Exactly the pair that must not re-form.
+      const off = Math.sqrt(1 - 0.91 ** 2);
+      const faceA = new Float32Array(DIM);
+      faceA[0] = 0.91; faceA[3] = off;
+      const faceB = new Float32Array(DIM);
+      faceB[0] = 0.91 * 0.7; faceB[1] = 0.91 * Math.sqrt(1 - 0.7 ** 2); faceB[3] = off;
+
+      const rows = [];
+      for (const vec of [faceA, faceB]) {
+        const [p] = await db('photos').insert({
+          event_id: eventId, filename: `${Math.random()}.jpg`, path: '/tmp/r.jpg', type: 'individual',
+        }).returning('id');
+        const [f] = await db('photo_faces').insert({
+          photo_id: typeof p === 'object' ? p.id : p, event_id: eventId,
+          bbox_x: 0, bbox_y: 0, bbox_w: 200, bbox_h: 200, det_score: 0.99,
+          embedding: clustering.packEmbedding(vec), model_version: 'test-v1',
+          created_at: new Date().toISOString(),
+        }).returning('id');
+        rows.push({ id: typeof f === 'object' ? f.id : f, embedding: clustering.packEmbedding(vec),
+          model_version: 'test-v1', det_score: 0.99, bbox_w: 200, bbox_h: 200 });
+      }
+
+      // The premise: they are close enough to each other to cluster together.
+      expect(clustering.dot(faceA, faceB)).toBeGreaterThan(THRESHOLDS.face_match_threshold);
+
+      const assignments = await clustering.assignFaces(eventId, rows, { thresholds: THRESHOLDS });
+      expect(assignments[0].personId).not.toBe(assignments[1].personId);
     });
 
     it('leaves ordinary assignment alone when no separation applies', async () => {

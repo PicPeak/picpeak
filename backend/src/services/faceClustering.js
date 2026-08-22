@@ -177,9 +177,26 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
   // Through the caller's trx, not the global db: assignFaces runs inside
   // processPhotoFaces' transaction, and on SQLite a second connection reading
   // while that write transaction is open can block on the writer lock.
-  const { vectors: separations } = await loadSeparations(eventId, trx);
-  // Project every person against the separations ONCE for the whole batch,
-  // rather than inside the per-face person loop.
+  const { vectors: allSeparations } = await loadSeparations(eventId, trx);
+
+  // Narrow to the separations this batch could possibly trip, before anything
+  // is projected. A separation binds only if the incoming FACE resolves to one
+  // of its sides, so if no face in the batch clears the threshold against
+  // either side, that separation cannot fire here — dropping it is exactly
+  // equivalent, not an approximation.
+  //
+  // This is what keeps a full scan affordable. assignFaces runs once per PHOTO,
+  // so projecting every person against every separation on every call would
+  // reintroduce the O(photos·people·separations·dims) cost the projection hoist
+  // just removed. One pass over the handful of vectors in this photo decides
+  // whether the event's people need projecting at all, and for almost every
+  // photo the answer is no.
+  const batchVectors = faceRows.map((f) => unpackEmbedding(f.embedding)).filter(Boolean);
+  const separations = allSeparations.filter((sep) => batchVectors.some(
+    (v) => dot(v, sep.a) >= thresholds.face_match_threshold
+      || dot(v, sep.b) >= thresholds.face_match_threshold,
+  ));
+
   for (const person of state) person.sep = projectOnSeparations(person.centroid, separations);
 
   const assignments = [];
@@ -218,11 +235,16 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
       // still looks like the one that was separated.
       if (separationForbidsProjected(faceSep, person.sep, {
         modelVersion: face.model_version || person.modelVersion || null,
-        // The face side gets the ordinary match threshold, not the strict one:
-        // a face sits well below its own centroid, so 0.92 was unreachable for
-        // exactly the faces this is meant to hold back. See
-        // separationForbidsProjected.
-        xThreshold: thresholds.face_match_threshold,
+        // BOTH sides get the ordinary match threshold here, not the strict
+        // one. Neither side of this comparison is a settled centroid: the
+        // candidate is a single face, and during a recluster the "person" it
+        // is being compared against is often a cluster of one — state starts
+        // empty and is rebuilt face by face. Holding either to 0.92 meant the
+        // constraint could not bind until well after the merge it was supposed
+        // to prevent had already happened. consolidate() and suggestMerges()
+        // keep the strict threshold, because there both sides really are
+        // established centroids.
+        threshold: thresholds.face_match_threshold,
       })) {
         continue;
       }
@@ -355,25 +377,18 @@ function projectOnSeparations(vec, separations) {
  * recorded under a different model is skipped for the same reason: its vectors
  * are meaningless there, not merely stale.
  *
- * `xThreshold` exists because the two candidates are not always the same KIND
- * of thing. Both sides of a stored separation are cluster centroids, so a
- * centroid can fairly be held to SEPARATION_MATCH_THRESHOLD. A single face
- * cannot: faces join a cluster at face_match_threshold (0.6 by default) and sit
- * well below their own centroid, so holding a face to 0.92 against a stored
- * side let exactly the case this feature exists for through — during a
- * recluster the individual faces of the separated cluster were each too far
- * from their own old centroid to trip the constraint, and walked straight back
- * into the other person before consolidation ever got a look.
+ * `threshold` is how closely a side must still be matched. It is the caller's
+ * because it depends on what is being compared: settled centroids can be held
+ * to SEPARATION_MATCH_THRESHOLD, whereas a single face — or a cluster of one
+ * part-way through a recluster — sits well below its own centroid and has to be
+ * judged at the ordinary match threshold. Holding those to 0.92 let exactly the
+ * case this feature exists for through.
  *
  * Takes PROJECTIONS, not vectors — see projectOnSeparations. The two arrays are
  * positionally aligned because both come from the same separation list.
  */
 function separationForbidsProjected(projX, projY, options = {}) {
-  const {
-    modelVersion = null,
-    threshold = SEPARATION_MATCH_THRESHOLD,
-    xThreshold = threshold,
-  } = options;
+  const { modelVersion = null, threshold = SEPARATION_MATCH_THRESHOLD } = options;
   if (!projX?.length || !projY?.length) return false;
 
   for (let i = 0; i < projX.length; i++) {
@@ -400,8 +415,8 @@ function separationForbidsProjected(projX, projY, options = {}) {
     // when it becomes meaningless: if the two stored sides are so alike that a
     // candidate cannot be told apart between them, there is no "these two" left
     // to enforce.
-    const straight = xa >= xThreshold && yb >= threshold && xa > xb && yb > ya;
-    const crossed = xb >= xThreshold && ya >= threshold && xb > xa && ya > yb;
+    const straight = xa >= threshold && yb >= threshold && xa > xb && yb > ya;
+    const crossed = xb >= threshold && ya >= threshold && xb > xa && ya > yb;
     if (straight || crossed) return true;
   }
   return false;
