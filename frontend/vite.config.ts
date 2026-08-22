@@ -40,15 +40,15 @@ const config: VitestUserConfig = {
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:7101',
+        target: 'http://localhost:3001',
         changeOrigin: true,
       },
       '/photos': {
-        target: 'http://localhost:7101',
+        target: 'http://localhost:3001',
         changeOrigin: true,
       },
       '/uploads': {
-        target: 'http://localhost:7101',
+        target: 'http://localhost:3001',
         changeOrigin: true,
       },
     },

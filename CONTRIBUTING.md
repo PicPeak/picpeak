@@ -73,23 +73,32 @@ cd picpeak
 # Install dependencies
 cd backend && npm install
 cd ../frontend && npm install
+cd ..
 
-# Set up environment
-cp .env.example .env
-# Edit .env with your settings
+# Start Postgres and Redis (the app itself runs on the host, see below)
+docker compose up -d postgres redis
 
-# Start development servers
-docker-compose -f docker-compose.dev.yml up
+# Backend config — note this is backend/.env, not the root one
+cp backend/.env.example backend/.env
+# JWT_SECRET must be set: the host process validates it and exits without one.
+# (The containers generate it themselves; `npm run dev` does not.)
+
+# Backend, with nodemon hot reload — http://localhost:3001
+cd backend && npm run dev
+
+# Frontend, with Vite hot reload, in a second shell — http://localhost:5173
+cd frontend && npm run dev
 ```
 
-**After pulling changes that touch `backend/package.json` / `backend/package-lock.json` (or the frontend equivalents)**, rebuild the affected image so the live-mounted source can `require()` the new deps:
+Open **http://localhost:5173**. Vite proxies `/api` to the backend on `3001`, so
+you do not need the root `.env` for this loop at all — that one configures the
+compose stack.
 
-```bash
-docker compose -f docker-compose.dev.yml up -d --build backend
-# (or `frontend`, or both)
-```
+Running the two Node processes on the host is the fastest loop: both reload on save, and you get a real debugger and stack traces without rebuilding an image.
 
-The dev compose bakes `node_modules` into the image while live-mounting `./backend/src` and `./frontend/src` from disk. A dep added on disk won't be picked up until the image is rebuilt — typical symptom is a `MODULE_NOT_FOUND` restart loop on the affected container.
+**Prefer everything in containers?** `docker compose up -d` builds `backend`, `frontend` and `ml` from source using the production Dockerfiles. That works, but there is no hot reload — you rebuild on every change (`docker compose up -d --build backend`).
+
+> `docker-compose.dev.yml` is listed in `.gitignore` and is not part of the repo. If you keep a local one for live-mounting `./backend/src` and `./frontend/src` against `backend/Dockerfile.dev` / `frontend/Dockerfile.dev`, remember it bakes `node_modules` into the image: after pulling a change to `backend/package.json`, rebuild that image or you will get a `MODULE_NOT_FOUND` restart loop.
 
 ### Running Tests
 

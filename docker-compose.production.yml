@@ -110,9 +110,20 @@ services:
       - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
       - FACE_PROCESSOR_CONCURRENCY=${FACE_PROCESSOR_CONCURRENCY:-}
     volumes:
-      - ${APP_STORAGE}:/app/storage
-      - ${LOGS}:/app/logs
-      - ${APP_DATA}:/app/data
+      # Defaulted so a .env that simply does not set these still works. Without
+      # them compose aborts with "invalid spec: :/app/storage: empty section
+      # between colons", which reads like a broken compose file rather than a
+      # missing variable (#705).
+      #
+      # Note this does NOT make `config` work with no .env at all: `env_file`
+      # above still requires the file. Making it optional needs
+      # `required: false`, which is Compose 2.24+ syntax that OLDER Compose
+      # rejects as a schema error — taking the whole stack down rather than
+      # just losing a default. Not worth it for a case the onboarding flow
+      # never hits, since it copies .env.example first.
+      - ${APP_STORAGE:-./storage}:/app/storage
+      - ${LOGS:-./logs}:/app/logs
+      - ${APP_DATA:-./data}:/app/data
       - picpeak-secrets:/run/secrets:ro
     ports:
       - "${BACKEND_PORT:-3001}:3000"
@@ -182,7 +193,7 @@ services:
     # Uses same channel as backend for consistency
     image: ghcr.io/picpeak/picpeak/frontend:${PICPEAK_CHANNEL:-stable}
     container_name: picpeak-frontend
-    # Note: Pre-built frontend uses Nginx to proxy /api to backend:3001.
+    # Note: Pre-built frontend uses Nginx to proxy /api to backend:3000.
     # Prefer keeping API base as '/api' in builds to avoid CORS.
     environment:
       # Substituted into index.html at container start (see frontend/

@@ -1005,6 +1005,63 @@ jobs:
         docker exec aio sh -c 'touch /backup/database/.w && rm /backup/database/.w' \
           || { echo "::error::/backup/database is not writable by the app user"; exit 1; }
 
+    - name: Assert a no-JWT_SECRET install boots and keeps its generated secret
+      run: |
+        # The boot above passes JWT_SECRET explicitly, so it cannot catch the case
+        # this image is actually deployed in: a NAS Container Manager / Container
+        # Station form has no shell to run `openssl rand`, and validateEnv treats a
+        # missing JWT_SECRET as critical and exits. wait-for-db.sh generates one
+        # into the data volume when neither the environment nor /run/secrets
+        # supplies it (#705).
+        docker volume create aio-nojwt > /dev/null
+        docker run -d --name aio-nojwt -p 3100:3000 -v aio-nojwt:/data picpeak-aio:smoke > /dev/null
+        for i in $(seq 1 60); do
+          curl -fsS http://localhost:3100/health > /dev/null 2>&1 && break
+          sleep 2
+        done
+        curl -fsS http://localhost:3100/health > /dev/null 2>&1 \
+          || { echo "::error::container with no JWT_SECRET never became healthy"; docker logs aio-nojwt | tail -50; exit 1; }
+
+        mode=$(docker exec aio-nojwt stat -c '%a' /data/db/jwt.secret 2>/dev/null || echo missing)
+        [ "$mode" = "600" ] \
+          || { echo "::error::/data/db/jwt.secret missing or not 0600 (got: $mode)"; exit 1; }
+
+        # The secret has to survive a restart. If it did not, every admin session
+        # and gallery link would be signed out on each container recreate — which
+        # is worse than failing to boot, because it looks like it works.
+        first=$(docker exec aio-nojwt cat /data/db/jwt.secret)
+        [ -n "$first" ] || { echo "::error::generated jwt.secret is empty"; exit 1; }
+        docker restart aio-nojwt > /dev/null
+        for i in $(seq 1 60); do
+          curl -fsS http://localhost:3100/health > /dev/null 2>&1 && break
+          sleep 2
+        done
+        # Assert recovery rather than falling through to `docker exec`, which
+        # would report a confusing cat failure for a container that never came
+        # back up.
+        curl -fsS http://localhost:3100/health > /dev/null 2>&1 \
+          || { echo "::error::container did not become healthy again after restart"; docker logs aio-nojwt | tail -50; exit 1; }
+        second=$(docker exec aio-nojwt cat /data/db/jwt.secret)
+        [ "$first" = "$second" ] \
+          || { echo "::error::jwt.secret changed across a restart — sessions would not survive"; exit 1; }
+
+        # An explicit secret must still win over the generated one. The $ is
+        # escaped so the comparison happens in the INNERMOST shell, after
+        # wait-for-db.sh has run. Unescaped it is the CONTAINER's outer `sh -c`
+        # that expands it — the runner's single quotes do protect it, but the
+        # container shell then substitutes the value while parsing the
+        # double-quoted region, before the script runs at all. The test reduces
+        # to `[ x = x ]` and passes even against a script that clobbers the
+        # variable: an assertion that cannot fail.
+        docker run --rm -v aio-nojwt:/data -e JWT_SECRET=explicit-secret-at-least-32-characters-long \
+          --entrypoint sh picpeak-aio:smoke -c \
+          './wait-for-db.sh sh -c "[ \"\$JWT_SECRET\" = explicit-secret-at-least-32-characters-long ]"' \
+          || { echo "::error::an explicit JWT_SECRET did not override the generated file"; exit 1; }
+
+        docker rm -f aio-nojwt > /dev/null
+        # -f alone can return before the volume is released
+        for i in $(seq 1 10); do docker volume rm aio-nojwt > /dev/null 2>&1 && break; sleep 1; done
+
     - name: Assert the sqlite3 CLI the backup service shells out to
       run: |
         # DatabaseBackupService spawns `sqlite3` for .backup and integrity_check;
