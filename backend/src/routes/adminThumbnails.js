@@ -4,6 +4,7 @@ const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { ensureThumbnail, ensurePreviewImage } = require('../services/imageProcessor');
+const { getStorage } = require('../services/storage');
 const logger = require('../utils/logger');
 
 // Parse JSON-encoded setting values
@@ -186,6 +187,27 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
           const newThumbnailPath = await ensureThumbnail({ ...photo, thumbnail_path: null });
 
           if (newThumbnailPath) {
+            // Drop the superseded canonical rendition when the key MOVED.
+            //
+            // For a managed photo on S3, ensureThumbnail downloads the source
+            // to a randomly-named temp file, and for non-RAW input
+            // withProcessableImage passes no outputBasename — so the key is
+            // derived from that random name and differs on every run. Nulling
+            // thumbnail_path above hides the old key from everything that
+            // would otherwise clean it up, so without this each regeneration
+            // strands a full thumbnail in the bucket, once per photo per run.
+            //
+            // Guarded on the key actually changing: on local storage it is
+            // stable, and deleting the equal key would delete the file that
+            // was just written.
+            if (photo.thumbnail_path && photo.thumbnail_path !== newThumbnailPath) {
+              await getStorage().delete(photo.thumbnail_path).catch((err) => {
+                // Losing the old object is untidy, not a failed regeneration.
+                logger.warn(
+                  `Could not remove superseded thumbnail ${photo.thumbnail_path} for photo ${photo.id}: ${err.message}`
+                );
+              });
+            }
             successCount++;
             logger.info(`Regenerated thumbnail for photo ${photo.id}`);
           } else {

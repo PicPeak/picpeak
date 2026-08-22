@@ -23,7 +23,7 @@ const express = require('express');
 const request = require('supertest');
 
 describe('admin thumbnail regeneration (#1129)', () => {
-  let tmpDir; let db; let cleanup; let app; let imageProcessor;
+  let tmpDir; let db; let cleanup; let app; let imageProcessor; let storage;
 
   beforeAll(async () => {
     tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'picpeak-regen-'));
@@ -41,6 +41,12 @@ describe('admin thumbnail regeneration (#1129)', () => {
     jest.doMock('../../src/middleware/permissions', () => ({
       requirePermission: () => (_req, _res, next) => next(),
     }));
+    // One instance, not a fresh object per call — the route and the
+    // assertions have to be looking at the same mock.
+    jest.doMock('../../src/services/storage', () => {
+      const instance = { delete: jest.fn().mockResolvedValue(undefined) };
+      return { getStorage: () => instance };
+    });
     jest.doMock('../../src/services/imageProcessor', () => ({
       ensureThumbnail: jest.fn().mockResolvedValue('thumbnails/thumb_ext1_shot.jpg'),
       ensurePreviewImage: jest.fn().mockResolvedValue('previews/p.jpg'),
@@ -53,6 +59,7 @@ describe('admin thumbnail regeneration (#1129)', () => {
     ({ db, cleanup } = await require('./helpers/crmDb').bootCrmDb());
 
     imageProcessor = require('../../src/services/imageProcessor');
+    storage = require('../../src/services/storage').getStorage();
     app = express();
     app.use(express.json());
     app.use('/admin/thumbnails', require('../../src/routes/adminThumbnails'));
@@ -152,6 +159,61 @@ describe('admin thumbnail regeneration (#1129)', () => {
     expect(res.body.count).toBe(1);
     expect(imageProcessor.ensureThumbnail).toHaveBeenCalledTimes(1);
     expect(imageProcessor.ensureThumbnail.mock.calls[0][0].filename).toBe('still.jpg');
+  });
+
+  /**
+   * On S3, ensureThumbnail downloads the source to a randomly-named temp file,
+   * and for non-RAW input withProcessableImage passes no outputBasename — so
+   * generateThumbnail derives the key from that random name and it differs on
+   * every run. Nulling thumbnail_path hides the old key from everything that
+   * would otherwise clean it up, so each regeneration would strand a full
+   * thumbnail in the bucket, once per photo per run.
+   */
+  describe('superseded canonical renditions', () => {
+    it('removes the old thumbnail when the key moved', async () => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, {
+        source_origin: 'managed',
+        thumbnail_path: 'thumbnails/thumb_OLDRANDOM_shot.jpg',
+      });
+      imageProcessor.ensureThumbnail.mockResolvedValueOnce('thumbnails/thumb_NEWRANDOM_shot.jpg');
+
+      await request(app).post('/admin/thumbnails/regenerate').send({});
+      await drain();
+
+      expect(storage.delete).toHaveBeenCalledWith('thumbnails/thumb_OLDRANDOM_shot.jpg');
+    });
+
+    it('does NOT delete when the key is unchanged — that is the new file', async () => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, {
+        source_origin: 'managed',
+        thumbnail_path: 'thumbnails/thumb_stable.jpg',
+      });
+      // Local storage resolves to a stable path, so the key is identical.
+      imageProcessor.ensureThumbnail.mockResolvedValueOnce('thumbnails/thumb_stable.jpg');
+
+      await request(app).post('/admin/thumbnails/regenerate').send({});
+      await drain();
+
+      expect(storage.delete).not.toHaveBeenCalled();
+    });
+
+    it('counts the photo as regenerated even if the old object cannot be removed', async () => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, {
+        source_origin: 'managed',
+        thumbnail_path: 'thumbnails/thumb_OLD.jpg',
+      });
+      imageProcessor.ensureThumbnail.mockResolvedValueOnce('thumbnails/thumb_NEW.jpg');
+      storage.delete.mockRejectedValueOnce(new Error('bucket said no'));
+
+      await request(app).post('/admin/thumbnails/regenerate').send({});
+      await drain();
+
+      // Losing the old object is untidy; the regeneration itself succeeded.
+      expect(imageProcessor.ensureThumbnail).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('scopes to one event when asked', async () => {
