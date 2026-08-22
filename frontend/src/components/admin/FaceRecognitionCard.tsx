@@ -226,7 +226,9 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
   // Rendered in two places — replacing the spinner mid-scan, or under the
   // final counts once a scan has ended with failures it can explain.
   const sidecarNotice = sidecarWarning && health ? (
-    <div className={`flex items-start gap-2 ${BURNS_PHOTOS.has(sidecarWarning) ? 'text-red-700' : 'text-amber-700'}`}>
+    <div className={`flex items-start gap-2 ${BURNS_PHOTOS.has(sidecarWarning)
+      ? 'text-red-700 dark:text-red-300'
+      : 'text-amber-700 dark:text-amber-300'}`}>
       <AlertTriangle size={14} className="mt-0.5 shrink-0" />
       <p>
         {sidecarWarning === 'unauthorized' && t('admin.faces.sidecarUnauthorized', {
@@ -243,7 +245,9 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
           defaultValue: `Can't reach the face-detection service at ${health.url}, so the ${status.pending} queued photos aren't being processed. Nothing is lost — the scan resumes on its own once the service is up. Start it with \`docker compose --profile faces up -d\`, and note it exits immediately unless FACE_ML_TOKEN is set to the same value as the backend — there is no default.`,
         })}
         {health.error && (
-          <span className={`block mt-1 text-xs font-mono ${BURNS_PHOTOS.has(sidecarWarning) ? 'text-red-600' : 'text-amber-600'}`}>
+          <span className={`block mt-1 text-xs font-mono ${BURNS_PHOTOS.has(sidecarWarning)
+            ? 'text-red-600 dark:text-red-400'
+            : 'text-amber-600 dark:text-amber-400'}`}>
             {health.error}
           </span>
         )}
@@ -256,10 +260,10 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
       <div className="flex items-start gap-3 mb-4">
         <Users className="text-neutral-400 mt-0.5" size={20} />
         <div>
-          <h3 className="text-lg font-medium text-neutral-900">
+          <h3 className="text-lg font-medium text-neutral-900 dark:text-neutral-100">
             {t('admin.faces.title', { defaultValue: 'People in this gallery' })}
           </h3>
-          <p className="text-sm text-neutral-500">
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
             {t('admin.faces.subtitle', {
               defaultValue: 'Group photos by the people in them, so guests can find and download their own.',
             })}
@@ -269,7 +273,7 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
 
       {/* Consent obligation. Stated plainly and up front, because by the time
           someone has switched this on they have already processed the data. */}
-      <div className="flex gap-2 p-3 mb-4 rounded-lg bg-amber-50 border border-amber-100 text-sm text-amber-900">
+      <div className="flex gap-2 p-3 mb-4 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-100 dark:border-amber-800 text-sm text-amber-900 dark:text-amber-200">
         <ShieldCheck size={16} className="flex-shrink-0 mt-0.5" />
         <p>
           {t('admin.faces.consentNotice', {
@@ -285,13 +289,13 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
           checked={data.enabled}
           disabled={saving || isArchived}
           onChange={(e) => patch({ enabled: e.target.checked })}
-          className="mt-1 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+          className="mt-1 rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-primary-600 focus:ring-primary-500"
         />
         <span>
-          <span className="block text-sm font-medium text-neutral-800">
+          <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
             {t('admin.faces.enable', { defaultValue: 'Detect people in this gallery' })}
           </span>
-          <span className="block text-xs text-neutral-500">
+          <span className="block text-xs text-neutral-500 dark:text-neutral-400">
             {t('admin.faces.enableHint', {
               defaultValue: 'Existing photos are scanned in the background. Faces and their numeric signatures are stored in your database; they are never included in backups or exports.',
             })}
@@ -306,13 +310,13 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
             checked={data.visible_to_guests}
             disabled={saving || isArchived}
             onChange={(e) => patch({ visible_to_guests: e.target.checked })}
-            className="mt-1 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+            className="mt-1 rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-primary-600 focus:ring-primary-500"
           />
           <span>
-            <span className="block text-sm font-medium text-neutral-800">
+            <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
               {t('admin.faces.visible', { defaultValue: 'Show the people bar to guests' })}
             </span>
-            <span className="block text-xs text-neutral-500">
+            <span className="block text-xs text-neutral-500 dark:text-neutral-400">
               {t('admin.faces.visibleHint', {
                 defaultValue: 'Off means you get the grouping as a private tool and guests see an unchanged gallery.',
               })}
@@ -326,7 +330,7 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
           admin deserves to know that before starting a 2,000-photo backfill
           rather than discovering it in their storage graph. */}
       {data.enabled && (
-        <div className="flex gap-2 p-3 mt-3 rounded-lg bg-neutral-50 text-xs text-neutral-600">
+        <div className="flex gap-2 p-3 mt-3 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-xs text-neutral-600 dark:text-neutral-400">
           <AlertTriangle size={14} className="flex-shrink-0 mt-0.5 text-neutral-400" />
           <p>
             {t('admin.faces.previewNotice', {
@@ -340,7 +344,7 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
           it sits apart from the two toggles above. Without a control here the
           rule engine had no way to be switched on at all. */}
       {data.enabled && (
-        <label className="flex items-start gap-3 py-2 mt-2 pt-3 border-t border-neutral-100 cursor-pointer">
+        <label className="flex items-start gap-3 py-2 mt-2 pt-3 border-t border-neutral-100 dark:border-neutral-700 cursor-pointer">
           <input
             type="checkbox"
             checked={autoCategories}
@@ -358,13 +362,13 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
                 setSaving(false);
               }
             }}
-            className="mt-1 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+            className="mt-1 rounded border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-700 text-primary-600 focus:ring-primary-500"
           />
           <span>
-            <span className="block text-sm font-medium text-neutral-800">
+            <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">
               {t('admin.faces.autoCategories', { defaultValue: 'Sort photos into categories automatically' })}
             </span>
-            <span className="block text-xs text-neutral-500">
+            <span className="block text-xs text-neutral-500 dark:text-neutral-400">
               {t('admin.faces.autoCategoriesHint', {
                 defaultValue: 'Uses the number of faces to file photos as Details, Portraits, Small groups or Groups. Applies to every gallery, only ever fills an empty category, and never changes one you set yourself.',
               })}
@@ -375,7 +379,7 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
 
       {data.enabled && (
         <>
-          <div className="mt-4 pt-4 border-t border-neutral-100 text-sm text-neutral-600">
+          <div className="mt-4 pt-4 border-t border-neutral-100 dark:border-neutral-700 text-sm text-neutral-600 dark:text-neutral-400">
             {/* While scanning, the warning replaces the spinner — a progress
                 indicator that cannot progress is the misleading part. Once the
                 scan has ended the counts are what the admin came for, so the
@@ -413,7 +417,7 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
                   </span>
                 )}
                 {status.failed > 0 && (
-                  <span className="text-amber-600">
+                  <span className="text-amber-600 dark:text-amber-400">
                     {' · '}
                     {t('admin.faces.failed', {
                       count: status.failed,
@@ -435,7 +439,7 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
                 rows — worth doing, but a bigger change than this. */}
             {!status.in_progress && sidecarNotice && (
               <div className="mt-2">
-                <p className="text-xs text-neutral-500 mb-1">
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1">
                   {t('admin.faces.sidecarStateNow', {
                     defaultValue: 'Service state right now — some of the failures above may have a different cause, but a re-scan will not succeed until this is fixed:',
                   })}
@@ -485,7 +489,7 @@ export const FaceRecognitionCard: React.FC<FaceRecognitionCardProps> = ({ eventI
               disabled={saving}
               onClick={purge}
               leftIcon={<Trash2 size={14} />}
-              className="text-red-600 border-red-200 hover:bg-red-50"
+              className="text-red-600 dark:text-red-400 border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/30"
             >
               {t('admin.faces.delete', { defaultValue: 'Delete all face data' })}
             </Button>

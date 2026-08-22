@@ -60,17 +60,24 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={t('gallery.people.title', { defaultValue: 'People in this gallery' })}
-        className="relative w-full sm:max-w-2xl bg-white rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[85vh] flex flex-col"
+        className="relative w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl shadow-xl max-h-[85vh] flex flex-col"
+        style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text)' }}
       >
-        <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-neutral-100">
-          <h2 className="text-base font-medium text-neutral-900">
+        <div
+          className="flex items-center justify-between px-4 pt-4 pb-3 border-b"
+          style={{ borderColor: 'var(--color-surface-border)' }}
+        >
+          <h2 className="text-base font-medium" style={{ color: 'var(--color-text)' }}>
             {t('gallery.people.title', { defaultValue: 'People in this gallery' })}
           </h2>
+          {/* Same inverted-hover trap as the strip's dismiss button: hover has
+              to add contrast on a dark gallery, not remove it. */}
           <button
             type="button"
             onClick={onClose}
             aria-label={t('common.close', { defaultValue: 'Close' })}
-            className="p-2 -m-2 text-neutral-400 hover:text-neutral-600"
+            className="p-2 -m-2 opacity-60 hover:opacity-100 transition-opacity"
+            style={{ color: 'var(--color-text)' }}
           >
             <X size={20} />
           </button>
@@ -79,13 +86,22 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
         {people.some((p) => p.label) && (
           <div className="px-4 pt-3">
             <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+              <Search
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2"
+                style={{ color: 'var(--color-muted-text)' }}
+              />
               <input
                 type="search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t('gallery.people.searchPlaceholder', { defaultValue: 'Find a person' })}
-                className="w-full pl-9 pr-3 py-2 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                style={{
+                  backgroundColor: 'var(--color-background)',
+                  borderColor: 'var(--color-surface-border)',
+                  color: 'var(--color-text)',
+                }}
               />
             </div>
           </div>
@@ -106,11 +122,21 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
                 >
                   <span
                     className={[
-                      'relative block w-16 h-16 rounded-full overflow-hidden bg-neutral-100 transition-all',
+                      'relative block w-16 h-16 rounded-full overflow-hidden transition-all',
                       selected
                         ? 'ring-[3px] ring-offset-2 ring-primary-600'
-                        : 'ring-1 ring-neutral-200 group-hover:ring-neutral-400',
+                        : 'ring-1 ring-[color:var(--color-surface-border)] group-hover:ring-[color:var(--color-muted-text)]',
                     ].join(' ')}
+                    style={{
+                      backgroundColor: 'var(--color-elevated)',
+                      // The SHEET's surface, not the page behind it — these
+                      // avatars sit on the panel. The strip's identical ring
+                      // uses --color-background for the same reason, because
+                      // there the avatars really are on the page. Presets
+                      // where the two differ (and the light default, #ffffff
+                      // vs #fafafa) show the mismatch as a halo.
+                      '--tw-ring-offset-color': 'var(--color-surface)',
+                    } as React.CSSProperties}
                   >
                     {photo && (
                       <AuthenticatedImage
@@ -131,14 +157,23 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
                     )}
                   </span>
                   <span className="w-full text-center leading-tight">
-                    <span className={`block truncate text-xs ${person.label ? 'font-medium text-neutral-800' : 'text-neutral-500'}`}>
+                    <span
+                      className="block truncate text-xs"
+                      style={{
+                        color: 'var(--color-text)',
+                        fontWeight: person.label ? 500 : 400,
+                        opacity: person.label ? 1 : 0.75,
+                      }}
+                    >
                       {person.label || t('gallery.people.unnamedCount', {
                         count: person.face_count,
                         defaultValue: `${person.face_count} photos`,
                       })}
                     </span>
                     {person.label && (
-                      <span className="block text-[11px] text-neutral-400">{person.face_count}</span>
+                      <span className="block text-[11px]" style={{ color: 'var(--color-muted-text)' }}>
+                        {person.face_count}
+                      </span>
                     )}
                   </span>
                 </button>
@@ -147,7 +182,7 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
           </div>
 
           {filtered.length === 0 && (
-            <p className="text-sm text-neutral-500 text-center py-8">
+            <p className="text-sm text-center py-8" style={{ color: 'var(--color-muted-text)' }}>
               {t('gallery.people.noMatches', { defaultValue: 'No one matches that name.' })}
             </p>
           )}
@@ -157,7 +192,10 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
             plain language — this copy never says "biometric" or
             "recognition", because those words describe our implementation,
             not the guest's experience. */}
-        <div className="px-4 py-3 border-t border-neutral-100 flex gap-2 text-xs text-neutral-500">
+        <div
+          className="px-4 py-3 border-t flex gap-2 text-xs"
+          style={{ borderColor: 'var(--color-surface-border)', color: 'var(--color-muted-text)' }}
+        >
           <Info size={14} className="flex-shrink-0 mt-0.5" />
           <p>
             {t('gallery.people.privacyNote', {

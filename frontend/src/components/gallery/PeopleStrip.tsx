@@ -62,14 +62,23 @@ const PersonAvatar: React.FC<PersonAvatarProps> = ({
       className="flex flex-col items-center gap-1.5 flex-shrink-0 group focus:outline-none"
       style={{ width: `${size + 8}px` }}
     >
+      {/* Every colour here comes from the gallery theme tokens, not fixed
+          neutrals — see the note on the label below. The ring-offset token
+          matters as much as the ring itself: left at its Tailwind default the
+          selected avatar wears a white halo on a dark gallery. */}
       <span
         className={[
-          'relative block rounded-full overflow-hidden bg-neutral-100 transition-all',
+          'relative block rounded-full overflow-hidden transition-all',
           selected
             ? 'ring-[3px] ring-offset-2 ring-primary-600'
-            : 'ring-1 ring-neutral-200 group-hover:ring-neutral-400 group-focus-visible:ring-primary-500',
+            : 'ring-1 ring-[color:var(--color-surface-border)] group-hover:ring-[color:var(--color-muted-text)] group-focus-visible:ring-primary-500',
         ].join(' ')}
-        style={{ width: `${size}px`, height: `${size}px` }}
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          backgroundColor: 'var(--color-elevated)',
+          '--tw-ring-offset-color': 'var(--color-background)',
+        } as React.CSSProperties}
       >
         {photo && person.cover ? (
           <AuthenticatedImage
@@ -83,7 +92,10 @@ const PersonAvatar: React.FC<PersonAvatarProps> = ({
             style={cropStyle || { width: '100%', height: '100%', objectFit: 'cover' }}
           />
         ) : (
-          <span className="flex items-center justify-center w-full h-full text-neutral-400">
+          <span
+            className="flex items-center justify-center w-full h-full"
+            style={{ color: 'var(--color-muted-text)' }}
+          >
             <Users size={size / 2.5} />
           </span>
         )}
@@ -189,11 +201,16 @@ export const PeopleStrip: React.FC<PeopleStripProps> = ({
               <ChevronRight size={16} />
             </button>
           )}
+          {/* Opacity, not a neutral pair: a fixed `hover:text-neutral-600`
+              makes this DARKER on hover, so on a dark gallery the control
+              disappears exactly when you reach for it. Driving it from
+              --color-text means hover always adds contrast, either way. */}
           <button
             type="button"
             onClick={() => onCollapsedChange(true)}
             aria-label={t('gallery.people.dismiss', { defaultValue: 'Hide the people bar' })}
-            className="p-1 -m-1 text-neutral-400 hover:text-neutral-600"
+            className="p-1 -m-1 opacity-60 hover:opacity-100 transition-opacity"
+            style={{ color: 'var(--color-text)' }}
           >
             <X size={16} />
           </button>
@@ -205,7 +222,7 @@ export const PeopleStrip: React.FC<PeopleStripProps> = ({
           who arrives mid-scan gets a working gallery and a growing strip. */}
       {scan?.in_progress && (
         <div className="px-1 pb-2">
-          <div className="flex items-center justify-between text-xs text-neutral-500 mb-1">
+          <div className="flex items-center justify-between text-xs mb-1">
             <span style={{ color: 'var(--color-muted-text)' }}>
               {t('gallery.people.scanning', {
                 scanned: scan.scanned,
@@ -214,7 +231,10 @@ export const PeopleStrip: React.FC<PeopleStripProps> = ({
               })}
             </span>
           </div>
-          <div className="h-0.5 bg-neutral-200 rounded-full overflow-hidden">
+          <div
+            className="h-0.5 rounded-full overflow-hidden"
+            style={{ backgroundColor: 'var(--color-surface-border)' }}
+          >
             <div
               className="h-full bg-primary-500 transition-all duration-500"
               style={{ width: `${scan.total ? Math.round((scan.scanned / scan.total) * 100) : 0}%` }}
