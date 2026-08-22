@@ -315,6 +315,44 @@ describe('separations survive re-derivation (#1132)', () => {
       expect(assignments[0].personId).toBeTruthy();
     });
 
+    it('holds back a face that is only loosely like the side it belongs to', async () => {
+      const eventId = await seedEvent('sep-assign-loose');
+      // The separated sides are CENTROIDS; an individual face sits well below
+      // its own centroid — that is why faces join at 0.6 and not at 0.92. A
+      // face 0.85-like its own side would clear no strict bar against it, and
+      // before this it walked straight into the other person during a
+      // recluster, which is the exact merge the photographer undid.
+      const [sideA, sideB] = pairAtSimilarity(0.7, 0);
+      const idA = await insertPerson(eventId, sideA);
+      const idB = await insertPerson(eventId, sideB);
+      await clustering.dismissMergeSuggestion(eventId, idA, idB);
+      await db('event_people').where({ id: idB }).del();
+
+      // 0.65 to side A — above the 0.6 match threshold, so it would join A —
+      // and 0.85 to side B, which is where it actually belongs.
+      const face = new Float32Array(DIM);
+      face[0] = 0.65; face[1] = 0.553; face[2] = Math.sqrt(1 - 0.65 ** 2 - 0.553 ** 2);
+
+      const [p] = await db('photos').insert({
+        event_id: eventId, filename: 'loose.jpg', path: '/tmp/l.jpg', type: 'individual',
+      }).returning('id');
+      const [f] = await db('photo_faces').insert({
+        photo_id: typeof p === 'object' ? p.id : p, event_id: eventId,
+        bbox_x: 0, bbox_y: 0, bbox_w: 200, bbox_h: 200, det_score: 0.99,
+        embedding: clustering.packEmbedding(face), model_version: 'test-v1',
+        created_at: new Date().toISOString(),
+      }).returning('id');
+
+      const assignments = await clustering.assignFaces(
+        eventId, [{ id: typeof f === 'object' ? f.id : f, embedding: clustering.packEmbedding(face),
+          model_version: 'test-v1', det_score: 0.99, bbox_w: 200, bbox_h: 200 }],
+        { thresholds: THRESHOLDS },
+      );
+
+      expect(assignments[0].personId).not.toBe(idA);
+      expect(assignments[0].personId).toBeTruthy();
+    });
+
     it('leaves ordinary assignment alone when no separation applies', async () => {
       const eventId = await seedEvent('sep-assign-clean');
       const base = new Float32Array(DIM); base[0] = 1;

@@ -178,6 +178,9 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
   // processPhotoFaces' transaction, and on SQLite a second connection reading
   // while that write transaction is open can block on the writer lock.
   const { vectors: separations } = await loadSeparations(eventId, trx);
+  // Project every person against the separations ONCE for the whole batch,
+  // rather than inside the per-face person loop.
+  for (const person of state) person.sep = projectOnSeparations(person.centroid, separations);
 
   const assignments = [];
 
@@ -189,6 +192,8 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
       assignments.push({ faceId: face.id, personId: null });
       continue;
     }
+
+    const faceSep = projectOnSeparations(embedding, separations);
 
     let best = null;
     let bestScore = -Infinity;
@@ -211,8 +216,14 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
       // are different people, and the alternative is silently overruling them.
       // The threshold is strict enough that this only fires while the cluster
       // still looks like the one that was separated.
-      if (separationForbids(embedding, person.centroid, separations,
-        { modelVersion: face.model_version || person.modelVersion || null })) {
+      if (separationForbidsProjected(faceSep, person.sep, {
+        modelVersion: face.model_version || person.modelVersion || null,
+        // The face side gets the ordinary match threshold, not the strict one:
+        // a face sits well below its own centroid, so 0.92 was unreachable for
+        // exactly the faces this is meant to hold back. See
+        // separationForbidsProjected.
+        xThreshold: thresholds.face_match_threshold,
+      })) {
         continue;
       }
       const score = dot(embedding, person.centroid);
@@ -226,6 +237,9 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
       best.centroid = updateCentroid(best.centroid, best.count, embedding);
       best.count += 1;
       best.dirty = true;
+      // The centroid just moved, so its projection is stale — one re-project
+      // per ASSIGNED face, not per comparison.
+      best.sep = projectOnSeparations(best.centroid, separations);
       assignments.push({ faceId: face.id, personId: best.id });
     } else {
       const [inserted] = await trx('event_people').insert({
@@ -251,6 +265,7 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
         count: 1,
         dirty: false,
         modelVersion: face.model_version,
+        sep: faceSep,
       });
       assignments.push({ faceId: face.id, personId });
     }
@@ -307,6 +322,28 @@ function pairKey(a, b) {
 const SEPARATION_MATCH_THRESHOLD = 0.92;
 
 /**
+ * One vector's similarity to both sides of every separation.
+ *
+ * Hoisted out of the comparison so the maths is paid per VECTOR, not per pair.
+ * separationForbids is called from the innermost loop of assignment (every face
+ * against every person) and of consolidation (every person against every other)
+ * — projecting inside it made those O(F·P·S·D) and O(P²·S·D), which on a
+ * gallery with a few hundred people and a handful of dismissals is billions of
+ * float operations per re-scan. Projecting once per vector makes it
+ * O((F+P)·S·D) of arithmetic plus O(S) scalar comparisons per pair, which is
+ * the same order as the clustering it is guarding.
+ */
+function projectOnSeparations(vec, separations) {
+  if (!vec || !separations?.length) return [];
+  const out = [];
+  for (const sep of separations) {
+    if (!sep.a || !sep.b) continue;
+    out.push({ a: dot(vec, sep.a), b: dot(vec, sep.b), modelVersion: sep.modelVersion || null });
+  }
+  return out;
+}
+
+/**
  * Does a stored separation forbid putting these two vectors together?
  *
  * A separation binds when each of its two sides still matches one of the
@@ -317,18 +354,38 @@ const SEPARATION_MATCH_THRESHOLD = 0.92;
  * already refused to compare across spaces before reaching here. A separation
  * recorded under a different model is skipped for the same reason: its vectors
  * are meaningless there, not merely stale.
+ *
+ * `xThreshold` exists because the two candidates are not always the same KIND
+ * of thing. Both sides of a stored separation are cluster centroids, so a
+ * centroid can fairly be held to SEPARATION_MATCH_THRESHOLD. A single face
+ * cannot: faces join a cluster at face_match_threshold (0.6 by default) and sit
+ * well below their own centroid, so holding a face to 0.92 against a stored
+ * side let exactly the case this feature exists for through — during a
+ * recluster the individual faces of the separated cluster were each too far
+ * from their own old centroid to trip the constraint, and walked straight back
+ * into the other person before consolidation ever got a look.
+ *
+ * Takes PROJECTIONS, not vectors — see projectOnSeparations. The two arrays are
+ * positionally aligned because both come from the same separation list.
  */
-function separationForbids(vecX, vecY, separations, options = {}) {
-  const { modelVersion = null, threshold = SEPARATION_MATCH_THRESHOLD } = options;
-  if (!vecX || !vecY) return false;
-  for (const sep of separations) {
-    if (!sep.a || !sep.b) continue;
-    if (modelVersion && sep.modelVersion && sep.modelVersion !== modelVersion) continue;
+function separationForbidsProjected(projX, projY, options = {}) {
+  const {
+    modelVersion = null,
+    threshold = SEPARATION_MATCH_THRESHOLD,
+    xThreshold = threshold,
+  } = options;
+  if (!projX?.length || !projY?.length) return false;
 
-    const xa = dot(vecX, sep.a);
-    const xb = dot(vecX, sep.b);
-    const ya = dot(vecY, sep.a);
-    const yb = dot(vecY, sep.b);
+  for (let i = 0; i < projX.length; i++) {
+    const px = projX[i];
+    const py = projY[i];
+    if (!px || !py) continue;
+    if (modelVersion && px.modelVersion && px.modelVersion !== modelVersion) continue;
+
+    const xa = px.a;
+    const xb = px.b;
+    const ya = py.a;
+    const yb = py.b;
 
     // Each candidate must resolve to ONE side and the other candidate to the
     // OTHER. Clearing the bar against both sides independently is not enough,
@@ -343,11 +400,24 @@ function separationForbids(vecX, vecY, separations, options = {}) {
     // when it becomes meaningless: if the two stored sides are so alike that a
     // candidate cannot be told apart between them, there is no "these two" left
     // to enforce.
-    const straight = xa >= threshold && yb >= threshold && xa > xb && yb > ya;
-    const crossed = xb >= threshold && ya >= threshold && xb > xa && ya > yb;
+    const straight = xa >= xThreshold && yb >= threshold && xa > xb && yb > ya;
+    const crossed = xb >= xThreshold && ya >= threshold && xb > xa && ya > yb;
     if (straight || crossed) return true;
   }
   return false;
+}
+
+/**
+ * Vector-level convenience wrapper. Fine for one-off checks; the hot loops
+ * project once and call separationForbidsProjected directly.
+ */
+function separationForbids(vecX, vecY, separations, options = {}) {
+  if (!vecX || !vecY) return false;
+  return separationForbidsProjected(
+    projectOnSeparations(vecX, separations),
+    projectOnSeparations(vecY, separations),
+    options,
+  );
 }
 
 /**
@@ -439,6 +509,7 @@ async function consolidate(eventId, options = {}) {
   // pass silently overturns an explicit human decision the moment new faces
   // push the pair over the threshold — or the moment someone tunes it.
   const separations = await loadSeparations(eventId);
+  for (const p of state) p.sep = projectOnSeparations(p.vec, separations.vectors);
 
   const merged = [];
   const absorbed = new Set();
@@ -466,7 +537,7 @@ async function consolidate(eventId, options = {}) {
         // meant, and the embedding match that carries the decision across a
         // re-derivation (#1132).
         if (separations.ids.has(pairKey(a.id, b.id))) continue;
-        if (separationForbids(a.vec, b.vec, separations.vectors,
+        if (separationForbidsProjected(a.sep, b.sep,
           { modelVersion: a.model_version || null })) continue;
 
         if (dot(a.vec, b.vec) >= mergeThreshold) {
@@ -553,6 +624,7 @@ async function suggestMerges(eventId, options = {}) {
   if (state.length < 2) return [];
 
   const separations = await loadSeparations(eventId);
+  for (const p of state) p.sep = projectOnSeparations(p.vec, separations.vectors);
 
   const pairs = [];
   for (let i = 0; i < state.length; i++) {
@@ -567,7 +639,7 @@ async function suggestMerges(eventId, options = {}) {
       // Exact pair while the ids still hold, plus the embedding match that
       // carries the decision across a re-derivation (#1132).
       if (separations.ids.has(pairKey(a.id, b.id))) continue;
-      if (separationForbids(a.vec, b.vec, separations.vectors,
+      if (separationForbidsProjected(a.sep, b.sep,
         { modelVersion: a.model_version || null })) continue;
 
       const score = dot(a.vec, b.vec);
@@ -1030,6 +1102,8 @@ module.exports = {
   // matching directly rather than only through a full clustering pass.
   loadSeparations,
   separationForbids,
+  separationForbidsProjected,
+  projectOnSeparations,
   refreshSeparationSnapshots,
   SEPARATION_MATCH_THRESHOLD,
   mergePeople,

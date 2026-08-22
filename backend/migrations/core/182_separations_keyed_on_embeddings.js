@@ -33,17 +33,23 @@
 exports.up = async function up(knex) {
   if (!(await knex.schema.hasTable('event_people_merge_dismissals'))) return;
 
-  const hasCentroidA = await knex.schema.hasColumn('event_people_merge_dismissals', 'centroid_a');
-  if (!hasCentroidA) {
-    await knex.schema.alterTable('event_people_merge_dismissals', (table) => {
-      table.binary('centroid_a');
-      table.binary('centroid_b');
-      // Which embedding space the vectors live in. A model change makes them
-      // meaningless rather than merely stale, exactly as it does for
-      // event_people.centroid.
-      table.string('model_version', 64);
-    });
-  }
+  // Each column guarded on its own. SQLite runs migrations outside a
+  // transaction and knex emits one ALTER per column, so a run that dies after
+  // the first would leave the table half-built — and a guard keyed on
+  // centroid_a alone would then skip the other two forever, with the backfill
+  // below failing on every retry. Not recoverable without hand-editing the
+  // schema, which is not something a deployment should ever need.
+  const addColumn = async (name, build) => {
+    if (await knex.schema.hasColumn('event_people_merge_dismissals', name)) return;
+    await knex.schema.alterTable('event_people_merge_dismissals', build);
+  };
+
+  await addColumn('centroid_a', (table) => table.binary('centroid_a'));
+  await addColumn('centroid_b', (table) => table.binary('centroid_b'));
+  // Which embedding space the vectors live in. A model change makes them
+  // meaningless rather than merely stale, exactly as it does for
+  // event_people.centroid.
+  await addColumn('model_version', (table) => table.string('model_version', 64));
 
   // Backfill from the people the rows point at, while they still resolve.
   const rows = await knex('event_people_merge_dismissals')
@@ -81,11 +87,11 @@ exports.up = async function up(knex) {
 
 exports.down = async function down(knex) {
   if (!(await knex.schema.hasTable('event_people_merge_dismissals'))) return;
-  if (await knex.schema.hasColumn('event_people_merge_dismissals', 'centroid_a')) {
+  // Dropped one at a time for the same reason they are added one at a time.
+  for (const name of ['centroid_a', 'centroid_b', 'model_version']) {
+    if (!(await knex.schema.hasColumn('event_people_merge_dismissals', name))) continue;
     await knex.schema.alterTable('event_people_merge_dismissals', (table) => {
-      table.dropColumn('centroid_a');
-      table.dropColumn('centroid_b');
-      table.dropColumn('model_version');
+      table.dropColumn(name);
     });
   }
 };
