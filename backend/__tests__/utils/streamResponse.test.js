@@ -34,6 +34,7 @@ function makeRes() {
   res.body = null;
   res.destroyed = false;
   res.removeHeader = (h) => { delete res.headers[h]; };
+  res.setHeader = (h, v) => { res.headers[h] = v; };
   res.status = (code) => { res.statusCode = code; return res; };
   res.json = (payload) => { res.body = payload; res.writableEnded = true; return res; };
   res.destroy = () => { res.destroyed = true; };
@@ -68,16 +69,42 @@ describe('pipeStreamToResponse (#1128)', () => {
   // so such a listener never sees it and the assertion could never fail.
   function stream_(p) { return fs.createReadStream(p); }
 
-  it('strips the stale Content-Length so the error body is not self-contradictory', async () => {
+  it('strips every header that described the file it can no longer send', async () => {
     const res = makeRes();
+    // What the image and zip routes actually stage before streaming.
+    res.headers = {
+      'Content-Length': '1234',
+      ETag: '"x"',
+      'Content-Type': 'image/jpeg',
+      'Content-Disposition': 'attachment; filename="gallery.zip"',
+      'Cache-Control': 'private, max-age=1800',
+    };
     const stream = fs.createReadStream(path.join(os.tmpdir(), `gone-${Date.now()}.jpg`));
 
     pipeStreamToResponse(stream, res);
     await settle();
 
-    // Both came from a stat that no longer describes anything.
     expect(res.headers['Content-Length']).toBeUndefined();
     expect(res.headers.ETag).toBeUndefined();
+    // Express does NOT overwrite an existing Content-Type, so leaving it makes
+    // res.json() emit JSON labelled image/jpeg — or a corrupt .zip download.
+    expect(res.headers['Content-Type']).toBeUndefined();
+    expect(res.headers['Content-Disposition']).toBeUndefined();
+  });
+
+  it('does not let a transient 404 be cached as a broken tile', async () => {
+    const res = makeRes();
+    // The thumbnail route stages 30 minutes; the hero route an hour.
+    res.headers = { 'Cache-Control': 'private, max-age=1800' };
+    const stream = fs.createReadStream(path.join(os.tmpdir(), `gone3-${Date.now()}.jpg`));
+
+    pipeStreamToResponse(stream, res);
+    await settle();
+
+    // The regeneration race is transient by definition: the tier exists moments
+    // later. Caching this 404 would keep the tile broken long after the file is
+    // back — the opposite of what this helper is for.
+    expect(res.headers['Cache-Control']).toBe('no-store');
   });
 
   it('honours a caller that wants a different missing-status', async () => {

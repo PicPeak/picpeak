@@ -41,10 +41,21 @@ function pipeStreamToResponse(stream, res, options = {}) {
       return;
     }
 
-    // Content-Length was set from a stat that no longer describes anything.
-    // Leaving it on a JSON error body makes the response self-contradictory.
+    // Every header staged for the FILE now describes a body that will never
+    // be sent. They are cleared rather than left to Express, which does not
+    // overwrite a Content-Type that is already set — so without this the JSON
+    // error goes out as `image/jpeg`, or as an `application/zip` attachment
+    // that saves to disk as a corrupt download.
+    //
+    // Cache-Control matters most. The image routes stage `max-age=1800` (the
+    // hero route 3600), so a 404 from the regeneration race — the transient
+    // case this whole helper exists for — would be cached as a broken tile for
+    // up to an hour after the tier finished generating.
     res.removeHeader('Content-Length');
     res.removeHeader('ETag');
+    res.removeHeader('Content-Type');
+    res.removeHeader('Content-Disposition');
+    res.setHeader('Cache-Control', 'no-store');
 
     if (gone) {
       // Expected under the regeneration race — the tier existed at stat time
