@@ -29,6 +29,7 @@ const { resolveGuest } = require('../middleware/guestAuth');
 const { generateGuestIdentifier } = require('../middleware/feedbackRateLimit');
 const secureImageService = require('../services/secureImageService');
 const logger = require('../utils/logger');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const { resolvePhotoFilePath } = require('../services/photoResolver');
 const { getEventShareToken, resolveShareIdentifier, buildShareLinkVariants } = require('../services/shareLinkService');
 const { handleAsync, errorResponse } = require('../utils/routeHelpers');
@@ -1044,7 +1045,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, async
       res.setHeader('Content-Length', zipInfo.size);
       res.setHeader('Content-Disposition', `attachment; filename="${req.event.slug}.zip"`);
       const stream = await storage.get(zipInfo.key);
-      stream.pipe(res);
+      pipeStreamToResponse(stream, res, { context: `prepared zip for event ${req.event.id}`, missingStatus: 410 });
 
       // Log bulk download
       db('access_logs').insert({
@@ -1505,7 +1506,7 @@ router.get('/:slug/photo/:photoId',
           const file = useStorageBackend
             ? await storage.getRange(storageKey, start, end)
             : fs.createReadStream(filePath, { start, end });
-          file.pipe(res);
+          pipeStreamToResponse(file, res, { context: `video range for photo ${photo.id}` });
         } else {
           res.writeHead(200, {
             'Content-Length': fileSize,
@@ -1517,7 +1518,7 @@ router.get('/:slug/photo/:photoId',
           const file = useStorageBackend
             ? await storage.get(storageKey)
             : fs.createReadStream(filePath);
-          file.pipe(res);
+          pipeStreamToResponse(file, res, { context: `video for photo ${photo.id}` });
         }
         return;
       }
@@ -1551,7 +1552,7 @@ router.get('/:slug/photo/:photoId',
                   'X-Protection-Level': 'basic'
                 });
                 const wmStream = await storage.get(photo.watermark_path);
-                return wmStream.pipe(res);
+                return pipeStreamToResponse(wmStream, res, { context: `watermarked photo ${photo.id}` });
               }
             } else {
               const watermarkFilePath = path.join(getStoragePath(), photo.watermark_path);
@@ -1600,7 +1601,7 @@ router.get('/:slug/photo/:photoId',
           res.set('Content-Length', stat.size);
           if (photo.mime_type) res.set('Content-Type', photo.mime_type);
           const stream = await storage.get(storageKey);
-          stream.pipe(res);
+          pipeStreamToResponse(stream, res, { context: `photo ${photo.id}` });
         } else {
           const absolutePath = path.isAbsolute(filePath) ? filePath : path.resolve(filePath);
           res.sendFile(absolutePath);
@@ -1695,7 +1696,7 @@ router.get('/:slug/thumbnail/:photoId',
       } else {
         res.setHeader('Content-Length', stat.size);
         const stream = await storage.get(thumbnailPath);
-        stream.pipe(res);
+        pipeStreamToResponse(stream, res, { context: `thumbnail for photo ${photoId}` });
       }
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to serve thumbnail');
@@ -1781,7 +1782,7 @@ router.get('/:slug/hero/:photoId',
       } else {
         res.setHeader('Content-Length', stat.size);
         const stream = await storage.get(heroPath);
-        stream.pipe(res);
+        pipeStreamToResponse(stream, res, { context: `hero for photo ${photoId}` });
       }
     } catch (error) {
       logger.error('Error serving hero image:', {
@@ -1877,7 +1878,7 @@ router.get('/:slug/preview/:photoId',
       } else {
         res.setHeader('Content-Length', stat.size);
         const stream = await storage.get(previewPath);
-        stream.pipe(res);
+        pipeStreamToResponse(stream, res, { context: `preview for photo ${photoId}` });
       }
     } catch (error) {
       logger.error('Error serving preview image:', {
