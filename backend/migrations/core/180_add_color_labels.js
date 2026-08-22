@@ -44,10 +44,18 @@ exports.up = async function (knex) {
       // Lightroom's colour names, lowercase: red/yellow/green/blue/purple.
       table.string('color_label', 16);
     });
-    await knex.schema.alterTable('photo_feedback', (table) => {
-      table.index(['event_id', 'feedback_type', 'color_label'], 'photo_feedback_color_label_idx');
-    });
   }
+
+  // Outside the column guard on purpose: a run that died between the two
+  // statements would otherwise leave the column present and the index missing,
+  // and a re-run would skip both — silently costing the admin colour filter
+  // the index this migration's header says it relies on. IF NOT EXISTS is
+  // supported by Postgres and by SQLite (verified idempotent on 3.44), so this
+  // is safe to re-run in any state.
+  await knex.raw(
+    'CREATE INDEX IF NOT EXISTS photo_feedback_color_label_idx '
+    + 'ON photo_feedback (event_id, feedback_type, color_label)'
+  );
 
   const hasColorLabelCount = await knex.schema.hasColumn('photos', 'color_label_count');
   if (!hasColorLabelCount) {
@@ -63,12 +71,12 @@ exports.down = async function (knex) {
       table.dropColumn('color_label_count');
     });
   }
+  // Drop the index first, and unconditionally: SQLite rebuilds the table on
+  // dropColumn and a lingering index over the dropped column makes that
+  // rebuild fail. Unconditional so a down() after a partial up() still clears
+  // whichever half landed.
+  await knex.raw('DROP INDEX IF EXISTS photo_feedback_color_label_idx');
   if (await knex.schema.hasColumn('photo_feedback', 'color_label')) {
-    // Drop the index first: SQLite rebuilds the table on dropColumn and a
-    // lingering index over the dropped column makes that rebuild fail.
-    await knex.schema.alterTable('photo_feedback', (table) => {
-      table.dropIndex(['event_id', 'feedback_type', 'color_label'], 'photo_feedback_color_label_idx');
-    });
     await knex.schema.alterTable('photo_feedback', (table) => {
       table.dropColumn('color_label');
     });

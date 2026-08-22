@@ -12,6 +12,18 @@ const logger = require('../utils/logger');
 const { isValidColorLabel } = require('../constants/colorLabels');
 
 /**
+ * A mark the caller got wrong, as opposed to something that went wrong.
+ *
+ * Carries a `code` so the route can map it to a 400 without matching on the
+ * message text — message-matching couples the status code to this file's copy,
+ * and a reworded string would silently turn a 400 into a 500.
+ */
+const INVALID_MARK = 'INVALID_MARK';
+function invalidMark(message) {
+  return Object.assign(new Error(message), { code: INVALID_MARK });
+}
+
+/**
  * Set, change or clear an admin's mark on one photo.
  *
  * `rating` and `colorLabel` are tri-state: `undefined` leaves that half of the
@@ -30,76 +42,88 @@ async function setMark(eventId, photoId, adminId, { rating, colorLabel } = {}) {
   if (rating !== undefined && rating !== null) {
     const asInt = Number(rating);
     if (!Number.isInteger(asInt) || asInt < 1 || asInt > 5) {
-      throw new Error('Rating must be between 1 and 5');
+      throw invalidMark('Rating must be between 1 and 5');
     }
   }
   if (colorLabel !== undefined && colorLabel !== null && !isValidColorLabel(colorLabel)) {
-    throw new Error('Invalid color label');
+    throw invalidMark('Invalid color label');
   }
+
+  /**
+   * Write ONLY the halves this call was asked about, onto the row as it
+   * stands right now.
+   *
+   * The obvious version — recompute both halves from a pre-read and write the
+   * pair — loses a concurrent write: press 4 then 9 on a photo that already
+   * has a mark and both calls read the old row, both write {rating,
+   * color_label}, and the second silently clobbers the first with its stale
+   * value. Not writing the untouched column at all means there is nothing to
+   * lose, and no race machinery is needed to achieve it.
+   */
+  const applyToRow = async (row) => {
+    const now = new Date().toISOString();
+    const patch = { updated_at: now };
+    if (rating !== undefined) patch.rating = rating === null ? null : Number(rating);
+    if (colorLabel !== undefined) patch.color_label = colorLabel;
+
+    await db('photo_admin_marks').where('id', row.id).update(patch);
+
+    // A mark with neither half left is deleted, not kept as an empty row — an
+    // empty row would still count as "marked" to anything testing existence.
+    //
+    // The emptiness test is a predicate ON the delete rather than a re-read
+    // followed by a delete: a concurrent call that just filled a half back in
+    // must not have its value dropped by our stale view of the row.
+    const removed = await db('photo_admin_marks')
+      .where('id', row.id)
+      .whereNull('rating')
+      .whereNull('color_label')
+      .delete();
+    if (removed) return null;
+
+    const after = await db('photo_admin_marks').where('id', row.id).first();
+    if (!after) return null;
+    return { rating: after.rating ?? null, color_label: after.color_label ?? null };
+  };
 
   const existing = await db('photo_admin_marks')
     .where({ photo_id: photoId, admin_id: adminId })
     .first();
 
-  const next = {
-    rating: rating === undefined ? (existing?.rating ?? null) : (rating === null ? null : Number(rating)),
-    color_label: colorLabel === undefined ? (existing?.color_label ?? null) : colorLabel,
-  };
+  if (existing) return applyToRow(existing);
 
-  // A mark with neither half left is deleted, not kept as an empty row — an
-  // empty row would still count as "marked" to anything that tests existence.
-  if (next.rating === null && next.color_label === null) {
-    if (existing) {
-      await db('photo_admin_marks').where('id', existing.id).delete();
-    }
-    return null;
-  }
+  // No row yet, so there is nothing for a clear-only call to clear.
+  const fresh = {
+    rating: rating === undefined || rating === null ? null : Number(rating),
+    color_label: colorLabel === undefined || colorLabel === null ? null : colorLabel,
+  };
+  if (fresh.rating === null && fresh.color_label === null) return null;
 
   const now = new Date().toISOString();
-  if (existing) {
-    await db('photo_admin_marks')
-      .where('id', existing.id)
-      .update({ ...next, updated_at: now });
-    return next;
-  }
-
   try {
     await db('photo_admin_marks').insert({
       photo_id: photoId,
       event_id: eventId,
       admin_id: adminId,
-      ...next,
+      ...fresh,
       created_at: now,
       updated_at: now,
     });
   } catch (error) {
     // The read above and this insert are not atomic, and a triage pass fires
-    // them back to back — press 4 then 9 and both requests can find no row
-    // and both try to insert. The unique index stops the duplicate, which
-    // would otherwise surface as a 500 and a lost keystroke; converge on the
-    // row the winner created instead.
+    // them back to back — press 4 then 9 on an UNMARKED photo and both
+    // requests can find no row and both try to insert. The unique index stops
+    // the duplicate, which would otherwise surface as a 500 and a lost
+    // keystroke; converge onto the row the winner created, through the same
+    // write-only-what-you-addressed path as any other update.
     const raced = await db('photo_admin_marks')
       .where({ photo_id: photoId, admin_id: adminId })
       .first();
     if (!raced) throw error;
-
-    // Re-resolve against what actually landed, so the half this call did not
-    // address keeps the winner's value rather than the stale pre-read one.
-    const merged = {
-      rating: rating === undefined ? (raced.rating ?? null) : next.rating,
-      color_label: colorLabel === undefined ? (raced.color_label ?? null) : next.color_label,
-    };
-    if (merged.rating === null && merged.color_label === null) {
-      await db('photo_admin_marks').where('id', raced.id).delete();
-      return null;
-    }
-    await db('photo_admin_marks')
-      .where('id', raced.id)
-      .update({ ...merged, updated_at: now });
-    return merged;
+    return applyToRow(raced);
   }
 
-  return next;
+  return fresh;
 }
 
 /**
@@ -158,4 +182,4 @@ async function getEventMarkColorCounts(eventId, adminId) {
   }
 }
 
-module.exports = { setMark, getEventMarks, getEventMarkColorCounts };
+module.exports = { setMark, getEventMarks, getEventMarkColorCounts, INVALID_MARK };

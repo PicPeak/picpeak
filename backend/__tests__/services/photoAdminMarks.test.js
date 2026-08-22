@@ -127,6 +127,15 @@ describe('photoAdminMarksService (#1044 follow-up)', () => {
     expect(await marks.getEventMarks(eventId, ADMIN_A, [photoIds[2]])).toEqual({});
   });
 
+  it('tags caller mistakes with a code, not just a message', async () => {
+    // The route maps this to a 400. Keyed on the code so rewording the
+    // message can't silently turn a bad request into a 500.
+    await expect(marks.setMark(eventId, photoIds[2], ADMIN_A, { rating: 9 }))
+      .rejects.toMatchObject({ code: marks.INVALID_MARK });
+    await expect(marks.setMark(eventId, photoIds[2], ADMIN_A, { colorLabel: 'beige' }))
+      .rejects.toMatchObject({ code: marks.INVALID_MARK });
+  });
+
   it('narrows to a page of photo ids', async () => {
     expect(Object.keys(await marks.getEventMarks(eventId, ADMIN_A, [photoIds[1]])))
       .toEqual([String(photoIds[1])]);
@@ -154,6 +163,49 @@ describe('photoAdminMarksService (#1044 follow-up)', () => {
     // Whichever order they landed in, neither half may be lost.
     expect(rows[0].rating).toBe(4);
     expect(rows[0].color_label).toBe('green');
+
+    await db('photo_admin_marks').where({ photo_id: photoId }).delete();
+  });
+
+  it('does not lose a concurrent half when the row already exists', async () => {
+    // luap's finding on #1137: the insert race was handled, but two keystrokes
+    // on a photo that ALREADY has a mark took a plain read-modify-write —
+    // both calls read the old row, both wrote the full pair, and the second
+    // clobbered the first with its stale value. That is the COMMON case in a
+    // triage pass, since by the second keystroke there usually is a row.
+    const photoId = photoIds[2];
+    await db('photo_admin_marks').where({ photo_id: photoId }).delete();
+    await marks.setMark(eventId, photoId, ADMIN_A, { rating: 3 });
+
+    await Promise.all([
+      marks.setMark(eventId, photoId, ADMIN_A, { rating: 4 }),
+      marks.setMark(eventId, photoId, ADMIN_A, { colorLabel: 'blue' }),
+    ]);
+
+    const row = await db('photo_admin_marks')
+      .where({ photo_id: photoId, admin_id: ADMIN_A }).first();
+    expect(row.rating).toBe(4);          // was 3 before the fix — the colour
+    expect(row.color_label).toBe('blue'); // write reverted it
+
+    await db('photo_admin_marks').where({ photo_id: photoId }).delete();
+  });
+
+  it('leaves the untouched half alone even when the caller sends only one', async () => {
+    // The mechanism behind the fix: an unaddressed column is never written,
+    // so it cannot be written with a stale value.
+    const photoId = photoIds[2];
+    await db('photo_admin_marks').where({ photo_id: photoId }).delete();
+    await marks.setMark(eventId, photoId, ADMIN_A, { rating: 2, colorLabel: 'purple' });
+
+    const before = await db('photo_admin_marks')
+      .where({ photo_id: photoId, admin_id: ADMIN_A }).first();
+
+    await marks.setMark(eventId, photoId, ADMIN_A, { colorLabel: 'green' });
+    const after = await db('photo_admin_marks')
+      .where({ photo_id: photoId, admin_id: ADMIN_A }).first();
+
+    expect(after.rating).toBe(before.rating);
+    expect(after.color_label).toBe('green');
 
     await db('photo_admin_marks').where({ photo_id: photoId }).delete();
   });

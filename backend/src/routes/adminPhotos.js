@@ -772,7 +772,9 @@ router.put('/:eventId/photos/:photoId/mark', adminAuth, requirePermission('photo
     res.json({ success: true, mark: result });
   } catch (error) {
     // Validation errors from the service are the caller's fault, not a 500.
-    if (/Invalid color label|Rating must be/.test(error.message)) {
+    // Keyed on the code, not the message: matching text would couple this
+    // status to the service's wording.
+    if (error.code === photoAdminMarksService.INVALID_MARK) {
       return res.status(400).json({ error: error.message });
     }
     errorResponse(res, error, 500, 'Failed to save mark');
