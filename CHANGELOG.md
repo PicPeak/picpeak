@@ -5,6 +5,25 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.113.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.112.0-beta.0...v3.113.0-beta.0) (2026-08-22)
+
+
+### Features
+
+* **faces:** consolidate look-alike clusters after a scan, and suggest the rest ([#1107](https://github.com/PicPeak/picpeak/issues/1107)) ([3583c92](https://github.com/PicPeak/picpeak/commit/3583c924dae999e5edf6bf86c4611a035c9bd986))
+
+
+### Bug Fixes
+
+* **gallery:** a missing thumbnail tier must not take the backend down ([#1128](https://github.com/PicPeak/picpeak/issues/1128)) ([f735d26](https://github.com/PicPeak/picpeak/commit/f735d26422ddd7e4f83cdbaf6fa10c2120dc82a4))
+* **gallery:** give masonry tiles their real shape back ([#1130](https://github.com/PicPeak/picpeak/issues/1130), [#1131](https://github.com/PicPeak/picpeak/issues/1131)) ([87115b2](https://github.com/PicPeak/picpeak/commit/87115b28e8aa4d955adc6534103d4cf1fb15485b))
+* **thumbnails:** regenerate external photos instead of dropping their tiers ([#1129](https://github.com/PicPeak/picpeak/issues/1129)) ([97d92f8](https://github.com/PicPeak/picpeak/commit/97d92f8428e28852011456ab5785e1f70dce5e8b))
+
+
+### Documentation
+
+* **faces:** link the face-recognition guidance from where people look ([#1125](https://github.com/PicPeak/picpeak/issues/1125)) ([25fbefc](https://github.com/PicPeak/picpeak/commit/25fbefc703c0531060203bcdb3910a590a6bfdb2))
+
 ## [3.112.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.111.1-beta.0...v3.112.0-beta.0) (2026-08-22)
 
 
