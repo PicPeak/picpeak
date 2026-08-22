@@ -63,7 +63,15 @@ async function insertPerson(eventId, centroid, overrides = {}) {
   return typeof row === 'object' ? row.id : row;
 }
 
-async function insertFace(eventId, personId, centroid) {
+/** The mirror of pairAtSimilarity's second vector: same similarity, other side. */
+function mirrorAtSimilarity(target, basis) {
+  const b = new Float32Array(DIM);
+  b[basis] = target;
+  b[basis + 1] = -Math.sqrt(1 - target * target);
+  return b;
+}
+
+async function insertFaceWithPhoto(eventId, personId, centroid) {
   const [p] = await db('photos').insert({
     event_id: eventId, filename: `${Math.random()}.jpg`, path: '/tmp/x.jpg', type: 'individual',
   }).returning('id');
@@ -74,7 +82,12 @@ async function insertFace(eventId, personId, centroid) {
     embedding: clustering.packEmbedding(centroid),
     model_version: 'test-v1', created_at: new Date().toISOString(),
   }).returning('id');
-  return typeof f === 'object' ? f.id : f;
+  return { faceId: typeof f === 'object' ? f.id : f, photoId };
+}
+
+async function insertFace(eventId, personId, centroid) {
+  const { faceId } = await insertFaceWithPhoto(eventId, personId, centroid);
+  return faceId;
 }
 
 /**
@@ -123,6 +136,32 @@ describe('separations survive re-derivation (#1132)', () => {
       expect(clustering.separationForbids(drifted, b, [{ a, b }])).toBe(false);
     });
 
+    it('does not bind two clusters that are both the SAME side', () => {
+      // A split leaves two halves of one cluster, so the pair it records is
+      // often similar to itself — here 0.95. Two candidates that are plainly
+      // both side A (0.97 to each other) each clear the bar against BOTH
+      // stored sides, so a test that only asks "does each side match
+      // something" says yes and refuses to let that person cluster with
+      // itself. It fragments into singletons — the person the split was not
+      // even about.
+      const [a, b] = pairAtSimilarity(0.95, 0);
+      const x = new Float32Array(DIM); x[0] = 1;
+      const y = mirrorAtSimilarity(0.97, 0);
+      expect(clustering.separationForbids(x, y, [{ a, b }])).toBe(false);
+      // The pair it was actually about still binds.
+      expect(clustering.separationForbids(a, b, [{ a, b }])).toBe(true);
+    });
+
+    it('ignores a separation recorded under a different embedding model', () => {
+      const [a, b] = pairAtSimilarity(0.64, 0);
+      // Vectors from another model are meaningless here, not merely stale —
+      // the same rule assignment and consolidation apply to person centroids.
+      expect(clustering.separationForbids(a, b, [{ a, b, modelVersion: 'test-v2' }],
+        { modelVersion: 'test-v1' })).toBe(false);
+      expect(clustering.separationForbids(a, b, [{ a, b, modelVersion: 'test-v1' }],
+        { modelVersion: 'test-v1' })).toBe(true);
+    });
+
     it('ignores an unrelated pair entirely', () => {
       const [a, b] = pairAtSimilarity(0.64, 0);
       const [x, y] = pairAtSimilarity(0.64, 20);
@@ -167,10 +206,15 @@ describe('separations survive re-derivation (#1132)', () => {
 
     it('a split still binds after the ids it recorded are gone', async () => {
       const eventId = await seedEvent('sep-split-rescan');
-      const base = new Float32Array(DIM); base[0] = 1;
+      // Two faces that look alike enough to have been clustered together, but
+      // are not the same vector — which is what a split is FOR, and the only
+      // case it can survive re-derivation in. Two byte-identical embeddings
+      // carry no information about which side is which, so a separation
+      // between them has nothing to key on once the ids are gone.
+      const [base, other] = pairAtSimilarity(0.96, 0);
       const personId = await insertPerson(eventId, base);
       await insertFace(eventId, personId, base);
-      const extra = await insertFace(eventId, personId, base);
+      const extra = await insertFace(eventId, personId, other);
 
       const newPersonId = await clustering.splitPerson(eventId, personId, [extra]);
       expect(newPersonId).toBeTruthy();
@@ -181,8 +225,56 @@ describe('separations survive re-derivation (#1132)', () => {
       expect(row.centroid_a).toBeTruthy();
       expect(row.centroid_b).toBeTruthy();
 
-      await simulateRescan(eventId, [base, base]);
+      await simulateRescan(eventId, [base, other]);
       expect(await clustering.consolidate(eventId, { thresholds: THRESHOLDS })).toEqual([]);
+    });
+  });
+
+  describe('when a photo is hard-deleted', () => {
+    const { purgePhotoFaces } = require('../../src/services/faceProcessor');
+
+    it('drops the separation when one side has no photos left', async () => {
+      const eventId = await seedEvent('sep-purge-gone');
+      const [a, b] = pairAtSimilarity(0.64, 0);
+      const idA = await insertPerson(eventId, a);
+      const idB = await insertPerson(eventId, b);
+      await insertFace(eventId, idA, a);
+      const { photoId } = await insertFaceWithPhoto(eventId, idB, b);
+
+      await clustering.dismissMergeSuggestion(eventId, idA, idB);
+      await purgePhotoFaces(photoId);
+
+      // Person B is gone with its only photo. The row held a COPY of its
+      // centroid, so leaving it standing would keep a vector derived from a
+      // deleted photo alive in a table nothing else touches.
+      expect(await db('event_people').where({ id: idB }).first()).toBeUndefined();
+      expect(await db('event_people_merge_dismissals').where({ event_id: eventId })).toHaveLength(0);
+    });
+
+    it('re-takes the snapshot from what is left when the person survives', async () => {
+      const eventId = await seedEvent('sep-purge-survives');
+      const [a, b] = pairAtSimilarity(0.64, 0);
+      const idA = await insertPerson(eventId, a);
+      const idB = await insertPerson(eventId, b);
+      await insertFace(eventId, idA, a);
+      await insertFace(eventId, idB, b);
+      // A second, different face on B — so purging the first one moves B's
+      // centroid rather than deleting the person.
+      const other = mirrorAtSimilarity(0.9, 0);
+      const { photoId } = await insertFaceWithPhoto(eventId, idB, other);
+      await clustering.recomputeCentroid(idB);
+
+      await clustering.dismissMergeSuggestion(eventId, idA, idB);
+      const before = await db('event_people_merge_dismissals').where({ event_id: eventId }).first();
+
+      await purgePhotoFaces(photoId);
+
+      const after = await db('event_people_merge_dismissals').where({ event_id: eventId }).first();
+      expect(after).toBeTruthy();
+      expect(Buffer.from(after.centroid_b).equals(Buffer.from(before.centroid_b))).toBe(false);
+      // It now equals the recomputed centroid — nothing of the deleted face left.
+      const person = await db('event_people').where({ id: idB }).first();
+      expect(Buffer.from(after.centroid_b).equals(Buffer.from(person.centroid))).toBe(true);
     });
   });
 

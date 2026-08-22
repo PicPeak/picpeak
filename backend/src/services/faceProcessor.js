@@ -402,11 +402,13 @@ async function purgeEvent(eventId) {
  * Safe to call for photos that were never scanned: it simply deletes nothing.
  */
 async function purgePhotoFaces(photoId, trx = db) {
-  const affected = await trx('photo_faces')
+  const affectedRows = await trx('photo_faces')
     .where({ photo_id: photoId })
     .whereNotNull('person_id')
-    .distinct('person_id')
-    .pluck('person_id');
+    .distinct('person_id', 'event_id')
+    .select('person_id', 'event_id');
+  const affected = [...new Set(affectedRows.map((r) => r.person_id))];
+  const eventId = affectedRows[0]?.event_id;
 
   // Drop any in-flight claim as well. A worker holding this photo would
   // otherwise still satisfy its `face_status = 'processing'` commit guard and
@@ -420,11 +422,19 @@ async function purgePhotoFaces(photoId, trx = db) {
   const removed = await trx('photo_faces').where({ photo_id: photoId }).del();
   if (!removed) return { removed: 0 };
 
-  const { recomputeCentroid: recompute } = require('./faceClustering');
+  const { recomputeCentroid: recompute, refreshSeparationSnapshots } = require('./faceClustering');
   for (const personId of affected) {
     // Deletes the person outright when it has no members left.
     await recompute(personId, trx);
   }
+
+  // A separation row carries a COPY of each side's centroid (#1132), and that
+  // copy was derived from the faces the person held — including the ones just
+  // deleted. Re-take it from the recomputed centroid, or drop the row if the
+  // person is gone entirely. Otherwise deleting a photo would leave a vector
+  // built from it standing in a table nothing else touches.
+  await refreshSeparationSnapshots(eventId, affected, trx);
+
   return { removed, peopleTouched: affected.length };
 }
 

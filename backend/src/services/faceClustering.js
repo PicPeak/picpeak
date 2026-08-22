@@ -177,9 +177,7 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
   // Through the caller's trx, not the global db: assignFaces runs inside
   // processPhotoFaces' transaction, and on SQLite a second connection reading
   // while that write transaction is open can block on the writer lock.
-  const { vectors: separations } = await loadSeparations(
-    eventId, faceRows[0]?.model_version || null, trx
-  );
+  const { vectors: separations } = await loadSeparations(eventId, trx);
 
   const assignments = [];
 
@@ -213,7 +211,8 @@ async function assignFacesLocked(eventId, faceRows, thresholds, trx) {
       // are different people, and the alternative is silently overruling them.
       // The threshold is strict enough that this only fires while the cluster
       // still looks like the one that was separated.
-      if (separationForbids(embedding, person.centroid, separations)) {
+      if (separationForbids(embedding, person.centroid, separations,
+        { modelVersion: face.model_version || person.modelVersion || null })) {
         continue;
       }
       const score = dot(embedding, person.centroid);
@@ -313,13 +312,39 @@ const SEPARATION_MATCH_THRESHOLD = 0.92;
  * A separation binds when each of its two sides still matches one of the
  * candidates — in either orientation, since neither the stored pair nor the
  * candidate pair has a meaningful order.
+ *
+ * `modelVersion` is the space the two candidates live in; every caller has
+ * already refused to compare across spaces before reaching here. A separation
+ * recorded under a different model is skipped for the same reason: its vectors
+ * are meaningless there, not merely stale.
  */
-function separationForbids(vecX, vecY, separations, threshold = SEPARATION_MATCH_THRESHOLD) {
+function separationForbids(vecX, vecY, separations, options = {}) {
+  const { modelVersion = null, threshold = SEPARATION_MATCH_THRESHOLD } = options;
   if (!vecX || !vecY) return false;
   for (const sep of separations) {
     if (!sep.a || !sep.b) continue;
-    const straight = dot(vecX, sep.a) >= threshold && dot(vecY, sep.b) >= threshold;
-    const crossed = dot(vecX, sep.b) >= threshold && dot(vecY, sep.a) >= threshold;
+    if (modelVersion && sep.modelVersion && sep.modelVersion !== modelVersion) continue;
+
+    const xa = dot(vecX, sep.a);
+    const xb = dot(vecX, sep.b);
+    const ya = dot(vecY, sep.a);
+    const yb = dot(vecY, sep.b);
+
+    // Each candidate must resolve to ONE side and the other candidate to the
+    // OTHER. Clearing the bar against both sides independently is not enough,
+    // and getting that wrong is not a corner case: a split leaves two halves
+    // that came out of one cluster, so its two stored sides are often similar
+    // to each other. Under the looser test, two faces that are plainly the
+    // SAME side each cleared the threshold against both — so the person the
+    // split was not even about got forbidden from clustering with itself and
+    // fragmented into singletons.
+    //
+    // Requiring a strict preference also makes the constraint lapse exactly
+    // when it becomes meaningless: if the two stored sides are so alike that a
+    // candidate cannot be told apart between them, there is no "these two" left
+    // to enforce.
+    const straight = xa >= threshold && yb >= threshold && xa > xb && yb > ya;
+    const crossed = xb >= threshold && ya >= threshold && xb > xa && ya > yb;
     if (straight || crossed) return true;
   }
   return false;
@@ -338,8 +363,14 @@ function separationForbids(vecX, vecY, separations, threshold = SEPARATION_MATCH
  * clustering cycle. `vectors` is what survives re-derivation: person ids die on
  * a recluster and face ids die on a full re-scan, so the embeddings are the only
  * stable handle on "these two".
+ *
+ * Every row is returned carrying its own model_version rather than the load
+ * being filtered to one. recluster() hands the whole event to assignFaces in a
+ * single batch, and a partial upgrade or a failed re-scan can leave faces from
+ * two models in it — filtering on the first face's model would silently drop
+ * every separation belonging to the others.
  */
-async function loadSeparations(eventId, modelVersion = null, conn = db) {
+async function loadSeparations(eventId, conn = db) {
   try {
     const rows = await conn('event_people_merge_dismissals')
       .where({ event_id: eventId })
@@ -352,10 +383,9 @@ async function loadSeparations(eventId, modelVersion = null, conn = db) {
       // Never compare across embedding spaces — a model change makes a stored
       // centroid meaningless rather than merely stale, the same rule assignment
       // and consolidation already apply to event_people.centroid.
-      if (modelVersion && row.model_version && row.model_version !== modelVersion) continue;
       const a = unpackEmbedding(row.centroid_a);
       const b = unpackEmbedding(row.centroid_b);
-      if (a && b) vectors.push({ a, b });
+      if (a && b) vectors.push({ a, b, modelVersion: row.model_version || null });
     }
     return { ids, vectors };
   } catch (err) {
@@ -408,7 +438,7 @@ async function consolidate(eventId, options = {}) {
   // however far the centroids drift afterwards. Without this the automatic
   // pass silently overturns an explicit human decision the moment new faces
   // push the pair over the threshold — or the moment someone tunes it.
-  const separations = await loadSeparations(eventId, state[0]?.model_version || null);
+  const separations = await loadSeparations(eventId);
 
   const merged = [];
   const absorbed = new Set();
@@ -436,7 +466,8 @@ async function consolidate(eventId, options = {}) {
         // meant, and the embedding match that carries the decision across a
         // re-derivation (#1132).
         if (separations.ids.has(pairKey(a.id, b.id))) continue;
-        if (separationForbids(a.vec, b.vec, separations.vectors)) continue;
+        if (separationForbids(a.vec, b.vec, separations.vectors,
+          { modelVersion: a.model_version || null })) continue;
 
         if (dot(a.vec, b.vec) >= mergeThreshold) {
           // Re-read this one pair immediately before acting. The set above was
@@ -521,7 +552,7 @@ async function suggestMerges(eventId, options = {}) {
 
   if (state.length < 2) return [];
 
-  const separations = await loadSeparations(eventId, state[0]?.model_version || null);
+  const separations = await loadSeparations(eventId);
 
   const pairs = [];
   for (let i = 0; i < state.length; i++) {
@@ -536,7 +567,8 @@ async function suggestMerges(eventId, options = {}) {
       // Exact pair while the ids still hold, plus the embedding match that
       // carries the decision across a re-derivation (#1132).
       if (separations.ids.has(pairKey(a.id, b.id))) continue;
-      if (separationForbids(a.vec, b.vec, separations.vectors)) continue;
+      if (separationForbids(a.vec, b.vec, separations.vectors,
+        { modelVersion: a.model_version || null })) continue;
 
       const score = dot(a.vec, b.vec);
       if (score < floor || score >= mergeThreshold) continue;
@@ -612,6 +644,63 @@ async function separationSnapshot(eventId, personAId, personBId, conn = db) {
       error: err.message,
     });
     return {};
+  }
+}
+
+/**
+ * Keep separation snapshots honest after a photo is hard-deleted (#1132).
+ *
+ * The snapshot is a COPY of a person's centroid, so it is derived from the
+ * faces that person held at the time. Once a photo is purged, that copy is the
+ * one place a vector built partly from the deleted photo would survive — the
+ * person row itself gets recomputed from what is left. Deleting a photo has to
+ * mean deleting it.
+ *
+ * So: re-snapshot from the recomputed centroid where the person survives, and
+ * drop the row where it does not. A person with no faces left is a cluster that
+ * no longer exists, and a separation between clusters that are gone has nothing
+ * left to constrain — the same rule the backfill applies to rows that were
+ * already dangling.
+ *
+ * Best-effort by design. This runs inside photo deletion, and failing to tidy a
+ * dismissal row must not fail the delete.
+ */
+async function refreshSeparationSnapshots(eventId, personIds, conn = db) {
+  if (!eventId || !personIds?.length) return;
+  try {
+    const rows = await conn('event_people_merge_dismissals')
+      .where({ event_id: eventId })
+      .where((q) => q.whereIn('person_a_id', personIds).orWhereIn('person_b_id', personIds))
+      .select('id', 'person_a_id', 'person_b_id');
+    if (!rows.length) return;
+
+    for (const row of rows) {
+      // Read the pair directly rather than through separationSnapshot: that
+      // helper folds a read failure into "no snapshot", and here that would
+      // read as "the person is gone" and delete a live decision on a transient
+      // error. An error must reach the catch below instead.
+      const people = await conn('event_people')
+        .where({ event_id: eventId })
+        .whereIn('id', [row.person_a_id, row.person_b_id])
+        .select('id', 'centroid', 'model_version');
+      const a = people.find((p) => p.id === row.person_a_id);
+      const b = people.find((p) => p.id === row.person_b_id);
+
+      if (!a?.centroid || !b?.centroid) {
+        await conn('event_people_merge_dismissals').where({ id: row.id }).del();
+        continue;
+      }
+      await conn('event_people_merge_dismissals').where({ id: row.id }).update({
+        centroid_a: a.centroid,
+        centroid_b: b.centroid,
+        model_version: a.model_version || b.model_version || null,
+      });
+    }
+  } catch (err) {
+    if (isMissingTable(err)) return;
+    logger.warn(`faceClustering: could not refresh separations for event ${eventId}`, {
+      error: err.message,
+    });
   }
 }
 
@@ -941,6 +1030,7 @@ module.exports = {
   // matching directly rather than only through a full clustering pass.
   loadSeparations,
   separationForbids,
+  refreshSeparationSnapshots,
   SEPARATION_MATCH_THRESHOLD,
   mergePeople,
   splitPerson,
