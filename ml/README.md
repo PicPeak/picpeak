@@ -1,5 +1,10 @@
 # picpeak-ml
 
+> **Looking for how to use the feature?** →
+> [docs.picpeak.app/features/face-recognition](https://docs.picpeak.app/features/face-recognition)
+> covers enabling it, the per-gallery toggle, consent and what guests see.
+> This document is the sidecar's HTTP contract and deployment notes.
+
 Optional face-detection sidecar for PicPeak (#1074). Detects faces in one
 image and returns a bounding box, five landmarks, quality signals and a
 512-d embedding per face.

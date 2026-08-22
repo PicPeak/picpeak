@@ -148,4 +148,6 @@ docker inspect --format='{{.State.Health.Status}}' picpeak
   thumbnail and preview generation in one container would slow everything
   down rather than fail cleanly. The toggle in Settings → Features is
   disabled here and says so. Use the multi-container deployment if you want
-  it.
+  it — see
+  [People in galleries](https://docs.picpeak.app/features/face-recognition)
+  for what the feature does and what enabling it commits you to.
