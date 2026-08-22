@@ -278,6 +278,29 @@ describe('separations survive re-derivation (#1132)', () => {
     });
   });
 
+  describe('when the photographer changes their mind', () => {
+    it('a manual merge clears the separation between the merged people', async () => {
+      const eventId = await seedEvent('sep-merge-overrules');
+      const [a, b] = pairAtSimilarity(0.97, 0);
+      const idA = await insertPerson(eventId, a);
+      const idB = await insertPerson(eventId, b);
+      await insertFace(eventId, idA, a);
+      await insertFace(eventId, idB, b);
+
+      await clustering.dismissMergeSuggestion(eventId, idA, idB);
+      // ...and then decides they ARE the same person after all.
+      await clustering.mergePeople(eventId, [idB], idA);
+
+      // The row is keyed on the centroids as well as the ids, so leaving it
+      // would survive the ids it names: the next recluster would recognise
+      // those two sides and pull the merge apart again.
+      expect(await db('event_people_merge_dismissals').where({ event_id: eventId })).toHaveLength(0);
+
+      await simulateRescan(eventId, [a, b]);
+      expect(await clustering.consolidate(eventId, { thresholds: THRESHOLDS })).toHaveLength(1);
+    });
+  });
+
   describe('when the whole gallery is deleted', () => {
     it('deleteEventCascade clears the separations too', () => {
       // Source inspection, deliberately. deleteEventCascade takes an admin
@@ -294,6 +317,19 @@ describe('separations survive re-derivation (#1132)', () => {
       expect(body).toContain('event_people_merge_dismissals\').where(\'event_id\', eventId).del()');
       // Guarded, not caught: a failed statement aborts the transaction on PG.
       expect(body).toContain('hasTable(\'event_people_merge_dismissals\')');
+    });
+
+    it('permanent archive deletion clears the face data too', () => {
+      // Same contract, second door. This route deletes the event row directly
+      // and leans on the FK cascade, which is inert on SQLite — and no FK
+      // reaches the dismissals table on either engine. archiveEvent's purge is
+      // nonfatal, so an event really can arrive here still holding embeddings.
+      const src = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'src', 'routes', 'adminArchives.js'), 'utf8'
+      );
+      expect(src).toContain('event_people_merge_dismissals');
+      expect(src).toContain('db(\'photo_faces\').where(\'event_id\', req.params.id).del()');
+      expect(src).toContain('db(\'event_people\').where(\'event_id\', req.params.id).del()');
     });
   });
 

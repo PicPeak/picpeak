@@ -864,6 +864,22 @@ async function mergePeople(eventId, sourceIds, targetId) {
 
     await trx('event_people').where({ event_id: eventId }).whereIn('id', ids).del();
 
+    // A separation between people who are now being merged is a decision the
+    // photographer has just reversed, and the newer decision wins. Leaving the
+    // row would be worse than untidy since #1132: it is keyed on the centroids
+    // too, so it outlives the ids it names and the next recluster would
+    // recognise those sides and pull the merge apart again — silently undoing
+    // an explicit human action. hasTable rather than a catch, because a failed
+    // statement aborts the surrounding transaction on Postgres.
+    const mergedIds = [targetId, ...ids];
+    if (await trx.schema.hasTable('event_people_merge_dismissals')) {
+      await trx('event_people_merge_dismissals')
+        .where({ event_id: eventId })
+        .whereIn('person_a_id', mergedIds)
+        .whereIn('person_b_id', mergedIds)
+        .del();
+    }
+
     if (Object.keys(inherited).length) {
       await trx('event_people').where({ id: targetId })
         .update({ ...inherited, updated_at: new Date().toISOString() });
