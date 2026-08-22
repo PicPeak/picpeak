@@ -181,6 +181,32 @@ describe('migration 181 — CSS template image height (#1131)', () => {
     expect(css).not.toMatch(/(?<![\w-])height:\s*200px/);
   });
 
+  it('handles a grouped selector list', async () => {
+    // Requiring `{` straight after `img` skipped these entirely — and the
+    // migration is still recorded as applied, so the template kept the bug.
+    const mine = '.photo-card img, .thumbnail img {\n  height: 200px;\n}';
+    await knex('css_templates').insert({ name: 'Grouped', css_content: mine });
+
+    await migration.up(knex);
+
+    const css = await contentOf('Grouped');
+    expect(css).toContain('.photo-card img, .thumbnail img {');
+    expect(css).toContain('height: 100%');
+    expect(css).not.toContain('200px');
+  });
+
+  it('skips a nested rule rather than rewriting the wrong declaration', async () => {
+    // Valid nested CSS that passes the validator. A brace-greedy body would
+    // capture the inner block and rewrite the CAPTION's height, which cannot
+    // be undone. Leaving it untouched is the lesser evil.
+    const mine = '.photo-card img {\n  & + .caption { height: 200px; }\n}';
+    await knex('css_templates').insert({ name: 'Nested', css_content: mine });
+
+    await migration.up(knex);
+
+    expect(await contentOf('Nested')).toBe(mine);
+  });
+
   it('leaves non-pixel heights on the image alone', async () => {
     const mine = '.photo-card img { height: 50vh; }\n.photo-card img { height: auto; }';
     await knex('css_templates').insert({ name: 'Relative', css_content: mine });

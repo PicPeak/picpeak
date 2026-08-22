@@ -53,7 +53,23 @@
  * heights in these same templates — a 1px gradient divider, an 8px scrollbar —
  * are untouched.
  */
-const PHOTO_CARD_IMG_RULE = /(\.photo-card\s+img\s*\{)([^}]*)\}/g;
+/*
+ * Two details in this pattern are deliberate:
+ *
+ *   * the selector part is a LIST, so `.photo-card img, .thumbnail img { … }`
+ *     is recognised. Requiring `{` straight after `img` skipped grouped
+ *     selectors entirely — and the migration would still be recorded as
+ *     applied, so the template kept the bug with no second chance.
+ *
+ *   * the body excludes braces, so a rule containing a NESTED block is not
+ *     matched at all. `.photo-card img { & + .caption { height: 200px } }` is
+ *     valid, passes the validator, and a `[^}]*` body would have captured the
+ *     nested block and rewritten the caption's height instead. Skipping it
+ *     means such a template keeps a fixed image height; corrupting unrelated
+ *     declarations in a migration that cannot be undone is the worse of the
+ *     two, and nesting does not appear in anything we ship.
+ */
+const PHOTO_CARD_IMG_RULE = /([^{}]*\.photo-card\s+img[^{}]*)\{([^{}]*)\}/g;
 
 /**
  * Only a fixed PIXEL height is wrong here; %, vh, auto and the rest stay.
@@ -66,10 +82,14 @@ const PHOTO_CARD_IMG_RULE = /(\.photo-card\s+img\s*\{)([^}]*)\}/g;
 const FIXED_PX_HEIGHT = /(?<![\w-])height\s*:\s*\d+(?:\.\d+)?px/gi;
 
 function relaxFixedImageHeights(css) {
-  return css.replace(PHOTO_CARD_IMG_RULE, (whole, open, body) => {
+  return css.replace(PHOTO_CARD_IMG_RULE, (whole, selectors, body) => {
+    // .test() on a /g regex advances lastIndex, so it is reset on both sides
+    // of the check — leaving it set makes the NEXT rule start matching from an
+    // arbitrary offset and silently skip declarations.
+    FIXED_PX_HEIGHT.lastIndex = 0;
     if (!FIXED_PX_HEIGHT.test(body)) return whole;
     FIXED_PX_HEIGHT.lastIndex = 0;
-    return `${open}${body.replace(FIXED_PX_HEIGHT, 'height: 100%')}}`;
+    return `${selectors}{${body.replace(FIXED_PX_HEIGHT, 'height: 100%')}}`;
   });
 }
 
