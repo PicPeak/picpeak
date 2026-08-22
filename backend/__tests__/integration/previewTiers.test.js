@@ -371,5 +371,88 @@ describe('preview tiers (#1095)', () => {
       await imageProcessor.deleteThumbnailTiers(await db('photos').where({ id: photo.id }).first());
       expect(fs.existsSync(abs)).toBe(false);
     });
+
+    /**
+     * The crash in #1128 needed two things: a tier that disappears, and a
+     * reader that dies on it. The reader is fixed in streamResponse; this is
+     * the half that stops the file disappearing in the first place.
+     */
+    describe('concurrent generation (#1128)', () => {
+      it('never leaves the tier absent once it has been published', async () => {
+        const photo = await seedThumbPhoto();
+        const key = imageProcessor.thumbnailTierKeys(photo).find((k) => k.includes('_w600_'));
+        const abs = path.join(process.env.STORAGE_PATH, key);
+
+        // A grid fires one request per tile at once, and on a cold gallery
+        // every one of them misses the cache. Previously each carried
+        // `regenerate: true`, whose first act is to DELETE the target — so a
+        // later arrival unlinked the file an earlier one had already published
+        // and handed to a reader.
+        const watcher = [];
+        const poll = setInterval(() => watcher.push(fs.existsSync(abs)), 1);
+
+        const results = await Promise.all(
+          Array.from({ length: 12 }, () => imageProcessor.ensureThumbnailAtWidth(photo, 600))
+        );
+        clearInterval(poll);
+
+        expect(results.every((r) => r === key)).toBe(true);
+        expect(fs.existsSync(abs)).toBe(true);
+
+        // Once true, never false again: no window where a validated file is gone.
+        const firstSeen = watcher.indexOf(true);
+        if (firstSeen !== -1) {
+          expect(watcher.slice(firstSeen).every(Boolean)).toBe(true);
+        }
+      });
+
+      it('runs one generation for a burst of requests, not one per request', async () => {
+        const photo = await seedThumbPhoto();
+        const thumbDir = path.join(process.env.STORAGE_PATH, 'thumbnails');
+        await fs.promises.mkdir(thumbDir, { recursive: true });
+
+        // Counted through the staging files LocalFsStorage writes:
+        // `<key>.tmp.<pid>.<hex>`, one per put, each a distinct random suffix.
+        // So distinct temp names == distinct generations, which is the thing
+        // the dedupe is supposed to collapse. (Spying on generateThumbnail
+        // would not work — ensureThumbnailAtWidth calls it through the
+        // module-local binding, so an export spy never sees it.)
+        const seen = new Set();
+        const poll = setInterval(() => {
+          for (const f of fs.readdirSync(thumbDir)) {
+            if (f.includes('_w900_') && f.includes('.tmp.')) seen.add(f);
+          }
+        }, 1);
+
+        const results = await Promise.all(
+          Array.from({ length: 8 }, () => imageProcessor.ensureThumbnailAtWidth(photo, 900))
+        );
+        clearInterval(poll);
+
+        const abs = path.join(
+          process.env.STORAGE_PATH,
+          imageProcessor.thumbnailTierKeys(photo).find((k) => k.includes('_w900_'))
+        );
+        expect(fs.existsSync(abs)).toBe(true);
+        expect(new Set(results).size).toBe(1);
+        // 8 requests, at most one Sharp pass. Before the dedupe this was 8 —
+        // and on an external photo, 8 full reads of the original.
+        expect(seen.size).toBeLessThanOrEqual(1);
+      });
+
+      it('does not cache a failure — a later request retries', async () => {
+        const photo = await seedThumbPhoto();
+        // Source removed underneath: generation fails and must not poison the
+        // key for the lifetime of the process.
+        const src = path.join(process.env.STORAGE_PATH, 'events/active', photo.path);
+        const saved = await fs.promises.readFile(src);
+        await fs.promises.unlink(src);
+
+        expect(await imageProcessor.ensureThumbnailAtWidth(photo, 600)).toBeNull();
+
+        await fs.promises.writeFile(src, saved);
+        expect(await imageProcessor.ensureThumbnailAtWidth(photo, 600)).toContain('_w600_');
+      });
+    });
   });
 });
