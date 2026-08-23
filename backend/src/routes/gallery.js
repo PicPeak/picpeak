@@ -692,6 +692,13 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     // Execute the query
     let photos = hiddenForGuest ? [] : await photosQuery;
     
+    // Check if feedback should be visible to guests. Read BEFORE the filter
+    // block, not after: the filters below consult it, because a filter that
+    // selects on other people's feedback is a way of reading that feedback.
+    const feedbackService = require('../services/feedbackService');
+    const feedbackSettings = await feedbackService.getEventFeedbackSettings(req.event.id);
+    const showFeedbackToGuests = isClient || parseBooleanInput(feedbackSettings.show_feedback_to_guests, true);
+
     // Apply filtering if requested (supports global stats + per-guest interactions)
     if (filter) {
       const filterTokens = new Set(
@@ -753,19 +760,33 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
           }
         };
 
+        // Every token below is an OR of two halves: what THIS viewer marked,
+        // and what ANYONE marked. The second half is other people's feedback,
+        // so it is gated on show_feedback_to_guests exactly like the counts
+        // this endpoint returns.
+        //
+        // Without the gate the setting only hides the numbers. A guest could
+        // still send `?filter=liked` and get back precisely the set of photos
+        // other people liked — the membership, one token at a time, which is
+        // most of what the counts would have told them. The viewer's own half
+        // is always theirs to filter by.
+        const includeAggregate = (predicate) => {
+          if (showFeedbackToGuests) includeBy(predicate);
+        };
+
         if (filterTokens.has('liked')) {
           includeGuestMatches('like');
-          includeBy(photo => (photo.like_count || 0) > 0);
+          includeAggregate(photo => (photo.like_count || 0) > 0);
         }
 
         if (filterTokens.has('favorited')) {
           includeGuestMatches('favorite');
-          includeBy(photo => (photo.favorite_count || 0) > 0);
+          includeAggregate(photo => (photo.favorite_count || 0) > 0);
         }
 
         if (filterTokens.has('rated')) {
           includeGuestMatches('rating');
-          includeBy(photo => (photo.average_rating || 0) > 0);
+          includeAggregate(photo => (photo.average_rating || 0) > 0);
         }
 
         // Colour-label filters (#1044), one token per colour: `color:green`.
@@ -778,31 +799,30 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
           for (const color of requestedColors) {
             guestColorLabels?.[color]?.forEach(id => include.add(id));
           }
-          const colorRows = await db('photo_feedback')
-            .where({ event_id: req.event.id, feedback_type: 'color_label', is_hidden: false })
-            .whereIn('color_label', requestedColors)
-            .select('photo_id');
-          colorRows.forEach(row => include.add(row.photo_id));
+          if (showFeedbackToGuests) {
+            const colorRows = await db('photo_feedback')
+              .where({ event_id: req.event.id, feedback_type: 'color_label', is_hidden: false })
+              .whereIn('color_label', requestedColors)
+              .select('photo_id');
+            colorRows.forEach(row => include.add(row.photo_id));
+          }
         }
 
         if (filterTokens.has('commented')) {
           includeGuestMatches('comment');
-          const commentedRows = await db('photo_feedback')
-            .where({ event_id: req.event.id, feedback_type: 'comment', is_approved: true, is_hidden: false })
-            .groupBy('photo_id')
-            .select('photo_id');
-          commentedRows.forEach(row => include.add(row.photo_id));
+          if (showFeedbackToGuests) {
+            const commentedRows = await db('photo_feedback')
+              .where({ event_id: req.event.id, feedback_type: 'comment', is_approved: true, is_hidden: false })
+              .groupBy('photo_id')
+              .select('photo_id');
+            commentedRows.forEach(row => include.add(row.photo_id));
+          }
         }
 
         photos = photos.filter(photo => include.has(photo.id));
       }
     }
     
-    // Check if feedback should be visible to guests
-    const feedbackService = require('../services/feedbackService');
-    const feedbackSettings = await feedbackService.getEventFeedbackSettings(req.event.id);
-    const showFeedbackToGuests = isClient || parseBooleanInput(feedbackSettings.show_feedback_to_guests, true);
-
     // Then get comment counts separately
     const commentCounts = await db('photo_feedback')
       .whereIn('photo_id', photos.map(p => p.id))
