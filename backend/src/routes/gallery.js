@@ -881,7 +881,12 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     const likedPhotoIds = new Set();
     if (showFeedbackToGuests && photos.length > 0) {
       const likeQuery = db('photo_feedback')
-        .where({ event_id: req.event.id, feedback_type: 'like' })
+        // Hidden rows are not there, for the viewer's OWN feedback as much as
+        // anyone's (#1150). getPhotoFeedback drops them, the filter drops them
+        // and updatePhotoFeedbackStats does not count them — leaving the heart
+        // filled was the one place that disagreed, so a like the photographer
+        // had hidden still showed as liked on a photo whose like_count was 0.
+        .where({ event_id: req.event.id, feedback_type: 'like', is_hidden: false })
         .whereIn('photo_id', photos.map(p => p.id));
       if (req.guest?.id) {
         likeQuery.where('guest_id', req.guest.id);
@@ -899,7 +904,8 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     const myColorLabelByPhoto = {};
     if (photos.length > 0) {
       const colorQuery = db('photo_feedback')
-        .where({ event_id: req.event.id, feedback_type: 'color_label' })
+        // Same rule as the heart above (#1150).
+        .where({ event_id: req.event.id, feedback_type: 'color_label', is_hidden: false })
         .whereIn('photo_id', photos.map(p => p.id));
       if (req.guest?.id) {
         colorQuery.where('guest_id', req.guest.id);
