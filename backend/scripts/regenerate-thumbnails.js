@@ -79,6 +79,7 @@ async function regenerateThumbnails(eventId = null, { tiers = true } = {}) {
   let skipCount = 0;
   let errorCount = 0;
   let tierCount = 0;
+  let tierFailures = 0;
 
   for (const photo of photos) {
     const label = photo.filename || `photo ${photo.id}`;
@@ -112,14 +113,25 @@ async function regenerateThumbnails(eventId = null, { tiers = true } = {}) {
       // Each call is a no-op when the tier is already stored.
       if (tiers) {
         for (const width of THUMBNAIL_WIDTHS) {
+          // Two ways this fails and both have to be reported. It THROWS on an
+          // unexpected error, and it RETURNS NULL on the expected ones it
+          // handles itself — an unreachable mount, a storage operation that
+          // did not land. Ignoring the null said "complete" after backfilling
+          // nothing, which is worse than the error it was hiding.
+          let built = null;
           try {
-            if (await ensureThumbnailAtWidth({ ...photo, thumbnail_path: thumbnailPath }, width)) {
-              tierCount++;
-            }
+            built = await ensureThumbnailAtWidth({ ...photo, thumbnail_path: thumbnailPath }, width);
           } catch (error) {
-            // One missing tier is not a failed photo — the canonical
-            // rendition above is what the gallery falls back to.
             console.warn(`  ! tier ${width}px failed for ${label}: ${error.message}`);
+          }
+
+          // One missing tier is not a failed photo — the canonical rendition
+          // above is what the gallery falls back to — so this is counted
+          // separately rather than as an error against the photo.
+          if (built) tierCount++;
+          else {
+            tierFailures++;
+            console.warn(`  ! tier ${width}px not built for ${label}`);
           }
         }
       }
@@ -133,10 +145,13 @@ async function regenerateThumbnails(eventId = null, { tiers = true } = {}) {
   console.log(`- Generated: ${successCount}`);
   console.log(`- Skipped (already valid): ${skipCount}`);
   console.log(`- Errors: ${errorCount}`);
-  if (tiers) console.log(`- Responsive tiers present: ${tierCount}`);
+  if (tiers) {
+    console.log(`- Responsive tiers present: ${tierCount}`);
+    if (tierFailures) console.log(`- Responsive tiers NOT built: ${tierFailures}`);
+  }
   console.log(`- Total processed: ${photos.length}`);
 
-  return { successCount, skipCount, errorCount, tierCount };
+  return { successCount, skipCount, errorCount, tierCount, tierFailures };
 }
 
 if (require.main === module) {

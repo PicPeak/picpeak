@@ -22,6 +22,7 @@ const sharp = require('sharp');
 describe('regenerate-thumbnails script (#1148)', () => {
   let tmpDir; let db; let cleanup; let regenerateThumbnails;
   let eventId; let externalPhotoId; let videoPhotoId; let watcherVideoId; let repairPhotoId;
+  let vanishingPhotoId;
   let externalRoot;
 
   beforeAll(async () => {
@@ -128,6 +129,23 @@ describe('regenerate-thumbnails script (#1148)', () => {
     }).returning('id');
     repairPhotoId = typeof rp === 'object' ? rp.id : rp;
 
+    // A photo whose source will be removed after its canonical thumbnail is
+    // cached — the "mount went away" case, where the canonical rendition is
+    // served from cache but a tier still needs to read the original.
+    await sharp({
+      create: { width: 1000, height: 700, channels: 3, background: { r: 30, g: 140, b: 60 } },
+    }).jpeg().toFile(path.join(externalRoot, 'vanishing.jpg'));
+    const [vp] = await db('photos').insert({
+      event_id: eventId,
+      filename: 'vanishing.jpg',
+      path: 'regen-script-event/vanishing.jpg',
+      type: 'individual',
+      source_origin: 'external',
+      external_relpath: 'vanishing.jpg',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id');
+    vanishingPhotoId = typeof vp === 'object' ? vp.id : vp;
+
     ({ regenerateThumbnails } = require('../../scripts/regenerate-thumbnails'));
   }, 180000);
 
@@ -149,8 +167,8 @@ describe('regenerate-thumbnails script (#1148)', () => {
 
     // The old script reported an error for this photo and wrote nothing.
     expect(result.errorCount).toBe(0);
-    // The external photo plus the repair row below; neither video is touched.
-    expect(result.successCount).toBe(2);
+    // The external photo, the repair row and the vanishing one; no video.
+    expect(result.successCount).toBe(3);
 
     const row = await db('photos').where('id', externalPhotoId).first();
     expect(row.thumbnail_path).toBeTruthy();
@@ -188,7 +206,7 @@ describe('regenerate-thumbnails script (#1148)', () => {
 
     expect(result.errorCount).toBe(0);
     expect(result.successCount).toBe(0);
-    expect(result.skipCount).toBe(2);
+    expect(result.skipCount).toBe(3);
 
     const after = await db('photos').where('id', externalPhotoId).first();
     expect(after.thumbnail_path).toBe(before.thumbnail_path);
@@ -207,7 +225,7 @@ describe('regenerate-thumbnails script (#1148)', () => {
     // "skipped" from an unchanged path reports this repair as already valid —
     // the one number an operator running this is actually reading.
     expect(result.successCount).toBe(1);
-    expect(result.skipCount).toBe(1);
+    expect(result.skipCount).toBe(2);
     expect(result.errorCount).toBe(0);
     expect(fs.existsSync(onDisk)).toBe(true);
   });
@@ -218,10 +236,35 @@ describe('regenerate-thumbnails script (#1148)', () => {
     // full-size image. The old script only ever produced `thumb_<filename>` at
     // a hard-coded 300px and could not backfill them at all.
     const { THUMBNAIL_WIDTHS } = require('../../src/services/imageProcessor');
-    const imageRows = 2; // the external photo and the repaired one; videos excluded
+    const imageRows = 3; // external, repaired and vanishing; videos excluded
     const result = await regenerateThumbnails(eventId, { tiers: true });
 
     expect(result.errorCount).toBe(0);
     expect(result.tierCount).toBe(THUMBNAIL_WIDTHS.length * imageRows);
+    expect(result.tierFailures).toBe(0);
+  });
+
+  it('reports tiers it could not build instead of claiming success', async () => {
+    // ensureThumbnailAtWidth handles the expected failures itself and returns
+    // NULL rather than throwing — an unreachable mount, a storage write that
+    // did not land. A try/catch alone never sees those, so the run counted
+    // zero errors and printed a clean summary after backfilling nothing.
+    //
+    // Reproduced the honest way: cache the canonical rendition, then take the
+    // source away. The canonical is served from cache; the tiers still need
+    // the original.
+    const row = await db('photos').where('id', vanishingPhotoId).first();
+    expect(row.thumbnail_path).toBeTruthy();
+
+    const { deleteThumbnailTiers } = require('../../src/services/imageProcessor');
+    await deleteThumbnailTiers(row).catch(() => {});
+    await fs.promises.rm(path.join(externalRoot, 'vanishing.jpg'));
+
+    const result = await regenerateThumbnails(eventId, { tiers: true });
+
+    expect(result.tierFailures).toBeGreaterThan(0);
+    // Still not an error against the photo: the canonical rendition is intact
+    // and the gallery falls back to it.
+    expect(result.errorCount).toBe(0);
   });
 });
