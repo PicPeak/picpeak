@@ -192,6 +192,13 @@ class FeedbackService {
             photo_id: photoId,
             event_id: eventId,
             feedback_type,
+            // A hidden row is not there (#1150). Without this the guest saw an
+            // empty heart — every read surface treats hidden as absent — and
+            // clicking it found the hidden row and TOGGLED IT OFF, so the
+            // click appeared to do nothing and it took two more to get back to
+            // a filled heart. Skipping it makes the click create a fresh,
+            // visible row, which is what the guest is asking for.
+            is_hidden: false,
           });
         if (guest_id) {
           duplicateQuery.where('guest_id', guest_id);
@@ -555,6 +562,11 @@ class FeedbackService {
    */
   async moderateFeedback(feedbackId, action, adminId) {
     try {
+      const target = await db('photo_feedback').where('id', feedbackId).first();
+      if (!target) {
+        throw new Error('Feedback not found');
+      }
+
       const updates = {
         updated_at: new Date()
       };
@@ -569,14 +581,8 @@ class FeedbackService {
         updates.is_hidden = true;
       }
       
-      const feedback = await db('photo_feedback')
-        .where('id', feedbackId)
-        .first();
-      
-      if (!feedback) {
-        throw new Error('Feedback not found');
-      }
-      
+      const feedback = target;
+
       await db('photo_feedback')
         .where('id', feedbackId)
         .update(updates);
