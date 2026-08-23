@@ -92,7 +92,7 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
 
 export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
   const { t } = useTranslation();
-  const { logout, isClient } = useGalleryAuth();
+  const { logout, isClient, viaCustomer } = useGalleryAuth();
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
@@ -1010,12 +1010,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   // Does this session hold something worth dropping? A password gallery and a
   // PIN client obviously do. So does a customer-portal session: its token
-  // bypasses reveal mode, so it can open a gallery a plain visitor cannot, and
-  // it lives for 24h in a cookie. It reports accessLevel 'guest' with
-  // isClient false, so without the server flag the gate would hide the only
-  // control that clears it — on a shared browser, for the whole TTL (#1149).
-  const showLogoutControl = requiresPassword || isClient
-    || Boolean((data as { via_customer?: boolean } | undefined)?.via_customer);
+  // bypasses reveal mode, so it opens galleries a plain visitor cannot, and it
+  // lives for 24h in a cookie the customer logout does not clear. Hiding the
+  // control would remove the only way to drop it (#1149).
+  //
+  // Read from the auth context, which resolves this from /auth/session on
+  // mount — NOT from the photos payload. That response is cached by React
+  // Query for five minutes on a key that knows nothing about the session, so
+  // opening a gallery as a guest and then from the portal would have reused
+  // the guest answer, and vice versa.
+  const showLogoutControl = requiresPassword || isClient || viaCustomer;
 
   // For full-page layouts, render just the PhotoGridWithLayouts without any wrappers
   if (isFullPageLayout) {

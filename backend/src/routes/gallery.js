@@ -988,12 +988,6 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     const downloadPolicy = await resolveEventDownloadPolicy(req.event);
 
     res.json({
-      // Was this session opened from the customer portal (#1149)? Portal
-      // tokens run at accessLevel 'guest' but carry via:'customer', and they
-      // BYPASS REVEAL MODE — so unlike a plain guest they hold a credential
-      // worth dropping, even on a gallery that needs no password. The frontend
-      // cannot tell otherwise: accessLevel is 'guest' and isClient is false.
-      via_customer: !!req.viaCustomer,
       event: {
         id: req.event.id,
         event_name: req.event.event_name,

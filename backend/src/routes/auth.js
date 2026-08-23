@@ -819,6 +819,17 @@ router.get('/session', async (req, res) => {
         user: decoded.username || decoded.eventSlug,
         eventSlug: decoded.eventSlug,
         adminUsername: decoded.username,
+        // What KIND of gallery session this cookie is (#1149). The frontend
+        // kept this in sessionStorage, which is per-tab: reopening a gallery
+        // in a second tab lost 'client' while the cookie — and therefore the
+        // backend — still treated it as one. Reported from the token so a
+        // restored session knows what it actually is.
+        //
+        // viaCustomer marks a portal-minted token. It runs at accessLevel
+        // 'guest' but bypasses reveal mode, so it is a credential even though
+        // it does not look like one.
+        accessLevel: decoded.type === 'gallery' ? (decoded.accessLevel || 'guest') : undefined,
+        viaCustomer: decoded.type === 'gallery' ? decoded.via === 'customer' : undefined,
         // Full admin payload (or null) — lets the SPA hydrate its user
         // state after a redirect-established session (SSO, #798) where no
         // login JSON response ever reached it.
