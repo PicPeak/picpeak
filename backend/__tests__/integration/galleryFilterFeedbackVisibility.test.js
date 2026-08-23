@@ -191,6 +191,22 @@ describe('guest filters and show_feedback_to_guests (#1044)', () => {
       expect(await filter('liked')).toEqual([mine]);
     });
 
+    it('drops the viewer\'s own feedback once an admin hides it', async () => {
+      // Moderation has to reach the filter too. getPhotoFeedback excludes
+      // hidden rows for the guest's OWN feedback, so a photo matching here
+      // would come back with nothing visible on it to explain why.
+      await db('photo_feedback')
+        .where({ photo_id: mine, guest_id: myGuestRowId, feedback_type: 'like' })
+        .update({ is_hidden: true });
+
+      expect(await filter('liked')).toEqual([]);
+
+      await db('photo_feedback')
+        .where({ photo_id: mine, guest_id: myGuestRowId, feedback_type: 'like' })
+        .update({ is_hidden: false });
+      expect(await filter('liked')).toEqual([mine]);
+    });
+
     it('ignores a guest_id supplied by the caller', async () => {
       // The own-half is resolved from the request identity. If it honoured the
       // query string instead, anyone holding another guest's identifier could

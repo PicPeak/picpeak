@@ -750,7 +750,14 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         let guestFeedbackByType = null;
         let guestColorLabels = null;
         {
-          const viewerFeedback = db('photo_feedback').where({ event_id: req.event.id });
+          // Hidden rows are excluded, matching what the viewer can actually
+          // SEE: getPhotoFeedback drops is_hidden for the guest's own feedback
+          // too, so without this a photo could come back under
+          // `?filter=commented` with no comment visible on it. Unapproved rows
+          // are NOT excluded — a comment still in the moderation queue is
+          // still the viewer's own, and the same guest-own read keeps it.
+          const viewerFeedback = db('photo_feedback')
+            .where({ event_id: req.event.id, is_hidden: false });
           if (req.guest?.id) {
             viewerFeedback.where('guest_id', req.guest.id);
           } else {
