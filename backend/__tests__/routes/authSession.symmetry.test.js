@@ -148,9 +148,9 @@ function signAdminToken({ id = 1, username = 'admin', iat, exp }) {
   );
 }
 
-function signGalleryToken({ eventId = 100, eventSlug = 'wedding' } = {}) {
+function signGalleryToken({ eventId = 100, eventSlug = 'wedding', ...extra } = {}) {
   return jwt.sign(
-    { eventId, eventSlug, type: 'gallery' },
+    { eventId, eventSlug, type: 'gallery', ...extra },
     process.env.JWT_SECRET,
     { expiresIn: '1h', issuer: 'picpeak-auth' }
   );
@@ -299,6 +299,58 @@ describe('GET /auth/session — symmetry with protected middleware', () => {
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.valid).toBe(true);
+  });
+
+  /**
+   * What KIND of gallery session this is (#1149).
+   *
+   * The frontend used to keep this in sessionStorage, which is per-TAB while
+   * the cookie is per-browser: a gallery reopened in a second tab lost
+   * 'client' even though the backend still served it as one, and the UI hid
+   * the only control that clears the privileged cookie. Reported from the
+   * token so a restored session knows what it actually is.
+   */
+  describe('gallery session kind', () => {
+    beforeEach(() => {
+      fakeDb.events.push({
+        id: 100,
+        slug: 'wedding',
+        is_active: true,
+        is_archived: false,
+        expires_at: new Date(Date.now() + 86400_000),
+      });
+    });
+
+    it('reports a PIN-client session as client', async () => {
+      const res = await request(makeApp())
+        .get('/auth/session?slug=wedding')
+        .set('Authorization', `Bearer ${signGalleryToken({ accessLevel: 'client' })}`);
+      expect(res.body.valid).toBe(true);
+      expect(res.body.accessLevel).toBe('client');
+      expect(res.body.viaCustomer).toBe(false);
+    });
+
+    it('reports a customer-portal session, which looks like a guest', async () => {
+      // via:'customer' runs at accessLevel 'guest' but bypasses reveal mode,
+      // so it is a credential that does not look like one.
+      const res = await request(makeApp())
+        .get('/auth/session?slug=wedding')
+        .set('Authorization', `Bearer ${signGalleryToken({ via: 'customer', customerId: 7 })}`);
+      expect(res.body.valid).toBe(true);
+      expect(res.body.accessLevel).toBe('guest');
+      expect(res.body.viaCustomer).toBe(true);
+    });
+
+    it('reports a plain guest as neither', async () => {
+      // The flags have to discriminate, or they would just hand every visitor
+      // a Logout button back.
+      const res = await request(makeApp())
+        .get('/auth/session?slug=wedding')
+        .set('Authorization', `Bearer ${signGalleryToken()}`);
+      expect(res.body.valid).toBe(true);
+      expect(res.body.accessLevel).toBe('guest');
+      expect(res.body.viaCustomer).toBe(false);
+    });
   });
 
   it('returns valid:false when the token is revoked', async () => {
