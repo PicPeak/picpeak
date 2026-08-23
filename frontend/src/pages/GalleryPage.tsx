@@ -419,14 +419,51 @@ export const GalleryPage: React.FC = () => {
 
   // Show gallery view if authenticated
   if (isAuthenticated && event) {
-    return <GalleryView slug={gallerySlugForView} event={event} />;
+    return <GalleryView slug={gallerySlugForView} event={event} requiresPassword={requiresPassword} />;
   }
 
   // Public gallery: auto-login is in flight (or about to fire). Show the
   // skeleton instead of the "publicly accessible — loading photos" card so
   // visitors see one continuous skeleton until real photos appear (#321).
   if (!requiresPassword) {
-    return <GallerySkeleton />;
+    if (!autoLoginAttempted || isLoggingIn) {
+      return <GallerySkeleton />;
+    }
+
+    // Auto-login has run and we are still not authenticated (#1149).
+    //
+    // Returning the skeleton here meant it never stopped: the effect above is
+    // latched on autoLoginAttempted and will not fire again, so the visitor
+    // sat on a loading gallery until they reloaded by hand. It also swallowed
+    // loginError completely — a public gallery that failed to open showed no
+    // reason, because this branch returns before the form that renders it.
+    //
+    // Reachable two ways: a failed or expired auto-login, and clearing the
+    // session from inside the gallery (the Logout button that should not have
+    // been there, or GalleryView's 401 handler). Retry re-arms the latch; it
+    // is a button rather than an automatic re-fire so a genuinely failing
+    // gallery cannot spin.
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4"
+        style={{ backgroundColor: 'var(--color-background, #fafafa)' }}>
+        <Card className="w-full max-w-md">
+          <CardContent className="p-6 text-center">
+            <AlertCircle className="w-10 h-10 mx-auto mb-3 text-muted-theme" />
+            <p className="text-base mb-4">
+              {loginError || t('gallery.failedToLoad', 'Failed to load gallery')}
+            </p>
+            <Button
+              onClick={() => {
+                setLoginError(null);
+                setAutoLoginAttempted(false);
+              }}
+            >
+              {t('gallery.tryAgain', 'Try again')}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   // Show login form

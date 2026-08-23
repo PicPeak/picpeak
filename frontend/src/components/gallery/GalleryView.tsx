@@ -55,6 +55,19 @@ interface GalleryViewProps {
     info_mode?: 'inherit' | 'custom' | 'off';
     info_markdown?: string | null;
   };
+  /**
+   * Whether this gallery is password-protected (#1149).
+   *
+   * Drives the Logout button. Logging out of a gallery that asks for nothing
+   * is meaningless — there is no credential to drop and nothing to return to
+   * — and it used to strand the visitor: GalleryPage's auto-login is a
+   * one-shot latch, so clearing the session left the page rendering its
+   * skeleton until a manual reload.
+   *
+   * A client (PIN) session still gets the button on a public gallery: that
+   * one IS a credential, and it is the only way back to the guest view.
+   */
+  requiresPassword?: boolean;
 }
 
 // Convert default_photo_sort DB value to internal sortBy state
@@ -76,7 +89,7 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
   }
 };
 
-export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
+export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
   const { t } = useTranslation();
   const { logout, isClient } = useGalleryAuth();
   const { setTheme, theme } = useTheme();
@@ -1149,7 +1162,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         heroLogoVisible={data?.event?.hero_logo_visible !== false}
         heroLogoSize={data?.event?.hero_logo_size || undefined}
         headerStyle={data?.event?.header_style || theme.headerStyle}
-        showLogout={true}
+        showLogout={requiresPassword || isClient}
         onLogout={logout}
         // Old Download All header button is replaced by the new
         // showHeaderDownload below — accent-coloured, always visible when
