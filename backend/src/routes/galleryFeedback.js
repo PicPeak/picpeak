@@ -414,7 +414,14 @@ router.get('/:slug/my-feedback',
 
       const query = db('photo_feedback')
         .join('photos', 'photo_feedback.photo_id', 'photos.id')
-        .where('photo_feedback.event_id', event.id);
+        .where('photo_feedback.event_id', event.id)
+        // Hidden rows are absent for the guest who left them too (#1150). In
+        // guest identity mode GalleryView builds its Liked/Favorited/Rated
+        // chips and their filters from THIS array rather than from is_liked,
+        // so without this a hidden like left an empty heart while the Liked
+        // chip still counted it and still surfaced the photo. Unapproved rows
+        // stay: a comment in the moderation queue is still the guest's own.
+        .where('photo_feedback.is_hidden', false);
 
       // Prefer guest_id lookup when a verified guest token is present
       // (per-person identity). Fall back to the device hash otherwise.

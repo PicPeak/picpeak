@@ -147,7 +147,12 @@ class FeedbackService {
    */
   async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier) {
     const query = db('photo_feedback')
-      .where({ event_id: eventId, feedback_type: feedbackType });
+      // Hidden rows do not count against the guest's cap (#1150). They are
+      // absent everywhere else — the heart is empty, the tallies skip them,
+      // and submitFeedback now treats one as room for a fresh row. Counting
+      // them here would meet that fresh row with limit_reached and leave the
+      // control dead until the guest un-likes something they can still see.
+      .where({ event_id: eventId, feedback_type: feedbackType, is_hidden: false });
     if (guestId) {
       query.where('guest_id', guestId);
     } else {
@@ -586,6 +591,29 @@ class FeedbackService {
       await db('photo_feedback')
         .where('id', feedbackId)
         .update(updates);
+
+      // Unhiding can collide with a replacement (#1150). A hidden row reads as
+      // absent, so the guest may well have re-added the same feedback in the
+      // meantime; making the original visible again would leave TWO visible
+      // rows for one guest on one photo — double-counted in the tallies, and
+      // needing two toggles to clear because each one deletes a single row.
+      //
+      // Converge on the row the admin acted on, the same way the submit path
+      // collapses racy duplicates. Comments are exempt: several from one guest
+      // on one photo is normal.
+      if (updates.is_hidden === false && feedback.feedback_type !== 'comment') {
+        const superseded = db('photo_feedback')
+          .where({
+            photo_id: feedback.photo_id,
+            event_id: feedback.event_id,
+            feedback_type: feedback.feedback_type,
+            is_hidden: false,
+          })
+          .whereNot('id', feedbackId);
+        if (feedback.guest_id) superseded.where('guest_id', feedback.guest_id);
+        else superseded.where('guest_identifier', feedback.guest_identifier);
+        await superseded.delete();
+      }
       
       // Update photo stats if visibility changed
       await this.updatePhotoFeedbackStats(feedback.photo_id);

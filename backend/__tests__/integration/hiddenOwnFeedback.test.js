@@ -100,6 +100,7 @@ describe('a guest\'s own hidden feedback (#1150)', () => {
     app.use(express.json());
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/gallery'));
+    app.use('/api/gallery', require('../../src/routes/galleryFeedback'));
   }, 180000);
 
   afterAll(async () => { if (cleanup) await cleanup(); });
@@ -140,6 +141,70 @@ describe('a guest\'s own hidden feedback (#1150)', () => {
         is_approved: true, is_hidden: true, created_at: new Date().toISOString(),
       });
       expect((await getPhoto()).my_color_label).toBeFalsy();
+    });
+  });
+
+  describe('and every other surface agrees', () => {
+    it('keeps a hidden like out of /my-feedback', async () => {
+      await like();
+      await db('photo_feedback')
+        .where({ photo_id: photoId, feedback_type: 'like' })
+        .update({ is_hidden: true });
+
+      const res = await request(app)
+        .get(`/api/gallery/${SLUG}/my-feedback`)
+        .set('Authorization', `Bearer ${galleryToken()}`)
+        .set('x-guest-token', guestToken());
+      expect(res.status).toBe(200);
+
+      // In guest identity mode the Liked/Favorited/Rated chips and their
+      // filters are built from THIS array, not from is_liked — so a hidden
+      // like left an empty heart while the chip still counted it.
+      expect(res.body.filter((f) => f.feedback_type === 'like')).toHaveLength(0);
+    });
+
+    it('does not count a hidden row against the guest cap', async () => {
+      await db('event_feedback_settings')
+        .where({ event_id: eventId }).update({ max_likes_per_guest: 1 });
+      await like();
+      await db('photo_feedback')
+        .where({ photo_id: photoId, feedback_type: 'like' })
+        .update({ is_hidden: true });
+
+      // The hidden row is room, not an occupant: the guest sees an empty
+      // heart, and meeting that click with limit_reached leaves the control
+      // dead until they un-like something they can still see.
+      const result = await feedbackService.submitFeedback(photoId, eventId, {
+        feedback_type: 'like', guest_identifier: ME, guest_id: myGuestRowId,
+      });
+      expect(result.limit_reached).toBeUndefined();
+
+      await db('event_feedback_settings')
+        .where({ event_id: eventId }).update({ max_likes_per_guest: null });
+    });
+
+    it('collapses the replacement when an admin unhides the original', async () => {
+      await like();
+      const original = await db('photo_feedback').where({ photo_id: photoId }).first();
+      await db('photo_feedback').where('id', original.id).update({ is_hidden: true });
+
+      // The guest, seeing an empty heart, likes again — a second row.
+      await feedbackService.submitFeedback(photoId, eventId, {
+        feedback_type: 'like', guest_identifier: ME, guest_id: myGuestRowId,
+      });
+      expect(await db('photo_feedback').where({ photo_id: photoId })).toHaveLength(2);
+
+      await feedbackService.moderateFeedback(original.id, 'approve', 1);
+
+      // Two visible rows for one guest would double-count in the tallies and
+      // need two toggles to clear, since each deletes a single row.
+      const visible = await db('photo_feedback')
+        .where({ photo_id: photoId, feedback_type: 'like', is_hidden: false });
+      expect(visible).toHaveLength(1);
+      expect(visible[0].id).toBe(original.id);
+
+      await feedbackService.updatePhotoFeedbackStats(photoId);
+      expect((await db('photos').where('id', photoId).first()).like_count).toBe(1);
     });
   });
 
