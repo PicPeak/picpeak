@@ -1058,7 +1058,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           heroDividerStyle={data?.event?.hero_divider_style || theme.heroDividerStyle || 'wave'}
           heroImageAnchor={data?.event?.hero_image_anchor || 'center'}
           welcomeMessage={event.welcome_message}
-          onLogout={logout}
+          // Same gate as the standard layout below (#1149). These layouts
+          // render the button on the callback being present rather than on a
+          // showLogout flag, so withholding it is how the gate reaches them.
+          onLogout={requiresPassword || isClient ? logout : undefined}
           showOriginalFilename={showOriginalFilename}
         />
 
