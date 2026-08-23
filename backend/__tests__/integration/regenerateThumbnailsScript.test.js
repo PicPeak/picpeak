@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const sharp = require('sharp');
+const { execFile } = require('child_process');
 
 describe('regenerate-thumbnails script (#1148)', () => {
   let tmpDir; let db; let cleanup; let regenerateThumbnails;
@@ -267,4 +268,30 @@ describe('regenerate-thumbnails script (#1148)', () => {
     // and the gallery falls back to it.
     expect(result.errorCount).toBe(0);
   });
+
+  /** Run the CLI the way cron does, and hand back its exit status. */
+  const runCli = (args = []) => new Promise((resolve) => {
+    execFile(
+      process.execPath,
+      [path.join(__dirname, '..', '..', 'scripts', 'regenerate-thumbnails.js'), ...args],
+      { env: { ...process.env }, cwd: path.join(__dirname, '..', '..') },
+      (error, stdout, stderr) => resolve({ code: error?.code ?? 0, stdout, stderr })
+    );
+  });
+
+  it('exits nonzero when work was left unfinished', async () => {
+    // Exit status is the only thing a cron job reads. `vanishing.jpg` still
+    // has no source, so its tiers cannot be built.
+    const failed = await runCli([String(eventId)]);
+    expect(failed.code).toBe(1);
+    expect(failed.stderr).toContain('completed with failures');
+  }, 120000);
+
+  it('exits zero when there is nothing left to do', async () => {
+    // Same event with tiers switched off: every canonical rendition is already
+    // valid, so a clean run must not cry wolf at automation.
+    const ok = await runCli([String(eventId), '--no-tiers']);
+    expect(ok.code).toBe(0);
+    expect(ok.stdout).toContain('Script completed successfully');
+  }, 120000);
 });

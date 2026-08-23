@@ -166,8 +166,23 @@ if (require.main === module) {
   }
 
   regenerateThumbnails(eventId, { tiers })
-    .then(() => db.destroy())
-    .then(() => {
+    .then(async (result) => {
+      await db.destroy();
+      // Exit status is the only thing a cron job reads. Resolving with a
+      // nonzero errorCount and still exiting 0 told automation the backfill
+      // was done when it had failed — which is how an unavailable mount stays
+      // unnoticed until someone opens a gallery.
+      //
+      // tierFailures counts too: a run that was asked for tiers and could not
+      // build them is incomplete, even though the canonical renditions are
+      // intact and the gallery still works.
+      if (result.errorCount || result.tierFailures) {
+        console.error(
+          `Script completed with failures: ${result.errorCount} photo(s), `
+          + `${result.tierFailures} tier(s)`
+        );
+        process.exit(1);
+      }
       console.log('Script completed successfully');
       process.exit(0);
     })
