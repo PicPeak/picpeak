@@ -428,6 +428,11 @@ class FeedbackService {
       
       const totalStats = await db('photo_feedback')
         .where('event_id', eventId)
+        // Hidden rows do not count, the same rule the photo counters above
+        // already apply — without this the two halves of THIS response
+        // disagreed, and a hidden row preserved beside its replacement (#1150)
+        // is counted twice.
+        .where('is_hidden', false)
         .select(
           db.raw('COUNT(DISTINCT CASE WHEN feedback_type = ? THEN guest_identifier END) as unique_raters', ['rating']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_ratings', ['rating']),
@@ -611,7 +616,13 @@ class FeedbackService {
       // Converge on the row the admin acted on, the same way the submit path
       // collapses racy duplicates. Comments are exempt: several from one guest
       // on one photo is normal.
-      if (updates.is_hidden === false && feedback.feedback_type !== 'comment') {
+      // Needs a stable identity to scope the collapse to ONE guest. With
+      // neither id nor identifier the fallback degrades to
+      // `guest_identifier IS NULL`, which is every identifier-less row on the
+      // photo — other people's, deleted. Nothing to converge in that case, so
+      // leave it alone.
+      const collapseIdentity = feedback.guest_id || feedback.guest_identifier;
+      if (updates.is_hidden === false && feedback.feedback_type !== 'comment' && collapseIdentity) {
         const superseded = db('photo_feedback')
           .where({
             photo_id: feedback.photo_id,

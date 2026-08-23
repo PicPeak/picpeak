@@ -208,6 +208,27 @@ describe('a guest\'s own hidden feedback (#1150)', () => {
       expect(survivor.color_label).toBe('red');
     });
 
+    it('leaves other anonymous rows alone when there is no identity to scope by', async () => {
+      // With neither guest_id nor guest_identifier the collapse scope degrades
+      // to `guest_identifier IS NULL` — every identifier-less row on the
+      // photo, i.e. other people's. Verified: knex renders that as `is null`.
+      const anon = (extra) => ({
+        photo_id: photoId, event_id: eventId, feedback_type: 'like',
+        is_approved: true, created_at: new Date().toISOString(), ...extra,
+      });
+      const [h] = await db('photo_feedback').insert(anon({ is_hidden: true })).returning('id');
+      const hiddenId = typeof h === 'object' ? h.id : h;
+      await db('photo_feedback').insert(anon({ is_hidden: false }));
+      await db('photo_feedback').insert(anon({ is_hidden: false }));
+
+      await feedbackService.moderateFeedback(hiddenId, 'approve', 1);
+
+      // All three survive: two unrelated visitors plus the unhidden one.
+      expect(await db('photo_feedback')
+        .where({ photo_id: photoId, feedback_type: 'like', is_hidden: false }))
+        .toHaveLength(3);
+    });
+
     it('collapses the replacement when an admin unhides the original', async () => {
       await like();
       const original = await db('photo_feedback').where({ photo_id: photoId }).first();
