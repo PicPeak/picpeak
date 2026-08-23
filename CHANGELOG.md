@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.46.3](https://github.com/PicPeak/picpeak/compare/v3.46.2...v3.46.3) (2026-08-22)
+
+
+### Bug Fixes
+
+* **gallery:** a missing file must not take the backend down ([#1128](https://github.com/PicPeak/picpeak/issues/1128)) ([da44f19](https://github.com/PicPeak/picpeak/commit/da44f1947b8317b47271f4f2a98b284b25d752c1))
+* **gallery:** give masonry tiles their real shape back ([#1130](https://github.com/PicPeak/picpeak/issues/1130), [#1131](https://github.com/PicPeak/picpeak/issues/1131)) ([d977e3e](https://github.com/PicPeak/picpeak/commit/d977e3e296deeb19c26f1e5a98258eec323d120d))
+* **thumbnails:** regenerate external photos, and stop destroying good ones ([#1129](https://github.com/PicPeak/picpeak/issues/1129)) ([dc9e3cd](https://github.com/PicPeak/picpeak/commit/dc9e3cdc5e00ac634f581e8d6b13107fe4839152))
+
 ## [3.46.2](https://github.com/PicPeak/picpeak/compare/v3.46.1...v3.46.2) (2026-08-21)
 
 
