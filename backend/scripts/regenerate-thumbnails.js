@@ -31,6 +31,7 @@ const { db } = require('../src/database/db');
 const {
   ensureThumbnail,
   ensureThumbnailAtWidth,
+  isThumbnailValid,
   THUMBNAIL_WIDTHS,
 } = require('../src/services/imageProcessor');
 
@@ -51,12 +52,25 @@ async function regenerateThumbnails(eventId = null, { tiers = true } = {}) {
     console.log(`Filtering for event ID: ${eventId}`);
   }
 
-  // Skip videos, matching the admin route. A video's thumbnail is a poster
-  // frame produced by videoProcessor, not a resize of the stored file, so
-  // handing the container to Sharp here only ever produced one error per row.
-  query = query.where(function () {
-    this.whereNull('media_type').orWhere('media_type', '!=', 'video');
-  });
+  // Skip videos. A video's thumbnail is a poster frame produced by
+  // videoProcessor, not a resize of the stored file, so handing the container
+  // to Sharp here only ever produced one error per row.
+  //
+  // Tested on every marker a video row can carry, not media_type alone:
+  // fileWatcher.processNewPhoto writes `type` and `mime_type` but never
+  // media_type, which defaults to 'image' — so an auto-imported video passes a
+  // media_type-only filter. Each clause is null-safe on its own so a row that
+  // simply has no mime_type is not swept up with them.
+  query = query
+    .where(function () {
+      this.whereNull('media_type').orWhere('media_type', '!=', 'video');
+    })
+    .where(function () {
+      this.whereNull('type').orWhere('type', '!=', 'video');
+    })
+    .where(function () {
+      this.whereNull('mime_type').orWhereNot('mime_type', 'like', 'video/%');
+    });
 
   const photos = await query;
   console.log(`Found ${photos.length} photos to process`);
@@ -70,6 +84,12 @@ async function regenerateThumbnails(eventId = null, { tiers = true } = {}) {
     const label = photo.filename || `photo ${photo.id}`;
     try {
       const existing = photo.thumbnail_path;
+      // Asked BEFORE the call, not inferred from the returned path afterwards.
+      // On local and external storage the key is deterministic, so repairing a
+      // missing or corrupt thumbnail hands back the identical string — and
+      // comparing paths would report that repair as "already valid", which is
+      // the one number an operator running this is actually reading.
+      const wasValid = existing ? await isThumbnailValid(existing) : false;
       const thumbnailPath = await ensureThumbnail(photo);
 
       if (!thumbnailPath) {
@@ -78,7 +98,7 @@ async function regenerateThumbnails(eventId = null, { tiers = true } = {}) {
         continue;
       }
 
-      if (existing && thumbnailPath === existing) {
+      if (wasValid && thumbnailPath === existing) {
         skipCount++;
       } else {
         successCount++;

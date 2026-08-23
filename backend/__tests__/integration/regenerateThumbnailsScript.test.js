@@ -21,7 +21,7 @@ const sharp = require('sharp');
 
 describe('regenerate-thumbnails script (#1148)', () => {
   let tmpDir; let db; let cleanup; let regenerateThumbnails;
-  let eventId; let externalPhotoId; let videoPhotoId;
+  let eventId; let externalPhotoId; let videoPhotoId; let watcherVideoId; let repairPhotoId;
   let externalRoot;
 
   beforeAll(async () => {
@@ -88,6 +88,46 @@ describe('regenerate-thumbnails script (#1148)', () => {
     }).returning('id');
     videoPhotoId = typeof v === 'object' ? v.id : v;
 
+    // How fileWatcher.processNewPhoto actually writes a video: `type` and
+    // `mime_type` set, media_type left to its 'image' default. A media_type-only
+    // filter lets this through and hands the container to Sharp.
+    //
+    // The file has to EXIST, otherwise the row fails resolution and looks
+    // skipped for the wrong reason — the bug is Sharp being handed a video, not
+    // a missing source. Real MP4 header bytes, no image in sight.
+    await fs.promises.writeFile(
+      path.join(externalRoot, 'watched.mp4'),
+      Buffer.from('00000018667479706d70343200000000', 'hex')
+    );
+    const [wv] = await db('photos').insert({
+      event_id: eventId,
+      filename: 'watched.mp4',
+      path: 'regen-script-event/watched.mp4',
+      type: 'video',
+      mime_type: 'video/mp4',
+      source_origin: 'external',
+      external_relpath: 'watched.mp4',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id');
+    watcherVideoId = typeof wv === 'object' ? wv.id : wv;
+    expect((await db('photos').where('id', watcherVideoId).first()).media_type).not.toBe('video');
+
+    // A photo whose thumbnail_path points at something that is no longer there.
+    await sharp({
+      create: { width: 900, height: 600, channels: 3, background: { r: 200, g: 40, b: 40 } },
+    }).jpeg().toFile(path.join(externalRoot, 'repair.jpg'));
+    const [rp] = await db('photos').insert({
+      event_id: eventId,
+      filename: 'repair.jpg',
+      path: 'regen-script-event/repair.jpg',
+      type: 'individual',
+      thumbnail_path: 'thumbnails/thumb_ext_missing_repair.jpg',
+      source_origin: 'external',
+      external_relpath: 'repair.jpg',
+      uploaded_at: new Date().toISOString(),
+    }).returning('id');
+    repairPhotoId = typeof rp === 'object' ? rp.id : rp;
+
     ({ regenerateThumbnails } = require('../../scripts/regenerate-thumbnails'));
   }, 180000);
 
@@ -109,7 +149,8 @@ describe('regenerate-thumbnails script (#1148)', () => {
 
     // The old script reported an error for this photo and wrote nothing.
     expect(result.errorCount).toBe(0);
-    expect(result.successCount).toBe(1);
+    // The external photo plus the repair row below; neither video is touched.
+    expect(result.successCount).toBe(2);
 
     const row = await db('photos').where('id', externalPhotoId).first();
     expect(row.thumbnail_path).toBeTruthy();
@@ -129,16 +170,46 @@ describe('regenerate-thumbnails script (#1148)', () => {
     expect(row.thumbnail_path).toBeFalsy();
   });
 
+  it('leaves a watcher-imported video alone, which carries no media_type', async () => {
+    // fileWatcher writes type + mime_type and lets media_type default to
+    // 'image', so filtering on media_type alone still fed these to Sharp. The
+    // signal is errorCount: the images are already done by now, so the only
+    // thing that can fail this run is a video reaching Sharp.
+    const result = await regenerateThumbnails(eventId, { tiers: false });
+
+    expect(result.errorCount).toBe(0);
+    const row = await db('photos').where('id', watcherVideoId).first();
+    expect(row.thumbnail_path).toBeFalsy();
+  });
+
   it('is idempotent — a second run skips instead of rebuilding', async () => {
     const before = await db('photos').where('id', externalPhotoId).first();
     const result = await regenerateThumbnails(eventId, { tiers: false });
 
     expect(result.errorCount).toBe(0);
     expect(result.successCount).toBe(0);
-    expect(result.skipCount).toBe(1);
+    expect(result.skipCount).toBe(2);
 
     const after = await db('photos').where('id', externalPhotoId).first();
     expect(after.thumbnail_path).toBe(before.thumbnail_path);
+  });
+
+  it('counts a repaired thumbnail as generated, not skipped', async () => {
+    // Both images are valid at this point. Destroy ONE thumbnail object while
+    // leaving thumbnail_path pointing at it — the corrupt/missing case.
+    const row = await db('photos').where('id', repairPhotoId).first();
+    const onDisk = path.join(process.env.STORAGE_PATH, row.thumbnail_path);
+    await fs.promises.rm(onDisk);
+
+    const result = await regenerateThumbnails(eventId, { tiers: false });
+
+    // On local and external storage the rebuilt key is identical, so inferring
+    // "skipped" from an unchanged path reports this repair as already valid —
+    // the one number an operator running this is actually reading.
+    expect(result.successCount).toBe(1);
+    expect(result.skipCount).toBe(1);
+    expect(result.errorCount).toBe(0);
+    expect(fs.existsSync(onDisk)).toBe(true);
   });
 
   it('backfills the responsive tiers, which is what a backfill is for', async () => {
@@ -147,10 +218,10 @@ describe('regenerate-thumbnails script (#1148)', () => {
     // full-size image. The old script only ever produced `thumb_<filename>` at
     // a hard-coded 300px and could not backfill them at all.
     const { THUMBNAIL_WIDTHS } = require('../../src/services/imageProcessor');
+    const imageRows = 2; // the external photo and the repaired one; videos excluded
     const result = await regenerateThumbnails(eventId, { tiers: true });
 
     expect(result.errorCount).toBe(0);
-    expect(result.tierCount).toBeGreaterThan(0);
-    expect(result.tierCount).toBeLessThanOrEqual(THUMBNAIL_WIDTHS.length);
+    expect(result.tierCount).toBe(THUMBNAIL_WIDTHS.length * imageRows);
   });
 });
