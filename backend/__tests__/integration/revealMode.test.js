@@ -272,6 +272,11 @@ describe('Reveal mode (#838)', () => {
       expect(res.status).toBe(200);
       expect(res.body.hidden_until_reveal).toBe(false);
       expect(res.body.photos).toHaveLength(2);
+      // Surfaced so the gallery can keep its Logout control (#1149). This is
+      // the session that just bypassed reveal, and it reports accessLevel
+      // 'guest' with isClient false — without the flag the UI cannot tell it
+      // from a plain visitor and would hide the only way to drop the token.
+      expect(res.body.via_customer).toBe(true);
     });
 
     it('a reveal_at in the past opens the gate without any stamp', async () => {
@@ -281,6 +286,9 @@ describe('Reveal mode (#838)', () => {
         .set('Authorization', `Bearer ${galleryToken()}`);
       expect(res.body.hidden_until_reveal).toBe(false);
       expect(res.body.photos).toHaveLength(2);
+      // A plain gallery token is NOT a portal session (#1149) — the flag has
+      // to discriminate, or it would just switch Logout back on for everyone.
+      expect(res.body.via_customer).toBe(false);
       await db('events').where('id', eventId).update({ reveal_at: null });
     });
   });

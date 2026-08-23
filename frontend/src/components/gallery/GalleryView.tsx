@@ -65,7 +65,8 @@ interface GalleryViewProps {
    * skeleton until a manual reload.
    *
    * A client (PIN) session still gets the button on a public gallery: that
-   * one IS a credential, and it is the only way back to the guest view.
+   * one IS a credential, and it is the only way back to the guest view. So is
+   * a customer-portal session — see `via_customer` on the /photos response.
    */
   requiresPassword?: boolean;
 }
@@ -1007,6 +1008,15 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // Skip all wrapper elements (header, footer, sidebar, filters) for these layouts
   const isFullPageLayout = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
 
+  // Does this session hold something worth dropping? A password gallery and a
+  // PIN client obviously do. So does a customer-portal session: its token
+  // bypasses reveal mode, so it can open a gallery a plain visitor cannot, and
+  // it lives for 24h in a cookie. It reports accessLevel 'guest' with
+  // isClient false, so without the server flag the gate would hide the only
+  // control that clears it — on a shared browser, for the whole TTL (#1149).
+  const showLogoutControl = requiresPassword || isClient
+    || Boolean((data as { via_customer?: boolean } | undefined)?.via_customer);
+
   // For full-page layouts, render just the PhotoGridWithLayouts without any wrappers
   if (isFullPageLayout) {
     return (
@@ -1061,7 +1071,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // Same gate as the standard layout below (#1149). These layouts
           // render the button on the callback being present rather than on a
           // showLogout flag, so withholding it is how the gate reaches them.
-          onLogout={requiresPassword || isClient ? logout : undefined}
+          onLogout={showLogoutControl ? logout : undefined}
           showOriginalFilename={showOriginalFilename}
         />
 
@@ -1165,7 +1175,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         heroLogoVisible={data?.event?.hero_logo_visible !== false}
         heroLogoSize={data?.event?.hero_logo_size || undefined}
         headerStyle={data?.event?.header_style || theme.headerStyle}
-        showLogout={requiresPassword || isClient}
+        showLogout={showLogoutControl}
         onLogout={logout}
         // Old Download All header button is replaced by the new
         // showHeaderDownload below — accent-coloured, always visible when
