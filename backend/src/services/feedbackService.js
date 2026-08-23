@@ -152,6 +152,13 @@ class FeedbackService {
             photo_id: photoId,
             event_id: eventId,
             feedback_type,
+            // A hidden row is not there (#1150). Without this the guest saw an
+            // empty heart — every read surface treats hidden as absent — and
+            // clicking it found the hidden row and TOGGLED IT OFF, so the
+            // click appeared to do nothing and it took two more to get back to
+            // a filled heart. Skipping it makes the click create a fresh,
+            // visible row, which is what the guest is asking for.
+            is_hidden: false,
           });
         if (guest_id) {
           duplicateQuery.where('guest_id', guest_id);
