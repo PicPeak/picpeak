@@ -83,6 +83,7 @@ router.get(
           db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'comment\' THEN 1 END) AS comments'),
           db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'rating\' THEN 1 END) AS ratings'),
           db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'reaction\' THEN 1 END) AS reactions'),
+          db.raw('COUNT(CASE WHEN photo_feedback.feedback_type = \'color_label\' THEN 1 END) AS color_labels'),
           db.raw('COUNT(DISTINCT photo_feedback.photo_id) AS distinct_photos')
         )
         .orderBy('gallery_guests.created_at', 'desc');
@@ -410,6 +411,7 @@ router.get(
           'photo_feedback.rating',
           'photo_feedback.comment_text',
           'photo_feedback.reaction',
+          'photo_feedback.color_label',
           'photo_feedback.created_at',
           'photos.id as photo_id',
           'photos.filename',
@@ -433,6 +435,7 @@ router.get(
         rated: [],
         commented: [],
         reacted: [],
+        labeled: [],
       };
       for (const row of feedback) {
         if (row.feedback_type === 'like') {
@@ -449,6 +452,8 @@ router.get(
           });
         } else if (row.feedback_type === 'reaction') {
           selections.reacted.push({ photo: photoFor(row), reaction: row.reaction });
+        } else if (row.feedback_type === 'color_label') {
+          selections.labeled.push({ photo: photoFor(row), color_label: row.color_label });
         }
       }
 
@@ -461,6 +466,7 @@ router.get(
             comments: selections.commented.length,
             ratings: selections.rated.length,
             reactions: selections.reacted.length,
+            color_labels: selections.labeled.length,
           },
         },
         selections,

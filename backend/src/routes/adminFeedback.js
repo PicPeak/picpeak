@@ -262,6 +262,7 @@ router.get('/events/:eventId/feedback-analytics',
         total_comments: Number(summaryData.stats?.total_comments) || 0,
         total_favorites: Number(summaryData.stats?.total_favorites) || 0,
         total_reactions: Number(summaryData.stats?.total_reactions) || 0,
+        total_color_labels: Number(summaryData.stats?.total_color_labels) || 0,
       };
       const summary = {
         average_rating: parseFloat(avgRatingResult?.average_rating || 0),
@@ -269,7 +270,7 @@ router.get('/events/:eventId/feedback-analytics',
         pending_moderation: Number(pendingModeration?.count) || 0,
         total_feedback: counts.total_ratings + counts.total_likes +
                        counts.total_comments + counts.total_favorites +
-                       counts.total_reactions
+                       counts.total_reactions + counts.total_color_labels
       };
       
       // Get top-rated photos

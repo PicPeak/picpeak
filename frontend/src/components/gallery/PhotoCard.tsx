@@ -5,6 +5,7 @@ import { AuthenticatedImage } from '../common';
 import { thumbnailUrlForTile } from './imageTiers';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { feedbackService } from '../../services/feedback.service';
+import { ColorLabelBadge } from './ColorLabelBadge';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import type { Photo } from '../../types';
 
@@ -377,6 +378,11 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       {inView && tile ? (
         <>
           <AuthenticatedImage {...imageProps} src={tileSrc} />
+
+          {/* The guest's own colour label (#1044) — visible without hovering
+              or opening anything, which is the point: the client watches
+              their selection progress across the grid. */}
+          <ColorLabelBadge colorLabel={photo.my_color_label} />
 
           {beforeOverlay}
 

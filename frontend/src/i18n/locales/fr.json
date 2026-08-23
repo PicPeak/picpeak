@@ -338,7 +338,9 @@
     "photosSelected_one": "{{count}} photo sélectionnée",
     "photosSelected_other": "{{count}} photos sélectionnées",
     "downloadSelected_one": "Télécharger {{count}} photo",
-    "downloadSelected_other": "Télécharger {{count}} photos"
+    "downloadSelected_other": "Télécharger {{count}} photos",
+    "colorFilter": "Couleur",
+    "filterByColor": "Afficher uniquement {{color}}"
   },
   "categories": {
     "title": "Catégories de photos",
@@ -892,7 +894,17 @@
       "showGalleryFilterBar": "Afficher la barre de filtre dans les galeries",
       "showGalleryFilterBarHelp": "Afficher la recherche par nom de fichier et les contrôles de tri au-dessus des galeries en disposition grille. Désactivez pour une disposition plus épurée.",
       "enablePhoneField": "Activer le champ de numéro de téléphone",
-      "enablePhoneFieldHelp": "Ajoute une entrée de numéro de téléphone optionnelle dans le formulaire d'événement. Utile pour les automatisations en aval comme la livraison WhatsApp via n8n. Toujours optionnel même lorsqu'il est activé."
+      "enablePhoneFieldHelp": "Ajoute une entrée de numéro de téléphone optionnelle dans le formulaire d'événement. Utile pour les automatisations en aval comme la livraison WhatsApp via n8n. Toujours optionnel même lorsqu'il est activé.",
+      "feedbackTypeDefaultsHelp": "Types de retours activés par défaut pour les nouvelles galeries. Les galeries existantes ne sont pas modifiées — chaque galerie reste réglable individuellement.",
+      "defaultAllowRatings": "Notes en étoiles",
+      "defaultAllowLikes": "J'aime",
+      "defaultAllowFavorites": "Favoris",
+      "defaultAllowComments": "Commentaires",
+      "defaultAllowReactions": "Réactions emoji",
+      "defaultAllowColorLabels": "Étiquettes de couleur",
+      "defaultKeybindMode": "Raccourcis par défaut de la visionneuse",
+      "keybindColors": "Couleurs uniquement — 1 vert, 2 jaune, 3 rouge",
+      "keybindLightroom": "Lightroom — 1-5 étoiles, 6-9 couleurs"
     },
     "imageSecurity": {
       "title": "Protection des images",
@@ -1659,7 +1671,15 @@
       "visibleSuccess": "Photos maintenant visibles pour les invités",
       "processingStatus": "Traitement en cours…",
       "processingFailed": "Échec du traitement",
-      "retryQueued": "Nouvelle tentative en file d'attente"
+      "retryQueued": "Nouvelle tentative en file d'attente",
+      "myMarks": "Vos marques",
+      "myMarksHelp": "Vous seul les voyez. Elles n'apparaissent jamais dans la galerie client et s'exportent vers Lightroom en XMP.",
+      "myRating": "Votre note",
+      "clearRating": "Effacer votre note",
+      "rateStars": "Noter {{count}} étoiles",
+      "markError": "Impossible d'enregistrer votre marque",
+      "yourMarkColor": "Votre marque : {{color}}",
+      "yourMarkRating": "Votre note : {{count}}"
     },
     "events": {
       "tabs": {
@@ -1715,7 +1735,8 @@
         "comments": "Commentaires",
         "ratings": "Notes",
         "reactions": "Réactions",
-        "lastSeen": "Dernière visite"
+        "lastSeen": "Dernière visite",
+        "colorLabels": "Étiquettes de couleur"
       },
       "view": "Voir les détails",
       "export": "Exporter",
@@ -1729,7 +1750,8 @@
         "favorited": "Favoris",
         "rated": "Notés",
         "reacted": "A réagi",
-        "commented": "Commentés"
+        "commented": "Commentés",
+        "labeled": "Étiquettes de couleur"
       },
       "inviteStatus": {
         "pending": "En attente",
@@ -2567,7 +2589,14 @@
       "enableRateLimiting": "Activer la limitation de débit",
       "rateLimitingDesc": "Empêcher le spam en limitant la fréquence des commentaires",
       "timeWindow": "Fenêtre de temps (minutes)",
-      "maxRequests": "Nombre maximal de requêtes"
+      "maxRequests": "Nombre maximal de requêtes",
+      "colorLabels": "Étiquettes de couleur",
+      "colorLabelsDesc": "Une couleur par invité et par photo, avec le jeu de couleurs de Lightroom pour que la sélection soit reprise via XMP",
+      "keybindMode": "Raccourcis clavier",
+      "keybindColors": "Couleurs uniquement (le plus simple)",
+      "keybindColorsDesc": "1 = vert (1er choix), 2 = jaune (2e choix), 3 = rouge (rejeté)",
+      "keybindLightroom": "Valeurs par défaut de Lightroom",
+      "keybindLightroomDesc": "1-5 attribuent les étoiles, 6-9 les couleurs rouge / jaune / vert / bleu"
     },
     "settingsUpdated": "Paramètres de commentaires mis à jour",
     "settingsUpdateError": "Échec de la mise à jour des paramètres",
@@ -2642,7 +2671,20 @@
     "onPhoto": "Sur la photo",
     "showAll_one": "Afficher tous les {{count}} commentaire en attente",
     "showAll_other": "Afficher tous les {{count}} commentaires en attente",
-    "viewAllFeedback": "Voir tous les commentaires et paramètres"
+    "viewAllFeedback": "Voir tous les commentaires et paramètres",
+    "colorLabels": {
+      "red": "Rouge",
+      "yellow": "Jaune",
+      "green": "Vert",
+      "blue": "Bleu",
+      "purple": "Violet"
+    },
+    "colorLabel": "étiquette de couleur",
+    "colorLabelsTitle": "Étiquettes de couleur",
+    "colorLabelError": "Échec de la mise à jour de l'étiquette de couleur",
+    "removeColorLabel": "Retirer l'étiquette {{color}}",
+    "setColorLabel": "Marquer comme {{color}}",
+    "markedAs": "Marqué comme {{color}}"
   },
   "filter": {
     "feedbackFilters": "Filtres de commentaires",
@@ -2660,7 +2702,11 @@
     "twoStarsPlus": "2+ étoiles",
     "threeStarsPlus": "3+ étoiles",
     "fourStarsPlus": "4+ étoiles",
-    "fiveStarsOnly": "5 étoiles uniquement"
+    "fiveStarsOnly": "5 étoiles uniquement",
+    "colorLabels": "Étiquettes de couleur",
+    "showOnlyColor": "Afficher uniquement {{color}}",
+    "myColorLabels": "Vos marques",
+    "showOnlyMyColor": "Afficher uniquement mes marques {{color}}"
   },
   "adminLogin": {
     "title": "Connexion administrateur",
@@ -2716,7 +2762,10 @@
     "exportFiltered": "Exporter les photos filtrées",
     "hint": "Sélectionnez des photos ou appliquez des filtres pour exporter",
     "exportSelected_one": "Exporter {{count}} sélectionné",
-    "exportSelected_other": "Exporter {{count}} sélectionnés"
+    "exportSelected_other": "Exporter {{count}} sélectionnés",
+    "markSource": "Étoiles et couleur XMP depuis",
+    "markSourceClient": "Sélections du client",
+    "markSourceMine": "Vos marques"
   },
   "photoSort": {
     "defaultSort": "Tri par défaut des photos",

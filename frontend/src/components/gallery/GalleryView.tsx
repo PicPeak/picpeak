@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -26,7 +26,7 @@ import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { api } from '../../config/api';
 import { Upload, Menu, Eye, EyeOff, Shield, X, Download } from 'lucide-react';
 import { galleryService } from '../../services/gallery.service';
-import { feedbackService } from '../../services/feedback.service';
+import { feedbackService, type ColorLabel } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
 import { useGalleryCustomCss } from '../../hooks/useGalleryCustomCss';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
@@ -106,6 +106,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   // Multi-select feedback filters (#889): OR-combined; empty = "All".
   // Clicking a filter toggles it, clicking "All" clears the set.
   const [activeFilters, setActiveFilters] = useState<FeedbackFilterType[]>([]);
+  // Colour-label filters (#1044) live in their own slice rather than as five
+  // more members of FeedbackFilterType: every exhaustive
+  // Record<FeedbackFilterType, …> in this file and the chip components would
+  // otherwise have to grow to ten keys.
+  const [activeColorFilters, setActiveColorFilters] = useState<ColorLabel[]>([]);
 
   // People filter (#1074). Multi-select, AND by default — see the filter
   // block below. `peopleMatchAny` only becomes reachable once a second
@@ -639,6 +644,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
       });
     }
 
+    // Apply colour-label filters (#1044). Guest-scoped by construction:
+    // `my_color_label` is the requesting viewer's own label, which is what a
+    // proofing client means by "show me my greens". Composes with (ANDs
+    // against) every filter above, like the people filter.
+    if (activeColorFilters.length > 0) {
+      photos = photos.filter(photo =>
+        !!photo.my_color_label && activeColorFilters.includes(photo.my_color_label as ColorLabel)
+      );
+    }
+
     // Apply sorting
     // Each comparator defaults to its natural order (desc for dates/size/rating, asc for name).
     // The flip multiplier reverses that when sortDesc differs from the natural order.
@@ -679,7 +694,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
     }
     
     return photos;
-  }, [data?.photos, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny]);
+  }, [data?.photos, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny]);
 
   // Counts shown in the filter chips ("Liked (N)", etc.). In guest
   // mode these need to mirror the per-guest filter behaviour above —
@@ -702,6 +717,24 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
     if (isGuestIdentityMode) return myFeedbackPhotoIds.rated.size;
     return data?.photos?.filter(p => (p.total_ratings || 0) > 0 || (p.average_rating || 0) > 0).length || 0;
   }, [data?.photos, isGuestIdentityMode, myFeedbackPhotoIds]);
+
+  // Per-colour chip counts (#1044) — the viewer's own labels, matching what
+  // the filter actually selects.
+  const colorLabelCounts = useMemo(() => {
+    const counts: Partial<Record<ColorLabel, number>> = {};
+    for (const photo of data?.photos || []) {
+      const label = photo.my_color_label as ColorLabel | null | undefined;
+      if (!label) continue;
+      counts[label] = (counts[label] || 0) + 1;
+    }
+    return counts;
+  }, [data?.photos]);
+
+  const handleColorFilterToggle = useCallback((color: ColorLabel) => {
+    setActiveColorFilters(prev =>
+      prev.includes(color) ? prev.filter(c => c !== color) : [...prev, color]
+    );
+  }, []);
 
   // Check if downloads are allowed (both event setting and not expired)
   const allowDownloads = !isExpired && (data?.event?.allow_downloads === true);
@@ -1090,6 +1123,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           likeCount={likeCount}
           favoriteCount={favoriteCount}
           ratedCount={ratedCount}
+          colorLabelsEnabled={!!feedbackSettings?.allow_color_labels}
+          activeColorFilters={activeColorFilters}
+          onColorFilterChange={handleColorFilterToggle}
+          colorLabelCounts={colorLabelCounts}
         />
       ) : null}
 
@@ -1237,6 +1274,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
             mediaFilter={mediaFilter}
             onMediaFilterChange={setMediaFilter}
             showMediaFilter={showMediaFilter}
+            colorLabelsEnabled={!!feedbackSettings?.allow_color_labels}
+            activeColorFilters={activeColorFilters}
+            onColorFilterChange={handleColorFilterToggle}
+            colorLabelCounts={colorLabelCounts}
           />
         </div>
       ) : null}

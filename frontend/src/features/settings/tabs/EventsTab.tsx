@@ -3,6 +3,7 @@ import { Save, AlertCircle } from 'lucide-react';
 import { Button, Card } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
 import type { EventSettings } from '../hooks/useSettingsState';
+import { COLOR_LABEL_SWATCHES, COLOR_LABELS } from '../../../services/feedback.service';
 
 interface EventsTabProps {
   eventSettings: EventSettings;
@@ -12,6 +13,25 @@ interface EventsTabProps {
     isPending: boolean;
   };
 }
+
+/**
+ * The per-type feedback defaults, in the order the per-event panel shows
+ * them. Mirrors FEEDBACK_TOGGLES in backend services/feedbackDefaults.js.
+ */
+const FEEDBACK_TYPE_DEFAULTS: Array<{
+  key: 'event_default_allow_ratings' | 'event_default_allow_likes'
+    | 'event_default_allow_favorites' | 'event_default_allow_comments'
+    | 'event_default_allow_reactions' | 'event_default_allow_color_labels';
+  label: string;
+  fallback: string;
+}> = [
+  { key: 'event_default_allow_ratings', label: 'settings.events.defaultAllowRatings', fallback: 'Star ratings' },
+  { key: 'event_default_allow_likes', label: 'settings.events.defaultAllowLikes', fallback: 'Likes' },
+  { key: 'event_default_allow_favorites', label: 'settings.events.defaultAllowFavorites', fallback: 'Favourites' },
+  { key: 'event_default_allow_comments', label: 'settings.events.defaultAllowComments', fallback: 'Comments' },
+  { key: 'event_default_allow_reactions', label: 'settings.events.defaultAllowReactions', fallback: 'Emoji reactions' },
+  { key: 'event_default_allow_color_labels', label: 'settings.events.defaultAllowColorLabels', fallback: 'Color labels' },
+];
 
 export const EventsTab: React.FC<EventsTabProps> = ({
   eventSettings,
@@ -186,6 +206,79 @@ export const EventsTab: React.FC<EventsTabProps> = ({
                 </p>
               </div>
             </label>
+          </div>
+
+          {/* Per-type guest-feedback defaults (#1044). Defaults for NEW
+              galleries — existing galleries keep whatever they were created
+              with, so flipping one here can never change a gallery a client
+              is in the middle of. Greyed out rather than hidden while the
+              master default is off, so the options stay discoverable. */}
+          <div
+            className={`ml-7 pl-4 border-l border-neutral-200 dark:border-neutral-700 space-y-3 ${
+              eventSettings.event_default_feedback_enabled ? '' : 'opacity-50'
+            }`}
+          >
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">
+              {t(
+                'settings.events.feedbackTypeDefaultsHelp',
+                'Which feedback types new galleries start with. Existing galleries are not affected — each gallery can still be changed individually.'
+              )}
+            </p>
+
+            {FEEDBACK_TYPE_DEFAULTS.map(({ key, label, fallback }) => (
+              <label key={key} className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  disabled={!eventSettings.event_default_feedback_enabled}
+                  checked={eventSettings[key]}
+                  onChange={(e) => setEventSettings(prev => ({ ...prev, [key]: e.target.checked }))}
+                  className="mt-1 w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
+                />
+                <span className="text-sm text-neutral-700 dark:text-neutral-300 flex items-center gap-2">
+                  {t(label, fallback)}
+                  {key === 'event_default_allow_color_labels' && (
+                    <span className="flex items-center gap-1" aria-hidden="true">
+                      {COLOR_LABELS.map((color) => (
+                        <span
+                          key={color}
+                          className="w-3 h-3 rounded-full border"
+                          style={{
+                            backgroundColor: COLOR_LABEL_SWATCHES[color].fill,
+                            borderColor: COLOR_LABEL_SWATCHES[color].ring,
+                          }}
+                        />
+                      ))}
+                    </span>
+                  )}
+                </span>
+              </label>
+            ))}
+
+            <div>
+              <label
+                className="block text-sm text-neutral-700 dark:text-neutral-300 mb-1"
+                htmlFor="event_default_keybind_mode"
+              >
+                {t('settings.events.defaultKeybindMode', 'Default lightbox shortcuts')}
+              </label>
+              <select
+                id="event_default_keybind_mode"
+                disabled={!eventSettings.event_default_feedback_enabled}
+                value={eventSettings.event_default_keybind_mode}
+                onChange={(e) => setEventSettings(prev => ({
+                  ...prev,
+                  event_default_keybind_mode: e.target.value === 'lightroom' ? 'lightroom' : 'colors',
+                }))}
+                className="w-full max-w-sm px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm"
+              >
+                <option value="colors">
+                  {t('settings.events.keybindColors', 'Colors only — 1 green, 2 yellow, 3 red')}
+                </option>
+                <option value="lightroom">
+                  {t('settings.events.keybindLightroom', 'Lightroom — 1-5 stars, 6-9 colors')}
+                </option>
+              </select>
+            </div>
           </div>
 
           <div>

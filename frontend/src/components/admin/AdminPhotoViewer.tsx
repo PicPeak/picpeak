@@ -10,6 +10,9 @@ import { Button } from '../common';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { AdminAuthenticatedVideo } from './AdminAuthenticatedVideo';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
+import { COLOR_LABELS, COLOR_LABEL_SWATCHES, type ColorLabel, type KeybindMode } from '../../services/feedback.service';
+import { resolveFeedbackKey, colorShortcutHints } from '../../utils/feedbackKeybinds';
+import { useTranslation } from 'react-i18next';
 import { useMutationWithToast, useModal } from '../../hooks';
 
 type AdminFeedbackResponse = {
@@ -36,6 +39,11 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [isDeleting, setIsDeleting] = useState(false);
+  const { t } = useTranslation();
+  // The photographer's own triage mark (#1044 follow-up). Held locally and
+  // seeded from the row so the star/colour UI responds instantly; the grid
+  // picks it up when its query is invalidated.
+  const [myMarks, setMyMarks] = useState<Record<number, { rating: number | null; color_label: ColorLabel | null }>>({});
   const categoryMenuModal = useModal();
   const commentsModal = useModal();
   const queryClient = useQueryClient();
@@ -143,6 +151,52 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
     errorMessage: () => 'Failed to delete feedback'
   });
 
+  // The mark shown for a photo: the local edit if there is one, otherwise
+  // whatever the list query loaded.
+  const markFor = (photo: AdminPhoto) => myMarks[photo.id] ?? {
+    rating: photo.my_rating ?? null,
+    color_label: (photo.my_color_label as ColorLabel) ?? null,
+  };
+  const currentMark = markFor(currentPhoto);
+
+  const saveMark = async (patch: { rating?: number | null; color_label?: ColorLabel | null }) => {
+    const photoId = currentPhoto.id;
+    const previous = markFor(currentPhoto);
+    const optimistic = {
+      rating: patch.rating === undefined ? previous.rating : patch.rating,
+      color_label: patch.color_label === undefined ? previous.color_label : patch.color_label,
+    };
+    setMyMarks((prev) => ({ ...prev, [photoId]: optimistic }));
+    try {
+      await photosService.setPhotoMark(eventId, photoId, patch);
+      // The grid reads my_rating / my_color_label off the photo rows.
+      queryClient.invalidateQueries({ queryKey: ['admin-event-photos', String(eventId)] });
+    } catch {
+      setMyMarks((prev) => ({ ...prev, [photoId]: previous }));
+      toast.error(t('admin.photos.markError', 'Failed to save your mark'));
+    }
+  };
+
+  // Pressing the same value again clears it, matching the gallery lightbox.
+  //
+  // 0 is the clear sentinel — Lightroom's own binding, and what
+  // resolveFeedbackKey returns for the '0' key. It must become `null` here:
+  // the mark service stores 1-5 only and rejects a literal 0, so passing it
+  // straight through turned "clear my rating" into an error toast.
+  const toggleMarkRating = (value: number) =>
+    saveMark({ rating: value === 0 || currentMark.rating === value ? null : value });
+  const toggleMarkColor = (color: ColorLabel) =>
+    saveMark({ color_label: currentMark.color_label === color ? null : color });
+
+  // The admin viewer always uses the Lightroom bindings — 1-5 stars, 6-9
+  // colours — regardless of the scheme chosen for the gallery. That scheme is
+  // a choice made FOR the client; this surface belongs to the photographer,
+  // who came from Lightroom and needs both halves on the keyboard. Resolved
+  // through the shared helper so the two viewers can't drift.
+  const keybindMode: KeybindMode = 'lightroom';
+  const markRef = React.useRef({ currentMark, toggleMarkRating, toggleMarkColor, saveMark });
+  markRef.current = { currentMark, toggleMarkRating, toggleMarkColor, saveMark };
+
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       switch (e.key) {
@@ -155,6 +209,23 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
         case 'ArrowRight':
           goToNext();
           break;
+        default: {
+          // Proofing shortcuts for the photographer's own marks (#1044
+          // follow-up). Read through a ref: this effect is keyed on
+          // currentIndex, so the closure would otherwise mark the photo that
+          // was open when it was registered.
+          const action = resolveFeedbackKey(e, {
+            mode: keybindMode,
+            allowColorLabels: true,
+            allowRatings: true,
+          });
+          if (!action) break;
+          e.preventDefault();
+          if (action.type === 'color') void markRef.current.toggleMarkColor(action.color);
+          else if (action.type === 'rating') void markRef.current.toggleMarkRating(action.value);
+          else void markRef.current.saveMark({ color_label: null });
+          break;
+        }
       }
     };
 
@@ -329,6 +400,74 @@ export const AdminPhotoViewer: React.FC<AdminPhotoViewerProps> = ({
                 <p className="text-white">{currentPhoto.download_count}</p>
               </div>
             )}
+          </div>
+
+          {/* The photographer's own marks (#1044 follow-up). Above the guest
+              feedback block on purpose: this is the surface being used during
+              a triage pass, and it is explicitly labelled as private so
+              nobody mistakes it for what the client chose. */}
+          <div className="mt-6 pt-6 border-t border-neutral-700">
+            <h4 className="text-white font-medium mb-1 flex items-center gap-2">
+              <Star className="w-4 h-4" />
+              {t('admin.photos.myMarks', 'Your marks')}
+            </h4>
+            <p className="text-xs text-neutral-400 mb-3">
+              {t('admin.photos.myMarksHelp', 'Only you see these. They never appear in the client gallery, and they export to Lightroom as XMP.')}
+            </p>
+
+            <div className="flex items-center gap-1 mb-3" aria-label={t('admin.photos.myRating', 'Your rating')}>
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => toggleMarkRating(value)}
+                  className="p-0.5"
+                  aria-pressed={currentMark.rating === value}
+                  aria-label={currentMark.rating === value
+                    ? t('admin.photos.clearRating', 'Clear your rating')
+                    : t('admin.photos.rateStars', 'Rate {{count}} stars', { count: value })}
+                  title={`${value}`}
+                >
+                  <Star
+                    className={`w-5 h-5 ${(currentMark.rating || 0) >= value ? 'text-yellow-400' : 'text-neutral-600'}`}
+                    fill={(currentMark.rating || 0) >= value ? 'currentColor' : 'none'}
+                  />
+                </button>
+              ))}
+              <span className="ml-2 text-xs text-neutral-500">1–5</span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('feedback.colorLabelsTitle', 'Color labels')}>
+              {COLOR_LABELS.map((color) => {
+                const swatch = COLOR_LABEL_SWATCHES[color];
+                const isMine = currentMark.color_label === color;
+                const shortcut = colorShortcutHints(keybindMode)[color];
+                const name = t(`feedback.colorLabels.${color}`, color);
+                return (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => toggleMarkColor(color)}
+                    aria-pressed={isMine}
+                    // Colour alone can't carry which swatch this is.
+                    aria-label={isMine
+                      ? t('feedback.removeColorLabel', 'Remove {{color}} label', { color: name })
+                      : t('feedback.setColorLabel', 'Mark as {{color}}', { color: name })}
+                    title={shortcut ? `${name} (${shortcut})` : name}
+                    className={`flex items-center gap-1 pl-1.5 pr-2 py-1 rounded-full text-xs transition-all ${
+                      isMine ? 'bg-white/15 ring-1 ring-white/60' : 'bg-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    <span
+                      className="w-3.5 h-3.5 rounded-full border shrink-0"
+                      style={{ backgroundColor: swatch.fill, borderColor: swatch.ring }}
+                      aria-hidden="true"
+                    />
+                    {shortcut && <span className="text-neutral-400">{shortcut}</span>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Feedback Section */}

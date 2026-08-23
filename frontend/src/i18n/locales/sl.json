@@ -338,7 +338,9 @@
     "photosSelected_one": "Izbrana {{count}} fotografija",
     "photosSelected_other": "Izbranih {{count}} fotografij",
     "downloadSelected_one": "Prenesi {{count}} fotografijo",
-    "downloadSelected_other": "Prenesi {{count}} fotografij"
+    "downloadSelected_other": "Prenesi {{count}} fotografij",
+    "colorFilter": "Barva",
+    "filterByColor": "Prikaži samo {{color}}"
   },
   "categories": {
     "title": "Kategorije fotografij",
@@ -892,7 +894,17 @@
       "showGalleryFilterBar": "Prikaži vrstico filtrov v galerijah",
       "showGalleryFilterBarHelp": "Prikaže iskanje po imenu datoteke in razvrščanje nad galerijami z mrežno postavitvijo. Izklopite za čistejšo postavitev.",
       "enablePhoneField": "Omogoči polje za telefonsko številko",
-      "enablePhoneFieldHelp": "Doda neobvezno polje za telefonsko številko v obrazec dogodka. Uporabno za nadaljnje avtomatizacije, kot je dostava prek WhatsAppa z n8n. Vedno je neobvezno, tudi ko je omogočeno."
+      "enablePhoneFieldHelp": "Doda neobvezno polje za telefonsko številko v obrazec dogodka. Uporabno za nadaljnje avtomatizacije, kot je dostava prek WhatsAppa z n8n. Vedno je neobvezno, tudi ko je omogočeno.",
+      "feedbackTypeDefaultsHelp": "S katerimi vrstami odzivov se ustvarijo nove galerije. Obstoječe galerije ostanejo nespremenjene – vsako galerijo je še vedno mogoče nastaviti posebej.",
+      "defaultAllowRatings": "Ocene z zvezdicami",
+      "defaultAllowLikes": "Všečki",
+      "defaultAllowFavorites": "Priljubljene",
+      "defaultAllowComments": "Komentarji",
+      "defaultAllowReactions": "Odzivi z emoji",
+      "defaultAllowColorLabels": "Barvne oznake",
+      "defaultKeybindMode": "Privzete bližnjice v pregledovalniku",
+      "keybindColors": "Samo barve – 1 zelena, 2 rumena, 3 rdeča",
+      "keybindLightroom": "Lightroom – 1–5 zvezdice, 6–9 barve"
     },
     "imageSecurity": {
       "title": "Zaščita slik",
@@ -1648,7 +1660,15 @@
       "visibleSuccess": "Fotografije so zdaj vidne gostom",
       "processingStatus": "Obdelava…",
       "processingFailed": "Neuspešno",
-      "retryQueued": "Ponovni poskus v čakalni vrsti"
+      "retryQueued": "Ponovni poskus v čakalni vrsti",
+      "myMarks": "Vaše oznake",
+      "myMarksHelp": "Vidite jih samo vi. V galeriji stranke se nikoli ne prikažejo, izvozijo pa se v Lightroom kot XMP.",
+      "myRating": "Vaša ocena",
+      "clearRating": "Odstrani vašo oceno",
+      "rateStars": "Oceni z {{count}} zvezdicami",
+      "markError": "Oznake ni bilo mogoče shraniti",
+      "yourMarkColor": "Vaša oznaka: {{color}}",
+      "yourMarkRating": "Vaša ocena: {{count}}"
     },
     "events": {
       "tabs": {
@@ -1704,7 +1724,8 @@
         "comments": "Komentarji",
         "ratings": "Ocene",
         "reactions": "Odzivi",
-        "lastSeen": "Nazadnje viden"
+        "lastSeen": "Nazadnje viden",
+        "colorLabels": "Barvne oznake"
       },
       "view": "Ogled podrobnosti",
       "export": "Izvozi",
@@ -1718,7 +1739,8 @@
         "favorited": "Dodano med priljubljene",
         "rated": "Ocenjeno",
         "reacted": "Odzval se",
-        "commented": "Komentirano"
+        "commented": "Komentirano",
+        "labeled": "Barvne oznake"
       },
       "inviteStatus": {
         "pending": "Čaka",
@@ -2556,7 +2578,14 @@
       "enableRateLimiting": "Omogoči omejevanje hitrosti",
       "rateLimitingDesc": "Preprečite spam z omejitvijo pogostosti povratnih informacij",
       "timeWindow": "Časovno okno (minute)",
-      "maxRequests": "Največ zahtev"
+      "maxRequests": "Največ zahtev",
+      "colorLabels": "Barvne oznake",
+      "colorLabelsDesc": "Ena barva na gosta in fotografijo, v barvnem naboru Lightrooma, da se izbor prenese prek XMP",
+      "keybindMode": "Bližnjice na tipkovnici",
+      "keybindColors": "Samo barve (najpreprostejše)",
+      "keybindColorsDesc": "1 = zelena (1. izbira), 2 = rumena (2. izbira), 3 = rdeča (zavrnjeno)",
+      "keybindLightroom": "Privzeto kot v Lightroomu",
+      "keybindLightroomDesc": "1–5 določijo zvezdice, 6–9 rdečo / rumeno / zeleno / modro"
     },
     "settingsUpdated": "Nastavitve povratnih informacij posodobljene",
     "settingsUpdateError": "Nastavitev ni bilo mogoče posodobiti",
@@ -2631,7 +2660,20 @@
     "onPhoto": "Na fotografiji",
     "showAll_one": "Prikaži vseh {{count}} čakajočih komentarjev",
     "showAll_other": "Prikaži vseh {{count}} čakajočih komentarjev",
-    "viewAllFeedback": "Ogled vseh povratnih informacij in nastavitev"
+    "viewAllFeedback": "Ogled vseh povratnih informacij in nastavitev",
+    "colorLabels": {
+      "red": "Rdeča",
+      "yellow": "Rumena",
+      "green": "Zelena",
+      "blue": "Modra",
+      "purple": "Vijolična"
+    },
+    "colorLabel": "barvna oznaka",
+    "colorLabelsTitle": "Barvne oznake",
+    "colorLabelError": "Barvne oznake ni bilo mogoče posodobiti",
+    "removeColorLabel": "Odstrani oznako {{color}}",
+    "setColorLabel": "Označi kot {{color}}",
+    "markedAs": "Označeno kot {{color}}"
   },
   "filter": {
     "feedbackFilters": "Filtri povratnih informacij",
@@ -2649,7 +2691,11 @@
     "twoStarsPlus": "2+ zvezdici",
     "threeStarsPlus": "3+ zvezdice",
     "fourStarsPlus": "4+ zvezdice",
-    "fiveStarsOnly": "Samo 5 zvezdic"
+    "fiveStarsOnly": "Samo 5 zvezdic",
+    "colorLabels": "Barvne oznake",
+    "showOnlyColor": "Prikaži samo {{color}}",
+    "myColorLabels": "Vaše oznake",
+    "showOnlyMyColor": "Prikaži samo moje oznake {{color}}"
   },
   "adminLogin": {
     "title": "Prijava administratorja",
@@ -2705,7 +2751,10 @@
     "exportFiltered": "Izvozi filtrirane fotografije",
     "hint": "Izberite fotografije ali uporabite filtre za izvoz",
     "exportSelected_one": "Izvozi {{count}} izbrano",
-    "exportSelected_other": "Izvozi {{count}} izbranih"
+    "exportSelected_other": "Izvozi {{count}} izbranih",
+    "markSource": "Zvezdice in barva XMP iz",
+    "markSourceClient": "Izbor stranke",
+    "markSourceMine": "Vaše oznake"
   },
   "photoSort": {
     "defaultSort": "Privzeto razvrščanje fotografij",

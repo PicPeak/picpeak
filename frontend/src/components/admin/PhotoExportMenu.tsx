@@ -85,6 +85,10 @@ export const PhotoExportMenu: React.FC<PhotoExportMenuProps> = ({
     },
   });
 
+  // Whose verdict the XMP sidecars carry (#1044 follow-up). Defaults to the
+  // client's selections, so existing exports are unchanged.
+  const [markSource, setMarkSource] = useState<'client' | 'mine'>('client');
+
   const handleExport = (format: 'txt' | 'csv' | 'xmp' | 'json') => {
     const options: ExportOptions = {
       format,
@@ -98,7 +102,8 @@ export const PhotoExportMenu: React.FC<PhotoExportMenuProps> = ({
         include_rating: true,
         include_label: true,
         include_description: true,
-        include_keywords: true
+        include_keywords: true,
+        mark_source: markSource
       }
     };
 
@@ -115,6 +120,9 @@ export const PhotoExportMenu: React.FC<PhotoExportMenuProps> = ({
         has_favorites: filters.hasFavorites,
         min_favorites: filters.minFavorites,
         has_comments: filters.hasComments,
+        // #1044 — lets "export only the greens" round-trip to Lightroom.
+        color_labels: filters.colorLabels?.length ? filters.colorLabels : undefined,
+        my_color_labels: filters.myColorLabels?.length ? filters.myColorLabels : undefined,
         category_id: filters.categoryId,
         logic: filters.logic,
         sort: filters.sort,
@@ -134,7 +142,9 @@ export const PhotoExportMenu: React.FC<PhotoExportMenuProps> = ({
     filters.minRating !== null ||
     filters.hasLikes ||
     filters.hasFavorites ||
-    filters.hasComments
+    filters.hasComments ||
+    (filters.colorLabels?.length || 0) > 0 ||
+    (filters.myColorLabels?.length || 0) > 0
   );
 
   const isDisabled = disabled || (!hasSelection && !hasFilters);
@@ -186,6 +196,22 @@ export const PhotoExportMenu: React.FC<PhotoExportMenuProps> = ({
                   : t('export.exportFiltered', 'Export filtered photos')
                 }
               </p>
+
+              {/* Whose stars/colours the XMP sidecars carry (#1044
+                  follow-up). Only affects XMP — the CSV and JSON exports
+                  carry both columns regardless. */}
+              <label className="flex items-center justify-between gap-2 px-3 py-2 text-xs text-neutral-600 dark:text-neutral-400">
+                <span>{t('export.markSource', 'XMP stars & colour from')}</span>
+                <select
+                  value={markSource}
+                  onChange={(e) => setMarkSource(e.target.value === 'mine' ? 'mine' : 'client')}
+                  className="px-2 py-1 rounded border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <option value="client">{t('export.markSourceClient', 'Client selections')}</option>
+                  <option value="mine">{t('export.markSourceMine', 'Your marks')}</option>
+                </select>
+              </label>
 
               {EXPORT_FORMATS.map((format) => {
                 const Icon = format.icon;

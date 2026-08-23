@@ -1,5 +1,6 @@
 import React from 'react';
 import { Star, Heart, Bookmark, MessageCircle, Filter, X } from 'lucide-react';
+import { COLOR_LABELS, COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.service';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../common';
 import { FeedbackFilters, FilterSummary } from '../../services/photos.service';
@@ -37,6 +38,31 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
     onChange({ ...filters, [field]: !filters[field] });
   };
 
+  // Colour labels are multi-select (#1044): each swatch toggles its colour,
+  // an empty list means no colour filtering.
+  const toggleColorLabel = (color: ColorLabel) => {
+    const active = filters.colorLabels || [];
+    onChange({
+      ...filters,
+      colorLabels: active.includes(color)
+        ? active.filter(c => c !== color)
+        : [...active, color],
+    });
+  };
+
+  // The same row against the admin's own marks (#1044 follow-up), kept as a
+  // separate filter rather than merged with the client's — "the client's
+  // greens" and "my greens" are different questions during a cull.
+  const toggleMyColorLabel = (color: ColorLabel) => {
+    const active = filters.myColorLabels || [];
+    onChange({
+      ...filters,
+      myColorLabels: active.includes(color)
+        ? active.filter(c => c !== color)
+        : [...active, color],
+    });
+  };
+
   const handleLogicChange = (logic: 'AND' | 'OR') => {
     onChange({ ...filters, logic });
   };
@@ -47,6 +73,8 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
       hasLikes: false,
       hasFavorites: false,
       hasComments: false,
+      colorLabels: [],
+      myColorLabels: [],
       logic: 'AND'
     });
   };
@@ -54,7 +82,9 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
   const hasActiveFilters = filters.minRating !== null ||
     filters.hasLikes ||
     filters.hasFavorites ||
-    filters.hasComments;
+    filters.hasComments ||
+    (filters.colorLabels?.length || 0) > 0 ||
+    (filters.myColorLabels?.length || 0) > 0;
 
   return (
     <div className="bg-white dark:bg-neutral-800 rounded-lg border border-neutral-200 dark:border-neutral-700 p-4 mb-4">
@@ -149,6 +179,90 @@ export const PhotoFilterPanel: React.FC<PhotoFilterPanelProps> = ({
             </span>
           </label>
         </div>
+
+        {/* Color labels (#1044). Rendered only when someone has actually
+            labelled something — an always-visible swatch row would be dead
+            UI in the many galleries that never turn the feature on. */}
+        {(summary?.withColorLabels || 0) > 0 && (
+          <div>
+            <span className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+              {t('filter.colorLabels', 'Color labels')}
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {COLOR_LABELS.map((color) => {
+                const count = summary?.colorLabelCounts?.[color] || 0;
+                const isActive = (filters.colorLabels || []).includes(color);
+                const swatch = COLOR_LABEL_SWATCHES[color];
+                const name = t(`feedback.colorLabels.${color}`, color);
+                return (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => toggleColorLabel(color)}
+                    disabled={isLoading}
+                    aria-pressed={isActive}
+                    aria-label={t('filter.showOnlyColor', 'Show only {{color}}', { color: name })}
+                    className={`flex items-center gap-2 px-2.5 py-1 rounded-full border text-sm transition-colors ${
+                      isActive
+                        ? 'border-accent-dark bg-accent-dark/10 text-neutral-900 dark:text-neutral-100'
+                        : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-700'
+                    }`}
+                  >
+                    <span
+                      className="w-3.5 h-3.5 rounded-full border shrink-0"
+                      style={{ backgroundColor: swatch.fill, borderColor: swatch.ring }}
+                      aria-hidden="true"
+                    />
+                    <span>{name}</span>
+                    <span className="text-neutral-500 dark:text-neutral-400">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* The admin's own marks (#1044 follow-up). Same shape as the row
+            above, labelled so the two are never confused. */}
+        {Object.keys(summary?.myColorLabelCounts || {}).length > 0 && (
+          <div>
+            <span className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
+              {t('filter.myColorLabels', 'Your marks')}
+            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {COLOR_LABELS.map((color) => {
+                const count = summary?.myColorLabelCounts?.[color] || 0;
+                if (count === 0 && !(filters.myColorLabels || []).includes(color)) return null;
+                const isActive = (filters.myColorLabels || []).includes(color);
+                const swatch = COLOR_LABEL_SWATCHES[color];
+                const name = t(`feedback.colorLabels.${color}`, color);
+                return (
+                  <button
+                    key={color}
+                    type="button"
+                    onClick={() => toggleMyColorLabel(color)}
+                    disabled={isLoading}
+                    aria-pressed={isActive}
+                    aria-label={t('filter.showOnlyMyColor', 'Show only my {{color}} marks', { color: name })}
+                    className={`flex items-center gap-2 px-2.5 py-1 rounded-full border text-sm transition-colors ${
+                      isActive
+                        ? 'border-accent-dark bg-accent-dark/10 text-neutral-900 dark:text-neutral-100'
+                        : 'border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-700'
+                    }`}
+                  >
+                    <span
+                      className="w-3.5 h-3.5 rounded-full border-2 border-dashed shrink-0"
+                      style={{ backgroundColor: swatch.fill, borderColor: swatch.ring }}
+                      aria-hidden="true"
+                    />
+                    <span>{name}</span>
+                    <span className="text-neutral-500 dark:text-neutral-400">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Logic Toggle */}
         {(filters.hasLikes || filters.hasFavorites || filters.hasComments) && (

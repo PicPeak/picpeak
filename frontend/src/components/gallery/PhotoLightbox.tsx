@@ -7,7 +7,9 @@ import { useSavePhotoToDevice } from '../../hooks/useGallery';
 import { AuthenticatedImage } from '../common';
 import { PhotoFeedback } from './PhotoFeedback';
 import { previewUrlForViewport } from './imageTiers';
-import { feedbackService } from '../../services/feedback.service';
+import { feedbackService, type ColorLabel, type KeybindMode } from '../../services/feedback.service';
+import { PhotoColorLabels } from './PhotoColorLabels';
+import { resolveFeedbackKey, colorShortcutHints } from '../../utils/feedbackKeybinds';
 import { galleryService } from '../../services/gallery.service';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { VideoPlayer } from './VideoPlayer';
@@ -93,19 +95,25 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     allow_ratings?: boolean;
     allow_comments?: boolean;
     allow_reactions?: boolean;
+    allow_color_labels?: boolean;
+    keybind_mode?: KeybindMode;
     show_feedback_to_guests?: boolean;
     require_name_email?: boolean;
   } | null>(null);
   const [myLiked, setMyLiked] = useState<boolean>(false);
   const [myRating, setMyRating] = useState<number>(0);
+  const [myColorLabel, setMyColorLabel] = useState<ColorLabel | null>(null);
+  const [colorLabelCounts, setColorLabelCounts] = useState<Partial<Record<ColorLabel, number>>>({});
   const [likeCount, setLikeCount] = useState<number>(0);
   const [avgRating, setAvgRating] = useState<number>(0);
   const [totalRatings, setTotalRatings] = useState<number>(0);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   const [showIdentityModal, setShowIdentityModal] = useState(false);
-  const [pendingAction, setPendingAction] = useState<null | { type: 'like' | 'rating'; rating?: number }>(null);
+  const [pendingAction, setPendingAction] = useState<null | { type: 'like' | 'rating' | 'color_label'; rating?: number; color?: ColorLabel }>(null);
   const guestIdentity = useGuestIdentityOptional();
   const isGuestMode = guestIdentity?.identityMode === 'guest';
+  // Which shortcut scheme this gallery uses (#1044).
+  const keybindMode: KeybindMode = feedbackSettings?.keybind_mode || 'colors';
   // Per-guest cap modal (#655) — shared across every submitFeedback call site
   // in the lightbox (guest mode, simple mode, identity-modal-confirm path).
   const { modal: limitModal, handleError: handleLimitError } = useFeedbackLimitModal();
@@ -224,6 +232,21 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     };
   }, [disableRightClick]);
 
+  // The keydown effect below is registered with [currentIndex] deps, so its
+  // closure would still hold the settings from the moment the lightbox
+  // opened — i.e. `null`, since they load asynchronously, leaving every
+  // proofing shortcut dead until the user changed photo. A ref refreshed on
+  // every render keeps the handler reading current state without
+  // re-registering the listener on each keystroke's worth of state change.
+  const proofingRef = useRef({
+    feedbackEnabled: false,
+    allowColorLabels: false,
+    allowRatings: false,
+    keybindMode: 'colors' as KeybindMode,
+    myRating: 0,
+    submitColorLabel: (async () => {}) as (color: ColorLabel | null) => Promise<void>,
+    submitRating: (async () => {}) as (value: number) => Promise<void>,
+  });
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       switch (e.key) {
@@ -250,6 +273,30 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             handleDownload();
           }
           break;
+        default: {
+          // Proofing shortcuts (#1044). Resolved from the event's keybind
+          // scheme so 1/2/3 mean colours in colour-only mode and stars in
+          // Lightroom mode; the helper ignores modified keys and anything
+          // typed into a field.
+          const proofing = proofingRef.current;
+          if (!proofing.feedbackEnabled) break;
+          const action = resolveFeedbackKey(e, {
+            mode: proofing.keybindMode,
+            allowColorLabels: proofing.allowColorLabels,
+            allowRatings: proofing.allowRatings,
+          });
+          if (!action) break;
+          e.preventDefault();
+          if (action.type === 'color') {
+            void proofing.submitColorLabel(action.color);
+          } else if (action.type === 'rating') {
+            // Pressing the current rating again clears it (#884).
+            void proofing.submitRating(action.value === proofing.myRating ? 0 : action.value);
+          } else {
+            void proofing.submitColorLabel(null);
+          }
+          break;
+        }
       }
     };
 
@@ -296,6 +343,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         if (!mounted) return;
         setMyLiked(!!data.my_feedback.liked);
         setMyRating(data.my_feedback.rating || 0);
+        setMyColorLabel((data.my_feedback.color_label as ColorLabel) || null);
+        setColorLabelCounts(data.color_labels || {});
         setLikeCount(Number(data.summary?.like_count) || 0);
         setAvgRating(Number(data.summary?.average_rating) || 0);
         setTotalRatings(Number(data.summary?.total_ratings) || 0);
@@ -415,6 +464,72 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     // Sync gallery photo list so the Rated filter reflects this rating
     // without a reload (parity with the guest-mode path above).
     if (onFeedbackChange) onFeedbackChange();
+  };
+
+  /**
+   * Set / switch / clear the guest's colour label (#1044). Same identity
+   * handling as submitLike above; `null` means "clear", which the backend
+   * expresses as submitting the current colour again.
+   */
+  const submitColorLabel = async (color: ColorLabel | null) => {
+    if (!feedbackSettings?.allow_color_labels) return;
+    // Clearing means re-submitting the current colour — the backend toggles
+    // a repeat submission off. With nothing set there is nothing to clear.
+    const value = color ?? myColorLabel;
+    if (!value) return;
+    const willBeSet = value === myColorLabel ? null : value;
+
+    if (isGuestMode && guestIdentity) {
+      try {
+        await guestIdentity.ensureIdentity();
+      } catch {
+        return;
+      }
+      try {
+        await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
+          feedback_type: 'color_label',
+          color_label: value,
+        });
+        setMyColorLabel(willBeSet);
+        if (onFeedbackChange) onFeedbackChange();
+      } catch (err) {
+        if (handleLimitError(err)) return;
+        console.warn('Color label submit failed', err);
+      }
+      return;
+    }
+
+    const needIdentity = feedbackSettings?.require_name_email && !savedIdentity;
+    if (needIdentity) {
+      setPendingAction({ type: 'color_label', color: value });
+      setShowIdentityModal(true);
+      return;
+    }
+    try {
+      await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
+        feedback_type: 'color_label',
+        color_label: value,
+        guest_name: savedIdentity?.name,
+        guest_email: savedIdentity?.email,
+      });
+      setMyColorLabel(willBeSet);
+      if (onFeedbackChange) onFeedbackChange();
+    } catch (err) {
+      if (handleLimitError(err)) return;
+      console.warn('Color label submit failed', err);
+    }
+  };
+
+  // Refreshed on every render (see the ref's declaration above): the keydown
+  // listener reads current settings and handlers without being re-registered.
+  proofingRef.current = {
+    feedbackEnabled: !!feedbackEnabled && !!feedbackSettings?.feedback_enabled,
+    allowColorLabels: !!feedbackSettings?.allow_color_labels,
+    allowRatings: !!feedbackSettings?.allow_ratings,
+    keybindMode,
+    myRating,
+    submitColorLabel,
+    submitRating,
   };
 
   const goToPrevious = () => {
@@ -927,6 +1042,27 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               </div>
             )}
             
+            {/* Inline color labels (#1044). In the toolbar rather than the
+                feedback panel: the whole point is a fast keyboard/click
+                proofing pass, which a panel toggle would interrupt. */}
+            {feedbackEnabled && feedbackSettings?.allow_color_labels && (
+              <div className="flex items-center gap-1 ml-1">
+                <PhotoColorLabels
+                  photoId={String(currentPhoto.id)}
+                  gallerySlug={slug}
+                  myColorLabel={myColorLabel}
+                  colorLabelCounts={feedbackSettings?.show_feedback_to_guests ? colorLabelCounts : {}}
+                  isEnabled
+                  requireNameEmail={!!feedbackSettings?.require_name_email}
+                  shortcutHints={colorShortcutHints(keybindMode)}
+                  onColorLabelChange={(label) => {
+                    setMyColorLabel(label);
+                    if (onFeedbackChange) onFeedbackChange();
+                  }}
+                />
+              </div>
+            )}
+
             {/* Feedback button with indicator. Likes/ratings have their
                 own dedicated toolbar buttons above, so this panel toggle
                 only has work to do when comments (#518) or the emoji
@@ -1197,13 +1333,29 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               setAvgRating(Number(fresh.summary?.average_rating) || 0);
               setTotalRatings(Number(fresh.summary?.total_ratings) || 0);
             } catch {}
+          } else if (pendingAction?.type === 'color_label' && pendingAction.color) {
+            try {
+              await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
+                feedback_type: 'color_label',
+                color_label: pendingAction.color,
+                guest_name: name,
+                guest_email: email,
+              });
+              setMyColorLabel(pendingAction.color === myColorLabel ? null : pendingAction.color);
+            } catch (err) {
+              if (!handleLimitError(err)) throw err;
+            }
           }
           // Sync gallery photo list (feedback filter chips) — parity with
           // the direct submit paths.
           if (onFeedbackChange) onFeedbackChange();
           setPendingAction(null);
         }}
-        feedbackType={pendingAction?.type === 'rating' ? 'rating' : 'like'}
+        feedbackType={
+          pendingAction?.type === 'rating' ? 'rating'
+            : pendingAction?.type === 'color_label' ? 'color label'
+              : 'like'
+        }
       />
       {/* Per-guest cap modal (#655). Single instance fires for any of the
           lightbox's submitFeedback paths via the shared hook. */}

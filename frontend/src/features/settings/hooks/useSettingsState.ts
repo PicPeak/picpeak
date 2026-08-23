@@ -89,6 +89,15 @@ export interface EventSettings {
   event_require_expiration: boolean;
   event_default_require_password: boolean;
   event_default_feedback_enabled: boolean;
+  // Per-type guest-feedback defaults for new galleries (#1044). These are
+  // DEFAULTS: changing one never touches a gallery that already exists.
+  event_default_allow_ratings: boolean;
+  event_default_allow_likes: boolean;
+  event_default_allow_favorites: boolean;
+  event_default_allow_comments: boolean;
+  event_default_allow_reactions: boolean;
+  event_default_allow_color_labels: boolean;
+  event_default_keybind_mode: 'colors' | 'lightroom';
   gallery_show_filter_bar: boolean;
   event_phone_field_enabled: boolean;
 }
@@ -177,6 +186,13 @@ export function useSettingsState() {
     event_require_expiration: true,
     event_default_require_password: true,
     event_default_feedback_enabled: false,
+    event_default_allow_ratings: true,
+    event_default_allow_likes: true,
+    event_default_allow_favorites: true,
+    event_default_allow_comments: true,
+    event_default_allow_reactions: true,
+    event_default_allow_color_labels: false,
+    event_default_keybind_mode: 'colors',
     gallery_show_filter_bar: true,
     event_phone_field_enabled: false
   });
@@ -285,6 +301,15 @@ export function useSettingsState() {
         event_require_expiration: toBoolean(settings.event_require_expiration, true),
         event_default_require_password: toBoolean(settings.event_default_require_password, true),
         event_default_feedback_enabled: toBoolean(settings.event_default_feedback_enabled, false),
+        // Fallbacks mirror FEEDBACK_TOGGLES in backend
+        // services/feedbackDefaults.js — keep the two in step.
+        event_default_allow_ratings: toBoolean(settings.event_default_allow_ratings, true),
+        event_default_allow_likes: toBoolean(settings.event_default_allow_likes, true),
+        event_default_allow_favorites: toBoolean(settings.event_default_allow_favorites, true),
+        event_default_allow_comments: toBoolean(settings.event_default_allow_comments, true),
+        event_default_allow_reactions: toBoolean(settings.event_default_allow_reactions, true),
+        event_default_allow_color_labels: toBoolean(settings.event_default_allow_color_labels, false),
+        event_default_keybind_mode: settings.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors',
         gallery_show_filter_bar: toBoolean(settings.gallery_show_filter_bar, true),
         event_phone_field_enabled: toBoolean(settings.event_phone_field_enabled, false)
       });

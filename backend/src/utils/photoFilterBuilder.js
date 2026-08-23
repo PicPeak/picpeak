@@ -3,6 +3,23 @@
  * Builds Knex queries for filtering photos by feedback metrics
  */
 
+const { COLOR_LABELS } = require('../constants/colorLabels');
+
+/**
+ * Accept a colour filter as an array or a comma-separated string, drop
+ * anything that isn't one of the five known colours, and de-duplicate.
+ */
+function normalizeColorLabels(value) {
+  if (!value) return [];
+  const raw = Array.isArray(value) ? value : String(value).split(',');
+  const seen = new Set();
+  for (const entry of raw) {
+    const color = String(entry).trim().toLowerCase();
+    if (COLOR_LABELS.includes(color)) seen.add(color);
+  }
+  return [...seen];
+}
+
 class PhotoFilterBuilder {
   constructor(queryBuilder, eventId) {
     this.query = queryBuilder;
@@ -21,6 +38,9 @@ class PhotoFilterBuilder {
       has_favorites,
       min_favorites,
       has_comments,
+      color_labels,
+      my_color_labels,
+      admin_id,
       category_id,
       logic = 'AND'
     } = filters;
@@ -57,6 +77,36 @@ class PhotoFilterBuilder {
 
     if (has_comments === true || has_comments === 'true') {
       conditions.push(builder => builder.where('photos.comment_count', '>', 0));
+    }
+
+    // Colour labels (#1044): "only the greens". Can't read a denormalized
+    // count — "has any label" and "has a GREEN label" are different questions
+    // — so this is an EXISTS over photo_feedback, covered by the
+    // photo_feedback_color_label_idx index from migration 180.
+    const requestedColors = normalizeColorLabels(color_labels);
+    if (requestedColors.length > 0) {
+      conditions.push(builder => builder.whereExists(function () {
+        this.select('*')
+          .from('photo_feedback')
+          .whereRaw('photo_feedback.photo_id = photos.id')
+          .where('photo_feedback.feedback_type', 'color_label')
+          .where('photo_feedback.is_hidden', false)
+          .whereIn('photo_feedback.color_label', requestedColors);
+      }));
+    }
+
+    // The same question against the caller's own marks (#1044 follow-up).
+    // Requires admin_id: without one this would filter by every admin's marks
+    // at once, so it is skipped rather than silently widened.
+    const requestedMyColors = normalizeColorLabels(my_color_labels);
+    if (requestedMyColors.length > 0 && admin_id) {
+      conditions.push(builder => builder.whereExists(function () {
+        this.select('*')
+          .from('photo_admin_marks')
+          .whereRaw('photo_admin_marks.photo_id = photos.id')
+          .where('photo_admin_marks.admin_id', admin_id)
+          .whereIn('photo_admin_marks.color_label', requestedMyColors);
+      }));
     }
 
     if (category_id) {
@@ -143,18 +193,36 @@ class PhotoFilterBuilder {
         db.raw('COUNT(CASE WHEN average_rating > 0 THEN 1 END) as with_ratings'),
         db.raw('COUNT(CASE WHEN like_count > 0 THEN 1 END) as with_likes'),
         db.raw('COUNT(CASE WHEN favorite_count > 0 THEN 1 END) as with_favorites'),
-        db.raw('COUNT(CASE WHEN comment_count > 0 THEN 1 END) as with_comments')
+        db.raw('COUNT(CASE WHEN comment_count > 0 THEN 1 END) as with_comments'),
+        db.raw('COUNT(CASE WHEN color_label_count > 0 THEN 1 END) as with_color_labels')
       )
       .first();
+
+    // Per-colour totals for the filter chips (#1044) — the swatch row shows
+    // "Green 42" so the photographer knows which colours are worth filtering.
+    const colorRows = await db('photo_feedback')
+      .where({ event_id: eventId, feedback_type: 'color_label' })
+      .where('is_hidden', false)
+      .groupBy('color_label')
+      .select('color_label')
+      .countDistinct('photo_id as count');
+
+    const colorLabelCounts = {};
+    for (const color of COLOR_LABELS) colorLabelCounts[color] = 0;
+    for (const row of colorRows) {
+      if (row.color_label) colorLabelCounts[row.color_label] = parseInt(row.count) || 0;
+    }
 
     return {
       total: parseInt(result.total) || 0,
       withRatings: parseInt(result.with_ratings) || 0,
       withLikes: parseInt(result.with_likes) || 0,
       withFavorites: parseInt(result.with_favorites) || 0,
-      withComments: parseInt(result.with_comments) || 0
+      withComments: parseInt(result.with_comments) || 0,
+      withColorLabels: parseInt(result.with_color_labels) || 0,
+      colorLabelCounts
     };
   }
 }
 
-module.exports = { PhotoFilterBuilder };
+module.exports = { PhotoFilterBuilder, normalizeColorLabels };

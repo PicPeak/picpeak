@@ -4,6 +4,8 @@ import { Button } from '../common';
 import { PhotoCategory } from '../../types';
 import { useTranslation } from 'react-i18next';
 import { GalleryFilter, type FilterType, type FeedbackFilterType } from './GalleryFilter';
+import { ColorLabelFilterChips } from './ColorLabelFilterChips';
+import type { ColorLabel } from '../../services/feedback.service';
 
 interface GallerySidebarProps {
   isOpen: boolean;
@@ -38,6 +40,11 @@ interface GallerySidebarProps {
   likeCount?: number;
   favoriteCount?: number;
   ratedCount?: number;
+  // Colour-label filters (#1044).
+  colorLabelsEnabled?: boolean;
+  activeColorFilters?: ColorLabel[];
+  onColorFilterChange?: (color: ColorLabel) => void;
+  colorLabelCounts?: Partial<Record<ColorLabel, number>>;
   mediaFilter?: 'all' | 'photo' | 'video';
   onMediaFilterChange?: (filter: 'all' | 'photo' | 'video') => void;
   showMediaFilter?: boolean;
@@ -74,6 +81,10 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   likeCount = 0,
   favoriteCount = 0,
   ratedCount = 0,
+  colorLabelsEnabled = false,
+  activeColorFilters = [],
+  onColorFilterChange,
+  colorLabelCounts = {},
   mediaFilter = 'all',
   onMediaFilterChange,
   showMediaFilter = false
@@ -241,6 +252,15 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                 className="w-full"
                 variant="compact"
               />
+              {/* Colour filter (#1044) */}
+              {colorLabelsEnabled && onColorFilterChange && (
+                <ColorLabelFilterChips
+                  className="mt-3"
+                  activeColors={activeColorFilters}
+                  onToggle={onColorFilterChange}
+                  counts={colorLabelCounts}
+                />
+              )}
             </div>
           )}
 

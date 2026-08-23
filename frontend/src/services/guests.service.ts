@@ -18,6 +18,7 @@ export interface AdminGuestStats {
   comments: number;
   ratings: number;
   reactions: number;
+  color_labels: number;
   distinct_photos: number;
 }
 
@@ -47,6 +48,7 @@ export interface AdminGuestSelections {
   rated: Array<{ photo: AdminGuestPhoto; rating: number }>;
   commented: Array<{ photo: AdminGuestPhoto; comment: string; created_at: string }>;
   reacted: Array<{ photo: AdminGuestPhoto; reaction: string }>;
+  labeled: Array<{ photo: AdminGuestPhoto; color_label: string }>;
 }
 
 export interface AdminGuestDetail {

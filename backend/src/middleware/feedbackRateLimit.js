@@ -26,6 +26,24 @@ function generateGuestIdentifier(req) {
 }
 
 /**
+ * Per-action-type rate limits, in one place — the happy path and the
+ * error path used to keep separate copies, and the error copy silently
+ * missed every action type added after it was written.
+ */
+const DEFAULT_RATE_LIMITS = {
+  rating: { max: 100, window: 3600 }, // 100 ratings per hour
+  comment: { max: 20, window: 3600 }, // 20 comments per hour
+  like: { max: 200, window: 3600 }, // 200 likes per hour
+  favorite: { max: 100, window: 3600 }, // 100 favorites per hour
+  reaction: { max: 200, window: 3600 }, // reactions churn like likes (#839)
+  // Colour labels (#1044) are the keyboard-driven proofing path: a client
+  // works through a 500-photo shoot pressing 1/2/3, and changing their mind
+  // costs a second request. A likes-sized 200/h cap would lock them out
+  // mid-session, so this one is deliberately generous.
+  color_label: { max: 2000, window: 3600 }
+};
+
+/**
  * Get rate limit settings from app_settings
  */
 async function getRateLimitSettings() {
@@ -37,13 +55,7 @@ async function getRateLimitSettings() {
     // Defaults FIRST, stored values override: persisted rows predate newer
     // action types (`reaction`, #839) — returning the stored object alone
     // would silently drop their intended defaults to the generic 100/h.
-    const defaults = {
-      rating: { max: 100, window: 3600 }, // 100 ratings per hour
-      comment: { max: 20, window: 3600 }, // 20 comments per hour
-      like: { max: 200, window: 3600 }, // 200 likes per hour
-      favorite: { max: 100, window: 3600 }, // 100 favorites per hour
-      reaction: { max: 200, window: 3600 } // reactions churn like likes (#839)
-    };
+    const defaults = { ...DEFAULT_RATE_LIMITS };
 
     if (settings && settings.setting_value) {
       // setting_value is already a JSON object in PostgreSQL
@@ -57,13 +69,7 @@ async function getRateLimitSettings() {
   } catch (error) {
     logger.error('Error getting rate limit settings:', error);
     // Return defaults on error
-    return {
-      rating: { max: 100, window: 3600 },
-      comment: { max: 20, window: 3600 },
-      like: { max: 200, window: 3600 },
-      favorite: { max: 100, window: 3600 },
-      reaction: { max: 200, window: 3600 }
-    };
+    return { ...DEFAULT_RATE_LIMITS };
   }
 }
 

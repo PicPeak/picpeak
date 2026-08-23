@@ -354,7 +354,9 @@
     "photosCount_few": "{{count}} фото",
     "photosCount_many": "{{count}} фото",
     "photosCount_one": "{{count}} фото",
-    "photosCount_other": "{{count}} фото"
+    "photosCount_other": "{{count}} фото",
+    "colorFilter": "Цвет",
+    "filterByColor": "Показать только «{{color}}»"
   },
   "categories": {
     "title": "Категории фото",
@@ -911,7 +913,17 @@
       "showGalleryFilterBar": "Показывать панель фильтров в галереях",
       "showGalleryFilterBarHelp": "Отображает поиск по имени файла и элементы управления сортировкой над галереями с сеткой. Отключите для более чистого интерфейса.",
       "enablePhoneField": "Включить поле номера телефона",
-      "enablePhoneFieldHelp": "Добавляет необязательное поле ввода номера телефона в форму события. Полезно для автоматизаций, таких как доставка в WhatsApp через n8n. Всегда необязательно, даже если включено."
+      "enablePhoneFieldHelp": "Добавляет необязательное поле ввода номера телефона в форму события. Полезно для автоматизаций, таких как доставка в WhatsApp через n8n. Всегда необязательно, даже если включено.",
+      "feedbackTypeDefaultsHelp": "С какими типами отзывов создаются новые галереи. Существующие галереи не меняются — каждую можно настроить отдельно.",
+      "defaultAllowRatings": "Оценка звёздами",
+      "defaultAllowLikes": "Лайки",
+      "defaultAllowFavorites": "Избранное",
+      "defaultAllowComments": "Комментарии",
+      "defaultAllowReactions": "Эмодзи-реакции",
+      "defaultAllowColorLabels": "Цветовые метки",
+      "defaultKeybindMode": "Горячие клавиши просмотра по умолчанию",
+      "keybindColors": "Только цвета — 1 зелёный, 2 жёлтый, 3 красный",
+      "keybindLightroom": "Lightroom — 1–5 звёзды, 6–9 цвета"
     },
     "imageSecurity": {
       "title": "Защита изображений",
@@ -1690,7 +1702,15 @@
       "visibleSuccess": "Фотографии теперь видны гостям",
       "processingStatus": "Обработка…",
       "processingFailed": "Ошибка",
-      "retryQueued": "Повтор в очереди"
+      "retryQueued": "Повтор в очереди",
+      "myMarks": "Ваши отметки",
+      "myMarksHelp": "Видны только вам. Они никогда не появляются в клиентской галерее и экспортируются в Lightroom через XMP.",
+      "myRating": "Ваша оценка",
+      "clearRating": "Убрать вашу оценку",
+      "rateStars": "Оценить на {{count}}",
+      "markError": "Не удалось сохранить отметку",
+      "yourMarkColor": "Ваша отметка: {{color}}",
+      "yourMarkRating": "Ваша оценка: {{count}}"
     },
     "events": {
       "tabs": {
@@ -1754,7 +1774,8 @@
         "comments": "Комментарии",
         "ratings": "Оценки",
         "reactions": "Реакции",
-        "lastSeen": "Последний визит"
+        "lastSeen": "Последний визит",
+        "colorLabels": "Цветовые метки"
       },
       "view": "Подробнее",
       "export": "Экспортировать",
@@ -1768,7 +1789,8 @@
         "favorited": "В избранном",
         "rated": "Оценено",
         "reacted": "Отреагировал",
-        "commented": "Прокомментировано"
+        "commented": "Прокомментировано",
+        "labeled": "Цветовые метки"
       },
       "inviteStatus": {
         "pending": "Ожидает",
@@ -2606,7 +2628,14 @@
       "enableRateLimiting": "Включить ограничение частоты",
       "rateLimitingDesc": "Предотвращает спам, ограничивая частоту отзывов",
       "timeWindow": "Временное окно (минуты)",
-      "maxRequests": "Макс. запросов"
+      "maxRequests": "Макс. запросов",
+      "colorLabels": "Цветовые метки",
+      "colorLabelsDesc": "Одна метка на гостя и фотографию, в цветовой схеме Lightroom — выбор переносится через XMP",
+      "keybindMode": "Горячие клавиши",
+      "keybindColors": "Только цвета (самый простой вариант)",
+      "keybindColorsDesc": "1 — зелёный (1-й выбор), 2 — жёлтый (2-й выбор), 3 — красный (отклонено)",
+      "keybindLightroom": "Как в Lightroom",
+      "keybindLightroomDesc": "1–5 ставят звёзды, 6–9 — красный / жёлтый / зелёный / синий"
     },
     "settingsUpdated": "Настройки отзывов обновлены",
     "settingsUpdateError": "Не удалось обновить настройки",
@@ -2691,7 +2720,20 @@
     "showAll_many": "Показать все {{count}} ожидающих комментариев",
     "showAll_one": "Показать {{count}} ожидающий комментарий",
     "showAll_other": "Показать все {{count}} ожидающих комментариев",
-    "viewAllFeedback": "Просмотреть все отзывы и настройки"
+    "viewAllFeedback": "Просмотреть все отзывы и настройки",
+    "colorLabels": {
+      "red": "Красный",
+      "yellow": "Жёлтый",
+      "green": "Зелёный",
+      "blue": "Синий",
+      "purple": "Фиолетовый"
+    },
+    "colorLabel": "цветовая метка",
+    "colorLabelsTitle": "Цветовые метки",
+    "colorLabelError": "Не удалось обновить цветовую метку",
+    "removeColorLabel": "Убрать метку «{{color}}»",
+    "setColorLabel": "Отметить как «{{color}}»",
+    "markedAs": "Отмечено как «{{color}}»"
   },
   "filter": {
     "feedbackFilters": "Фильтры отзывов",
@@ -2709,7 +2751,11 @@
     "twoStarsPlus": "2+ звезды",
     "threeStarsPlus": "3+ звезды",
     "fourStarsPlus": "4+ звезды",
-    "fiveStarsOnly": "Только 5 звёзд"
+    "fiveStarsOnly": "Только 5 звёзд",
+    "colorLabels": "Цветовые метки",
+    "showOnlyColor": "Показать только «{{color}}»",
+    "myColorLabels": "Ваши отметки",
+    "showOnlyMyColor": "Показать только мои отметки «{{color}}»"
   },
   "adminLogin": {
     "title": "Вход для администратора",
@@ -2767,7 +2813,10 @@
     "exportSelected_few": "Экспортировать {{count}} выбранных",
     "exportSelected_many": "Экспортировать {{count}} выбранных",
     "exportSelected_one": "Экспортировать {{count}} выбранный",
-    "exportSelected_other": "Экспортировать {{count}} выбранных"
+    "exportSelected_other": "Экспортировать {{count}} выбранных",
+    "markSource": "Звёзды и цвет для XMP из",
+    "markSourceClient": "Выбор клиента",
+    "markSourceMine": "Ваши отметки"
   },
   "photoSort": {
     "defaultSort": "Сортировка фото по умолчанию",

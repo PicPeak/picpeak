@@ -29,6 +29,7 @@ const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ow
 // requirePermission gates supply the missing half; they key on req.admin.id,
 // which apiTokenAuth populates.
 const { requirePermission } = require('../../middleware/permissions');
+const { resolveEventFeedbackDefaults } = require('../../services/feedbackDefaults');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const { generateThumbnail } = require('../../services/imageProcessor');
 const logger = require('../../utils/logger');
@@ -303,17 +304,22 @@ router.post(
       const id = insertResult[0]?.id || insertResult[0];
 
       // Issue #550 — mirror adminEvents.js: create event_feedback_settings
-      // row when feedback is enabled, so the gallery actually shows
-      // feedback UI. Sub-flags default to the same values the admin form
-      // ships with (everything on except require_name_email).
+      // row when feedback is enabled, so the gallery actually shows feedback
+      // UI. The sub-flags come from the shared global defaults (#1044) rather
+      // than a hard-coded list, which is how this path silently shipped
+      // without allow_reactions for two releases.
       if (feedback_enabled) {
+        const feedbackDefaults = await resolveEventFeedbackDefaults();
         await db('event_feedback_settings').insert({
           event_id: id,
           feedback_enabled: formatBoolean(true),
-          allow_ratings: formatBoolean(true),
-          allow_likes: formatBoolean(true),
-          allow_comments: formatBoolean(true),
-          allow_favorites: formatBoolean(true),
+          allow_ratings: formatBoolean(feedbackDefaults.allow_ratings),
+          allow_likes: formatBoolean(feedbackDefaults.allow_likes),
+          allow_comments: formatBoolean(feedbackDefaults.allow_comments),
+          allow_favorites: formatBoolean(feedbackDefaults.allow_favorites),
+          allow_reactions: formatBoolean(feedbackDefaults.allow_reactions),
+          allow_color_labels: formatBoolean(feedbackDefaults.allow_color_labels),
+          keybind_mode: feedbackDefaults.keybind_mode,
           require_name_email: formatBoolean(false),
           moderate_comments: formatBoolean(true),
           show_feedback_to_guests: formatBoolean(true),

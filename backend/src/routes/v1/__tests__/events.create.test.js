@@ -172,20 +172,25 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
     //   2. branding probe (whereIn → select)
     //   3. slug probe
     //   4. events insert
-    //   5. event_feedback_settings insert
+    //   5. feedback sub-toggle defaults probe (whereIn → select, #1044)
+    //   6. event_feedback_settings insert
     const devtoolsChain = buildChain({ firstResult: null });
     const brandingChain = buildChain({ selectResult: [] });
     const slugChain = buildChain({ firstResult: null });
     const insertChain = buildChain({ returningResult: [{ id: 50 }] });
+    const feedbackDefaultsChain = buildChain({ selectResult: [] });
     const feedbackInsertChain = buildChain();
-    db.__setImplementations(devtoolsChain, brandingChain, slugChain, insertChain, feedbackInsertChain);
+    db.__setImplementations(
+      devtoolsChain, brandingChain, slugChain, insertChain,
+      feedbackDefaultsChain, feedbackInsertChain,
+    );
 
     await request(buildApp())
       .post('/events')
       .send({ ...BASE_BODY, feedback_enabled: true })
       .expect(201);
 
-    expect(db).toHaveBeenNthCalledWith(5, 'event_feedback_settings');
+    expect(db).toHaveBeenNthCalledWith(6, 'event_feedback_settings');
 
     const feedbackRow = feedbackInsertChain.insert.mock.calls[0][0];
     expect(feedbackRow).toMatchObject({ event_id: 50 });
@@ -197,6 +202,12 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
     expect(Boolean(feedbackRow.allow_likes)).toBe(true);
     expect(Boolean(feedbackRow.allow_comments)).toBe(true);
     expect(Boolean(feedbackRow.allow_favorites)).toBe(true);
+    // #1044: this insert used to omit allow_reactions entirely, so v1-created
+    // events only got reactions by accident of the column default.
+    expect(Boolean(feedbackRow.allow_reactions)).toBe(true);
+    // Colour labels are opt-in, so they stay off until the global is flipped.
+    expect(Boolean(feedbackRow.allow_color_labels)).toBe(false);
+    expect(feedbackRow.keybind_mode).toBe('colors');
     expect(Boolean(feedbackRow.require_name_email)).toBe(false);
     expect(Boolean(feedbackRow.moderate_comments)).toBe(true);
     expect(Boolean(feedbackRow.show_feedback_to_guests)).toBe(true);
@@ -205,7 +216,8 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
   it('honours the event_default_feedback_enabled global when body omits feedback_enabled', async () => {
     // Feedback probe returns serialized "true" → fallback kicks in and
     // the feedback insert runs. Sequence: feedback probe, devtools probe,
-    // branding probe, slug, insert, feedback insert (6 calls total).
+    // branding probe, slug, insert, sub-toggle defaults probe (#1044),
+    // feedback insert (7 calls total).
     const feedbackProbe = buildChain({
       firstResult: { setting_key: 'event_default_feedback_enabled', setting_value: 'true' },
     });
@@ -213,9 +225,11 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
     const brandingChain = buildChain({ selectResult: [] });
     const slugChain = buildChain({ firstResult: null });
     const insertChain = buildChain({ returningResult: [{ id: 51 }] });
+    const feedbackDefaultsChain = buildChain({ selectResult: [] });
     const feedbackInsertChain = buildChain();
     db.__setImplementations(
-      feedbackProbe, devtoolsChain, brandingChain, slugChain, insertChain, feedbackInsertChain
+      feedbackProbe, devtoolsChain, brandingChain, slugChain, insertChain,
+      feedbackDefaultsChain, feedbackInsertChain,
     );
 
     await request(buildApp())
@@ -223,7 +237,7 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
       .send(BASE_BODY)
       .expect(201);
 
-    expect(db).toHaveBeenNthCalledWith(6, 'event_feedback_settings');
+    expect(db).toHaveBeenNthCalledWith(7, 'event_feedback_settings');
     expect(feedbackInsertChain.insert).toHaveBeenCalledTimes(1);
   });
 

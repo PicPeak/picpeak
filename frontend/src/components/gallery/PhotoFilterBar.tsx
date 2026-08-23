@@ -3,6 +3,8 @@ import { Search, SortAsc, SortDesc, Grid, Heart, Star, MessageSquare, Bookmark }
 import { useTranslation } from 'react-i18next';
 import { Button, Input } from '../common';
 import type { FilterType, FeedbackFilterType } from './GalleryFilter';
+import { ColorLabelFilterChips } from './ColorLabelFilterChips';
+import type { ColorLabel } from '../../services/feedback.service';
 
 interface PhotoCategory {
   id: number | string;
@@ -40,6 +42,12 @@ interface PhotoFilterBarProps {
   mediaFilter?: 'all' | 'photo' | 'video';
   onMediaFilterChange?: (filter: 'all' | 'photo' | 'video') => void;
   showMediaFilter?: boolean;
+  // Colour-label filters (#1044). Their own slice rather than more members
+  // of FilterType — see the note in GalleryView.
+  colorLabelsEnabled?: boolean;
+  activeColorFilters?: ColorLabel[];
+  onColorFilterChange?: (color: ColorLabel) => void;
+  colorLabelCounts?: Partial<Record<ColorLabel, number>>;
 }
 
 export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
@@ -59,7 +67,11 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
   onFilterChange,
   mediaFilter = 'all',
   onMediaFilterChange,
-  showMediaFilter = false
+  showMediaFilter = false,
+  colorLabelsEnabled = false,
+  activeColorFilters = [],
+  onColorFilterChange,
+  colorLabelCounts = {}
 }) => {
   const { t } = useTranslation();
   const [showSortMenu, setShowSortMenu] = useState(false);
@@ -291,6 +303,16 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
               </div>
             )}
 
+            {/* Colour filter (#1044), desktop */}
+            {feedbackEnabled && colorLabelsEnabled && onColorFilterChange && (
+              <ColorLabelFilterChips
+                className="hidden lg:flex flex-shrink-0"
+                activeColors={activeColorFilters}
+                onToggle={onColorFilterChange}
+                counts={colorLabelCounts}
+              />
+            )}
+
             {/* Without categories this row only carries desktop content (the
                 chips are lg-only; mobile has its own block below), so hide
                 the count below lg to keep the mobile layout unchanged. */}
@@ -388,6 +410,16 @@ export const PhotoFilterBar: React.FC<PhotoFilterBarProps> = ({
               </Button>
             </div>
           </div>
+        )}
+
+        {/* Colour filter (#1044), mobile/tablet */}
+        {feedbackEnabled && colorLabelsEnabled && onColorFilterChange && (
+          <ColorLabelFilterChips
+            className="flex lg:hidden"
+            activeColors={activeColorFilters}
+            onToggle={onColorFilterChange}
+            counts={colorLabelCounts}
+          />
         )}
       </div>
     </div>

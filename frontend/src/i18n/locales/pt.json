@@ -346,7 +346,9 @@
     },
     "photosCount_many": "{{count}} fotos",
     "photosCount_one": "{{count}} foto",
-    "photosCount_other": "{{count}} fotos"
+    "photosCount_other": "{{count}} fotos",
+    "colorFilter": "Cor",
+    "filterByColor": "Mostrar apenas {{color}}"
   },
   "categories": {
     "title": "Categorias de Fotos",
@@ -905,7 +907,17 @@
       "showGalleryFilterBar": "Mostrar barra de filtros nas galerias",
       "showGalleryFilterBarHelp": "Exibe a pesquisa por nome de ficheiro e os controlos de ordenação acima das galerias em grelha. Desative para um layout mais limpo.",
       "enablePhoneField": "Ativar campo de número de telefone",
-      "enablePhoneFieldHelp": "Adiciona um campo opcional de número de telefone ao formulário de evento. Útil para automatizações como entrega via WhatsApp com n8n. Sempre opcional mesmo quando ativado."
+      "enablePhoneFieldHelp": "Adiciona um campo opcional de número de telefone ao formulário de evento. Útil para automatizações como entrega via WhatsApp com n8n. Sempre opcional mesmo quando ativado.",
+      "feedbackTypeDefaultsHelp": "Que tipos de feedback as novas galerias trazem. As galerias existentes não são alteradas — cada galeria continua a poder ser ajustada individualmente.",
+      "defaultAllowRatings": "Classificação por estrelas",
+      "defaultAllowLikes": "Gostos",
+      "defaultAllowFavorites": "Favoritos",
+      "defaultAllowComments": "Comentários",
+      "defaultAllowReactions": "Reações emoji",
+      "defaultAllowColorLabels": "Etiquetas de cor",
+      "defaultKeybindMode": "Atalhos predefinidos do visualizador",
+      "keybindColors": "Apenas cores — 1 verde, 2 amarelo, 3 vermelho",
+      "keybindLightroom": "Lightroom — 1-5 estrelas, 6-9 cores"
     },
     "imageSecurity": {
       "title": "Proteção de Imagem",
@@ -1669,7 +1681,15 @@
       "visibleSuccess": "Fotos agora visíveis aos visitantes",
       "processingStatus": "A processar…",
       "processingFailed": "Falhado",
-      "retryQueued": "Nova tentativa em fila"
+      "retryQueued": "Nova tentativa em fila",
+      "myMarks": "As suas marcas",
+      "myMarksHelp": "Só você as vê. Nunca aparecem na galeria do cliente e são exportadas para o Lightroom como XMP.",
+      "myRating": "A sua classificação",
+      "clearRating": "Remover a sua classificação",
+      "rateStars": "Classificar com {{count}} estrelas",
+      "markError": "Não foi possível guardar a sua marca",
+      "yourMarkColor": "A sua marca: {{color}}",
+      "yourMarkRating": "A sua classificação: {{count}}"
     },
     "events": {
       "tabs": {
@@ -1729,7 +1749,8 @@
         "comments": "Comentários",
         "ratings": "Avaliações",
         "reactions": "Reações",
-        "lastSeen": "Última visita"
+        "lastSeen": "Última visita",
+        "colorLabels": "Etiquetas de cor"
       },
       "view": "Ver detalhes",
       "export": "Exportar",
@@ -1743,7 +1764,8 @@
         "favorited": "Favorito",
         "rated": "Avaliado",
         "reacted": "Reagiu",
-        "commented": "Comentado"
+        "commented": "Comentado",
+        "labeled": "Etiquetas de cor"
       },
       "inviteStatus": {
         "pending": "Pendente",
@@ -2581,7 +2603,14 @@
       "enableRateLimiting": "Ativar limitação de taxa",
       "rateLimitingDesc": "Previne spam limitando a frequência de feedback",
       "timeWindow": "Janela de tempo (minutos)",
-      "maxRequests": "Pedidos máx."
+      "maxRequests": "Pedidos máx.",
+      "colorLabels": "Etiquetas de cor",
+      "colorLabelsDesc": "Uma cor por convidado e por foto, com o conjunto de cores do Lightroom para que a seleção seja transferida via XMP",
+      "keybindMode": "Atalhos de teclado",
+      "keybindColors": "Apenas cores (mais simples)",
+      "keybindColorsDesc": "1 = verde (1.ª escolha), 2 = amarelo (2.ª escolha), 3 = vermelho (rejeitada)",
+      "keybindLightroom": "Predefinições do Lightroom",
+      "keybindLightroomDesc": "1-5 atribuem estrelas, 6-9 atribuem vermelho / amarelo / verde / azul"
     },
     "settingsUpdated": "Definições de feedback atualizadas",
     "settingsUpdateError": "Falha ao atualizar definições",
@@ -2661,7 +2690,20 @@
     "showAll_many": "Mostrar todos os {{count}} comentários pendentes",
     "showAll_one": "Mostrar o {{count}} comentário pendente",
     "showAll_other": "Mostrar todos os {{count}} comentários pendentes",
-    "viewAllFeedback": "Ver todo o feedback e definições"
+    "viewAllFeedback": "Ver todo o feedback e definições",
+    "colorLabels": {
+      "red": "Vermelho",
+      "yellow": "Amarelo",
+      "green": "Verde",
+      "blue": "Azul",
+      "purple": "Roxo"
+    },
+    "colorLabel": "etiqueta de cor",
+    "colorLabelsTitle": "Etiquetas de cor",
+    "colorLabelError": "Não foi possível atualizar a etiqueta de cor",
+    "removeColorLabel": "Remover a etiqueta {{color}}",
+    "setColorLabel": "Marcar como {{color}}",
+    "markedAs": "Marcado como {{color}}"
   },
   "filter": {
     "feedbackFilters": "Filtros de Feedback",
@@ -2679,7 +2721,11 @@
     "twoStarsPlus": "2+ estrelas",
     "threeStarsPlus": "3+ estrelas",
     "fourStarsPlus": "4+ estrelas",
-    "fiveStarsOnly": "Apenas 5 estrelas"
+    "fiveStarsOnly": "Apenas 5 estrelas",
+    "colorLabels": "Etiquetas de cor",
+    "showOnlyColor": "Mostrar apenas {{color}}",
+    "myColorLabels": "As suas marcas",
+    "showOnlyMyColor": "Mostrar apenas as minhas marcas {{color}}"
   },
   "adminLogin": {
     "title": "Login Administrativo",
@@ -2736,7 +2782,10 @@
     "hint": "Selecione fotos ou aplique filtros para exportar",
     "exportSelected_many": "Exportar {{count}} selecionados",
     "exportSelected_one": "Exportar {{count}} selecionado",
-    "exportSelected_other": "Exportar {{count}} selecionados"
+    "exportSelected_other": "Exportar {{count}} selecionados",
+    "markSource": "Estrelas e cor XMP a partir de",
+    "markSourceClient": "Seleções do cliente",
+    "markSourceMine": "As suas marcas"
   },
   "photoSort": {
     "defaultSort": "Ordenação padrão das fotos",

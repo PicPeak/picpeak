@@ -31,6 +31,7 @@ const { verifyGalleryAccess, denySlideshowToken, isAdminPreview } = require('../
 const withPreview = (req, url) => (req.isAdminPreview ? `${url}${url.includes('?') ? '&' : '?'}admin_preview=1` : url);
 const { resolveGuest } = require('../middleware/guestAuth');
 const { generateGuestIdentifier } = require('../middleware/feedbackRateLimit');
+const { COLOR_LABELS } = require('../constants/colorLabels');
 const secureImageService = require('../services/secureImageService');
 const logger = require('../utils/logger');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
@@ -721,16 +722,26 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         };
 
         let guestFeedbackByType = null;
+        let guestColorLabels = null;
         if (guest_id) {
           const guestFeedbackRows = await db('photo_feedback')
             .where({ event_id: req.event.id, guest_identifier: guest_id })
-            .select('photo_id', 'feedback_type');
+            .select('photo_id', 'feedback_type', 'color_label');
 
           guestFeedbackByType = guestFeedbackRows.reduce((acc, row) => {
             if (!acc[row.feedback_type]) {
               acc[row.feedback_type] = new Set();
             }
             acc[row.feedback_type].add(row.photo_id);
+            return acc;
+          }, {});
+
+          // Colour filters are per-COLOUR, not just per-type (#1044) — "show
+          // me my greens" needs the value, which the type map above discards.
+          guestColorLabels = guestFeedbackRows.reduce((acc, row) => {
+            if (row.feedback_type !== 'color_label' || !row.color_label) return acc;
+            if (!acc[row.color_label]) acc[row.color_label] = new Set();
+            acc[row.color_label].add(row.photo_id);
             return acc;
           }, {});
         }
@@ -755,6 +766,23 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         if (filterTokens.has('rated')) {
           includeGuestMatches('rating');
           includeBy(photo => (photo.average_rating || 0) > 0);
+        }
+
+        // Colour-label filters (#1044), one token per colour: `color:green`.
+        // Same OR-of-guest-and-aggregate shape as the sibling tokens above:
+        // the guest's own labels of that colour, plus anyone's. (The public
+        // gallery narrows to "my greens" client-side from `my_color_label`,
+        // which is per-viewer by construction.)
+        const requestedColors = COLOR_LABELS.filter(color => filterTokens.has(`color:${color}`));
+        if (requestedColors.length > 0) {
+          for (const color of requestedColors) {
+            guestColorLabels?.[color]?.forEach(id => include.add(id));
+          }
+          const colorRows = await db('photo_feedback')
+            .where({ event_id: req.event.id, feedback_type: 'color_label', is_hidden: false })
+            .whereIn('color_label', requestedColors)
+            .select('photo_id');
+          colorRows.forEach(row => include.add(row.photo_id));
         }
 
         if (filterTokens.has('commented')) {
@@ -811,6 +839,26 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
       }
       const likedRows = await likeQuery.select('photo_id');
       likedRows.forEach(row => likedPhotoIds.add(row.photo_id));
+    }
+
+    // Per-viewer colour label (#1044), same identity resolution as the likes
+    // above. NOT gated on showFeedbackToGuests: a guest's own label is their
+    // own selection, not shared aggregate data, and hiding it would blank the
+    // grid badges on every refresh in a gallery with sharing switched off.
+    const myColorLabelByPhoto = {};
+    if (photos.length > 0) {
+      const colorQuery = db('photo_feedback')
+        .where({ event_id: req.event.id, feedback_type: 'color_label' })
+        .whereIn('photo_id', photos.map(p => p.id));
+      if (req.guest?.id) {
+        colorQuery.where('guest_id', req.guest.id);
+      } else {
+        colorQuery.where('guest_identifier', generateGuestIdentifier(req));
+      }
+      const colorRows = await colorQuery.select('photo_id', 'color_label');
+      colorRows.forEach(row => {
+        if (row.color_label) myColorLabelByPhoto[row.photo_id] = row.color_label;
+      });
     }
 
     // People in each photo (#1074). Two independent gates: the feature must
@@ -1087,6 +1135,12 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
           // grid seed its lifted likedPhotoIds correctly on hard refresh.
           is_liked: showFeedbackToGuests ? likedPhotoIds.has(photo.id) : false,
           favorite_count: showFeedbackToGuests ? (photo.favorite_count || 0) : 0,
+          // Colour labels (#1044). The COUNT is aggregate data and follows
+          // show_feedback_to_guests like its siblings; the viewer's OWN label
+          // is not aggregate and must survive with sharing off, otherwise the
+          // grid badge disappears on refresh for the very guest who set it.
+          color_label_count: showFeedbackToGuests ? (photo.color_label_count || 0) : 0,
+          my_color_label: myColorLabelByPhoto[photo.id] || null,
           // People in this photo (#1074). Empty array when the feature is
           // off for this event or hidden from guests, so the frontend has
           // one shape to handle. Riding along on this payload is what keeps

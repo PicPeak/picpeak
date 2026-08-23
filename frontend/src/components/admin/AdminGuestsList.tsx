@@ -233,6 +233,9 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                   <th className="px-4 py-3 text-right text-xs font-medium text-neutral-600 dark:text-neutral-400 uppercase">
                     {t('admin.guests.columns.reactions', 'Reactions')}
                   </th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-neutral-600 dark:text-neutral-400 uppercase">
+                    {t('admin.guests.columns.colorLabels', 'Color labels')}
+                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-neutral-600 dark:text-neutral-400 uppercase">
                     {t('admin.guests.columns.lastSeen', 'Last seen')}
                   </th>
@@ -275,6 +278,9 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                     </td>
                     <td className="px-4 py-3 text-right text-sm text-neutral-900 dark:text-neutral-100">
                       {guest.stats.reactions}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm text-neutral-900 dark:text-neutral-100">
+                      {guest.stats.color_labels ?? 0}
                     </td>
                     <td className="px-4 py-3 text-sm text-neutral-600 dark:text-neutral-400">
                       {fmtDate(guest.last_seen_at)}

@@ -208,6 +208,12 @@ export interface Photo {
   // Used to seed the lifted likedPhotoIds Set in grid layouts on mount.
   is_liked?: boolean;
   favorite_count?: number;
+  // Colour labels (#1044). `color_label_count` is aggregate data and follows
+  // show_feedback_to_guests; `my_color_label` is the requesting viewer's own
+  // label and is always present, so the grid badge survives a refresh even in
+  // galleries where feedback isn't shared between guests.
+  color_label_count?: number;
+  my_color_label?: string | null;
 }
 
 // Download resolutions (#858).

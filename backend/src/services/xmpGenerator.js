@@ -3,6 +3,8 @@
  * Generates Adobe XMP metadata files for photos with guest feedback
  */
 
+const { COLOR_LABEL_TO_XMP, dominantColorLabel } = require('../constants/colorLabels');
+
 class XmpGenerator {
   /**
    * Generate XMP sidecar content for a photo
@@ -19,7 +21,7 @@ class XmpGenerator {
     } = options;
 
     const rating = include_rating ? this.mapRating(photo.average_rating) : 0;
-    const label = include_label ? this.mapLabel(photo.average_rating) : null;
+    const label = include_label ? this.mapLabel(photo) : null;
 
     const descriptionXml = include_description ? this.generateDescription(photo) : '';
     const keywordsXml = include_keywords ? this.generateKeywords(photo) : '';
@@ -57,11 +59,39 @@ class XmpGenerator {
   }
 
   /**
-   * Map PicPeak rating to XMP color label
+   * Resolve the photo's XMP colour label.
+   *
+   * A real colour label the client set while proofing (#1044) always wins:
+   * that is the whole point of using Lightroom's colour set, and it is an
+   * explicit choice rather than something inferred. Only when a photo has no
+   * label does this fall back to the historical rating-derived mapping, so
+   * exports for events that never enabled colour labels are unchanged.
+   *
+   * @param {Object} photo - photo row, may carry dominant_color_label
+   * @returns {string|null} XMP label colour
+   */
+  mapLabel(photo) {
+    // Tolerate being handed a bare rating: this used to take one, and
+    // callers outside the export service may still do so.
+    if (typeof photo === 'number' || photo === null || photo === undefined) {
+      return this.mapRatingToLabel(photo);
+    }
+
+    const colorLabel = photo.dominant_color_label
+      || dominantColorLabel(photo.color_labels);
+    if (colorLabel && COLOR_LABEL_TO_XMP[colorLabel]) {
+      return COLOR_LABEL_TO_XMP[colorLabel];
+    }
+
+    return this.mapRatingToLabel(photo.average_rating);
+  }
+
+  /**
+   * The pre-#1044 mapping: infer a colour from the average star rating.
    * @param {number} avgRating - Average rating
    * @returns {string|null} XMP label color
    */
-  mapLabel(avgRating) {
+  mapRatingToLabel(avgRating) {
     if (!avgRating || avgRating === 0) return null;
     if (avgRating >= 4.5) return 'Red';      // Top picks
     if (avgRating >= 3.5) return 'Yellow';   // Good
@@ -80,7 +110,9 @@ class XmpGenerator {
     const likes = photo.like_count || 0;
     const favorites = photo.favorite_count || 0;
 
-    const desc = `PicPeak Guest Feedback: ${rating} stars, ${likes} likes, ${favorites} favorites`;
+    const colorLabel = photo.dominant_color_label || dominantColorLabel(photo.color_labels);
+    const colorPart = colorLabel ? `, ${colorLabel} label` : '';
+    const desc = `PicPeak Guest Feedback: ${rating} stars, ${likes} likes, ${favorites} favorites${colorPart}`;
 
     return `<dc:description>
         <rdf:Alt>
@@ -111,6 +143,14 @@ class XmpGenerator {
 
     if (photo.favorite_count > 0) {
       keywords.push('favorited');
+    }
+
+    // A searchable keyword for the client's colour choice (#1044) — Lightroom
+    // can filter on xmp:Label directly, Bridge and Capture One users often
+    // find keywords easier.
+    const colorLabel = photo.dominant_color_label || dominantColorLabel(photo.color_labels);
+    if (colorLabel) {
+      keywords.push(`color-${colorLabel}`);
     }
 
     if (photo.category_name) {

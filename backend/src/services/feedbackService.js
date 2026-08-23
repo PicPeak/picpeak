@@ -2,6 +2,8 @@ const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
 const { REACTION_EMOJIS } = require('../constants/reactions');
+const { isValidColorLabel } = require('../constants/colorLabels');
+const { resolveEventFeedbackDefaults, DEFAULT_KEYBIND_MODE, KEYBIND_MODES } = require('./feedbackDefaults');
 
 // Every writable column on event_feedback_settings (#1030). The admin form
 // posts its whole client-side state back, including UI-only keys that were
@@ -17,6 +19,8 @@ const FEEDBACK_SETTINGS_COLUMNS = [
   'allow_comments',
   'allow_favorites',
   'allow_reactions',
+  'allow_color_labels',
+  'keybind_mode',
   'require_name_email',
   'moderate_comments',
   'require_moderation',
@@ -25,6 +29,16 @@ const FEEDBACK_SETTINGS_COLUMNS = [
   'max_favorites_per_guest',
   'max_likes_per_guest'
 ];
+
+/**
+ * Feedback types that store exactly ONE value per guest per photo, and the
+ * column each keeps it in. Both share the toggle-off / switch semantics in
+ * submitFeedback below.
+ */
+const SINGLE_VALUE_COLUMNS = {
+  reaction: 'reaction',
+  color_label: 'color_label',
+};
 
 function pickSettingsColumns(settings) {
   const picked = {};
@@ -47,15 +61,15 @@ class FeedbackService {
         .first();
       
       if (!settings) {
-        // Return default settings if none exist
+        // No row = feedback was never enabled for this event. The sub-toggles
+        // still matter: they are the state the admin's feedback panel opens
+        // with. Read them from the same global defaults the create routes use
+        // (#1044) instead of a fourth hard-coded copy that drifts from them.
+        const globals = await resolveEventFeedbackDefaults();
         return {
           event_id: eventId,
           feedback_enabled: false,
-          allow_ratings: true,
-          allow_likes: true,
-          allow_comments: false,
-          allow_favorites: true,
-          allow_reactions: true,
+          ...globals,
           require_name_email: false,
           moderate_comments: true,
           show_feedback_to_guests: true,
@@ -68,6 +82,12 @@ class FeedbackService {
       // Back-compat: rows created before migration 078 have NULL identity_mode.
       if (!settings.identity_mode) {
         settings.identity_mode = 'simple';
+      }
+      // Rows created before migration 180 have NULL keybind_mode. An
+      // unrecognised value gets the same treatment — the lightbox switches on
+      // this string and must never receive something it has no scheme for.
+      if (!KEYBIND_MODES.includes(settings.keybind_mode)) {
+        settings.keybind_mode = DEFAULT_KEYBIND_MODE;
       }
       // Per-guest caps (#655). NULL on existing rows = unlimited; the route
       // layer treats null/0/missing identically.
@@ -139,10 +159,10 @@ class FeedbackService {
 
   async submitFeedback(photoId, eventId, feedbackData, guestIdentifier) {
     try {
-      const { feedback_type, rating, comment_text, reaction, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
+      const { feedback_type, rating, comment_text, reaction, color_label, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
 
       // Validate feedback type
-      if (!['rating', 'like', 'comment', 'favorite', 'reaction'].includes(feedback_type)) {
+      if (!['rating', 'like', 'comment', 'favorite', 'reaction', 'color_label'].includes(feedback_type)) {
         throw new Error('Invalid feedback type');
       }
 
@@ -150,6 +170,11 @@ class FeedbackService {
       // (the route validator enforces this too; this is the last line).
       if (feedback_type === 'reaction' && !REACTION_EMOJIS.includes(reaction)) {
         throw new Error('Invalid reaction');
+      }
+
+      // Same contract for colour labels (#1044).
+      if (feedback_type === 'color_label' && !isValidColorLabel(color_label)) {
+        throw new Error('Invalid color label');
       }
 
       // Rating 0 clears the guest's rating (#884). Only the explicit zero
@@ -209,35 +234,41 @@ class FeedbackService {
             return { id: existing.id, updated: true };
           }
 
-          // One reaction per guest per photo, changeable (#839): the same
-          // emoji again toggles it off; a different one switches the row.
+          // Single-value types — one reaction (#839) and one colour label
+          // (#1044) per guest per photo, both changeable: submitting the
+          // current value again toggles it off, a different one switches the
+          // row. Shared so the two paths can't drift.
+          //
           // Toggle/switch act on the full guest-scoped QUERY, not existing.id:
           // like the sibling like path, the check-then-insert above can race
           // into duplicate rows — operating on the set makes the next
           // interaction collapse them instead of leaving a phantom count.
-          const reactionScope = () => {
-            const q = db('photo_feedback').where({
-              photo_id: photoId,
-              event_id: eventId,
-              feedback_type: 'reaction',
-            });
-            if (guest_id) q.where('guest_id', guest_id);
-            else q.where('guest_identifier', guestIdentifier);
-            return q;
-          };
-          if (feedback_type === 'reaction') {
-            if (existing.reaction === reaction) {
-              await reactionScope().delete();
+          const singleValueColumn = SINGLE_VALUE_COLUMNS[feedback_type];
+          if (singleValueColumn) {
+            const submittedValue = feedback_type === 'reaction' ? reaction : color_label;
+            const singleValueScope = () => {
+              const q = db('photo_feedback').where({
+                photo_id: photoId,
+                event_id: eventId,
+                feedback_type,
+              });
+              if (guest_id) q.where('guest_id', guest_id);
+              else q.where('guest_identifier', guestIdentifier);
+              return q;
+            };
+
+            if (existing[singleValueColumn] === submittedValue) {
+              await singleValueScope().delete();
               await this.updatePhotoFeedbackStats(photoId);
               return { removed: true };
             }
             // Converge to exactly one row: drop any racy duplicates, then
-            // switch the surviving row's emoji.
-            await reactionScope().whereNot('id', existing.id).delete();
+            // switch the surviving row's value.
+            await singleValueScope().whereNot('id', existing.id).delete();
             await db('photo_feedback')
               .where('id', existing.id)
               .update({
-                reaction,
+                [singleValueColumn]: submittedValue,
                 updated_at: new Date()
               });
             await this.updatePhotoFeedbackStats(photoId);
@@ -300,6 +331,7 @@ class FeedbackService {
         rating: feedback_type === 'rating' ? rating : null,
         comment_text: feedback_type === 'comment' ? comment_text : null,
         reaction: feedback_type === 'reaction' ? reaction : null,
+        color_label: feedback_type === 'color_label' ? color_label : null,
         guest_name,
         guest_email,
         guest_identifier: guestIdentifier,
@@ -352,7 +384,7 @@ class FeedbackService {
       
       const feedback = await query
         .orderBy('created_at', 'desc')
-        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'guest_name', 'created_at', 'is_approved', 'is_hidden');
+        .select('id', 'feedback_type', 'rating', 'comment_text', 'reaction', 'color_label', 'guest_name', 'created_at', 'is_approved', 'is_hidden');
       
       return feedback;
     } catch (error) {
@@ -368,7 +400,7 @@ class FeedbackService {
     try {
       const photos = await db('photos')
         .where('event_id', eventId)
-        .select('id', 'filename', 'feedback_count', 'like_count', 'average_rating', 'favorite_count', 'reaction_count')
+        .select('id', 'filename', 'feedback_count', 'like_count', 'average_rating', 'favorite_count', 'reaction_count', 'color_label_count')
         .orderBy('average_rating', 'desc')
         .orderBy('like_count', 'desc');
       
@@ -380,7 +412,8 @@ class FeedbackService {
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_likes', ['like']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_comments', ['comment']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_favorites', ['favorite']),
-          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_reactions', ['reaction'])
+          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_reactions', ['reaction']),
+          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_color_labels', ['color_label'])
         )
         .first();
       
@@ -420,6 +453,67 @@ class FeedbackService {
   }
 
   /**
+   * Per-colour tallies for one photo (#1044) — the colour-label sibling of
+   * getPhotoReactionCounts.
+   */
+  async getPhotoColorLabelCounts(photoId) {
+    try {
+      const rows = await db('photo_feedback')
+        .where({ photo_id: photoId, feedback_type: 'color_label' })
+        .where('is_hidden', false)
+        .groupBy('color_label')
+        .select('color_label')
+        .count('id as count');
+
+      const counts = {};
+      for (const row of rows) {
+        if (row.color_label) counts[row.color_label] = Number(row.count) || 0;
+      }
+      return counts;
+    } catch (error) {
+      logger.error('Error getting photo color label counts:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Per-colour tallies for every labelled photo in an event, keyed by photo
+   * id (#1044). One grouped query — the admin grid needs this for a whole
+   * page of photos at once, and the per-photo helper above would be N+1.
+   *
+   * @param {number} eventId
+   * @param {number[]} [photoIds] - optional narrowing to the visible page
+   * @returns {Promise<Object>} { [photoId]: { green: 2, red: 1 } }
+   */
+  async getEventColorLabelCounts(eventId, photoIds = null) {
+    try {
+      const query = db('photo_feedback')
+        .where({ event_id: eventId, feedback_type: 'color_label' })
+        .where('is_hidden', false)
+        .groupBy('photo_id', 'color_label')
+        .select('photo_id', 'color_label')
+        .count('id as count');
+
+      if (Array.isArray(photoIds)) {
+        if (photoIds.length === 0) return {};
+        query.whereIn('photo_id', photoIds);
+      }
+
+      const rows = await query;
+      const byPhoto = {};
+      for (const row of rows) {
+        if (!row.color_label) continue;
+        if (!byPhoto[row.photo_id]) byPhoto[row.photo_id] = {};
+        byPhoto[row.photo_id][row.color_label] = Number(row.count) || 0;
+      }
+      return byPhoto;
+    } catch (error) {
+      logger.error('Error getting event color label counts:', error);
+      return {};
+    }
+  }
+
+  /**
    * Update photo feedback statistics
    */
   async updatePhotoFeedbackStats(photoId) {
@@ -433,6 +527,7 @@ class FeedbackService {
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as like_count', ['like']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as favorite_count', ['favorite']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as reaction_count', ['reaction']),
+          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as color_label_count', ['color_label']),
           db.raw('AVG(CASE WHEN feedback_type = ? THEN rating END) as average_rating', ['rating']),
           db.raw('COUNT(DISTINCT COALESCE(CAST(guest_id AS VARCHAR), guest_identifier)) as feedback_count')
         )
@@ -446,7 +541,8 @@ class FeedbackService {
           like_count: stats.like_count || 0,
           average_rating: stats.average_rating || 0,
           favorite_count: stats.favorite_count || 0,
-          reaction_count: stats.reaction_count || 0
+          reaction_count: stats.reaction_count || 0,
+          color_label_count: stats.color_label_count || 0
         });
     } catch (error) {
       logger.error('Error updating photo feedback stats:', error);
@@ -587,6 +683,7 @@ class FeedbackService {
           'photo_feedback.rating',
           'photo_feedback.comment_text',
           'photo_feedback.reaction',
+          'photo_feedback.color_label',
           'photo_feedback.guest_name',
           'photo_feedback.guest_email',
           'photo_feedback.created_at'
@@ -625,6 +722,7 @@ class FeedbackService {
           'photo_feedback.rating',
           'photo_feedback.comment_text',
           'photo_feedback.reaction',
+          'photo_feedback.color_label',
           'photo_feedback.guest_name',
           'photo_feedback.guest_email',
           'photo_feedback.guest_identifier',
@@ -651,6 +749,7 @@ class FeedbackService {
             star_rating: '',
             comment: '',
             reaction: '',
+            color_label: '',
             latest_at: row.created_at,
           };
           byKey.set(key, entry);
@@ -679,6 +778,9 @@ class FeedbackService {
             break;
           case 'reaction':
             if (row.reaction) entry.reaction = row.reaction;
+            break;
+          case 'color_label':
+            if (row.color_label) entry.color_label = row.color_label;
             break;
           default:
             // Unknown feedback type — ignore so a future type doesn't break the export.

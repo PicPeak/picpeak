@@ -18,6 +18,16 @@ router.get('/', async (req, res) => {
               'seo_meta_noindex', 'seo_meta_nofollow', 'seo_meta_noai',
               'event_default_require_password',
               'event_default_feedback_enabled',
+              // Per-type feedback defaults (#1044) — the create form seeds
+              // its feedback panel from these, the same way it seeds the
+              // master toggle above.
+              'event_default_allow_ratings',
+              'event_default_allow_likes',
+              'event_default_allow_favorites',
+              'event_default_allow_comments',
+              'event_default_allow_reactions',
+              'event_default_allow_color_labels',
+              'event_default_keybind_mode',
               'gallery_show_filter_bar',
               'event_phone_field_enabled',
               // #613 — guest upload UI needs to know the per-batch file
@@ -206,6 +216,16 @@ router.get('/', async (req, res) => {
       // Defaults to false (matches the prior hard-coded form default), so
       // existing installs see no behaviour change until an admin flips it.
       event_default_feedback_enabled: settingsObject.event_default_feedback_enabled === true,
+      // Per-type feedback defaults (#1044). The fallbacks mirror
+      // FEEDBACK_TOGGLES in services/feedbackDefaults.js — the backend is
+      // still the authority; these only pre-fill the create form.
+      event_default_allow_ratings: settingsObject.event_default_allow_ratings !== false,
+      event_default_allow_likes: settingsObject.event_default_allow_likes !== false,
+      event_default_allow_favorites: settingsObject.event_default_allow_favorites !== false,
+      event_default_allow_comments: settingsObject.event_default_allow_comments !== false,
+      event_default_allow_reactions: settingsObject.event_default_allow_reactions !== false,
+      event_default_allow_color_labels: settingsObject.event_default_allow_color_labels === true,
+      event_default_keybind_mode: settingsObject.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors',
       // Phone-number field on events is opt-in (#322).
       event_phone_field_enabled: settingsObject.event_phone_field_enabled === true,
       // Whether to show the search/sort filter bar in public galleries (default: true)

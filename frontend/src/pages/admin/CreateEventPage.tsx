@@ -65,6 +65,8 @@ interface FormData {
     allow_comments: boolean;
     allow_favorites: boolean;
     allow_reactions: boolean;
+    allow_color_labels: boolean;
+    keybind_mode: 'colors' | 'lightroom';
     require_name_email: boolean;
     moderate_comments: boolean;
     show_feedback_to_guests: boolean;
@@ -134,6 +136,8 @@ export const CreateEventPage: React.FC = () => {
       allow_comments: true,
       allow_favorites: true,
       allow_reactions: true,
+      allow_color_labels: false,
+      keybind_mode: 'colors',
       require_name_email: false,
       moderate_comments: true,
       show_feedback_to_guests: true,
@@ -270,11 +274,12 @@ export const CreateEventPage: React.FC = () => {
     }));
   }, [publicSettings]);
 
-  // Honour the global "Enable Guest Feedback by default" admin setting (#520).
-  // Same one-shot apply pattern as require_password above — only seeds the
-  // master toggle. The sub-toggles (likes / ratings / comments) keep their
-  // hard-coded true defaults so a flipped master immediately gives sensible
-  // behaviour without a second admin setting to manage.
+  // Honour the global guest-feedback defaults (#520 for the master toggle,
+  // #1044 for the per-type ones). Same one-shot apply pattern as
+  // require_password above. This form POSTs every sub-toggle explicitly, so
+  // seeding them here is what makes the Settings > Events defaults actually
+  // reach a gallery created through the UI — the server-side inheritance in
+  // feedbackDefaults.js only covers callers that omit them (the v1 API).
   const feedbackEnabledDefaultApplied = useRef(false);
   useEffect(() => {
     if (feedbackEnabledDefaultApplied.current) return;
@@ -284,7 +289,14 @@ export const CreateEventPage: React.FC = () => {
       ...prev,
       feedback_settings: {
         ...prev.feedback_settings,
-        feedback_enabled: publicSettings.event_default_feedback_enabled === true
+        feedback_enabled: publicSettings.event_default_feedback_enabled === true,
+        allow_ratings: publicSettings.event_default_allow_ratings !== false,
+        allow_likes: publicSettings.event_default_allow_likes !== false,
+        allow_favorites: publicSettings.event_default_allow_favorites !== false,
+        allow_comments: publicSettings.event_default_allow_comments !== false,
+        allow_reactions: publicSettings.event_default_allow_reactions !== false,
+        allow_color_labels: publicSettings.event_default_allow_color_labels === true,
+        keybind_mode: publicSettings.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors'
       }
     }));
   }, [publicSettings]);
@@ -485,6 +497,8 @@ export const CreateEventPage: React.FC = () => {
       allow_comments: feedbackSettings.allow_comments,
       allow_favorites: feedbackSettings.allow_favorites,
       allow_reactions: feedbackSettings.allow_reactions,
+      allow_color_labels: feedbackSettings.allow_color_labels,
+      keybind_mode: feedbackSettings.keybind_mode,
       require_name_email: feedbackSettings.require_name_email,
       moderate_comments: feedbackSettings.moderate_comments,
       show_feedback_to_guests: feedbackSettings.show_feedback_to_guests,

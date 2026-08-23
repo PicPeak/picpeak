@@ -28,6 +28,7 @@ const { getAppSetting } = require('../../utils/appSettings');
 const { clampIntOrUndefined } = require('../../utils/numericHelpers');
 const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const downloadZipService = require('../../services/downloadZipService');
+const { resolveEventFeedbackDefaults, applyFeedbackDefaults, KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { validateHeroImageAnchor, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults, getBrandingDefaults, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./helpers');
 
 module.exports = (router) => {
@@ -93,6 +94,15 @@ module.exports = (router) => {
     // #328 follow-up: per-event opt-in for presigned-URL "Download All".
     // Bypasses watermarks; admin must enable knowingly.
     body('allow_presigned_download').optional().isBoolean(),
+    // Feedback sub-toggles (#1044). Optional: omitting them inherits the
+    // global Settings > Events defaults.
+    body('allow_ratings').optional().isBoolean(),
+    body('allow_likes').optional().isBoolean(),
+    body('allow_comments').optional().isBoolean(),
+    body('allow_favorites').optional().isBoolean(),
+    body('allow_reactions').optional().isBoolean(),
+    body('allow_color_labels').optional().isBoolean(),
+    body('keybind_mode').optional().isIn(KEYBIND_MODES),
     body('css_template_id').optional({ nullable: true, checkFalsy: true }).isInt(),
     // Hero logo settings
     body('hero_logo_visible').optional({ nullable: true }).isBoolean(),
@@ -167,13 +177,20 @@ module.exports = (router) => {
         watermark_text = null,
         allow_presigned_download = false,
         require_password: requirePasswordInput,
-        // Feedback settings
+        // Feedback settings. The allow_* sub-toggles deliberately have NO
+        // destructuring defaults: `undefined` means "the caller didn't say",
+        // which inherits the global Settings > Events default (#1044). The
+        // admin create form posts explicit values (it seeds its own panel
+        // from the same globals), so inheritance here is what covers the v1
+        // API and any other caller that omits them.
         feedback_enabled: feedbackEnabledInput,
-        allow_ratings = true,
-        allow_likes = true,
-        allow_comments = true,
-        allow_favorites = true,
-        allow_reactions = true,
+        allow_ratings: allowRatingsInput,
+        allow_likes: allowLikesInput,
+        allow_comments: allowCommentsInput,
+        allow_favorites: allowFavoritesInput,
+        allow_reactions: allowReactionsInput,
+        allow_color_labels: allowColorLabelsInput,
+        keybind_mode: keybindModeInput,
         require_name_email = false,
         moderate_comments = true,
         show_feedback_to_guests = true,
@@ -252,6 +269,18 @@ module.exports = (router) => {
         if (setting !== undefined) feedbackEnabledFallback = setting;
       }
       const feedback_enabled = parseBooleanInput(feedbackEnabledInput, feedbackEnabledFallback);
+
+      // Sub-toggle defaults from the global Settings > Events values (#1044).
+      // One batched read; an explicitly-sent body value still wins.
+      const feedbackDefaults = applyFeedbackDefaults({
+        allow_ratings: allowRatingsInput,
+        allow_likes: allowLikesInput,
+        allow_comments: allowCommentsInput,
+        allow_favorites: allowFavoritesInput,
+        allow_reactions: allowReactionsInput,
+        allow_color_labels: allowColorLabelsInput,
+        keybind_mode: keybindModeInput,
+      }, await resolveEventFeedbackDefaults());
 
       // Debug logging
       logger.debug('Download control values', {
@@ -510,11 +539,13 @@ module.exports = (router) => {
         await db('event_feedback_settings').insert({
           event_id: eventId,
           feedback_enabled: formatBoolean(feedback_enabled),
-          allow_ratings: formatBoolean(allow_ratings),
-          allow_likes: formatBoolean(allow_likes),
-          allow_comments: formatBoolean(allow_comments),
-          allow_favorites: formatBoolean(allow_favorites),
-          allow_reactions: formatBoolean(allow_reactions),
+          allow_ratings: formatBoolean(feedbackDefaults.allow_ratings),
+          allow_likes: formatBoolean(feedbackDefaults.allow_likes),
+          allow_comments: formatBoolean(feedbackDefaults.allow_comments),
+          allow_favorites: formatBoolean(feedbackDefaults.allow_favorites),
+          allow_reactions: formatBoolean(feedbackDefaults.allow_reactions),
+          allow_color_labels: formatBoolean(feedbackDefaults.allow_color_labels),
+          keybind_mode: feedbackDefaults.keybind_mode,
           require_name_email: formatBoolean(require_name_email),
           moderate_comments: formatBoolean(moderate_comments),
           show_feedback_to_guests: formatBoolean(show_feedback_to_guests),
@@ -1157,6 +1188,10 @@ module.exports = (router) => {
           allow_comments: sourceFeedback.allow_comments,
           allow_favorites: sourceFeedback.allow_favorites,
           allow_reactions: sourceFeedback.allow_reactions,
+          // A clone copies the SOURCE event, so these come from the source
+          // row rather than the global defaults (#1044).
+          allow_color_labels: sourceFeedback.allow_color_labels,
+          keybind_mode: sourceFeedback.keybind_mode,
           require_name_email: sourceFeedback.require_name_email,
           moderate_comments: sourceFeedback.moderate_comments,
           show_feedback_to_guests: sourceFeedback.show_feedback_to_guests,

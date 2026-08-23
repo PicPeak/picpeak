@@ -10,6 +10,7 @@ import Download from 'yet-another-react-lightbox/plugins/download';
 import Captions from 'yet-another-react-lightbox/plugins/captions';
 import 'yet-another-react-lightbox/styles.css';
 import 'yet-another-react-lightbox/plugins/thumbnails.css';
+import { ColorLabelBadge } from '../ColorLabelBadge';
 import 'yet-another-react-lightbox/plugins/captions.css';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Download as DownloadIcon, Heart, Check, Star, MessageSquare, Package, LogOut } from 'lucide-react';
@@ -129,6 +130,9 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         useEnhancedProtection={useEnhancedProtection}
         useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
       />
+
+      {/* Colour label (#1044) — same badge every layout uses. */}
+      <ColorLabelBadge colorLabel={photo.my_color_label} />
 
       {/* Overlay Gradient */}
       <div className="gallery-premium-photo-overlay" />

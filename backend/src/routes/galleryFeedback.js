@@ -33,6 +33,9 @@ router.get('/:slug/feedback-settings',
         allow_comments: Boolean(settings.allow_comments),
         allow_favorites: Boolean(settings.allow_favorites),
         allow_reactions: Boolean(settings.allow_reactions),
+        allow_color_labels: Boolean(settings.allow_color_labels),
+        // Which lightbox shortcut scheme this gallery uses (#1044).
+        keybind_mode: settings.keybind_mode || 'colors',
         require_name_email: Boolean(settings.require_name_email),
         show_feedback_to_guests: Boolean(settings.show_feedback_to_guests),
         identity_mode: settings.identity_mode || 'simple',
@@ -125,6 +128,7 @@ router.get('/:slug/photos/:photoId/feedback',
           // Gated like the per-emoji map below — aggregate reaction data is
           // a new surface, kept fully hidden while sharing is off.
           reaction_count: settings.show_feedback_to_guests ? (photo.reaction_count || 0) : 0,
+          color_label_count: settings.show_feedback_to_guests ? (photo.color_label_count || 0) : 0,
           comment_count: await db('photo_feedback')
             .where({ 
               photo_id: photoId, 
@@ -142,11 +146,17 @@ router.get('/:slug/photos/:photoId/feedback',
         reactions: settings.show_feedback_to_guests
           ? await feedbackService.getPhotoReactionCounts(photoId)
           : {},
+        // Per-colour tallies (#1044), gated exactly like `reactions` above:
+        // with sharing off the guest sees only their own label.
+        color_labels: settings.show_feedback_to_guests
+          ? await feedbackService.getPhotoColorLabelCounts(photoId)
+          : {},
         my_feedback: {
           rating: guestFeedback.find(f => f.feedback_type === 'rating')?.rating,
           liked: !!guestFeedback.find(f => f.feedback_type === 'like'),
           favorited: !!guestFeedback.find(f => f.feedback_type === 'favorite'),
-          reaction: guestFeedback.find(f => f.feedback_type === 'reaction')?.reaction || null
+          reaction: guestFeedback.find(f => f.feedback_type === 'reaction')?.reaction || null,
+          color_label: guestFeedback.find(f => f.feedback_type === 'color_label')?.color_label || null
         }
       });
     } catch (error) {
@@ -199,7 +209,8 @@ router.post('/:slug/photos/:photoId/feedback',
         like: settings.allow_likes,
         comment: settings.allow_comments,
         favorite: settings.allow_favorites,
-        reaction: settings.allow_reactions
+        reaction: settings.allow_reactions,
+        color_label: settings.allow_color_labels
       };
 
       if (!typeAllowed[feedbackType]) {
@@ -246,6 +257,7 @@ router.post('/:slug/photos/:photoId/feedback',
         rating: req.body.rating,
         comment_text: req.body.comment_text,
         reaction: req.body.reaction,
+        color_label: req.body.color_label,
         guest_name: req.guest?.name ?? req.body.guest_name,
         guest_email: req.guest?.email ?? req.body.guest_email,
         guest_id: req.guest?.id ?? null,
@@ -372,7 +384,9 @@ router.get('/:slug/feedback-summary',
           allow_likes: settings.allow_likes,
           allow_comments: settings.allow_comments,
           allow_favorites: settings.allow_favorites,
-          allow_reactions: settings.allow_reactions
+          allow_reactions: settings.allow_reactions,
+          allow_color_labels: settings.allow_color_labels,
+          keybind_mode: settings.keybind_mode || 'colors'
         },
         summary: guestSummary
       });

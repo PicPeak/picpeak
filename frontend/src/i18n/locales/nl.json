@@ -338,7 +338,9 @@
       "socials": "Sociale media"
     },
     "photosCount_one": "{{count}} foto",
-    "photosCount_other": "{{count}} foto's"
+    "photosCount_other": "{{count}} foto's",
+    "colorFilter": "Kleur",
+    "filterByColor": "Alleen {{color}} tonen"
   },
   "categories": {
     "title": "Fotocategorieen",
@@ -888,7 +890,17 @@
       "showGalleryFilterBar": "Filterbalk in galerijen tonen",
       "showGalleryFilterBarHelp": "Toont de zoek-op-bestandsnaam en sorteerbediening boven rasterindelingsgalerijen. Uitschakelen voor een cleaner lay-out.",
       "enablePhoneField": "Telefoonnummerveld inschakelen",
-      "enablePhoneFieldHelp": "Voegt een optioneel telefoonnumerinvoerveld toe aan het evenementformulier. Handig voor automatisering zoals WhatsApp-levering via n8n. Altijd optioneel, ook als ingeschakeld."
+      "enablePhoneFieldHelp": "Voegt een optioneel telefoonnumerinvoerveld toe aan het evenementformulier. Handig voor automatisering zoals WhatsApp-levering via n8n. Altijd optioneel, ook als ingeschakeld.",
+      "feedbackTypeDefaultsHelp": "Met welke feedbacktypen nieuwe galerijen starten. Bestaande galerijen veranderen niet — elke galerij blijft afzonderlijk instelbaar.",
+      "defaultAllowRatings": "Sterbeoordelingen",
+      "defaultAllowLikes": "Likes",
+      "defaultAllowFavorites": "Favorieten",
+      "defaultAllowComments": "Reacties",
+      "defaultAllowReactions": "Emoji-reacties",
+      "defaultAllowColorLabels": "Kleurlabels",
+      "defaultKeybindMode": "Standaard sneltoetsen in de weergave",
+      "keybindColors": "Alleen kleuren — 1 groen, 2 geel, 3 rood",
+      "keybindLightroom": "Lightroom — 1-5 sterren, 6-9 kleuren"
     },
     "imageSecurity": {
       "title": "Afbeeldingsbeveiliging",
@@ -1648,7 +1660,15 @@
       "visibleSuccess": "Foto's nu zichtbaar voor gasten",
       "processingStatus": "Verwerken…",
       "processingFailed": "Mislukt",
-      "retryQueued": "Nieuwe poging in wachtrij"
+      "retryQueued": "Nieuwe poging in wachtrij",
+      "myMarks": "Jouw markeringen",
+      "myMarksHelp": "Alleen jij ziet deze. Ze verschijnen nooit in de klantgalerij en gaan als XMP naar Lightroom.",
+      "myRating": "Jouw beoordeling",
+      "clearRating": "Jouw beoordeling wissen",
+      "rateStars": "{{count}} sterren geven",
+      "markError": "Markering opslaan mislukt",
+      "yourMarkColor": "Jouw markering: {{color}}",
+      "yourMarkRating": "Jouw beoordeling: {{count}}"
     },
     "events": {
       "tabs": {
@@ -1704,7 +1724,8 @@
         "comments": "Opmerkingen",
         "ratings": "Beoordelingen",
         "reactions": "Reacties",
-        "lastSeen": "Laatste bezoek"
+        "lastSeen": "Laatste bezoek",
+        "colorLabels": "Kleurlabels"
       },
       "view": "Details bekijken",
       "export": "Exporteren",
@@ -1718,7 +1739,8 @@
         "favorited": "Favoriet",
         "rated": "Beoordeeld",
         "reacted": "Gereageerd",
-        "commented": "Becommentarieerd"
+        "commented": "Becommentarieerd",
+        "labeled": "Kleurlabels"
       },
       "inviteStatus": {
         "pending": "In behandeling",
@@ -2556,7 +2578,14 @@
       "enableRateLimiting": "Snelheidsbeperking inschakelen",
       "rateLimitingDesc": "Voorkom spam door de feedbackfrequentie te beperken",
       "timeWindow": "Tijdvenster (minuten)",
-      "maxRequests": "Max. verzoeken"
+      "maxRequests": "Max. verzoeken",
+      "colorLabels": "Kleurlabels",
+      "colorLabelsDesc": "Eén kleur per gast per foto, met de kleurenset van Lightroom zodat de selectie via XMP meegaat",
+      "keybindMode": "Sneltoetsen",
+      "keybindColors": "Alleen kleuren (eenvoudigst)",
+      "keybindColorsDesc": "1 = groen (1e keuze), 2 = geel (2e keuze), 3 = rood (afgewezen)",
+      "keybindLightroom": "Lightroom-standaard",
+      "keybindLightroomDesc": "1-5 geven sterren, 6-9 geven rood / geel / groen / blauw"
     },
     "settingsUpdated": "Feedbackinstellingen bijgewerkt",
     "settingsUpdateError": "Bijwerken instellingen mislukt",
@@ -2631,7 +2660,20 @@
     "onPhoto": "Op foto",
     "showAll_one": "Alle {{count}} openstaande opmerking tonen",
     "showAll_other": "Alle {{count}} openstaande opmerkingen tonen",
-    "viewAllFeedback": "Alle feedback en instellingen bekijken"
+    "viewAllFeedback": "Alle feedback en instellingen bekijken",
+    "colorLabels": {
+      "red": "Rood",
+      "yellow": "Geel",
+      "green": "Groen",
+      "blue": "Blauw",
+      "purple": "Paars"
+    },
+    "colorLabel": "kleurlabel",
+    "colorLabelsTitle": "Kleurlabels",
+    "colorLabelError": "Bijwerken van kleurlabel mislukt",
+    "removeColorLabel": "Label {{color}} verwijderen",
+    "setColorLabel": "Markeren als {{color}}",
+    "markedAs": "Gemarkeerd als {{color}}"
   },
   "filter": {
     "feedbackFilters": "Feedbackfilters",
@@ -2649,7 +2691,11 @@
     "twoStarsPlus": "2+ sterren",
     "threeStarsPlus": "3+ sterren",
     "fourStarsPlus": "4+ sterren",
-    "fiveStarsOnly": "Alleen 5 sterren"
+    "fiveStarsOnly": "Alleen 5 sterren",
+    "colorLabels": "Kleurlabels",
+    "showOnlyColor": "Alleen {{color}} tonen",
+    "myColorLabels": "Jouw markeringen",
+    "showOnlyMyColor": "Alleen mijn {{color}} markeringen tonen"
   },
   "export": {
     "button": "Exporteren",
@@ -2658,7 +2704,10 @@
     "exportFiltered": "Gefilterde foto's exporteren",
     "hint": "Selecteer foto's of pas filters toe om te exporteren",
     "exportSelected_one": "{{count}} geselecteerde exporteren",
-    "exportSelected_other": "{{count}} geselecteerde exporteren"
+    "exportSelected_other": "{{count}} geselecteerde exporteren",
+    "markSource": "XMP-sterren & -kleur van",
+    "markSourceClient": "Klantselectie",
+    "markSourceMine": "Jouw markeringen"
   },
   "adminLogin": {
     "title": "Beheerder login",

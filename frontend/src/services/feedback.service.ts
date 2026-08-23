@@ -7,6 +7,55 @@ export type IdentityMode = 'simple' | 'guest';
 export const REACTION_EMOJIS = ['❤️', '😂', '😍', '👏', '🎉'] as const;
 export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
 
+// Colour labels (#1044): Lightroom's colour set, so a client's proofing
+// selection round-trips into the photographer's catalogue through xmp:Label.
+// Mirrored in backend/src/constants/colorLabels.js — update both together.
+export const COLOR_LABELS = ['red', 'yellow', 'green', 'blue', 'purple'] as const;
+export type ColorLabel = (typeof COLOR_LABELS)[number];
+
+/** Which lightbox keyboard scheme a gallery uses. */
+export type KeybindMode = 'colors' | 'lightroom';
+
+/**
+ * The two keyboard schemes, as data — the gallery lightbox, the admin viewer
+ * and the settings preview all read these, so they cannot drift.
+ *
+ * 'colors'    three keys, no Lightroom knowledge needed (discussion #1027):
+ *             1 = 1st choice, 2 = 2nd choice, 3 = rejected.
+ * 'lightroom' Lightroom's own defaults: 1-5 stars, 6-9 colours. Lightroom has
+ *             no default shortcut for purple and neither do we.
+ *
+ * In both schemes the same key again clears the value.
+ */
+export const KEYBIND_SCHEMES: Record<KeybindMode, {
+  colors: Record<string, ColorLabel>;
+  ratings: Record<string, number>;
+}> = {
+  colors: {
+    colors: { '1': 'green', '2': 'yellow', '3': 'red' },
+    ratings: {},
+  },
+  lightroom: {
+    colors: { '6': 'red', '7': 'yellow', '8': 'green', '9': 'blue' },
+    ratings: { '1': 1, '2': 2, '3': 3, '4': 4, '5': 5 },
+  },
+};
+
+/**
+ * Swatch colours for the five labels. Deliberately literal hex rather than
+ * theme variables: these ARE Lightroom's colours, and a gallery theme must
+ * not repaint "green" into something the photographer can't match in their
+ * catalogue. Each pairs a fill with a border that stays visible on both a
+ * white and a black backdrop.
+ */
+export const COLOR_LABEL_SWATCHES: Record<ColorLabel, { fill: string; ring: string }> = {
+  red: { fill: '#e8493f', ring: '#b3251c' },
+  yellow: { fill: '#e8c33f', ring: '#a8871a' },
+  green: { fill: '#4caf50', ring: '#2e7d32' },
+  blue: { fill: '#3f7fe8', ring: '#1c4fb3' },
+  purple: { fill: '#9b59d0', ring: '#6a2f99' },
+};
+
 export interface FeedbackSettings {
   feedback_enabled: boolean;
   allow_ratings: boolean;
@@ -14,6 +63,9 @@ export interface FeedbackSettings {
   allow_comments: boolean;
   allow_favorites: boolean;
   allow_reactions: boolean;
+  allow_color_labels: boolean;
+  /** Which lightbox shortcut scheme this gallery uses (#1044). */
+  keybind_mode?: KeybindMode;
   require_name_email: boolean;
   moderate_comments: boolean;
   show_feedback_to_guests: boolean;
@@ -34,11 +86,12 @@ export interface PhotoFeedback {
   id: number;
   photo_id: number;
   event_id: number;
-  feedback_type: 'rating' | 'like' | 'comment' | 'favorite' | 'reaction';
+  feedback_type: 'rating' | 'like' | 'comment' | 'favorite' | 'reaction' | 'color_label';
   rating?: number;
   comment_text?: string;
   comment?: string;
   reaction?: string;
+  color_label?: ColorLabel | null;
   guest_name?: string;
   guest_email?: string;
   is_approved: boolean;
@@ -57,6 +110,7 @@ export interface FeedbackSummary {
   like_count: number;
   favorite_count: number;
   reaction_count?: number;
+  color_label_count?: number;
   comment_count: number;
 }
 
@@ -65,6 +119,7 @@ export interface MyFeedback {
   liked: boolean;
   favorited: boolean;
   reaction?: string | null;
+  color_label?: ColorLabel | null;
 }
 
 export interface FeedbackResponse {
@@ -72,6 +127,8 @@ export interface FeedbackResponse {
   summary: FeedbackSummary;
   /** Per-emoji tallies for the reaction bar (#839), e.g. { '❤️': 3 }. */
   reactions?: Record<string, number>;
+  /** Per-colour tallies (#1044), e.g. { green: 3 }. */
+  color_labels?: Partial<Record<ColorLabel, number>>;
   my_feedback: MyFeedback;
   pagination?: {
     page: number;
@@ -210,10 +267,11 @@ class FeedbackService {
   }
 
   async submitFeedback(slug: string, photoId: string, feedback: {
-    feedback_type: 'rating' | 'like' | 'comment' | 'favorite' | 'reaction';
+    feedback_type: 'rating' | 'like' | 'comment' | 'favorite' | 'reaction' | 'color_label';
     rating?: number;
     comment_text?: string;
     reaction?: string;
+    color_label?: ColorLabel;
     guest_name?: string;
     guest_email?: string;
   }) {

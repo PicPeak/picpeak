@@ -318,7 +318,9 @@
       "anonymous": "Anónimo"
     },
     "rated": "Valorado",
-    "commented": "Comentado"
+    "commented": "Comentado",
+    "colorFilter": "Color",
+    "filterByColor": "Mostrar solo {{color}}"
   },
   "categories": {
     "title": "Categorías de fotos",
@@ -923,7 +925,17 @@
       "expirationWarning": "Las galerías sin expiración permanecerán activas hasta ser archivadas manualmente",
       "saveSettings": "Guardar ajustes de eventos",
       "noteTitle": "Nota",
-      "noteText": "Estos ajustes solo afectan a la creación de nuevos eventos. Los eventos existentes no se ven afectados. El comportamiento por defecto requiere todos los campos."
+      "noteText": "Estos ajustes solo afectan a la creación de nuevos eventos. Los eventos existentes no se ven afectados. El comportamiento por defecto requiere todos los campos.",
+      "feedbackTypeDefaultsHelp": "Qué tipos de valoración traen las galerías nuevas. Las galerías existentes no cambian: cada una se puede ajustar por separado.",
+      "defaultAllowRatings": "Valoración con estrellas",
+      "defaultAllowLikes": "Me gusta",
+      "defaultAllowFavorites": "Favoritos",
+      "defaultAllowComments": "Comentarios",
+      "defaultAllowReactions": "Reacciones emoji",
+      "defaultAllowColorLabels": "Etiquetas de color",
+      "defaultKeybindMode": "Atajos predeterminados del visor",
+      "keybindColors": "Solo colores — 1 verde, 2 amarillo, 3 rojo",
+      "keybindLightroom": "Lightroom — 1-5 estrellas, 6-9 colores"
     },
     "imageSecurity": {
       "title": "Proteger Imagen",
@@ -1569,7 +1581,23 @@
       "hideSelected": "Ocultar",
       "showSelected": "Mostrar",
       "hiddenSuccess": "Fotos ocultas a los invitados",
-      "visibleSuccess": "Fotos ahora visibles para invitados"
+      "visibleSuccess": "Fotos ahora visibles para invitados",
+      "myMarks": "Tus marcas",
+      "myMarksHelp": "Solo tú las ves. Nunca aparecen en la galería del cliente y se exportan a Lightroom como XMP.",
+      "myRating": "Tu valoración",
+      "clearRating": "Quitar tu valoración",
+      "rateStars": "Valorar con {{count}} estrellas",
+      "markError": "No se pudo guardar tu marca",
+      "yourMarkColor": "Tu marca: {{color}}",
+      "yourMarkRating": "Tu valoración: {{count}}"
+    },
+    "guests": {
+      "columns": {
+        "colorLabels": "Etiquetas de color"
+      },
+      "detail": {
+        "labeled": "Etiquetas de color"
+      }
     }
   },
   "permissions": {
@@ -2418,8 +2446,28 @@
       "identityModeSimple": "Feedback simple",
       "identityModeSimpleDesc": "Anónimo, basado en dispositivo. Visitantes del mismo dispositivo comparten estado.",
       "identityModeGuest": "Por invitado",
-      "identityModeGuestDesc": "Cada visitante introduce su nombre. Habilita rastreo por invitado e insights admin."
-    }
+      "identityModeGuestDesc": "Cada visitante introduce su nombre. Habilita rastreo por invitado e insights admin.",
+      "colorLabels": "Etiquetas de color",
+      "colorLabelsDesc": "Un color por invitado y foto, con el conjunto de colores de Lightroom para que la selección se traslade mediante XMP",
+      "keybindMode": "Atajos de teclado",
+      "keybindColors": "Solo colores (lo más sencillo)",
+      "keybindColorsDesc": "1 = verde (1.ª opción), 2 = amarillo (2.ª opción), 3 = rojo (descartada)",
+      "keybindLightroom": "Valores por defecto de Lightroom",
+      "keybindLightroomDesc": "1-5 asignan estrellas, 6-9 asignan rojo / amarillo / verde / azul"
+    },
+    "colorLabels": {
+      "red": "Rojo",
+      "yellow": "Amarillo",
+      "green": "Verde",
+      "blue": "Azul",
+      "purple": "Morado"
+    },
+    "colorLabel": "etiqueta de color",
+    "colorLabelsTitle": "Etiquetas de color",
+    "colorLabelError": "No se pudo actualizar la etiqueta de color",
+    "removeColorLabel": "Quitar la etiqueta {{color}}",
+    "setColorLabel": "Marcar como {{color}}",
+    "markedAs": "Marcado como {{color}}"
   },
   "filter": {
     "feedbackFilters": "Filtros de feedback",
@@ -2436,7 +2484,11 @@
     "hasFavorites": "Con favoritos",
     "hasComments": "Con comentarios",
     "showingPhotos": "Fotos totales",
-    "withRatings": "Con valoraciones"
+    "withRatings": "Con valoraciones",
+    "colorLabels": "Etiquetas de color",
+    "showOnlyColor": "Mostrar solo {{color}}",
+    "myColorLabels": "Tus marcas",
+    "showOnlyMyColor": "Mostrar solo mis marcas en {{color}}"
   },
   "adminLogin": {
     "title": "Acceso admin",
@@ -2492,7 +2544,10 @@
     "error": "Error en la exportación: ",
     "exportSelected": "Exportar {{count}} seleccionadas",
     "exportFiltered": "Exportar fotos filtradas",
-    "hint": "Selecciona fotos o aplica filtros para exportar"
+    "hint": "Selecciona fotos o aplica filtros para exportar",
+    "markSource": "Estrellas y color XMP desde",
+    "markSourceClient": "Selecciones del cliente",
+    "markSourceMine": "Tus marcas"
   },
   "photoSort": {
     "defaultSort": "Orden por defecto",

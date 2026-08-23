@@ -13,6 +13,7 @@ const { requireEventOwnership } = require('../middleware/ownership');
 const { PhotoFilterBuilder } = require('../utils/photoFilterBuilder');
 const { getPagination } = require('../utils/routeHelpers');
 const { PhotoExportService } = require('../services/photoExportService');
+const photoAdminMarksService = require('../services/photoAdminMarksService');
 const logger = require('../utils/logger');
 
 const exportService = new PhotoExportService();
@@ -29,6 +30,8 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), re
   query('has_favorites').optional().isBoolean(),
   query('min_favorites').optional().isInt({ min: 0 }),
   query('has_comments').optional().isBoolean(),
+  query('color_labels').optional().isString(),
+  query('my_color_labels').optional().isString(),
   query('category_id').optional().isInt(),
   query('logic').optional().isIn(['AND', 'OR']),
   query('sort').optional().isIn(['rating', 'likes', 'favorites', 'date', 'filename']),
@@ -62,6 +65,9 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), re
       has_favorites: req.query.has_favorites,
       min_favorites: req.query.min_favorites ? parseInt(req.query.min_favorites) : undefined,
       has_comments: req.query.has_comments,
+      color_labels: req.query.color_labels,
+      my_color_labels: req.query.my_color_labels,
+      admin_id: req.admin.id,
       category_id: req.query.category_id ? parseInt(req.query.category_id) : undefined,
       logic: req.query.logic || 'AND'
     };
@@ -84,6 +90,7 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), re
           'photos.like_count',
           'photos.favorite_count',
           'photos.comment_count',
+          'photos.color_label_count',
           'photos.width',
           'photos.height',
           'photos.uploaded_at',
@@ -142,9 +149,15 @@ router.get('/:eventId/filter-summary', adminAuth, requirePermission('photos.view
       PhotoFilterBuilder.getSummary(db, eventId)
     );
 
+    // Per-colour counts for the caller's OWN marks (#1044 follow-up), so the
+    // "My marks" chips can show numbers the way the client-selection chips do.
+    const myColorLabelCounts = await withRetry(() =>
+      photoAdminMarksService.getEventMarkColorCounts(eventId, req.admin.id)
+    );
+
     res.json({
       success: true,
-      data: summary
+      data: { ...summary, myColorLabelCounts }
     });
   } catch (error) {
     logger.error('Filter summary error:', error);
@@ -161,6 +174,7 @@ router.post('/:eventId/export', adminAuth, requirePermission('photos.download'),
   body('photo_ids.*').optional().isInt(),
   body('filter').optional().isObject(),
   body('format').isIn(['txt', 'csv', 'xmp', 'json']),
+  body('options.mark_source').optional().isIn(['client', 'mine']),
   body('options').optional().isObject()
 ], async (req, res) => {
   try {
@@ -189,13 +203,18 @@ router.post('/:eventId/export', adminAuth, requirePermission('photos.download'),
         db('photos').select('id'),
         eventId
       );
-      filterBuilder.applyFilters(filter);
+      // admin_id comes from the session, so a my-marks filter in the body can
+      // only ever mean the caller's own marks.
+      filterBuilder.applyFilters({ ...filter, admin_id: req.admin.id });
       const filteredPhotos = await withRetry(() => filterBuilder.getQuery());
       photoIds = filteredPhotos.map(p => p.id);
     }
 
     // Export photos
-    const result = await exportService.exportPhotos(eventId, photoIds, format, options);
+    const result = await exportService.exportPhotos(eventId, photoIds, format, {
+      ...options,
+      admin_id: req.admin.id,
+    });
 
     if (result.type === 'stream') {
       res.setHeader('Content-Type', result.contentType);

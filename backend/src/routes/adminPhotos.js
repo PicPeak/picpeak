@@ -13,6 +13,9 @@ const {
   pickRawDownloadName,
 } = require('../services/downloadFilenameService');
 const { escapeLikePattern } = require('../utils/sqlSecurity');
+const { COLOR_LABELS, dominantColorLabel } = require('../constants/colorLabels');
+const feedbackService = require('../services/feedbackService');
+const photoAdminMarksService = require('../services/photoAdminMarksService');
 const { validateUploadedFiles } = require('../middleware/uploadValidation');
 const { getMaxFilesPerUpload, getAllowedMimeTypes } = require('../services/uploadSettings');
 const { processUploadedPhotos } = require('../services/photoProcessor');
@@ -724,6 +727,60 @@ router.delete('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.
   }
 });
 
+// The photographer's own star / colour mark on a photo (#1044 follow-up).
+//
+// Separate from guest feedback in every sense: its own table, its own
+// endpoint, and never surfaced to the gallery. `rating` and `color_label` are
+// tri-state — omit a key to leave that half alone, send null to clear it — so
+// the lightbox's colour keys and star keys don't wipe each other.
+router.put('/:eventId/photos/:photoId/mark', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    // Parse before querying: Postgres errors on `where id = 'abc'` (22P02),
+    // which would answer 500 for what is really a bad URL. SQLite just fails
+    // to match, so without this the two engines disagree.
+    const photoId = parseInt(req.params.photoId, 10);
+    if (!Number.isInteger(photoId) || photoId < 1) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    // requireEventOwnership proves the caller owns the EVENT; this proves the
+    // photo is in it, so a photo id from another event can't be marked
+    // through an event the caller does own.
+    const photo = await db('photos')
+      .where({ id: photoId, event_id: eventId })
+      .first();
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+
+    const mark = {};
+    if (Object.prototype.hasOwnProperty.call(req.body, 'rating')) {
+      mark.rating = req.body.rating === null ? null : req.body.rating;
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, 'color_label')) {
+      mark.colorLabel = req.body.color_label === null ? null : req.body.color_label;
+    }
+    if (Object.keys(mark).length === 0) {
+      return res.status(400).json({ error: 'Send rating and/or color_label' });
+    }
+
+    const result = await photoAdminMarksService.setMark(
+      parseInt(eventId, 10), photoId, req.admin.id, mark,
+    );
+
+    res.json({ success: true, mark: result });
+  } catch (error) {
+    // Validation errors from the service are the caller's fault, not a 500.
+    // Keyed on the code, not the message: matching text would couple this
+    // status to the service's wording.
+    if (error.code === photoAdminMarksService.INVALID_MARK) {
+      return res.status(400).json({ error: error.message });
+    }
+    errorResponse(res, error, 500, 'Failed to save mark');
+  }
+});
+
 // Update a photo (e.g., change category)
 router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.edit'), requireEventOwnership, async (req, res) => {
   try {
@@ -1036,7 +1093,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
 router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { category_id, type, search, sort = 'date', has_likes, has_favorites, has_comments, min_rating } = req.query;
+    const { category_id, type, search, sort = 'date', has_likes, has_favorites, has_comments, min_rating, color_label } = req.query;
     const order = ['asc', 'desc'].includes(req.query.order) ? req.query.order : 'desc';
     const logic = req.query.logic === 'OR' ? 'OR' : 'AND';
 
@@ -1090,6 +1147,41 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         feedbackConditions.push(qb => qb.where('photos.average_rating', '>=', minRatingNum));
       }
     }
+    // Colour-label filter (#1044). Comma-separated colours; unknown values are
+    // dropped rather than passed to the query. Unlike its siblings this can't
+    // read a denormalized count column — "any label" and "a GREEN label" are
+    // different questions — so it runs as an EXISTS over photo_feedback,
+    // which the migration-180 index covers.
+    const requestedColorLabels = String(color_label || '')
+      .split(',')
+      .map(value => value.trim().toLowerCase())
+      .filter(value => COLOR_LABELS.includes(value));
+    if (requestedColorLabels.length > 0) {
+      feedbackConditions.push(qb => qb.whereExists(function () {
+        this.select('*')
+          .from('photo_feedback')
+          .whereRaw('photo_feedback.photo_id = photos.id')
+          .where('photo_feedback.feedback_type', 'color_label')
+          .where('photo_feedback.is_hidden', false)
+          .whereIn('photo_feedback.color_label', requestedColorLabels);
+      }));
+    }
+    // The same filter against the caller's OWN marks (#1044 follow-up).
+    // Scoped to req.admin.id: one photographer's triage must not filter by
+    // another's, even on a shared event.
+    const requestedMyColorLabels = String(req.query.my_color_label || '')
+      .split(',')
+      .map(value => value.trim().toLowerCase())
+      .filter(value => COLOR_LABELS.includes(value));
+    if (requestedMyColorLabels.length > 0) {
+      feedbackConditions.push(qb => qb.whereExists(function () {
+        this.select('*')
+          .from('photo_admin_marks')
+          .whereRaw('photo_admin_marks.photo_id = photos.id')
+          .where('photo_admin_marks.admin_id', req.admin.id)
+          .whereIn('photo_admin_marks.color_label', requestedMyColorLabels);
+      }));
+    }
     if (feedbackConditions.length > 0) {
       if (logic === 'OR') {
         query = query.where(builder => {
@@ -1132,6 +1224,20 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
     commentCounts.forEach(c => {
       commentMap[c.photo_id] = parseInt(c.comment_count);
     });
+
+    // Per-colour tallies for the grid badges (#1044) — one grouped query for
+    // the whole page, same shape as commentMap above.
+    const colorLabelMap = await feedbackService.getEventColorLabelCounts(
+      parseInt(eventId, 10),
+      photos.map(p => p.id),
+    );
+
+    // The caller's own marks for this page (#1044 follow-up).
+    const myMarks = await photoAdminMarksService.getEventMarks(
+      parseInt(eventId, 10),
+      req.admin.id,
+      photos.map(p => p.id),
+    );
     
     res.json({
       photos: photos.map(photo => ({
@@ -1159,6 +1265,13 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         comment_count: commentMap[photo.id] || 0,
         like_count: photo.like_count || 0,
         favorite_count: photo.favorite_count || 0,
+        color_label_count: photo.color_label_count || 0,
+        color_labels: colorLabelMap[photo.id] || {},
+        dominant_color_label: dominantColorLabel(colorLabelMap[photo.id]),
+        // The requesting admin's own mark — never the whole team's, and never
+        // shown to guests.
+        my_rating: myMarks[photo.id]?.rating ?? null,
+        my_color_label: myMarks[photo.id]?.color_label ?? null,
         // Engagement counters (#895 follow-up): the grid reads these, but
         // this explicit mapper never included them — so the Engagement
         // column showed 0 regardless of what the DB counted. This, not

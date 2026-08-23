@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Heart } from 'lucide-react';
 import { AuthenticatedImage } from '../../../common';
+import { ColorLabelBadge } from '../../ColorLabelBadge';
 import type { Photo } from '../../../../types';
 
 interface StoryPhotoCardProps {
@@ -77,6 +78,9 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
         />
       </a>
+
+      {/* Colour label (#1044) — same badge every layout uses. */}
+      <ColorLabelBadge colorLabel={photo.my_color_label} />
 
       {/* Overlay */}
       <div className="story-photo-card-overlay" />

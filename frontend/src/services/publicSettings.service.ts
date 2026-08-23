@@ -95,6 +95,14 @@ export interface PublicSettings {
   event_require_expiration?: boolean;
   event_default_require_password?: boolean;
   event_default_feedback_enabled?: boolean;
+  // Per-type feedback defaults (#1044) — seed the create form's feedback panel.
+  event_default_allow_ratings?: boolean;
+  event_default_allow_likes?: boolean;
+  event_default_allow_favorites?: boolean;
+  event_default_allow_comments?: boolean;
+  event_default_allow_reactions?: boolean;
+  event_default_allow_color_labels?: boolean;
+  event_default_keybind_mode?: 'colors' | 'lightroom';
   gallery_show_filter_bar?: boolean;
   event_phone_field_enabled?: boolean;
   // SEO meta tags (consumed by RobotsMetaTags)

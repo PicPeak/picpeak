@@ -1084,7 +1084,9 @@
       "privacyNote": "Personen werden automatisch innerhalb dieser Galerie erkannt. Es werden keine Daten an externe Dienste gesendet.",
       "inThisPhoto": "Auf diesem Foto:",
       "downloadThese": "Diese {{count}} herunterladen"
-    }
+    },
+    "colorFilter": "Farbe",
+    "filterByColor": "Nur {{color}} anzeigen"
   },
   "categories": {
     "title": "Fotokategorien",
@@ -1659,7 +1661,17 @@
       "enablePhoneField": "Telefonnummer-Feld aktivieren",
       "enablePhoneFieldHelp": "Fügt ein optionales Telefonnummer-Eingabefeld zum Veranstaltungsformular hinzu. Nützlich für Folgeautomatisierungen wie WhatsApp-Zustellung via n8n. Immer optional, auch wenn aktiviert.",
       "defaultFeedbackEnabled": "Gäste-Feedback standardmäßig aktivieren",
-      "defaultFeedbackEnabledHelp": "Vorbelegt \"Gäste-Feedback\" beim Erstellen neuer Events. Einzelne Feedback-Optionen (Likes, Bewertungen, Kommentare) bleiben pro Event anpassbar."
+      "defaultFeedbackEnabledHelp": "Vorbelegt \"Gäste-Feedback\" beim Erstellen neuer Events. Einzelne Feedback-Optionen (Likes, Bewertungen, Kommentare) bleiben pro Event anpassbar.",
+      "feedbackTypeDefaultsHelp": "Welche Feedback-Typen neue Galerien standardmäßig erhalten. Bestehende Galerien bleiben unverändert – jede Galerie lässt sich weiterhin einzeln anpassen.",
+      "defaultAllowRatings": "Sternebewertung",
+      "defaultAllowLikes": "Likes",
+      "defaultAllowFavorites": "Favoriten",
+      "defaultAllowComments": "Kommentare",
+      "defaultAllowReactions": "Emoji-Reaktionen",
+      "defaultAllowColorLabels": "Farbmarkierungen",
+      "defaultKeybindMode": "Standard-Tastenkürzel in der Großansicht",
+      "keybindColors": "Nur Farben – 1 Grün, 2 Gelb, 3 Rot",
+      "keybindLightroom": "Lightroom – 1–5 Sterne, 6–9 Farben"
     },
     "imageSecurity": {
       "title": "Bildschutz",
@@ -2881,7 +2893,15 @@
         "views": "Aufrufe",
         "downloads": "Downloads",
         "likes": "Likes"
-      }
+      },
+      "myMarks": "Deine Markierungen",
+      "myMarksHelp": "Nur für dich sichtbar. Sie erscheinen nie in der Kundengalerie und werden als XMP nach Lightroom exportiert.",
+      "myRating": "Deine Bewertung",
+      "clearRating": "Deine Bewertung entfernen",
+      "rateStars": "Mit {{count}} Sternen bewerten",
+      "markError": "Markierung konnte nicht gespeichert werden",
+      "yourMarkColor": "Deine Markierung: {{color}}",
+      "yourMarkRating": "Deine Bewertung: {{count}}"
     },
     "events": {
       "tabs": {
@@ -2937,7 +2957,8 @@
         "comments": "Kommentare",
         "ratings": "Bewertungen",
         "reactions": "Reaktionen",
-        "lastSeen": "Zuletzt gesehen"
+        "lastSeen": "Zuletzt gesehen",
+        "colorLabels": "Farbmarkierungen"
       },
       "view": "Details anzeigen",
       "export": "Exportieren",
@@ -2951,7 +2972,8 @@
         "favorited": "Favorisiert",
         "rated": "Bewertet",
         "reacted": "Reagiert",
-        "commented": "Kommentiert"
+        "commented": "Kommentiert",
+        "labeled": "Farbmarkierungen"
       },
       "inviteStatus": {
         "pending": "Ausstehend",
@@ -3682,7 +3704,14 @@
       "enableRateLimiting": "Ratenbegrenzung aktivieren",
       "rateLimitingDesc": "Spam durch Begrenzung der Feedback-Häufigkeit verhindern",
       "timeWindow": "Zeitfenster (Minuten)",
-      "maxRequests": "Maximale Anfragen"
+      "maxRequests": "Maximale Anfragen",
+      "colorLabels": "Farbmarkierungen",
+      "colorLabelsDesc": "Eine Farbe pro Gast und Foto – im Farbschema von Lightroom, damit die Auswahl per XMP übernommen werden kann",
+      "keybindMode": "Tastenkürzel",
+      "keybindColors": "Nur Farben (am einfachsten)",
+      "keybindColorsDesc": "1 = Grün (1. Wahl), 2 = Gelb (2. Wahl), 3 = Rot (aussortiert)",
+      "keybindLightroom": "Lightroom-Standard",
+      "keybindLightroomDesc": "1–5 vergeben Sterne, 6–9 setzen Rot / Gelb / Grün / Blau"
     },
     "settingsUpdated": "Feedback-Einstellungen aktualisiert",
     "settingsUpdateError": "Einstellungen konnten nicht aktualisiert werden",
@@ -3768,7 +3797,20 @@
     "viewAllFeedback": "Gesamtes Feedback & Einstellungen anzeigen",
     "exportShapeLabel": "Form",
     "exportShapeLong": "Pro Aktion (lang)",
-    "exportShapePivot": "Pro Gast (pivot)"
+    "exportShapePivot": "Pro Gast (pivot)",
+    "colorLabels": {
+      "red": "Rot",
+      "yellow": "Gelb",
+      "green": "Grün",
+      "blue": "Blau",
+      "purple": "Violett"
+    },
+    "colorLabel": "Farbmarkierung",
+    "colorLabelsTitle": "Farbmarkierungen",
+    "colorLabelError": "Farbmarkierung konnte nicht gespeichert werden",
+    "removeColorLabel": "Markierung {{color}} entfernen",
+    "setColorLabel": "Als {{color}} markieren",
+    "markedAs": "Markiert als {{color}}"
   },
   "filter": {
     "feedbackFilters": "Feedback-Filter",
@@ -3786,7 +3828,11 @@
     "twoStarsPlus": "2+ Sterne",
     "threeStarsPlus": "3+ Sterne",
     "fourStarsPlus": "4+ Sterne",
-    "fiveStarsOnly": "Nur 5 Sterne"
+    "fiveStarsOnly": "Nur 5 Sterne",
+    "colorLabels": "Farbmarkierungen",
+    "showOnlyColor": "Nur {{color}} anzeigen",
+    "myColorLabels": "Deine Markierungen",
+    "showOnlyMyColor": "Nur meine Markierungen in {{color}} anzeigen"
   },
   "export": {
     "button": "Exportieren",
@@ -3806,7 +3852,10 @@
       "copied": "In die Zwischenablage kopiert.",
       "copyFailed": "Zugriff auf die Zwischenablage blockiert. Bitte den Text markieren und manuell kopieren.",
       "download": "Als Datei herunterladen"
-    }
+    },
+    "markSource": "XMP-Sterne & -Farbe aus",
+    "markSourceClient": "Kundenauswahl",
+    "markSourceMine": "Deine Markierungen"
   },
   "slideshow": {
     "adminTitle": "Live-Diashow",

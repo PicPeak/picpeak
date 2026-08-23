@@ -625,7 +625,9 @@
       "privacyNote": "People are detected automatically inside this gallery. Nothing is sent to any external service.",
       "inThisPhoto": "In this photo:",
       "downloadThese": "Download these {{count}}"
-    }
+    },
+    "colorFilter": "Color",
+    "filterByColor": "Show only {{color}}"
   },
   "categories": {
     "title": "Photo Categories",
@@ -1263,7 +1265,17 @@
       "enablePhoneField": "Enable phone number field",
       "enablePhoneFieldHelp": "Adds an optional phone number input to the event form. Useful for downstream automations like WhatsApp delivery via n8n. Always optional even when enabled.",
       "defaultFeedbackEnabled": "Enable Guest Feedback by default",
-      "defaultFeedbackEnabledHelp": "Pre-check \"Guest Feedback\" when creating new events. Individual feedback options (likes, ratings, comments) can still be customised per event."
+      "defaultFeedbackEnabledHelp": "Pre-check \"Guest Feedback\" when creating new events. Individual feedback options (likes, ratings, comments) can still be customised per event.",
+      "feedbackTypeDefaultsHelp": "Which feedback types new galleries start with. Existing galleries are not affected — each gallery can still be changed individually.",
+      "defaultAllowRatings": "Star ratings",
+      "defaultAllowLikes": "Likes",
+      "defaultAllowFavorites": "Favorites",
+      "defaultAllowComments": "Comments",
+      "defaultAllowReactions": "Emoji reactions",
+      "defaultAllowColorLabels": "Color labels",
+      "defaultKeybindMode": "Default lightbox shortcuts",
+      "keybindColors": "Colors only — 1 green, 2 yellow, 3 red",
+      "keybindLightroom": "Lightroom — 1-5 stars, 6-9 colors"
     },
     "imageSecurity": {
       "title": "Image Protection",
@@ -2453,7 +2465,15 @@
         "views": "Views",
         "downloads": "Downloads",
         "likes": "Likes"
-      }
+      },
+      "myMarks": "Your marks",
+      "myMarksHelp": "Only you see these. They never appear in the client gallery, and they export to Lightroom as XMP.",
+      "myRating": "Your rating",
+      "clearRating": "Clear your rating",
+      "rateStars": "Rate {{count}} stars",
+      "markError": "Failed to save your mark",
+      "yourMarkColor": "Your mark: {{color}}",
+      "yourMarkRating": "Your rating: {{count}}"
     },
     "events": {
       "tabs": {
@@ -2509,7 +2529,8 @@
         "comments": "Comments",
         "ratings": "Ratings",
         "reactions": "Reactions",
-        "lastSeen": "Last seen"
+        "lastSeen": "Last seen",
+        "colorLabels": "Color labels"
       },
       "view": "View details",
       "export": "Export",
@@ -2523,7 +2544,8 @@
         "favorited": "Favorited",
         "rated": "Rated",
         "reacted": "Reacted",
-        "commented": "Commented"
+        "commented": "Commented",
+        "labeled": "Color labels"
       },
       "inviteStatus": {
         "pending": "Pending",
@@ -3703,7 +3725,14 @@
       "enableRateLimiting": "Enable Rate Limiting",
       "rateLimitingDesc": "Prevent spam by limiting feedback frequency",
       "timeWindow": "Time Window (minutes)",
-      "maxRequests": "Max Requests"
+      "maxRequests": "Max Requests",
+      "colorLabels": "Color Labels",
+      "colorLabelsDesc": "One color per guest per photo, using Lightroom's color set so selections carry over via XMP",
+      "keybindMode": "Keyboard shortcuts",
+      "keybindColors": "Colors only (simplest)",
+      "keybindColorsDesc": "1 = green (1st choice), 2 = yellow (2nd choice), 3 = red (rejected)",
+      "keybindLightroom": "Lightroom defaults",
+      "keybindLightroomDesc": "1-5 set the star rating, 6-9 set red / yellow / green / blue"
     },
     "settingsUpdated": "Feedback settings updated",
     "settingsUpdateError": "Failed to update settings",
@@ -3789,7 +3818,20 @@
     "viewAllFeedback": "View all feedback & settings",
     "exportShapeLabel": "Shape",
     "exportShapeLong": "Per-action (long)",
-    "exportShapePivot": "Per-guest (pivot)"
+    "exportShapePivot": "Per-guest (pivot)",
+    "colorLabels": {
+      "red": "Red",
+      "yellow": "Yellow",
+      "green": "Green",
+      "blue": "Blue",
+      "purple": "Purple"
+    },
+    "colorLabel": "color label",
+    "colorLabelsTitle": "Color labels",
+    "colorLabelError": "Failed to update color label",
+    "removeColorLabel": "Remove {{color}} label",
+    "setColorLabel": "Mark as {{color}}",
+    "markedAs": "Marked as {{color}}"
   },
   "filter": {
     "feedbackFilters": "Feedback Filters",
@@ -3807,7 +3849,11 @@
     "twoStarsPlus": "2+ Stars",
     "threeStarsPlus": "3+ Stars",
     "fourStarsPlus": "4+ Stars",
-    "fiveStarsOnly": "5 Stars Only"
+    "fiveStarsOnly": "5 Stars Only",
+    "colorLabels": "Color labels",
+    "showOnlyColor": "Show only {{color}}",
+    "myColorLabels": "Your marks",
+    "showOnlyMyColor": "Show only my {{color}} marks"
   },
   "setup": {
     "title": "Welcome to PicPeak",
@@ -4102,7 +4148,10 @@
       "copied": "Copied to clipboard.",
       "copyFailed": "Clipboard write blocked. Select the text and copy manually.",
       "download": "Download as file"
-    }
+    },
+    "markSource": "XMP stars & colour from",
+    "markSourceClient": "Client selections",
+    "markSourceMine": "Your marks"
   },
   "photoSort": {
     "defaultSort": "Default Photo Sort",
