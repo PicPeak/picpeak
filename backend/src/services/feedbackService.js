@@ -124,7 +124,12 @@ class FeedbackService {
    */
   async countGuestFeedback(eventId, feedbackType, guestId, guestIdentifier) {
     const query = db('photo_feedback')
-      .where({ event_id: eventId, feedback_type: feedbackType });
+      // Hidden rows do not count against the guest's cap (#1150). They are
+      // absent everywhere else — the heart is empty, the tallies skip them,
+      // and submitFeedback now treats one as room for a fresh row. Counting
+      // them here would meet that fresh row with limit_reached and leave the
+      // control dead until the guest un-likes something they can still see.
+      .where({ event_id: eventId, feedback_type: feedbackType, is_hidden: false });
     if (guestId) {
       query.where('guest_id', guestId);
     } else {
@@ -152,6 +157,13 @@ class FeedbackService {
             photo_id: photoId,
             event_id: eventId,
             feedback_type,
+            // A hidden row is not there (#1150). Without this the guest saw an
+            // empty heart — every read surface treats hidden as absent — and
+            // clicking it found the hidden row and TOGGLED IT OFF, so the
+            // click appeared to do nothing and it took two more to get back to
+            // a filled heart. Skipping it makes the click create a fresh,
+            // visible row, which is what the guest is asking for.
+            is_hidden: false,
           });
         if (guest_id) {
           duplicateQuery.where('guest_id', guest_id);
@@ -297,6 +309,11 @@ class FeedbackService {
       
       const totalStats = await db('photo_feedback')
         .where('event_id', eventId)
+        // Hidden rows do not count, the same rule the photo counters above
+        // already apply — without this the two halves of THIS response
+        // disagreed, and a hidden row preserved beside its replacement (#1150)
+        // is counted twice.
+        .where('is_hidden', false)
         .select(
           db.raw('COUNT(DISTINCT CASE WHEN feedback_type = ? THEN guest_identifier END) as unique_raters', ['rating']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_ratings', ['rating']),
@@ -379,7 +396,33 @@ class FeedbackService {
       await db('photo_feedback')
         .where('id', feedbackId)
         .update(updates);
-      
+
+      // Unhiding can collide with a replacement (#1150). A hidden row reads as
+      // absent, so the guest may well have re-added the same feedback in the
+      // meantime; making the original visible again would leave TWO visible
+      // rows for one guest on one photo — double-counted in the tallies, and
+      // needing two toggles to clear because each one deletes a single row.
+      //
+      // Needs a stable identity to scope by. With neither id nor identifier
+      // the fallback degrades to `guest_identifier IS NULL`, which is every
+      // identifier-less row on the photo — other people's, deleted. Nothing to
+      // converge in that case, so leave it alone. Comments are exempt: several
+      // from one guest on one photo is normal.
+      const collapseIdentity = feedback.guest_id || feedback.guest_identifier;
+      if (updates.is_hidden === false && feedback.feedback_type !== 'comment' && collapseIdentity) {
+        const superseded = db('photo_feedback')
+          .where({
+            photo_id: feedback.photo_id,
+            event_id: feedback.event_id,
+            feedback_type: feedback.feedback_type,
+            is_hidden: false,
+          })
+          .whereNot('id', feedbackId);
+        if (feedback.guest_id) superseded.where('guest_id', feedback.guest_id);
+        else superseded.where('guest_identifier', feedback.guest_identifier);
+        await superseded.delete();
+      }
+
       // Update photo stats if visibility changed
       await this.updatePhotoFeedbackStats(feedback.photo_id);
       
