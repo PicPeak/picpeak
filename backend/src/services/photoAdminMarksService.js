@@ -19,6 +19,9 @@ const { isValidColorLabel } = require('../constants/colorLabels');
  * and a reworded string would silently turn a 400 into a 500.
  */
 const INVALID_MARK = 'INVALID_MARK';
+
+/** The row we were writing to was deleted by a concurrent call. */
+const ROW_GONE = Symbol('row-gone');
 function invalidMark(message) {
   return Object.assign(new Error(message), { code: INVALID_MARK });
 }
@@ -66,7 +69,12 @@ async function setMark(eventId, photoId, adminId, { rating, colorLabel } = {}) {
     if (rating !== undefined) patch.rating = rating === null ? null : Number(rating);
     if (colorLabel !== undefined) patch.color_label = colorLabel;
 
-    await db('photo_admin_marks').where('id', row.id).update(patch);
+    const updated = await db('photo_admin_marks').where('id', row.id).update(patch);
+    // Zero rows means a concurrent CLEAR deleted this row between our read and
+    // this write — the other direction of the same race the patch above
+    // closes. Our value landed nowhere, so reporting emptiness here would drop
+    // the keystroke silently. Say so, and let the caller start over.
+    if (!updated) return ROW_GONE;
 
     // A mark with neither half left is deleted, not kept as an empty row — an
     // empty row would still count as "marked" to anything testing existence.
@@ -86,44 +94,59 @@ async function setMark(eventId, photoId, adminId, { rating, colorLabel } = {}) {
     return { rating: after.rating ?? null, color_label: after.color_label ?? null };
   };
 
-  const existing = await db('photo_admin_marks')
-    .where({ photo_id: photoId, admin_id: adminId })
-    .first();
+  const insertFresh = async () => {
+    // No row yet, so there is nothing for a clear-only call to clear.
+    const fresh = {
+      rating: rating === undefined || rating === null ? null : Number(rating),
+      color_label: colorLabel === undefined || colorLabel === null ? null : colorLabel,
+    };
+    if (fresh.rating === null && fresh.color_label === null) return null;
 
-  if (existing) return applyToRow(existing);
+    const now = new Date().toISOString();
+    try {
+      await db('photo_admin_marks').insert({
+        photo_id: photoId,
+        event_id: eventId,
+        admin_id: adminId,
+        ...fresh,
+        created_at: now,
+        updated_at: now,
+      });
+    } catch (error) {
+      // The read above and this insert are not atomic, and a triage pass fires
+      // them back to back — press 4 then 9 on an UNMARKED photo and both
+      // requests can find no row and both try to insert. The unique index
+      // stops the duplicate, which would otherwise surface as a 500 and a lost
+      // keystroke; converge onto the row the winner created, through the same
+      // write-only-what-you-addressed path as any other update.
+      const raced = await db('photo_admin_marks')
+        .where({ photo_id: photoId, admin_id: adminId })
+        .first();
+      if (!raced) throw error;
+      return applyToRow(raced);
+    }
 
-  // No row yet, so there is nothing for a clear-only call to clear.
-  const fresh = {
-    rating: rating === undefined || rating === null ? null : Number(rating),
-    color_label: colorLabel === undefined || colorLabel === null ? null : colorLabel,
+    return fresh;
   };
-  if (fresh.rating === null && fresh.color_label === null) return null;
 
-  const now = new Date().toISOString();
-  try {
-    await db('photo_admin_marks').insert({
-      photo_id: photoId,
-      event_id: eventId,
-      admin_id: adminId,
-      ...fresh,
-      created_at: now,
-      updated_at: now,
-    });
-  } catch (error) {
-    // The read above and this insert are not atomic, and a triage pass fires
-    // them back to back — press 4 then 9 on an UNMARKED photo and both
-    // requests can find no row and both try to insert. The unique index stops
-    // the duplicate, which would otherwise surface as a 500 and a lost
-    // keystroke; converge onto the row the winner created, through the same
-    // write-only-what-you-addressed path as any other update.
-    const raced = await db('photo_admin_marks')
+  // The row can flip between "exists" and "gone" underneath us: a concurrent
+  // clear deletes it after we read it, or a concurrent set recreates it after
+  // we find none. Each pass re-reads and acts on what it finds, and only a
+  // flip sends us round again — so this settles as soon as one write lands.
+  // Bounded because an unbounded retry on a hot row is a way to hang a
+  // request, and three flips in one keystroke is not a real sequence.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const existing = await db('photo_admin_marks')
       .where({ photo_id: photoId, admin_id: adminId })
       .first();
-    if (!raced) throw error;
-    return applyToRow(raced);
+
+    const result = existing ? await applyToRow(existing) : await insertFresh();
+    if (result !== ROW_GONE) return result;
   }
 
-  return fresh;
+  // Not silent: losing the keystroke is the failure this whole path exists to
+  // avoid, so if it somehow cannot land, say so rather than report success.
+  throw new Error('Could not save mark: the row kept changing underneath');
 }
 
 /**
