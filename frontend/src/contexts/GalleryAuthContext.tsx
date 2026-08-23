@@ -39,6 +39,8 @@ interface GalleryAuthContextType {
   isAuthenticated: boolean;
   event: GalleryEvent | null;
   accessLevel: GalleryAccessLevel;
+  /** Session was minted by the customer portal — credentialed, not a plain guest. */
+  viaCustomer: boolean;
   isClient: boolean;
   login: (slug: string, password?: string, recaptchaToken?: string | null) => Promise<void>;
   clientLogin: (slug: string, password: string) => Promise<void>;
@@ -65,6 +67,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [event, setEvent] = useState<GalleryEvent | null>(null);
   const [accessLevel, setAccessLevel] = useState<GalleryAccessLevel>('guest');
+  const [viaCustomer, setViaCustomer] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [routeError, setRouteError] = useState<string | null>(null);
@@ -204,13 +207,25 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
     const initialise = async () => {
       try {
         setIsLoading(true);
-        const sessionResponse = await api.get<{ valid: boolean; type: string; eventSlug?: string }>(
+        const sessionResponse = await api.get<{
+          valid: boolean; type: string; eventSlug?: string;
+          accessLevel?: GalleryAccessLevel; viaCustomer?: boolean;
+        }>(
           '/auth/session',
           { params: { slug: currentSlug } }
         );
 
         if (sessionResponse.data?.valid && sessionResponse.data.type === 'gallery' && sessionResponse.data.eventSlug === currentSlug) {
           setIsAuthenticated(true);
+          // The SERVER's view of this session, not the per-tab sessionStorage
+          // guess above (#1149). A second tab has no sessionStorage but the
+          // same cookie, so the stored value silently downgraded a client
+          // session to 'guest' while the backend kept serving it as a client.
+          if (sessionResponse.data.accessLevel === 'client') {
+            setAccessLevel('client');
+            sessionStorage.setItem(`gallery_access_level_${currentSlug}`, 'client');
+          }
+          setViaCustomer(Boolean(sessionResponse.data.viaCustomer));
 
           // Always refresh from the server — the stored event from sessionStorage
           // is shown above as an instant placeholder for perceived perf, but it
@@ -340,6 +355,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
     setIsAuthenticated(false);
     setEvent(null);
     setAccessLevel('guest');
+    setViaCustomer(false);
     clearActiveGallerySlug();
   };
 
@@ -350,6 +366,7 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
         event,
         accessLevel,
         isClient: accessLevel === 'client',
+        viaCustomer,
         login,
         clientLogin: clientLoginFn,
         logout,
