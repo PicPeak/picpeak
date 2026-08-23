@@ -82,7 +82,7 @@ exports.up = async function up(knex) {
     filled += 1;
   }
 
-  console.log(`  182: keyed ${filled} separation(s) on embeddings, dropped ${dropped} dangling`);
+  console.log(`  184: keyed ${filled} separation(s) on embeddings, dropped ${dropped} dangling`);
 };
 
 exports.down = async function down(knex) {
