@@ -23,8 +23,8 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'filter-visibility-secret';
 
 const SLUG = 'filter-visibility-event';
-const ME = 'guest-me';
-const SOMEONE_ELSE = 'guest-other';
+const ME = 'guest-me-identifier';
+const SOMEONE_ELSE = 'guest-other-identifier';
 
 describe('guest filters and show_feedback_to_guests (#1044)', () => {
   let db;
@@ -33,6 +33,7 @@ describe('guest filters and show_feedback_to_guests (#1044)', () => {
   let eventId;
   let mine;
   let theirs;
+  let myGuestRowId;
 
   const galleryToken = () => jwt.sign(
     { eventId, eventSlug: SLUG, type: 'gallery' },
@@ -44,11 +45,21 @@ describe('guest filters and show_feedback_to_guests (#1044)', () => {
     .where({ event_id: eventId })
     .update({ show_feedback_to_guests: visible });
 
-  const filter = async (token) => {
-    const res = await request(app)
+  // A real verified guest, which is how the viewer's own feedback is actually
+  // identified — NOT the `guest_id` query parameter the frontend invents.
+  const guestToken = () => jwt.sign(
+    { type: 'guest', guestId: myGuestRowId, eventId },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h', issuer: 'picpeak-auth' }
+  );
+
+  const filter = async (token, { as = 'me', claimGuestId } = {}) => {
+    const req = request(app)
       .get(`/api/gallery/${SLUG}/photos`)
-      .query({ filter: token, guest_id: ME })
+      .query({ filter: token, ...(claimGuestId ? { guest_id: claimGuestId } : {}) })
       .set('Authorization', `Bearer ${galleryToken()}`);
+    if (as === 'me') req.set('x-guest-token', guestToken());
+    const res = await req;
     expect(res.status).toBe(200);
     const photos = Array.isArray(res.body) ? res.body : res.body.photos;
     return (photos || []).map((p) => p.id).sort((a, b) => a - b);
@@ -101,10 +112,23 @@ describe('guest filters and show_feedback_to_guests (#1044)', () => {
       show_feedback_to_guests: true,
     });
 
+    const guestRow = await db('gallery_guests').insert({
+      event_id: eventId,
+      name: 'Me',
+      identifier: ME,
+      created_at: new Date().toISOString(),
+      last_seen_at: new Date().toISOString(),
+      is_deleted: false,
+    }).returning('id');
+    myGuestRowId = guestRow[0]?.id ?? guestRow[0];
+
     const feedback = (photoId, who, type, extra = {}) => db('photo_feedback').insert({
       photo_id: photoId,
       event_id: eventId,
       guest_identifier: who,
+      // Submission links to the per-person guest row when one is present, and
+      // that is the column the viewer's own half resolves through.
+      guest_id: who === ME ? myGuestRowId : null,
       feedback_type: type,
       is_approved: true,
       is_hidden: false,
@@ -165,6 +189,17 @@ describe('guest filters and show_feedback_to_guests (#1044)', () => {
       // The viewer's own half is never gated: this is their own action, and
       // hiding it would break "show me the ones I liked" for no privacy gain.
       expect(await filter('liked')).toEqual([mine]);
+    });
+
+    it('ignores a guest_id supplied by the caller', async () => {
+      // The own-half is resolved from the request identity. If it honoured the
+      // query string instead, anyone holding another guest's identifier could
+      // read that guest's hidden memberships one token at a time — straight
+      // back through the gate this file exists to pin.
+      expect(await filter('favorited', { claimGuestId: SOMEONE_ELSE })).toEqual([]);
+      expect(await filter('color:green', { claimGuestId: SOMEONE_ELSE })).toEqual([]);
+      // And an anonymous caller claiming to be me gets nothing of mine.
+      expect(await filter('liked', { as: 'anon', claimGuestId: ME })).toEqual([]);
     });
   });
 });
