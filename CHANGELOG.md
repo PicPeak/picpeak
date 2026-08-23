@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.114.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.113.0-beta.0...v3.114.0-beta.0) (2026-08-23)
+
+
+### Features
+
+* **gallery:** colour labels for client proofing, and one global default per feedback type ([#1044](https://github.com/PicPeak/picpeak/issues/1044)) ([#1137](https://github.com/PicPeak/picpeak/issues/1137)) ([e2844d1](https://github.com/PicPeak/picpeak/commit/e2844d190969269e53dfac9a74ebd8fe94e042dc))
+
 ## [3.113.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.112.0-beta.0...v3.113.0-beta.0) (2026-08-22)
 
 
