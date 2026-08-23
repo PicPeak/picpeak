@@ -220,10 +220,15 @@ class FeedbackService {
           // into duplicate rows (same defense as the reaction path), and
           // clearing must not leave a stray duplicate in the average.
           if (isRatingClear) {
+            // Visible rows only (#1150). A hidden row can now sit alongside
+            // the guest's replacement, and it is the admin's moderation
+            // record — clearing a rating must not destroy it, or there is
+            // nothing left to review or unhide.
             const clearScope = db('photo_feedback').where({
               photo_id: photoId,
               event_id: eventId,
               feedback_type: 'rating',
+              is_hidden: false,
             });
             if (guest_id) clearScope.where('guest_id', guest_id);
             else clearScope.where('guest_identifier', guestIdentifier);
@@ -258,11 +263,16 @@ class FeedbackService {
           const singleValueColumn = SINGLE_VALUE_COLUMNS[feedback_type];
           if (singleValueColumn) {
             const submittedValue = feedback_type === 'reaction' ? reaction : color_label;
+            // Visible rows only, same reason as the rating clear above: the
+            // toggle-off and the duplicate collapse below both DELETE over
+            // this scope, and a hidden original is the admin's record rather
+            // than a racy duplicate of the guest's own.
             const singleValueScope = () => {
               const q = db('photo_feedback').where({
                 photo_id: photoId,
                 event_id: eventId,
                 feedback_type,
+                is_hidden: false,
               });
               if (guest_id) q.where('guest_id', guest_id);
               else q.where('guest_identifier', guestIdentifier);

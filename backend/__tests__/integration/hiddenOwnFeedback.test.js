@@ -183,6 +183,31 @@ describe('a guest\'s own hidden feedback (#1150)', () => {
         .where({ event_id: eventId }).update({ max_likes_per_guest: null });
     });
 
+    it('keeps the hidden record when the guest changes their replacement', async () => {
+      // A hidden colour label and a visible replacement now coexist. The
+      // toggle/switch and rating-clear paths DELETE over the guest-scoped set,
+      // so an unfiltered scope took the admin's record with it — leaving
+      // nothing to review or unhide.
+      const [orig] = await db('photo_feedback').insert({
+        photo_id: photoId, event_id: eventId, guest_identifier: ME,
+        guest_id: myGuestRowId, feedback_type: 'color_label', color_label: 'red',
+        is_approved: true, is_hidden: true, created_at: new Date().toISOString(),
+      }).returning('id');
+      const hiddenId = typeof orig === 'object' ? orig.id : orig;
+
+      // The guest, seeing no label, picks green, then switches to blue, then
+      // toggles blue off — every mutation the single-value path offers.
+      const opts = { feedback_type: 'color_label', guest_identifier: ME, guest_id: myGuestRowId };
+      await feedbackService.submitFeedback(photoId, eventId, { ...opts, color_label: 'green' });
+      await feedbackService.submitFeedback(photoId, eventId, { ...opts, color_label: 'blue' });
+      await feedbackService.submitFeedback(photoId, eventId, { ...opts, color_label: 'blue' });
+
+      const survivor = await db('photo_feedback').where('id', hiddenId).first();
+      expect(survivor).toBeTruthy();
+      expect(survivor.is_hidden).toBeTruthy();
+      expect(survivor.color_label).toBe('red');
+    });
+
     it('collapses the replacement when an admin unhides the original', async () => {
       await like();
       const original = await db('photo_feedback').where({ photo_id: photoId }).first();
