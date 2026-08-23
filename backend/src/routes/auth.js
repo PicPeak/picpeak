@@ -725,7 +725,18 @@ router.get('/session', async (req, res) => {
         expiresIn: Math.floor(remainingTime),
         user: decoded.username || decoded.eventSlug,
         eventSlug: decoded.eventSlug,
-        adminUsername: decoded.username
+        adminUsername: decoded.username,
+        // What KIND of gallery session this cookie is (#1149). The frontend
+        // kept this in sessionStorage, which is per-tab: reopening a gallery
+        // in a second tab lost 'client' while the cookie — and therefore the
+        // backend — still treated it as one. Reported from the token so a
+        // restored session knows what it actually is.
+        //
+        // viaCustomer marks a portal-minted token, which opens the gallery
+        // without the password. Also a credential, and it does not look like
+        // one: it runs at accessLevel 'guest'.
+        accessLevel: decoded.type === 'gallery' ? (decoded.accessLevel || 'guest') : undefined,
+        viaCustomer: decoded.type === 'gallery' ? decoded.via === 'customer' : undefined
       });
     } catch (err) {
       res.json({

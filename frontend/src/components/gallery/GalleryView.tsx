@@ -33,6 +33,20 @@ import { useQueryClient } from '@tanstack/react-query';
 
 interface GalleryViewProps {
   slug: string;
+  /**
+   * Whether this gallery is password-protected (#1149).
+   *
+   * Drives the Logout button. Logging out of a gallery that asks for nothing
+   * is meaningless — there is no credential to drop and nothing to return to
+   * — and it used to strand the visitor: GalleryPage's auto-login is a
+   * one-shot latch, so clearing the session left the page rendering its
+   * skeleton until a manual reload.
+   *
+   * A client (PIN) session still gets the button on a public gallery: that
+   * one IS a credential, and it is the only way back to the guest view. So is
+   * a customer-portal session.
+   */
+  requiresPassword?: boolean;
   event: {
     id: number;
     event_name: string;
@@ -67,9 +81,9 @@ const parseDefaultPhotoSort = (defaultSort?: string): { sortBy: 'date' | 'name' 
   }
 };
 
-export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
+export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresPassword = true }) => {
   const { t } = useTranslation();
-  const { logout, isClient } = useGalleryAuth();
+  const { logout, isClient, viaCustomer } = useGalleryAuth();
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
@@ -705,6 +719,18 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
   // Skip all wrapper elements (header, footer, sidebar, filters) for these layouts
   const isFullPageLayout = theme.galleryLayout === 'gallery-premium' || theme.galleryLayout === 'gallery-story';
 
+  // Does this session hold something worth dropping? A password gallery and a
+  // PIN client obviously do, and so does a customer-portal session — its token
+  // opens the gallery without the password and lives for 24h in a cookie the
+  // customer logout does not clear.
+  //
+  // Read from the auth context, which resolves it from /auth/session on mount.
+  // accessLevel used to come from sessionStorage alone, which is per-TAB while
+  // the cookie is per-browser: a gallery reopened in a second tab lost
+  // 'client' while the backend went on serving it as one, and the gate would
+  // then hide the only control that clears the privileged cookie (#1149).
+  const showLogoutControl = requiresPassword || isClient || viaCustomer;
+
   // For full-page layouts, render just the PhotoGridWithLayouts without any wrappers
   if (isFullPageLayout) {
     return (
@@ -745,7 +771,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
           heroDividerStyle={data?.event?.hero_divider_style || theme.heroDividerStyle || 'wave'}
           heroImageAnchor={data?.event?.hero_image_anchor || 'center'}
           welcomeMessage={event.welcome_message}
-          onLogout={logout}
+          // Same gate as the standard layout below (#1149). These layouts
+          // render the button on the callback being present rather than on a
+          // showLogout flag, so withholding it is how the gate reaches them.
+          onLogout={showLogoutControl ? logout : undefined}
           showOriginalFilename={showOriginalFilename}
         />
 
@@ -823,7 +852,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event }) => {
         heroLogoVisible={data?.event?.hero_logo_visible !== false}
         heroLogoSize={data?.event?.hero_logo_size || undefined}
         headerStyle={data?.event?.header_style || theme.headerStyle}
-        showLogout={true}
+        showLogout={showLogoutControl}
         onLogout={logout}
         // Old Download All header button is replaced by the new
         // showHeaderDownload below — accent-coloured, always visible when
