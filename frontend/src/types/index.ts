@@ -249,6 +249,10 @@ export interface PhotoCategory {
   slug: string;
   is_global: boolean;
   hero_photo_id?: number | null;
+  // Folder vs filter (#1160). A filter category leaves its photos in the root
+  // grid and narrows it when picked; a folder CONTAINS them — they are absent
+  // from the root grid and only render once the guest opens the folder.
+  is_folder?: boolean;
 }
 
 export interface GalleryData {

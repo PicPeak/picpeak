@@ -627,7 +627,11 @@
       "downloadThese": "Download these {{count}}"
     },
     "colorFilter": "Color",
-    "filterByColor": "Show only {{color}}"
+    "filterByColor": "Show only {{color}}",
+    "folders": "Folders",
+    "openFolder": "Open folder {{name}}",
+    "folderPhotoCount": "{{count}} photos",
+    "backToGallery": "All photos"
   },
   "categories": {
     "title": "Photo Categories",
@@ -662,7 +666,12 @@
     "downloadsDisabled": "Downloads disabled for this category",
     "enableDownloadsTitle": "Click to enable downloads for this category",
     "disableDownloadsTitle": "Click to disable downloads for this category",
-    "failedToToggleDownloads": "Failed to update download permission"
+    "failedToToggleDownloads": "Failed to update download permission",
+    "folderEnabled": "Photos in this category now sit inside a folder",
+    "folderDisabled": "This category filters the gallery again",
+    "failedToToggleFolder": "Failed to update folder setting",
+    "disableFolderTitle": "Folder: these photos are hidden from the main grid and shown only inside the folder. Click to make it a filter again.",
+    "enableFolderTitle": "Filter: these photos stay in the main grid. Click to turn it into a folder — hides them from the grid, does NOT restrict access."
   },
   "events": {
     "revealMode": "Reveal mode (hide gallery until reveal)",

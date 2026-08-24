@@ -16,6 +16,10 @@ export interface PhotoCategory {
   // Per-event override position (#782). Non-null on the /event/:id response when
   // this gallery has customised its order; null means it follows the default.
   override_position?: number | null;
+  // Folder vs filter (#1160). false (the default) is the historical behaviour:
+  // the category filters the root grid. true makes it a container — its photos
+  // leave the root grid and only render inside the folder.
+  is_folder?: boolean;
   created_at: string;
 }
 
@@ -24,6 +28,7 @@ export interface CreateCategoryData {
   slug?: string;
   is_global?: boolean;
   event_id?: number;
+  is_folder?: boolean;
 }
 
 export const categoriesService = {
@@ -52,7 +57,7 @@ export const categoriesService = {
   async updateCategory(
     id: number,
     name: string,
-    patch?: { allow_downloads?: boolean }
+    patch?: { allow_downloads?: boolean; is_folder?: boolean }
   ): Promise<PhotoCategory> {
     const response = await api.put<PhotoCategory>(`/admin/categories/${id}`, { name, ...patch });
     return response.data;

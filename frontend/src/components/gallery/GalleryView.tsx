@@ -8,6 +8,15 @@ import { GallerySkeleton } from './GallerySkeleton';
 import { useGalleryAuth, useTheme } from '../../contexts';
 import { useGalleryPhotos, useDownloadAllPhotos } from '../../hooks/useGallery';
 import { PhotoGridWithLayouts } from './PhotoGridWithLayouts';
+import { GalleryFolderTiles } from './GalleryFolderTiles';
+import {
+  findFolderBySlug,
+  filterCategories,
+  folderTiles,
+  photosInScope,
+  readFolderParam,
+  writeFolderParam,
+} from './folders';
 import { DownloadResolutionModal } from './DownloadResolutionModal';
 import { ExpirationBanner } from './ExpirationBanner';
 import { CountdownTimer } from './CountdownTimer';
@@ -24,7 +33,7 @@ import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { api } from '../../config/api';
-import { Upload, Menu, Eye, EyeOff, Shield, X, Download } from 'lucide-react';
+import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ChevronLeft } from 'lucide-react';
 import { galleryService } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
@@ -96,6 +105,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const { setTheme, theme } = useTheme();
   const queryClient = useQueryClient();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
+  // Open folder (#1160), mirrored to `?folder=<slug>` so it is linkable and the
+  // browser back button walks out of it. Seeded from the URL on first render.
+  const [openFolderSlug, setOpenFolderSlug] = useState<string | null>(() => readFolderParam());
   // Download size picker (#858). `showResolutionPicker` covers "download all";
   // `resolutionPickerIds` covers a selection (sidebar / full-page layouts).
   const [showResolutionPicker, setShowResolutionPicker] = useState(false);
@@ -592,23 +604,58 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const showUrgentWarning = daysUntilExpiration !== null && daysUntilExpiration <= 7;
   const isExpired = daysUntilExpiration !== null && daysUntilExpiration < 0;
 
+  // Folders (#1160). `openFolder` resolves the `?folder=` slug against the
+  // categories the gallery actually returned, so a stale or hand-typed slug
+  // simply falls back to root instead of rendering an empty gallery.
+  const openFolder = useMemo(
+    () => findFolderBySlug(data?.categories, openFolderSlug),
+    [data?.categories, openFolderSlug]
+  );
+
+  const tiles = useMemo(
+    () => folderTiles(data?.categories, data?.photos),
+    [data?.categories, data?.photos]
+  );
+
+  const openFolderBySlug = useCallback((slug: string | null) => {
+    setOpenFolderSlug(slug);
+    writeFolderParam(slug);
+    // Entering or leaving a folder is a scope change, not a filter change —
+    // carrying a category selection across it would contradict the new scope.
+    setSelectedCategoryId(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  // The address bar is the source of truth, so Back/Forward walk in and out of
+  // folders instead of leaving the gallery.
+  useEffect(() => {
+    const onPop = () => setOpenFolderSlug(readFolderParam());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   // Filter and sort photos
   const filteredPhotos = useMemo(() => {
     if (!data?.photos) return [];
-    
-    let photos = [...data.photos];
+
+    // Folder containment (#1160) comes FIRST: at root this drops every photo that
+    // lives in a folder, inside a folder it keeps only that folder's photos.
+    // Everything below narrows within that scope, so a search or a feedback chip
+    // never reaches across a folder boundary.
+    let photos = photosInScope(data.photos, data.categories, openFolder?.id ?? null);
 
     if (mediaFilter === 'photo') {
       photos = photos.filter(photo => resolveMediaType(photo) !== 'video');
     } else if (mediaFilter === 'video') {
       photos = photos.filter(photo => resolveMediaType(photo) === 'video');
     }
-    
-    // Apply category filter
-    if (selectedCategoryId) {
+
+    // Apply category filter. Only meaningful at root — inside a folder every
+    // photo already shares the folder's category.
+    if (selectedCategoryId && !openFolder) {
       photos = photos.filter(photo => photo.category_id === selectedCategoryId);
     }
-    
+
     // Apply search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -708,7 +755,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
     
     return photos;
-  }, [data?.photos, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny]);
+  }, [data?.photos, data?.categories, openFolder, selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug, activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds, selectedPersonIds, peopleMatchAny]);
 
   // Counts shown in the filter chips ("Liked (N)", etc.). In guest
   // mode these need to mirror the per-guest filter behaviour above —
@@ -854,7 +901,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const photoCounts = useMemo(() => {
     if (!data?.photos) return {};
     const counts: Record<number | string, number> = {};
-    data.photos
+    // Scoped to the current view (#1160): a folder's photos must not inflate the
+    // per-category counts shown at root, where those photos aren't in the grid.
+    photosInScope(data.photos, data.categories, openFolder?.id ?? null)
       .filter(photo => {
         if (mediaFilter === 'photo') return resolveMediaType(photo) !== 'video';
         if (mediaFilter === 'video') return resolveMediaType(photo) === 'video';
@@ -866,7 +915,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       }
     });
     return counts;
-  }, [data?.photos, mediaFilter]);
+  }, [data?.photos, data?.categories, openFolder, mediaFilter]);
 
   // Track search usage with debouncing
   useEffect(() => {
@@ -1122,7 +1171,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         <GallerySidebar
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(!sidebarOpen)}
-          categories={(data?.categories || []).filter(cat => photoCounts[cat.id] > 0)}
+          categories={filterCategories(data?.categories).filter(cat => photoCounts[cat.id] > 0)}
           selectedCategoryId={selectedCategoryId}
           onCategoryChange={setSelectedCategoryId}
           searchTerm={searchTerm}
@@ -1286,7 +1335,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {filterBarShown ? (
           <div className="mt-6">
             <PhotoFilterBar
-              categories={data.categories}
+              // Folders are navigation, not a filter (#1160) — they get tiles.
+              categories={filterCategories(data.categories)}
               photos={data.photos}
               selectedCategoryId={selectedCategoryId}
               onCategoryChange={setSelectedCategoryId}
@@ -1418,8 +1468,28 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             `-mt-6` bleed leaves a visible gap instead of gluing the filter
             bar to the hero image (issue #624). */}
         <div className={filterBarShown && isHeroHeader ? "mt-12" : "mt-6"}>
-          <PhotoGridWithLayouts 
-            photos={filteredPhotos} 
+          {/* Folders (#1160). Tiles at root; a breadcrumb back to root inside one. */}
+          {openFolder ? (
+            <div className="mb-6 flex items-center gap-2 text-sm">
+              <button
+                type="button"
+                onClick={() => openFolderBySlug(null)}
+                className="inline-flex items-center gap-1 underline hover:no-underline"
+                style={{ color: 'var(--color-muted-text)' }}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                {t('gallery.backToGallery', 'All photos')}
+              </button>
+              <span style={{ color: 'var(--color-muted-text)' }}>/</span>
+              <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                {openFolder.name}
+              </span>
+            </div>
+          ) : (
+            <GalleryFolderTiles tiles={tiles} onOpen={openFolderBySlug} />
+          )}
+          <PhotoGridWithLayouts
+            photos={filteredPhotos}
             slug={slug}
             people={peopleEnabled ? people : undefined}
             onSelectPerson={togglePerson} 

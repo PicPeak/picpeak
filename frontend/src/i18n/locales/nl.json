@@ -340,7 +340,11 @@
     "photosCount_one": "{{count}} foto",
     "photosCount_other": "{{count}} foto's",
     "colorFilter": "Kleur",
-    "filterByColor": "Alleen {{color}} tonen"
+    "filterByColor": "Alleen {{color}} tonen",
+    "folders": "Mappen",
+    "openFolder": "Map {{name}} openen",
+    "folderPhotoCount": "{{count}} foto's",
+    "backToGallery": "Alle foto's"
   },
   "categories": {
     "title": "Fotocategorieen",

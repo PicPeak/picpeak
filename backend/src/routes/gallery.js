@@ -1053,7 +1053,7 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
       // default, else name — restricted to categories that have photos.
       const categoryDetails = await getEventCategoriesOrdered(req.event.id, {
         onlyIds: usedCategoryIds,
-        select: ['c.id', 'c.name', 'c.slug', 'c.is_global', 'c.hero_photo_id', 'c.allow_downloads'],
+        select: ['c.id', 'c.name', 'c.slug', 'c.is_global', 'c.hero_photo_id', 'c.allow_downloads', 'c.is_folder'],
       });
 
       categories = categoryDetails.map(cat => ({
@@ -1065,7 +1065,11 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
         // Per-category download flag (#640). false explicitly disables; the
         // gallery hides the download button. Defaults true so categories
         // created before migration 135 keep working.
-        allow_downloads: parseBooleanInput(cat.allow_downloads, true)
+        allow_downloads: parseBooleanInput(cat.allow_downloads, true),
+        // Folder vs filter (#1160). true = the category CONTAINS its photos:
+        // they leave the root grid and only render inside the folder. Defaults
+        // false so categories predating migration 185 keep filtering.
+        is_folder: parseBooleanInput(cat.is_folder, false)
       }));
     }
 

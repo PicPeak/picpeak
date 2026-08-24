@@ -356,7 +356,11 @@
     "photosCount_one": "{{count}} фото",
     "photosCount_other": "{{count}} фото",
     "colorFilter": "Цвет",
-    "filterByColor": "Показать только «{{color}}»"
+    "filterByColor": "Показать только «{{color}}»",
+    "folders": "Папки",
+    "openFolder": "Открыть папку {{name}}",
+    "folderPhotoCount": "{{count}} фото",
+    "backToGallery": "Все фото"
   },
   "categories": {
     "title": "Категории фото",
