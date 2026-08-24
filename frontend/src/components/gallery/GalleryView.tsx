@@ -1167,9 +1167,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           leftIcon={<Download className="w-4 h-4" />}
           className="ml-auto"
         >
-          {t('gallery.downloadFolder', 'Download folder ({{count}})', {
-            count: folderDownloadableIds.length,
-          })}
+          {folderDownloadCapped
+            ? t('gallery.downloadFolderCapped', 'Download first {{limit}} of {{total}}', {
+                limit: SELECTED_DOWNLOAD_LIMIT,
+                total: folderDownloadableIds.length,
+              })
+            : t('gallery.downloadFolder', 'Download folder ({{count}})', {
+                count: folderDownloadableIds.length,
+              })}
         </Button>
       )}
     </div>
@@ -1199,7 +1204,27 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             would be hidden with no way in. Contained width so the folder strip
             reads as chrome against the full-bleed grid below it. */}
         {hasFolderNav && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">{buildFolderNav(true)}</div>
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap">
+            {buildFolderNav(true)}
+            {/* These layouts have no header download button — their only
+                gallery-wide download is select-all + download-selected, and
+                select-all is (correctly) scoped to what is on screen. Once
+                folders exist that leaves no single way to get everything, so
+                surface the event-wide zip here. Root only: inside a folder the
+                breadcrumb already offers that folder's download. */}
+            {!openFolder && allowDownloads && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadAll}
+                disabled={downloadAllMutation.isPending}
+                leftIcon={<Download className="w-4 h-4" />}
+                className="ml-auto"
+              >
+                {t('gallery.downloadEverything', 'Download all photos')}
+              </Button>
+            )}
+          </div>
         )}
         <PhotoGridWithLayouts
           photos={filteredPhotos}

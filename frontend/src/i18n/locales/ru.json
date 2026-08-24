@@ -362,7 +362,8 @@
     "folderPhotoCount": "{{count}} фото",
     "backToGallery": "Все фото",
     "downloadFolder": "Скачать папку ({{count}})",
-    "downloadFolderCapped": "Скачать первые {{limit}} из {{total}}"
+    "downloadFolderCapped": "Скачать первые {{limit}} из {{total}}",
+    "downloadEverything": "Скачать все фото"
   },
   "categories": {
     "title": "Категории фото",

@@ -346,7 +346,8 @@
     "folderPhotoCount": "{{count}} photos",
     "backToGallery": "Toutes les photos",
     "downloadFolder": "Télécharger le dossier ({{count}})",
-    "downloadFolderCapped": "Télécharger les {{limit}} premières sur {{total}}"
+    "downloadFolderCapped": "Télécharger les {{limit}} premières sur {{total}}",
+    "downloadEverything": "Télécharger toutes les photos"
   },
   "categories": {
     "title": "Catégories de photos",

@@ -346,7 +346,8 @@
     "folderPhotoCount": "{{count}} foto's",
     "backToGallery": "Alle foto's",
     "downloadFolder": "Map downloaden ({{count}})",
-    "downloadFolderCapped": "Eerste {{limit}} van {{total}} downloaden"
+    "downloadFolderCapped": "Eerste {{limit}} van {{total}} downloaden",
+    "downloadEverything": "Alle foto's downloaden"
   },
   "categories": {
     "title": "Fotocategorieen",

@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   filterCategories,
   peopleInScope,
+  SELECTED_DOWNLOAD_LIMIT,
   findFolderByKey,
   folderKey,
   folderCategoryIds,
@@ -195,6 +196,15 @@ describe('peopleInScope', () => {
     const noFolders = [cat({ id: 1, slug: 'ceremony' })];
     const scoped = peopleInScope(PEOPLE, photosInScope(withPeople, noFolders, null));
     expect(scoped.map((p) => [p.id, p.face_count])).toEqual([[1, 2], [2, 2], [3, 2]]);
+  });
+});
+
+describe('SELECTED_DOWNLOAD_LIMIT', () => {
+  // Mirrors the server-side `.slice(0, 500)` in gallery.js's /download-selected
+  // and /download-jobs. If the backend cap moves and this doesn't, the folder
+  // button silently promises more than the archive will contain.
+  it('matches the cap the backend enforces', () => {
+    expect(SELECTED_DOWNLOAD_LIMIT).toBe(500);
   });
 });
 
