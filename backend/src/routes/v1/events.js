@@ -925,7 +925,12 @@ router.get('/events/:id/share-link', apiTokenAuth, requireApiScope('read'), requ
  *                       comment_count: { type: integer }
  *                       color_labels:
  *                         type: object
- *                         description: Per-colour tallies across guests, e.g. `{ "green": 2 }`.
+ *                         description: >
+ *                           Per-colour tallies across guests, keyed by colour —
+ *                           for example a green count of 2 and a red count of 1.
+ *                           Braces are spelled out here on purpose: an inline
+ *                           JSON example in an unquoted YAML scalar parses as a
+ *                           flow mapping and swagger-jsdoc drops the whole route.
  *                       dominant_color_label: { type: string, nullable: true }
  *                       my_rating: { type: integer, nullable: true }
  *                       my_color_label: { type: string, nullable: true }
