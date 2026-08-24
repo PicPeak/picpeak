@@ -139,9 +139,13 @@ export function peopleInScope<T extends { id: number; face_count: number }>(
     ids.forEach((id) => counts.set(id, (counts.get(id) || 0) + 1));
   });
 
+  // Re-sorted, not just recounted: /people orders by the EVENT-wide count, and
+  // PeopleStrip only shows the first 12 inline. Keeping that order after
+  // rescoping can push the folder's most-photographed person behind "Show all".
   return list
     .map((person) => ({ ...person, face_count: counts.get(person.id) || 0 }))
-    .filter((person) => person.face_count > 0);
+    .filter((person) => person.face_count > 0)
+    .sort((a, b) => b.face_count - a.face_count);
 }
 
 /** Categories that still act as filters — the only ones the filter UI should offer. */

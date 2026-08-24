@@ -28,12 +28,18 @@ export interface BaseGalleryLayoutProps {
   /** #1160: folder-only root — render the shell, skip the empty message. */
   suppressEmptyState?: boolean;
   /**
-   * Every photo id in the EVENT (#1160). A layout's own "Download All Photos"
-   * must not be built from the `photos` prop once folders exist: that prop is
-   * the current scope, so the control would silently omit foldered photos while
-   * still calling itself Download All.
+   * Event-wide photo count (#1160), for stats a layout renders about the whole
+   * gallery. `photos` is only the current folder scope and is empty at a
+   * folder-only root.
    */
-  downloadAllIds?: number[];
+  eventPhotoCount?: number;
+  /**
+   * Runs the whole-gallery download (#1160). A layout's own "Download All
+   * Photos" must use this rather than posting an id list: /download-selected
+   * caps at 500 server-side, so a large gallery would silently truncate, while
+   * /download-all has no such cap.
+   */
+  onDownloadEverything?: () => void;
   // Resolution picker choices (#858). More than one entry means the gallery
   // offers a real choice, so bulk downloads must route through the modal
   // instead of calling downloadSelectedPhotos directly.

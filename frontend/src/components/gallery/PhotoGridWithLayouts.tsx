@@ -92,14 +92,16 @@ interface PhotoGridWithLayoutsProps {
    * the whole gallery shell.
    */
   suppressEmptyState?: boolean;
-  /** #1160: event-wide ids for a layout's own Download All. */
-  downloadAllIds?: number[];
+  /** #1160: event-wide count + whole-gallery download for layout chrome. */
+  eventPhotoCount?: number;
+  onDownloadEverything?: () => void;
 }
 
 export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   photos,
   suppressEmptyState = false,
-  downloadAllIds,
+  eventPhotoCount,
+  onDownloadEverything,
   slug,
   categoryId,
   heroPhotoOverride,
@@ -258,7 +260,8 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     // noPhotosFound return, don't contradict the folder tiles above them on a
     // folder-only root (#1160).
     suppressEmptyState,
-    downloadAllIds,
+    eventPhotoCount,
+    onDownloadEverything,
     slug,
     // Face data (#1074) must reach the full-page layouts too — they render
     // their OWN lightbox rather than the one below, so without this the

@@ -192,10 +192,26 @@ describe('peopleInScope', () => {
     expect(inFolder).toEqual([{ id: 3, face_count: 2 }]);
   });
 
+  // PeopleStrip only shows the first 12 inline, so keeping /people's event-wide
+  // ordering after rescoping could push a folder's most-photographed person
+  // behind "Show all".
+  it('re-sorts by the recomputed scoped count', () => {
+    const people = [
+      { id: 3, face_count: 99 }, // 2 in the folder
+      { id: 1, face_count: 99 }, // 0 in the folder
+      { id: 2, face_count: 99 }, // 0 in the folder
+    ];
+    const inFolder = peopleInScope(people, photosInScope(withPeople, CATEGORIES, 2));
+    expect(inFolder.map((p) => p.id)).toEqual([3]);
+
+    const atRoot = peopleInScope(people, photosInScope(withPeople, CATEGORIES, null));
+    expect(atRoot.map((p) => [p.id, p.face_count])).toEqual([[1, 2], [2, 1]]);
+  });
+
   it('is a no-op for a gallery without folders', () => {
     const noFolders = [cat({ id: 1, slug: 'ceremony' })];
     const scoped = peopleInScope(PEOPLE, photosInScope(withPeople, noFolders, null));
-    expect(scoped.map((p) => [p.id, p.face_count])).toEqual([[1, 2], [2, 2], [3, 2]]);
+    expect(scoped.map((p) => [p.id, p.face_count]).sort()).toEqual([[1, 2], [2, 2], [3, 2]]);
   });
 });
 

@@ -15,6 +15,17 @@ import { folderKey, type FolderTile } from './folders';
 interface GalleryFolderTilesProps {
   tiles: FolderTile[];
   onOpen: (slug: string) => void;
+  /** Gallery slug — the cover is an authenticated image like any other photo. */
+  slug?: string;
+  /**
+   * Image-protection settings (#1160). A folder cover is a real gallery photo,
+   * so a gallery configured for canvas rendering or maximum protection must not
+   * get an ordinary blob-backed <img> here just because it is a cover.
+   */
+  protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
+  useEnhancedProtection?: boolean;
+  useCanvasRendering?: boolean;
+  allowDownloads?: boolean;
   /**
    * Compact chip row instead of cover cards. Used by the full-bleed layouts
    * (Premium, Story), where a block of cards above the hero would break the
@@ -24,7 +35,16 @@ interface GalleryFolderTilesProps {
   compact?: boolean;
 }
 
-export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({ tiles, onOpen, compact = false }) => {
+export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({
+  tiles,
+  onOpen,
+  compact = false,
+  slug,
+  protectionLevel,
+  useEnhancedProtection,
+  useCanvasRendering,
+  allowDownloads = true,
+}) => {
   const { t } = useTranslation();
 
   if (tiles.length === 0) return null;
@@ -74,6 +94,15 @@ export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({ tiles, o
                   src={coverPhoto.thumbnail_url}
                   alt=""
                   className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"
+                  isGallery
+                  slug={slug}
+                  photoId={coverPhoto.id}
+                  requiresToken={coverPhoto.requires_token}
+                  secureUrlTemplate={coverPhoto.secure_url_template}
+                  protectFromDownload={!allowDownloads || useEnhancedProtection}
+                  protectionLevel={protectionLevel}
+                  useEnhancedProtection={useEnhancedProtection}
+                  useCanvasRendering={useCanvasRendering}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">

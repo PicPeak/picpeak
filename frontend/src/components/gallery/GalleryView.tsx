@@ -1197,7 +1197,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       )}
     </div>
   ) : (
-    <GalleryFolderTiles tiles={tiles} onOpen={openFolderBySlug} compact={compact} />
+    <GalleryFolderTiles
+      tiles={tiles}
+      onOpen={openFolderBySlug}
+      compact={compact}
+      slug={slug}
+      protectionLevel={protectionLevel}
+      useEnhancedProtection={protectionLevel !== 'basic'}
+      useCanvasRendering={useCanvasRendering}
+      allowDownloads={allowDownloads}
+    />
   );
 
   const folderNav = buildFolderNav(false);
@@ -1255,9 +1264,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // component for the full-bleed layouts, so a folder-only root must
           // silence the empty message without unmounting the shell (#1160).
           suppressEmptyState={rootIsFoldersOnly}
-          // Event-wide, so a layout's own Download All isn't built from the
-          // scoped array and quietly skips foldered photos (#1160).
-          downloadAllIds={data?.photos?.map((p) => p.id)}
+          // Event-wide, so a layout's own Download All neither skips foldered
+          // photos nor truncates at the 500-id cap (#1160).
+          eventPhotoCount={data?.photos?.length || 0}
+          onDownloadEverything={allowDownloads ? handleDownloadAll : undefined}
           slug={slug}
           people={peopleEnabled ? people : undefined}
           onSelectPerson={togglePerson}

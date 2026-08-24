@@ -52,7 +52,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   eventDate,
   allowDownloads = true,
   suppressEmptyState = false,
-  downloadAllIds,
+  eventPhotoCount,
+  onDownloadEverything,
   downloadChoices,
   onPickResolution,
   protectionLevel = 'standard',
@@ -144,7 +145,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   // #1160: on a folder-only root this component renders its shell with an empty
   // scope, so fall back to the event-wide count rather than announcing 0 Photos
   // directly above folder tiles that hold them.
-  const totalPhotos = photos.length || downloadAllIds?.length || 0;
+  const totalPhotos = photos.length || eventPhotoCount || 0;
   const stats = `${totalPhotos} ${t('gallery.photos', 'Photos')}`;
 
   const handleToggleFavorite = useCallback(async (photoId: number) => {
@@ -242,14 +243,18 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }, [selectedPhotoForFeedback, ratings, slug, savedIdentity, onFeedbackChange]);
 
   const handleDownloadAll = useCallback(async () => {
-    // Event-wide when supplied — `photos` is only the current folder scope.
-    const ids = downloadAllIds ?? photos.map(p => p.id);
+    // Whole-gallery path when available: posting ids would hit the server's
+    // 500-id cap and silently truncate a large gallery (#1160).
+    if (onDownloadEverything) {
+      onDownloadEverything();
+      return;
+    }
+    const ids = photos.map(p => p.id);
     // #858: hand off to the resolution picker when the gallery offers a choice.
     if (downloadChoices && downloadChoices.length > 1 && onPickResolution) {
       onPickResolution(ids);
       return;
     }
-    // ids may be event-wide while `photos` is the current scope (#1160).
     toast.info(t('gallery.downloading', { count: ids.length }));
     try {
       await galleryService.downloadSelectedPhotos(slug, ids);
@@ -257,7 +262,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     } catch {
       toast.error(t('gallery.downloadError'));
     }
-  }, [photos, downloadAllIds, slug, t, downloadChoices, onPickResolution]);
+  }, [photos, onDownloadEverything, slug, t, downloadChoices, onPickResolution]);
 
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
