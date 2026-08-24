@@ -39,7 +39,11 @@ export function folderCategoryIds(categories: PhotoCategory[] | undefined): Set<
  */
 export function folderKey(category: Pick<PhotoCategory, 'id' | 'slug'>): string {
   const slug = (category.slug || '').trim();
-  return slug || String(category.id);
+  // The id is always appended: slugs are only unique per scope
+  // (UNIQUE(slug, event_id)), so a global folder and an event folder can share
+  // one. Keying on the slug alone made the second of the pair unopenable —
+  // every lookup resolved to the first match.
+  return slug ? `${slug}-${category.id}` : String(category.id);
 }
 
 /** The folder matching a `?folder=<key>`, or null at root / for an unknown key. */
@@ -67,7 +71,10 @@ export function photosInScope(
     return list.filter((p) => p.category_id === openFolderId);
   }
   const folders = folderCategoryIds(categories);
-  if (folders.size === 0) return list;
+  // Always a NEW array, even on the no-folders fast path: callers sort the
+  // result in place, and handing back `data.photos` itself would sort the React
+  // Query cache and reorder it for every other consumer.
+  if (folders.size === 0) return [...list];
   return list.filter((p) => !p.category_id || !folders.has(p.category_id));
 }
 

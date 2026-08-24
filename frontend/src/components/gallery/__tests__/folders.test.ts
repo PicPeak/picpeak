@@ -64,6 +64,16 @@ describe('photosInScope', () => {
     expect(photosInScope(PHOTOS, filtersOnly, null)).toHaveLength(PHOTOS.length);
   });
 
+  // Callers sort the result in place. Returning `photos` itself on the
+  // no-folders fast path sorted the React Query cache for every other consumer.
+  it('never hands back the caller’s own array', () => {
+    const filtersOnly = [cat({ id: 1, slug: 'ceremony' })];
+    const out = photosInScope(PHOTOS, filtersOnly, null);
+    expect(out).not.toBe(PHOTOS);
+    out.sort((a, b) => b.id - a.id);
+    expect(PHOTOS.map((p) => p.id)).toEqual([10, 11, 20, 21, 22, 30]);
+  });
+
   it('treats a category as a filter until is_folder is set', () => {
     const asFilter = [cat({ id: 2, slug: 'selects' })];
     expect(photosInScope(PHOTOS, asFilter, null)).toHaveLength(PHOTOS.length);
@@ -98,7 +108,7 @@ describe('folderTiles', () => {
 
 describe('findFolderByKey / folderKey', () => {
   it('resolves an open folder', () => {
-    expect(findFolderByKey(CATEGORIES, 'selects')?.id).toBe(2);
+    expect(findFolderByKey(CATEGORIES, 'selects-2')?.id).toBe(2);
   });
 
   it('falls back to root for an unknown key rather than emptying the gallery', () => {
@@ -119,8 +129,20 @@ describe('findFolderByKey / folderKey', () => {
     expect(findFolderByKey([cyrillic], '7')?.id).toBe(7);
   });
 
-  it('still prefers a real slug for readable links', () => {
-    expect(folderKey(CATEGORIES[1])).toBe('selects');
+  it('keeps the slug in the key so links stay readable', () => {
+    expect(folderKey(CATEGORIES[1])).toBe('selects-2');
+  });
+
+  // Regression: UNIQUE is (slug, event_id), so a global folder and an
+  // event-specific folder can share a slug. Keying on the slug alone made the
+  // second one unopenable — every lookup matched the first.
+  it('distinguishes two folders that share a slug across scopes', () => {
+    const globalSelects = cat({ id: 20, slug: 'selects', is_global: true, is_folder: true });
+    const eventSelects = cat({ id: 21, slug: 'selects', is_folder: true });
+    const both = [globalSelects, eventSelects];
+    expect(folderKey(globalSelects)).not.toBe(folderKey(eventSelects));
+    expect(findFolderByKey(both, folderKey(eventSelects))?.id).toBe(21);
+    expect(findFolderByKey(both, folderKey(globalSelects))?.id).toBe(20);
   });
 });
 

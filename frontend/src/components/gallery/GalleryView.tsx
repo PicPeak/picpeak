@@ -352,6 +352,30 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // identity on every render.
   const allPeople = useMemo(() => peopleData?.people || [], [peopleData?.people]);
 
+  // Folders (#1160). `openFolder` resolves the `?folder=` slug against the
+  // categories the gallery actually returned, so a stale or hand-typed slug
+  // simply falls back to root instead of rendering an empty gallery.
+  const openFolder = useMemo(
+    () => findFolderByKey(data?.categories, openFolderSlug),
+    [data?.categories, openFolderSlug]
+  );
+
+  const tiles = useMemo(
+    () => folderTiles(data?.categories, data?.photos),
+    [data?.categories, data?.photos]
+  );
+
+  // Photos the current view is allowed to show, before any user-applied filter.
+  // This — not `filteredPhotos` — is the right basis for the people strip and
+  // the category counts: scoping those by the person filter would zero out
+  // every other face the moment one is picked.
+  const scopedPhotos = useMemo(
+    () => photosInScope(data?.photos, data?.categories, openFolder?.id ?? null),
+    [data?.photos, data?.categories, openFolder]
+  );
+
+  const people = useMemo(() => peopleInScope(allPeople, scopedPhotos), [allPeople, scopedPhotos]);
+
   // The strip comes from /people, but FILTERING uses photo.person_ids, which
   // rides on the one-shot /photos response. During a backfill those drift
   // apart: new faces appear in the strip while the photo memberships behind
@@ -453,16 +477,18 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     }
   }, [settingsData]);
 
+  // Scoped (#1160): a Video chip offered at root for a video that only exists
+  // inside a folder filters to an empty grid.
   const availableMediaTypes = useMemo(() => {
     const types = new Set<'photo' | 'video'>();
-    (data?.photos || []).forEach((photo) => {
+    scopedPhotos.forEach((photo) => {
       const mediaType = resolveMediaType(photo);
       if (mediaType === 'photo' || mediaType === 'video') {
         types.add(mediaType);
       }
     });
     return types;
-  }, [data?.photos]);
+  }, [scopedPhotos]);
 
   const showMediaFilter = availableMediaTypes.has('photo') && availableMediaTypes.has('video');
 
@@ -607,29 +633,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const showUrgentWarning = daysUntilExpiration !== null && daysUntilExpiration <= 7;
   const isExpired = daysUntilExpiration !== null && daysUntilExpiration < 0;
 
-  // Folders (#1160). `openFolder` resolves the `?folder=` slug against the
-  // categories the gallery actually returned, so a stale or hand-typed slug
-  // simply falls back to root instead of rendering an empty gallery.
-  const openFolder = useMemo(
-    () => findFolderByKey(data?.categories, openFolderSlug),
-    [data?.categories, openFolderSlug]
-  );
-
-  const tiles = useMemo(
-    () => folderTiles(data?.categories, data?.photos),
-    [data?.categories, data?.photos]
-  );
-
-  // Photos the current view is allowed to show, before any user-applied filter.
-  // This — not `filteredPhotos` — is the right basis for the people strip and
-  // the category counts: scoping those by the person filter would zero out
-  // every other face the moment one is picked.
-  const scopedPhotos = useMemo(
-    () => photosInScope(data?.photos, data?.categories, openFolder?.id ?? null),
-    [data?.photos, data?.categories, openFolder]
-  );
-
-  const people = useMemo(() => peopleInScope(allPeople, scopedPhotos), [allPeople, scopedPhotos]);
 
   const openFolderBySlug = useCallback((key: string | null) => {
     setOpenFolderSlug(key);
@@ -806,13 +809,13 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // the filter actually selects.
   const colorLabelCounts = useMemo(() => {
     const counts: Partial<Record<ColorLabel, number>> = {};
-    for (const photo of data?.photos || []) {
+    for (const photo of scopedPhotos) {
       const label = photo.my_color_label as ColorLabel | null | undefined;
       if (!label) continue;
       counts[label] = (counts[label] || 0) + 1;
     }
     return counts;
-  }, [data?.photos]);
+  }, [scopedPhotos]);
 
   const handleColorFilterToggle = useCallback((color: ColorLabel) => {
     setActiveColorFilters(prev =>
@@ -927,10 +930,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const folderDownloadableIds = useMemo(() => {
     if (!openFolder) return [];
     if (openFolder.allow_downloads === false) return [];
-    return filteredPhotos
+    // scopedPhotos, not filteredPhotos: a search or feedback chip stays active
+    // when entering a folder, and a button that says "Download folder" must not
+    // quietly hand over a filtered subset of it (or vanish when the filter
+    // matches nothing).
+    return scopedPhotos
       .filter((photo) => photo.category_allow_downloads !== false)
       .map((photo) => photo.id);
-  }, [openFolder, filteredPhotos]);
+  }, [openFolder, scopedPhotos]);
 
   const handleDownloadFolder = async () => {
     if (!allowDownloads || folderDownloadableIds.length === 0) return;
@@ -1168,7 +1175,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   // Root of a gallery where every photo lives in a folder: the tiles ARE the
   // content, and the grid below them would otherwise render its empty state.
-  const rootIsFoldersOnly = !openFolder && tiles.length > 0 && filteredPhotos.length === 0;
+  // Deliberately `scopedPhotos`, not `filteredPhotos`: with loose root photos
+  // present, a search matching none of them would otherwise look "folder-only"
+  // and swallow the no-results message the guest needs.
+  const rootIsFoldersOnly = !openFolder && tiles.length > 0 && scopedPhotos.length === 0;
 
   // For full-page layouts, render just the PhotoGridWithLayouts without any wrappers
   if (isFullPageLayout) {
@@ -1181,6 +1191,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {hasFolderNav && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">{buildFolderNav(true)}</div>
         )}
+        {rootIsFoldersOnly ? null : (
         <PhotoGridWithLayouts
           photos={filteredPhotos}
           slug={slug}
@@ -1234,6 +1245,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onLogout={showLogoutControl ? logout : undefined}
           showOriginalFilename={showOriginalFilename}
         />
+        )}
 
         {/* Upload Modal for full-page layouts */}
         {showUploadModal && (data?.event?.allow_user_uploads || event?.allow_user_uploads) && (
