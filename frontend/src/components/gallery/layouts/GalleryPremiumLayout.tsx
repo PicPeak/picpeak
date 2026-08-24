@@ -576,7 +576,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                 <Heart className="w-4 h-4" />
               </button>
             )}
-            {allowDownloads && (
+            {allowDownloads && photos.length > 0 && (
               <button
                 className="gallery-premium-nav-btn"
                 title={t('common.downloadAll', 'Download All')}

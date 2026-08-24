@@ -141,7 +141,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     }));
   }, [photos, searchQuery, t]);
 
-  const totalPhotos = photos.length;
+  // #1160: on a folder-only root this component renders its shell with an empty
+  // scope, so fall back to the event-wide count rather than announcing 0 Photos
+  // directly above folder tiles that hold them.
+  const totalPhotos = photos.length || downloadAllIds?.length || 0;
   const stats = `${totalPhotos} ${t('gallery.photos', 'Photos')}`;
 
   const handleToggleFavorite = useCallback(async (photoId: number) => {

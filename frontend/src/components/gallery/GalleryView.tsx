@@ -646,6 +646,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // the folder survives into it, and the toolbar would offer to download (or
     // a client to hide) photos that are no longer on screen.
     setSelectedPhotos(new Set());
+    // A person picked in the previous scope may have no photos here, and
+    // peopleInScope drops them from the strip — leaving an invisible filter that
+    // empties the grid with no control left to clear it.
+    setSelectedPersonIds([]);
+    setPeopleMatchAny(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
@@ -656,6 +661,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       setOpenFolderSlug(readFolderParam());
       setSelectedCategoryId(null);
       setSelectedPhotos(new Set());
+      setSelectedPersonIds([]);
+      setPeopleMatchAny(false);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
