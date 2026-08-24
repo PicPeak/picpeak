@@ -344,7 +344,8 @@
     "folders": "Mappen",
     "openFolder": "Map {{name}} openen",
     "folderPhotoCount": "{{count}} foto's",
-    "backToGallery": "Alle foto's"
+    "backToGallery": "Alle foto's",
+    "downloadFolder": "Map downloaden ({{count}})"
   },
   "categories": {
     "title": "Fotocategorieen",

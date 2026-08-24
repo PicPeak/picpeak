@@ -17,7 +17,7 @@ interface PhotosTabProps {
   photos: AdminPhoto[];
   photosLoading: boolean;
   refetchPhotos: () => void;
-  categories: Array<{ id: number; name: string; slug: string }>;
+  categories: Array<{ id: number; name: string; slug: string; is_folder?: boolean }>;
   photoFilters: PhotoFilterParams;
   setPhotoFilters: React.Dispatch<React.SetStateAction<PhotoFilterParams>>;
   feedbackFilters: FeedbackFilters;

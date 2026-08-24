@@ -344,7 +344,8 @@
     "folders": "Dossiers",
     "openFolder": "Ouvrir le dossier {{name}}",
     "folderPhotoCount": "{{count}} photos",
-    "backToGallery": "Toutes les photos"
+    "backToGallery": "Toutes les photos",
+    "downloadFolder": "Télécharger le dossier ({{count}})"
   },
   "categories": {
     "title": "Catégories de photos",

@@ -18,6 +18,8 @@ import { BulkCategoryModal } from './BulkCategoryModal';
 interface CategoryOption {
   id: number;
   name: string;
+  // #1160: folders are categories too; the move dialog labels them.
+  is_folder?: boolean;
 }
 
 interface AdminPhotoGridProps {

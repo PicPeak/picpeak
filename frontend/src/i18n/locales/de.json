@@ -1090,7 +1090,8 @@
     "folders": "Ordner",
     "openFolder": "Ordner {{name}} öffnen",
     "folderPhotoCount": "{{count}} Fotos",
-    "backToGallery": "Alle Fotos"
+    "backToGallery": "Alle Fotos",
+    "downloadFolder": "Ordner herunterladen ({{count}})"
   },
   "categories": {
     "title": "Fotokategorien",
@@ -4209,7 +4210,8 @@
     "movedToCategory_one": "{{count}} Foto nach {{category}} verschoben",
     "movedToCategory_other": "{{count}} Fotos nach {{category}} verschoben",
     "moveToCategoryFailed": "Fotos konnten nicht in die Kategorie verschoben werden",
-    "moveToCategory": "In Kategorie verschieben"
+    "moveToCategory": "In Kategorie verschieben",
+    "folderOption": "{{name}} (Ordner — im Hauptraster ausgeblendet)"
   },
   "customer": {
     "login": {

@@ -360,7 +360,8 @@
     "folders": "Папки",
     "openFolder": "Открыть папку {{name}}",
     "folderPhotoCount": "{{count}} фото",
-    "backToGallery": "Все фото"
+    "backToGallery": "Все фото",
+    "downloadFolder": "Скачать папку ({{count}})"
   },
   "categories": {
     "title": "Категории фото",

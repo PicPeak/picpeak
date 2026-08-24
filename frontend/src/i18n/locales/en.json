@@ -631,7 +631,8 @@
     "folders": "Folders",
     "openFolder": "Open folder {{name}}",
     "folderPhotoCount": "{{count}} photos",
-    "backToGallery": "All photos"
+    "backToGallery": "All photos",
+    "downloadFolder": "Download folder ({{count}})"
   },
   "categories": {
     "title": "Photo Categories",
@@ -4209,7 +4210,8 @@
     "movedToCategory_one": "{{count}} photos moved to {{category}}",
     "movedToCategory_other": "{{count}} photos moved to {{category}}",
     "moveToCategoryFailed": "Failed to move photos to category",
-    "moveToCategory": "Move to Category"
+    "moveToCategory": "Move to Category",
+    "folderOption": "{{name}} (folder — hidden from the main grid)"
   },
   "customer": {
     "login": {

@@ -897,6 +897,35 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     await galleryService.downloadSelectedPhotos(slug, peopleDownloadableIds);
   };
 
+  // Download just the open folder (#1160). The event-wide "download all" still
+  // zips the whole gallery including foldered photos; this is the "only this
+  // folder, once" case. Honours the per-category opt-out (#640), so a folder
+  // with allow_downloads = false offers no button at all.
+  const folderDownloadableIds = useMemo(() => {
+    if (!openFolder) return [];
+    if (openFolder.allow_downloads === false) return [];
+    return filteredPhotos
+      .filter((photo) => photo.category_allow_downloads !== false)
+      .map((photo) => photo.id);
+  }, [openFolder, filteredPhotos]);
+
+  const handleDownloadFolder = async () => {
+    if (!allowDownloads || folderDownloadableIds.length === 0) return;
+
+    // Same resolution-picker behaviour as every other multi-photo download.
+    if (downloadChoices.length > 1) {
+      setResolutionPickerIds(folderDownloadableIds);
+      return;
+    }
+
+    analyticsService.trackGalleryEvent('bulk_download', {
+      gallery: slug,
+      photo_count: folderDownloadableIds.length,
+    });
+
+    await galleryService.downloadSelectedPhotos(slug, folderDownloadableIds);
+  };
+
   // Calculate photo counts per category
   const photoCounts = useMemo(() => {
     if (!data?.photos) return {};
@@ -1470,7 +1499,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         <div className={filterBarShown && isHeroHeader ? "mt-12" : "mt-6"}>
           {/* Folders (#1160). Tiles at root; a breadcrumb back to root inside one. */}
           {openFolder ? (
-            <div className="mb-6 flex items-center gap-2 text-sm">
+            <div className="mb-6 flex items-center gap-2 text-sm flex-wrap">
               <button
                 type="button"
                 onClick={() => openFolderBySlug(null)}
@@ -1481,9 +1510,22 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 {t('gallery.backToGallery', 'All photos')}
               </button>
               <span style={{ color: 'var(--color-muted-text)' }}>/</span>
-              <span className="font-medium text-neutral-900 dark:text-neutral-100">
+              <span className="font-medium" style={{ color: 'var(--color-text)' }}>
                 {openFolder.name}
               </span>
+              {allowDownloads && folderDownloadableIds.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadFolder}
+                  leftIcon={<Download className="w-4 h-4" />}
+                  className="ml-auto"
+                >
+                  {t('gallery.downloadFolder', 'Download folder ({{count}})', {
+                    count: folderDownloadableIds.length,
+                  })}
+                </Button>
+              )}
             </div>
           ) : (
             <GalleryFolderTiles tiles={tiles} onOpen={openFolderBySlug} />
