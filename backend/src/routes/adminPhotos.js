@@ -212,8 +212,8 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
       if (replaceByName && req.files) {
         for (const file of req.files) {
           const candidate = await findReplacementCandidate(
-          parseInt(eventId), file.originalname, { matchMode }
-        );
+            parseInt(eventId), file.originalname, { matchMode }
+          );
           if (candidate && !candidate.ambiguous) newFilesCount--;
         }
       }
@@ -281,7 +281,9 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     if (replaceByName && req.files.length > 0) {
       const newFiles = [];
       for (const file of req.files) {
-        const candidate = await findReplacementCandidate(parseInt(eventId), file.originalname);
+        const candidate = await findReplacementCandidate(
+          parseInt(eventId), file.originalname, { matchMode }
+        );
         if (candidate && !candidate.ambiguous) {
           // Replace existing photo
           const result = await replacePhoto(candidate, file.path, {

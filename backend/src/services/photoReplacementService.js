@@ -72,22 +72,27 @@ async function findReplacementCandidate(eventId, originalFilename, opts = {}) {
     const token = trailingDigitRun(originalFilename);
     if (!token) return null;
 
-    // The token has to be compared against the stem of the stored name, not
+    // The token has to be compared against the STEM of the stored name, not
     // the whole string, so `IMG_1234.JPG` yields `1234` on both sides. Doing
-    // that in SQL across two engines is more trouble than it is worth for a
-    // per-event photo count, so the candidate set is narrowed by event and
-    // the run extracted in JS.
+    // that in SQL across two engines is more trouble than it is worth, so the
+    // candidate set is narrowed by event and the run extracted in JS —
+    // reading only the three columns the match needs, so a 5000-photo event
+    // doesn't pull 5000 full rows through memory to answer one question.
     const rows = await db('photos')
       .where({ event_id: eventId })
-      .select('*');
+      .select('id', 'source_filename', 'original_filename');
 
     const matches = rows.filter((row) => {
       const stored = row.source_filename || row.original_filename;
       return stored && trailingDigitRun(stored) === token;
     });
 
-    if (matches.length === 1) return matches[0];
     if (matches.length > 1) return { ambiguous: true, count: matches.length };
+    if (matches.length === 1) {
+      // Re-read the full row: replacePhoto() needs the columns the narrowed
+      // select above deliberately skipped (type, filename, source_filename).
+      return db('photos').where({ id: matches[0].id }).first();
+    }
     return null;
   }
 
