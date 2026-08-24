@@ -247,6 +247,10 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   // Select the appropriate layout component
   const layoutProps = {
     photos,
+    // Forwarded so the full-bleed layouts, which render their OWN
+    // noPhotosFound return, don't contradict the folder tiles above them on a
+    // folder-only root (#1160).
+    suppressEmptyState,
     slug,
     // Face data (#1074) must reach the full-page layouts too — they render
     // their OWN lightbox rather than the one below, so without this the

@@ -792,19 +792,27 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // global aggregate in simple mode where no per-person identity
   // exists.
   const likeCount = useMemo(() => {
-    if (isGuestIdentityMode) return myFeedbackPhotoIds.liked.size;
-    return data?.photos?.filter(p => (p.like_count ?? 0) > 0).length || 0;
-  }, [data?.photos, isGuestIdentityMode, myFeedbackPhotoIds]);
+    // Scoped (#1160): a chip counting another folder's likes advertises matches
+    // that clicking it — which filters scopedPhotos — can never produce.
+    if (isGuestIdentityMode) {
+      return scopedPhotos.filter(p => myFeedbackPhotoIds.liked.has(p.id)).length;
+    }
+    return scopedPhotos.filter(p => (p.like_count ?? 0) > 0).length;
+  }, [scopedPhotos, isGuestIdentityMode, myFeedbackPhotoIds]);
 
   const favoriteCount = useMemo(() => {
-    if (isGuestIdentityMode) return myFeedbackPhotoIds.favorited.size;
-    return data?.photos?.filter(p => (p.favorite_count ?? 0) > 0).length || 0;
-  }, [data?.photos, isGuestIdentityMode, myFeedbackPhotoIds]);
+    if (isGuestIdentityMode) {
+      return scopedPhotos.filter(p => myFeedbackPhotoIds.favorited.has(p.id)).length;
+    }
+    return scopedPhotos.filter(p => (p.favorite_count ?? 0) > 0).length;
+  }, [scopedPhotos, isGuestIdentityMode, myFeedbackPhotoIds]);
 
   const ratedCount = useMemo(() => {
-    if (isGuestIdentityMode) return myFeedbackPhotoIds.rated.size;
-    return data?.photos?.filter(p => (p.total_ratings || 0) > 0 || (p.average_rating || 0) > 0).length || 0;
-  }, [data?.photos, isGuestIdentityMode, myFeedbackPhotoIds]);
+    if (isGuestIdentityMode) {
+      return scopedPhotos.filter(p => myFeedbackPhotoIds.rated.has(p.id)).length;
+    }
+    return scopedPhotos.filter(p => (p.total_ratings || 0) > 0 || (p.average_rating || 0) > 0).length;
+  }, [scopedPhotos, isGuestIdentityMode, myFeedbackPhotoIds]);
 
   // Per-colour chip counts (#1044) — the viewer's own labels, matching what
   // the filter actually selects.
@@ -1227,6 +1235,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           </div>
         )}
         <PhotoGridWithLayouts
+          // Remount on a scope change (#1160): layout state such as the
+          // carousel's currentIndex is only meaningful for the photo set it was
+          // built against, and an index kept from a larger scope indexes past
+          // the end of a smaller folder.
+          key={openFolder ? `folder-${openFolder.id}` : 'root'}
           photos={filteredPhotos}
           // The hero, title, logout and download controls live inside this
           // component for the full-bleed layouts, so a folder-only root must
@@ -1345,6 +1358,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           allowDownloads={allowDownloads}
           photoCounts={photoCounts}
           totalPhotos={scopedPhotos.length}
+          // Download All hits /download-all, which is event-wide — labelling or
+          // disabling it from the scoped count would show 0 on a folder-only
+          // root and refuse a perfectly valid download (#1160).
+          downloadAllTotal={data?.photos?.length || 0}
           isMobile={isMobile}
           galleryLayout={theme.galleryLayout}
           allowUploads={data?.event?.allow_user_uploads || event?.allow_user_uploads || false}
@@ -1636,6 +1653,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               — directly under the tiles that prove otherwise. Skip the grid when
               the tiles are the entire content. */}
           <PhotoGridWithLayouts
+            key={openFolder ? `folder-${openFolder.id}` : 'root'}
             photos={filteredPhotos}
             suppressEmptyState={rootIsFoldersOnly}
             slug={slug}

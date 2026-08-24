@@ -45,6 +45,8 @@ interface PhotoCardProps {
   isLiked: boolean;
   slug: string;
   allowDownloads?: boolean;
+  /** #1160: folder-only root — render the shell, skip the empty message. */
+  suppressEmptyState?: boolean;
   protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
   useCanvasRendering?: boolean;
@@ -68,6 +70,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   isLiked,
   slug,
   allowDownloads = true,
+  suppressEmptyState = false,
   protectionLevel = 'standard',
   useEnhancedProtection = false,
   useCanvasRendering = false,
@@ -477,7 +480,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     day: '2-digit'
   }) : null;
 
-  if (photos.length === 0) {
+  // #1160: a folder-only root has no photos to show here, but the folder tiles
+  // above prove the gallery isn't empty — render the shell (hero, logout,
+  // controls) without the contradictory message.
+  if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">{t('gallery.noPhotosFound')}</p>

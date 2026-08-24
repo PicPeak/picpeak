@@ -51,6 +51,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   eventName,
   eventDate,
   allowDownloads = true,
+  suppressEmptyState = false,
   downloadChoices,
   onPickResolution,
   protectionLevel = 'standard',
@@ -252,7 +253,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     }
   }, [photos, slug, t, downloadChoices, onPickResolution]);
 
-  if (photos.length === 0) {
+  // #1160: a folder-only root has no photos to show here, but the folder tiles
+  // above prove the gallery isn't empty — render the shell (hero, logout,
+  // controls) without the contradictory message.
+  if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">{t('gallery.noPhotosFound')}</p>

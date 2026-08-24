@@ -25,6 +25,8 @@ export interface BaseGalleryLayoutProps {
   eventDate?: string | null;
   expiresAt?: string | null;
   allowDownloads?: boolean;
+  /** #1160: folder-only root — render the shell, skip the empty message. */
+  suppressEmptyState?: boolean;
   // Resolution picker choices (#858). More than one entry means the gallery
   // offers a real choice, so bulk downloads must route through the modal
   // instead of calling downloadSelectedPhotos directly.
