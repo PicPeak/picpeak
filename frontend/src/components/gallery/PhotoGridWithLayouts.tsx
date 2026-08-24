@@ -92,11 +92,14 @@ interface PhotoGridWithLayoutsProps {
    * the whole gallery shell.
    */
   suppressEmptyState?: boolean;
+  /** #1160: event-wide ids for a layout's own Download All. */
+  downloadAllIds?: number[];
 }
 
 export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   photos,
   suppressEmptyState = false,
+  downloadAllIds,
   slug,
   categoryId,
   heroPhotoOverride,
@@ -233,12 +236,25 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     }
   };
 
-  if (photos.length === 0 && !suppressEmptyState) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
-      </div>
-    );
+  if (photos.length === 0) {
+    // Suppressed (#1160): a folder-only root has folder tiles above proving the
+    // gallery isn't empty, so the message would contradict them.
+    if (!suppressEmptyState) {
+      return (
+        <div className="text-center py-12">
+          <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
+        </div>
+      );
+    }
+    // Only the full-bleed layouts are mounted with an empty set — they own the
+    // hero, logout and download chrome, so unmounting them strips the page.
+    // Every other layout renders nothing rather than being mounted empty:
+    // CarouselGalleryLayout returns before four of its useState calls, so
+    // driving one instance between empty and non-empty changes its hook count.
+    const layout = theme.galleryLayout;
+    if (layout !== 'gallery-premium' && layout !== 'gallery-story') {
+      return null;
+    }
   }
 
   // Get the current layout from theme
@@ -251,6 +267,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     // noPhotosFound return, don't contradict the folder tiles above them on a
     // folder-only root (#1160).
     suppressEmptyState,
+    downloadAllIds,
     slug,
     // Face data (#1074) must reach the full-page layouts too — they render
     // their OWN lightbox rather than the one below, so without this the

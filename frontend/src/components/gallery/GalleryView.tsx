@@ -1245,6 +1245,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // component for the full-bleed layouts, so a folder-only root must
           // silence the empty message without unmounting the shell (#1160).
           suppressEmptyState={rootIsFoldersOnly}
+          // Event-wide, so a layout's own Download All isn't built from the
+          // scoped array and quietly skips foldered photos (#1160).
+          downloadAllIds={data?.photos?.map((p) => p.id)}
           slug={slug}
           people={peopleEnabled ? people : undefined}
           onSelectPerson={togglePerson}

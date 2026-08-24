@@ -45,8 +45,6 @@ interface PhotoCardProps {
   isLiked: boolean;
   slug: string;
   allowDownloads?: boolean;
-  /** #1160: folder-only root — render the shell, skip the empty message. */
-  suppressEmptyState?: boolean;
   protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
   useCanvasRendering?: boolean;
@@ -70,7 +68,6 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   isLiked,
   slug,
   allowDownloads = true,
-  suppressEmptyState = false,
   protectionLevel = 'standard',
   useEnhancedProtection = false,
   useCanvasRendering = false,
@@ -196,9 +193,12 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
 
 interface GalleryPremiumLayoutProps extends BaseGalleryLayoutProps {
   heroPhotoOverride?: Photo | null;
+  suppressEmptyState?: boolean;
 }
 
 export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
+  // #1160: folder-only root — render the shell, skip the empty message.
+  suppressEmptyState = false,
   photos,
   slug,
   onPhotoClick: _onPhotoClick,

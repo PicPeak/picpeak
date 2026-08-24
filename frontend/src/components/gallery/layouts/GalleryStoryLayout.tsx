@@ -52,6 +52,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   eventDate,
   allowDownloads = true,
   suppressEmptyState = false,
+  downloadAllIds,
   downloadChoices,
   onPickResolution,
   protectionLevel = 'standard',
@@ -238,7 +239,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }, [selectedPhotoForFeedback, ratings, slug, savedIdentity, onFeedbackChange]);
 
   const handleDownloadAll = useCallback(async () => {
-    const ids = photos.map(p => p.id);
+    // Event-wide when supplied — `photos` is only the current folder scope.
+    const ids = downloadAllIds ?? photos.map(p => p.id);
     // #858: hand off to the resolution picker when the gallery offers a choice.
     if (downloadChoices && downloadChoices.length > 1 && onPickResolution) {
       onPickResolution(ids);
@@ -251,7 +253,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     } catch {
       toast.error(t('gallery.downloadError'));
     }
-  }, [photos, slug, t, downloadChoices, onPickResolution]);
+  }, [photos, downloadAllIds, slug, t, downloadChoices, onPickResolution]);
 
   // #1160: a folder-only root has no photos to show here, but the folder tiles
   // above prove the gallery isn't empty — render the shell (hero, logout,
