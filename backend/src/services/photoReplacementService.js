@@ -21,15 +21,82 @@ const { resolvePhotoStorageKey } = require('./photoResolver');
 const logger = require('../utils/logger');
 
 /**
- * Find a replacement candidate by matching original_filename (case-insensitive).
- * Returns the photo row if exactly one match, { ambiguous: true, count } if multiple, or null.
+ * The trailing digit run of a filename stem, e.g. `Smith_Wedding_11234.jpg`
+ * -> `11234`. Used by the `number_token` match mode below.
+ *
+ * Deliberately the LONGEST trailing run and never a fixed last-N slice.
+ * Multi-camera shoots disambiguate by prefixing the camera index into the
+ * number (`cam11234.jpg`, `cam21234.jpg`); a last-4 slice reads `1234` from
+ * both bodies and reintroduces exactly the collision the prefix removes.
+ *
+ * @param {string} filename
+ * @returns {string|null} the digit run, or null when there is none
  */
-async function findReplacementCandidate(eventId, originalFilename) {
+function trailingDigitRun(filename) {
+  if (!filename) return null;
+  const stem = String(filename).replace(/\.[^.]+$/, '');
+  const match = stem.match(/(\d+)$/);
+  return match ? match[1] : null;
+}
+
+/**
+ * Find a replacement candidate.
+ *
+ * Two modes:
+ *
+ * - `exact` (default, unchanged behaviour): case-insensitive match on the
+ *   name the photo was uploaded under.
+ * - `number_token` (#745): match on the trailing digit run instead, so an
+ *   editor who renamed `IMG_1234.JPG` to `Smith_Wedding_1234.jpg` in
+ *   Lightroom still lands on the right photo. Opt-in, because a digit run is
+ *   a much weaker key than a filename.
+ *
+ * Both modes prefer `source_filename` (the camera-original name, preserved
+ * across replaces by migration 185) and fall back to `original_filename` for
+ * rows that predate it.
+ *
+ * Returns the photo row on exactly one match, `{ ambiguous: true, count }`
+ * when several match, or null. Ambiguity is never resolved by guessing — the
+ * caller uploads the file as new rather than overwriting the wrong photo.
+ *
+ * @param {number} eventId
+ * @param {string} originalFilename
+ * @param {Object} [opts]
+ * @param {'exact'|'number_token'} [opts.matchMode='exact']
+ */
+async function findReplacementCandidate(eventId, originalFilename, opts = {}) {
   if (!originalFilename) return null;
+  const { matchMode = 'exact' } = opts;
+
+  if (matchMode === 'number_token') {
+    const token = trailingDigitRun(originalFilename);
+    if (!token) return null;
+
+    // The token has to be compared against the stem of the stored name, not
+    // the whole string, so `IMG_1234.JPG` yields `1234` on both sides. Doing
+    // that in SQL across two engines is more trouble than it is worth for a
+    // per-event photo count, so the candidate set is narrowed by event and
+    // the run extracted in JS.
+    const rows = await db('photos')
+      .where({ event_id: eventId })
+      .select('*');
+
+    const matches = rows.filter((row) => {
+      const stored = row.source_filename || row.original_filename;
+      return stored && trailingDigitRun(stored) === token;
+    });
+
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return { ambiguous: true, count: matches.length };
+    return null;
+  }
 
   const matches = await db('photos')
     .where({ event_id: eventId })
-    .whereRaw('LOWER(original_filename) = LOWER(?)', [originalFilename]);
+    .where(function () {
+      this.whereRaw('LOWER(original_filename) = LOWER(?)', [originalFilename])
+        .orWhereRaw('LOWER(source_filename) = LOWER(?)', [originalFilename]);
+    });
 
   if (matches.length === 1) return matches[0];
   if (matches.length > 1) return { ambiguous: true, count: matches.length };
@@ -121,6 +188,14 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     const updates = {
       filename: newFilename,
       original_filename: originalFilename,
+      // source_filename is deliberately NOT in this list. It holds the
+      // camera-original name and must survive a replace, otherwise the
+      // Lightroom round-trip (#745) loses its match key the first time an
+      // editor uploads a renamed render over the proof. Backfilled here only
+      // when the row predates migration 185 and has nothing stored yet.
+      ...(existingPhoto.source_filename
+        ? {}
+        : { source_filename: existingPhoto.original_filename || originalFilename }),
       path: relativePath,
       thumbnail_path: thumbnailPath,
       size_bytes: stats.size,
@@ -173,4 +248,4 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
   }
 }
 
-module.exports = { findReplacementCandidate, replacePhoto };
+module.exports = { trailingDigitRun, findReplacementCandidate, replacePhoto };

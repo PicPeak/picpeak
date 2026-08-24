@@ -57,6 +57,9 @@ class PhotoFilterBuilder {
       has_comments,
       color_labels,
       my_color_labels,
+      my_min_rating,
+      marked_only,
+      mark_source = 'either',
       admin_id,
       category_id,
       logic = 'AND'
@@ -127,6 +130,56 @@ class PhotoFilterBuilder {
           .whereRaw('photo_admin_marks.photo_id = photos.id')
           .where('photo_admin_marks.admin_id', admin_id)
           .whereIn('photo_admin_marks.color_label', requestedMyColors);
+      }));
+    }
+
+    // The caller's own star rating (#745). Same admin_id requirement as the
+    // colour filter above, and skipped rather than widened without one.
+    if (my_min_rating !== undefined && my_min_rating !== null && admin_id) {
+      conditions.push(builder => builder.whereExists(function () {
+        this.select('*')
+          .from('photo_admin_marks')
+          .whereRaw('photo_admin_marks.photo_id = photos.id')
+          .where('photo_admin_marks.admin_id', admin_id)
+          .where('photo_admin_marks.rating', '>=', my_min_rating);
+      }));
+    }
+
+    // "Only the photos somebody actually marked" — the Lightroom round-trip's
+    // import scope (#745). This is ONE condition that ORs internally rather
+    // than several pushed conditions, so it still behaves as a single clause
+    // when the caller asked for `logic: 'AND'` alongside other filters.
+    //
+    // `mark_source` decides whose marks count: the client's proofing verdict,
+    // the photographer's own triage, or either. 'mine' and 'either' need an
+    // admin_id for the same reason the filters above do; without one the
+    // admin half is dropped instead of matching every admin's marks.
+    if (marked_only === true || marked_only === 'true') {
+      const wantsClient = mark_source === 'client' || mark_source === 'either';
+      const wantsMine = (mark_source === 'mine' || mark_source === 'either') && Boolean(admin_id);
+
+      conditions.push(builder => builder.where(function () {
+        if (wantsClient) {
+          this.orWhere('photos.color_label_count', '>', 0);
+          this.orWhere('photos.average_rating', '>', 0);
+        }
+        if (wantsMine) {
+          this.orWhereExists(function () {
+            this.select('*')
+              .from('photo_admin_marks')
+              .whereRaw('photo_admin_marks.photo_id = photos.id')
+              .where('photo_admin_marks.admin_id', admin_id)
+              .where(function () {
+                this.whereNotNull('photo_admin_marks.color_label')
+                  .orWhereNotNull('photo_admin_marks.rating');
+              });
+          });
+        }
+        // Neither half available (mark_source 'mine' with no admin_id) —
+        // match nothing rather than silently returning the whole event.
+        if (!wantsClient && !wantsMine) {
+          this.whereRaw('1 = 0');
+        }
       }));
     }
 

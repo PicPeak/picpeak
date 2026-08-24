@@ -178,8 +178,14 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
 
   try {
     const { eventId } = req.params;
-    const { category_id, replace_by_name } = req.body;
+    const { category_id, replace_by_name, match_mode } = req.body;
     const replaceByName = replace_by_name === 'true' || replace_by_name === true;
+    // How replace_by_name finds its target (#745). 'exact' is the historical
+    // behaviour and stays the default; 'number_token' matches on the trailing
+    // digit run so a render renamed in Lightroom still lands on its proof.
+    // Anything else falls back to 'exact' rather than erroring — an unknown
+    // mode must not silently widen the match.
+    const matchMode = match_mode === 'number_token' ? 'number_token' : 'exact';
 
     logger.info('Upload request received for event:', eventId);
     logger.info('Body:', req.body);
@@ -205,7 +211,9 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
       // Subtract likely replacements from cap calculation
       if (replaceByName && req.files) {
         for (const file of req.files) {
-          const candidate = await findReplacementCandidate(parseInt(eventId), file.originalname);
+          const candidate = await findReplacementCandidate(
+          parseInt(eventId), file.originalname, { matchMode }
+        );
           if (candidate && !candidate.ambiguous) newFilesCount--;
         }
       }
@@ -294,7 +302,12 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
         } else if (candidate && candidate.ambiguous) {
           skippedReplacements.push({
             filename: file.originalname,
-            reason: `${candidate.count} photos share this name — uploaded as new`,
+            reason: matchMode === 'number_token'
+              ? `${candidate.count} photos share this number — uploaded as new. `
+                + 'Multi-camera shoots should prefix the camera index into the '
+                + 'filename (cam11234.jpg / cam21234.jpg) and keep it in the '
+                + 'delivery name.'
+              : `${candidate.count} photos share this name — uploaded as new`,
           });
           newFiles.push(file);
         } else {
@@ -373,6 +386,10 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
             event_id: parseInt(eventId, 10),
             filename: newFilename,
             original_filename: file.originalname,
+            // Camera-original name, kept separate so a later replace can
+            // overwrite original_filename without losing the Lightroom
+            // round-trip's match key (migration 185, #745).
+            source_filename: file.originalname,
             path: relativePath,
             thumbnail_path: null,
             type: photoType,
