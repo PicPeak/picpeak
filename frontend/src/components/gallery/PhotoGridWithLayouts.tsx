@@ -246,15 +246,6 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
         </div>
       );
     }
-    // Only the full-bleed layouts are mounted with an empty set — they own the
-    // hero, logout and download chrome, so unmounting them strips the page.
-    // Every other layout renders nothing rather than being mounted empty:
-    // CarouselGalleryLayout returns before four of its useState calls, so
-    // driving one instance between empty and non-empty changes its hook count.
-    const layout = theme.galleryLayout;
-    if (layout !== 'gallery-premium' && layout !== 'gallery-story') {
-      return null;
-    }
   }
 
   // Get the current layout from theme
@@ -340,6 +331,14 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
 
   // Gallery Premium and Gallery Story layouts have their own integrated hero/header
   const isFullPageLayout = galleryLayout === 'gallery-premium' || galleryLayout === 'gallery-story';
+
+  // Folder-only root (#1160). The full-bleed layouts own the hero/logout chrome,
+  // so they are mounted even with an empty set. Every other layout is skipped
+  // instead: CarouselGalleryLayout returns before four of its useState calls, so
+  // driving one instance between empty and non-empty changes its hook count and
+  // React throws. Skipping only the child keeps this component's own HeroHeader
+  // and welcome message on screen.
+  const skipEmptyLayoutChild = photos.length === 0 && suppressEmptyState && !isFullPageLayout;
 
   return (
     <>
@@ -431,7 +430,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
       )}
 
       {/* Render the selected layout */}
-      <LayoutComponent {...layoutProps} />
+      {skipEmptyLayoutChild ? null : <LayoutComponent {...layoutProps} />}
 
       {/* Lightbox - skip for full-page layouts which have their own lightbox */}
       {selectedPhotoIndex !== null && !isFullPageLayout && (

@@ -246,7 +246,8 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
       onPickResolution(ids);
       return;
     }
-    toast.info(t('gallery.downloading', { count: photos.length }));
+    // ids may be event-wide while `photos` is the current scope (#1160).
+    toast.info(t('gallery.downloading', { count: ids.length }));
     try {
       await galleryService.downloadSelectedPhotos(slug, ids);
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });

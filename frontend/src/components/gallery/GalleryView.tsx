@@ -1047,7 +1047,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   const showSidebar = theme.controlsStyle === 'sidebar';
   const filterBarShown = !showSidebar
     && settingsData?.gallery_show_filter_bar !== false
-    && (data?.photos?.length ?? 0) > 0;
+    // Scoped (#1160): on a folder-only root there is nothing for search, sort or
+    // the feedback chips to act on, and showing them reintroduces exactly the
+    // empty filter row discussion #317 complained about.
+    && scopedPhotos.length > 0;
 
   // Reveal mode (#838): the server returned the event shell with no photos —
   // render the upload-only view for EVERY layout. Enforcement is server-side
