@@ -388,7 +388,11 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         <p className="story-footer-text">
           {welcomeMessage || t('gallery.thankYouMessage', 'For being part of our story and making our special day unforgettable.')}
         </p>
-        {allowDownloads && (
+        {/* Needs something to download: either the whole-gallery callback, or
+            photos in the current scope. On a folder-only root of a gallery with
+            a category download opt-out it has neither, and posting an empty id
+            list is a 400 (#1160). */}
+        {allowDownloads && (onDownloadEverything || photos.length > 0) && (
           <button className="story-footer-btn" onClick={handleDownloadAll}>
             {t('common.downloadAll', 'Download All Photos')}
           </button>

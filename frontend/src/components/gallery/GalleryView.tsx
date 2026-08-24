@@ -1237,7 +1237,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             would be hidden with no way in. Contained width so the folder strip
             reads as chrome against the full-bleed grid below it. */}
         {hasFolderNav && (
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap">
+          // relative + z-[60]: the Story layout's `.story-nav` is `position:
+          // fixed` across the top of the viewport at z-index 50, and it swallowed
+          // the clicks on these chips — a Story gallery whose photos are all
+          // foldered had no way in at all.
+          <div className="relative z-[60] max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap">
             {buildFolderNav(true)}
             {/* Hidden when a category opts out of downloads (#640): this routes
                 to the whole-gallery zip, which contains every event photo with
