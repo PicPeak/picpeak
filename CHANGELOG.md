@@ -5,6 +5,16 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.46.4](https://github.com/PicPeak/picpeak/compare/v3.46.3...v3.46.4) (2026-08-23)
+
+
+### Bug Fixes
+
+* **gallery:** a guest's own hidden feedback is hidden from them too ([#1150](https://github.com/PicPeak/picpeak/issues/1150)) ([#1157](https://github.com/PicPeak/picpeak/issues/1157)) ([b62cd2c](https://github.com/PicPeak/picpeak/commit/b62cd2c290d54820e8f58d11719d48592a1cd1f1))
+* **gallery:** guest filters respect show_feedback_to_guests ([#1044](https://github.com/PicPeak/picpeak/issues/1044)) ([#1156](https://github.com/PicPeak/picpeak/issues/1156)) ([eaa8b41](https://github.com/PicPeak/picpeak/commit/eaa8b41ba323c7eac22e04947fead8e468e9c6c2))
+* **gallery:** no Logout button on galleries that don't require a password ([#1149](https://github.com/PicPeak/picpeak/issues/1149)) ([#1154](https://github.com/PicPeak/picpeak/issues/1154)) ([d46397d](https://github.com/PicPeak/picpeak/commit/d46397d92a7648910075fb774b14abf77d893865))
+* **scripts:** regenerate-thumbnails resolves external sources through ensureThumbnail ([#1148](https://github.com/PicPeak/picpeak/issues/1148)) ([#1155](https://github.com/PicPeak/picpeak/issues/1155)) ([e46260a](https://github.com/PicPeak/picpeak/commit/e46260ad0799bd411a4158c4cc31d587ba85d4ca))
+
 ## [3.46.3](https://github.com/PicPeak/picpeak/compare/v3.46.2...v3.46.3) (2026-08-22)
 
 
