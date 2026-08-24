@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
+const { parseBooleanInput } = require('../utils/parsers');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
@@ -100,7 +101,10 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
       event_id: is_global ? null : event_id,
       display_order: nextOrder,
       // #1160: a folder contains its photos instead of filtering them.
-      is_folder: formatBoolean(!!is_folder)
+      // parseBooleanInput, not `!!`: express-validator's isBoolean() accepts the
+      // STRINGS "false" and "0", and `!!'false'` is true — a form-encoded caller
+      // asking for a filter would silently get a folder.
+      is_folder: formatBoolean(parseBooleanInput(is_folder, false))
     }).returning('id');
     
     const categoryId = insertResult[0]?.id || insertResult[0];
@@ -180,7 +184,7 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
     // (or back into) the root grid with no re-upload — it only changes where they
     // render, never which photos exist or who may reach them.
     if (Object.prototype.hasOwnProperty.call(req.body, 'is_folder')) {
-      updateData.is_folder = formatBoolean(!!req.body.is_folder);
+      updateData.is_folder = formatBoolean(parseBooleanInput(req.body.is_folder, false));
     }
 
     await db('photo_categories')

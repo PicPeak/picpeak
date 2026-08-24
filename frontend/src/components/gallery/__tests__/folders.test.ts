@@ -9,7 +9,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   filterCategories,
   peopleInScope,
-  findFolderBySlug,
+  findFolderByKey,
+  folderKey,
   folderCategoryIds,
   folderTiles,
   photosInScope,
@@ -95,17 +96,31 @@ describe('folderTiles', () => {
   });
 });
 
-describe('findFolderBySlug', () => {
+describe('findFolderByKey / folderKey', () => {
   it('resolves an open folder', () => {
-    expect(findFolderBySlug(CATEGORIES, 'selects')?.id).toBe(2);
+    expect(findFolderByKey(CATEGORIES, 'selects')?.id).toBe(2);
   });
 
-  it('falls back to root for an unknown slug rather than emptying the gallery', () => {
-    expect(findFolderBySlug(CATEGORIES, 'nope')).toBeNull();
+  it('falls back to root for an unknown key rather than emptying the gallery', () => {
+    expect(findFolderByKey(CATEGORIES, 'nope')).toBeNull();
   });
 
   it('refuses to open a filter category as a folder', () => {
-    expect(findFolderBySlug(CATEGORIES, 'ceremony')).toBeNull();
+    expect(findFolderByKey(CATEGORIES, 'ceremony')).toBeNull();
+  });
+
+  // Regression: adminCategories slugs with `[^\w\s-]` stripping, and `\w` is
+  // ASCII-only — "Избранное" slugs to "". Keying on the slug made such a
+  // folder's photos unreachable: gone from the root grid, and the empty param
+  // neither wrote nor resolved.
+  it('keys a folder by id when its name slugs to nothing', () => {
+    const cyrillic = cat({ id: 7, slug: '', name: 'Избранное', is_folder: true });
+    expect(folderKey(cyrillic)).toBe('7');
+    expect(findFolderByKey([cyrillic], '7')?.id).toBe(7);
+  });
+
+  it('still prefers a real slug for readable links', () => {
+    expect(folderKey(CATEGORIES[1])).toBe('selects');
   });
 });
 

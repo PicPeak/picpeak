@@ -27,13 +27,28 @@ export function folderCategoryIds(categories: PhotoCategory[] | undefined): Set<
   return ids;
 }
 
-/** The folder matching a `?folder=<slug>`, or null at root / for an unknown slug. */
-export function findFolderBySlug(
+/**
+ * The URL key for a folder.
+ *
+ * Prefers the slug because it makes a shared link readable, but falls back to
+ * the id: `adminCategories` derives slugs with `[^\w\s-]` stripping, and `\w`
+ * is ASCII-only, so a perfectly valid name in a non-Latin script ("Избранное",
+ * "日本語") slugs to the empty string. An empty key would delete the query
+ * param on open and never resolve on read — the folder's photos would be gone
+ * from the root grid with no way back to them.
+ */
+export function folderKey(category: Pick<PhotoCategory, 'id' | 'slug'>): string {
+  const slug = (category.slug || '').trim();
+  return slug || String(category.id);
+}
+
+/** The folder matching a `?folder=<key>`, or null at root / for an unknown key. */
+export function findFolderByKey(
   categories: PhotoCategory[] | undefined,
-  slug: string | null
+  key: string | null
 ): PhotoCategory | null {
-  if (!slug) return null;
-  return (categories || []).find((c) => c.is_folder && c.slug === slug) || null;
+  if (!key) return null;
+  return (categories || []).find((c) => c.is_folder && folderKey(c) === key) || null;
 }
 
 /**

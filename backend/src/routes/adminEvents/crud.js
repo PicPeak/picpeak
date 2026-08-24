@@ -1207,7 +1207,7 @@ module.exports = (router) => {
         const sourceCategories = await db('photo_categories')
           .where({ event_id: id })
           .where(function () { this.whereNull('is_global').orWhere('is_global', formatBoolean(false)); })
-          .select('name', 'slug', 'is_global');
+          .select('name', 'slug', 'is_global', 'is_folder');
         if (sourceCategories.length > 0) {
           await db('photo_categories').insert(
             sourceCategories.map((c) => ({
@@ -1215,6 +1215,10 @@ module.exports = (router) => {
               name: c.name,
               slug: c.slug,
               is_global: formatBoolean(false),
+              // #1160: carry folder-ness across. Without this the clone silently
+              // falls back to the column default and a duplicated gallery turns
+              // every folder back into a filter.
+              is_folder: formatBoolean(parseBooleanInput(c.is_folder, false)),
             })),
           );
         }

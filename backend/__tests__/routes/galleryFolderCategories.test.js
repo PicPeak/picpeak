@@ -122,6 +122,17 @@ describe('folder categories in the gallery payload (#1160)', () => {
     expect(found.is_folder).toBe(false);
   });
 
+  test('a form-encoded is_folder="false" stays a filter (not !!-coerced to true)', async () => {
+    // express-validator's isBoolean() accepts the STRINGS "false"/"0", and
+    // `!!'false'` is true — so `!!` would flip a caller asking for a filter into
+    // a folder, silently pulling their photos out of the root grid.
+    const { parseBooleanInput } = require('../../src/utils/parsers');
+    expect(parseBooleanInput('false', true)).toBe(false);
+    expect(parseBooleanInput('0', true)).toBe(false);
+    expect(parseBooleanInput('true', false)).toBe(true);
+    expect(parseBooleanInput(undefined, false)).toBe(false);
+  });
+
   test('folders are not an access boundary — the photo is still in the payload', async () => {
     // Containment is a rendering rule, not authorisation. If this ever starts
     // failing, folders have silently become a security feature they are not.

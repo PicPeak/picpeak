@@ -10,7 +10,7 @@ import { useGalleryPhotos, useDownloadAllPhotos } from '../../hooks/useGallery';
 import { PhotoGridWithLayouts } from './PhotoGridWithLayouts';
 import { GalleryFolderTiles } from './GalleryFolderTiles';
 import {
-  findFolderBySlug,
+  findFolderByKey,
   filterCategories,
   folderTiles,
   peopleInScope,
@@ -611,7 +611,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // categories the gallery actually returned, so a stale or hand-typed slug
   // simply falls back to root instead of rendering an empty gallery.
   const openFolder = useMemo(
-    () => findFolderBySlug(data?.categories, openFolderSlug),
+    () => findFolderByKey(data?.categories, openFolderSlug),
     [data?.categories, openFolderSlug]
   );
 
@@ -631,19 +631,28 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   const people = useMemo(() => peopleInScope(allPeople, scopedPhotos), [allPeople, scopedPhotos]);
 
-  const openFolderBySlug = useCallback((slug: string | null) => {
-    setOpenFolderSlug(slug);
-    writeFolderParam(slug);
+  const openFolderBySlug = useCallback((key: string | null) => {
+    setOpenFolderSlug(key);
+    writeFolderParam(key);
     // Entering or leaving a folder is a scope change, not a filter change —
     // carrying a category selection across it would contradict the new scope.
     setSelectedCategoryId(null);
+    // The grid only auto-clears its selection when `categoryId` changes, and
+    // that is already null at root — so without this a selection made outside
+    // the folder survives into it, and the toolbar would offer to download (or
+    // a client to hide) photos that are no longer on screen.
+    setSelectedPhotos(new Set());
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
 
   // The address bar is the source of truth, so Back/Forward walk in and out of
   // folders instead of leaving the gallery.
   useEffect(() => {
-    const onPop = () => setOpenFolderSlug(readFolderParam());
+    const onPop = () => {
+      setOpenFolderSlug(readFolderParam());
+      setSelectedCategoryId(null);
+      setSelectedPhotos(new Set());
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
@@ -1157,6 +1166,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // their edge-to-edge hero untouched unless folders are actually in use.
   const hasFolderNav = !!openFolder || tiles.length > 0;
 
+  // Root of a gallery where every photo lives in a folder: the tiles ARE the
+  // content, and the grid below them would otherwise render its empty state.
+  const rootIsFoldersOnly = !openFolder && tiles.length > 0 && filteredPhotos.length === 0;
+
   // For full-page layouts, render just the PhotoGridWithLayouts without any wrappers
   if (isFullPageLayout) {
     return (
@@ -1430,8 +1443,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           <div className="mt-6">
             <PhotoFilterBar
               // Folders are navigation, not a filter (#1160) — they get tiles.
-              categories={filterCategories(data.categories)}
-              photos={data.photos}
+              // Inside a folder the category chips are dead controls: the filter
+              // branch ignores `selectedCategoryId` there, so offering them would
+              // let a guest click a chip and see nothing happen.
+              categories={openFolder ? [] : filterCategories(data.categories)}
+              // Scoped, so a chip can't advertise a count the grid won't produce.
+              photos={scopedPhotos}
               selectedCategoryId={selectedCategoryId}
               onCategoryChange={setSelectedCategoryId}
               searchTerm={searchTerm}
@@ -1464,7 +1481,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           <div className="mt-4">
             <PeopleStrip
               people={people}
-              photos={data.photos}
+              photos={scopedPhotos}
               slug={slug}
               selectedPersonIds={selectedPersonIds}
               onToggle={togglePerson}
@@ -1563,6 +1580,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             bar to the hero image (issue #624). */}
         <div className={filterBarShown && isHeroHeader ? "mt-12" : "mt-6"}>
           {folderNav}
+          {/* A gallery whose photos ALL live in folders has an empty root grid,
+              and PhotoGridWithLayouts unconditionally renders "no photos found"
+              — directly under the tiles that prove otherwise. Skip the grid when
+              the tiles are the entire content. */}
+          {rootIsFoldersOnly ? null : (
           <PhotoGridWithLayouts
             photos={filteredPhotos}
             slug={slug}
@@ -1614,6 +1636,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onToggleVisibility={isClient ? handleToggleVisibility : undefined}
             showOriginalFilename={showOriginalFilename}
           />
+          )}
         </div>
 
         {/* Upload Modal */}
@@ -1650,7 +1673,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             open={showPeopleSheet}
             onClose={() => setShowPeopleSheet(false)}
             people={people}
-            photos={data?.photos || []}
+            photos={scopedPhotos}
             slug={slug}
             selectedPersonIds={selectedPersonIds}
             onToggle={togglePerson}

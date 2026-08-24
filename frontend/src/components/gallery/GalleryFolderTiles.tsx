@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { Folder } from 'lucide-react';
 
 import { AuthenticatedImage } from '../common';
-import type { FolderTile } from './folders';
+import { folderKey, type FolderTile } from './folders';
 
 interface GalleryFolderTilesProps {
   tiles: FolderTile[];
@@ -37,7 +37,7 @@ export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({ tiles, o
           <button
             key={category.id}
             type="button"
-            onClick={() => onOpen(category.slug)}
+            onClick={() => onOpen(folderKey(category))}
             aria-label={t('gallery.openFolder', 'Open folder {{name}}', { name: category.name })}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-surface bg-surface text-sm hover:shadow-sm transition-shadow focus:outline-none focus:ring-2 focus:ring-primary-500"
             style={{ color: 'var(--color-text)' }}
@@ -64,7 +64,7 @@ export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({ tiles, o
           <button
             key={category.id}
             type="button"
-            onClick={() => onOpen(category.slug)}
+            onClick={() => onOpen(folderKey(category))}
             aria-label={t('gallery.openFolder', 'Open folder {{name}}', { name: category.name })}
             className="group text-left rounded-lg overflow-hidden border border-surface bg-surface hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
