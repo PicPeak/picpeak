@@ -86,6 +86,34 @@ export function folderTiles(
     .filter((tile) => tile.count > 0);
 }
 
+/**
+ * People, recounted against the photos actually on screen (#1160).
+ *
+ * `face_count` comes from /people and spans the whole event, which contradicts
+ * the grid once folders exist: inside a folder a face reads "12 photos" but
+ * clicking it yields only the ones in that folder, and at root a person whose
+ * photos ALL live in a folder shows up and filters down to nothing — a dead
+ * chip. Recomputing from `photo.person_ids` (already what the filter itself
+ * uses) keeps the strip honest, and dropping the zeroes removes the dead chips.
+ */
+export function peopleInScope<T extends { id: number; face_count: number }>(
+  people: T[] | undefined,
+  scopedPhotos: Photo[] | undefined
+): T[] {
+  const list = people || [];
+  if (list.length === 0) return list;
+
+  const counts = new Map<number, number>();
+  (scopedPhotos || []).forEach((photo) => {
+    const ids = (photo as Photo & { person_ids?: number[] }).person_ids || [];
+    ids.forEach((id) => counts.set(id, (counts.get(id) || 0) + 1));
+  });
+
+  return list
+    .map((person) => ({ ...person, face_count: counts.get(person.id) || 0 }))
+    .filter((person) => person.face_count > 0);
+}
+
 /** Categories that still act as filters — the only ones the filter UI should offer. */
 export function filterCategories(categories: PhotoCategory[] | undefined): PhotoCategory[] {
   return (categories || []).filter((c) => !c.is_folder);

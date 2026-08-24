@@ -15,12 +15,41 @@ import type { FolderTile } from './folders';
 interface GalleryFolderTilesProps {
   tiles: FolderTile[];
   onOpen: (slug: string) => void;
+  /**
+   * Compact chip row instead of cover cards. Used by the full-bleed layouts
+   * (Premium, Story), where a block of cards above the hero would break the
+   * edge-to-edge opening those layouts exist for — but where the folders still
+   * have to be reachable, since containment applies there too.
+   */
+  compact?: boolean;
 }
 
-export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({ tiles, onOpen }) => {
+export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({ tiles, onOpen, compact = false }) => {
   const { t } = useTranslation();
 
   if (tiles.length === 0) return null;
+
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm text-muted-theme">{t('gallery.folders', 'Folders')}</span>
+        {tiles.map(({ category, count }) => (
+          <button
+            key={category.id}
+            type="button"
+            onClick={() => onOpen(category.slug)}
+            aria-label={t('gallery.openFolder', 'Open folder {{name}}', { name: category.name })}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-surface bg-surface text-sm hover:shadow-sm transition-shadow focus:outline-none focus:ring-2 focus:ring-primary-500"
+            style={{ color: 'var(--color-text)' }}
+          >
+            <Folder className="w-3.5 h-3.5 text-muted-theme" />
+            <span className="font-medium">{category.name}</span>
+            <span className="text-muted-theme">{count}</span>
+          </button>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="mb-8">

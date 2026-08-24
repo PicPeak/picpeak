@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
   filterCategories,
+  peopleInScope,
   findFolderBySlug,
   folderCategoryIds,
   folderTiles,
@@ -115,6 +116,48 @@ describe('filterCategories / folderCategoryIds', () => {
 
   it('collects folder ids', () => {
     expect([...folderCategoryIds(CATEGORIES)]).toEqual([2, 3]);
+  });
+});
+
+describe('peopleInScope', () => {
+  // photo 10 -> Anna; 11 -> Anna+Ben; folder photos 20,21 -> Chris; 30 -> Ben
+  const withPeople: Photo[] = [
+    { ...photo(10, 1), person_ids: [1] },
+    { ...photo(11, null), person_ids: [1, 2] },
+    { ...photo(20, 2), person_ids: [3] },
+    { ...photo(21, 2), person_ids: [3] },
+    { ...photo(22, 2), person_ids: [] },
+    { ...photo(30, 3), person_ids: [2] },
+  ] as unknown as Photo[];
+
+  const PEOPLE = [
+    { id: 1, face_count: 99 },
+    { id: 2, face_count: 99 },
+    { id: 3, face_count: 99 },
+  ];
+
+  it('recounts against the photos actually on screen', () => {
+    const atRoot = peopleInScope(PEOPLE, photosInScope(withPeople, CATEGORIES, null));
+    expect(atRoot).toEqual([
+      { id: 1, face_count: 2 },
+      { id: 2, face_count: 1 },
+    ]);
+  });
+
+  it('drops a person whose photos all live in a folder — no dead chip at root', () => {
+    const atRoot = peopleInScope(PEOPLE, photosInScope(withPeople, CATEGORIES, null));
+    expect(atRoot.map((p) => p.id)).not.toContain(3);
+  });
+
+  it('counts only the folder’s photos while inside it', () => {
+    const inFolder = peopleInScope(PEOPLE, photosInScope(withPeople, CATEGORIES, 2));
+    expect(inFolder).toEqual([{ id: 3, face_count: 2 }]);
+  });
+
+  it('is a no-op for a gallery without folders', () => {
+    const noFolders = [cat({ id: 1, slug: 'ceremony' })];
+    const scoped = peopleInScope(PEOPLE, photosInScope(withPeople, noFolders, null));
+    expect(scoped.map((p) => [p.id, p.face_count])).toEqual([[1, 2], [2, 2], [3, 2]]);
   });
 });
 

@@ -13,6 +13,7 @@ import {
   findFolderBySlug,
   filterCategories,
   folderTiles,
+  peopleInScope,
   photosInScope,
   readFolderParam,
   writeFolderParam,
@@ -347,7 +348,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     refetchInterval: (query) => (query.state.data?.scan?.in_progress ? 5000 : false),
     staleTime: 30_000,
   });
-  const people = peopleData?.people || [];
+  // Memoised so the `people` recount below isn't invalidated by a fresh []
+  // identity on every render.
+  const allPeople = useMemo(() => peopleData?.people || [], [peopleData?.people]);
 
   // The strip comes from /people, but FILTERING uses photo.person_ids, which
   // rides on the one-shot /photos response. During a backfill those drift
@@ -616,6 +619,17 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     () => folderTiles(data?.categories, data?.photos),
     [data?.categories, data?.photos]
   );
+
+  // Photos the current view is allowed to show, before any user-applied filter.
+  // This — not `filteredPhotos` — is the right basis for the people strip and
+  // the category counts: scoping those by the person filter would zero out
+  // every other face the moment one is picked.
+  const scopedPhotos = useMemo(
+    () => photosInScope(data?.photos, data?.categories, openFolder?.id ?? null),
+    [data?.photos, data?.categories, openFolder]
+  );
+
+  const people = useMemo(() => peopleInScope(allPeople, scopedPhotos), [allPeople, scopedPhotos]);
 
   const openFolderBySlug = useCallback((slug: string | null) => {
     setOpenFolderSlug(slug);
@@ -928,11 +942,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
 
   // Calculate photo counts per category
   const photoCounts = useMemo(() => {
-    if (!data?.photos) return {};
     const counts: Record<number | string, number> = {};
     // Scoped to the current view (#1160): a folder's photos must not inflate the
     // per-category counts shown at root, where those photos aren't in the grid.
-    photosInScope(data.photos, data.categories, openFolder?.id ?? null)
+    scopedPhotos
       .filter(photo => {
         if (mediaFilter === 'photo') return resolveMediaType(photo) !== 'video';
         if (mediaFilter === 'video') return resolveMediaType(photo) === 'video';
@@ -944,7 +957,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       }
     });
     return counts;
-  }, [data?.photos, data?.categories, openFolder, mediaFilter]);
+  }, [scopedPhotos, mediaFilter]);
 
   // Track search usage with debouncing
   useEffect(() => {
@@ -1099,10 +1112,62 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // the guest answer, and vice versa.
   const showLogoutControl = requiresPassword || isClient || viaCustomer;
 
+  // Folder navigation (#1160): tiles at root, a breadcrumb + folder download
+  // inside one. Defined once and rendered by BOTH layout branches — containment
+  // comes from `filteredPhotos`, which every branch uses, so a branch that hides
+  // foldered photos without offering the tiles makes them unreachable.
+  // Renders nothing at all when the gallery has no folders, so galleries that
+  // don't use the feature are untouched.
+  const buildFolderNav = (compact: boolean) => openFolder ? (
+    <div className="mb-6 flex items-center gap-2 text-sm flex-wrap">
+      <button
+        type="button"
+        onClick={() => openFolderBySlug(null)}
+        className="inline-flex items-center gap-1 underline hover:no-underline"
+        style={{ color: 'var(--color-muted-text)' }}
+      >
+        <ChevronLeft className="w-4 h-4" />
+        {t('gallery.backToGallery', 'All photos')}
+      </button>
+      <span style={{ color: 'var(--color-muted-text)' }}>/</span>
+      <span className="font-medium" style={{ color: 'var(--color-text)' }}>
+        {openFolder.name}
+      </span>
+      {allowDownloads && folderDownloadableIds.length > 0 && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleDownloadFolder}
+          leftIcon={<Download className="w-4 h-4" />}
+          className="ml-auto"
+        >
+          {t('gallery.downloadFolder', 'Download folder ({{count}})', {
+            count: folderDownloadableIds.length,
+          })}
+        </Button>
+      )}
+    </div>
+  ) : (
+    <GalleryFolderTiles tiles={tiles} onOpen={openFolderBySlug} compact={compact} />
+  );
+
+  const folderNav = buildFolderNav(false);
+
+  // True only when there is something to show, so the full-page layouts keep
+  // their edge-to-edge hero untouched unless folders are actually in use.
+  const hasFolderNav = !!openFolder || tiles.length > 0;
+
   // For full-page layouts, render just the PhotoGridWithLayouts without any wrappers
   if (isFullPageLayout) {
     return (
       <>
+        {/* #1160: these layouts return early and render edge-to-edge, but they
+            still get `filteredPhotos`, so without this the foldered photos
+            would be hidden with no way in. Contained width so the folder strip
+            reads as chrome against the full-bleed grid below it. */}
+        {hasFolderNav && (
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">{buildFolderNav(true)}</div>
+        )}
         <PhotoGridWithLayouts
           photos={filteredPhotos}
           slug={slug}
@@ -1497,39 +1562,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             `-mt-6` bleed leaves a visible gap instead of gluing the filter
             bar to the hero image (issue #624). */}
         <div className={filterBarShown && isHeroHeader ? "mt-12" : "mt-6"}>
-          {/* Folders (#1160). Tiles at root; a breadcrumb back to root inside one. */}
-          {openFolder ? (
-            <div className="mb-6 flex items-center gap-2 text-sm flex-wrap">
-              <button
-                type="button"
-                onClick={() => openFolderBySlug(null)}
-                className="inline-flex items-center gap-1 underline hover:no-underline"
-                style={{ color: 'var(--color-muted-text)' }}
-              >
-                <ChevronLeft className="w-4 h-4" />
-                {t('gallery.backToGallery', 'All photos')}
-              </button>
-              <span style={{ color: 'var(--color-muted-text)' }}>/</span>
-              <span className="font-medium" style={{ color: 'var(--color-text)' }}>
-                {openFolder.name}
-              </span>
-              {allowDownloads && folderDownloadableIds.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleDownloadFolder}
-                  leftIcon={<Download className="w-4 h-4" />}
-                  className="ml-auto"
-                >
-                  {t('gallery.downloadFolder', 'Download folder ({{count}})', {
-                    count: folderDownloadableIds.length,
-                  })}
-                </Button>
-              )}
-            </div>
-          ) : (
-            <GalleryFolderTiles tiles={tiles} onOpen={openFolderBySlug} />
-          )}
+          {folderNav}
           <PhotoGridWithLayouts
             photos={filteredPhotos}
             slug={slug}
