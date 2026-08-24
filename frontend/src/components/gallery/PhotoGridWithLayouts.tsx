@@ -83,10 +83,20 @@ interface PhotoGridWithLayoutsProps {
   // show "In this photo: …". Undefined when the feature is off.
   people?: GalleryPerson[];
   onSelectPerson?: (personId: number) => void;
+  /**
+   * Suppress the "no photos found" message (#1160). A gallery whose photos all
+   * live in folders has an empty root grid while its folder tiles sit directly
+   * above — printing "no photos" there contradicts the tiles. Only the message
+   * is suppressed: the full-page layouts render their hero, title, logout and
+   * download controls from inside this component, so unmounting it would strip
+   * the whole gallery shell.
+   */
+  suppressEmptyState?: boolean;
 }
 
 export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   photos,
+  suppressEmptyState = false,
   slug,
   categoryId,
   heroPhotoOverride,
@@ -223,7 +233,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
     }
   };
 
-  if (photos.length === 0) {
+  if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
         <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>

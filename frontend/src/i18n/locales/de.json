@@ -1091,7 +1091,8 @@
     "openFolder": "Ordner {{name}} öffnen",
     "folderPhotoCount": "{{count}} Fotos",
     "backToGallery": "Alle Fotos",
-    "downloadFolder": "Ordner herunterladen ({{count}})"
+    "downloadFolder": "Ordner herunterladen ({{count}})",
+    "downloadFolderCapped": "Erste {{limit}} von {{total}} herunterladen"
   },
   "categories": {
     "title": "Fotokategorien",

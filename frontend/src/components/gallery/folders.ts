@@ -18,6 +18,14 @@ import type { Photo, PhotoCategory } from '../../types';
 
 export const FOLDER_QUERY_PARAM = 'folder';
 
+/**
+ * Server-side cap on `/download-selected` and `/download-jobs`
+ * (gallery.js slices the id list to this). Mirrored here so the folder download
+ * can say what it will actually deliver instead of promising the whole folder
+ * and quietly handing back the first 500.
+ */
+export const SELECTED_DOWNLOAD_LIMIT = 500;
+
 /** Ids of every category that contains (rather than filters) its photos. */
 export function folderCategoryIds(categories: PhotoCategory[] | undefined): Set<number | string> {
   const ids = new Set<number | string>();

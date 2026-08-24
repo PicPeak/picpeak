@@ -353,7 +353,8 @@
     "openFolder": "Abrir pasta {{name}}",
     "folderPhotoCount": "{{count}} fotos",
     "backToGallery": "Todas as fotos",
-    "downloadFolder": "Baixar pasta ({{count}})"
+    "downloadFolder": "Baixar pasta ({{count}})",
+    "downloadFolderCapped": "Baixar as primeiras {{limit}} de {{total}}"
   },
   "categories": {
     "title": "Categorias de Fotos",

@@ -94,7 +94,10 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
   const folderToggleMutation = useMutationWithToast({
     mutationFn: ({ category, isFolder }: { category: PhotoCategory; isFolder: boolean }) =>
       categoriesService.updateCategory(category.id, category.name, { is_folder: isFolder }),
-    invalidateKeys: [['event-categories', eventId]],
+    // EventDetailsPage caches the same rows under a DIFFERENT key and feeds them
+    // to the Photos tab's move dialog, so invalidating only this one left that
+    // dialog labelling a fresh folder as a plain category (#1160).
+    invalidateKeys: [['event-categories', eventId], ['admin-event-categories', String(eventId)]],
     successMessage: (_data, variables) =>
       variables.isFolder
         ? t('categories.folderEnabled', 'Photos in this category now sit inside a folder')

@@ -15,6 +15,7 @@ import {
   folderTiles,
   peopleInScope,
   photosInScope,
+  SELECTED_DOWNLOAD_LIMIT,
   readFolderParam,
   writeFolderParam,
 } from './folders';
@@ -939,21 +940,30 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       .map((photo) => photo.id);
   }, [openFolder, scopedPhotos]);
 
+  // /download-selected caps the id list server-side, so a folder bigger than the
+  // cap would deliver a truncated archive under a button promising the whole
+  // thing. Send only what the server will honour, and say so on the label.
+  const folderDownloadIds = useMemo(
+    () => folderDownloadableIds.slice(0, SELECTED_DOWNLOAD_LIMIT),
+    [folderDownloadableIds]
+  );
+  const folderDownloadCapped = folderDownloadableIds.length > SELECTED_DOWNLOAD_LIMIT;
+
   const handleDownloadFolder = async () => {
     if (!allowDownloads || folderDownloadableIds.length === 0) return;
 
     // Same resolution-picker behaviour as every other multi-photo download.
     if (downloadChoices.length > 1) {
-      setResolutionPickerIds(folderDownloadableIds);
+      setResolutionPickerIds(folderDownloadIds);
       return;
     }
 
     analyticsService.trackGalleryEvent('bulk_download', {
       gallery: slug,
-      photo_count: folderDownloadableIds.length,
+      photo_count: folderDownloadIds.length,
     });
 
-    await galleryService.downloadSelectedPhotos(slug, folderDownloadableIds);
+    await galleryService.downloadSelectedPhotos(slug, folderDownloadIds);
   };
 
   // Calculate photo counts per category
@@ -1191,9 +1201,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {hasFolderNav && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">{buildFolderNav(true)}</div>
         )}
-        {rootIsFoldersOnly ? null : (
         <PhotoGridWithLayouts
           photos={filteredPhotos}
+          // The hero, title, logout and download controls live inside this
+          // component for the full-bleed layouts, so a folder-only root must
+          // silence the empty message without unmounting the shell (#1160).
+          suppressEmptyState={rootIsFoldersOnly}
           slug={slug}
           people={peopleEnabled ? people : undefined}
           onSelectPerson={togglePerson}
@@ -1245,7 +1258,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           onLogout={showLogoutControl ? logout : undefined}
           showOriginalFilename={showOriginalFilename}
         />
-        )}
 
         {/* Upload Modal for full-page layouts */}
         {showUploadModal && (data?.event?.allow_user_uploads || event?.allow_user_uploads) && (
@@ -1307,7 +1319,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           isDownloading={downloadAllMutation.isPending}
           allowDownloads={allowDownloads}
           photoCounts={photoCounts}
-          totalPhotos={data?.photos.length || 0}
+          totalPhotos={scopedPhotos.length}
           isMobile={isMobile}
           galleryLayout={theme.galleryLayout}
           allowUploads={data?.event?.allow_user_uploads || event?.allow_user_uploads || false}
@@ -1552,8 +1564,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 <span className="text-sm sm:ml-auto" style={{ color: 'var(--color-muted-text)' }}>
                   {t('gallery.people.matchCount', {
                     count: filteredPhotos.length,
-                    total: totalCount,
-                    defaultValue: `${filteredPhotos.length} of ${totalCount} photos`,
+                    // Scoped denominator (#1160): at a folder root this said
+                    // "42 of 62" while only 42 exist in the view.
+                    total: scopedPhotos.length,
+                    defaultValue: `${filteredPhotos.length} of ${scopedPhotos.length} photos`,
                   })}
                 </span>
 
@@ -1596,9 +1610,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
               and PhotoGridWithLayouts unconditionally renders "no photos found"
               — directly under the tiles that prove otherwise. Skip the grid when
               the tiles are the entire content. */}
-          {rootIsFoldersOnly ? null : (
           <PhotoGridWithLayouts
             photos={filteredPhotos}
+            suppressEmptyState={rootIsFoldersOnly}
             slug={slug}
             people={peopleEnabled ? people : undefined}
             onSelectPerson={togglePerson} 
@@ -1648,7 +1662,6 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onToggleVisibility={isClient ? handleToggleVisibility : undefined}
             showOriginalFilename={showOriginalFilename}
           />
-          )}
         </div>
 
         {/* Upload Modal */}

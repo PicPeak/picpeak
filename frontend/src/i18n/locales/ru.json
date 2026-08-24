@@ -361,7 +361,8 @@
     "openFolder": "Открыть папку {{name}}",
     "folderPhotoCount": "{{count}} фото",
     "backToGallery": "Все фото",
-    "downloadFolder": "Скачать папку ({{count}})"
+    "downloadFolder": "Скачать папку ({{count}})",
+    "downloadFolderCapped": "Скачать первые {{limit}} из {{total}}"
   },
   "categories": {
     "title": "Категории фото",

@@ -345,7 +345,8 @@
     "openFolder": "Odpri mapo {{name}}",
     "folderPhotoCount": "{{count}} fotografij",
     "backToGallery": "Vse fotografije",
-    "downloadFolder": "Prenesi mapo ({{count}})"
+    "downloadFolder": "Prenesi mapo ({{count}})",
+    "downloadFolderCapped": "Prenesi prvih {{limit}} od {{total}}"
   },
   "categories": {
     "title": "Kategorije fotografij",

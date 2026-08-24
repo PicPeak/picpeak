@@ -632,7 +632,8 @@
     "openFolder": "Open folder {{name}}",
     "folderPhotoCount": "{{count}} photos",
     "backToGallery": "All photos",
-    "downloadFolder": "Download folder ({{count}})"
+    "downloadFolder": "Download folder ({{count}})",
+    "downloadFolderCapped": "Download first {{limit}} of {{total}}"
   },
   "categories": {
     "title": "Photo Categories",
