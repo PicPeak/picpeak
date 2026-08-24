@@ -1237,12 +1237,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             would be hidden with no way in. Contained width so the folder strip
             reads as chrome against the full-bleed grid below it. */}
         {hasFolderNav && (
-          // relative + z-[60]: the Story layout's `.story-nav` is `position:
-          // fixed` across the top of the viewport at z-index 50, and it swallowed
-          // the clicks on these chips — a Story gallery whose photos are all
-          // foldered had no way in at all.
-          <div className="relative z-[60] max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap">
-            {buildFolderNav(true)}
+          // Story's `.story-nav` is fixed across this same band at z-index 50.
+          // Raising the strip above it is necessary for the chips to be
+          // clickable at all, but the strip is mostly empty space — so the
+          // container itself must not take hits, or it would block the nav's own
+          // search/favourites/logout underneath. Only the real controls opt back
+          // in via pointer-events-auto.
+          <div className="relative z-[60] pointer-events-none max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap">
+            <div className="pointer-events-auto flex items-center gap-3 flex-wrap">
+              {buildFolderNav(true)}
+            </div>
             {/* Hidden when a category opts out of downloads (#640): this routes
                 to the whole-gallery zip, which contains every event photo with
                 no per-category filter, so offering it here would hand a guest
@@ -1262,7 +1266,10 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
                 onClick={handleDownloadAll}
                 disabled={downloadAllMutation.isPending}
                 leftIcon={<Download className="w-4 h-4" />}
-                className="ml-auto"
+                // No ml-auto: the right of this band belongs to Story's fixed
+                // nav (logout, favourites), and pushing the button over there
+                // physically covers those controls.
+                className="pointer-events-auto"
               >
                 {t('gallery.downloadEverything', 'Download all photos')}
               </Button>
