@@ -102,7 +102,11 @@ export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({
                   protectFromDownload={!allowDownloads || useEnhancedProtection}
                   protectionLevel={protectionLevel}
                   useEnhancedProtection={useEnhancedProtection}
-                  useCanvasRendering={useCanvasRendering}
+                  // Same rule as every other gallery image path: maximum
+                  // protection implies canvas rendering even when the separate
+                  // toggle is off (its default), otherwise a cover silently
+                  // falls back to a blob-backed <img>.
+                  useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
