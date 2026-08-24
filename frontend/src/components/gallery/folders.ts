@@ -54,13 +54,29 @@ export function folderKey(category: Pick<PhotoCategory, 'id' | 'slug'>): string 
   return slug ? `${slug}-${category.id}` : String(category.id);
 }
 
-/** The folder matching a `?folder=<key>`, or null at root / for an unknown key. */
+/**
+ * The folder matching a `?folder=<key>`, or null at root / for an unknown key.
+ *
+ * Resolves on the trailing ID rather than the whole key: renaming a category
+ * rewrites its slug, so an already-shared `?folder=selects-11` would otherwise
+ * stop matching and silently dump the visitor at the gallery root. The slug is
+ * there to make the link readable, not to identify the folder.
+ */
 export function findFolderByKey(
   categories: PhotoCategory[] | undefined,
   key: string | null
 ): PhotoCategory | null {
   if (!key) return null;
-  return (categories || []).find((c) => c.is_folder && folderKey(c) === key) || null;
+  const list = categories || [];
+
+  const trailing = key.split('-').pop();
+  const id = trailing !== undefined && trailing !== '' ? Number(trailing) : NaN;
+  if (Number.isInteger(id)) {
+    const byId = list.find((c) => c.is_folder && Number(c.id) === id);
+    if (byId) return byId;
+  }
+
+  return list.find((c) => c.is_folder && folderKey(c) === key) || null;
 }
 
 /**

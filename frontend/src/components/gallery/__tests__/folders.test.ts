@@ -130,6 +130,13 @@ describe('findFolderByKey / folderKey', () => {
     expect(findFolderByKey([cyrillic], '7')?.id).toBe(7);
   });
 
+  // A rename rewrites the slug, so a link already shared with a client must not
+  // silently dump them at the gallery root.
+  it('still resolves a link shared before the folder was renamed', () => {
+    const renamed = cat({ id: 2, slug: 'final-selects', is_folder: true });
+    expect(findFolderByKey([renamed], 'selects-2')?.id).toBe(2);
+  });
+
   it('keeps the slug in the key so links stay readable', () => {
     expect(folderKey(CATEGORIES[1])).toBe('selects-2');
   });

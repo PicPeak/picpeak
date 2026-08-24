@@ -958,6 +958,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // /download-selected caps the id list server-side, so a folder bigger than the
   // cap would deliver a truncated archive under a button promising the whole
   // thing. Send only what the server will honour, and say so on the label.
+  // True when any category in this gallery opts out of downloads (#640).
+  const hasRestrictedCategory = useMemo(
+    () => (data?.categories || []).some((c) => c.allow_downloads === false),
+    [data?.categories]
+  );
+
   const folderDownloadIds = useMemo(
     () => folderDownloadableIds.slice(0, SELECTED_DOWNLOAD_LIMIT),
     [folderDownloadableIds]
@@ -1233,13 +1239,19 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         {hasFolderNav && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3 flex-wrap">
             {buildFolderNav(true)}
-            {/* These layouts have no header download button — their only
+            {/* Hidden when a category opts out of downloads (#640): this routes
+                to the whole-gallery zip, which contains every event photo with
+                no per-category filter, so offering it here would hand a guest
+                the photos that opt-out is meant to withhold. Those galleries
+                keep the per-folder download, which enforces it.
+
+                These layouts have no header download button — their only
                 gallery-wide download is select-all + download-selected, and
                 select-all is (correctly) scoped to what is on screen. Once
                 folders exist that leaves no single way to get everything, so
                 surface the event-wide zip here. Root only: inside a folder the
                 breadcrumb already offers that folder's download. */}
-            {!openFolder && allowDownloads && (
+            {!openFolder && allowDownloads && !hasRestrictedCategory && (
               <Button
                 variant="outline"
                 size="sm"
@@ -1267,7 +1279,15 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           // Event-wide, so a layout's own Download All neither skips foldered
           // photos nor truncates at the 500-id cap (#1160).
           eventPhotoCount={data?.photos?.length || 0}
-          onDownloadEverything={allowDownloads ? handleDownloadAll : undefined}
+          // Withheld when any category opts out of downloads (#640): the
+          // whole-gallery route serves a prebuilt zip that contains EVERY event
+          // photo with no per-category filter (gallery.js's own note on
+          // bumpEventDownloadCounts). Handing this to the layout there would
+          // turn a restricted photo into a downloadable one, so those galleries
+          // keep the id-based path, which enforces the opt-out.
+          onDownloadEverything={
+            allowDownloads && !hasRestrictedCategory ? handleDownloadAll : undefined
+          }
           slug={slug}
           people={peopleEnabled ? people : undefined}
           onSelectPerson={togglePerson}
