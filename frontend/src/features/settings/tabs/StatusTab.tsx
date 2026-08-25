@@ -18,6 +18,7 @@ import { settingsService } from '../../../services/settings.service';
 import { useStatusTab } from '../hooks/useStatusTab';
 import { UpdateNotificationSettings } from '../components/UpdateNotificationSettings';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
+import { usePermission } from '../../../hooks/usePermission';
 
 const BYTES_PER_GB = 1024 * 1024 * 1024;
 
@@ -84,13 +85,20 @@ export const StatusTab: React.FC<StatusTabProps> = ({
   // Capture dates (#1172). Same shape as the dimension repair above — a
   // background pass over originals that resolves external rows properly — so
   // it gets the same status/poll/mutation treatment.
+  // Gated on the same permission the endpoint requires, so a role without it
+  // never starts the poll. Without this the card would poll a 403 every ten
+  // seconds for anyone who can open the Status tab but cannot run the job —
+  // which on this branch is every built-in admin, since they hold settings.view
+  // but not settings.edit.
+  const canEditSettings = usePermission('settings.edit');
+
   const { data: captureDateStatus } = useQuery({
     queryKey: ['photo-capture-date-status'],
     queryFn: async () => {
       const res = await api.get('/admin/photos/repair-capture-dates/status');
       return res.data;
     },
-    enabled: isActive,
+    enabled: isActive && canEditSettings,
     refetchInterval: 10000,
   });
 

@@ -140,6 +140,20 @@ describe('capture-date ordering on SQLite (#1172)', () => {
     expect(await orderedFilenames('asc')).toEqual(['iso-0115.jpg', 'fallback-2300.jpg']);
   });
 
+  test('an epoch-integer uploaded_at is compared as a date, not as its digits', async () => {
+    // uploaded_at is not always text either: a legacy archive restore leaves
+    // epoch milliseconds in it (a .picpeak restore from an install that stored them that way).
+    // Reading that with substr() would have compared the string '1830297600000'
+    // against '2020-01-01 00:00:00', putting the 2028 row first.
+    await addPhoto('epoch-upload-2028.jpg', null, new Date('2028-01-01T00:00:00Z').getTime());
+    await addPhoto('captured-2020.jpg', managed('2020-01-01T00:00:00Z'), '2020-01-01 00:00:00');
+
+    const [row] = await db.raw("select typeof(uploaded_at) as t from photos where filename = 'epoch-upload-2028.jpg'");
+    expect((row.t || row).toString()).toBe('integer');
+
+    expect(await orderedFilenames('asc')).toEqual(['captured-2020.jpg', 'epoch-upload-2028.jpg']);
+  });
+
   test('all three storage classes order together correctly', async () => {
     await addPhoto('c-managed-2026-08.jpg', managed('2026-08-15T12:00:00Z'), '2026-09-01 00:00:00');
     await addPhoto('a-external-2026-06.jpg', '2026-06-03T01:15:00.000Z', '2026-09-01 00:00:00');

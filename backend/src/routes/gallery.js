@@ -469,8 +469,11 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
       //   text     external imports and the backfill, which write ISO-8601
       //            ('2026-06-03T01:15:00.000Z') per the CLAUDE.md rule that
       //            Dates must not be handed to the binding in tests
-      //   null     no capture date, so the sort falls through to uploaded_at,
-      //            itself text in knex's 'YYYY-MM-DD HH:MM:SS' default shape
+      //   null     no capture date, so the sort falls through to uploaded_at —
+      //            usually text in knex's 'YYYY-MM-DD HH:MM:SS' default shape,
+      //            but epoch milliseconds on rows a .picpeak restore carried in
+      //            from an install that stored them that way, so that column
+      //            needs the same two branches
       //
       // SQLite orders INTEGER before TEXT unconditionally, so every managed
       // photo carrying EXIF sorted ahead of every photo that did not, whatever
@@ -492,8 +495,9 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
           .orderByRaw('COALESCE(photos.captured_at, photos.uploaded_at) ' + sortOrder);
       } else {
         photosQuery = photosQuery.orderByRaw(`CASE
-            WHEN typeof(photos.captured_at) = 'integer' THEN datetime(photos.captured_at / 1000, 'unixepoch')
+            WHEN typeof(photos.captured_at) IN ('integer', 'real') THEN datetime(photos.captured_at / 1000, 'unixepoch')
             WHEN photos.captured_at IS NOT NULL THEN replace(replace(substr(photos.captured_at, 1, 19), 'T', ' '), 'Z', '')
+            WHEN typeof(photos.uploaded_at) IN ('integer', 'real') THEN datetime(photos.uploaded_at / 1000, 'unixepoch')
             ELSE substr(photos.uploaded_at, 1, 19)
           END ${sortOrder}`);
       }
