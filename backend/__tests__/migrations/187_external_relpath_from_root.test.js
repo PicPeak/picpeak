@@ -171,6 +171,25 @@ describe('migration 187 — external_relpath from the media root (#1163)', () =>
       .toBeUndefined();
   });
 
+  it('removes the losing row when two paths converge, instead of stranding it', async () => {
+    // Trip/Sub/c.jpg imported once via `Trip` (as `Sub/c.jpg`) and once via
+    // `Trip/Sub` (as `c.jpg`). Both fold to the same path. Skipping the loser
+    // would leave it base-relative under a root-only resolver — pointing at
+    // <root>/c.jpg — with the marker claiming the conversion is complete.
+    const size = await touch('Trip/Sub/c.jpg', 33);
+    await knex('events').insert({ id: 1, external_path: 'Trip/Sub' });
+    await knex('photos').insert([
+      { event_id: 1, external_relpath: 'Sub/c.jpg', size_bytes: size, source_origin: 'external' },
+      { event_id: 1, external_relpath: 'c.jpg', size_bytes: size, source_origin: 'external' },
+    ]);
+
+    await migration.up(knex);
+
+    const rows = await knex('photos').select('external_relpath');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].external_relpath).toBe('Trip/Sub/c.jpg');
+  });
+
   it('leaves a row it cannot place resolving where it resolves today', async () => {
     // Never guess below current behaviour: a file that is genuinely gone must
     // not have its path rewritten to some other file that happens to exist.

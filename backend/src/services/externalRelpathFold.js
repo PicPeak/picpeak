@@ -52,6 +52,7 @@
 
 const path = require('path');
 const fsp = require('fs').promises;
+const { deleteDuplicatePhotos } = require('./externalPhotoDedupe');
 
 const MARKER = 'external_relpath_root_relative';
 
@@ -199,16 +200,26 @@ async function foldExternalRelpaths(knex, log = () => {}) {
     // the write fail: a caught write error cannot tell a genuine duplicate from
     // a lock or I/O fault, and continuing past one would certify a partial
     // conversion by writing the marker anyway.
-    const claimed = new Set();
+    //
+    // The loser is DELETED, not skipped. Skipping leaves it holding a
+    // base-relative path that the root-only resolver then reads as
+    // `<root>/<relpath>` — permanently pointing at the wrong place, or
+    // nowhere, with the marker saying the conversion is done. And it is a
+    // duplicate by construction: two rows that resolve to one file is exactly
+    // what migration 186 removes, so it goes through the same helper, which
+    // reparents the feedback and marks and reconciles the face clusters.
+    const claimed = new Map();
     const resolved = [];
+    const losers = new Map();
     for (const [row, chosen] of placements) {
       const next = chosen ? `${chosen}/${row.external_relpath}` : row.external_relpath;
-      if (claimed.has(next)) { collided++; continue; }
-      claimed.add(next);
+      const winner = claimed.get(next);
+      if (winner != null) { losers.set(row.id, winner); collided++; continue; }
+      claimed.set(next, row.id);
       if (chosen === base) folded++; else repaired++;
       resolved.push([row.id, next]);
     }
-    plan.push({ eventId, base, bulk: false, rows: resolved });
+    plan.push({ eventId, base, bulk: false, rows: resolved, losers });
   }
 
   // ---- Phase 2: write, all or nothing. ---------------------------------
@@ -226,6 +237,11 @@ async function foldExternalRelpaths(knex, log = () => {}) {
           .whereNotNull('external_relpath')
           .update({ external_relpath: trx.raw('? || external_relpath', [`${step.base}/`]) });
         continue;
+      }
+      // Losers first: while they still hold their old path, the survivor has
+      // not taken the value they would collide with.
+      if (step.losers && step.losers.size) {
+        await deleteDuplicatePhotos(trx, step.losers);
       }
       for (const [id, next] of step.rows) {
         // No catch: collisions were resolved above, so anything failing here is

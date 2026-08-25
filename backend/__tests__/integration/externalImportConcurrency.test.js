@@ -173,14 +173,16 @@ describe('concurrent external imports (#1162)', () => {
       path: 'x/a.jpg',
       type: 'individual',
       source_origin: 'external',
-      external_relpath: path.join('individual', 'a.jpg'),
+      // Root-relative, as the route now writes it (#1163) — the competing
+      // writer has to target the same value for the race to be real.
+      external_relpath: path.join('nas', 'individual', 'a.jpg'),
     };
 
     const res = await runImport(eventId);
 
     expect(res.status).toBe(200);
     const counts = await relpathCounts(eventId);
-    expect(counts.get(path.join('individual', 'a.jpg'))).toBe(1);
+    expect(counts.get(path.join('nas', 'individual', 'a.jpg'))).toBe(1);
     // Two imported by us, one lost to the other writer and reported honestly.
     expect(res.body.imported).toBe(2);
     expect(res.body.skipped).toBe(1);
@@ -194,7 +196,9 @@ describe('concurrent external imports (#1162)', () => {
       path: 'x/a.jpg',
       type: 'individual',
       source_origin: 'external',
-      external_relpath: path.join('individual', 'a.jpg'),
+      // Root-relative, as the route now writes it (#1163) — the competing
+      // writer has to target the same value for the race to be real.
+      external_relpath: path.join('nas', 'individual', 'a.jpg'),
     };
 
     await runImport(eventId);

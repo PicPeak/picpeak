@@ -249,6 +249,11 @@ router.post('/picpeak/import', adminAuth, requirePermission('backup.restore'), p
       filesRestored: result.filesRestored,
       usesExternalMedia: result.usesExternalMedia,
       crossEngine: result.crossEngine,
+      // False when the pre-#1163 external-path conversion failed. The rows and
+      // files are in place, but no external original resolves until it is
+      // retried — the UI must say so rather than showing a plain success.
+      externalPathsConverted: result.externalPathsConverted !== false,
+      externalPathError: result.externalPathError || null,
       sessionInvalidated: true,
     });
   } catch (error) {

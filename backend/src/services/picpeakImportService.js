@@ -555,6 +555,8 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
     // failed — a state only an explicit Re-scan clears, and one the fold does
     // not undo. Probing a cold mount takes long enough for that to be likely
     // rather than theoretical.
+    let externalPathsConverted = true;
+    let externalPathError = null;
     try {
       const { foldExternalRelpaths } = require('./externalRelpathFold');
       const result = await foldExternalRelpaths(db, (msg) => logger.info(`picpeakImport: external paths — ${msg}`));
@@ -562,10 +564,14 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
         logger.info(`picpeakImport: folded ${result.folded} external path(s), repaired ${result.repaired}`);
       }
     } catch (err) {
-      // A restore that has already put every row and file in place must not
-      // fail over this; the banner below still tells the admin to check the
-      // external-media mount.
-      logger.warn(`picpeakImport: external path fold skipped: ${err.message}`);
+      // NOT swallowed as a footnote. The fold is transactional, so a failure
+      // leaves every external path in the pre-#1163 format while the running
+      // resolver reads from the media root — meaning every original in the
+      // restored library is unreachable. Reporting that as a clean restore
+      // sends the admin away believing it worked.
+      externalPathsConverted = false;
+      externalPathError = err.message;
+      logger.error(`picpeakImport: external path conversion FAILED — originals will not resolve until this is retried: ${err.message}`);
     }
     // Face data (#1074): queue ONLY once the files are on disk. The archive
     // carries no face rows and the export blanked photos.face_status, but the
@@ -577,13 +583,21 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
     // instance's files or marks photos failed for originals that are not
     // there yet — and nothing re-queues them afterwards.
     try {
-      const requeued = await db('photos')
-        .whereIn('event_id', db('events').select('id').where('face_recognition_enabled', true))
-        .update({
-          face_status: 'pending', face_count: null, face_started_at: null, face_error: null,
-        });
-      if (requeued > 0) {
-        logger.info(`picpeakImport: queued ${requeued} photo(s) for face detection after import`);
+      if (!externalPathsConverted) {
+        // Queueing now would hand the live worker rows whose paths the
+        // resolver cannot follow, and it would mark them 'failed' — a state
+        // only an explicit Re-scan clears. Leave them unqueued; the operator
+        // re-runs the conversion and then re-scans.
+        logger.warn('picpeakImport: skipping face requeue — external paths are unconverted');
+      } else {
+        const requeued = await db('photos')
+          .whereIn('event_id', db('events').select('id').where('face_recognition_enabled', true))
+          .update({
+            face_status: 'pending', face_count: null, face_started_at: null, face_error: null,
+          });
+        if (requeued > 0) {
+          logger.info(`picpeakImport: queued ${requeued} photo(s) for face detection after import`);
+        }
       }
     } catch (err) {
       logger.debug?.(`picpeakImport: face requeue skipped: ${err.message}`);
@@ -594,7 +608,19 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
     logger.info(
       `[picpeak-import] restored ${tables.length} tables, ${filesRestored} files (externalMedia=${usesExternalMedia}, crossEngine=${crossEngine})`
     );
-    return { restored: true, tables: tables.length, filesRestored, usesExternalMedia, crossEngine, manifest };
+    return {
+      restored: true,
+      tables: tables.length,
+      filesRestored,
+      usesExternalMedia,
+      crossEngine,
+      manifest,
+      // Surfaced so the caller can warn rather than report an unqualified
+      // success: the rows and files are in place, but the external originals
+      // do not resolve until the conversion is retried (#1163).
+      externalPathsConverted,
+      externalPathError,
+    };
   } finally {
     await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
   }

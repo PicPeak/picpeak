@@ -209,18 +209,19 @@ class RestoreService {
 
       // Step 6: Perform the actual restore based on type
       let restoreResult;
+      // Set by the full/database branches; acted on after step 7c so the
+      // schema — and any data conversion those migrations perform — is in
+      // place before the live face worker can claim a row.
+      let needsFaceRequeue = false;
       switch (options.restoreType) {
       case 'full':
         restoreResult = await this.performFullRestore(localBackupPath, manifest, options);
-        // After the FILES too — see requeueFaceScans on why the ordering
-        // matters with a live worker.
-        await this.requeueFaceScans();
+        // Deferred to after step 7c — see the requeue there.
+        needsFaceRequeue = true;
         break;
       case 'database':
         restoreResult = await this.performDatabaseRestore(localBackupPath, manifest, options);
-        // Database-only restore: the existing files stay in place, so there
-        // is nothing to race.
-        await this.requeueFaceScans();
+        needsFaceRequeue = true;
         break;
       case 'files':
         restoreResult = await this.performFilesRestore(localBackupPath, manifest, options);
@@ -329,6 +330,18 @@ class RestoreService {
         this.log('warn',
           'Post-restore migrate:safe failed — restore data is in place but the schema may lag the running image. ' +
           `A container restart will retry via wait-for-db.sh. Error: ${migErr.message}`);
+      }
+
+      // Faces last (#1163). This used to run in step 6, before the migrations
+      // above. On a backup predating migration 187 that meant queueing rows
+      // whose external_relpath was still relative to events.external_path
+      // while the running code resolves from the media root — so the live
+      // worker resolved them against the wrong path and marked them 'failed',
+      // a state the later fold does not clear and only an explicit Re-scan
+      // does. The files are already in place by step 6, so deferring costs
+      // nothing and closes that window.
+      if (needsFaceRequeue) {
+        await this.requeueFaceScans();
       }
 
       // Step 8: Clean up temporary files
