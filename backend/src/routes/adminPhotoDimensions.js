@@ -182,20 +182,40 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('photos.edit')
     if (captureDateProgress.isRunning) {
       return res.status(409).json({ error: 'Capture date backfill is already running' });
     }
+    // Claimed here, not after the candidate query: that query is an await, and
+    // two POSTs arriving inside it would both read isRunning === false and both
+    // start a pass over the same rows. Every early exit below has to release it
+    // again, hence the try/catch around the query.
+    captureDateProgress.isRunning = true;
+    captureDateProgress.lastResult = null;
 
-    const photos = await db('photos')
-      .join('events', 'photos.event_id', 'events.id')
-      .whereNull('photos.captured_at')
-      .where(function () {
-        this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
-      })
-      .select(
-        'photos.id', 'photos.path', 'photos.filename',
-        'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
-        'events.source_mode', 'events.external_path', 'events.slug'
-      );
+    let photos;
+    try {
+      photos = await db('photos')
+        .join('events', 'photos.event_id', 'events.id')
+        .whereNull('photos.captured_at')
+        .where(function () {
+          this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
+        })
+        // Archiving deletes the originals from storage but keeps the photos
+        // rows (archiveService.js:166,199). Those files are inside the zip and
+        // nothing here can read them, so including them would fail every row
+        // on every run and leave the button permanently lit.
+        .where(function () {
+          this.where('events.is_archived', false).orWhereNull('events.is_archived');
+        })
+        .select(
+          'photos.id', 'photos.path', 'photos.filename',
+          'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
+          'events.source_mode', 'events.external_path', 'events.slug'
+        );
+    } catch (err) {
+      captureDateProgress.isRunning = false;
+      throw err;
+    }
 
     if (photos.length === 0) {
+      captureDateProgress.isRunning = false;
       return res.json({ message: 'No photos need a capture date', count: 0 });
     }
 
@@ -204,11 +224,9 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('photos.edit')
       count: photos.length
     });
 
-    captureDateProgress.isRunning = true;
-    captureDateProgress.lastResult = null;
-
     setImmediate(async () => {
-      const { extractCaptureDate } = require('../services/imageProcessor');
+      const { extractCaptureDate, withLocalCopy } = require('../services/imageProcessor');
+      const { resolvePhotoStorageKey } = require('../services/photoResolver');
       let successCount = 0;
       let missingCount = 0;
       let errorCount = 0;
@@ -216,28 +234,61 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('photos.edit')
       for (const photo of photos) {
         try {
           const event = { source_mode: photo.source_mode, external_path: photo.external_path, slug: photo.slug };
-          let fullPath;
-          try {
-            fullPath = resolvePhotoFilePath(event, photo);
-          } catch (err) {
-            logger.warn(`Photo ${photo.id} has no resolvable path, skipping capture date: ${err.message}`);
-            errorCount++;
-            continue;
+          const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+
+          // Two source shapes, same split the thumbnail regenerator uses
+          // (imageProcessor.js:391-420). External rows live on a local mount
+          // and are read directly; managed rows live behind the storage
+          // backend, which on an S3 install is not a filesystem at all — going
+          // through resolvePhotoFilePath there would build a STORAGE_PATH that
+          // holds nothing and fail every managed photo.
+          let captured;
+          if (isExternal) {
+            let fullPath;
+            try {
+              fullPath = resolvePhotoFilePath(event, photo);
+            } catch (err) {
+              logger.warn(`Photo ${photo.id} has no resolvable path, skipping capture date: ${err.message}`);
+              errorCount++;
+              continue;
+            }
+
+            try {
+              await fs.access(fullPath);
+            } catch (err) {
+              logger.warn(`File not found for photo ${photo.id}: ${fullPath}`);
+              errorCount++;
+              continue;
+            }
+
+            captured = await extractCaptureDate(fullPath);
+          } else {
+            let sourceKey;
+            try {
+              sourceKey = resolvePhotoStorageKey(event, photo);
+            } catch (err) {
+              logger.warn(`Photo ${photo.id} has no resolvable storage key, skipping capture date: ${err.message}`);
+              errorCount++;
+              continue;
+            }
+
+            // In local-fs mode withLocalCopy hands back the resolved path
+            // without checking it exists, so the access probe stays. In S3
+            // mode a missing object throws out of getToFile and lands in the
+            // outer catch — both end up counted as failures, which is what a
+            // missing original is.
+            captured = await withLocalCopy(sourceKey, async (localPath) => {
+              await fs.access(localPath);
+              return extractCaptureDate(localPath);
+            });
           }
 
-          try {
-            await fs.access(fullPath);
-          } catch (err) {
-            logger.warn(`File not found for photo ${photo.id}: ${fullPath}`);
-            errorCount++;
-            continue;
-          }
-
-          const captured = await extractCaptureDate(fullPath);
           if (!captured) {
-            // A photo with no EXIF date is not a failure — plenty of sources
-            // carry none. Counted separately so the operator can tell "the
-            // mount is broken" from "these files simply have no date".
+            // No date recovered. Usually genuine — plenty of sources carry no
+            // EXIF — but extractCaptureDate also returns null when the file is
+            // unreadable as an image, so this bucket is "nothing to write",
+            // not "definitely has no EXIF". The failure counter above is the
+            // one that means the storage is broken.
             missingCount++;
             continue;
           }
@@ -273,12 +324,19 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('photos.edit')
 
 router.get('/repair-capture-dates/status', adminAuth, requirePermission('photos.view'), async (req, res) => {
   try {
-    const notVideo = (q) => q.where(function () {
-      this.where('media_type', '!=', 'video').orWhereNull('media_type');
-    });
+    // Same scope as the job itself — counting archived photos here would show
+    // a permanent backlog the button can never clear.
+    const scoped = () => db('photos')
+      .join('events', 'photos.event_id', 'events.id')
+      .where(function () {
+        this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
+      })
+      .where(function () {
+        this.where('events.is_archived', false).orWhereNull('events.is_archived');
+      });
 
-    const totalPhotos = await notVideo(db('photos')).count('id as count').first();
-    const withDates = await notVideo(db('photos')).whereNotNull('captured_at').count('id as count').first();
+    const totalPhotos = await scoped().count('photos.id as count').first();
+    const withDates = await scoped().whereNotNull('photos.captured_at').count('photos.id as count').first();
 
     const total = Number(totalPhotos.count);
     const withCaptureDate = Number(withDates.count);

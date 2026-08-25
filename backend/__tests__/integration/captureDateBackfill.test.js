@@ -66,14 +66,14 @@ describe('capture date backfill (#1172)', () => {
     await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   });
 
-  async function seed({ relpath, exifIso, writeFile = true }) {
+  async function seed({ relpath, exifIso, writeFile = true, archived = false }) {
     await db('photos').del();
     await db('events').del();
     const [e] = await db('events').insert({
       slug: 'capfill', event_type: 'wedding', event_name: 'capfill', event_date: '2026-01-01',
       host_email: 'h@example.com', admin_email: 'a@example.com', password_hash: 'x',
       share_link: `capfill-${Math.random()}`, expires_at: new Date().toISOString(),
-      source_mode: 'reference', external_path: 'trip',
+      source_mode: 'reference', external_path: 'trip', is_archived: archived,
     }).returning('id');
     const eventId = typeof e === 'object' ? e.id : e;
     if (writeFile) await writeJpegWithExif(path.join(mediaRoot, 'trip', relpath), exifIso);
@@ -131,6 +131,21 @@ describe('capture date backfill (#1172)', () => {
 
     expect(res.body.count).toBe(0);
     expect((await status()).body.withoutCaptureDate).toBe(0);
+  });
+
+  it('skips archived events instead of failing them on every run', async () => {
+    // Archiving deletes the originals and keeps the rows, so an archived photo
+    // can never get a date. Counting it would fail it every pass and leave the
+    // status endpoint permanently reporting a backlog.
+    await seed({ relpath: 'archived.jpg', exifIso: '2026-06-04T09:00:00Z', archived: true });
+
+    const res = await request(app).post('/api/admin/photos/repair-capture-dates');
+
+    expect(res.body.count).toBe(0);
+    const s = await status();
+    expect(s.body.total).toBe(0);
+    expect(s.body.withoutCaptureDate).toBe(0);
+    expect(s.body.isRunning).toBe(false);
   });
 
   it('does not overwrite a date written while it was running', async () => {
