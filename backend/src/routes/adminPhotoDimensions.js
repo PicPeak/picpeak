@@ -181,8 +181,8 @@ router.get('/repair-dimensions/status', adminAuth, requirePermission('photos.vie
 // rewrites their metadata. photos.edit is held by the team_photographer preset
 // (175_granular_permissions_and_presets.js:106), which exists precisely for a
 // contributing shooter who should not be able to start a whole-library S3/NAS
-// scan or touch another owner's photos. The dimension repair above has the same
-// exposure and predates this — worth the same treatment, but not in this change.
+// scan or touch another owner's photos. The dimension repair above had the same
+// exposure and predates this; it is brought in line separately in #1182.
 router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
     if (captureDateProgress.isRunning) {
