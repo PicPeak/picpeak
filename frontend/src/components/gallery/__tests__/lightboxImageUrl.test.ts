@@ -90,7 +90,7 @@ describe('lightboxImageUrl (#1166)', () => {
     })).toBe('/api/gallery/g/preview/47?wm=3');
   });
 
-  it.each(['image/gif', 'image/apng'])('keeps the original for %s, which the preview tier would flatten', (mime) => {
+  it.each(['image/gif', 'image/apng', 'image/png'])('keeps the original for %s, which the preview tier would flatten', (mime) => {
     // generatePreviewImage always encodes JPEG, so routing an animated source
     // through it replaces the animation with its first frame — behaviour the
     // toggle-off default never had.
@@ -106,7 +106,7 @@ describe('lightboxImageUrl (#1166)', () => {
 
   it('still uses the preview tier for ordinary still formats', () => {
     setViewport(1440, 2, 900);
-    for (const mime_type of ['image/jpeg', 'image/png', 'image/webp', undefined]) {
+    for (const mime_type of ['image/jpeg', 'image/webp', undefined]) {
       expect(lightboxImageUrl({
         url: '/api/gallery/g/photo/47',
         preview_url: null,

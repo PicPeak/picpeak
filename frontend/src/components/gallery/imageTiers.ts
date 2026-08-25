@@ -139,12 +139,20 @@ export function lightboxImageUrl(photo: {
   // preview tier would replace the animation with its first frame — a
   // regression the toggle-off default never had.
   //
-  // MIME is all the frontend has, so this covers the types that declare
-  // themselves animated. Animated WebP reports image/webp exactly like a still
-  // one and cannot be told apart here; that needs the backend to report it
-  // (Sharp's `metadata.pages > 1`) rather than costing every static-WebP
-  // gallery the bandwidth fix on a guess.
-  if (photo.mime_type === 'image/gif' || photo.mime_type === 'image/apng') return photo.url;
+  // PNG goes with them, for two reasons that share a cause: generatePreviewImage
+  // also drops ALPHA (a transparent source flattens against a solid
+  // background), and an APNG is normally reported as image/png rather than
+  // image/apng, so the specific check alone would miss the common upload path.
+  // PNG is where transparency is the norm, and it is rare enough in an event
+  // gallery that the bandwidth given up is small.
+  //
+  // MIME is all the frontend has. Animated or alpha WebP reports image/webp
+  // exactly like an ordinary still, and cannot be told apart here — fixing
+  // that needs the backend to report it (Sharp's `metadata.pages`, and
+  // `hasAlpha`) rather than costing every static-WebP gallery the bandwidth
+  // fix on a guess. That is the known remaining gap.
+  const ORIGINAL_ONLY = ['image/gif', 'image/apng', 'image/png'];
+  if (photo.mime_type && ORIGINAL_ONLY.includes(photo.mime_type)) return photo.url;
   return previewUrlForViewport(photo.preview_url || photo.slideshow_url, photo) || photo.url;
 }
 
