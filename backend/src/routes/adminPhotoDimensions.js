@@ -126,9 +126,12 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
 
 // Get dimension repair status
 //
-// Matches the POST: no point advertising a backlog to someone who cannot act on
-// it. StatusTab guards on the payload, so the card simply stays hidden.
-router.get('/repair-dimensions/status', adminAuth, requirePermission('system.view'), async (req, res) => {
+// The same permission as the POST, not the read-only system.view. The two are
+// independent grants, and StatusTab has no permission gate of its own — a
+// successful status payload is what renders the card and its enabled button
+// (StatusTab.tsx:558). system.view alone would therefore show a live Repair
+// button whose every click 403s with no error surfaced.
+router.get('/repair-dimensions/status', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
     const totalPhotos = await db('photos')
       .where(function () {
