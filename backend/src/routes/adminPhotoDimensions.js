@@ -328,9 +328,14 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
   }
 });
 
-// Matches the POST: no point advertising a backlog to someone who cannot act on
-// it. The panel is hidden when this 403s (StatusTab.tsx guards on the payload).
-router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.view'), async (req, res) => {
+// The same permission as the POST, not the read-only system.view. system.view
+// and system.manage are independent grants, and StatusTab has no permission
+// gate of its own — a successful status payload is what renders the card and
+// its enabled button (StatusTab.tsx:637). Gating this on system.view therefore
+// handed a system.view-only role a live button whose every click 403s with no
+// error surfaced. Requiring system.manage makes the card appear only for
+// someone who can actually run it, which is what this comment always claimed.
+router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
     // Same scope as the job itself — counting archived photos here would show
     // a permanent backlog the button can never clear.
