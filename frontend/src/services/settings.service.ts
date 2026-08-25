@@ -96,6 +96,10 @@ export interface StorageInfo {
   // floor rather than the answer. Anything comparing it against a limit has to
   // say so, or an unreadable subtree reads as "safely under".
   storage_partial?: boolean;
+  // Where total_used came from. 'disk' is the filesystem walk; 'catalog' means
+  // the backend is S3, where the objects are in the bucket and a walk of the
+  // local storage root would report near-zero.
+  storage_measurement?: 'disk' | 'catalog';
   archive_storage: number;
   storage_by_event: Array<{
     event_name: string;

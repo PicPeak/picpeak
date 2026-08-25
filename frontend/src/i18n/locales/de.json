@@ -3214,7 +3214,8 @@
       "consolidated_other": "Beim letzten Scan wurden {{count}} ähnliche Paare automatisch zusammengeführt. Prüfen Sie sie unter „Personen verwalten“ — falsch Zusammengeführtes lässt sich mit „Trennen“ wieder aufteilen."
     },
     "catalogedMedia": "{{size}} katalogisiert",
-    "storageUnavailable": "nicht verfügbar"
+    "storageUnavailable": "nicht verfügbar",
+    "catalogedMediaOnly": "katalogisiert — Objekte liegen in S3"
   },
   "acceptInvitation": {
     "title": "Einladung annehmen",

@@ -1812,7 +1812,16 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
     } catch (err) {
       logger.warn(`Storage measurement failed, falling back to catalogued bytes: ${err.message}`);
     }
-    const totalUsed = localUsage ? localUsage.total : catalogedBytes;
+    // On an S3 backend the originals, renditions, archives and download caches
+    // are all objects in the bucket, and STORAGE_PATH holds only incidental
+    // local files — so the walk would report near-zero and drag the soft-limit
+    // recommendation down with it. Those installs keep the catalogued figure,
+    // which is the approximation they had before #1164, and the response says
+    // which one this is so the UI can label it rather than implying a disk
+    // measurement it never made.
+    const usesLocalBackend = (process.env.STORAGE_BACKEND || 'local').toLowerCase() !== 's3';
+    const measuredFromDisk = usesLocalBackend && !!localUsage;
+    const totalUsed = measuredFromDisk ? localUsage.total : catalogedBytes;
 
     const parseBytesValue = (value) => {
       const numeric = Number(value);
@@ -1937,8 +1946,10 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
       // What total_used used to be, kept so the UI can show both and the
       // difference stops being invisible.
       cataloged_bytes: catalogedBytes,
-      storage_breakdown: localUsage ? localUsage.breakdown : null,
-      storage_partial: localUsage ? localUsage.partial : false,
+      storage_measurement: measuredFromDisk ? 'disk' : 'catalog',
+      storage_breakdown: measuredFromDisk ? localUsage.breakdown : null,
+      storage_partial: measuredFromDisk ? localUsage.partial : false,
+      excluded_external_root: measuredFromDisk ? localUsage.excludedExternalRoot : null,
       archive_storage: archiveStorage,
       storage_by_event: storageByEvent,
       storage_limit: effectiveSoftLimit,

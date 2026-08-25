@@ -1602,7 +1602,8 @@
       }
     },
     "catalogedMedia": "{{size}} catalogados",
-    "storageUnavailable": "no disponible"
+    "storageUnavailable": "no disponible",
+    "catalogedMediaOnly": "catalogado — los objetos están en S3"
   },
   "permissions": {
     "insufficient": "No tienes permiso para realizar esta acción",

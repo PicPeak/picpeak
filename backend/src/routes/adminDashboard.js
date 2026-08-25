@@ -107,9 +107,14 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
     // which is the honest answer to "is this box running out of space" and
     // leaks nothing beyond the aggregate they can already infer from the
     // system-health page.
+    // Skipped entirely on an S3 backend: the objects are in the bucket and a
+    // walk of STORAGE_PATH would report near-zero, which is worse than the
+    // catalogued figure those installs had before #1164. `storageUsed` is null
+    // there and the tile shows the catalogued number it already carries.
+    const usesLocalBackend = (process.env.STORAGE_BACKEND || 'local').toLowerCase() !== 's3';
     let localStorage = null;
     try {
-      localStorage = await measureLocalStorageUsage();
+      if (usesLocalBackend) localStorage = await measureLocalStorageUsage();
     } catch (err) {
       // The dashboard must render without it; the tile falls back to showing
       // the catalogued figure, labelled as such.
@@ -181,6 +186,7 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
       // UI shows as "unavailable" rather than substituting a number that
       // means something else.
       storageUsed: localStorage ? localStorage.total : null,
+      storageMeasurement: localStorage ? 'disk' : 'catalog',
       storageBreakdown: localStorage ? localStorage.breakdown : null,
       // True when part of the storage root could not be read, so the total is
       // a floor rather than the answer.

@@ -1849,7 +1849,8 @@
       "cms_page_logo_uploaded": "CMS-pagina-logo geüpload: {{slug}}"
     },
     "catalogedMedia": "{{size}} gecatalogiseerd",
-    "storageUnavailable": "niet beschikbaar"
+    "storageUnavailable": "niet beschikbaar",
+    "catalogedMediaOnly": "gecatalogiseerd — objecten staan in S3"
   },
   "acceptInvitation": {
     "title": "Uitnodiging accepteren",

@@ -1899,7 +1899,8 @@
       "cms_page_logo_uploaded": "Логотип CMS-страницы загружен: {{slug}}"
     },
     "catalogedMedia": "{{size}} в каталоге",
-    "storageUnavailable": "недоступно"
+    "storageUnavailable": "недоступно",
+    "catalogedMediaOnly": "в каталоге — объекты хранятся в S3"
   },
   "acceptInvitation": {
     "title": "Принять приглашение",

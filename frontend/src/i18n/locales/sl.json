@@ -1849,7 +1849,8 @@
       "cms_page_logo_uploaded": "Logotip CMS strani naložen: {{slug}}"
     },
     "catalogedMedia": "{{size}} katalogizirano",
-    "storageUnavailable": "ni na voljo"
+    "storageUnavailable": "ni na voljo",
+    "catalogedMediaOnly": "katalogizirano — objekti so v S3"
   },
   "acceptInvitation": {
     "title": "Sprejmi povabilo",

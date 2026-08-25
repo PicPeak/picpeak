@@ -2788,7 +2788,8 @@
       "consolidated_other": "Grouping merged {{count}} look-alike pairs automatically after the last scan. Open Manage people to check them — anything merged wrongly can be separated again with Split."
     },
     "catalogedMedia": "{{size}} catalogued",
-    "storageUnavailable": "unavailable"
+    "storageUnavailable": "unavailable",
+    "catalogedMediaOnly": "catalogued — objects live in S3"
   },
   "acceptInvitation": {
     "title": "Accept Invitation",

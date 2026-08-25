@@ -1860,7 +1860,8 @@
       "cms_page_logo_uploaded": "Logo de la page CMS téléversé : {{slug}}"
     },
     "catalogedMedia": "{{size}} catalogués",
-    "storageUnavailable": "indisponible"
+    "storageUnavailable": "indisponible",
+    "catalogedMediaOnly": "catalogué — les objets sont dans S3"
   },
   "acceptInvitation": {
     "title": "Accepter l'invitation",

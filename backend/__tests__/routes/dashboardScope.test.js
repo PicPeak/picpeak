@@ -146,6 +146,27 @@ describe('dashboard scoping (GHSA-c2jj / gqx7 / jhcf)', () => {
     expect(res.body).toHaveProperty('storageBreakdown');
   });
 
+  it('/stats reports the catalogued figure on an S3 backend, not a near-zero disk walk', async () => {
+    // STORAGE_PATH holds only incidental local files when objects live in a
+    // bucket, so walking it would report near-zero and drag the soft-limit
+    // recommendation with it (#1164 review).
+    const prev = process.env.STORAGE_BACKEND;
+    process.env.STORAGE_BACKEND = 's3';
+    try {
+      const res = await request(app)
+        .get('/api/admin/dashboard/stats')
+        .set('Authorization', `Bearer ${editorToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.storageUsed).toBeNull();
+      expect(res.body.storageMeasurement).toBe('catalog');
+      expect(Number(res.body.catalogedBytes)).toBe(1000);
+    } finally {
+      if (prev === undefined) delete process.env.STORAGE_BACKEND;
+      else process.env.STORAGE_BACKEND = prev;
+    }
+  });
+
   it('/analytics does not expose a foreign gallery name or slug', async () => {
     const res = await request(app)
       .get('/api/admin/dashboard/analytics?days=7')

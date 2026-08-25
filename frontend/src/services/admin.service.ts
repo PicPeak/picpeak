@@ -67,6 +67,9 @@ export interface DashboardStats {
   // substituting `catalogedBytes`: they are different quantities and on a
   // reference-mode install they are wildly different.
   storageUsed: number | null;
+  // 'catalog' when the backend is S3: the objects are in the bucket, so no
+  // disk walk was made and storageUsed is null.
+  storageMeasurement?: 'disk' | 'catalog';
   storageBreakdown: {
     originals: number;
     archives: number;

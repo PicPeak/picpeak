@@ -176,14 +176,21 @@ export const AdminDashboard: React.FC = () => {
       // than `|| `: null means the measurement failed and must read as
       // unavailable, not as 0 Bytes.
       title: t('admin.storageUsed'),
+      // On an S3 backend there is no disk to measure, so the catalogued figure
+      // IS the answer available and stands in — labelled by the subtitle below
+      // rather than pretending a walk happened.
       value: dashboardStats?.storageUsed == null
-        ? t('admin.storageUnavailable', 'unavailable')
+        ? (dashboardStats?.storageMeasurement === 'catalog'
+          ? adminService.formatBytes(dashboardStats.catalogedBytes)
+          : t('admin.storageUnavailable', 'unavailable'))
         : `${adminService.formatBytes(dashboardStats.storageUsed)}${dashboardStats.storagePartial ? '+' : ''}`,
       // The catalogued figure alongside, so the difference is visible rather
       // than conflated. On a managed install they track each other; on a
       // reference one they are supposed to diverge.
       change: dashboardStats
-        ? t('admin.catalogedMedia', { size: adminService.formatBytes(dashboardStats.catalogedBytes) })
+        ? (dashboardStats.storageMeasurement === 'catalog'
+          ? t('admin.catalogedMediaOnly', 'catalogued — objects live in S3')
+          : t('admin.catalogedMedia', { size: adminService.formatBytes(dashboardStats.catalogedBytes) }))
         : undefined,
       icon: HardDrive,
       color: 'text-purple-600',

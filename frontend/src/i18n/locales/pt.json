@@ -1874,7 +1874,8 @@
       "cms_page_logo_uploaded": "Logotipo da página CMS carregado: {{slug}}"
     },
     "catalogedMedia": "{{size}} catalogados",
-    "storageUnavailable": "indisponível"
+    "storageUnavailable": "indisponível",
+    "catalogedMediaOnly": "catalogado — os objetos estão no S3"
   },
   "acceptInvitation": {
     "title": "Aceitar Convite",
