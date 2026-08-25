@@ -72,12 +72,23 @@ const MOVE_TABLES = [
     // guest_identifier alone would treat two DIFFERENT people sharing a
     // device as one and delete one of their ratings.
     identity: (row) => (row.guest_id != null ? `id:${row.guest_id}` : `anon:${row.guest_identifier}`),
-    keys: ['feedback_type'],
+    // is_hidden is part of the identity, not noise: feedbackService lets a
+    // moderator-hidden row coexist with the guest's visible replacement and
+    // excludes hidden rows from the counts. Without it the visible row is
+    // dropped as redundant against the hidden one.
+    keys: ['feedback_type', 'is_hidden'],
     // A comment is distinct content, never a per-guest toggle: two comments
     // from one guest are two comments, so they always move.
     alwaysMove: (row) => row.feedback_type === 'comment',
   },
-  { table: 'photo_admin_marks', keys: ['admin_id'] },
+  {
+    table: 'photo_admin_marks',
+    keys: ['admin_id'],
+    // rating and color_label are independently writable, so the same admin can
+    // have rated one tile and colour-labelled the other. Dropping the loser
+    // outright would lose a half the survivor's row has no value for.
+    mergeFields: ['rating', 'color_label'],
+  },
   { table: 'transfer_files', keys: ['transfer_id'] },
 ];
 
@@ -109,6 +120,19 @@ async function moveOrDrop(knex, spec, doomedToSurvivor, touched) {
       const key = equivalenceKey(spec, row);
       const move = (spec.alwaysMove && spec.alwaysMove(row)) || !taken.has(key);
       if (!move) {
+        // Before dropping the loser, hand over any field the winner has no
+        // value for — otherwise an independently-set half goes with it.
+        if (spec.mergeFields) {
+          const winner = existing.find((r) => equivalenceKey(spec, r) === key);
+          const fill = {};
+          for (const field of spec.mergeFields) {
+            if (winner && winner[field] == null && row[field] != null) fill[field] = row[field];
+          }
+          if (winner && Object.keys(fill).length) {
+            await knex(spec.table).where('id', winner.id).update(fill);
+            Object.assign(winner, fill);
+          }
+        }
         await knex(spec.table).where('id', row.id).del();
         continue;
       }
@@ -171,6 +195,16 @@ async function deleteDuplicatePhotos(knex, doomedToSurvivor) {
   // built from photos that no longer exist. faceProcessor says as much: it is
   // "called from every photo-deletion path".
   if (await knex.schema.hasTable('photo_faces')) {
+    // If the ONLY completed scan of this file belonged to the duplicate, the
+    // purge below takes the sole embeddings with it and nothing re-queues the
+    // survivor — it just silently stops having a face. Mark those for a
+    // rescan; the worker picks up 'pending' on its own.
+    const needsRescan = [];
+    for (const [doomedId, survivorId] of doomedToSurvivor) {
+      if (!(await knex('photo_faces').where('photo_id', doomedId).first())) continue;
+      if (!(await knex('photo_faces').where('photo_id', survivorId).first())) needsRescan.push(survivorId);
+    }
+
     let purgePhotoFaces = null;
     try {
       ({ purgePhotoFaces } = require('./faceProcessor'));
@@ -183,6 +217,27 @@ async function deleteDuplicatePhotos(knex, doomedToSurvivor) {
       for (const id of doomed) await purgePhotoFaces(id, knex);
     } else {
       for (const ids of chunked(doomed)) await knex('photo_faces').whereIn('photo_id', ids).del();
+    }
+
+    if (needsRescan.length && await knex.schema.hasColumn('photos', 'face_status')) {
+      for (const ids of chunked(needsRescan)) {
+        await knex('photos').whereIn('id', ids).update({ face_status: 'pending' });
+      }
+    }
+  }
+
+  // Real interactions, recorded per row. Deleting the duplicate would quietly
+  // lower the engagement the admin grid shows for a photo people did view and
+  // download.
+  if (await knex.schema.hasColumn('photos', 'view_count')) {
+    for (const [doomedId, survivorId] of doomedToSurvivor) {
+      const from = await knex('photos').where('id', doomedId)
+        .select('view_count', 'download_count').first();
+      if (!from) continue;
+      const add = {};
+      if (from.view_count) add.view_count = knex.raw('COALESCE(view_count, 0) + ?', [from.view_count]);
+      if (from.download_count) add.download_count = knex.raw('COALESCE(download_count, 0) + ?', [from.download_count]);
+      if (Object.keys(add).length) await knex('photos').where('id', survivorId).update(add);
     }
   }
 

@@ -59,6 +59,8 @@ describe('migration 186 — unique (event_id, external_relpath) (#1162)', () => 
       t.integer('reaction_count').defaultTo(0);
       t.integer('color_label_count').defaultTo(0);
       t.string('face_status');
+      t.integer('view_count').defaultTo(0);
+      t.integer('download_count').defaultTo(0);
       t.integer('face_count');
       t.string('face_started_at');
       t.text('face_error');
@@ -87,6 +89,8 @@ describe('migration 186 — unique (event_id, external_relpath) (#1162)', () => 
       t.integer('event_id');
       t.integer('admin_id');
       t.integer('rating');
+      // Independently writable alongside rating, per photoAdminMarksService.
+      t.string('color_label', 16);
       t.unique(['photo_id', 'admin_id'], 'photo_admin_marks_photo_admin_uniq');
     });
     await knex.schema.createTable('photo_faces', (t) => {
@@ -421,6 +425,57 @@ describe('migration 186 — unique (event_id, external_relpath) (#1162)', () => 
     expect(await knex('photo_faces').count('* as c').first()).toEqual({ c: 0 });
     // The person had exactly one member and loses it, so it goes with it.
     expect(await knex('event_people').where('id', 5).first()).toBeUndefined();
+  });
+
+  it('keeps a hidden moderation record from swallowing the visible replacement', async () => {
+    // feedbackService lets both coexist and counts only the visible one.
+    await seedPair();
+    await knex('photo_feedback').insert([
+      { photo_id: 1, event_id: 1, feedback_type: 'like', guest_identifier: 'g', is_hidden: true },
+      { photo_id: 2, event_id: 1, feedback_type: 'like', guest_identifier: 'g', is_hidden: false },
+    ]);
+
+    await migration.up(knex);
+
+    expect(await knex('photo_feedback').count('* as c').first()).toEqual({ c: 2 });
+  });
+
+  it('merges the independent halves of one admin\'s mark', async () => {
+    // rating and color_label are written independently, so the same admin can
+    // have rated one tile and coloured the other.
+    await seedPair();
+    await knex('photo_admin_marks').insert([
+      { photo_id: 1, event_id: 1, admin_id: 7, rating: 5, color_label: null },
+      { photo_id: 2, event_id: 1, admin_id: 7, rating: null, color_label: 'red' },
+    ]);
+
+    await migration.up(knex);
+
+    const rows = await knex('photo_admin_marks');
+    expect(rows).toHaveLength(1);
+    expect([rows[0].rating, rows[0].color_label]).toEqual([5, 'red']);
+  });
+
+  it('requeues the survivor when the duplicate held the only scan', async () => {
+    // Otherwise the sole embeddings go with the purge and nothing re-queues:
+    // the photo just silently stops having a face.
+    await seedPair();
+    await knex('photo_faces').insert({ photo_id: 2, event_id: 1 });
+
+    await migration.up(knex);
+
+    expect((await knex('photos').where('id', 1).first()).face_status).toBe('pending');
+  });
+
+  it('carries the duplicate\'s views and downloads over', async () => {
+    await seedPair();
+    await knex('photos').where('id', 1).update({ view_count: 2, download_count: 1 });
+    await knex('photos').where('id', 2).update({ view_count: 5, download_count: 3 });
+
+    await migration.up(knex);
+
+    const survivor = await knex('photos').where('id', 1).first();
+    expect([survivor.view_count, survivor.download_count]).toEqual([7, 4]);
   });
 
   it('fails loudly rather than recording itself applied without the index', async () => {
