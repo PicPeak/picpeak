@@ -1806,9 +1806,14 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
     // reference-mode install got a disk-capacity recommendation computed from
     // bytes that are not on the disk.
     const catalogedBytes = Number(totalStorage?.total) || 0;
+    // Gated BEFORE the walk, not after. This endpoint is polled by the sidebar,
+    // and an S3 install that still has a large local tree from before the
+    // migration would otherwise pay a full stat-per-file traversal on every
+    // cold cache only to discard the result.
+    const usesLocalBackend = (process.env.STORAGE_BACKEND || 'local').toLowerCase() !== 's3';
     let localUsage = null;
     try {
-      localUsage = await measureLocalStorageUsage();
+      if (usesLocalBackend) localUsage = await measureLocalStorageUsage();
     } catch (err) {
       logger.warn(`Storage measurement failed, falling back to catalogued bytes: ${err.message}`);
     }
@@ -1819,7 +1824,6 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
     // which is the approximation they had before #1164, and the response says
     // which one this is so the UI can label it rather than implying a disk
     // measurement it never made.
-    const usesLocalBackend = (process.env.STORAGE_BACKEND || 'local').toLowerCase() !== 's3';
     const measuredFromDisk = usesLocalBackend && !!localUsage;
     const totalUsed = measuredFromDisk ? localUsage.total : catalogedBytes;
 
