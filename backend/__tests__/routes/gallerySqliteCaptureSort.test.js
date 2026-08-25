@@ -148,7 +148,7 @@ describe('capture-date ordering on SQLite (#1172)', () => {
     await addPhoto('epoch-upload-2028.jpg', null, new Date('2028-01-01T00:00:00Z').getTime());
     await addPhoto('captured-2020.jpg', managed('2020-01-01T00:00:00Z'), '2020-01-01 00:00:00');
 
-    const [row] = await db.raw("select typeof(uploaded_at) as t from photos where filename = 'epoch-upload-2028.jpg'");
+    const [row] = await db.raw('select typeof(uploaded_at) as t from photos where filename = \'epoch-upload-2028.jpg\'');
     expect((row.t || row).toString()).toBe('integer');
 
     expect(await orderedFilenames('asc')).toEqual(['captured-2020.jpg', 'epoch-upload-2028.jpg']);
