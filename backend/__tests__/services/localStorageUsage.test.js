@@ -31,12 +31,15 @@ describe('localStorageUsage (#1164)', () => {
   beforeEach(async () => {
     root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'picpeak-usage-'));
     process.env.STORAGE_PATH = root;
+    delete process.env.EXTERNAL_MEDIA_ROOT;
+    jest.resetModules();
     resetLocalStorageUsageCache();
   });
 
   afterEach(async () => {
     await fs.promises.rm(root, { recursive: true, force: true }).catch(() => {});
     delete process.env.STORAGE_PATH;
+    delete process.env.EXTERNAL_MEDIA_ROOT;
     resetLocalStorageUsageCache();
   });
 
@@ -114,6 +117,62 @@ describe('localStorageUsage (#1164)', () => {
     // ENOENT on the root is a fresh/misconfigured install, not a partial read.
     expect(usage.total).toBe(0);
     expect(usage.partial).toBe(false);
+  });
+
+  it('does not walk the media share bind-mounted under the storage root', async () => {
+    // The compose default puts EXTERNAL_MEDIA_ROOT at <storage>/external-media,
+    // where the NAS is bind-mounted — a plain directory, not a symlink. Walking
+    // it would put every referenced original back into a figure that exists to
+    // leave them out, which is the over-count this measurement replaces.
+    await write(path.join('thumbnails', 'a.jpg'), 100);
+    await write(path.join('external-media', 'nas', 'huge.jpg'), 50000);
+    process.env.EXTERNAL_MEDIA_ROOT = path.join(root, 'external-media');
+    jest.resetModules();
+    const svc = require('../../src/services/localStorageUsage');
+    svc.resetLocalStorageUsageCache();
+
+    const usage = await svc.measureLocalStorageUsage();
+
+    expect(usage.total).toBe(100);
+    expect(usage.excludedExternalRoot).toBe(path.join(root, 'external-media'));
+  });
+
+  it('still counts a directory that merely looks like the media share', async () => {
+    // Only the CONFIGURED root is skipped. An install whose media lives
+    // elsewhere keeps whatever is in this directory in the total, because
+    // those really are local bytes.
+    await write(path.join('external-media', 'leftover.jpg'), 700);
+    // The production shape: the share is mounted well outside the storage root.
+    const elsewhere = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'picpeak-nas-elsewhere-'));
+    process.env.EXTERNAL_MEDIA_ROOT = elsewhere;
+    jest.resetModules();
+    const svc = require('../../src/services/localStorageUsage');
+    svc.resetLocalStorageUsageCache();
+
+    const usage = await svc.measureLocalStorageUsage();
+
+    expect(usage.total).toBe(700);
+    expect(usage.excludedExternalRoot).toBeNull();
+    await fs.promises.rm(elsewhere, { recursive: true, force: true });
+  });
+
+  it('shares one walk between concurrent cold-cache callers', async () => {
+    // /dashboard/stats and /storage/info are routinely requested together, and
+    // the sidebar adds a third. Each starting its own full stat-per-file walk
+    // multiplies the cost on exactly the large libraries where it hurts.
+    await write(path.join('thumbnails', 'a.jpg'), 100);
+    const readdir = jest.spyOn(fs.promises, 'readdir');
+
+    const [a, b, c] = await Promise.all([
+      measureLocalStorageUsage(),
+      measureLocalStorageUsage(),
+      measureLocalStorageUsage(),
+    ]);
+
+    expect([a.total, b.total, c.total]).toEqual([100, 100, 100]);
+    // One walk: the storage root plus its one subdirectory.
+    expect(readdir).toHaveBeenCalledTimes(2);
+    readdir.mockRestore();
   });
 
   it('caches, and honours force', async () => {

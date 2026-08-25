@@ -22,8 +22,16 @@
  * disk. A `du` is the only honest answer, and the only one that notices what
  * PicPeak has forgotten about.
  *
+ * The external media root is EXCLUDED, and that is the whole point rather than
+ * a detail. Its compose default is `<storage>/external-media`, where the NAS is
+ * bind-mounted — a plain directory, not a symlink — so walking it would add
+ * every referenced original back into a figure that exists to leave them out,
+ * and compare NAS bytes against statfs() of the local disk. That is the
+ * over-count this replaces, reintroduced by the fix for it.
+ *
  * Cached, because it is one stat per file. On a large install that is seconds,
- * and the dashboard is polled.
+ * and the dashboard is polled — and concurrent misses share one walk rather
+ * than each starting their own.
  */
 
 const path = require('path');
@@ -34,6 +42,29 @@ const { getStoragePath } = require('../config/storage');
 const TTL_MS = 5 * 60 * 1000;
 
 let cache = null;
+// The walk in flight, if any. Two admins loading the dashboard, or the sidebar
+// and the storage tab on one page, hit the same cold cache and would otherwise
+// each stat every file on the disk.
+let inFlight = null;
+
+/**
+ * The external media root, resolved, when it lies inside the storage root.
+ * Returns null when it is elsewhere (the usual production case) or cannot be
+ * resolved — nothing to exclude then.
+ */
+function nestedExternalRoot(storageRoot) {
+  let externalRoot;
+  try {
+    externalRoot = require('./externalMediaService').getExternalMediaRoot();
+  } catch (err) {
+    return null;
+  }
+  if (!externalRoot) return null;
+  const resolvedExternal = path.resolve(externalRoot);
+  const resolvedStorage = path.resolve(storageRoot);
+  if (resolvedExternal === resolvedStorage) return null;
+  return resolvedExternal.startsWith(resolvedStorage + path.sep) ? resolvedExternal : null;
+}
 
 /**
  * Which line of the breakdown a path belongs to.
@@ -48,11 +79,9 @@ let cache = null;
  * and it is the one bucket that is pure disposable cache, which makes it the
  * one an admin most wants to see on its own.
  *
- * `externalMedia` earns a line for the opposite reason. EXTERNAL_MEDIA_ROOT
- * usually points at a mount somewhere else entirely and never appears here at
- * all, but its dev/compose fallback is `<storage>/external-media`. Where that
- * applies the bytes ARE on this disk and belong in the total — just not
- * conflated with the artefacts PicPeak generates.
+ * There is no external-media bucket: that subtree is not walked at all (see
+ * nestedExternalRoot). Those bytes live on the media share, and counting them
+ * is the exact over-count this measurement exists to end.
  */
 function categorize(relPath) {
   const segments = relPath.split(path.sep);
@@ -65,7 +94,6 @@ function categorize(relPath) {
   case 'uploads': return 'uploads';
   case 'temp': return 'temp';
   case 'business-docs': return 'businessDocs';
-  case 'external-media': return 'externalMedia';
   case 'events':
     return segments[1] === 'archived' ? 'archives' : 'originals';
   default:
@@ -83,12 +111,20 @@ const EMPTY_BREAKDOWN = () => ({
   uploads: 0,
   businessDocs: 0,
   downloadCache: 0,
-  externalMedia: 0,
   temp: 0,
   other: 0,
 });
 
 async function walk(absDir, relDir, acc) {
+  // The media share, bind-mounted under the storage root. Walking it would put
+  // every referenced original back into a local-usage figure, and on a real
+  // NAS the traversal alone would take far longer than the measurement is
+  // worth.
+  if (acc.excludeRoot && path.resolve(absDir) === acc.excludeRoot) {
+    acc.excludedExternalRoot = acc.excludeRoot;
+    return;
+  }
+
   let entries;
   try {
     entries = await fsp.readdir(absDir, { withFileTypes: true });
@@ -133,26 +169,45 @@ async function walk(absDir, relDir, acc) {
 async function measureLocalStorageUsage(opts = {}) {
   const now = Date.now();
   if (!opts.force && cache && now - cache.at < TTL_MS) return cache.value;
+  // Share a walk already underway rather than starting a second one.
+  if (!opts.force && inFlight) return inFlight;
+
+  inFlight = runMeasurement()
+    .then((value) => { cache = { at: Date.now(), value }; return value; })
+    .finally(() => { inFlight = null; });
+  return inFlight;
+}
+
+async function runMeasurement() {
 
   const root = getStoragePath();
-  const acc = { total: 0, files: 0, breakdown: EMPTY_BREAKDOWN(), partial: false };
+  const acc = {
+    total: 0,
+    files: 0,
+    breakdown: EMPTY_BREAKDOWN(),
+    partial: false,
+    excludeRoot: nestedExternalRoot(root),
+    excludedExternalRoot: null,
+  };
   await walk(root, '', acc);
 
-  const value = {
+  return {
     total: acc.total,
     files: acc.files,
     breakdown: acc.breakdown,
     partial: acc.partial,
+    // Set when the media share sits inside the storage root and was skipped,
+    // so the UI can say why the figure is smaller than `du` would report.
+    excludedExternalRoot: acc.excludedExternalRoot,
     measuredAt: new Date().toISOString(),
     root,
   };
-  cache = { at: now, value };
-  return value;
 }
 
 /** Test seam — the TTL cache would otherwise outlive a temp storage root. */
 function resetLocalStorageUsageCache() {
   cache = null;
+  inFlight = null;
 }
 
 module.exports = {
