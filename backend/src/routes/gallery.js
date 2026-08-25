@@ -1929,13 +1929,19 @@ router.get('/:slug/preview/:photoId',
       });
 
       if (watermarkSettings && watermarkSettings.enabled) {
-        // applyWatermark composites and re-encodes to JPEG, so a watermarked
-        // gallery serves a flattened still even for an animated or transparent
-        // source. Correct the header rather than mislabelling the bytes.
+        // No Content-Type override here. applyWatermark PRESERVES the source
+        // format (watermarkService.js: png -> png, webp -> webp, else jpeg),
+        // and its input is this preview — so the output format matches the key
+        // the header was already derived from. Forcing image/jpeg would
+        // mislabel a watermarked WebP preview, and `nosniff` means the browser
+        // will not correct it.
+        //
+        // What is still lost is the animation: the compositor flattens a
+        // multi-frame source to one frame while keeping the WebP container.
+        // That is a separate problem and a much larger one.
         const watermarkedBuffer = await withLocalCopy(previewPath, (localPath) =>
           watermarkService.applyWatermark(localPath, watermarkSettings)
         );
-        res.set('Content-Type', 'image/jpeg');
         res.send(watermarkedBuffer);
       } else {
         res.setHeader('Content-Length', stat.size);
