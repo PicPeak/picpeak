@@ -457,12 +457,50 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
     await resyncSequences(tables);
 
     const filesRestored = await restoreFiles(staging);
+
+    // External media paths (#1163). knex_migrations is excluded from the
+    // archive, so migration 177 does not re-run after a restore — a pre-#1163
+    // backup would otherwise drop base-relative rows onto an instance that
+    // resolves them from the media root, and every original in the restored
+    // library would be unreachable with nothing logged. The fold is a no-op
+    // when the restored app_settings already carries the marker.
+    let externalPathsConverted = true;
+    let externalPathError = null;
+    try {
+      const { foldExternalRelpaths } = require('./externalRelpathFold');
+      const result = await foldExternalRelpaths(db, (msg) => logger.info(`picpeakImport: external paths — ${msg}`));
+      if (result.folded || result.repaired) {
+        logger.info(`picpeakImport: folded ${result.folded} external path(s), repaired ${result.repaired}`);
+      }
+    } catch (err) {
+      // NOT swallowed as a footnote. The fold is transactional, so a failure
+      // leaves every external path in the pre-#1163 format while the running
+      // resolver reads from the media root — meaning every original in the
+      // restored library is unreachable. Reporting that as a clean restore
+      // sends the admin away believing it worked.
+      externalPathsConverted = false;
+      externalPathError = err.message;
+      logger.error(`picpeakImport: external path conversion FAILED — originals will not resolve until this is retried: ${err.message}`);
+    }
+
     const usesExternalMedia = await detectExternalMedia();
 
     logger.info(
       `[picpeak-import] restored ${tables.length} tables, ${filesRestored} files (externalMedia=${usesExternalMedia}, crossEngine=${crossEngine})`
     );
-    return { restored: true, tables: tables.length, filesRestored, usesExternalMedia, crossEngine, manifest };
+    return {
+      restored: true,
+      tables: tables.length,
+      filesRestored,
+      usesExternalMedia,
+      crossEngine,
+      manifest,
+      // Surfaced so the caller can warn rather than report an unqualified
+      // success: the rows and files are in place, but the external originals
+      // do not resolve until the conversion is retried (#1163).
+      externalPathsConverted,
+      externalPathError,
+    };
   } finally {
     await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
   }
