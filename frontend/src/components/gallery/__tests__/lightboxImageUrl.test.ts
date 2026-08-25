@@ -67,6 +67,28 @@ describe('lightboxImageUrl (#1166)', () => {
     },
   );
 
+  it('catches a PNG that migration 039 mislabelled as image/jpeg', () => {
+    // 039 backfilled every pre-existing photo's mime_type to image/jpeg, and
+    // the external-media importer inserts rows with none at all — so trusting
+    // MIME alone lets exactly the transparent photos through.
+    expect(lightboxImageUrl({
+      url: '/api/gallery/g/photo/47',
+      preview_url: null,
+      slideshow_url: '/api/gallery/g/preview/47',
+      mime_type: 'image/jpeg',
+      filename: 'logo-with-alpha.png',
+    })).toBe('/api/gallery/g/photo/47');
+  });
+
+  it('catches one with no mime_type at all, as external imports write them', () => {
+    expect(lightboxImageUrl({
+      url: '/api/gallery/g/photo/47',
+      preview_url: null,
+      slideshow_url: '/api/gallery/g/preview/47',
+      filename: 'animation.gif',
+    })).toBe('/api/gallery/g/photo/47');
+  });
+
   it('still uses the preview tier for ordinary still formats', () => {
     for (const mime_type of ['image/jpeg', 'image/webp', undefined]) {
       expect(lightboxImageUrl({ ...PHOTO, mime_type })).toBe('/api/gallery/g/preview/47');

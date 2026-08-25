@@ -32,6 +32,8 @@ export function lightboxImageUrl(photo: {
   preview_url?: string | null;
   slideshow_url?: string | null;
   mime_type?: string;
+  filename?: string;
+  original_filename?: string | null;
 }): string {
   // Animated and transparent formats keep the original. generatePreviewImage
   // encodes JPEG, which has neither a second frame nor an alpha channel, so
@@ -46,8 +48,17 @@ export function lightboxImageUrl(photo: {
   //
   // The proper fix is backend-side, encoding WebP for alpha or multi-page
   // sources; when that lands this list goes away entirely.
+  // Checked against the FILENAME as well as the MIME, because mime_type is not
+  // trustworthy here: migration 039 backfilled every pre-existing photo as
+  // image/jpeg regardless of what it was, and the external-media importer
+  // inserts rows without a mime_type at all. A mislabelled PNG would otherwise
+  // sail past this and come back flattened.
   const ORIGINAL_ONLY = ['image/gif', 'image/apng', 'image/png'];
-  if (photo.mime_type && ORIGINAL_ONLY.includes(photo.mime_type)) return photo.url;
+  const ORIGINAL_ONLY_EXT = /\.(gif|apng|png)$/i;
+  const name = photo.original_filename || photo.filename || '';
+  if ((photo.mime_type && ORIGINAL_ONLY.includes(photo.mime_type)) || ORIGINAL_ONLY_EXT.test(name)) {
+    return photo.url;
+  }
 
   return photo.preview_url || photo.slideshow_url || photo.url;
 }
