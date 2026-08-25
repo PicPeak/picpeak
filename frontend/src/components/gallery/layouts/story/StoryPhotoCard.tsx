@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
+import React, { useRef, useState } from 'react';
+import { motion, useInView } from 'framer-motion';
 import { Heart } from 'lucide-react';
 import { AuthenticatedImage } from '../../../common';
 import { ColorLabelBadge } from '../../ColorLabelBadge';
@@ -39,8 +39,24 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   void _galleryId;
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // Don't fetch until the card is near the viewport (#1166).
+  //
+  // Every card in a Story gallery mounts at page load — `whileInView` gates the
+  // ANIMATION, not the render — and AuthenticatedImage fetches from an effect
+  // on mount, so all of them requested at once. That was tolerable while they
+  // pointed at `photo.url`, because nothing was generated; pointing them at
+  // the preview tier means a gallery with cold previews would Sharp-decode
+  // every original in one burst.
+  //
+  // `once` so a card that has loaded never unloads on scroll-away, and the
+  // same 200px margin the entrance animation uses so the image is already in
+  // flight by the time the card animates in.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const isNearViewport = useInView(cardRef, { once: true, margin: '200px' });
+
   return (
     <motion.div
+      ref={cardRef}
       initial={{ opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-50px' }}
@@ -64,6 +80,11 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
         }}
         className="block w-full h-full"
       >
+        {/* The placeholder keeps the card's box while the image is still
+            out of range, so nothing reflows when it arrives. */}
+        {!isNearViewport ? (
+          <div className="w-full h-full bg-neutral-200 dark:bg-neutral-800" aria-hidden="true" />
+        ) : (
         <AuthenticatedImage
           // A card tile, and it used to render the full ORIGINAL at
           // object-cover — the one place where the reporter's "hundreds of
@@ -92,6 +113,7 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           useEnhancedProtection={useEnhancedProtection}
           useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
         />
+        )}
       </a>
 
       {/* Colour label (#1044) — same badge every layout uses. */}

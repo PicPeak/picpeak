@@ -39,9 +39,14 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
     <div className="story-hero">
       {/* Background */}
       <div className="story-hero-bg">
-        {photo && (photo.url || photo.thumbnail_url) ? (
+        {photo && (photo.hero_url || photo.url || photo.thumbnail_url) ? (
           <AuthenticatedImage
-            src={photo.url || photo.thumbnail_url || ''}
+            // hero_url, which is what it is for (#1166): a 1920x1080 cover crop,
+            // and this is a full-bleed object-cover background. It rendered
+            // photo.url — a full original on the critical path for first paint
+            // of every Story gallery. Emitted unconditionally for every photo
+            // (gallery.js:1139), so the fallbacks below are belt-and-braces.
+            src={photo.hero_url || photo.url || photo.thumbnail_url || ''}
             alt="Hero"
             className="w-full h-full object-cover"
             isGallery={true}
