@@ -438,18 +438,27 @@ export const AnalyticsPage: React.FC = () => {
 
           {/* Storage Information */}
           {dashboardStats && (() => {
-            const softLimitBytes = storageInfo?.storage_soft_limit ?? storageInfo?.storage_limit ?? storageInfo?.recommended_soft_limit ?? null;
-            const safeSoftLimit = Math.max(
-              softLimitBytes ?? storageInfo?.recommended_soft_limit ?? (dashboardStats.storageUsed || 1),
-              1
-            );
-            // No measurement means no percentage. Coercing null to 0 drew an
-            // empty bar at "0% of limit" and suppressed the over-limit state —
-            // reading as "plenty of room" precisely when nothing is known
-            // (#1164). On S3 the catalogued figure is what there is.
+            // On S3 there is no disk to walk and the catalogued figure IS the
+            // available answer; a failed local walk has none at all.
             const measured = dashboardStats.storageUsed ?? (
               dashboardStats.storageMeasurement === 'catalog' ? dashboardStats.catalogedBytes : null);
-            const usageRatio = measured == null ? null : measured / safeSoftLimit;
+            const softLimitBytes = storageInfo?.storage_soft_limit ?? storageInfo?.storage_limit ?? storageInfo?.recommended_soft_limit ?? null;
+            // `measured`, not storageUsed. An editor or viewer holds
+            // analytics.view but not settings.view, so /storage/info 403s and
+            // storageInfo is undefined — and on S3 storageUsed is null, which
+            // made this denominator 1 and rendered percentages in the billions.
+            const safeSoftLimit = Math.max(
+              softLimitBytes ?? storageInfo?.recommended_soft_limit ?? (measured || 1),
+              1
+            );
+            // Without a real limit there is no percentage worth showing: the
+            // denominator would be the usage itself, which always reads 100%.
+            const hasLimit = softLimitBytes != null || storageInfo?.recommended_soft_limit != null;
+            // No measurement, or no limit, means no percentage. Coercing null
+            // to 0 drew an empty bar at "0% of limit" and suppressed the
+            // over-limit state — reading as plenty of room precisely when
+            // nothing is known (#1164).
+            const usageRatio = (measured == null || !hasLimit) ? null : measured / safeSoftLimit;
             const usagePercent = usageRatio == null ? null : Math.round(usageRatio * 100);
             const usageWidth = usageRatio == null ? 0 : Math.min(usageRatio * 100, 100);
             const overSoftLimit = softLimitBytes != null && measured != null && measured >= softLimitBytes;
@@ -460,7 +469,7 @@ export const AnalyticsPage: React.FC = () => {
                 : t('settings.storage.unlimited');
             const progressColor = overSoftLimit
               ? 'bg-red-600'
-              : usagePercent >= 90
+              : (usagePercent != null && usagePercent >= 90)
                 ? 'bg-amber-500'
                 : 'bg-accent-dark';
             const limitDescriptor = storageInfo

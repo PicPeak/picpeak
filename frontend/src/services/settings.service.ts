@@ -89,7 +89,7 @@ export interface StorageInfo {
   // True when part of the storage root could not be read, so total_used is a
   // floor. Anything comparing it against a limit has to say so.
   storage_partial?: boolean;
-  storage_measurement?: 'disk' | 'catalog';
+  storage_measurement?: 'disk' | 'catalog' | 'unavailable';
   archive_storage: number;
   storage_by_event: Array<{
     event_name: string;
