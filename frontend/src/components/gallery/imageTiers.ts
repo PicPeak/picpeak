@@ -130,29 +130,17 @@ export function lightboxImageUrl(photo: {
   url: string;
   preview_url?: string | null;
   slideshow_url?: string | null;
-  mime_type?: string;
   width?: number | null;
   height?: number | null;
 }): string {
-  // Animated formats keep the original. generatePreviewImage always encodes
-  // JPEG (imageProcessor.js:668), so routing an animated source through the
-  // preview tier would replace the animation with its first frame — a
-  // regression the toggle-off default never had.
-  //
-  // PNG goes with them, for two reasons that share a cause: generatePreviewImage
-  // also drops ALPHA (a transparent source flattens against a solid
-  // background), and an APNG is normally reported as image/png rather than
-  // image/apng, so the specific check alone would miss the common upload path.
-  // PNG is where transparency is the norm, and it is rare enough in an event
-  // gallery that the bandwidth given up is small.
-  //
-  // MIME is all the frontend has. Animated or alpha WebP reports image/webp
-  // exactly like an ordinary still, and cannot be told apart here — fixing
-  // that needs the backend to report it (Sharp's `metadata.pages`, and
-  // `hasAlpha`) rather than costing every static-WebP gallery the bandwidth
-  // fix on a guess. That is the known remaining gap.
-  const ORIGINAL_ONLY = ['image/gif', 'image/apng', 'image/png'];
-  if (photo.mime_type && ORIGINAL_ONLY.includes(photo.mime_type)) return photo.url;
+  // No format is excluded any more. This used to bypass the preview tier for
+  // GIF, APNG and PNG because generatePreviewImage always encoded JPEG, which
+  // has neither an alpha channel nor a second frame — so a transparent source
+  // came back flattened and an animated one came back as a still. That is
+  // fixed at the source: previews of alpha or multi-page images are now WebP,
+  // which carries both, and the guess-by-MIME this file could never make
+  // correctly (a still and an animated WebP declare the same type) is gone
+  // with it.
   return previewUrlForViewport(photo.preview_url || photo.slideshow_url, photo) || photo.url;
 }
 

@@ -623,6 +623,20 @@ async function ensureHeroImage(photo) {
  * Output to `previews/preview_<filename>` so an admin who flips the
  * setting back off can wipe the folder cleanly without touching
  * thumbnails or heroes.
+ *
+ * ENCODING follows the source, it is not always JPEG. JPEG has no alpha
+ * channel and no second frame, so encoding everything as JPEG flattened a
+ * transparent PNG onto a solid background and reduced an animated GIF to its
+ * first frame — for every consumer of this tier: the lightbox, the slideshow,
+ * admin previews, face avatars. Sources with alpha or more than one page are
+ * encoded as WebP instead, which carries both and is still far smaller than
+ * the original.
+ *
+ * The output extension is rewritten to match what was actually written.
+ * Previously the source basename was kept verbatim, so a PNG source produced
+ * `preview_foo.png` holding JPEG bytes — harmless while the route hard-coded
+ * image/jpeg, and actively wrong now that the encoding varies. Old keys keep
+ * working: they are still JPEG and still served as such.
  */
 async function generatePreviewImage(imagePath, options = {}) {
   const filename = options.outputBasename || path.basename(imagePath);
@@ -631,16 +645,31 @@ async function generatePreviewImage(imagePath, options = {}) {
   const widthTag = options.longEdge && options.longEdge !== DEFAULT_PREVIEW_LONG_EDGE
     ? `w${options.longEdge}_`
     : '';
-  const previewFilename = `preview_${widthTag}${filename}`;
-  const previewRelKey = path.posix.join('previews', previewFilename);
   const storage = getStorage();
+
+  // Probed BEFORE the key is built: the extension has to match the encoding,
+  // and the encoding depends on what the source turns out to be.
+  let probe;
+  try {
+    probe = await sharp(imagePath).metadata();
+  } catch (error) {
+    const msg = (error && error.message) ? error.message : String(error);
+    logger.error(`Failed to read metadata for preview of ${filename}: ${msg}`);
+    return null;
+  }
+  const isAnimated = (probe.pages || 1) > 1;
+  const needsWebp = isAnimated || probe.hasAlpha === true;
+
+  const base = filename.replace(/\.[^./\\]+$/, '');
+  const previewFilename = `preview_${widthTag}${base}.${needsWebp ? 'webp' : 'jpg'}`;
+  const previewRelKey = path.posix.join('previews', previewFilename);
 
   if (options.regenerate) {
     await storage.delete(previewRelKey).catch(() => {});
   }
 
   try {
-    const metadata = await sharp(imagePath).metadata();
+    const metadata = probe;
     if (!metadata.width || !metadata.height) {
       throw new Error('Invalid image metadata - file may be incomplete');
     }
@@ -652,6 +681,12 @@ async function generatePreviewImage(imagePath, options = {}) {
       limitInputPixels: 268402689, // ~16k x 16k max
       sequentialRead: true,
       failOn: 'none',
+      // Without this an animated source is opened as its first frame only, and
+      // every later frame is discarded before the resize ever sees it.
+      // limitInputPixels still applies, and sharp counts an animated input as
+      // width x (height x pages) — so a pathological GIF is rejected rather
+      // than decoded, and the caller falls back to the original.
+      animated: isAnimated,
     });
 
     // Strip EXIF — same privacy reasoning as thumbnails/heroes.
@@ -665,18 +700,18 @@ async function generatePreviewImage(imagePath, options = {}) {
       fit: 'inside',
     });
 
-    sharpInstance = sharpInstance.jpeg({
-      quality,
-      progressive: true,
-      mozjpeg: true,
-    });
+    sharpInstance = needsWebp
+      ? sharpInstance.webp({ quality })
+      : sharpInstance.jpeg({ quality, progressive: true, mozjpeg: true });
 
     const buffer = await sharpInstance.toBuffer();
     if (!buffer || buffer.length === 0) {
       throw new Error('Generated preview image is empty');
     }
 
-    await storage.put(previewRelKey, buffer, { contentType: 'image/jpeg' });
+    await storage.put(previewRelKey, buffer, {
+      contentType: needsWebp ? 'image/webp' : 'image/jpeg',
+    });
 
     logger.info(`Generated preview image for ${filename} → ${previewRelKey}`);
     return previewRelKey;

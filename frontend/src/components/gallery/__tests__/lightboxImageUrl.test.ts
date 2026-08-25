@@ -90,32 +90,22 @@ describe('lightboxImageUrl (#1166)', () => {
     })).toBe('/api/gallery/g/preview/47?wm=3');
   });
 
-  it.each(['image/gif', 'image/apng', 'image/png'])('keeps the original for %s, which the preview tier would flatten', (mime) => {
-    // generatePreviewImage always encodes JPEG, so routing an animated source
-    // through it replaces the animation with its first frame — behaviour the
-    // toggle-off default never had.
-    setViewport(1440, 2, 900);
-    expect(lightboxImageUrl({
-      url: '/api/gallery/g/photo/47',
-      preview_url: null,
-      slideshow_url: '/api/gallery/g/preview/47',
-      mime_type: mime,
-      ...BIG,
-    })).toBe('/api/gallery/g/photo/47');
-  });
-
-  it('still uses the preview tier for ordinary still formats', () => {
-    setViewport(1440, 2, 900);
-    for (const mime_type of ['image/jpeg', 'image/webp', undefined]) {
+  it.each(['image/gif', 'image/apng', 'image/png', 'image/webp', 'image/jpeg'])(
+    'uses the preview tier for %s — the backend preserves alpha and frames now',
+    (mime_type) => {
+      // The bypass list this replaces existed because generatePreviewImage
+      // always encoded JPEG. Previews of alpha or multi-page sources are WebP
+      // now, so there is nothing left for the frontend to guess at.
+      setViewport(1440, 2, 900);
       expect(lightboxImageUrl({
         url: '/api/gallery/g/photo/47',
         preview_url: null,
         slideshow_url: '/api/gallery/g/preview/47',
         mime_type,
         ...BIG,
-      })).toBe('/api/gallery/g/preview/47');
-    }
-  });
+      } as Parameters<typeof lightboxImageUrl>[0])).toBe('/api/gallery/g/preview/47');
+    },
+  );
 
   it('still sizes the fallback tier for the device', () => {
     // The #1095 behaviour has to survive the new fallback: a phone must not
