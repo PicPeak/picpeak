@@ -55,10 +55,16 @@ const fsp = require('fs').promises;
 const { deleteDuplicatePhotos } = require('./externalPhotoDedupe');
 
 const MARKER = 'external_relpath_root_relative';
-// Per-row parking value for the two-pass rewrite below. Unique by id, and
-// prefixed with a byte no real relative path starts with, so a crash between
-// the passes leaves something obviously wrong rather than something plausible.
-const STAGING_PREFIX = '\u0000fold-staging/';
+// Per-row parking value for the two-pass rewrite below.
+//
+// NOT a NUL-prefixed string, which is what this was first written as: Postgres
+// rejects U+0000 in a `text` column outright ("invalid byte sequence for
+// encoding UTF8"), so the rewrite would abort on exactly the installs that
+// need the two-pass repair — and only on Postgres, which SQLite-only tests
+// cannot see. The prefix below is ordinary text, cannot collide with a real
+// relative path (no import writes a leading dot-segment like this), and stays
+// obviously wrong if a crash ever leaves one behind.
+const STAGING_PREFIX = '.picpeak-fold-staging/';
 const CHUNK = 400; // SQLite caps a statement at 999 bound parameters.
 const chunk = (arr) => {
   const out = [];
