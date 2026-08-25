@@ -242,6 +242,32 @@ async function deleteDuplicatePhotos(knex, doomedToSurvivor) {
   }
 
   for (const ids of chunked(doomed)) await knex('photos').whereIn('id', ids).del();
+
+  // The pre-built "download everything" zip still contains the rows just
+  // removed. Every ordinary photo-deletion path calls
+  // downloadZipService.invalidate for this reason (adminPhotos.js:450 and
+  // friends) — but that service carries debounce timers and a regeneration
+  // queue, which is not something a migration should be starting. Clearing the
+  // columns is the durable half of what invalidate does: getZipInfo already
+  // treats a missing or absent record as a cache miss and rebuilds on the next
+  // request, so guests stop receiving an archive containing deleted duplicates.
+  //
+  // The stale object itself is left for the same reason the duplicates'
+  // thumbnails are — a migration is the wrong place to reach into storage,
+  // which may be S3.
+  if (await knex.schema.hasColumn('events', 'download_zip_path')) {
+    const affected = [...new Set([...doomedToSurvivor.values()])];
+    const eventIds = affected.length
+      ? (await knex('photos').whereIn('id', affected).distinct('event_id')).map((r) => r.event_id)
+      : [];
+    for (const ids of chunked(eventIds)) {
+      await knex('events').whereIn('id', ids).update({
+        download_zip_path: null,
+        download_zip_generated_at: null,
+      });
+    }
+  }
+
   return doomed.length;
 }
 

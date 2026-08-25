@@ -40,6 +40,8 @@ describe('migration 176 — unique (event_id, external_relpath) (#1162)', () => 
     await knex.schema.createTable('events', (t) => {
       t.increments('id').primary();
       t.integer('hero_photo_id');
+      t.string('download_zip_path');
+      t.string('download_zip_generated_at');
     });
     await knex.schema.createTable('photo_categories', (t) => {
       t.increments('id').primary();
@@ -480,6 +482,35 @@ describe('migration 176 — unique (event_id, external_relpath) (#1162)', () => 
     const { createExternalRelpathIndex } = require('../../src/services/externalPhotoDedupe');
 
     await expect(createExternalRelpathIndex(knex)).rejects.toThrow(/unique/i);
+  });
+
+  it('invalidates the pre-built download zip for the affected event', async () => {
+    // The cached archive still contains the rows just removed, and every
+    // ordinary photo-deletion path invalidates it for exactly that reason.
+    // getZipInfo treats a cleared record as a miss and rebuilds on request.
+    await seedPair();
+    await knex('events').insert({
+      id: 1, download_zip_path: 'events/active/x/.download-cache/all.zip',
+      download_zip_generated_at: '2026-01-01',
+    });
+
+    await migration.up(knex);
+
+    const ev = await knex('events').where('id', 1).first();
+    expect(ev.download_zip_path).toBeNull();
+    expect(ev.download_zip_generated_at).toBeNull();
+  });
+
+  it('leaves an untouched event\'s zip alone', async () => {
+    await seedPair();
+    await knex('events').insert([
+      { id: 1, download_zip_path: 'a.zip', download_zip_generated_at: '2026-01-01' },
+      { id: 2, download_zip_path: 'b.zip', download_zip_generated_at: '2026-01-01' },
+    ]);
+
+    await migration.up(knex);
+
+    expect((await knex('events').where('id', 2).first()).download_zip_path).toBe('b.zip');
   });
 
   it('is idempotent', async () => {
