@@ -447,15 +447,26 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
       });
     }
 
-    // Apply sort option
+    // Apply sort option.
+    //
+    // Every branch carries photos.id as a tiebreaker (#1172). Without one the
+    // order within a tie is whatever the engine happens to return, and ties are
+    // the normal case rather than the exception: a bulk import writes hundreds
+    // of rows inside the same second, so uploaded_at collapses — and with
+    // captured_at NULL the COALESCE below collapses onto it too. The visible
+    // symptom is a grid that reshuffles between page loads. id is insertion
+    // order, so it also makes the fallback ordering meaningful rather than
+    // arbitrary.
     if (sort === 'capture_date') {
       // Sort by capture date, falling back to uploaded_at if capture date is null
-      photosQuery = photosQuery.orderByRaw('COALESCE(photos.captured_at, photos.uploaded_at) ' + sortOrder);
+      photosQuery = photosQuery
+        .orderByRaw('COALESCE(photos.captured_at, photos.uploaded_at) ' + sortOrder)
+        .orderBy('photos.id', sortOrder);
     } else if (sort === 'filename') {
-      photosQuery = photosQuery.orderBy('photos.filename', sortOrder);
+      photosQuery = photosQuery.orderBy('photos.filename', sortOrder).orderBy('photos.id', sortOrder);
     } else {
       // Default: sort by upload date
-      photosQuery = photosQuery.orderBy('photos.uploaded_at', sortOrder);
+      photosQuery = photosQuery.orderBy('photos.uploaded_at', sortOrder).orderBy('photos.id', sortOrder);
     }
 
     // Execute the query
