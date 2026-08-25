@@ -131,6 +131,8 @@ export function lightboxImageUrl(photo: {
   preview_url?: string | null;
   slideshow_url?: string | null;
   mime_type?: string;
+  filename?: string;
+  original_filename?: string | null;
   width?: number | null;
   height?: number | null;
 }): string {
@@ -151,8 +153,17 @@ export function lightboxImageUrl(photo: {
   // that needs the backend to report it (Sharp's `metadata.pages`, and
   // `hasAlpha`) rather than costing every static-WebP gallery the bandwidth
   // fix on a guess. That is the known remaining gap.
+  // Checked against the FILENAME as well as the MIME, because mime_type is not
+  // trustworthy here: migration 039 backfilled every pre-existing photo as
+  // image/jpeg regardless of what it was, and the external-media importer
+  // inserts rows without a mime_type at all. A mislabelled PNG would otherwise
+  // sail past this and come back flattened.
   const ORIGINAL_ONLY = ['image/gif', 'image/apng', 'image/png'];
-  if (photo.mime_type && ORIGINAL_ONLY.includes(photo.mime_type)) return photo.url;
+  const ORIGINAL_ONLY_EXT = /\.(gif|apng|png)$/i;
+  const name = photo.original_filename || photo.filename || '';
+  if ((photo.mime_type && ORIGINAL_ONLY.includes(photo.mime_type)) || ORIGINAL_ONLY_EXT.test(name)) {
+    return photo.url;
+  }
   return previewUrlForViewport(photo.preview_url || photo.slideshow_url, photo) || photo.url;
 }
 

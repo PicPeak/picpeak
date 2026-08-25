@@ -570,16 +570,13 @@ async function isHeroValid(heroPath) {
  * Ensure a hero image exists for a photo, regenerate if needed
  */
 async function ensureHeroImage(photo) {
-  const { resolvePhotoStorageKey } = require('./photoResolver');
+  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
-  let sourceKey;
+  let event;
   try {
-    const event = await db('events').where('id', photo.event_id).first();
-    sourceKey = resolvePhotoStorageKey(event, photo);
-    logger.info(`Ensuring hero image for photo ${photo.id} from key: ${sourceKey}`);
+    event = await db('events').where('id', photo.event_id).first();
   } catch (e) {
-    const msg = (e && e.message) ? e.message : String(e);
-    logger.error(`Failed to resolve original key for hero image (photo ${photo.id}): ${msg}`);
+    logger.error(`Failed to load event for hero image (photo ${photo.id}): ${e.message}`);
     return null;
   }
 
@@ -591,7 +588,56 @@ async function ensureHeroImage(photo) {
     logger.warn(`Invalid hero image detected for photo ${photo.id}, regenerating...`);
   }
 
-  const newHeroPath = await withLocalCopy(sourceKey, async (localPath) => {
+  // External sources never reach the managed backend, so resolvePhotoStorageKey
+  // returns null for them by design — and this function used to feed that null
+  // straight to withLocalCopy, which throws, so the hero route fell back to
+  // redirecting at the full original. #1078 fixed exactly this for
+  // ensurePreviewImage and nobody carried it across; it only became visible
+  // when the Story hero started asking for hero_url instead of the original
+  // (#1166), which on a reference-mode gallery quietly changed nothing.
+  const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+
+  let newHeroPath;
+  if (isExternal) {
+    // Mirrors the external branch in ensurePreviewImage: a direct fs read off
+    // the mount, so no withLocalCopy, and a per-photo outputBasename so two
+    // events referencing the same NAS basename cannot clobber each other.
+    let localPath;
+    try {
+      localPath = resolvePhotoFilePath(event, photo);
+    } catch (e) {
+      logger.error(`Failed to resolve external file for hero image (photo ${photo.id}): ${e.message}`);
+      return null;
+    }
+    const sourceBasename = path.basename(photo.external_relpath || photo.filename || `photo-${photo.id}`);
+    newHeroPath = await generateHeroImage(localPath, {
+      regenerate: true,
+      outputBasename: `ext${photo.id}_${sourceBasename}`,
+    });
+    if (newHeroPath) {
+      await db('photos').where({ id: photo.id }).update({ hero_path: newHeroPath });
+    }
+    return newHeroPath;
+  }
+
+  let sourceKey;
+  try {
+    sourceKey = resolvePhotoStorageKey(event, photo);
+    logger.info(`Ensuring hero image for photo ${photo.id} from key: ${sourceKey}`);
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : String(e);
+    logger.error(`Failed to resolve original key for hero image (photo ${photo.id}): ${msg}`);
+    return null;
+  }
+  if (!sourceKey) {
+    // Reference-mode event holding a row with no source_origin: the mode falls
+    // back to the event's and resolvePhotoStorageKey returns null. Honour the
+    // null-on-failure contract rather than feeding it to withLocalCopy.
+    logger.warn(`No managed storage key for hero image (photo ${photo.id}); skipping generation`);
+    return null;
+  }
+
+  newHeroPath = await withLocalCopy(sourceKey, async (localPath) => {
     const proc = await withProcessableImage(localPath, sourceKey);
     try {
       return await generateHeroImage(proc.path, { regenerate: true, outputBasename: proc.outputBasename });
