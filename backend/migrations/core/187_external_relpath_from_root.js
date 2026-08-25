@@ -20,7 +20,20 @@
 const { foldExternalRelpaths } = require('../../src/services/externalRelpathFold');
 
 exports.up = async function(knex) {
-  await foldExternalRelpaths(knex, (msg) => console.log(`187_external_relpath_from_root: ${msg}`));
+  try {
+    await foldExternalRelpaths(knex, (msg) => console.log(`187_external_relpath_from_root: ${msg}`));
+  } catch (err) {
+    // Re-thrown WITHOUT the driver's error code. run-migrations-safe.js treats
+    // 23505 / 42P07 / 42701 / 42710 as "schema already exists" and marks the
+    // migration applied (run-migrations-safe.js:138) — so a unique-violation
+    // rolling this fold back would be recorded as a success, leaving every
+    // external path in the old format under a resolver that reads them
+    // differently, with nothing to trigger a retry.
+    throw new Error(
+      `187_external_relpath_from_root failed and was rolled back: ${err.message}. `
+      + 'External photo paths are unchanged; resolve the cause and re-run the migration.'
+    );
+  }
 };
 
 /**

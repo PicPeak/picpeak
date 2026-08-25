@@ -213,6 +213,7 @@ class RestoreService {
       // schema — and any data conversion those migrations perform — is in
       // place before the live face worker can claim a row.
       let needsFaceRequeue = false;
+      let migrationsApplied = true;
       switch (options.restoreType) {
       case 'full':
         restoreResult = await this.performFullRestore(localBackupPath, manifest, options);
@@ -327,6 +328,12 @@ class RestoreService {
         }
         this.log('info', 'Post-restore migrations applied');
       } catch (migErr) {
+        // Also gates the face requeue below: a pre-#1163 backup whose
+        // migration 187 did not run still holds event-relative external
+        // paths, and queueing those hands the live worker rows it will
+        // resolve from the media root and mark 'failed' — a state the later
+        // retry does not clear.
+        migrationsApplied = false;
         this.log('warn',
           'Post-restore migrate:safe failed — restore data is in place but the schema may lag the running image. ' +
           `A container restart will retry via wait-for-db.sh. Error: ${migErr.message}`);
@@ -340,8 +347,10 @@ class RestoreService {
       // a state the later fold does not clear and only an explicit Re-scan
       // does. The files are already in place by step 6, so deferring costs
       // nothing and closes that window.
-      if (needsFaceRequeue) {
+      if (needsFaceRequeue && migrationsApplied) {
         await this.requeueFaceScans();
+      } else if (needsFaceRequeue) {
+        this.log('warn', 'Skipping face requeue — post-restore migrations did not complete, so photo paths may be unconverted');
       }
 
       // Step 8: Clean up temporary files

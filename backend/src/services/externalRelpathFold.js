@@ -55,6 +55,16 @@ const fsp = require('fs').promises;
 const { deleteDuplicatePhotos } = require('./externalPhotoDedupe');
 
 const MARKER = 'external_relpath_root_relative';
+// Per-row parking value for the two-pass rewrite below. Unique by id, and
+// prefixed with a byte no real relative path starts with, so a crash between
+// the passes leaves something obviously wrong rather than something plausible.
+const STAGING_PREFIX = '\u0000fold-staging/';
+const CHUNK = 400; // SQLite caps a statement at 999 bound parameters.
+const chunk = (arr) => {
+  const out = [];
+  for (let i = 0; i < arr.length; i += CHUNK) out.push(arr.slice(i, i + CHUNK));
+  return out;
+};
 
 function normalizeBase(externalPath) {
   return String(externalPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
@@ -191,7 +201,7 @@ async function foldExternalRelpaths(knex, log = () => {}) {
 
     if (allUnderBase) {
       folded += rows.length;
-      plan.push({ eventId, base, bulk: true, rows: [] });
+      plan.push({ eventId, base, bulk: true, rows: [], ids: rows.map((r) => r.id) });
       continue;
     }
 
@@ -230,18 +240,34 @@ async function foldExternalRelpaths(knex, log = () => {}) {
   const apply = async (trx) => {
     for (const step of plan) {
       if (step.bulk) {
-        // One statement, and it cannot collide: every row gains the same
-        // prefix, so distinct values stay distinct.
-        await trx('photos')
-          .where('event_id', step.eventId)
-          .whereNotNull('external_relpath')
-          .update({ external_relpath: trx.raw('? || external_relpath', [`${step.base}/`]) });
+        // BY ID, not by event. Phase 1 runs outside the transaction and can
+        // take minutes probing a cold mount; an import completing in that
+        // window inserts an already root-relative row, and `where event_id`
+        // would prefix it a second time with the stale base.
+        for (const ids of chunk(step.ids)) {
+          await trx('photos')
+            .whereIn('id', ids)
+            .whereNotNull('external_relpath')
+            .update({ external_relpath: trx.raw('? || external_relpath', [`${step.base}/`]) });
+        }
         continue;
       }
       // Losers first: while they still hold their old path, the survivor has
       // not taken the value they would collide with.
       if (step.losers && step.losers.size) {
         await deleteDuplicatePhotos(trx, step.losers);
+      }
+
+      // Two passes, through a per-row temporary value. The FINAL values are
+      // all distinct, but a final value can equal another row's CURRENT one —
+      // `photo.jpg` repairing to `Trip/photo.jpg` while the existing
+      // `Trip/photo.jpg` is still waiting to fold — so a single pass violates
+      // migration 186's unique index halfway through. And on Postgres that
+      // surfaces as 23505, which run-migrations-safe.js mistakes for "schema
+      // already exists" and records the migration as applied after the
+      // rollback, leaving every path unconverted with no retry.
+      for (const [id] of step.rows) {
+        await trx('photos').where('id', id).update({ external_relpath: `${STAGING_PREFIX}${id}` });
       }
       for (const [id, next] of step.rows) {
         // No catch: collisions were resolved above, so anything failing here is

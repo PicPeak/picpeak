@@ -190,6 +190,53 @@ describe('migration 187 — external_relpath from the media root (#1163)', () =>
     expect(rows[0].external_relpath).toBe('Trip/Sub/c.jpg');
   });
 
+  it('survives a final path that equals another row\'s current path', async () => {
+    // `photo.jpg` repairs to `Trip/photo.jpg` while the row already holding
+    // `Trip/photo.jpg` folds to `Trip/Sub/Trip/photo.jpg`. Every FINAL value is
+    // distinct, but a one-pass rewrite collides halfway through — and on
+    // Postgres that 23505 is misread by the migration runner as "already
+    // applied", leaving everything unconverted.
+    const a = await touch('Trip/photo.jpg', 11);
+    const b = await touch('Trip/Sub/Trip/photo.jpg', 22);
+    await knex('events').insert({ id: 1, external_path: 'Trip/Sub' });
+    await knex('photos').insert([
+      { event_id: 1, external_relpath: 'photo.jpg', size_bytes: a, source_origin: 'external' },
+      { event_id: 1, external_relpath: 'Trip/photo.jpg', size_bytes: b, source_origin: 'external' },
+    ]);
+
+    await migration.up(knex);
+
+    expect(await relpaths()).toEqual(['Trip/photo.jpg', 'Trip/Sub/Trip/photo.jpg']);
+  });
+
+  it('does not re-prefix a row inserted while the probe was running', async () => {
+    // Phase 1 runs outside the transaction and can take minutes on a cold
+    // mount. An import finishing in that window writes an already
+    // root-relative row, which a `where event_id` bulk update would prefix a
+    // second time with the stale base.
+    await touch('Trip/a.jpg');
+    await knex('events').insert({ id: 1, external_path: 'Trip' });
+    await knex('photos').insert({ event_id: 1, external_relpath: 'a.jpg', source_origin: 'external' });
+
+    const { foldExternalRelpaths } = require('../../src/services/externalRelpathFold');
+    const realStat = fs.promises.stat;
+    let injected = false;
+    jest.spyOn(fs.promises, 'access').mockImplementation(async (...args) => {
+      if (!injected) {
+        injected = true;
+        await knex('photos').insert({
+          event_id: 1, external_relpath: 'Trip/late.jpg', source_origin: 'external',
+        });
+      }
+      return realStat(args[0]).then(() => undefined);
+    });
+
+    await foldExternalRelpaths(knex);
+    fs.promises.access.mockRestore();
+
+    expect((await relpaths()).sort()).toEqual(['Trip/a.jpg', 'Trip/late.jpg']);
+  });
+
   it('leaves a row it cannot place resolving where it resolves today', async () => {
     // Never guess below current behaviour: a file that is genuinely gone must
     // not have its path rewritten to some other file that happens to exist.
