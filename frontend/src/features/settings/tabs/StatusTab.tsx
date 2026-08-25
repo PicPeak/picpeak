@@ -662,14 +662,17 @@ export const StatusTab: React.FC<StatusTabProps> = ({
 
           {captureDateStatus.lastResult && (
             <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-              {/* noExif is reported separately from failed on purpose: a photo
-                  that simply carries no EXIF date is not a broken mount, and
-                  an operator needs to tell those apart before re-running. */}
+              {/* Two buckets on purpose: "the mount is gone" and "these files
+                  carry no date" need different reactions. The middle number is
+                  worded as "no date found" rather than "without EXIF" because
+                  it also absorbs files whose metadata could not be parsed —
+                  extractCaptureDate returns null for those too. The last number
+                  is the one that means the storage could not be reached. */}
               {t('settings.captureDates.resultSuccess', {
                 success: captureDateStatus.lastResult.success,
                 noExif: captureDateStatus.lastResult.noExif,
                 failed: captureDateStatus.lastResult.failed,
-                defaultValue: 'Last run: {{success}} updated, {{noExif}} without EXIF date, {{failed}} unreadable',
+                defaultValue: 'Last run: {{success}} updated, {{noExif}} with no date found, {{failed}} unreachable',
               })}
             </p>
           )}

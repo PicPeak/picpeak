@@ -177,7 +177,13 @@ router.get('/repair-dimensions/status', adminAuth, requirePermission('photos.vie
  * rows at all (the thumbnail regenerator resolves under
  * storage/events/active/<path>, which never exists for them).
  */
-router.post('/repair-capture-dates', adminAuth, requirePermission('photos.edit'), async (req, res) => {
+// system.manage, not photos.edit: this walks every event in the install and
+// rewrites their metadata. photos.edit is held by the team_photographer preset
+// (175_granular_permissions_and_presets.js:106), which exists precisely for a
+// contributing shooter who should not be able to start a whole-library S3/NAS
+// scan or touch another owner's photos. The dimension repair above has the same
+// exposure and predates this — worth the same treatment, but not in this change.
+router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
     if (captureDateProgress.isRunning) {
       return res.status(409).json({ error: 'Capture date backfill is already running' });
@@ -322,7 +328,9 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('photos.edit')
   }
 });
 
-router.get('/repair-capture-dates/status', adminAuth, requirePermission('photos.view'), async (req, res) => {
+// Matches the POST: no point advertising a backlog to someone who cannot act on
+// it. The panel is hidden when this 403s (StatusTab.tsx guards on the payload).
+router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.view'), async (req, res) => {
   try {
     // Same scope as the job itself — counting archived photos here would show
     // a permanent backlog the button can never clear.
