@@ -15,7 +15,14 @@ let repairProgress = {
 };
 
 // Repair photo dimensions (background job)
-router.post('/repair-dimensions', adminAuth, requirePermission('photos.edit'), async (req, res) => {
+//
+// system.manage, not photos.edit: the query below is unscoped, so this walks
+// every event in the install, reads every original off S3 or the NAS mount, and
+// rewrites their metadata. photos.edit is held by the team_photographer preset
+// (175_granular_permissions_and_presets.js:106), which exists for a contributing
+// second shooter — someone who should be able to edit the photos they work on,
+// not start a whole-library scan or touch another owner's events.
+router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
     if (repairProgress.isRunning) {
       return res.status(409).json({ error: 'Repair is already running' });
@@ -118,7 +125,10 @@ router.post('/repair-dimensions', adminAuth, requirePermission('photos.edit'), a
 });
 
 // Get dimension repair status
-router.get('/repair-dimensions/status', adminAuth, requirePermission('photos.view'), async (req, res) => {
+//
+// Matches the POST: no point advertising a backlog to someone who cannot act on
+// it. StatusTab guards on the payload, so the card simply stays hidden.
+router.get('/repair-dimensions/status', adminAuth, requirePermission('system.view'), async (req, res) => {
   try {
     const totalPhotos = await db('photos')
       .where(function () {
