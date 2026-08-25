@@ -2823,7 +2823,10 @@
       "email_template_created": "E-Mail-Vorlage erstellt: {{template_key}}",
       "event_duplicated": "Event dupliziert aus {{source_event_name}}",
       "whatsapp_config_updated": "WhatsApp-Konfiguration aktualisiert"
-    }
+    },
+    "catalogedMedia": "{{size}} katalogisiert",
+    "catalogedMediaOnly": "katalogisiert — Objekte liegen in S3",
+    "storageUnavailable": "nicht verfügbar"
   },
   "acceptInvitation": {
     "title": "Einladung annehmen",
@@ -2944,7 +2947,10 @@
     "totalPhotos": "Gesamte Fotos",
     "activeEvents": "Aktive Veranstaltungen",
     "notConfigured": "Umami Analytics nicht konfiguriert",
-    "configureInstructions": "Um echte Analysedaten zu sehen, konfigurieren Sie Umami in Ihren Umgebungsvariablen und Admin-Panel-Einstellungen."
+    "configureInstructions": "Um echte Analysedaten zu sehen, konfigurieren Sie Umami in Ihren Umgebungsvariablen und Admin-Panel-Einstellungen.",
+    "catalogedMedia": "Katalogisierte Medien",
+    "storageUnavailable": "nicht verfügbar",
+    "storageNoMeasurement": "keine Messung verfügbar"
   },
   "email": {
     "title": "E-Mail-Konfiguration",

@@ -81,7 +81,15 @@ export interface PasswordComplexitySettings {
 }
 
 export interface StorageInfo {
+  // Real bytes under the storage root (#1164), excluding the external media
+  // share. Was the summed size of the catalogued originals, which on a
+  // reference-mode install is the size of a NAS.
   total_used: number;
+  cataloged_bytes?: number;
+  // True when part of the storage root could not be read, so total_used is a
+  // floor. Anything comparing it against a limit has to say so.
+  storage_partial?: boolean;
+  storage_measurement?: 'disk' | 'catalog';
   archive_storage: number;
   storage_by_event: Array<{
     event_name: string;

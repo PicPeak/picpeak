@@ -443,10 +443,16 @@ export const AnalyticsPage: React.FC = () => {
               softLimitBytes ?? storageInfo?.recommended_soft_limit ?? (dashboardStats.storageUsed || 1),
               1
             );
-            const usageRatio = dashboardStats.storageUsed / safeSoftLimit;
-            const usagePercent = Math.round(usageRatio * 100);
-            const usageWidth = Math.min(usageRatio * 100, 100);
-            const overSoftLimit = softLimitBytes != null && dashboardStats.storageUsed >= softLimitBytes;
+            // No measurement means no percentage. Coercing null to 0 drew an
+            // empty bar at "0% of limit" and suppressed the over-limit state —
+            // reading as "plenty of room" precisely when nothing is known
+            // (#1164). On S3 the catalogued figure is what there is.
+            const measured = dashboardStats.storageUsed ?? (
+              dashboardStats.storageMeasurement === 'catalog' ? dashboardStats.catalogedBytes : null);
+            const usageRatio = measured == null ? null : measured / safeSoftLimit;
+            const usagePercent = usageRatio == null ? null : Math.round(usageRatio * 100);
+            const usageWidth = usageRatio == null ? 0 : Math.min(usageRatio * 100, 100);
+            const overSoftLimit = softLimitBytes != null && measured != null && measured >= softLimitBytes;
             const limitDisplay = softLimitBytes != null
               ? adminService.formatBytes(softLimitBytes)
               : storageInfo?.recommended_soft_limit != null
@@ -470,7 +476,11 @@ export const AnalyticsPage: React.FC = () => {
                   <div>
                     <div className="flex justify-between text-sm mb-1">
                       <span className="text-neutral-600 dark:text-neutral-400">{t('analytics.used')}</span>
-                      <span className="font-medium text-neutral-900 dark:text-neutral-100">{adminService.formatBytes(dashboardStats.storageUsed)}</span>
+                      <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                        {measured == null
+                          ? t('analytics.storageUnavailable', 'unavailable')
+                          : `${adminService.formatBytes(measured)}${dashboardStats.storagePartial ? '+' : ''}`}
+                      </span>
                     </div>
                     <div className="w-full bg-neutral-200 dark:bg-neutral-700 rounded-full h-2">
                       <div
@@ -479,7 +489,9 @@ export const AnalyticsPage: React.FC = () => {
                       />
                     </div>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                      {usagePercent}% {t('analytics.of')} {limitDisplay}
+                      {usagePercent == null
+                        ? t('analytics.storageNoMeasurement', 'no measurement available')
+                        : `${usagePercent}% ${t('analytics.of')} ${limitDisplay}`}
                     </p>
                     <p className={`text-xs mt-1 ${overSoftLimit ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-red-500 dark:text-red-400 font-medium'}`}>
                       {limitDescriptor}
@@ -487,6 +499,10 @@ export const AnalyticsPage: React.FC = () => {
                   </div>
                   <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
                     <div className="flex justify-between text-sm">
+                      <span className="text-neutral-600 dark:text-neutral-400">{t('analytics.catalogedMedia', 'Catalogued media')}</span>
+                      <span className="font-medium text-neutral-900 dark:text-neutral-100">{adminService.formatBytes(dashboardStats.catalogedBytes)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mt-2">
                       <span className="text-neutral-600 dark:text-neutral-400">{t('analytics.totalPhotos')}</span>
                       <span className="font-medium text-neutral-900 dark:text-neutral-100">{dashboardStats.totalPhotos.toLocaleString()}</span>
                     </div>

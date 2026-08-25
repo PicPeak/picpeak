@@ -169,8 +169,21 @@ export const AdminDashboard: React.FC = () => {
       color: 'text-blue-600',
     },
     {
+      // Real bytes under the storage root (#1164). This used to be the summed
+      // size of the catalogued originals, which on a reference-mode install is
+      // the size of a NAS. `== null` rather than `||`: an absent measurement
+      // must read as unavailable, not as 0 Bytes.
       title: t('admin.storageUsed'),
-      value: adminService.formatBytes(dashboardStats?.storageUsed || 0),
+      value: dashboardStats?.storageUsed == null
+        ? (dashboardStats?.storageMeasurement === 'catalog'
+          ? adminService.formatBytes(dashboardStats.catalogedBytes)
+          : t('admin.storageUnavailable', 'unavailable'))
+        : `${adminService.formatBytes(dashboardStats.storageUsed)}${dashboardStats.storagePartial ? '+' : ''}`,
+      change: dashboardStats
+        ? (dashboardStats.storageMeasurement === 'catalog'
+          ? t('admin.catalogedMediaOnly', 'catalogued — objects live in S3')
+          : t('admin.catalogedMedia', { size: adminService.formatBytes(dashboardStats.catalogedBytes) }))
+        : undefined,
       icon: HardDrive,
       color: 'text-purple-600',
     },

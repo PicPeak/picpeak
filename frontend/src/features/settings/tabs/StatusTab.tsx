@@ -197,7 +197,10 @@ export const StatusTab: React.FC<StatusTabProps> = ({
               <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-4">
                 <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('settings.storage.totalUsed')}</p>
                 <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-                  {settingsService.formatBytes(storageInfo.total_used)}
+                  {/* `+` marks a floor: part of the storage root was
+                      unreadable, so the real figure — and the limit
+                      percentage derived from it — is higher (#1164). */}
+                  {settingsService.formatBytes(storageInfo.total_used)}{storageInfo.storage_partial ? '+' : ''}
                 </p>
               </div>
               <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-4">

@@ -24,6 +24,7 @@ const { clearShareLinkSettingsCache } = require('../services/shareLinkService');
 const { resetSecurityConfigCache } = require('../utils/authSecurity');
 const { errorResponse } = require('../utils/routeHelpers');
 const logger = require('../utils/logger');
+const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const router = express.Router();
 const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD } = require('../services/uploadSettings');
 const watermarkService = require('../services/watermarkService');
@@ -1174,6 +1175,8 @@ router.put('/seo', adminAuth, requirePermission('settings.edit'), async (req, re
 router.get('/storage/info', adminAuth, requirePermission('settings.view'), async (req, res) => {
   try {
     // Get total storage used
+    // Catalogued original bytes. Reported, but no longer as "used" (#1164) —
+    // in reference mode those files are on a NAS and none of them are here.
     const totalStorage = await db('photos')
       .sum('size_bytes as total')
       .first();
@@ -1254,7 +1257,25 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
       }
     }
 
-    const totalUsed = totalStorage?.total || 0;
+    // What is actually on this disk. This is what the soft limit is compared
+    // against and what the recommendation below is derived from, so getting it
+    // from the catalogued originals was the load-bearing half of #1164: a
+    // reference-mode install got a disk-capacity recommendation computed from
+    // bytes that are not on the disk.
+    //
+    // Gated BEFORE the walk: this endpoint is polled by the sidebar, and an S3
+    // install with a large local tree would otherwise pay a full traversal on
+    // every cold cache only to discard the result.
+    const catalogedBytes = Number(totalStorage?.total) || 0;
+    const usesLocalBackend = (process.env.STORAGE_BACKEND || 'local').toLowerCase() !== 's3';
+    let localUsage = null;
+    try {
+      if (usesLocalBackend) localUsage = await measureLocalStorageUsage();
+    } catch (err) {
+      logger.warn(`Storage measurement failed, falling back to catalogued bytes: ${err.message}`);
+    }
+    const measuredFromDisk = usesLocalBackend && !!localUsage;
+    const totalUsed = measuredFromDisk ? localUsage.total : catalogedBytes;
 
     const parseBytesValue = (value) => {
       const numeric = Number(value);
@@ -1376,6 +1397,13 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
 
     res.json({
       total_used: totalUsed,
+      // What total_used used to be, kept so the UI can show both and the
+      // difference stops being invisible.
+      cataloged_bytes: catalogedBytes,
+      storage_measurement: measuredFromDisk ? 'disk' : 'catalog',
+      storage_breakdown: measuredFromDisk ? localUsage.breakdown : null,
+      storage_partial: measuredFromDisk ? localUsage.partial : false,
+      excluded_external_root: measuredFromDisk ? localUsage.excludedExternalRoot : null,
       archive_storage: archiveStorage,
       storage_by_event: storageByEvent,
       storage_limit: effectiveSoftLimit,
