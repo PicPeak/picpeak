@@ -299,7 +299,7 @@ export const ThumbnailsTab: React.FC = () => {
           {t('settings.thumbnails.lightboxTitle', 'Lightbox Preview Tier')}
         </h2>
         <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
-          {t('settings.thumbnails.lightboxHelp', 'When enabled, the lightbox loads an aspect-preserved ~1920px JPEG (typically 200–500 KB) instead of the full original (often 5–12 MB). Originals are still served when guests click Download. Costs roughly one extra preview file per photo on disk; previews are generated lazily on first open and stored in /previews.')}
+          {t('settings.thumbnails.lightboxHelp', 'The lightbox shows an aspect-preserved ~1920px JPEG (typically 200–500 KB) rather than the full original (often 5–12 MB). Originals are still served when guests click Download. Previews cost roughly one extra file per photo on disk and are stored in /previews.')}
         </p>
 
         <label className="flex items-start gap-3 cursor-pointer mb-4">
@@ -311,10 +311,10 @@ export const ThumbnailsTab: React.FC = () => {
           />
           <span className="text-sm">
             <span className="font-medium text-neutral-900 dark:text-neutral-100">
-              {t('settings.thumbnails.lightboxToggle', 'Use medium-resolution previews in the lightbox')}
+              {t('settings.thumbnails.lightboxToggle', 'Enable eager preview generation')}
             </span>
             <span className="block text-xs text-neutral-600 dark:text-neutral-400 mt-0.5">
-              {t('settings.thumbnails.lightboxToggleHelp', 'Off by default. Flip on after deciding the perceived-perf win is worth the extra disk usage.')}
+              {t('settings.thumbnails.lightboxToggleHelp', 'Off by default: each preview is built the first time a guest opens that photo. Turning this on unlocks the button below, which builds them all up front.')}
             </span>
           </span>
         </label>
