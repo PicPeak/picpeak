@@ -186,7 +186,11 @@ router.get('/stats', adminAuth, requirePermission('analytics.view'), async (req,
       // UI shows as "unavailable" rather than substituting a number that
       // means something else.
       storageUsed: localStorage ? localStorage.total : null,
-      storageMeasurement: localStorage ? 'disk' : 'catalog',
+      // Three states, not two: 'catalog' means the backend is S3 and the
+      // objects are in the bucket, which is a fact about the install;
+      // 'unavailable' means the walk failed, which is a fault. Collapsing them
+      // made a failed local measurement claim the objects live in S3.
+      storageMeasurement: localStorage ? 'disk' : (usesLocalBackend ? 'unavailable' : 'catalog'),
       storageBreakdown: localStorage ? localStorage.breakdown : null,
       // True when part of the storage root could not be read, so the total is
       // a floor rather than the answer.

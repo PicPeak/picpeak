@@ -1257,7 +1257,8 @@
     "notConfigured": "Umami Analytics не настроен",
     "configureInstructions": "Для отображения данных аналитики настройте Umami в переменных среды и настройках панели администратора.",
     "catalogedMedia": "Каталогизированные медиа",
-    "storageUnavailable": "недоступно"
+    "storageUnavailable": "недоступно",
+    "storageNoMeasurement": "измерение недоступно"
   },
   "branding": {
     "title": "Брендинг и темы",

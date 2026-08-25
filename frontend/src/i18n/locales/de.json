@@ -3339,7 +3339,8 @@
     "notConfigured": "Umami Analytics nicht konfiguriert",
     "configureInstructions": "Um echte Analysedaten zu sehen, konfigurieren Sie Umami in Ihren Umgebungsvariablen und Admin-Panel-Einstellungen.",
     "catalogedMedia": "Katalogisierte Medien",
-    "storageUnavailable": "nicht verfügbar"
+    "storageUnavailable": "nicht verfügbar",
+    "storageNoMeasurement": "keine Messung verfügbar"
   },
   "email": {
     "title": "E-Mail-Konfiguration",

@@ -67,9 +67,11 @@ export interface DashboardStats {
   // substituting `catalogedBytes`: they are different quantities and on a
   // reference-mode install they are wildly different.
   storageUsed: number | null;
-  // 'catalog' when the backend is S3: the objects are in the bucket, so no
-  // disk walk was made and storageUsed is null.
-  storageMeasurement?: 'disk' | 'catalog';
+  // 'catalog' when the backend is S3 — the objects are in the bucket, so no
+  // disk walk was made. 'unavailable' when a local walk was attempted and
+  // failed. Distinct because the first is a fact about the install and the
+  // second is a fault, and the UI must not claim S3 for a broken measurement.
+  storageMeasurement?: 'disk' | 'catalog' | 'unavailable';
   storageBreakdown: {
     originals: number;
     archives: number;

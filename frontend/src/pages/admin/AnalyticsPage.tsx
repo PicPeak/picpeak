@@ -443,15 +443,31 @@ export const AnalyticsPage: React.FC = () => {
             // files are on a NAS — compared a number from the NAS against a
             // limit meant for this disk.
             const localUsed = dashboardStats.storageUsed;
+            // On S3 there is no disk to walk and the catalogued figure IS the
+            // available answer; a failed local walk has none at all.
+            const measured = localUsed ?? (dashboardStats.storageMeasurement === 'catalog'
+              ? dashboardStats.catalogedBytes
+              : null);
             const softLimitBytes = storageInfo?.storage_soft_limit ?? storageInfo?.storage_limit ?? storageInfo?.recommended_soft_limit ?? null;
+            // `measured`, not `localUsed`. An editor or viewer holds
+            // analytics.view but not settings.view, so /storage/info 403s and
+            // storageInfo is undefined — and on S3 localUsed is null, which
+            // made this denominator 1 and rendered percentages in the billions.
             const safeSoftLimit = Math.max(
-              softLimitBytes ?? storageInfo?.recommended_soft_limit ?? (localUsed || 1),
+              softLimitBytes ?? storageInfo?.recommended_soft_limit ?? (measured || 1),
               1
             );
-            const usageRatio = (localUsed ?? 0) / safeSoftLimit;
-            const usagePercent = Math.round(usageRatio * 100);
-            const usageWidth = Math.min(usageRatio * 100, 100);
-            const overSoftLimit = softLimitBytes != null && localUsed != null && localUsed >= softLimitBytes;
+            // Without a real limit there is no percentage worth showing: the
+            // denominator would be the usage itself, which always reads 100%.
+            const hasLimit = softLimitBytes != null || storageInfo?.recommended_soft_limit != null;
+            // No measurement, or no limit, means no percentage. Coercing null
+            // to 0 drew an empty bar at "0% of limit" and suppressed the
+            // over-limit state — reading as plenty of room precisely when
+            // nothing is known.
+            const usageRatio = (measured == null || !hasLimit) ? null : measured / safeSoftLimit;
+            const usagePercent = usageRatio == null ? null : Math.round(usageRatio * 100);
+            const usageWidth = usageRatio == null ? 0 : Math.min(usageRatio * 100, 100);
+            const overSoftLimit = softLimitBytes != null && measured != null && measured >= softLimitBytes;
             const limitDisplay = softLimitBytes != null
               ? adminService.formatBytes(softLimitBytes)
               : storageInfo?.recommended_soft_limit != null
@@ -459,7 +475,7 @@ export const AnalyticsPage: React.FC = () => {
                 : t('settings.storage.unlimited');
             const progressColor = overSoftLimit
               ? 'bg-red-600'
-              : usagePercent >= 90
+              : (usagePercent != null && usagePercent >= 90)
                 ? 'bg-amber-500'
                 : 'bg-accent-dark';
             const limitDescriptor = storageInfo
@@ -476,9 +492,9 @@ export const AnalyticsPage: React.FC = () => {
                     <div className="flex justify-between text-sm mb-1">
                       <span className="text-neutral-600 dark:text-neutral-400">{t('analytics.used')}</span>
                       <span className="font-medium text-neutral-900 dark:text-neutral-100">
-                        {localUsed == null
+                        {measured == null
                           ? t('analytics.storageUnavailable', 'unavailable')
-                          : `${adminService.formatBytes(localUsed)}${dashboardStats.storagePartial ? '+' : ''}`}
+                          : `${adminService.formatBytes(measured)}${dashboardStats.storagePartial ? '+' : ''}`}
                       </span>
                     </div>
                     <div className="w-full bg-neutral-200 dark:bg-neutral-700 rounded-full h-2">
@@ -488,7 +504,9 @@ export const AnalyticsPage: React.FC = () => {
                       />
                     </div>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                      {usagePercent}% {t('analytics.of')} {limitDisplay}
+                      {usagePercent == null
+                        ? t('analytics.storageNoMeasurement', 'no measurement available')
+                        : `${usagePercent}% ${t('analytics.of')} ${limitDisplay}`}
                     </p>
                     <p className={`text-xs mt-1 ${overSoftLimit ? 'text-red-600 dark:text-red-400 font-semibold' : 'text-red-500 dark:text-red-400 font-medium'}`}>
                       {limitDescriptor}

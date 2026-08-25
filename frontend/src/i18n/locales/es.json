@@ -1111,7 +1111,8 @@
     "noData": "No hay datos disponibles",
     "percentChange": "{{percent}}% respecto al periodo anterior",
     "catalogedMedia": "Medios catalogados",
-    "storageUnavailable": "no disponible"
+    "storageUnavailable": "no disponible",
+    "storageNoMeasurement": "sin medición disponible"
   },
   "branding": {
     "title": "Marca y temas",

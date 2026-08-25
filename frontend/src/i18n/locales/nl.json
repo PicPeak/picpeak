@@ -1223,7 +1223,8 @@
     "notConfigured": "Umami Analytics niet geconfigureerd",
     "configureInstructions": "Configureer Umami in uw omgevingsvariabelen en beheerdersinstellingen om echte statistieken te zien.",
     "catalogedMedia": "Gecatalogiseerde media",
-    "storageUnavailable": "niet beschikbaar"
+    "storageUnavailable": "niet beschikbaar",
+    "storageNoMeasurement": "geen meting beschikbaar"
   },
   "branding": {
     "title": "Huisstijl & Thema's",

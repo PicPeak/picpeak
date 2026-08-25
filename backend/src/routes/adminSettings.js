@@ -1950,7 +1950,7 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
       // What total_used used to be, kept so the UI can show both and the
       // difference stops being invisible.
       cataloged_bytes: catalogedBytes,
-      storage_measurement: measuredFromDisk ? 'disk' : 'catalog',
+      storage_measurement: measuredFromDisk ? 'disk' : (usesLocalBackend ? 'unavailable' : 'catalog'),
       storage_breakdown: measuredFromDisk ? localUsage.breakdown : null,
       storage_partial: measuredFromDisk ? localUsage.partial : false,
       excluded_external_root: measuredFromDisk ? localUsage.excludedExternalRoot : null,

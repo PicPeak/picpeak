@@ -1234,7 +1234,8 @@
     "notConfigured": "Umami Analytics non configuré",
     "configureInstructions": "Pour voir les données analytiques réelles, configurez Umami dans vos variables d'environnement et les paramètres du panneau d'administration.",
     "catalogedMedia": "Médias catalogués",
-    "storageUnavailable": "indisponible"
+    "storageUnavailable": "indisponible",
+    "storageNoMeasurement": "aucune mesure disponible"
   },
   "branding": {
     "title": "Marque & Thèmes",

@@ -99,7 +99,7 @@ export interface StorageInfo {
   // Where total_used came from. 'disk' is the filesystem walk; 'catalog' means
   // the backend is S3, where the objects are in the bucket and a walk of the
   // local storage root would report near-zero.
-  storage_measurement?: 'disk' | 'catalog';
+  storage_measurement?: 'disk' | 'catalog' | 'unavailable';
   archive_storage: number;
   storage_by_event: Array<{
     event_name: string;
