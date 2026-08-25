@@ -134,14 +134,17 @@ export function lightboxImageUrl(photo: {
   width?: number | null;
   height?: number | null;
 }): string {
-  // GIFs keep the original. generatePreviewImage always encodes JPEG
-  // (imageProcessor.js:668), so routing an animated source through the preview
-  // tier would replace the animation with its first frame — a regression the
-  // toggle-off default never had. Animated WebP has the same problem and
-  // cannot be told from a static one by MIME alone; fixing that properly needs
-  // the backend to report it (Sharp's `metadata.pages > 1`), so it is left
-  // rather than paying every static-WebP gallery the bandwidth for a guess.
-  if (photo.mime_type === 'image/gif') return photo.url;
+  // Animated formats keep the original. generatePreviewImage always encodes
+  // JPEG (imageProcessor.js:668), so routing an animated source through the
+  // preview tier would replace the animation with its first frame — a
+  // regression the toggle-off default never had.
+  //
+  // MIME is all the frontend has, so this covers the types that declare
+  // themselves animated. Animated WebP reports image/webp exactly like a still
+  // one and cannot be told apart here; that needs the backend to report it
+  // (Sharp's `metadata.pages > 1`) rather than costing every static-WebP
+  // gallery the bandwidth fix on a guess.
+  if (photo.mime_type === 'image/gif' || photo.mime_type === 'image/apng') return photo.url;
   return previewUrlForViewport(photo.preview_url || photo.slideshow_url, photo) || photo.url;
 }
 

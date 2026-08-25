@@ -4,7 +4,7 @@ import { Heart } from 'lucide-react';
 import { AuthenticatedImage } from '../../../common';
 import { ColorLabelBadge } from '../../ColorLabelBadge';
 import type { Photo } from '../../../../types';
-import { lightboxImageUrl, thumbnailUrlForTile } from '../../imageTiers';
+import { lightboxImageUrl } from '../../imageTiers';
 
 interface StoryPhotoCardProps {
   photo: Photo;
@@ -65,13 +65,18 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
         className="block w-full h-full"
       >
         <AuthenticatedImage
-          // A GRID TILE, so a thumbnail (#1166). This rendered the full
-          // original at object-cover in a small card — the one place in the
-          // app where the reporter's "hundreds of megabytes for a gallery"
-          // was literally true. thumbnailUrlForTile sizes it per device
-          // (#1095), matching PhotoCard; photo.url stays as the last resort
-          // for rows with no thumbnail yet.
-          src={thumbnailUrlForTile(photo.thumbnail_url, photo) || photo.url}
+          // A card tile, and it used to render the full ORIGINAL at
+          // object-cover — the one place where the reporter's "hundreds of
+          // megabytes for a gallery" was literally true (#1166).
+          //
+          // The preview tier rather than the thumbnail, deliberately.
+          // thumbnail_fit is seeded to 'cover' on every install, so thumbnails
+          // are square centre-crops; these cards are not square (400x500 in
+          // the carousel, fixed-height in the desktop grid), so a thumbnail
+          // would be cropped a second time by object-cover and reframe every
+          // photo. Previews use fit:'inside' and are the whole frame, so the
+          // card looks exactly as it did while no longer pulling an original.
+          src={lightboxImageUrl(photo)}
           alt={photo.filename}
           onLoad={() => setIsLoaded(true)}
           className={`w-full h-full object-cover transition-all duration-700 ease-out will-change-transform ${

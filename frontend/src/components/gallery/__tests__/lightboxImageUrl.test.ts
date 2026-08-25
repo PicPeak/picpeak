@@ -90,7 +90,7 @@ describe('lightboxImageUrl (#1166)', () => {
     })).toBe('/api/gallery/g/preview/47?wm=3');
   });
 
-  it('keeps the original for a GIF, which the preview tier would flatten', () => {
+  it.each(['image/gif', 'image/apng'])('keeps the original for %s, which the preview tier would flatten', (mime) => {
     // generatePreviewImage always encodes JPEG, so routing an animated source
     // through it replaces the animation with its first frame — behaviour the
     // toggle-off default never had.
@@ -99,7 +99,7 @@ describe('lightboxImageUrl (#1166)', () => {
       url: '/api/gallery/g/photo/47',
       preview_url: null,
       slideshow_url: '/api/gallery/g/preview/47',
-      mime_type: 'image/gif',
+      mime_type: mime,
       ...BIG,
     })).toBe('/api/gallery/g/photo/47');
   });

@@ -326,6 +326,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       // deliberately stays on photo.url: what a guest saves must be the full
       // original.
       src: lightboxImageUrl(photo),
+      // The download handler used to recover the photo by matching slide.src
+      // against photo.url. src is a derivative now, so that lookup would find
+      // nothing and Download would silently do nothing (#1166 review).
+      photoId: photo.id,
       alt: photo.filename,
       width: photo.width || 1200,
       height: photo.height || 800,
@@ -445,10 +449,15 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     }
   }, [selectedPhotos, slug, t, downloadChoices, onPickResolution]);
 
-  const handleDownloadFromLightbox = useCallback((slide: { src?: string }) => {
+  const handleDownloadFromLightbox = useCallback((slide: { src?: string; photoId?: number }) => {
     if (!allowDownloads || !slide.src) return;
 
-    const photo = filteredPhotos.find(p => p.url === slide.src);
+    // By id, carried on the slide. Matching on src broke the moment the slide
+    // stopped being the original — and what Download hands over must stay the
+    // original regardless of what is rendered.
+    const photo = slide.photoId != null
+      ? filteredPhotos.find(p => p.id === slide.photoId)
+      : filteredPhotos.find(p => p.url === slide.src);
     if (photo) {
       analyticsService.trackDownload(photo.id, slug, false);
       downloadPhotoMutation.mutate({
