@@ -1201,6 +1201,17 @@
       "save": "Shrani spremembe",
       "saved": "Blagovna znamka nadzorne plošče stranke je shranjena",
       "error": "Nastavitev ni bilo mogoče shraniti"
+    },
+    "captureDates": {
+      "title": "Datumi zajema",
+      "totalPhotos": "Skupaj fotografij",
+      "withDates": "Z datumom zajema",
+      "missingDates": "Brez datuma zajema",
+      "button": "Dopolni datume zajema",
+      "running": "Dopolnjevanje...",
+      "noneToFill": "Vse fotografije že imajo datum zajema",
+      "resultSuccess": "Zadnji zagon: {{success}} posodobljenih, {{noExif}} brez datuma EXIF, {{failed}} neberljivih",
+      "description": "Dopolni »datum zajema« iz EXIF za fotografije, uvožene pred njegovim branjem. Zunanji uvozi ga niso zabeležili, zato se te galerije razvrščajo po vrstnem redu uvoza namesto po času zajema."
     }
   },
   "analytics": {
