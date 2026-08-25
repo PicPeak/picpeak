@@ -34,6 +34,7 @@ describe('migration 186 — unique (event_id, external_relpath) (#1162)', () => 
     for (const table of [
       'photos', 'events', 'photo_categories', 'photo_feedback',
       'photo_admin_marks', 'photo_faces', 'image_access_logs', 'transfer_files',
+      'event_people', 'event_people_merge_dismissals',
     ]) {
       await knex.schema.dropTableIfExists(table);
     }
@@ -51,6 +52,16 @@ describe('migration 186 — unique (event_id, external_relpath) (#1162)', () => 
       t.string('external_relpath');
       t.string('thumbnail_path');
       t.string('source_origin').defaultTo('managed');
+      t.integer('feedback_count').defaultTo(0);
+      t.integer('like_count').defaultTo(0);
+      t.decimal('average_rating', 3, 2).defaultTo(0);
+      t.integer('favorite_count').defaultTo(0);
+      t.integer('reaction_count').defaultTo(0);
+      t.integer('color_label_count').defaultTo(0);
+      t.string('face_status');
+      t.integer('face_count');
+      t.string('face_started_at');
+      t.text('face_error');
     });
     // Declared exactly as the real schema declares them — CASCADE and all.
     // The point of these tables here is that SQLite does NOT enforce any of
@@ -63,7 +74,12 @@ describe('migration 186 — unique (event_id, external_relpath) (#1162)', () => 
       t.string('feedback_type');
       t.text('comment_text');
       t.string('guest_identifier');
+      // Per-person guest identity (migration 078). Nullable: galleries without
+      // guest identity leave it NULL and fall back to guest_identifier.
+      t.integer('guest_id');
       t.integer('rating');
+      t.boolean('is_hidden').defaultTo(false);
+      t.boolean('is_approved').defaultTo(true);
     });
     await knex.schema.createTable('photo_admin_marks', (t) => {
       t.increments('id').primary();
@@ -77,6 +93,24 @@ describe('migration 186 — unique (event_id, external_relpath) (#1162)', () => 
       t.increments('id').primary();
       t.integer('photo_id').references('id').inTable('photos').onDelete('CASCADE');
       t.integer('event_id');
+      // purgePhotoFaces rebuilds the people that lose members, so the cluster
+      // link and the vectors recomputeCentroid reads have to be here for this
+      // to exercise the real path rather than a stub.
+      t.integer('person_id');
+      t.binary('embedding');
+      t.float('det_score');
+    });
+    await knex.schema.createTable('event_people', (t) => {
+      t.increments('id').primary();
+      t.integer('event_id');
+      t.binary('centroid');
+      t.integer('face_count').defaultTo(0);
+    });
+    await knex.schema.createTable('event_people_merge_dismissals', (t) => {
+      t.increments('id').primary();
+      t.integer('event_id');
+      t.binary('centroid_a');
+      t.binary('centroid_b');
     });
     await knex.schema.createTable('image_access_logs', (t) => {
       t.increments('id').primary();
@@ -326,6 +360,67 @@ describe('migration 186 — unique (event_id, external_relpath) (#1162)', () => 
     const rows = await knex('transfer_files').orderBy('transfer_id');
     expect(rows.map((r) => r.transfer_id)).toEqual([3, 4]);
     expect(rows.every((r) => r.photo_id === 1)).toBe(true);
+  });
+
+  it('recomputes the survivor\'s feedback totals after reparenting rows', async () => {
+    // photos carries denormalized counters (migration 033). A survivor that
+    // now OWNS the feedback but still renders zero is the visible half of
+    // getting this wrong.
+    await seedPair();
+    await knex('photo_feedback').insert([
+      { photo_id: 2, event_id: 1, feedback_type: 'like', guest_identifier: 'g1' },
+      { photo_id: 2, event_id: 1, feedback_type: 'rating', rating: 4, guest_identifier: 'g1' },
+    ]);
+
+    await migration.up(knex);
+
+    const survivor = await knex('photos').where('id', 1).first();
+    expect(survivor.like_count).toBe(1);
+    expect(Number(survivor.average_rating)).toBe(4);
+    expect(survivor.feedback_count).toBe(1);
+  });
+
+  it('keeps two people who share a device apart', async () => {
+    // guest_identifier is per-device; guest_id is per-person (migration 078),
+    // and feedbackService scopes by guest_id when it is present. Keying on the
+    // identifier alone would read these as one person and delete a rating.
+    await seedPair();
+    await knex('photo_feedback').insert([
+      { photo_id: 1, event_id: 1, feedback_type: 'rating', rating: 5, guest_identifier: 'shared', guest_id: 10 },
+      { photo_id: 2, event_id: 1, feedback_type: 'rating', rating: 2, guest_identifier: 'shared', guest_id: 11 },
+    ]);
+
+    await migration.up(knex);
+
+    const rows = await knex('photo_feedback').orderBy('guest_id');
+    expect(rows.map((r) => [r.guest_id, r.rating])).toEqual([[10, 5], [11, 2]]);
+  });
+
+  it('still dedupes one person voting on both tiles', async () => {
+    await seedPair();
+    await knex('photo_feedback').insert([
+      { photo_id: 1, event_id: 1, feedback_type: 'like', guest_identifier: 'shared', guest_id: 10 },
+      { photo_id: 2, event_id: 1, feedback_type: 'like', guest_identifier: 'shared', guest_id: 10 },
+    ]);
+
+    await migration.up(knex);
+
+    expect(await knex('photo_feedback').count('* as c').first()).toEqual({ c: 1 });
+  });
+
+  it('rebuilds the people that lose members, rather than deleting faces raw', async () => {
+    // purgePhotoFaces is "called from every photo-deletion path" precisely
+    // because event_people counts and centroids are derived from the rows
+    // being removed. A bare delete leaves a ghost person behind.
+    await seedPair();
+    await knex('event_people').insert({ id: 5, event_id: 1, face_count: 1 });
+    await knex('photo_faces').insert({ photo_id: 2, event_id: 1, person_id: 5 });
+
+    await migration.up(knex);
+
+    expect(await knex('photo_faces').count('* as c').first()).toEqual({ c: 0 });
+    // The person had exactly one member and loses it, so it goes with it.
+    expect(await knex('event_people').where('id', 5).first()).toBeUndefined();
   });
 
   it('fails loudly rather than recording itself applied without the index', async () => {
