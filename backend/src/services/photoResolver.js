@@ -1,5 +1,5 @@
 const path = require('path');
-const { resolveExternalPath } = require('./externalMediaService');
+const { resolveExternalPhotoPath } = require('./externalMediaService');
 const { safePathJoin } = require('../utils/fileSecurityUtils');
 
 const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
@@ -40,7 +40,7 @@ function resolvePhotoStorageKey(event, photo) {
 /**
  * Resolve absolute photo file path based on event + photo origin
  * Managed: storage/events/active + photo.path (legacy variants supported)
- * External reference: EXTERNAL_MEDIA_ROOT + event.external_path + photo.external_relpath
+ * External reference: EXTERNAL_MEDIA_ROOT + photo.external_relpath
  */
 function resolvePhotoFilePath(event, photo) {
   if (!event || !photo) throw new Error('resolvePhotoFilePath requires event and photo');
@@ -61,20 +61,18 @@ function resolvePhotoFilePath(event, photo) {
       }
       throw new Error('Missing external_relpath for external photo');
     }
-    // Normalize duplicate leaf segments (e.g., event.external_path ends with 'individual'
-    // and external_relpath starts with 'individual/') to avoid double segment like
-    // '/external-media/.../individual/individual/file.jpg'
-    let rel = photo.external_relpath;
-    try {
-      const lastSeg = path.basename(event.external_path || '');
-      const firstSeg = rel.split(path.sep)[0];
-      if (lastSeg && firstSeg && lastSeg === firstSeg) {
-        rel = rel.split(path.sep).slice(1).join(path.sep) || '';
-      }
-    } catch (_) {
-      // ignore normalization errors
-    }
-    return resolveExternalPath(event, rel);
+    // external_relpath is relative to EXTERNAL_MEDIA_ROOT, so the event is not
+    // consulted at all (#1163). It used to be relative to event.external_path,
+    // which meant importing a second folder into an event silently moved every
+    // photo already in it.
+    //
+    // The duplicate-leaf-segment normalisation that used to live here went with
+    // it. It stripped the first segment of the relpath when it matched the last
+    // segment of event.external_path — a guess that papered over the
+    // double-prefixing this class of bug produced, and one that actively
+    // corrupts a root-relative path whose first segment legitimately repeats
+    // (external_path 'Trip', relpath 'Trip/x.jpg').
+    return resolveExternalPhotoPath(photo);
   }
 
   const storagePath = getStoragePath();
