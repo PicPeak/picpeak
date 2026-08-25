@@ -214,6 +214,12 @@ export interface Photo {
   // galleries where feedback isn't shared between guests.
   color_label_count?: number;
   my_color_label?: string | null;
+  // Distinct colours OTHER viewers gave this photo (#1178). The lightbox has
+  // always shown these as per-colour tallies; without this field the grid
+  // could only ever render the viewer's own label, so a colour set by someone
+  // else was visible in fullscreen and invisible on the tile. Empty when the
+  // gallery has show_feedback_to_guests off — it is other people's feedback.
+  other_color_labels?: string[];
 }
 
 // Download resolutions (#858).

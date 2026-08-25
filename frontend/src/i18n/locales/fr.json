@@ -2684,7 +2684,8 @@
     "colorLabelError": "Échec de la mise à jour de l'étiquette de couleur",
     "removeColorLabel": "Retirer l'étiquette {{color}}",
     "setColorLabel": "Marquer comme {{color}}",
-    "markedAs": "Marqué comme {{color}}"
+    "markedAs": "Marqué comme {{color}}",
+    "alsoMarkedBy": "Également marqué par d’autres : {{colors}}"
   },
   "filter": {
     "feedbackFilters": "Filtres de commentaires",

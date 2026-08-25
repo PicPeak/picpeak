@@ -2673,7 +2673,8 @@
     "colorLabelError": "Barvne oznake ni bilo mogoče posodobiti",
     "removeColorLabel": "Odstrani oznako {{color}}",
     "setColorLabel": "Označi kot {{color}}",
-    "markedAs": "Označeno kot {{color}}"
+    "markedAs": "Označeno kot {{color}}",
+    "alsoMarkedBy": "Označili tudi drugi: {{colors}}"
   },
   "filter": {
     "feedbackFilters": "Filtri povratnih informacij",

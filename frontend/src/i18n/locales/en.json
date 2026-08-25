@@ -3831,7 +3831,8 @@
     "colorLabelError": "Failed to update color label",
     "removeColorLabel": "Remove {{color}} label",
     "setColorLabel": "Mark as {{color}}",
-    "markedAs": "Marked as {{color}}"
+    "markedAs": "Marked as {{color}}",
+    "alsoMarkedBy": "Also marked by others: {{colors}}"
   },
   "filter": {
     "feedbackFilters": "Feedback Filters",

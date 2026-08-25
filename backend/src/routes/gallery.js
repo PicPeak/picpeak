@@ -918,6 +918,46 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
       });
     }
 
+    // OTHER viewers' colour labels, per photo (#1178).
+    //
+    // The lightbox has always shown these — /photos/:id/feedback returns
+    // per-colour tallies across everyone — but the grid had no field carrying
+    // them, so a label set by one guest was visible in fullscreen and invisible
+    // on the tile. With sharing on, that is just a hole.
+    //
+    // DISTINCT colours, not counts: a tile has room for a couple of dots, and
+    // "who else marked this, and how" is a lightbox question. The viewer's own
+    // colour is excluded here so the badge and the dots never say the same
+    // thing twice — the frontend renders `my_color_label` as the badge and
+    // these beside it.
+    //
+    // Gated on showFeedbackToGuests, like every other aggregate: this is other
+    // people's feedback, unlike my_color_label above.
+    const otherColorLabelsByPhoto = {};
+    if (photos.length > 0 && showFeedbackToGuests) {
+      const othersQuery = db('photo_feedback')
+        .where({ event_id: req.event.id, feedback_type: 'color_label', is_hidden: false })
+        .whereIn('photo_id', photos.map(p => p.id))
+        .whereNotNull('color_label');
+      if (req.guest?.id) {
+        othersQuery.where(function () {
+          this.whereNot('guest_id', req.guest.id).orWhereNull('guest_id');
+        });
+      } else {
+        const mine = generateGuestIdentifier(req);
+        othersQuery.where(function () {
+          this.whereNot('guest_identifier', mine).orWhereNull('guest_identifier');
+        });
+      }
+      const otherRows = await othersQuery.distinct('photo_id', 'color_label');
+      otherRows.forEach(row => {
+        if (!otherColorLabelsByPhoto[row.photo_id]) otherColorLabelsByPhoto[row.photo_id] = [];
+        if (!otherColorLabelsByPhoto[row.photo_id].includes(row.color_label)) {
+          otherColorLabelsByPhoto[row.photo_id].push(row.color_label);
+        }
+      });
+    }
+
     // People in each photo (#1074). Two independent gates: the feature must
     // be on for this event AND, for a plain guest, the photographer must have
     // left the strip visible. A client (PIN access) is the photographer's own
@@ -1198,6 +1238,10 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
           // grid badge disappears on refresh for the very guest who set it.
           color_label_count: showFeedbackToGuests ? (photo.color_label_count || 0) : 0,
           my_color_label: myColorLabelByPhoto[photo.id] || null,
+          // Distinct colours other viewers put on this photo (#1178), so the
+          // grid can show them beside the viewer's own badge. Empty with
+          // sharing off — it is other people's feedback.
+          other_color_labels: otherColorLabelsByPhoto[photo.id] || [],
           // People in this photo (#1074). Empty array when the feature is
           // off for this event or hidden from guests, so the frontend has
           // one shape to handle. Riding along on this payload is what keeps

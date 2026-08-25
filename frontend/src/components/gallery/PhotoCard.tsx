@@ -382,7 +382,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           {/* The guest's own colour label (#1044) — visible without hovering
               or opening anything, which is the point: the client watches
               their selection progress across the grid. */}
-          <ColorLabelBadge colorLabel={photo.my_color_label} />
+          <ColorLabelBadge
+            colorLabel={photo.my_color_label}
+            otherColorLabels={photo.other_color_labels}
+          />
 
           {beforeOverlay}
 

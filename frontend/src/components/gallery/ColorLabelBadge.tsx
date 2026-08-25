@@ -4,6 +4,13 @@ import { COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.s
 
 interface ColorLabelBadgeProps {
   colorLabel?: string | null;
+  /**
+   * Distinct colours OTHER viewers gave this photo (#1178). Rendered as small
+   * dots beside the viewer's own badge, so a label set by someone else is
+   * visible on the tile instead of only in the lightbox. Empty when the
+   * gallery has feedback sharing switched off.
+   */
+  otherColorLabels?: string[];
   /** Extra classes for positioning inside the tile. */
   className?: string;
 }
@@ -16,15 +23,51 @@ interface ColorLabelBadgeProps {
  * loud: an inset ring around the tile plus a corner dot. Both are
  * pointer-events-none so they never swallow a click meant for the tile.
  */
-export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({ colorLabel, className = '' }) => {
+export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
+  colorLabel,
+  otherColorLabels = [],
+  className = '',
+}) => {
   const { t } = useTranslation();
 
-  if (!colorLabel || !(colorLabel in COLOR_LABEL_SWATCHES)) return null;
-  const swatch = COLOR_LABEL_SWATCHES[colorLabel as ColorLabel];
-  const name = t(`feedback.colorLabels.${colorLabel}`, colorLabel);
+  const mine = colorLabel && colorLabel in COLOR_LABEL_SWATCHES ? (colorLabel as ColorLabel) : null;
+  // Capped at three: a tile has room for a few dots, and "exactly who marked
+  // this, and how many" is a question the lightbox answers properly.
+  const others = otherColorLabels
+    .filter((c) => c in COLOR_LABEL_SWATCHES && c !== colorLabel)
+    .slice(0, 3) as ColorLabel[];
+
+  if (!mine && others.length === 0) return null;
+
+  const swatch = mine ? COLOR_LABEL_SWATCHES[mine] : null;
+  const name = mine ? t(`feedback.colorLabels.${mine}`, mine) : '';
 
   return (
     <>
+      {others.length > 0 && (
+        <span
+          // Bottom-left, opposite the viewer's own dot, so the two never read
+          // as one group. The ring stays the viewer's own signal.
+          className="absolute bottom-2 left-2 pointer-events-none flex items-center gap-1"
+          role="img"
+          aria-label={t('feedback.alsoMarkedBy', 'Also marked by others: {{colors}}', {
+            colors: others.map((c) => t(`feedback.colorLabels.${c}`, c)).join(', '),
+          })}
+          title={t('feedback.alsoMarkedBy', 'Also marked by others: {{colors}}', {
+            colors: others.map((c) => t(`feedback.colorLabels.${c}`, c)).join(', '),
+          })}
+        >
+          {others.map((c) => (
+            <span
+              key={c}
+              className="block w-2.5 h-2.5 rounded-full border border-white/90 shadow-sm"
+              style={{ backgroundColor: COLOR_LABEL_SWATCHES[c].fill }}
+            />
+          ))}
+        </span>
+      )}
+      {mine && swatch && (
+      <>
       <span
         className={`absolute inset-0 pointer-events-none rounded-[inherit] ${className}`}
         // Inset rather than an outline: the tile is often flush against its
@@ -41,6 +84,8 @@ export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({ colorLabel, cl
         role="img"
         aria-label={t('feedback.markedAs', 'Marked as {{color}}', { color: name })}
       />
+      </>
+      )}
     </>
   );
 };
