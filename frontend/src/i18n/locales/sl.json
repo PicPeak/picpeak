@@ -1210,7 +1210,7 @@
       "button": "Dopolni datume zajema",
       "running": "Dopolnjevanje...",
       "noneToFill": "Vse fotografije že imajo datum zajema",
-      "resultSuccess": "Zadnji zagon: {{success}} posodobljenih, {{noExif}} brez datuma EXIF, {{failed}} neberljivih",
+      "resultSuccess": "Zadnji zagon: {{success}} posodobljenih, {{noExif}} brez najdenega datuma, {{failed}} nedosegljivih",
       "description": "Dopolni »datum zajema« iz EXIF za fotografije, uvožene pred njegovim branjem. Zunanji uvozi ga niso zabeležili, zato se te galerije razvrščajo po vrstnem redu uvoza namesto po času zajema."
     }
   },
