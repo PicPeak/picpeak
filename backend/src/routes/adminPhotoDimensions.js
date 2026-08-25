@@ -200,8 +200,20 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
       photos = await db('photos')
         .join('events', 'photos.event_id', 'events.id')
         .whereNull('photos.captured_at')
+        // Three markers, because no single one is reliable. fileWatcher's
+        // auto-import sets type='video' and a video/* mime but never
+        // media_type (fileWatcher.js:128-130), so those rows keep the 'image'
+        // default from migration 048 and a media_type-only filter queues them
+        // forever: extractCaptureDate returns null for a video, captured_at
+        // stays null, and every run picks it up again.
         .where(function () {
           this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
+        })
+        .where(function () {
+          this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
+        })
+        .where(function () {
+          this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
         })
         // Archiving deletes the originals from storage but keeps the photos
         // rows (archiveService.js:166,199). Those files are inside the zip and
@@ -345,14 +357,26 @@ router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.
         this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
       })
       .where(function () {
+        this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
+      })
+      .where(function () {
+        this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
+      })
+      .where(function () {
         this.where('events.is_archived', false).orWhereNull('events.is_archived');
       });
 
-    const totalPhotos = await scoped().count('photos.id as count').first();
-    const withDates = await scoped().whereNotNull('photos.captured_at').count('photos.id as count').first();
+    // One query, two aggregates. As two separate counts an import committing a
+    // dated photo between them could be counted by the second and not the
+    // first, so withCaptureDate came out larger than total and the card showed
+    // a negative backlog — with the button enabled to "fix" it.
+    const counts = await scoped()
+      .count('photos.id as total')
+      .count({ dated: db.raw('CASE WHEN photos.captured_at IS NOT NULL THEN 1 END') })
+      .first();
 
-    const total = Number(totalPhotos.count);
-    const withCaptureDate = Number(withDates.count);
+    const total = Number(counts.total);
+    const withCaptureDate = Number(counts.dated);
 
     res.json({
       total,

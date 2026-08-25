@@ -641,7 +641,11 @@ export const StatusTab: React.FC<StatusTabProps> = ({
       )}
 
       {/* Capture Dates (#1172) */}
-      {captureDateStatus && (
+      {/* canManageSystem as well as the payload: TanStack keeps the cached
+          status after `enabled` flips false, so without it a lower-privileged
+          admin logging in behind a system.manage user inside the cache lifetime
+          would still be shown the card and a button whose POST 403s. */}
+      {captureDateStatus && canManageSystem && (
         <Card padding="md">
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
             <CalendarClock className="w-5 h-5" />
