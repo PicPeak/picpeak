@@ -17,6 +17,7 @@ import { settingsService } from '../../../services/settings.service';
 import { useStatusTab } from '../hooks/useStatusTab';
 import { UpdateNotificationSettings } from '../components/UpdateNotificationSettings';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
+import { usePermission } from '../../../hooks/usePermission';
 
 const BYTES_PER_GB = 1024 * 1024 * 1024;
 
@@ -60,13 +61,19 @@ export const StatusTab: React.FC<StatusTabProps> = ({
   const { storageInfo, systemStatus } = useStatusTab(isActive);
   const queryClient = useQueryClient();
 
+  // Gated on the same permission the endpoint requires, so a role without it
+  // never starts the poll. Without this the card would poll a 403 every ten
+  // seconds for anyone who can open the Status tab but cannot run the repair,
+  // filling the logs with denials for a panel they were never shown.
+  const canManageSystem = usePermission('system.manage');
+
   const { data: dimensionStatus } = useQuery({
     queryKey: ['photo-dimension-status'],
     queryFn: async () => {
       const res = await api.get('/admin/photos/repair-dimensions/status');
       return res.data;
     },
-    enabled: isActive,
+    enabled: isActive && canManageSystem,
     refetchInterval: 10000,
   });
 
