@@ -90,6 +90,33 @@ describe('lightboxImageUrl (#1166)', () => {
     })).toBe('/api/gallery/g/preview/47?wm=3');
   });
 
+  it('keeps the original for a GIF, which the preview tier would flatten', () => {
+    // generatePreviewImage always encodes JPEG, so routing an animated source
+    // through it replaces the animation with its first frame — behaviour the
+    // toggle-off default never had.
+    setViewport(1440, 2, 900);
+    expect(lightboxImageUrl({
+      url: '/api/gallery/g/photo/47',
+      preview_url: null,
+      slideshow_url: '/api/gallery/g/preview/47',
+      mime_type: 'image/gif',
+      ...BIG,
+    })).toBe('/api/gallery/g/photo/47');
+  });
+
+  it('still uses the preview tier for ordinary still formats', () => {
+    setViewport(1440, 2, 900);
+    for (const mime_type of ['image/jpeg', 'image/png', 'image/webp', undefined]) {
+      expect(lightboxImageUrl({
+        url: '/api/gallery/g/photo/47',
+        preview_url: null,
+        slideshow_url: '/api/gallery/g/preview/47',
+        mime_type,
+        ...BIG,
+      })).toBe('/api/gallery/g/preview/47');
+    }
+  });
+
   it('still sizes the fallback tier for the device', () => {
     // The #1095 behaviour has to survive the new fallback: a phone must not
     // pull the 1920 rendition just because the URL came from slideshow_url.

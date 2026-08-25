@@ -4,6 +4,7 @@ import { Heart } from 'lucide-react';
 import { AuthenticatedImage } from '../../../common';
 import { ColorLabelBadge } from '../../ColorLabelBadge';
 import type { Photo } from '../../../../types';
+import { lightboxImageUrl, thumbnailUrlForTile } from '../../imageTiers';
 
 interface StoryPhotoCardProps {
   photo: Photo;
@@ -48,7 +49,10 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
     >
       <a
         href={photo.url}
-        data-pswp-src={photo.url}
+        // PhotoSwipe's full-size source (#1166). The preview tier, like every
+        // other lightbox surface — the original is what Download hands out,
+        // not what gets rendered on screen.
+        data-pswp-src={lightboxImageUrl(photo)}
         data-pswp-width={photo.width || 1200}
         data-pswp-height={photo.height || 800}
         data-photo-id={photo.id}
@@ -61,7 +65,13 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
         className="block w-full h-full"
       >
         <AuthenticatedImage
-          src={photo.url}
+          // A GRID TILE, so a thumbnail (#1166). This rendered the full
+          // original at object-cover in a small card — the one place in the
+          // app where the reporter's "hundreds of megabytes for a gallery"
+          // was literally true. thumbnailUrlForTile sizes it per device
+          // (#1095), matching PhotoCard; photo.url stays as the last resort
+          // for rows with no thumbnail yet.
+          src={thumbnailUrlForTile(photo.thumbnail_url, photo) || photo.url}
           alt={photo.filename}
           onLoad={() => setIsLoaded(true)}
           className={`w-full h-full object-cover transition-all duration-700 ease-out will-change-transform ${

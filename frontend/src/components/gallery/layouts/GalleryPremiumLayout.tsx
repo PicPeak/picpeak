@@ -31,6 +31,7 @@ import { useDownloadPhoto } from '../../../hooks/useGallery';
 import { toast } from 'react-toastify';
 
 import './GalleryPremiumLayout.css';
+import { lightboxImageUrl } from '../imageTiers';
 
 interface PhotoCardProps {
   photo: Photo;
@@ -318,7 +319,13 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   // when the admin has flipped the original-filenames toggle (#508).
   const slides = useMemo(() => {
     return filteredPhotos.map(photo => ({
-      src: photo.url,
+      // Display source, not the original (#1166). This layout returns early
+      // from PhotoGridWithLayouts and never renders PhotoLightbox, so it needs
+      // its own call — without it a premium gallery keeps pulling
+      // multi-megabyte originals to show a photo on screen. `download` below
+      // deliberately stays on photo.url: what a guest saves must be the full
+      // original.
+      src: lightboxImageUrl(photo),
       alt: photo.filename,
       width: photo.width || 1200,
       height: photo.height || 800,
