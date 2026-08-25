@@ -1912,7 +1912,12 @@ router.get('/:slug/preview/:photoId',
       }
 
       res.set({
-        'Content-Type': 'image/jpeg',
+        // From the key, not hard-coded: a preview of a transparent or animated
+        // source is WebP, because JPEG carries neither. `nosniff` below means
+        // getting this wrong shows a broken image rather than being silently
+        // corrected by the browser. Pre-existing keys have no .webp suffix and
+        // are JPEG, so they keep their old header.
+        'Content-Type': previewPath.endsWith('.webp') ? 'image/webp' : 'image/jpeg',
         // Cache aggressively — preview only changes on photo
         // re-upload (which generates a new preview key) or settings
         // regenerate (which writes a new mtime + ETag).
@@ -1924,9 +1929,13 @@ router.get('/:slug/preview/:photoId',
       });
 
       if (watermarkSettings && watermarkSettings.enabled) {
+        // applyWatermark composites and re-encodes to JPEG, so a watermarked
+        // gallery serves a flattened still even for an animated or transparent
+        // source. Correct the header rather than mislabelling the bytes.
         const watermarkedBuffer = await withLocalCopy(previewPath, (localPath) =>
           watermarkService.applyWatermark(localPath, watermarkSettings)
         );
+        res.set('Content-Type', 'image/jpeg');
         res.send(watermarkedBuffer);
       } else {
         res.setHeader('Content-Length', stat.size);

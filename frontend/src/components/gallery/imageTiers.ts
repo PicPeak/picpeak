@@ -31,34 +31,15 @@ export function lightboxImageUrl(photo: {
   url: string;
   preview_url?: string | null;
   slideshow_url?: string | null;
-  mime_type?: string;
-  filename?: string;
-  original_filename?: string | null;
 }): string {
-  // Animated and transparent formats keep the original. generatePreviewImage
-  // encodes JPEG, which has neither a second frame nor an alpha channel, so
-  // routing these through the preview tier would replace an animation with its
-  // first frame and flatten transparency onto a solid background — a
-  // regression the toggle-off default never had.
-  //
-  // PNG is in the list because that is where transparency is the norm, and
-  // because an APNG is normally reported as image/png rather than image/apng.
-  // Animated or alpha WebP declares image/webp exactly like an ordinary still
-  // and cannot be told apart from MIME.
-  //
-  // The proper fix is backend-side, encoding WebP for alpha or multi-page
-  // sources; when that lands this list goes away entirely.
-  // Checked against the FILENAME as well as the MIME, because mime_type is not
-  // trustworthy here: migration 039 backfilled every pre-existing photo as
-  // image/jpeg regardless of what it was, and the external-media importer
-  // inserts rows without a mime_type at all. A mislabelled PNG would otherwise
-  // sail past this and come back flattened.
-  const ORIGINAL_ONLY = ['image/gif', 'image/apng', 'image/png'];
-  const ORIGINAL_ONLY_EXT = /\.(gif|apng|png)$/i;
-  const name = photo.original_filename || photo.filename || '';
-  if ((photo.mime_type && ORIGINAL_ONLY.includes(photo.mime_type)) || ORIGINAL_ONLY_EXT.test(name)) {
-    return photo.url;
-  }
-
+  // No format is excluded any more. This used to bypass the preview tier for
+  // GIF, APNG and PNG because generatePreviewImage always encoded JPEG, which
+  // has neither an alpha channel nor a second frame — so a transparent source
+  // came back flattened and an animated one came back as a still. That is
+  // fixed at the source: previews of alpha or multi-page images are now WebP,
+  // which carries both, and the guess-by-MIME this file could never make
+  // correctly (a still and an animated WebP declare the same type) is gone
+  // with it — including the filename fallback the previous commit needed
+  // because migration 039 made mime_type untrustworthy.
   return photo.preview_url || photo.slideshow_url || photo.url;
 }
