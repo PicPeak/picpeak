@@ -541,6 +541,32 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
 
     const filesRestored = await restoreFiles(staging);
 
+    // External media paths (#1163). knex_migrations is excluded from the
+    // archive, so migration 187 does not re-run after a restore — a pre-#1163
+    // backup would otherwise drop base-relative rows onto an instance that
+    // resolves them from the media root, and every original in the restored
+    // library would be unreachable with nothing logged. The fold is a no-op
+    // when the restored app_settings already carries the marker.
+    //
+    // BEFORE the face requeue below, and for the same reason that requeue sits
+    // after restoreFiles: the worker is live throughout. Queued first, it can
+    // claim an external row while the row is still base-relative, resolve it
+    // against the wrong path with the root-only resolver, and mark the photo
+    // failed — a state only an explicit Re-scan clears, and one the fold does
+    // not undo. Probing a cold mount takes long enough for that to be likely
+    // rather than theoretical.
+    try {
+      const { foldExternalRelpaths } = require('./externalRelpathFold');
+      const result = await foldExternalRelpaths(db, (msg) => logger.info(`picpeakImport: external paths — ${msg}`));
+      if (result.folded || result.repaired) {
+        logger.info(`picpeakImport: folded ${result.folded} external path(s), repaired ${result.repaired}`);
+      }
+    } catch (err) {
+      // A restore that has already put every row and file in place must not
+      // fail over this; the banner below still tells the admin to check the
+      // external-media mount.
+      logger.warn(`picpeakImport: external path fold skipped: ${err.message}`);
+    }
     // Face data (#1074): queue ONLY once the files are on disk. The archive
     // carries no face rows and the export blanked photos.face_status, but the
     // event toggles come across enabled, so the "enable" transition that
@@ -561,24 +587,6 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
       }
     } catch (err) {
       logger.debug?.(`picpeakImport: face requeue skipped: ${err.message}`);
-    }
-    // External media paths (#1163). knex_migrations is excluded from the
-    // archive, so migration 187 does not re-run after a restore — a pre-#1163
-    // backup would otherwise drop base-relative rows onto an instance that
-    // resolves them from the media root, and every original in the restored
-    // library would be unreachable with nothing logged. The fold is a no-op
-    // when the restored app_settings already carries the marker.
-    try {
-      const { foldExternalRelpaths } = require('./externalRelpathFold');
-      const result = await foldExternalRelpaths(db, (msg) => logger.info(`picpeakImport: external paths — ${msg}`));
-      if (result.folded || result.repaired) {
-        logger.info(`picpeakImport: folded ${result.folded} external path(s), repaired ${result.repaired}`);
-      }
-    } catch (err) {
-      // A restore that has already put every row and file in place must not
-      // fail over this; the banner below still tells the admin to check the
-      // external-media mount.
-      logger.warn(`picpeakImport: external path fold skipped: ${err.message}`);
     }
 
     const usesExternalMedia = await detectExternalMedia();

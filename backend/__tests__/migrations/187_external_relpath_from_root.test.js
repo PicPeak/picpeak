@@ -18,10 +18,13 @@ const os = require('os');
 describe('migration 187 — external_relpath from the media root (#1163)', () => {
   let knex; let tmpDir; let mediaRoot; let migration;
 
-  const touch = async (rel) => {
+  /** Writes `bytes` bytes and returns the size, so fixtures can record it the
+   *  way an import would have. */
+  const touch = async (rel, bytes = 8) => {
     const full = path.join(mediaRoot, rel);
     await fs.promises.mkdir(path.dirname(full), { recursive: true });
-    await fs.promises.writeFile(full, 'x');
+    await fs.promises.writeFile(full, Buffer.alloc(bytes));
+    return bytes;
   };
 
   beforeAll(async () => {
@@ -60,6 +63,7 @@ describe('migration 187 — external_relpath from the media root (#1163)', () =>
       t.increments('id').primary();
       t.integer('event_id');
       t.string('external_relpath');
+      t.integer('size_bytes');
       t.string('source_origin').defaultTo('managed');
     });
     await knex.schema.createTable('app_settings', (t) => {
@@ -95,12 +99,12 @@ describe('migration 187 — external_relpath from the media root (#1163)', () =>
     // The reported shape: a parent imported first, a child imported second, so
     // events.external_path is the child and the parent's rows resolve into a
     // path that does not exist.
-    await touch('Trip/Leknes/old.jpg');       // from the first import
-    await touch('Trip/Sub/new.jpg');          // from the second
+    const oldSize = await touch('Trip/Leknes/old.jpg', 11);   // from the first import
+    const newSize = await touch('Trip/Sub/new.jpg', 22);      // from the second
     await knex('events').insert({ id: 1, external_path: 'Trip/Sub' });
     await knex('photos').insert([
-      { event_id: 1, external_relpath: 'Leknes/old.jpg', source_origin: 'external' },
-      { event_id: 1, external_relpath: 'new.jpg', source_origin: 'external' },
+      { event_id: 1, external_relpath: 'Leknes/old.jpg', size_bytes: oldSize, source_origin: 'external' },
+      { event_id: 1, external_relpath: 'new.jpg', size_bytes: newSize, source_origin: 'external' },
     ]);
 
     await migration.up(knex);
@@ -108,6 +112,63 @@ describe('migration 187 — external_relpath from the media root (#1163)', () =>
     // The old row is placed where the file actually is; the new one keeps
     // resolving exactly where it resolved before.
     expect(await relpaths()).toEqual(['Trip/Leknes/old.jpg', 'Trip/Sub/new.jpg']);
+  });
+
+  it('refuses an ancestor whose file is a different size', async () => {
+    // The dangerous case: the row's own file was simply deleted, and an
+    // UNRELATED file one directory up happens to share its name. Adopting it
+    // would make downloads serve the wrong original — worse than a dead link.
+    await touch('Trip/photo.jpg', 999);
+    await knex('events').insert({ id: 1, external_path: 'Trip/Sub' });
+    await knex('photos').insert({
+      event_id: 1, external_relpath: 'photo.jpg', size_bytes: 42, source_origin: 'external',
+    });
+
+    await migration.up(knex);
+
+    expect(await relpaths()).toEqual(['Trip/Sub/photo.jpg']);
+  });
+
+  it('refuses an ancestor when the row records no size to check against', async () => {
+    // Nothing to verify provenance with, so the row stays where it resolves
+    // today rather than adopting a same-named stranger.
+    await touch('Trip/photo.jpg', 100);
+    await knex('events').insert({ id: 1, external_path: 'Trip/Sub' });
+    await knex('photos').insert({
+      event_id: 1, external_relpath: 'photo.jpg', size_bytes: null, source_origin: 'external',
+    });
+
+    await migration.up(knex);
+
+    expect(await relpaths()).toEqual(['Trip/Sub/photo.jpg']);
+  });
+
+  it('leaves nothing folded when a rewrite fails partway', async () => {
+    // Without a transaction, a crash between the first event's UPDATE and the
+    // marker leaves mixed formats behind — and the next run folds the already
+    // folded rows a second time, putting every original one directory deeper.
+    await touch('A/one.jpg');
+    await touch('B/two.jpg');
+    await knex('events').insert([
+      { id: 1, external_path: 'A' },
+      { id: 2, external_path: 'B' },
+    ]);
+    await knex('photos').insert([
+      { event_id: 1, external_relpath: 'one.jpg', source_origin: 'external' },
+      { event_id: 2, external_relpath: 'two.jpg', source_origin: 'external' },
+    ]);
+    // app_settings is written last, in the same transaction as the rewrites.
+    await knex.schema.dropTableIfExists('app_settings_backup');
+    await knex.raw('CREATE TRIGGER fail_marker BEFORE INSERT ON app_settings '
+      + "BEGIN SELECT RAISE(ABORT, 'boom'); END");
+
+    await expect(migration.up(knex)).rejects.toThrow(/boom/);
+
+    await knex.raw('DROP TRIGGER fail_marker');
+    // Every row still base-relative, and no marker — so a retry is correct.
+    expect(await relpaths()).toEqual(['one.jpg', 'two.jpg']);
+    expect(await knex('app_settings').where('setting_key', 'external_relpath_root_relative').first())
+      .toBeUndefined();
   });
 
   it('leaves a row it cannot place resolving where it resolves today', async () => {

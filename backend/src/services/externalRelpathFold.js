@@ -23,6 +23,20 @@
  * place is left resolving exactly where it resolves today — preserving current
  * behaviour is the floor, never guess below it.
  *
+ * Existence alone is NOT enough to accept an ancestor. A row whose file an
+ * admin simply deleted would otherwise adopt any same-named file further up —
+ * base `Trip/Sub`, relpath `photo.jpg`, an unrelated `Trip/photo.jpg` — and
+ * downloads would then serve the WRONG original, which is worse than a broken
+ * link. So an ancestor candidate must also match photos.size_bytes, recorded
+ * by the import from the very file the row describes. Rows carrying no size
+ * are never repaired from an ancestor.
+ *
+ * ATOMICITY. Probing is read-only and runs first; every rewrite and the marker
+ * are then committed in ONE transaction. Split across commits, a process
+ * killed mid-fold would leave converted and unconverted rows behind with no
+ * marker, and the next run would fold the converted ones a second time —
+ * putting every original one directory deeper, permanently.
+ *
  * The probe is skipped entirely when the media root is unreachable or empty:
  * an unmounted share makes every file look missing, and "repairing" off that
  * signal would move every original on a healthy install. When it does run it
@@ -59,6 +73,24 @@ async function exists(p) {
 }
 
 /**
+ * Is `p` plausibly the file this row was imported from?
+ *
+ * Size is the provenance signal available without re-reading every original:
+ * photos.size_bytes was written by the import from the file the row describes.
+ * Returns false when it cannot be verified, so an unverifiable candidate is
+ * never adopted from somewhere the row did not previously point.
+ */
+async function fileMatchesSize(p, expectedSize) {
+  if (expectedSize == null || Number(expectedSize) <= 0) return false;
+  try {
+    const stats = await fsp.stat(p);
+    return stats.isFile() && stats.size === Number(expectedSize);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Joined without the safePathJoin the app serves through: this is reading, and
  * a stored path that escapes the root is damage worth detecting rather than
  * throwing on.
@@ -77,7 +109,8 @@ async function rootUsable(root) {
 }
 
 /**
- * @param {import('knex')} knex
+ * @param {import('knex')} knex  a knex instance, or a transaction from a caller
+ *   that is already inside one (the restore).
  * @param {(msg: string) => void} [log]
  * @returns {Promise<{skipped?: string, folded?: number, repaired?: number, stranded?: number, collided?: number}>}
  */
@@ -104,7 +137,12 @@ async function foldExternalRelpaths(knex, log = () => {}) {
   const canProbe = await rootUsable(root);
   if (!canProbe) log('media root unreachable or empty — folding base paths in without on-disk repair');
 
+  // ---- Phase 1: decide, writing nothing. -------------------------------
+  // Read-only, so the transaction below stays short. Probing a cold NAS can
+  // take minutes and holding a write transaction open for that would block the
+  // app for the duration.
   let folded = 0; let repaired = 0; let stranded = 0; let collided = 0;
+  const plan = [];
 
   for (const { event_id: eventId } of eventRows) {
     // No base path means the rows are already relative to the root.
@@ -114,7 +152,7 @@ async function foldExternalRelpaths(knex, log = () => {}) {
     const rows = await knex('photos')
       .where('event_id', eventId)
       .whereNotNull('external_relpath')
-      .select('id', 'external_relpath');
+      .select('id', 'external_relpath', 'size_bytes');
 
     // Deciding health from a SAMPLE was the tempting shortcut and it is not
     // safe: a rebased event whose first few rows happen to come from the most
@@ -125,49 +163,94 @@ async function foldExternalRelpaths(knex, log = () => {}) {
 
     for (const row of rows) {
       if (!canProbe) { placements.push([row, base]); continue; }
+
       let chosen = null;
-      for (const prefix of prefixes) {
-        if (await exists(under(root, prefix, row.external_relpath))) { chosen = prefix; break; }
+      // The current base first, on existence alone — nothing is inferred
+      // there, it is where the row already resolves.
+      if (await exists(under(root, base, row.external_relpath))) {
+        chosen = base;
+      } else {
+        // Anywhere else has to prove itself: the name AND the size the import
+        // recorded. Without that a row whose file an admin deleted would adopt
+        // an unrelated same-named file one directory up, and downloads would
+        // serve the wrong original.
+        for (const prefix of prefixes) {
+          if (prefix === base) continue;
+          if (await fileMatchesSize(under(root, prefix, row.external_relpath), row.size_bytes)) {
+            chosen = prefix;
+            break;
+          }
+        }
       }
+
       if (chosen === null) { chosen = base; stranded++; }
       if (chosen !== base) allUnderBase = false;
       placements.push([row, chosen]);
     }
 
     if (allUnderBase) {
-      // One statement, and it cannot collide: every row gains the same prefix,
-      // so distinct values stay distinct.
-      folded += await knex('photos')
-        .where('event_id', eventId)
-        .whereNotNull('external_relpath')
-        .update({ external_relpath: knex.raw('? || external_relpath', [`${base}/`]) });
+      folded += rows.length;
+      plan.push({ eventId, base, bulk: true, rows: [] });
       continue;
     }
 
+    // Two rows can now target the same path — the same file imported under two
+    // different bases really is one file. Resolved HERE rather than by letting
+    // the write fail: a caught write error cannot tell a genuine duplicate from
+    // a lock or I/O fault, and continuing past one would certify a partial
+    // conversion by writing the marker anyway.
+    const claimed = new Set();
+    const resolved = [];
     for (const [row, chosen] of placements) {
-      if (chosen === base) folded++; else repaired++;
       const next = chosen ? `${chosen}/${row.external_relpath}` : row.external_relpath;
-      try {
-        await knex('photos').where('id', row.id).update({ external_relpath: next });
-      } catch (e) {
-        // Two rows can land on the same path — the same file imported under two
-        // different bases really is one file, and migration 186's unique index
-        // says so. Leaving the loser untouched is the conservative half of
-        // that: it stays a row pointing somewhere, rather than being deleted.
-        collided++;
-      }
+      if (claimed.has(next)) { collided++; continue; }
+      claimed.add(next);
+      if (chosen === base) folded++; else repaired++;
+      resolved.push([row.id, next]);
     }
+    plan.push({ eventId, base, bulk: false, rows: resolved });
   }
 
-  await knex('app_settings').insert({
-    setting_key: MARKER,
-    setting_value: JSON.stringify(true),
-    setting_type: 'system',
-    updated_at: new Date().toISOString(),
-  });
+  // ---- Phase 2: write, all or nothing. ---------------------------------
+  // The marker rides in the same transaction as the rewrites, so there is no
+  // window where some rows are folded, the marker is absent, and a second run
+  // folds them again — which would put every original one directory deeper,
+  // permanently.
+  const apply = async (trx) => {
+    for (const step of plan) {
+      if (step.bulk) {
+        // One statement, and it cannot collide: every row gains the same
+        // prefix, so distinct values stay distinct.
+        await trx('photos')
+          .where('event_id', step.eventId)
+          .whereNotNull('external_relpath')
+          .update({ external_relpath: trx.raw('? || external_relpath', [`${step.base}/`]) });
+        continue;
+      }
+      for (const [id, next] of step.rows) {
+        // No catch: collisions were resolved above, so anything failing here is
+        // a real fault and must roll the whole fold back rather than leave a
+        // half-converted table certified by the marker.
+        await trx('photos').where('id', id).update({ external_relpath: next });
+      }
+    }
+
+    await trx('app_settings').insert({
+      setting_key: MARKER,
+      setting_value: JSON.stringify(true),
+      setting_type: 'system',
+      updated_at: new Date().toISOString(),
+    });
+  };
+
+  // A caller already inside a transaction (the restore) passes its trx in as
+  // `knex`; opening a nested one would deadlock SQLite.
+  if (knex.isTransaction) await apply(knex);
+  else await knex.transaction(apply);
 
   log(`${folded} folded, ${repaired} repaired, ${stranded} left unresolved, ${collided} skipped as duplicates`);
   return { folded, repaired, stranded, collided };
 }
+
 
 module.exports = { foldExternalRelpaths, MARKER };
