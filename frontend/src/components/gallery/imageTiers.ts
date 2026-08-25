@@ -108,6 +108,35 @@ export function previewUrlForViewport(
 }
 
 /**
+ * What the lightbox actually puts in an <img> (#1166).
+ *
+ * `preview_url` is only emitted when the admin has flipped
+ * lightbox_preview_enabled, which is off by default — so a stock install fell
+ * straight through to `url`, the untouched original. A reporter measured
+ * 16.5 MB per photo where the preview is 345 KB, and the lightbox renders its
+ * neighbours too, so opening one photo pulled three originals.
+ *
+ * `slideshow_url` is the same /preview/:id URL, watermark query and all, but
+ * emitted unconditionally for images since #1015 — the slideshow has never had
+ * a fallback worth taking. Preferring it here fixes every existing install
+ * without an admin touching a setting.
+ *
+ * `url` stays as the last resort, which is where videos land (both derivative
+ * URLs are null for them) and where an image goes if the server ever stops
+ * emitting either. The preview route generates lazily and redirects to the
+ * original on any failure, so nothing here can show less than it does today.
+ */
+export function lightboxImageUrl(photo: {
+  url: string;
+  preview_url?: string | null;
+  slideshow_url?: string | null;
+  width?: number | null;
+  height?: number | null;
+}): string {
+  return previewUrlForViewport(photo.preview_url || photo.slideshow_url, photo) || photo.url;
+}
+
+/**
  * An aspect-preserved rendition for a face avatar (#1096).
  *
  * NOT the thumbnail. faceCropStyle positions the crop by scaling the whole
