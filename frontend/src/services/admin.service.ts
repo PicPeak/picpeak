@@ -61,7 +61,32 @@ export interface DashboardStats {
   activeEvents: number;
   expiringEvents: number;
   totalPhotos: number;
-  storageUsed: number;
+  // Real bytes under the storage root — thumbnails, previews, hero
+  // renditions, download caches and any managed originals (#1164). Null when
+  // the measurement failed, which the UI must show as unavailable rather than
+  // substituting `catalogedBytes`: they are different quantities and on a
+  // reference-mode install they are wildly different.
+  storageUsed: number | null;
+  storageBreakdown: {
+    originals: number;
+    archives: number;
+    thumbnails: number;
+    previews: number;
+    heroes: number;
+    watermarks: number;
+    uploads: number;
+    businessDocs: number;
+    downloadCache: number;
+    externalMedia: number;
+    temp: number;
+    other: number;
+  } | null;
+  // The total is a floor: part of the storage root could not be read.
+  storagePartial?: boolean;
+  // Summed photos.size_bytes — the catalogued size of the originals, which is
+  // what this endpoint used to label "storage used". In reference mode those
+  // files are on external storage and none of those bytes are local.
+  catalogedBytes: number;
   totalViews: number;
   totalDownloads: number;
   viewsTrend: number;

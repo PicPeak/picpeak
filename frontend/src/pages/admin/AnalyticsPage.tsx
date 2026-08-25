@@ -438,15 +438,20 @@ export const AnalyticsPage: React.FC = () => {
 
           {/* Storage Information */}
           {dashboardStats && (() => {
+            // Real local bytes (#1164). This used to be the summed size of the
+            // catalogued originals, so a reference-mode install — where those
+            // files are on a NAS — compared a number from the NAS against a
+            // limit meant for this disk.
+            const localUsed = dashboardStats.storageUsed;
             const softLimitBytes = storageInfo?.storage_soft_limit ?? storageInfo?.storage_limit ?? storageInfo?.recommended_soft_limit ?? null;
             const safeSoftLimit = Math.max(
-              softLimitBytes ?? storageInfo?.recommended_soft_limit ?? (dashboardStats.storageUsed || 1),
+              softLimitBytes ?? storageInfo?.recommended_soft_limit ?? (localUsed || 1),
               1
             );
-            const usageRatio = dashboardStats.storageUsed / safeSoftLimit;
+            const usageRatio = (localUsed ?? 0) / safeSoftLimit;
             const usagePercent = Math.round(usageRatio * 100);
             const usageWidth = Math.min(usageRatio * 100, 100);
-            const overSoftLimit = softLimitBytes != null && dashboardStats.storageUsed >= softLimitBytes;
+            const overSoftLimit = softLimitBytes != null && localUsed != null && localUsed >= softLimitBytes;
             const limitDisplay = softLimitBytes != null
               ? adminService.formatBytes(softLimitBytes)
               : storageInfo?.recommended_soft_limit != null
@@ -470,7 +475,11 @@ export const AnalyticsPage: React.FC = () => {
                   <div>
                     <div className="flex justify-between text-sm mb-1">
                       <span className="text-neutral-600 dark:text-neutral-400">{t('analytics.used')}</span>
-                      <span className="font-medium text-neutral-900 dark:text-neutral-100">{adminService.formatBytes(dashboardStats.storageUsed)}</span>
+                      <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                        {localUsed == null
+                          ? t('analytics.storageUnavailable', 'unavailable')
+                          : `${adminService.formatBytes(localUsed)}${dashboardStats.storagePartial ? '+' : ''}`}
+                      </span>
                     </div>
                     <div className="w-full bg-neutral-200 dark:bg-neutral-700 rounded-full h-2">
                       <div
@@ -486,7 +495,15 @@ export const AnalyticsPage: React.FC = () => {
                     </p>
                   </div>
                   <div className="pt-2 border-t border-neutral-200 dark:border-neutral-700">
+                    {/* The catalogued size of the originals, shown separately
+                        rather than as "used" (#1164). On a reference-mode
+                        install this is large and none of it is on this disk,
+                        which is the distinction the old single figure hid. */}
                     <div className="flex justify-between text-sm">
+                      <span className="text-neutral-600 dark:text-neutral-400">{t('analytics.catalogedMedia', 'Catalogued media')}</span>
+                      <span className="font-medium text-neutral-900 dark:text-neutral-100">{adminService.formatBytes(dashboardStats.catalogedBytes)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm mt-2">
                       <span className="text-neutral-600 dark:text-neutral-400">{t('analytics.totalPhotos')}</span>
                       <span className="font-medium text-neutral-900 dark:text-neutral-100">{dashboardStats.totalPhotos.toLocaleString()}</span>
                     </div>

@@ -127,7 +127,23 @@ describe('dashboard scoping (GHSA-c2jj / gqx7 / jhcf)', () => {
     expect(res.status).toBe(200);
     expect(Number(res.body.totalEvents)).toBe(1);
     expect(Number(res.body.totalPhotos)).toBe(1);
-    expect(Number(res.body.storageUsed)).toBe(1000);
+    // The catalogued original bytes — this is what carries the per-event
+    // scoping, and what `storageUsed` reported before #1164.
+    expect(Number(res.body.catalogedBytes)).toBe(1000);
+  });
+
+  it('/stats reports disk usage unscoped, because disk is not per-event', async () => {
+    // storageUsed is a measurement of the storage root (#1164), so it is the
+    // same number for every admin by design. Pinned so a future reviewer
+    // reading "everything on this endpoint is scoped" does not turn it into a
+    // sum of this editor's photos again — which is the bug that was fixed.
+    const res = await request(app)
+      .get('/api/admin/dashboard/stats')
+      .set('Authorization', `Bearer ${editorToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.storageUsed).not.toBe(1000);
+    expect(res.body).toHaveProperty('storageBreakdown');
   });
 
   it('/analytics does not expose a foreign gallery name or slug', async () => {

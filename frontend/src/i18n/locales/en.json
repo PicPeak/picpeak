@@ -1924,7 +1924,9 @@
     "totalPhotos": "Total Photos",
     "activeEvents": "Active Events",
     "notConfigured": "Umami Analytics Not Configured",
-    "configureInstructions": "To see real analytics data, configure Umami in your environment variables and admin panel settings."
+    "configureInstructions": "To see real analytics data, configure Umami in your environment variables and admin panel settings.",
+    "catalogedMedia": "Catalogued media",
+    "storageUnavailable": "unavailable"
   },
   "branding": {
     "title": "Branding & Themes",
@@ -2784,7 +2786,9 @@
       "sidecarStateNow": "Service state right now — some of the failures above may have a different cause, but a re-scan will not succeed until this is fixed:",
       "consolidated_one": "Grouping merged {{count}} look-alike pair automatically after the last scan. Open Manage people to check it — anything merged wrongly can be separated again with Split.",
       "consolidated_other": "Grouping merged {{count}} look-alike pairs automatically after the last scan. Open Manage people to check them — anything merged wrongly can be separated again with Split."
-    }
+    },
+    "catalogedMedia": "{{size}} catalogued",
+    "storageUnavailable": "unavailable"
   },
   "acceptInvitation": {
     "title": "Accept Invitation",

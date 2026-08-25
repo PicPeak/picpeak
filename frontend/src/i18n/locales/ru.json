@@ -1255,7 +1255,9 @@
     "totalPhotos": "Всего фото",
     "activeEvents": "Активных событий",
     "notConfigured": "Umami Analytics не настроен",
-    "configureInstructions": "Для отображения данных аналитики настройте Umami в переменных среды и настройках панели администратора."
+    "configureInstructions": "Для отображения данных аналитики настройте Umami в переменных среды и настройках панели администратора.",
+    "catalogedMedia": "Каталогизированные медиа",
+    "storageUnavailable": "недоступно"
   },
   "branding": {
     "title": "Брендинг и темы",
@@ -1895,7 +1897,9 @@
       "category_hero_updated": "Главное фото категории обновлено",
       "public_site_reset_to_default": "Публичный сайт сброшен к значениям по умолчанию",
       "cms_page_logo_uploaded": "Логотип CMS-страницы загружен: {{slug}}"
-    }
+    },
+    "catalogedMedia": "{{size}} в каталоге",
+    "storageUnavailable": "недоступно"
   },
   "acceptInvitation": {
     "title": "Принять приглашение",

@@ -169,8 +169,22 @@ export const AdminDashboard: React.FC = () => {
       color: 'text-blue-600',
     },
     {
+      // Real bytes under the storage root (#1164). This used to be the summed
+      // size of the catalogued originals, which on a reference-mode install is
+      // the size of a NAS — the one number an admin reaches for when asking
+      // "am I running out of disk" pointed away from the answer. `?? ` rather
+      // than `|| `: null means the measurement failed and must read as
+      // unavailable, not as 0 Bytes.
       title: t('admin.storageUsed'),
-      value: adminService.formatBytes(dashboardStats?.storageUsed || 0),
+      value: dashboardStats?.storageUsed == null
+        ? t('admin.storageUnavailable', 'unavailable')
+        : `${adminService.formatBytes(dashboardStats.storageUsed)}${dashboardStats.storagePartial ? '+' : ''}`,
+      // The catalogued figure alongside, so the difference is visible rather
+      // than conflated. On a managed install they track each other; on a
+      // reference one they are supposed to diverge.
+      change: dashboardStats
+        ? t('admin.catalogedMedia', { size: adminService.formatBytes(dashboardStats.catalogedBytes) })
+        : undefined,
       icon: HardDrive,
       color: 'text-purple-600',
     },
