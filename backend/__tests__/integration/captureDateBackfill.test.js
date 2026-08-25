@@ -133,6 +133,43 @@ describe('capture date backfill (#1172)', () => {
     expect((await status()).body.withoutCaptureDate).toBe(0);
   });
 
+  it('skips a watcher-imported video, which carries media_type "image"', async () => {
+    // fileWatcher.processNewPhoto sets type='video' and a video/* mime but
+    // never media_type (fileWatcher.js:128-130), so the row keeps the 'image'
+    // default from migration 048. Filtering on media_type alone queued it every
+    // run: extractCaptureDate returns null for a video, captured_at stays null,
+    // and the backlog never cleared.
+    const { eventId } = await seed({ relpath: 'clip.jpg', exifIso: '2026-06-01T09:45:03Z', writeFile: false });
+    await db('photos').del();
+    await db('photos').insert({
+      event_id: eventId, filename: 'clip.mp4', path: 'capfill/clip.mp4',
+      type: 'video', media_type: 'image', mime_type: 'video/mp4',
+      source_origin: 'external', external_relpath: 'trip/clip.mp4',
+      uploaded_at: new Date().toISOString(), captured_at: null,
+    });
+
+    const res = await request(app).post('/api/admin/photos/repair-capture-dates');
+    expect(res.body.count).toBe(0);
+
+    const s = await status();
+    // And it is not counted as a permanent backlog either.
+    expect(s.body.total).toBe(0);
+    expect(s.body.withoutCaptureDate).toBe(0);
+  });
+
+  it('never reports more dated photos than it has photos', async () => {
+    // Both counts come from one aggregate; as two queries an import committing
+    // between them produced withCaptureDate > total and a negative backlog.
+    const { photoId } = await seed({ relpath: 'counted.jpg', exifIso: '2026-06-05T08:00:00Z' });
+    await db('photos').where({ id: photoId }).update({ captured_at: new Date().toISOString() });
+
+    const s = await status();
+    expect(s.body.total).toBe(1);
+    expect(s.body.withCaptureDate).toBe(1);
+    expect(s.body.withoutCaptureDate).toBe(0);
+    expect(s.body.withoutCaptureDate).toBeGreaterThanOrEqual(0);
+  });
+
   it('skips archived events instead of failing them on every run', async () => {
     // Archiving deletes the originals and keeps the rows, so an archived photo
     // can never get a date. Counting it would fail it every pass and leave the
