@@ -272,6 +272,41 @@ describe('orientation backfill (#1198)', () => {
     expect(done.body.lastResult.corrected).toBe(0);
   });
 
+  it('leaves a post-fix import alone, renditions and all', async () => {
+    // A 5-8 rotation changes the dimensions, so a tagged photo whose stored
+    // dimensions are already oriented must have been ingested after #1185.
+    // Re-clearing its renditions would delete valid files and rescan a
+    // completed face detection for nothing.
+    const { photoId } = await seed({
+      orientation: 6, storedWidth: 200, storedHeight: 400, faceStatus: 'done',
+    });
+
+    await run();
+    const done = await settle();
+
+    const row = await db('photos').where({ id: photoId }).first();
+    expect(row.thumbnail_path).toBe('thumbnails/thumb_orientbf.jpg');
+    expect(row.face_status).toBe('done');
+    expect(done.body.lastResult).toMatchObject({ corrected: 0, requeuedFaces: 0 });
+    // ...and it is marked, so it is not re-read next time either.
+    expect(row.orientation_checked_at).toBeTruthy();
+  });
+
+  it('still invalidates a 180-degree rotation, which carries no such evidence', async () => {
+    // Orientation 3 leaves the dimensions identical whether or not it has been
+    // processed, so there is nothing to infer from and it must be done once.
+    const { photoId } = await seed({
+      orientation: 3, storedWidth: 400, storedHeight: 200, faceStatus: 'done',
+    });
+
+    await run();
+    await settle();
+
+    const row = await db('photos').where({ id: photoId }).first();
+    expect(row.thumbnail_path).toBeNull();
+    expect(row.face_status).toBe('pending');
+  });
+
   it('leaves an untagged photo completely alone', async () => {
     const { photoId } = await seed({
       orientation: null, storedWidth: 400, storedHeight: 200, faceStatus: 'done',

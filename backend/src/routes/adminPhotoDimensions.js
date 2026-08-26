@@ -673,15 +673,22 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
             // Face boxes live in ORIGINAL pixel space and are scaled by
             // photo.width at read time, so ANY change to the stored dimensions
             // invalidates them — not only one caused by rotation.
-            const facesStale = dimsWrong || hasOrientationTransform(metadata);
+            // A 5-8 rotation changes the dimensions, so a tagged photo whose
+            // stored dimensions are ALREADY oriented must have been ingested
+            // after #1185 — its renditions are correct and re-clearing them
+            // would delete valid files and rescan faces for nothing. 2, 3 and
+            // 4 leave dimensions untouched, so they carry no such evidence and
+            // are invalidated once; the marker stops it happening twice.
+            // A square image is the exception within 5-8: the rotation is real
+            // but the dimensions come out identical, so it carries no evidence
+            // either and has to be treated like 2/3/4.
+            const swapsDimensions = metadata.orientation >= 5 && metadata.orientation <= 8
+              && metadata.width !== metadata.height;
+            const cannotTell = hasOrientationTransform(metadata) && !swapsDimensions;
+            const facesStale = dimsWrong || cannotTell;
             // NOT the same question as "did the dimensions change". Orientation
-            // 2, 3 and 4 move every pixel while leaving width and height alone,
-            // as does 5-8 on a square image — and those are exactly the rows
-            // whose derived data is stale while a dimension check says nothing
-            // happened.
-            const transformed = hasOrientationTransform(metadata);
 
-            if (!dimsWrong && !transformed) {
+            if (!dimsWrong && !facesStale) {
               // Nothing to change, but record that it was looked at so a
               // re-run does not pay for reading it again.
               await db('photos').where(fenceOf(photo)).update({ orientation_checked_at: nowIso() });
@@ -702,6 +709,8 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
             // invalidation does not, the row keeps stale face boxes AND a
             // retry computes "already correct" — so nothing would ever fix it.
             let dimsWritten = 0;
+            let invalidated = 0;
+            let markerPending = false;
             await db.transaction(async (trx) => {
               if (dimsWrong) {
                 dimsWritten = await trx('photos').where(fence)
@@ -721,7 +730,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
                 // ensurePreviewImage would otherwise hand the rescan the old
                 // unrotated pixels, whose boxes then get scaled by the
                 // corrected dimensions.
-                await trx('photos').where(fence).update({
+                invalidated = await trx('photos').where(fence).update({
                   preview_path: null,
                   thumbnail_path: null,
                   hero_path: null,
@@ -743,8 +752,9 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
 
               // Same transaction as the work it records: a marker written
               // separately could survive a rolled-back correction and hide the
-              // row from every future run.
-              await trx('photos').where(fence).update({ orientation_checked_at: nowIso() });
+              // row from every future run. Withheld below if the storage
+              // cleanup then fails, so the row stays eligible for a retry.
+              markerPending = true;
             });
 
             // Outside the transaction on purpose: these delete files, and a
@@ -759,7 +769,12 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
             // tier helpers swallow their own errors, so the keys are re-checked
             // and anything still standing is counted — a run that could not
             // clear them should not report itself as clean.
-            if (facesStale) {
+            // Only when a fenced write actually landed. If the file was
+            // replaced mid-run every update matched zero rows, and deleting
+            // now would destroy renditions belonging to the REPLACEMENT —
+            // watermarks especially, which are keyed by photo id and so alias
+            // straight onto the new file.
+            if (facesStale && invalidated > 0) {
               const storage = getStorage();
               for (const key of [photo.preview_path, photo.thumbnail_path, photo.hero_path, photo.watermark_path]) {
                 if (key) await storage.delete(key).catch(() => {});
@@ -780,11 +795,19 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
               const stuck = survivors.filter(Boolean).length;
               if (stuck) {
                 staleTiers += stuck;
+                // Leave the row unmarked so the ordinary (non-force) re-run
+                // the UI recommends actually finds it again. Marking it here
+                // would make that advice impossible to follow.
+                markerPending = false;
                 logger.warn(
                   `Orientation backfill: ${stuck} tier(s) survived deletion for photo ${photo.id} — `
                   + 'they will keep serving unrotated until storage is writable and this is re-run'
                 );
               }
+            }
+
+            if (markerPending) {
+              await db('photos').where(fence).update({ orientation_checked_at: nowIso() });
             }
 
             // From the affected-row count, not the intent: if the fence

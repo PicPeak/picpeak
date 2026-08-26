@@ -2353,7 +2353,16 @@ router.get('/:slug/photo/:photoId',
       const watermarkHash = watermarkSettings?.enabled
         ? `-wm${watermarkSettings.opacity}${watermarkSettings.position}${watermarkSettings.size}`
         : '-nowm';
-      const etag = `"${photoId}-${mtimeMs}${watermarkHash}"`;
+      // orientation_checked_at participates because the backfill (#1198) can
+      // change these bytes without touching either of the other two inputs:
+      // it rewrites the derived renditions while the ORIGINAL's mtime and the
+      // watermark settings both stay exactly as they were. Without it a guest
+      // holding a pre-fix ETag keeps getting 304 and keeps their cached
+      // sideways image, however many times the backfill succeeds.
+      const orientationVersion = photo.orientation_checked_at
+        ? `-o${new Date(photo.orientation_checked_at).getTime()}`
+        : '';
+      const etag = `"${photoId}-${mtimeMs}${watermarkHash}${orientationVersion}"`;
 
       if (req.headers['if-none-match'] === etag) {
         return res.status(304).end();
