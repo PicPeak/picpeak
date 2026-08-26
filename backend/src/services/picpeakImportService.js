@@ -27,6 +27,11 @@ const { hasColumnCached } = require('../utils/schemaCache');
 const { setSessionsValidAfter } = require('../utils/sessionCutoff');
 const logger = require('../utils/logger');
 const { PICPEAK_FORMAT_VERSION, EXCLUDED_TABLES, listDataTables } = require('./picpeakExportService');
+const {
+  dedupeExternalPhotos,
+  createExternalRelpathIndex,
+  dropExternalRelpathIndex,
+} = require('./externalPhotoDedupe');
 
 const isPostgres = () => knexConfig.client === 'pg';
 
@@ -348,6 +353,19 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       await trx.raw('PRAGMA defer_foreign_keys = ON');
     }
 
+    // Suspending FK enforcement does not suspend UNIQUE indexes on either
+    // engine (#1162). A backup taken before migration 186 carries the
+    // duplicate photo rows that migration exists to remove, so batchInsert
+    // below would hit photos_event_external_relpath_uniq and roll the whole
+    // restore back — after every table had already been emptied. Drop it for
+    // the load and rebuild it once the rows are deduped, which is the same
+    // repair the migration performs.
+    let hadRelpathIndex = false;
+    if (await trx.schema.hasColumn('photos', 'external_relpath')) {
+      hadRelpathIndex = true;
+      await dropExternalRelpathIndex(trx);
+    }
+
     for (const table of tables) {
       await trx(table).del();
     }
@@ -382,6 +400,18 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       }
       prepared = serialiseJsonColumns(prepared, toSerialise);
       await trx.batchInsert(table, prepared, 100);
+    }
+
+    // Restore the constraint the load ran without. Deduping first because the
+    // incoming rows may be exactly the duplicates migration 186 removes; the
+    // index creation then also proves the repair worked, inside the same
+    // transaction that would otherwise leave the target unprotected.
+    if (hadRelpathIndex) {
+      const removed = await dedupeExternalPhotos(trx);
+      if (removed) {
+        logger.info(`picpeakImport: removed ${removed} duplicate external photo row(s) from the archive (#1162)`);
+      }
+      await createExternalRelpathIndex(trx);
     }
 
     const operatorId = await reinjectCurrentAdmin(trx, currentAdmin);
