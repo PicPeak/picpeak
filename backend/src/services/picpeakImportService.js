@@ -27,6 +27,11 @@ const { hasColumnCached } = require('../utils/schemaCache');
 const { setSessionsValidAfter } = require('../utils/sessionCutoff');
 const logger = require('../utils/logger');
 const { PICPEAK_FORMAT_VERSION, EXCLUDED_TABLES, listDataTables } = require('./picpeakExportService');
+const {
+  dedupeExternalPhotos,
+  createExternalRelpathIndex,
+  dropExternalRelpathIndex,
+} = require('./externalPhotoDedupe');
 
 const isPostgres = () => knexConfig.client === 'pg';
 
@@ -348,6 +353,19 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       await trx.raw('PRAGMA defer_foreign_keys = ON');
     }
 
+    // Suspending FK enforcement does not suspend UNIQUE indexes on either
+    // engine (#1162). A backup taken before migration 186 carries the
+    // duplicate photo rows that migration exists to remove, so batchInsert
+    // below would hit photos_event_external_relpath_uniq and roll the whole
+    // restore back — after every table had already been emptied. Drop it for
+    // the load and rebuild it once the rows are deduped, which is the same
+    // repair the migration performs.
+    let hadRelpathIndex = false;
+    if (await trx.schema.hasColumn('photos', 'external_relpath')) {
+      hadRelpathIndex = true;
+      await dropExternalRelpathIndex(trx);
+    }
+
     for (const table of tables) {
       await trx(table).del();
     }
@@ -382,6 +400,18 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       }
       prepared = serialiseJsonColumns(prepared, toSerialise);
       await trx.batchInsert(table, prepared, 100);
+    }
+
+    // Restore the constraint the load ran without. Deduping first because the
+    // incoming rows may be exactly the duplicates migration 186 removes; the
+    // index creation then also proves the repair worked, inside the same
+    // transaction that would otherwise leave the target unprotected.
+    if (hadRelpathIndex) {
+      const removed = await dedupeExternalPhotos(trx);
+      if (removed) {
+        logger.info(`picpeakImport: removed ${removed} duplicate external photo row(s) from the archive (#1162)`);
+      }
+      await createExternalRelpathIndex(trx);
     }
 
     const operatorId = await reinjectCurrentAdmin(trx, currentAdmin);
@@ -511,6 +541,38 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
 
     const filesRestored = await restoreFiles(staging);
 
+    // External media paths (#1163). knex_migrations is excluded from the
+    // archive, so migration 187 does not re-run after a restore — a pre-#1163
+    // backup would otherwise drop base-relative rows onto an instance that
+    // resolves them from the media root, and every original in the restored
+    // library would be unreachable with nothing logged. The fold is a no-op
+    // when the restored app_settings already carries the marker.
+    //
+    // BEFORE the face requeue below, and for the same reason that requeue sits
+    // after restoreFiles: the worker is live throughout. Queued first, it can
+    // claim an external row while the row is still base-relative, resolve it
+    // against the wrong path with the root-only resolver, and mark the photo
+    // failed — a state only an explicit Re-scan clears, and one the fold does
+    // not undo. Probing a cold mount takes long enough for that to be likely
+    // rather than theoretical.
+    let externalPathsConverted = true;
+    let externalPathError = null;
+    try {
+      const { foldExternalRelpaths } = require('./externalRelpathFold');
+      const result = await foldExternalRelpaths(db, (msg) => logger.info(`picpeakImport: external paths — ${msg}`));
+      if (result.folded || result.repaired) {
+        logger.info(`picpeakImport: folded ${result.folded} external path(s), repaired ${result.repaired}`);
+      }
+    } catch (err) {
+      // NOT swallowed as a footnote. The fold is transactional, so a failure
+      // leaves every external path in the pre-#1163 format while the running
+      // resolver reads from the media root — meaning every original in the
+      // restored library is unreachable. Reporting that as a clean restore
+      // sends the admin away believing it worked.
+      externalPathsConverted = false;
+      externalPathError = err.message;
+      logger.error(`picpeakImport: external path conversion FAILED — originals will not resolve until this is retried: ${err.message}`);
+    }
     // Face data (#1074): queue ONLY once the files are on disk. The archive
     // carries no face rows and the export blanked photos.face_status, but the
     // event toggles come across enabled, so the "enable" transition that
@@ -521,23 +583,44 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
     // instance's files or marks photos failed for originals that are not
     // there yet — and nothing re-queues them afterwards.
     try {
-      const requeued = await db('photos')
-        .whereIn('event_id', db('events').select('id').where('face_recognition_enabled', true))
-        .update({
-          face_status: 'pending', face_count: null, face_started_at: null, face_error: null,
-        });
-      if (requeued > 0) {
-        logger.info(`picpeakImport: queued ${requeued} photo(s) for face detection after import`);
+      if (!externalPathsConverted) {
+        // Queueing now would hand the live worker rows whose paths the
+        // resolver cannot follow, and it would mark them 'failed' — a state
+        // only an explicit Re-scan clears. Leave them unqueued; the operator
+        // re-runs the conversion and then re-scans.
+        logger.warn('picpeakImport: skipping face requeue — external paths are unconverted');
+      } else {
+        const requeued = await db('photos')
+          .whereIn('event_id', db('events').select('id').where('face_recognition_enabled', true))
+          .update({
+            face_status: 'pending', face_count: null, face_started_at: null, face_error: null,
+          });
+        if (requeued > 0) {
+          logger.info(`picpeakImport: queued ${requeued} photo(s) for face detection after import`);
+        }
       }
     } catch (err) {
       logger.debug?.(`picpeakImport: face requeue skipped: ${err.message}`);
     }
+
     const usesExternalMedia = await detectExternalMedia();
 
     logger.info(
       `[picpeak-import] restored ${tables.length} tables, ${filesRestored} files (externalMedia=${usesExternalMedia}, crossEngine=${crossEngine})`
     );
-    return { restored: true, tables: tables.length, filesRestored, usesExternalMedia, crossEngine, manifest };
+    return {
+      restored: true,
+      tables: tables.length,
+      filesRestored,
+      usesExternalMedia,
+      crossEngine,
+      manifest,
+      // Surfaced so the caller can warn rather than report an unqualified
+      // success: the rows and files are in place, but the external originals
+      // do not resolve until the conversion is retried (#1163).
+      externalPathsConverted,
+      externalPathError,
+    };
   } finally {
     await fsp.rm(staging, { recursive: true, force: true }).catch(() => {});
   }

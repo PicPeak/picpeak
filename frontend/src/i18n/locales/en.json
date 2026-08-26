@@ -1893,6 +1893,17 @@
       "inheritWith": "Inherit ({{value}})",
       "effective": "Currently hands out: {{standard}}",
       "pickerOn": "guests may choose another size"
+    },
+    "captureDates": {
+      "title": "Capture Dates",
+      "totalPhotos": "Total Photos",
+      "withDates": "With Capture Date",
+      "missingDates": "Missing Capture Date",
+      "button": "Backfill Capture Dates",
+      "running": "Backfilling...",
+      "noneToFill": "All photos already have a capture date",
+      "resultSuccess": "Last run: {{success}} updated, {{noExif}} with no date found, {{failed}} unreachable",
+      "description": "Backfill \"Date Taken\" from EXIF for photos imported before capture dates were read. External/reference imports never recorded one, so their galleries sort by import order instead of when the photos were taken."
     }
   },
   "analytics": {

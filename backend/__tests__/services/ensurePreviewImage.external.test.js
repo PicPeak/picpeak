@@ -91,15 +91,16 @@ describe('ensurePreviewImage — external/reference sources (#1078)', () => {
   it.each(['external', 'reference'])(
     'generates a downscaled preview for a %s photo off the media mount',
     async (sourceOrigin) => {
-      const relpath = `${sourceOrigin}-shot.jpg`;
-      await writeSourceJpeg(path.join(EXTERNAL_ROOT, EVENT.external_path, relpath));
+      const name = `${sourceOrigin}-shot.jpg`;
+      await writeSourceJpeg(path.join(EXTERNAL_ROOT, EVENT.external_path, name));
 
       const photo = {
         id: sourceOrigin === 'external' ? 101 : 102,
         event_id: EVENT.id,
         source_origin: sourceOrigin,
-        external_relpath: relpath,
-        filename: relpath,
+        // Relative to the media ROOT, not to event.external_path (#1163).
+        external_relpath: path.join(EVENT.external_path, name),
+        filename: name,
         preview_path: null,
       };
 
@@ -107,7 +108,7 @@ describe('ensurePreviewImage — external/reference sources (#1078)', () => {
 
       // Per-photo basename so two events referencing the same NAS filename
       // can't clobber each other's preview.
-      expect(key).toBe(`previews/preview_ext${photo.id}_${relpath}`);
+      expect(key).toBe(`previews/preview_ext${photo.id}_${name}`);
       expect(await storage.exists(key)).toBe(true);
 
       const meta = await sharp(storage.resolveLocalPath(key)).metadata();
@@ -124,14 +125,14 @@ describe('ensurePreviewImage — external/reference sources (#1078)', () => {
   );
 
   it('short-circuits on an existing valid preview instead of regenerating', async () => {
-    const relpath = 'already-previewed.jpg';
-    await writeSourceJpeg(path.join(EXTERNAL_ROOT, EVENT.external_path, relpath));
+    const name = 'already-previewed.jpg';
+    await writeSourceJpeg(path.join(EXTERNAL_ROOT, EVENT.external_path, name));
     const photo = {
       id: 103,
       event_id: EVENT.id,
       source_origin: 'external',
-      external_relpath: relpath,
-      filename: relpath,
+      external_relpath: path.join(EVENT.external_path, name),
+      filename: name,
       preview_path: null,
     };
 
@@ -179,19 +180,19 @@ describe('ensurePreviewImage — external/reference sources (#1078)', () => {
     // Pins why the /regenerate-previews caller must select source_origin:
     // an external row missing that column takes the managed path, where
     // resolvePhotoStorageKey yields null and generation is skipped.
-    const relpath = 'column-starved.jpg';
-    await writeSourceJpeg(path.join(EXTERNAL_ROOT, EVENT.external_path, relpath));
+    const name = 'column-starved.jpg';
+    await writeSourceJpeg(path.join(EXTERNAL_ROOT, EVENT.external_path, name));
     const starved = {
       id: 106,
       event_id: EVENT.id,
-      external_relpath: relpath,
+      external_relpath: path.join(EVENT.external_path, name),
       preview_path: null,
     };
 
     await expect(imageProcessor.ensurePreviewImage(starved)).resolves.toBeNull();
     await expect(
-      imageProcessor.ensurePreviewImage({ ...starved, source_origin: 'external', filename: relpath })
-    ).resolves.toBe(`previews/preview_ext106_${relpath}`);
+      imageProcessor.ensurePreviewImage({ ...starved, source_origin: 'external', filename: name })
+    ).resolves.toBe(`previews/preview_ext106_${name}`);
   });
 
   it('still routes managed photos through the storage backend', async () => {
