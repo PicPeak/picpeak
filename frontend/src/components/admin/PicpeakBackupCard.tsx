@@ -16,6 +16,11 @@ interface RestoreResult {
   tables: number;
   filesRestored: number;
   usesExternalMedia: boolean;
+  // False when the pre-#1163 external-path conversion failed. Rows and files
+  // are in place, but no external original resolves until it is retried — so
+  // this must not be presented as a plain success.
+  externalPathsConverted?: boolean;
+  externalPathError?: string | null;
   crossEngine?: boolean;
   sessionInvalidated?: boolean;
 }
@@ -115,7 +120,12 @@ export const PicpeakRestoreCard: React.FC = () => {
       const res = await api.post<RestoreResult>('/admin/backup/picpeak/import', fd);
       setResult(res.data);
       setPendingFile(null);
-      toast.success(t('backup.picpeak.restoreDone', 'Backup restored.'));
+      if (res.data?.externalPathsConverted === false) {
+        toast.error(t('backup.picpeak.externalPathsFailed',
+          'Backup restored, but external photo paths could not be converted — those originals will not load until this is retried.'));
+      } else {
+        toast.success(t('backup.picpeak.restoreDone', 'Backup restored.'));
+      }
       // The restore rewrote admin_users and the backend revoked our session
       // (ids may have shifted). Send the operator to a fresh login rather than
       // letting the now-stale token resolve to a different restored account.
@@ -167,6 +177,16 @@ export const PicpeakRestoreCard: React.FC = () => {
               {result.crossEngine && (
                 <p className="mt-0.5 text-xs text-green-700 dark:text-green-300">
                   {t('backup.picpeak.crossEngineNote', 'Cross-engine restore: a SQLite backup was converted onto this PostgreSQL instance.')}
+                </p>
+              )}
+              {result.externalPathsConverted === false && (
+                <p className="mt-2 flex items-start gap-1 text-xs text-red-800 dark:text-red-300">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <span>
+                    {t('backup.picpeak.externalPathsFailedDetail',
+                      'External photo paths were not converted, so every referenced original is currently unreachable. Re-run the restore or the pending migrations once the cause is resolved.')}
+                    {result.externalPathError ? ` (${result.externalPathError})` : ''}
+                  </span>
                 </p>
               )}
               {result.usesExternalMedia && (

@@ -81,6 +81,14 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
     if (!event) return res.status(404).json({ error: 'Event not found' });
 
     const baseAbs = resolveExternalPath({ external_path }, '');
+
+    // What gets STORED on the row (#1163). `f.rel` stays relative to the
+    // imported folder because the type inference below reads its first segment
+    // ('individual' / 'collages'); external_relpath is written relative to
+    // EXTERNAL_MEDIA_ROOT so the row does not depend on a column this very
+    // handler is about to overwrite.
+    const basePrefix = String(external_path).replace(/^\/+|\/+$/g, '');
+    const toRootRelative = (rel) => (basePrefix ? path.join(basePrefix, rel) : rel);
     // Collect files
     const files = recursive ? await walkDir(baseAbs, baseAbs) : (await fs.readdir(baseAbs, { withFileTypes: true }))
       .filter(e => e.isFile())
@@ -127,6 +135,8 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
       if (segs[0] === map.collages) type = 'collage';
       if (segs[0] === map.individual) type = 'individual';
 
+      const relFromRoot = toRootRelative(f.rel);
+
       try {
         // Fast path only. This SELECT settles the common case — a re-import of
         // a folder already in the event — without paying for a stat and a
@@ -136,7 +146,7 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
         // index from migration 176 is the guard, and the catch below is how
         // this loop converges when it fires.
         const exists = await db('photos')
-          .where({ event_id: eventId, external_relpath: f.rel })
+          .where({ event_id: eventId, external_relpath: relFromRoot })
           .first();
         if (exists) { skipped++; continue; }
         const stats = await fs.stat(f.full);
@@ -166,7 +176,7 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
               width,
               height,
               source_origin: 'external',
-              external_relpath: f.rel
+              external_relpath: relFromRoot
             })
             .returning('id');
         } catch (insertErr) {
@@ -214,7 +224,12 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
       }
     }
 
-    // Update event fields
+    // Safe for existing EXTERNAL rows as of #1163. It was not: relpaths were
+    // stored relative to external_path, so overwriting the column here rebased
+    // every row already in the event onto the new folder — quietly, because
+    // their thumbnails were already on local disk and the grid carried on
+    // rendering. Rows now carry a root-relative path and this write cannot
+    // reach them.
     await db('events').where('id', eventId).update({ source_mode: 'reference', external_path });
 
     await logActivity(

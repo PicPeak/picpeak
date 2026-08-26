@@ -94,6 +94,13 @@ async function list(relativePath = '') {
   return { path: relFromRoot, entries, canNavigateUp };
 }
 
+/**
+ * A path under an EVENT's configured base directory.
+ *
+ * Still the right resolver for anything that means "the folder this event was
+ * imported from" — the import walk in particular. It is NOT how a photo's
+ * original is found any more: see resolveExternalPhotoPath (#1163).
+ */
 function resolveExternalPath(event, relpath) {
   const root = getExternalMediaRoot();
   const base = event?.external_path ? path.join(event.external_path) : '';
@@ -101,9 +108,29 @@ function resolveExternalPath(event, relpath) {
   return safePathJoin(root, combined);
 }
 
+/**
+ * A photo's original, from the root (#1163).
+ *
+ * photos.external_relpath used to be stored relative to events.external_path,
+ * which made a row's meaning depend on a column on another table that every
+ * import overwrites. Importing a second folder into an event therefore rebased
+ * every row already in it — silently, because thumbnails are written to local
+ * storage during the import and the grid keeps rendering. One reporter had
+ * 7547 of 8004 rows resolving to files that did not exist.
+ *
+ * Root-relative makes a row self-describing: nothing an admin does to the event
+ * afterwards can move an already-imported photo. Migration 177 rewrote the
+ * existing rows.
+ */
+function resolveExternalPhotoPath(photo) {
+  const root = getExternalMediaRoot();
+  return safePathJoin(root, photo?.external_relpath || '');
+}
+
 module.exports = {
   getExternalMediaRoot,
   isUnderRoot,
   list,
   resolveExternalPath,
+  resolveExternalPhotoPath,
 };
