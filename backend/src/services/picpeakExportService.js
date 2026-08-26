@@ -29,7 +29,17 @@ const packageJson = require('../../package.json');
 const PICPEAK_FORMAT_VERSION = 1;
 
 // Never exported as data — the target owns these (its own migrations set them).
-const EXCLUDED_TABLES = new Set(['knex_migrations', 'knex_migrations_lock']);
+const EXCLUDED_TABLES = new Set([
+  'knex_migrations',
+  'knex_migrations_lock',
+  // Live lease state for the maintenance sweeps (#1181), not data. An archive
+  // taken while a sweep was running would otherwise carry is_running = true and
+  // a claim token belonging to a process on the source install. Restored within
+  // the staleness window, the target reports the job as running and refuses new
+  // POSTs, with no runner anywhere that could release it. The table is seeded
+  // by its migration, so the target already has the rows it needs.
+  'maintenance_jobs',
+]);
 
 // Storage subdirs holding non-recalculable blobs — always included.
 const DOC_DIRS = ['business-docs', 'uploads'];

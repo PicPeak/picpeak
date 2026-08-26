@@ -8,6 +8,7 @@ import {
   HardDrive,
   Activity,
   Ruler,
+  CalendarClock,
 } from 'lucide-react';
 import { Button, Card, Input } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
@@ -17,6 +18,7 @@ import { settingsService } from '../../../services/settings.service';
 import { useStatusTab } from '../hooks/useStatusTab';
 import { UpdateNotificationSettings } from '../components/UpdateNotificationSettings';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
+import { usePermission } from '../../../hooks/usePermission';
 
 const BYTES_PER_GB = 1024 * 1024 * 1024;
 
@@ -77,6 +79,36 @@ export const StatusTab: React.FC<StatusTabProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['photo-dimension-status'] });
+    },
+  });
+
+  // Capture dates (#1172). Same shape as the dimension repair above — a
+  // background pass over originals that resolves external rows properly — so
+  // it gets the same status/poll/mutation treatment.
+  // Gated on the same permission the endpoint requires, so a role without it
+  // never starts the poll. Without this the card would poll a 403 every ten
+  // seconds for anyone who can open the Status tab but cannot run the job —
+  // which on this branch is every built-in admin, since they hold settings.view
+  // but not settings.edit.
+  const canEditSettings = usePermission('settings.edit');
+
+  const { data: captureDateStatus } = useQuery({
+    queryKey: ['photo-capture-date-status'],
+    queryFn: async () => {
+      const res = await api.get('/admin/photos/repair-capture-dates/status');
+      return res.data;
+    },
+    enabled: isActive && canEditSettings,
+    refetchInterval: 10000,
+  });
+
+  const captureDateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/admin/photos/repair-capture-dates');
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['photo-capture-date-status'] });
     },
   });
 
@@ -604,6 +636,73 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                 : Number(dimensionStatus.withoutDimensions) === 0
                   ? t('settings.photoDimensions.noneToRepair')
                   : t('settings.photoDimensions.repairButton')}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Capture Dates (#1172) */}
+      {/* canEditSettings as well as the payload: TanStack keeps the cached
+          status after `enabled` flips false, so without it a built-in admin
+          logging in behind a settings.edit user inside the cache lifetime would
+          still be shown the card and a button whose POST 403s. */}
+      {captureDateStatus && canEditSettings && (
+        <Card padding="md">
+          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
+            <CalendarClock className="w-5 h-5" />
+            {t('settings.captureDates.title', 'Capture Dates')}
+          </h2>
+
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+            {t('settings.captureDates.description', 'Backfill "Date Taken" from EXIF for photos imported before capture dates were read. External/reference imports never recorded one, so their galleries sort by import order instead of when the photos were taken.')}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{captureDateStatus.total}</p>
+              <p className="text-xs text-neutral-600 dark:text-neutral-400">{t('settings.captureDates.totalPhotos', 'Total Photos')}</p>
+            </div>
+            <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-3 text-center">
+              <p className="text-2xl font-bold text-green-600 dark:text-green-400">{captureDateStatus.withCaptureDate}</p>
+              <p className="text-xs text-neutral-600 dark:text-neutral-400">{t('settings.captureDates.withDates', 'With Capture Date')}</p>
+            </div>
+            <div className={`rounded-lg p-3 text-center ${Number(captureDateStatus.withoutCaptureDate) > 0 ? 'bg-amber-50 dark:bg-amber-900/30' : 'bg-neutral-50 dark:bg-neutral-800'}`}>
+              <p className={`text-2xl font-bold ${Number(captureDateStatus.withoutCaptureDate) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-neutral-900 dark:text-neutral-100'}`}>{captureDateStatus.withoutCaptureDate}</p>
+              <p className="text-xs text-neutral-600 dark:text-neutral-400">{t('settings.captureDates.missingDates', 'Missing Capture Date')}</p>
+            </div>
+          </div>
+
+          {captureDateStatus.lastResult && (
+            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+              {/* Two buckets on purpose: "the mount is gone" and "these files
+                  carry no date" need different reactions. The middle number is
+                  worded as "no date found" rather than "without EXIF" because
+                  it also absorbs files whose metadata could not be parsed —
+                  extractCaptureDate returns null for those too. The last number
+                  is the one that means the storage could not be reached. */}
+              {t('settings.captureDates.resultSuccess', {
+                success: captureDateStatus.lastResult.success,
+                noExif: captureDateStatus.lastResult.noExif,
+                failed: captureDateStatus.lastResult.failed,
+                defaultValue: 'Last run: {{success}} updated, {{noExif}} with no date found, {{failed}} unreachable',
+              })}
+            </p>
+          )}
+
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => captureDateMutation.mutate()}
+              isLoading={captureDateMutation.isPending || captureDateStatus.isRunning}
+              disabled={Number(captureDateStatus.withoutCaptureDate) === 0 || captureDateStatus.isRunning}
+              leftIcon={<CalendarClock className="w-4 h-4" />}
+            >
+              {captureDateStatus.isRunning
+                ? t('settings.captureDates.running', 'Backfilling...')
+                : Number(captureDateStatus.withoutCaptureDate) === 0
+                  ? t('settings.captureDates.noneToFill', 'All photos already have a capture date')
+                  : t('settings.captureDates.button', 'Backfill Capture Dates')}
             </Button>
           </div>
         </Card>

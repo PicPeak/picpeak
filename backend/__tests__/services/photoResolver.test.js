@@ -2,10 +2,10 @@ const path = require('path');
 const mockPath = path;
 
 jest.mock('../../src/services/externalMediaService', () => ({
-  resolveExternalPath: jest.fn((event, relPath) => mockPath.join('/mock/external', event.external_path || '', relPath || '')),
+  resolveExternalPhotoPath: jest.fn((photo) => mockPath.join('/mock/external', photo.external_relpath || '')),
 }));
 
-const { resolveExternalPath } = require('../../src/services/externalMediaService');
+const { resolveExternalPhotoPath } = require('../../src/services/externalMediaService');
 const { resolvePhotoFilePath } = require('../../src/services/photoResolver');
 
 describe('resolvePhotoFilePath', () => {
@@ -46,24 +46,34 @@ describe('resolvePhotoFilePath', () => {
     expect(result).toBe(path.join(backendRoot, 'storage', 'events/active', 'wedding-party', 'hero.jpg'));
   });
 
-  it('delegates external photos to external media resolver', () => {
+  it('resolves an external photo from the media root, ignoring the event', () => {
     const event = { slug: 'fashion-show', source_mode: 'reference', external_path: 'picsum-demo' };
-    const photo = { source_origin: 'external', external_relpath: 'individual/look-01.jpg' };
+    const photo = { source_origin: 'external', external_relpath: 'picsum-demo/individual/look-01.jpg' };
 
     const result = resolvePhotoFilePath(event, photo);
 
-    expect(resolveExternalPath).toHaveBeenCalledWith(event, 'individual/look-01.jpg');
+    expect(resolveExternalPhotoPath).toHaveBeenCalledWith(photo);
     expect(result).toBe(path.join('/mock/external', 'picsum-demo', 'individual', 'look-01.jpg'));
   });
 
-  it('deduplicates folder names when event external path already ends with segment', () => {
-    const event = { slug: 'fashion-show', source_mode: 'reference', external_path: 'picsum-demo/individual' };
-    const photo = { source_origin: 'external', external_relpath: 'individual/look-02.jpg' };
+  it('does not move a photo when the event is repointed at another folder (#1163)', () => {
+    // The regression. Both events below hold the SAME row; only
+    // events.external_path differs, which is what a second import overwrites.
+    const photo = { source_origin: 'external', external_relpath: 'Trip/Leknes/_DSC0818.JPG' };
+    const before = { slug: 'trip', source_mode: 'reference', external_path: 'Trip' };
+    const after = { slug: 'trip', source_mode: 'reference', external_path: 'Trip/Subfolder' };
 
-    const result = resolvePhotoFilePath(event, photo);
+    expect(resolvePhotoFilePath(before, photo)).toBe(resolvePhotoFilePath(after, photo));
+  });
 
-    expect(resolveExternalPath).toHaveBeenCalledWith(event, 'look-02.jpg');
-    expect(result).toBe(path.join('/mock/external', 'picsum-demo/individual', 'look-02.jpg'));
+  it('keeps a first segment that repeats the base path', () => {
+    // The old duplicate-leaf-segment normalisation stripped this, which is
+    // corruption once the relpath is root-relative: `Trip/Trip/x.jpg` is a real
+    // layout, and the file is not at `Trip/x.jpg`.
+    const event = { slug: 'trip', source_mode: 'reference', external_path: 'Trip' };
+    const photo = { source_origin: 'external', external_relpath: 'Trip/Trip/x.jpg' };
+
+    expect(resolvePhotoFilePath(event, photo)).toBe(path.join('/mock/external', 'Trip', 'Trip', 'x.jpg'));
   });
 
   it('falls back to managed storage when external metadata is missing', () => {
@@ -72,7 +82,7 @@ describe('resolvePhotoFilePath', () => {
 
     const result = resolvePhotoFilePath(event, photo);
 
-    expect(resolveExternalPath).not.toHaveBeenCalled();
+    expect(resolveExternalPhotoPath).not.toHaveBeenCalled();
     expect(result).toBe(path.join(backendRoot, 'storage', 'events/active', 'fashion-show', 'new-upload.jpg'));
   });
 
