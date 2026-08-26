@@ -1213,7 +1213,10 @@
     "totalPhotos": "Photos totales",
     "activeEvents": "Événements actifs",
     "notConfigured": "Umami Analytics non configuré",
-    "configureInstructions": "Pour voir les données analytiques réelles, configurez Umami dans vos variables d'environnement et les paramètres du panneau d'administration."
+    "configureInstructions": "Pour voir les données analytiques réelles, configurez Umami dans vos variables d'environnement et les paramètres du panneau d'administration.",
+    "catalogedMedia": "Médias catalogués",
+    "storageUnavailable": "indisponible",
+    "storageNoMeasurement": "aucune mesure disponible"
   },
   "branding": {
     "title": "Marque & Thèmes",
@@ -1817,7 +1820,10 @@
       "category_hero_updated": "Photo de couverture de catégorie mise à jour",
       "public_site_reset_to_default": "Site public réinitialisé aux valeurs par défaut",
       "cms_page_logo_uploaded": "Logo de la page CMS téléversé : {{slug}}"
-    }
+    },
+    "catalogedMedia": "{{size}} catalogués",
+    "catalogedMediaOnly": "catalogué — les objets sont dans S3",
+    "storageUnavailable": "indisponible"
   },
   "acceptInvitation": {
     "title": "Accepter l'invitation",

@@ -361,7 +361,9 @@ const StorageInfo: React.FC = () => {
         <div className="flex items-center justify-between text-sm">
           <span className="text-neutral-700 dark:text-neutral-300">{t('admin.storageUsed')}</span>
           <span className="font-medium text-neutral-900 dark:text-neutral-100">
-            {settingsService.formatBytes(storageInfo.total_used)}
+            {/* `+` marks a floor: part of the storage root was unreadable, so
+                the real figure — and the percentage below — is higher (#1164). */}
+            {settingsService.formatBytes(storageInfo.total_used)}{storageInfo.storage_partial ? '+' : ''}
           </span>
         </div>
         <div className="mt-2 w-full bg-neutral-200 dark:bg-neutral-700 rounded-full h-2">

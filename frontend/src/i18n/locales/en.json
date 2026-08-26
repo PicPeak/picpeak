@@ -1650,7 +1650,10 @@
     "totalPhotos": "Total Photos",
     "activeEvents": "Active Events",
     "notConfigured": "Umami Analytics Not Configured",
-    "configureInstructions": "To see real analytics data, configure Umami in your environment variables and admin panel settings."
+    "configureInstructions": "To see real analytics data, configure Umami in your environment variables and admin panel settings.",
+    "catalogedMedia": "Catalogued media",
+    "storageUnavailable": "unavailable",
+    "storageNoMeasurement": "no measurement available"
   },
   "branding": {
     "title": "Branding & Themes",
@@ -2406,7 +2409,10 @@
       "email_template_created": "Email template created: {{template_key}}",
       "event_duplicated": "Event duplicated from {{source_event_name}}",
       "whatsapp_config_updated": "WhatsApp configuration updated"
-    }
+    },
+    "catalogedMedia": "{{size}} catalogued",
+    "catalogedMediaOnly": "catalogued — objects live in S3",
+    "storageUnavailable": "unavailable"
   },
   "acceptInvitation": {
     "title": "Accept Invitation",

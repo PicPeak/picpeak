@@ -61,7 +61,24 @@ export interface DashboardStats {
   activeEvents: number;
   expiringEvents: number;
   totalPhotos: number;
-  storageUsed: number;
+  // Real bytes under the storage root — thumbnails, previews, hero
+  // renditions, watermarks, download caches and any managed originals
+  // (#1164). Null when the measurement failed, or when the backend is S3 and
+  // the objects live in the bucket. The UI must show that as unavailable
+  // rather than substituting `catalogedBytes`: they are different quantities
+  // and on a reference-mode install they are wildly different.
+  storageUsed: number | null;
+  // 'catalog' when the backend is S3 — the objects are in the bucket, so no
+  // disk walk was made. 'unavailable' when a local walk was attempted and
+  // failed. Distinct because the first is a fact about the install and the
+  // second is a fault, and the UI must not claim S3 for a broken measurement.
+  storageMeasurement?: 'disk' | 'catalog' | 'unavailable';
+  storageBreakdown: Record<string, number> | null;
+  // The total is a floor: part of the storage root could not be read.
+  storagePartial?: boolean;
+  // Summed photos.size_bytes — what this endpoint used to label "storage
+  // used". In reference mode those files are on external storage.
+  catalogedBytes: number;
   totalViews: number;
   totalDownloads: number;
   viewsTrend: number;
