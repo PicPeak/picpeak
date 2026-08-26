@@ -430,8 +430,17 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('system.manage
             // large library, and an import or a replacement finishing meanwhile
             // has already written a date this pass would otherwise overwrite
             // with the same-or-worse value.
+            //
+            // Fenced on path and filename as well as the id, for the same reason
+            // the orientation backfill below is (#1199): replacePhoto — reachable
+            // from the replace_by_name upload path (adminPhotos.js) — swaps a NEW
+            // file under an existing row and rewrites path/filename. That
+            // replacement carries no date of its own, so captured_at is still
+            // NULL and whereNull alone would let the previous file's EXIF date
+            // land on it. Matching the identity that was actually read means the
+            // update affects no rows and the row is simply skipped.
             const updated = await db('photos')
-              .where({ id: photo.id })
+              .where({ id: photo.id, path: photo.path, filename: photo.filename })
               .whereNull('captured_at')
               .update({ captured_at: captured.toISOString() });
             if (updated) successCount++;
