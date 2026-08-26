@@ -3223,7 +3223,10 @@
       "sidecarStateNow": "Aktueller Zustand des Dienstes — einige der Fehler oben können eine andere Ursache haben, aber ein erneuter Scan wird erst nach der Behebung erfolgreich sein:",
       "consolidated_one": "Beim letzten Scan wurde {{count}} ähnliches Paar automatisch zusammengeführt. Prüfen Sie es unter „Personen verwalten“ — falsch Zusammengeführtes lässt sich mit „Trennen“ wieder aufteilen.",
       "consolidated_other": "Beim letzten Scan wurden {{count}} ähnliche Paare automatisch zusammengeführt. Prüfen Sie sie unter „Personen verwalten“ — falsch Zusammengeführtes lässt sich mit „Trennen“ wieder aufteilen."
-    }
+    },
+    "catalogedMedia": "{{size}} katalogisiert",
+    "storageUnavailable": "nicht verfügbar",
+    "catalogedMediaOnly": "katalogisiert — Objekte liegen in S3"
   },
   "acceptInvitation": {
     "title": "Einladung annehmen",
@@ -3345,7 +3348,10 @@
     "totalPhotos": "Gesamte Fotos",
     "activeEvents": "Aktive Veranstaltungen",
     "notConfigured": "Umami Analytics nicht konfiguriert",
-    "configureInstructions": "Um echte Analysedaten zu sehen, konfigurieren Sie Umami in Ihren Umgebungsvariablen und Admin-Panel-Einstellungen."
+    "configureInstructions": "Um echte Analysedaten zu sehen, konfigurieren Sie Umami in Ihren Umgebungsvariablen und Admin-Panel-Einstellungen.",
+    "catalogedMedia": "Katalogisierte Medien",
+    "storageUnavailable": "nicht verfügbar",
+    "storageNoMeasurement": "keine Messung verfügbar"
   },
   "email": {
     "title": "E-Mail-Konfiguration",

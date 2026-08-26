@@ -1109,7 +1109,10 @@
     "notConfigured": "Umami no está configurado",
     "configureInstructions": "Para ver datos reales, configura Umami en tus variables de entorno y en los ajustes.",
     "noData": "No hay datos disponibles",
-    "percentChange": "{{percent}}% respecto al periodo anterior"
+    "percentChange": "{{percent}}% respecto al periodo anterior",
+    "catalogedMedia": "Medios catalogados",
+    "storageUnavailable": "no disponible",
+    "storageNoMeasurement": "sin medición disponible"
   },
   "branding": {
     "title": "Marca y temas",
@@ -1598,7 +1601,10 @@
       "detail": {
         "labeled": "Etiquetas de color"
       }
-    }
+    },
+    "catalogedMedia": "{{size}} catalogados",
+    "storageUnavailable": "no disponible",
+    "catalogedMediaOnly": "catalogado — los objetos están en S3"
   },
   "permissions": {
     "insufficient": "No tienes permiso para realizar esta acción",

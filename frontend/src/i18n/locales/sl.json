@@ -1243,7 +1243,10 @@
     "totalPhotos": "Skupaj fotografij",
     "activeEvents": "Aktivni dogodki",
     "notConfigured": "Umami Analytics ni nastavljen",
-    "configureInstructions": "Za prikaz resničnih analitičnih podatkov nastavite Umami v okoljskih spremenljivkah in nastavitvah administratorske plošče."
+    "configureInstructions": "Za prikaz resničnih analitičnih podatkov nastavite Umami v okoljskih spremenljivkah in nastavitvah administratorske plošče.",
+    "catalogedMedia": "Katalogizirani mediji",
+    "storageUnavailable": "ni na voljo",
+    "storageNoMeasurement": "meritev ni na voljo"
   },
   "branding": {
     "title": "Blagovna znamka in teme",
@@ -1856,7 +1859,10 @@
       "category_hero_updated": "Hero fotografija kategorije posodobljena",
       "public_site_reset_to_default": "Javna stran ponastavljena na privzeto",
       "cms_page_logo_uploaded": "Logotip CMS strani naložen: {{slug}}"
-    }
+    },
+    "catalogedMedia": "{{size}} katalogizirano",
+    "storageUnavailable": "ni na voljo",
+    "catalogedMediaOnly": "katalogizirano — objekti so v S3"
   },
   "acceptInvitation": {
     "title": "Sprejmi povabilo",

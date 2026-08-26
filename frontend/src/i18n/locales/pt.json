@@ -1238,7 +1238,10 @@
     "totalPhotos": "Total de Fotos",
     "activeEvents": "Eventos Ativos",
     "notConfigured": "Umami Analytics não configurado",
-    "configureInstructions": "Para ver dados reais, configure o Umami nas variáveis de ambiente e no painel admin."
+    "configureInstructions": "Para ver dados reais, configure o Umami nas variáveis de ambiente e no painel admin.",
+    "catalogedMedia": "Mídia catalogada",
+    "storageUnavailable": "indisponível",
+    "storageNoMeasurement": "sem medição disponível"
   },
   "branding": {
     "title": "Marca e Temas",
@@ -1870,7 +1873,10 @@
       "category_hero_updated": "Foto principal da categoria atualizada",
       "public_site_reset_to_default": "Site público redefinido ao padrão",
       "cms_page_logo_uploaded": "Logotipo da página CMS carregado: {{slug}}"
-    }
+    },
+    "catalogedMedia": "{{size}} catalogados",
+    "storageUnavailable": "indisponível",
+    "catalogedMediaOnly": "catalogado — os objetos estão no S3"
   },
   "acceptInvitation": {
     "title": "Aceitar Convite",

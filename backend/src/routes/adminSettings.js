@@ -25,6 +25,7 @@ const { clearShareLinkSettingsCache } = require('../services/shareLinkService');
 const { invalidateSiteUrlCache, isEnvPinned, envPinnedBase } = require('../utils/frontendUrl');
 const { resetSecurityConfigCache } = require('../utils/authSecurity');
 const { errorResponse } = require('../utils/routeHelpers');
+const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const logger = require('../utils/logger');
 const router = express.Router();
 const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileSizeCache, MAX_ALLOWED_FILE_SIZE_MB } = require('../services/uploadSettings');
@@ -1717,7 +1718,8 @@ router.put('/seo', adminAuth, requirePermission('settings.edit'), async (req, re
 // Get storage info
 router.get('/storage/info', adminAuth, requirePermission('settings.view'), async (req, res) => {
   try {
-    // Get total storage used
+    // Catalogued original bytes. Reported, but no longer as "used" (#1164) —
+    // in reference mode those files are on a NAS and none of them are here.
     const totalStorage = await db('photos')
       .sum('size_bytes as total')
       .first();
@@ -1798,7 +1800,32 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
       }
     }
 
-    const totalUsed = totalStorage?.total || 0;
+    // What is actually on this disk. This is what the soft limit is compared
+    // against and what the recommendation below is derived from, so getting it
+    // from the catalogued originals was the load-bearing half of #1164: a
+    // reference-mode install got a disk-capacity recommendation computed from
+    // bytes that are not on the disk.
+    const catalogedBytes = Number(totalStorage?.total) || 0;
+    // Gated BEFORE the walk, not after. This endpoint is polled by the sidebar,
+    // and an S3 install that still has a large local tree from before the
+    // migration would otherwise pay a full stat-per-file traversal on every
+    // cold cache only to discard the result.
+    const usesLocalBackend = (process.env.STORAGE_BACKEND || 'local').toLowerCase() !== 's3';
+    let localUsage = null;
+    try {
+      if (usesLocalBackend) localUsage = await measureLocalStorageUsage();
+    } catch (err) {
+      logger.warn(`Storage measurement failed, falling back to catalogued bytes: ${err.message}`);
+    }
+    // On an S3 backend the originals, renditions, archives and download caches
+    // are all objects in the bucket, and STORAGE_PATH holds only incidental
+    // local files — so the walk would report near-zero and drag the soft-limit
+    // recommendation down with it. Those installs keep the catalogued figure,
+    // which is the approximation they had before #1164, and the response says
+    // which one this is so the UI can label it rather than implying a disk
+    // measurement it never made.
+    const measuredFromDisk = usesLocalBackend && !!localUsage;
+    const totalUsed = measuredFromDisk ? localUsage.total : catalogedBytes;
 
     const parseBytesValue = (value) => {
       const numeric = Number(value);
@@ -1920,6 +1947,13 @@ router.get('/storage/info', adminAuth, requirePermission('settings.view'), async
 
     res.json({
       total_used: totalUsed,
+      // What total_used used to be, kept so the UI can show both and the
+      // difference stops being invisible.
+      cataloged_bytes: catalogedBytes,
+      storage_measurement: measuredFromDisk ? 'disk' : (usesLocalBackend ? 'unavailable' : 'catalog'),
+      storage_breakdown: measuredFromDisk ? localUsage.breakdown : null,
+      storage_partial: measuredFromDisk ? localUsage.partial : false,
+      excluded_external_root: measuredFromDisk ? localUsage.excludedExternalRoot : null,
       archive_storage: archiveStorage,
       storage_by_event: storageByEvent,
       storage_limit: effectiveSoftLimit,

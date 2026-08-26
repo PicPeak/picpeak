@@ -1221,7 +1221,10 @@
     "totalPhotos": "Totaal foto's",
     "activeEvents": "Actieve evenementen",
     "notConfigured": "Umami Analytics niet geconfigureerd",
-    "configureInstructions": "Configureer Umami in uw omgevingsvariabelen en beheerdersinstellingen om echte statistieken te zien."
+    "configureInstructions": "Configureer Umami in uw omgevingsvariabelen en beheerdersinstellingen om echte statistieken te zien.",
+    "catalogedMedia": "Gecatalogiseerde media",
+    "storageUnavailable": "niet beschikbaar",
+    "storageNoMeasurement": "geen meting beschikbaar"
   },
   "branding": {
     "title": "Huisstijl & Thema's",
@@ -1845,7 +1848,10 @@
       "category_hero_updated": "Categorie hero-foto bijgewerkt",
       "public_site_reset_to_default": "Publieke site teruggezet naar standaard",
       "cms_page_logo_uploaded": "CMS-pagina-logo geüpload: {{slug}}"
-    }
+    },
+    "catalogedMedia": "{{size}} gecatalogiseerd",
+    "storageUnavailable": "niet beschikbaar",
+    "catalogedMediaOnly": "gecatalogiseerd — objecten staan in S3"
   },
   "acceptInvitation": {
     "title": "Uitnodiging accepteren",

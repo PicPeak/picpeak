@@ -86,7 +86,20 @@ export interface PasswordComplexitySettings {
 }
 
 export interface StorageInfo {
+  // Real bytes under the storage root (#1164), excluding the external media
+  // share. Was the summed size of the catalogued originals, which on a
+  // reference-mode install is the size of a NAS.
   total_used: number;
+  // Summed photos.size_bytes — what total_used used to be.
+  cataloged_bytes?: number;
+  // True when part of the storage root could not be read, so total_used is a
+  // floor rather than the answer. Anything comparing it against a limit has to
+  // say so, or an unreadable subtree reads as "safely under".
+  storage_partial?: boolean;
+  // Where total_used came from. 'disk' is the filesystem walk; 'catalog' means
+  // the backend is S3, where the objects are in the bucket and a walk of the
+  // local storage root would report near-zero.
+  storage_measurement?: 'disk' | 'catalog' | 'unavailable';
   archive_storage: number;
   storage_by_event: Array<{
     event_name: string;
