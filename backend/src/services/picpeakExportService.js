@@ -47,6 +47,13 @@ const EXCLUDED_TABLES = new Set([
   // they would attach to whatever ids the target's own re-scan happens to
   // mint, silently suppressing merge suggestions in unrelated galleries.
   'event_people_merge_dismissals',
+  // Live lease state for the maintenance sweeps (#1181), not data. An archive
+  // taken while a sweep was running would otherwise carry is_running = true and
+  // a claim token belonging to a process on the source install. Restored within
+  // the staleness window, the target reports the job as running and refuses new
+  // POSTs, with no runner anywhere that could release it. The table is seeded
+  // by its migration, so the target already has the rows it needs.
+  'maintenance_jobs',
 ]);
 
 // Storage subdirs holding non-recalculable blobs — always included.
