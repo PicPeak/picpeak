@@ -72,9 +72,11 @@ describe('ensureHeroImage — external sources', () => {
       id: sourceOrigin === 'external' ? 301 : 302,
       event_id: EVENT.id,
       source_origin: sourceOrigin,
-      // Relative to event.external_path, which is what THIS branch stores —
-      // the root-relative change is a separate stack (#1163).
-      external_relpath: name,
+      // Root-relative, as stored since #1163: external_relpath is resolved
+      // from EXTERNAL_MEDIA_ROOT, not from event.external_path. The base-
+      // relative form this fixture used to carry stopped resolving the moment
+      // that landed, and ensureHeroImage returned null.
+      external_relpath: path.join(EVENT.external_path, name),
       filename: name,
       hero_path: null,
     };
@@ -94,7 +96,7 @@ describe('ensureHeroImage — external sources', () => {
   it('returns null rather than throwing when the external source is gone', async () => {
     const photo = {
       id: 303, event_id: EVENT.id, source_origin: 'external',
-      external_relpath: 'not-on-the-mount.jpg', filename: 'not-on-the-mount.jpg', hero_path: null,
+      external_relpath: path.join(EVENT.external_path, 'not-on-the-mount.jpg'), filename: 'not-on-the-mount.jpg', hero_path: null,
     };
 
     await expect(imageProcessor.ensureHeroImage(photo)).resolves.toBeNull();
