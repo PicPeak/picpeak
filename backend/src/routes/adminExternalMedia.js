@@ -8,7 +8,7 @@ const { list, resolveExternalPath, getExternalMediaRoot } = require('../services
 const { db, logActivity } = require('../database/db');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
-const { generateThumbnail } = require('../services/imageProcessor');
+const { generateThumbnail, extractCaptureDate } = require('../services/imageProcessor');
 const { isUniqueViolation } = require('../utils/dbErrors');
 
 const router = express.Router();
@@ -208,6 +208,27 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
           logger.warn(`Could not extract dimensions for ${f.rel}: ${dimErr.message}`);
         }
 
+        // Capture date from EXIF (#1172). Managed uploads get this from
+        // photoProcessor, which external media never goes through — so
+        // captured_at stayed NULL for every externally imported photo, and the
+        // gallery's "Date Taken" sort silently degraded into import order via
+        // its COALESCE fallback. On a library imported in two batches that put
+        // the first days of a trip after the last ones.
+        //
+        // Read here because the file is already open a few lines above for the
+        // dimensions, so this costs one more read of the same source rather
+        // than a second pass over the mount.
+        //
+        // Best-effort, exactly like the dimensions: a source without EXIF, or
+        // one Sharp/exifr cannot parse, imports with captured_at NULL and
+        // falls back to uploaded_at as before.
+        let capturedAt = null;
+        try {
+          capturedAt = await extractCaptureDate(f.full);
+        } catch (dateErr) {
+          logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
+        }
+
         let inserted;
         try {
           inserted = await db('photos')
@@ -222,7 +243,12 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
               width,
               height,
               source_origin: 'external',
-              external_relpath: relFromRoot
+              external_relpath: relFromRoot,
+              // .toISOString() rather than the Date: inside jest, Dates handed
+              // to the sqlite3 binding land as the literal string
+              // "[object Object]" (see CLAUDE.md). Strings round-trip on both
+              // engines.
+              captured_at: capturedAt ? capturedAt.toISOString() : null
             })
             .returning('id');
         } catch (insertErr) {
