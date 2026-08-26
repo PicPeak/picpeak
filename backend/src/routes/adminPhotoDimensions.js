@@ -73,13 +73,6 @@ function startLeaseKeeper(jobName, token) {
 // not start a whole-library scan or touch another owner's events.
 router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
-    // Normally this job only fills rows that have no dimensions at all.
-    // `recompute` widens it to every image row (#1185): a library that
-    // predates the orientation fix has BOTH dimensions stored, just in the
-    // raw order, so the NULL filter never reaches them — and once their
-    // thumbnails regenerate rotated, the grid sizes a portrait photo with a
-    // landscape ratio. Opt-in because it re-reads every original.
-    const recompute = req.body?.recompute === true || req.query?.recompute === 'true';
     // Claimed before the candidate query, not after: that query is an await,
     // and two requests arriving inside it would both read "not running" and
     // both start a pass. The claim is a conditional UPDATE, so it settles the
@@ -99,10 +92,8 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
     try {
       photos = await db('photos')
         .join('events', 'photos.event_id', 'events.id')
-        .modify((q) => {
-          if (!recompute) q.where(function () {
-            this.whereNull('photos.width').orWhereNull('photos.height');
-          });
+        .where(function () {
+          this.whereNull('photos.width').orWhereNull('photos.height');
         })
         .where(function () {
           this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
@@ -110,9 +101,6 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
         .select(
           'photos.id', 'photos.path', 'photos.filename',
           'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
-          // Needed to tell a row that actually changed from one merely re-read:
-          // only a real change invalidates that photo's face data.
-          'photos.width', 'photos.height',
           'events.source_mode', 'events.external_path', 'events.slug'
         );
     } catch (err) {
@@ -149,7 +137,6 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
 
       let successCount = 0;
       let errorCount = 0;
-      let requeuedFaces = 0;
       let lostClaim = false;
 
       // Everything below runs detached from the request, so an unexpected
@@ -187,10 +174,6 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
             const dims = require('../services/imageProcessor').orientedDimensions(metadata);
 
             if (dims.width && dims.height) {
-              // Only the rows that actually change matter for the face
-              // requeue below, so notice before writing.
-              const changed = photo.width !== dims.width || photo.height !== dims.height;
-
               await db('photos')
                 .where({ id: photo.id })
                 .update({
@@ -198,26 +181,6 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
                   height: dims.height
                 });
               successCount++;
-
-              // A changed orientation invalidates any face data this photo
-              // already has (#1185). Detection runs against the preview and
-              // stores boxes in ORIGINAL pixel space, scaled by
-              // `photo.width / previewMeta.width` (faceProcessor.js:220-224) —
-              // so boxes recorded before the fix are in the raw coordinate
-              // system while the preview now regenerates rotated, and the
-              // overlays crop the wrong region.
-              //
-              // Queued rather than deleted: the row keeps its identity and the
-              // face queue re-detects it. whereNotNull so installs that never
-              // enabled the feature are left alone, and so a photo already
-              // waiting in the queue is not disturbed.
-              if (changed) {
-                requeuedFaces += await db('photos')
-                  .where({ id: photo.id })
-                  .whereNotNull('face_status')
-                  .whereNot('face_status', 'pending')
-                  .update({ face_status: 'pending' });
-              }
 
               if (successCount % 50 === 0) {
                 logger.info(`Dimension repair progress: ${successCount} updated...`);
@@ -239,13 +202,8 @@ router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'),
           logger.warn(`Dimension repair stopped: claim taken over after ${successCount} updated, ${errorCount} errors`);
           return;
         }
-        await maintenanceJobs.release(JOB_DIMENSION_REPAIR, token, {
-          success: successCount, failed: errorCount, requeuedFaces,
-        });
-        logger.info(
-          `Dimension repair complete: ${successCount} success, ${errorCount} errors`
-          + (requeuedFaces ? `, ${requeuedFaces} photo(s) requeued for face scanning` : '')
-        );
+        await maintenanceJobs.release(JOB_DIMENSION_REPAIR, token, { success: successCount, failed: errorCount });
+        logger.info(`Dimension repair complete: ${successCount} success, ${errorCount} errors`);
       } catch (err) {
         logger.error('Dimension repair aborted:', err);
         await maintenanceJobs
