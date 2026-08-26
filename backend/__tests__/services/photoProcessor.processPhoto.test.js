@@ -73,6 +73,15 @@ jest.mock('../../src/services/imageProcessor', () => {
     generateThumbnail: mockGenerateThumbnail,
     generateVideoPlaceholder: jest.fn(async (filename) => `thumbnails/thumb_${filename.replace(/\.[^.]+$/, '')}.jpg`),
     extractCaptureDate: mockExtractCaptureDate,
+    // processPhoto routes stored dimensions through this to get the displayed
+    // ones (#1185). Mirrored rather than requireActual'd, because pulling the
+    // real module in here would drag its database dependency into the mock
+    // factory. Kept faithful to imageProcessor.orientedDimensions.
+    orientedDimensions: jest.fn((m) => {
+      if (!m || !m.width || !m.height) return { width: null, height: null };
+      const swap = m.orientation >= 5 && m.orientation <= 8;
+      return { width: swap ? m.height : m.width, height: swap ? m.width : m.height };
+    }),
     withLocalCopy: jest.fn(async (key, fn) =>
       fn(`/tmp/local-copy-${require('path').basename(key)}`)
     ),

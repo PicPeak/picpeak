@@ -8,7 +8,7 @@ const { list, resolveExternalPath, getExternalMediaRoot } = require('../services
 const { db, logActivity } = require('../database/db');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
-const { generateThumbnail, extractCaptureDate } = require('../services/imageProcessor');
+const { generateThumbnail, extractCaptureDate, orientedDimensions } = require('../services/imageProcessor');
 const { isUniqueViolation } = require('../utils/dbErrors');
 
 const router = express.Router();
@@ -202,8 +202,10 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
         let height = null;
         try {
           const metadata = await sharp(f.full).metadata();
-          width = metadata.width || null;
-          height = metadata.height || null;
+          // Oriented, not raw: a portrait shot from a body that tags rather
+          // than rotates reports landscape dimensions, and the grid would size
+          // its tile from those (#1185).
+          ({ width, height } = orientedDimensions(metadata));
         } catch (dimErr) {
           logger.warn(`Could not extract dimensions for ${f.rel}: ${dimErr.message}`);
         }
