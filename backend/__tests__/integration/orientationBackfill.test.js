@@ -77,6 +77,7 @@ describe('orientation backfill (#1198)', () => {
     orientation, storedWidth, storedHeight, faceStatus = null,
     previewPath = 'previews/prev_orientbf.jpg', archived = false, filename = 'p.jpg',
     thumbnailPath = 'thumbnails/thumb_orientbf.jpg', heroPath = 'heroes/hero_orientbf.jpg',
+    watermarkPath = 'watermarks/wm_orientbf.jpg', checkedAt = null,
   }) {
     await db('photos').del();
     await db('events').del();
@@ -96,6 +97,7 @@ describe('orientation backfill (#1198)', () => {
       event_id: eventId, filename, path: `orientbf/${filename}`, type: 'individual',
       width: storedWidth, height: storedHeight, face_status: faceStatus,
       preview_path: previewPath, thumbnail_path: thumbnailPath, hero_path: heroPath,
+      watermark_path: watermarkPath, orientation_checked_at: checkedAt,
       uploaded_at: new Date().toISOString(),
     }).returning('id');
     return { eventId, photoId: typeof p === 'object' ? p.id : p };
@@ -185,6 +187,71 @@ describe('orientation backfill (#1198)', () => {
     expect(row.width).toBe(400);            // untouched
     expect(row.face_status).toBe('done');   // not requeued
     expect(row.thumbnail_path).toBe('thumbnails/thumb_orientbf.jpg');
+  });
+
+  it('is idempotent — a second run finds nothing left to do', async () => {
+    // The trigger is the EXIF tag on the ORIGINAL, which correcting a photo
+    // never changes. Without a marker every re-run would throw away the
+    // renditions it had just regenerated and requeue every completed face
+    // scan — on a face-enabled install, re-detecting the whole library.
+    await seed({ orientation: 6, storedWidth: 400, storedHeight: 200, faceStatus: 'done' });
+
+    expect((await run()).body.count).toBe(1);
+    const first = await settle();
+    expect(first.body.lastResult.corrected).toBe(1);
+
+    expect((await run()).body.count).toBe(0);
+  });
+
+  it('force revisits rows it has already checked', async () => {
+    await seed({
+      orientation: 6, storedWidth: 200, storedHeight: 400,
+      checkedAt: new Date().toISOString(),
+    });
+
+    expect((await run()).body.count).toBe(0);
+    const forced = await request(app).post('/api/admin/photos/repair-orientation').send({ force: true });
+    expect(forced.body.count).toBe(1);
+    await settle();
+  });
+
+  it('clears the watermarked rendition, which is what a guest actually sees', async () => {
+    // gallery.js serves watermark_path ahead of the original when branding
+    // watermarking is on.
+    const { photoId } = await seed({ orientation: 6, storedWidth: 400, storedHeight: 200 });
+
+    await run();
+    await settle();
+
+    expect((await db('photos').where({ id: photoId }).first()).watermark_path).toBeNull();
+  });
+
+  it('does not report stale tiers after a clean run', async () => {
+    // storage.stat() RESOLVES with null for a missing key rather than
+    // rejecting, so counting "the promise settled" marked every deleted and
+    // never-created tier as a survivor and told the operator to re-run.
+    await seed({ orientation: 6, storedWidth: 400, storedHeight: 200 });
+
+    await run();
+    const done = await settle();
+
+    expect(done.body.lastResult.staleTiers).toBe(0);
+  });
+
+  it('requeues faces when only the dimensions were wrong', async () => {
+    // No rotation involved: boxes are scaled by photo.width at read time, so
+    // any change to the stored dimensions invalidates them.
+    const { photoId } = await seed({
+      orientation: null, storedWidth: 999, storedHeight: 111, faceStatus: 'done',
+    });
+
+    await run();
+    const done = await settle();
+
+    const row = await db('photos').where({ id: photoId }).first();
+    expect(row.width).toBe(400);
+    expect(row.face_status).toBe('pending');
+    expect(done.body.lastResult.requeuedFaces).toBe(1);
   });
 
   it('requeues an orientation that moves pixels without moving dimensions', async () => {

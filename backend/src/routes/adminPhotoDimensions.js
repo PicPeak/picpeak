@@ -540,6 +540,13 @@ router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.
  */
 router.post('/repair-orientation', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
+    // The trigger is the EXIF tag on the original, and correcting a photo does
+    // not untag it — so without a marker every re-run would throw away the
+    // renditions it just regenerated and requeue every completed face scan.
+    // `force` is the escape hatch for an interrupted run, or for a future fix
+    // that needs to revisit rows this one already cleared.
+    const force = req.body?.force === true || req.query?.force === 'true';
+
     const token = await maintenanceJobs.claim(JOB_ORIENTATION_BACKFILL);
     if (!token) {
       return res.status(409).json({ error: 'Orientation backfill is already running' });
@@ -565,10 +572,18 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
         .where(function () {
           this.where('events.is_archived', false).orWhereNull('events.is_archived');
         })
+        .modify((q) => {
+          if (!force) q.whereNull('photos.orientation_checked_at');
+        })
         .select(
           'photos.id', 'photos.path', 'photos.filename',
           'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
-          'photos.width', 'photos.height', 'photos.preview_path', 'photos.face_status',
+          'photos.width', 'photos.height', 'photos.face_status',
+          // Every rendition the invalidation below deletes. Selecting only
+          // preview_path left thumbnail_path and hero_path undefined, so their
+          // database pointers were cleared while the objects stayed in storage.
+          'photos.preview_path', 'photos.thumbnail_path', 'photos.hero_path',
+          'photos.watermark_path',
           'events.source_mode', 'events.external_path', 'events.slug'
         );
     } catch (err) {
@@ -593,6 +608,14 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
       } = require('../services/imageProcessor');
       const { getStorage } = require('../services/storage');
       const { resolvePhotoStorageKey } = require('../services/photoResolver');
+
+      // Fenced on the identity that was measured, not just the id: replacePhoto
+      // — reachable from the replace_by_name upload path (adminPhotos.js) —
+      // swaps a new file under an existing row and rewrites path/filename, so a
+      // replacement landing mid-run would otherwise be given the previous
+      // file's dimensions and have its fresh renditions cleared.
+      const fenceOf = (photo) => ({ id: photo.id, path: photo.path, filename: photo.filename });
+      const nowIso = () => new Date().toISOString();
 
       let checked = 0;
       let corrected = 0;
@@ -647,6 +670,10 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
             if (!dims.width || !dims.height) continue;
 
             const dimsWrong = photo.width !== dims.width || photo.height !== dims.height;
+            // Face boxes live in ORIGINAL pixel space and are scaled by
+            // photo.width at read time, so ANY change to the stored dimensions
+            // invalidates them — not only one caused by rotation.
+            const facesStale = dimsWrong || hasOrientationTransform(metadata);
             // NOT the same question as "did the dimensions change". Orientation
             // 2, 3 and 4 move every pixel while leaving width and height alone,
             // as does 5-8 on a square image — and those are exactly the rows
@@ -654,7 +681,12 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
             // happened.
             const transformed = hasOrientationTransform(metadata);
 
-            if (!dimsWrong && !transformed) continue;
+            if (!dimsWrong && !transformed) {
+              // Nothing to change, but record that it was looked at so a
+              // re-run does not pay for reading it again.
+              await db('photos').where(fenceOf(photo)).update({ orientation_checked_at: nowIso() });
+              continue;
+            }
 
             // Every write is fenced on the identity we measured, not just the
             // id. replacePhoto — reachable from the replace_by_name upload path
@@ -664,18 +696,19 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
             // dimensions written over it and its fresh renditions cleared.
             // Matching path and filename too means the update affects no rows
             // instead.
-            const fence = { id: photo.id, path: photo.path, filename: photo.filename };
+            const fence = fenceOf(photo);
 
             // One transaction. If the dimension write commits and the
             // invalidation does not, the row keeps stale face boxes AND a
             // retry computes "already correct" — so nothing would ever fix it.
+            let dimsWritten = 0;
             await db.transaction(async (trx) => {
               if (dimsWrong) {
-                await trx('photos').where(fence)
+                dimsWritten = await trx('photos').where(fence)
                   .update({ width: dims.width, height: dims.height });
               }
 
-              if (transformed) {
+              if (facesStale) {
                 // Every cached rendition, not just the preview. All three are
                 // regenerated lazily and all three short-circuit on a file
                 // that is merely VALID — and a pre-fix sideways thumbnail is
@@ -692,6 +725,10 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
                   preview_path: null,
                   thumbnail_path: null,
                   hero_path: null,
+                  // gallery.js serves watermark_path ahead of the original when
+                  // branding watermarking is on, so a stale one is the single
+                  // most visible rendition of all.
+                  watermark_path: null,
                 });
 
                 // whereNotNull: face_status NULL means this photo was never
@@ -703,6 +740,11 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
                   .whereNot('face_status', 'pending')
                   .update({ face_status: 'pending' });
               }
+
+              // Same transaction as the work it records: a marker written
+              // separately could survive a rolled-back correction and hide the
+              // row from every future run.
+              await trx('photos').where(fence).update({ orientation_checked_at: nowIso() });
             });
 
             // Outside the transaction on purpose: these delete files, and a
@@ -717,17 +759,23 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
             // tier helpers swallow their own errors, so the keys are re-checked
             // and anything still standing is counted — a run that could not
             // clear them should not report itself as clean.
-            if (transformed) {
+            if (facesStale) {
               const storage = getStorage();
-              for (const key of [photo.preview_path, photo.thumbnail_path, photo.hero_path]) {
+              for (const key of [photo.preview_path, photo.thumbnail_path, photo.hero_path, photo.watermark_path]) {
                 if (key) await storage.delete(key).catch(() => {});
               }
               await deletePreviewTiers(photo).catch(() => {});
               await deleteThumbnailTiers(photo).catch(() => {});
 
+              // stat() RESOLVES with null for a missing key rather than
+              // rejecting, so testing only that the promise settled counted
+              // every deleted — and every never-created — tier as a survivor,
+              // and told the operator to re-run after a perfectly clean pass.
+              // A rejection is a real storage error, which is also not proof
+              // the object is gone, so it counts as stuck.
               const survivors = await Promise.all(
                 [...previewTierKeys(photo), ...thumbnailTierKeys(photo)]
-                  .map((k) => storage.stat(k).then(() => k).catch(() => null))
+                  .map((k) => storage.stat(k).then((st) => (st ? k : null)).catch(() => k))
               );
               const stuck = survivors.filter(Boolean).length;
               if (stuck) {
@@ -739,7 +787,10 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
               }
             }
 
-            if (dimsWrong) corrected++;
+            // From the affected-row count, not the intent: if the fence
+            // rejected the write because the file was replaced mid-run, the
+            // photo was not corrected and must not be reported as such.
+            if (dimsWritten > 0) corrected++;
 
             if ((corrected + requeuedFaces) % 50 === 0 && (corrected + requeuedFaces) > 0) {
               logger.info(`Orientation backfill progress: ${corrected} corrected...`);
