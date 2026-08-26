@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.46.5](https://github.com/PicPeak/picpeak/compare/v3.46.4...v3.46.5) (2026-08-26)
+
+
+### Bug Fixes
+
+* **admin:** make "Storage used" report storage used ([#1164](https://github.com/PicPeak/picpeak/issues/1164)) ([#1177](https://github.com/PicPeak/picpeak/issues/1177)) ([ac7ef26](https://github.com/PicPeak/picpeak/commit/ac7ef266dcd0d2b146c9739710c7631e672ef40f))
+* **admin:** move the maintenance sweeps' run state into the database ([#1181](https://github.com/PicPeak/picpeak/issues/1181)) ([#1188](https://github.com/PicPeak/picpeak/issues/1188)) ([58ccecc](https://github.com/PicPeak/picpeak/commit/58ccecc304ff308bac3d334553ca5c7ef282eae2))
+* **external-media:** one row per external file per event ([#1162](https://github.com/PicPeak/picpeak/issues/1162)) ([#1173](https://github.com/PicPeak/picpeak/issues/1173)) ([e9fcf49](https://github.com/PicPeak/picpeak/commit/e9fcf4960eb998c7e18528d773239f08e42e53bf))
+* **external-media:** record captured_at on import and add a backfill (stable) ([#1183](https://github.com/PicPeak/picpeak/issues/1183)) ([7f0ed23](https://github.com/PicPeak/picpeak/commit/7f0ed23ea4c1d9379272b7267da74bc3addc1318))
+* **external-media:** store external paths from the media root ([#1163](https://github.com/PicPeak/picpeak/issues/1163)) ([#1174](https://github.com/PicPeak/picpeak/issues/1174)) ([2b1c358](https://github.com/PicPeak/picpeak/commit/2b1c3588aeb26b1503445698efc6ffe4f483e645))
+* **gallery:** stop the lightbox loading originals to display a photo ([#1166](https://github.com/PicPeak/picpeak/issues/1166)) ([#1175](https://github.com/PicPeak/picpeak/issues/1175)) ([75facb4](https://github.com/PicPeak/picpeak/commit/75facb4d67d026d312a99252abc7a6c420b864fb))
+* **images:** respect EXIF orientation in thumbnails, heroes, previews and watermarks ([#1185](https://github.com/PicPeak/picpeak/issues/1185)) ([#1202](https://github.com/PicPeak/picpeak/issues/1202)) ([5559cd3](https://github.com/PicPeak/picpeak/commit/5559cd333d1a1f0b5ae22ad3361c13b3954ce344))
+* **previews:** preserve alpha and animation in the preview tier ([#1176](https://github.com/PicPeak/picpeak/issues/1176)) ([9ffbe2f](https://github.com/PicPeak/picpeak/commit/9ffbe2f98fba53b22200081ae1b6ad2f94003345))
+
 ## [3.46.4](https://github.com/PicPeak/picpeak/compare/v3.46.3...v3.46.4) (2026-08-23)
 
 
