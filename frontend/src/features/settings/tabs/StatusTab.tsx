@@ -689,6 +689,23 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                 failed: captureDateStatus.lastResult.failed,
                 defaultValue: 'Last run: {{success}} updated, {{noExif}} with no date found, {{failed}} unreachable',
               })}
+              {/* Only when it happened. Without it the three numbers above
+                  silently stop adding up to the count the run started with: a
+                  photo that was replaced, renamed or dated by someone else
+                  mid-run is read but not written.
+                  Deliberately says "not updated" and not "will be retried":
+                  one of the two ways to land here is another writer having
+                  filled captured_at, and that photo is finished, not backlog.
+                  The Missing Capture Date figure above is what says whether
+                  anything is actually left to do. */}
+              {Number(captureDateStatus.lastResult.skipped) > 0 && (
+                <span className="block text-amber-600 dark:text-amber-400 mt-1">
+                  {t('settings.captureDates.skipped', {
+                    count: captureDateStatus.lastResult.skipped,
+                    defaultValue: '{{count}} photo(s) were changed by something else while the run was reading them and were not updated.',
+                  })}
+                </span>
+              )}
             </p>
           )}
 

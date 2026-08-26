@@ -1618,6 +1618,7 @@
       "running": "Backfilling...",
       "noneToFill": "All photos already have a capture date",
       "resultSuccess": "Last run: {{success}} updated, {{noExif}} with no date found, {{failed}} unreachable",
+      "skipped": "{{count}} photo(s) were changed by something else while the run was reading them and were not updated.",
       "description": "Backfill \"Date Taken\" from EXIF for photos imported before capture dates were read. External/reference imports never recorded one, so their galleries sort by import order instead of when the photos were taken."
     }
   },
