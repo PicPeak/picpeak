@@ -1212,6 +1212,14 @@
       "noneToFill": "Vse fotografije že imajo datum zajema",
       "resultSuccess": "Zadnji zagon: {{success}} posodobljenih, {{noExif}} brez najdenega datuma, {{failed}} nedosegljivih",
       "description": "Dopolni »datum zajema« iz EXIF za fotografije, uvožene pred njegovim branjem. Zunanji uvozi ga niso zabeležili, zato se te galerije razvrščajo po vrstnem redu uvoza namesto po času zajema."
+    },
+    "orientationBackfill": {
+      "title": "Usmerjenost fotografij",
+      "description": "Ponovno prebere zapis EXIF o usmerjenosti za fotografije, uvožene pred popravkom vrtenja, popravi shranjene mere ter odstrani sličice, predoglede in glavne slike, ustvarjene iz nezavrtenih izvirnikov. Spremenjene so samo fotografije, katerih usmerjenost se dejansko spremeni.",
+      "button": "Popravi usmerjenost",
+      "running": "Preverjanje usmerjenosti...",
+      "resultSuccess": "Zadnji zagon: {{checked}} preverjenih, {{corrected}} popravljenih, {{requeued}} znova uvrščenih v prepoznavo obrazov, {{failed}} nedosegljivih",
+      "staleTiers": "{{count}} predpomnjenih velikosti ni bilo mogoče izbrisati in bodo še naprej prikazovale staro usmerjenost — ponovite, ko bo shramba zapisljiva."
     }
   },
   "analytics": {

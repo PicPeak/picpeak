@@ -76,6 +76,7 @@ describe('orientation backfill (#1198)', () => {
   async function seed({
     orientation, storedWidth, storedHeight, faceStatus = null,
     previewPath = 'previews/prev_orientbf.jpg', archived = false, filename = 'p.jpg',
+    thumbnailPath = 'thumbnails/thumb_orientbf.jpg', heroPath = 'heroes/hero_orientbf.jpg',
   }) {
     await db('photos').del();
     await db('events').del();
@@ -94,7 +95,8 @@ describe('orientation backfill (#1198)', () => {
     const [p] = await db('photos').insert({
       event_id: eventId, filename, path: `orientbf/${filename}`, type: 'individual',
       width: storedWidth, height: storedHeight, face_status: faceStatus,
-      preview_path: previewPath, uploaded_at: new Date().toISOString(),
+      preview_path: previewPath, thumbnail_path: thumbnailPath, hero_path: heroPath,
+      uploaded_at: new Date().toISOString(),
     }).returning('id');
     return { eventId, photoId: typeof p === 'object' ? p.id : p };
   }
@@ -129,6 +131,60 @@ describe('orientation backfill (#1198)', () => {
     expect(row.preview_path).toBeNull();
     expect(row.face_status).toBe('pending');
     expect(done.body.lastResult.requeuedFaces).toBe(1);
+  });
+
+  it('clears the thumbnail and hero too, not just the preview', async () => {
+    // The miss that mattered most: ensureThumbnail and ensureHeroImage return
+    // their cached file whenever it is merely VALID, and a pre-fix sideways
+    // thumbnail is perfectly valid. Clearing only the preview fixed the face
+    // data and left the gallery rendering the old sideways image inside a
+    // newly-corrected portrait tile.
+    const { photoId } = await seed({ orientation: 6, storedWidth: 400, storedHeight: 200 });
+
+    await run();
+    await settle();
+
+    const row = await db('photos').where({ id: photoId }).first();
+    expect(row.preview_path).toBeNull();
+    expect(row.thumbnail_path).toBeNull();
+    expect(row.hero_path).toBeNull();
+  });
+
+  it('leaves the renditions of an untransformed photo alone', async () => {
+    // Nothing moved, so nothing cached is stale — clearing them would make a
+    // routine run regenerate the whole library for no reason.
+    const { photoId } = await seed({ orientation: null, storedWidth: 400, storedHeight: 200 });
+
+    await run();
+    await settle();
+
+    const row = await db('photos').where({ id: photoId }).first();
+    expect(row.thumbnail_path).toBe('thumbnails/thumb_orientbf.jpg');
+    expect(row.hero_path).toBe('heroes/hero_orientbf.jpg');
+    expect(row.preview_path).toBe('previews/prev_orientbf.jpg');
+  });
+
+  it('does not touch a row whose file was replaced while it was reading', async () => {
+    // replacePhoto swaps a new file under an existing row and rewrites
+    // path/filename (reachable from replace_by_name). The writes are fenced on
+    // the identity that was measured, so a replacement that lands mid-run is
+    // left entirely alone rather than being given the previous file's
+    // dimensions and having its fresh renditions cleared.
+    const { photoId } = await seed({
+      orientation: 6, storedWidth: 400, storedHeight: 200, faceStatus: 'done',
+    });
+
+    const res = await run();
+    expect(res.body.count).toBe(1);
+    // Simulate the replacement landing before the loop writes.
+    await db('photos').where({ id: photoId })
+      .update({ path: 'orientbf/replaced.jpg', filename: 'replaced.jpg' });
+    await settle();
+
+    const row = await db('photos').where({ id: photoId }).first();
+    expect(row.width).toBe(400);            // untouched
+    expect(row.face_status).toBe('done');   // not requeued
+    expect(row.thumbnail_path).toBe('thumbnails/thumb_orientbf.jpg');
   });
 
   it('requeues an orientation that moves pixels without moving dimensions', async () => {

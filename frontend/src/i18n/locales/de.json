@@ -2363,6 +2363,14 @@
       "noneToFill": "Alle Fotos haben bereits ein Aufnahmedatum",
       "resultSuccess": "Letzter Lauf: {{success}} aktualisiert, {{noExif}} ohne gefundenes Datum, {{failed}} nicht erreichbar",
       "description": "Trägt „Aufnahmedatum\" aus den EXIF-Daten nach, für Fotos die vor dieser Auswertung importiert wurden. Externe Importe haben nie eines gespeichert, dadurch sortieren diese Galerien nach Importreihenfolge statt nach Aufnahmezeit."
+    },
+    "orientationBackfill": {
+      "title": "Fotoausrichtung",
+      "description": "Liest die EXIF-Ausrichtung für Fotos neu ein, die vor der Drehungskorrektur importiert wurden, korrigiert ihre gespeicherten Maße und verwirft Thumbnails, Vorschauen und Hero-Bilder, die aus den ungedrehten Originalen erzeugt wurden. Es werden nur Fotos angefasst, deren Ausrichtung sich tatsächlich ändert.",
+      "button": "Fotoausrichtung korrigieren",
+      "running": "Ausrichtung wird geprüft...",
+      "resultSuccess": "Letzter Lauf: {{checked}} geprüft, {{corrected}} korrigiert, {{requeued}} erneut zur Gesichtserkennung eingereiht, {{failed}} nicht erreichbar",
+      "staleTiers": "{{count}} zwischengespeicherte Größe(n) konnten nicht gelöscht werden und liefern weiterhin die alte Ausrichtung — bitte erneut ausführen, sobald der Speicher beschreibbar ist."
     }
   },
   "branding": {

@@ -589,13 +589,15 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
       const sharp = require('sharp');
       const {
         orientedDimensions, hasOrientationTransform, withLocalCopy, withProcessableImage,
-        deletePreviewTiers,
+        deletePreviewTiers, deleteThumbnailTiers, previewTierKeys, thumbnailTierKeys,
       } = require('../services/imageProcessor');
+      const { getStorage } = require('../services/storage');
       const { resolvePhotoStorageKey } = require('../services/photoResolver');
 
       let checked = 0;
       let corrected = 0;
       let requeuedFaces = 0;
+      let staleTiers = 0;
       let errorCount = 0;
       let lostClaim = false;
 
@@ -654,29 +656,49 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
 
             if (!dimsWrong && !transformed) continue;
 
+            // Every write is fenced on the identity we measured, not just the
+            // id. replacePhoto — reachable from the replace_by_name upload path
+            // (adminPhotos.js) — swaps a new file under an existing row and
+            // rewrites path/filename, so a replacement landing while this job
+            // read the old original would otherwise get the previous file's
+            // dimensions written over it and its fresh renditions cleared.
+            // Matching path and filename too means the update affects no rows
+            // instead.
+            const fence = { id: photo.id, path: photo.path, filename: photo.filename };
+
             // One transaction. If the dimension write commits and the
             // invalidation does not, the row keeps stale face boxes AND a
             // retry computes "already correct" — so nothing would ever fix it.
             await db.transaction(async (trx) => {
               if (dimsWrong) {
-                await trx('photos').where({ id: photo.id })
+                await trx('photos').where(fence)
                   .update({ width: dims.width, height: dims.height });
               }
 
               if (transformed) {
-                // Clear the canonical preview BEFORE queueing the rescan.
-                // ensurePreviewImage returns the cached preview whenever it is
-                // still a valid image (imageProcessor.js), and a pre-fix
-                // unrotated preview is perfectly valid — so requeueing without
-                // this makes the rescan read unrotated pixels and scale those
-                // boxes by the corrected dimensions. Worse than leaving it.
-                await trx('photos').where({ id: photo.id }).update({ preview_path: null });
+                // Every cached rendition, not just the preview. All three are
+                // regenerated lazily and all three short-circuit on a file
+                // that is merely VALID — and a pre-fix sideways thumbnail is
+                // perfectly valid. Clearing only the preview fixed the face
+                // data while leaving the gallery showing the old sideways
+                // image inside a newly-corrected portrait tile, which is worse
+                // than not having run at all.
+                //
+                // The preview specifically must go before faces are requeued:
+                // ensurePreviewImage would otherwise hand the rescan the old
+                // unrotated pixels, whose boxes then get scaled by the
+                // corrected dimensions.
+                await trx('photos').where(fence).update({
+                  preview_path: null,
+                  thumbnail_path: null,
+                  hero_path: null,
+                });
 
                 // whereNotNull: face_status NULL means this photo was never
                 // scanned, and an install that never enabled the feature must
                 // not start scanning because of a dimension repair.
                 requeuedFaces += await trx('photos')
-                  .where({ id: photo.id })
+                  .where(fence)
                   .whereNotNull('face_status')
                   .whereNot('face_status', 'pending')
                   .update({ face_status: 'pending' });
@@ -685,10 +707,36 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
 
             // Outside the transaction on purpose: these delete files, and a
             // storage error must not roll back a correct database write. A
-            // leftover tier is regenerated on next read; a rolled-back write
-            // is silent corruption.
+            // rolled-back write is silent corruption; a leftover object is not.
+            //
+            // For the canonical renditions a failed delete is harmless — their
+            // keys are deterministic, so regeneration overwrites in place. The
+            // responsive TIERS are the exception: ensurePreviewImageAtWidth
+            // treats storage.stat(key) as a cache hit, so a tier that survived
+            // deletion keeps being served unrotated and never regenerates. The
+            // tier helpers swallow their own errors, so the keys are re-checked
+            // and anything still standing is counted — a run that could not
+            // clear them should not report itself as clean.
             if (transformed) {
+              const storage = getStorage();
+              for (const key of [photo.preview_path, photo.thumbnail_path, photo.hero_path]) {
+                if (key) await storage.delete(key).catch(() => {});
+              }
               await deletePreviewTiers(photo).catch(() => {});
+              await deleteThumbnailTiers(photo).catch(() => {});
+
+              const survivors = await Promise.all(
+                [...previewTierKeys(photo), ...thumbnailTierKeys(photo)]
+                  .map((k) => storage.stat(k).then(() => k).catch(() => null))
+              );
+              const stuck = survivors.filter(Boolean).length;
+              if (stuck) {
+                staleTiers += stuck;
+                logger.warn(
+                  `Orientation backfill: ${stuck} tier(s) survived deletion for photo ${photo.id} — `
+                  + 'they will keep serving unrotated until storage is writable and this is re-run'
+                );
+              }
             }
 
             if (dimsWrong) corrected++;
@@ -707,7 +755,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
           return;
         }
         await maintenanceJobs.release(JOB_ORIENTATION_BACKFILL, token, {
-          checked, corrected, requeuedFaces, failed: errorCount,
+          checked, corrected, requeuedFaces, staleTiers, failed: errorCount,
         });
         logger.info(
           `Orientation backfill complete: ${checked} checked, ${corrected} corrected, `
@@ -717,7 +765,7 @@ router.post('/repair-orientation', adminAuth, requirePermission('system.manage')
         logger.error('Orientation backfill aborted:', err);
         await maintenanceJobs
           .release(JOB_ORIENTATION_BACKFILL, token, {
-            checked, corrected, requeuedFaces, failed: errorCount, error: err.message,
+            checked, corrected, requeuedFaces, staleTiers, failed: errorCount, error: err.message,
           })
           .catch(() => {});
       } finally {
