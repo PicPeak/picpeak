@@ -156,8 +156,8 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
         let height = null;
         try {
           const metadata = await sharp(f.full).metadata();
-          width = metadata.width || null;
-          height = metadata.height || null;
+          // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
+          ({ width, height } = require('../services/imageProcessor').orientedDimensions(metadata));
         } catch (dimErr) {
           logger.warn(`Could not extract dimensions for ${f.rel}: ${dimErr.message}`);
         }

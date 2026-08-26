@@ -163,13 +163,15 @@ router.post('/repair-dimensions', adminAuth, requirePermission('photos.edit'), a
             }
 
             const metadata = await sharp(fullPath).metadata();
+            // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
+            const dims = require('../services/imageProcessor').orientedDimensions(metadata);
 
-            if (metadata.width && metadata.height) {
+            if (dims.width && dims.height) {
               await db('photos')
                 .where({ id: photo.id })
                 .update({
-                  width: metadata.width,
-                  height: metadata.height
+                  width: dims.width,
+                  height: dims.height
                 });
               successCount++;
 
