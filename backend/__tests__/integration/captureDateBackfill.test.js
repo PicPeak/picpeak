@@ -198,6 +198,8 @@ describe('capture date backfill (#1172)', () => {
 
     expect(new Date((await db('photos').where({ id: photoId }).first()).captured_at).toISOString()).toBe(claimed);
     expect(done.body.lastResult.success).toBe(0);
+    // Read but not written, so it is accounted for rather than dropped.
+    expect(done.body.lastResult.skipped).toBe(1);
   });
 
   it('does not date a row whose file was replaced while it was reading (#1201)', async () => {
@@ -218,5 +220,8 @@ describe('capture date backfill (#1172)', () => {
 
     expect((await db('photos').where({ id: photoId }).first()).captured_at).toBeNull();
     expect(done.body.lastResult.success).toBe(0);
+    // Not an error and not "no EXIF" — the date was found, another writer just
+    // got there first. It stays in the backlog for the next run.
+    expect(done.body.lastResult).toMatchObject({ noExif: 0, failed: 0, skipped: 1 });
   });
 });
