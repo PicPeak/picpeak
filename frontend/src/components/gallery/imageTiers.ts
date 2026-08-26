@@ -108,6 +108,66 @@ export function previewUrlForViewport(
 }
 
 /**
+ * What the lightbox actually puts in an <img> (#1166).
+ *
+ * `preview_url` is only emitted when the admin has flipped
+ * lightbox_preview_enabled, which is off by default — so a stock install fell
+ * straight through to `url`, the untouched original. A reporter measured
+ * 16.5 MB per photo where the preview is 345 KB, and the lightbox renders its
+ * neighbours too, so opening one photo pulled three originals.
+ *
+ * `slideshow_url` is the same /preview/:id URL, watermark query and all, but
+ * emitted unconditionally for images since #1015 — the slideshow has never had
+ * a fallback worth taking. Preferring it here fixes every existing install
+ * without an admin touching a setting.
+ *
+ * `url` stays as the last resort, which is where videos land (both derivative
+ * URLs are null for them) and where an image goes if the server ever stops
+ * emitting either. The preview route generates lazily and redirects to the
+ * original on any failure, so nothing here can show less than it does today.
+ */
+export function lightboxImageUrl(photo: {
+  url: string;
+  preview_url?: string | null;
+  slideshow_url?: string | null;
+  mime_type?: string;
+  filename?: string;
+  original_filename?: string | null;
+  width?: number | null;
+  height?: number | null;
+}): string {
+  // Animated formats keep the original. generatePreviewImage always encodes
+  // JPEG (imageProcessor.js:668), so routing an animated source through the
+  // preview tier would replace the animation with its first frame — a
+  // regression the toggle-off default never had.
+  //
+  // PNG goes with them, for two reasons that share a cause: generatePreviewImage
+  // also drops ALPHA (a transparent source flattens against a solid
+  // background), and an APNG is normally reported as image/png rather than
+  // image/apng, so the specific check alone would miss the common upload path.
+  // PNG is where transparency is the norm, and it is rare enough in an event
+  // gallery that the bandwidth given up is small.
+  //
+  // MIME is all the frontend has. Animated or alpha WebP reports image/webp
+  // exactly like an ordinary still, and cannot be told apart here — fixing
+  // that needs the backend to report it (Sharp's `metadata.pages`, and
+  // `hasAlpha`) rather than costing every static-WebP gallery the bandwidth
+  // fix on a guess. That is the known remaining gap.
+  // Checked against the FILENAME as well as the MIME, because mime_type is not
+  // trustworthy here: migration 039 backfilled every pre-existing photo as
+  // image/jpeg regardless of what it was, and the external-media importer
+  // inserts rows without a mime_type at all. A mislabelled PNG would otherwise
+  // sail past this and come back flattened.
+  const ORIGINAL_ONLY = ['image/gif', 'image/apng', 'image/png'];
+  const ORIGINAL_ONLY_EXT = /\.(gif|apng|png)$/i;
+  const name = photo.original_filename || photo.filename || '';
+  if ((photo.mime_type && ORIGINAL_ONLY.includes(photo.mime_type)) || ORIGINAL_ONLY_EXT.test(name)) {
+    return photo.url;
+  }
+  return previewUrlForViewport(photo.preview_url || photo.slideshow_url, photo) || photo.url;
+}
+
+/**
  * An aspect-preserved rendition for a face avatar (#1096).
  *
  * NOT the thumbnail. faceCropStyle positions the crop by scaling the whole

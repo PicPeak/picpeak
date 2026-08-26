@@ -155,13 +155,16 @@ export interface Photo {
   hero_url?: string; // Hero-optimized image URL (1920x1080) for full-width hero sections
   // Lightbox preview URL (#492). Set only when the admin has flipped
   // lightbox_preview_enabled in Settings → Thumbnails. Aspect-preserved
-  // ≤1920px JPEG; the lightbox prefers it over `url` for image photos
-  // and falls back to `url` when null (off, video, or not yet generated).
+  // ≤1920px JPEG.
   preview_url?: string | null;
   // Aspect-preserved ≤1920px source for the fullscreen slideshow (#1015).
   // Always set for image photos, unlike `preview_url` — the slideshow must
   // never fall back to `hero_url`, which is a 16:9 centre crop and makes
   // the "Black Bars (No crop)" fit letterbox an already-cropped frame.
+  //
+  // The lightbox takes it as its second choice for the same reason (#1166):
+  // the same /preview/:id URL, so an install that never flipped the toggle
+  // stops serving multi-megabyte originals to display a photo on screen.
   slideshow_url?: string | null;
   secure_url_template?: string;
   download_url_template?: string;
