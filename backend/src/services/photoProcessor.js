@@ -174,11 +174,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
           try {
             const sharp = require('sharp');
             const metadata = await sharp(proc.path).metadata();
-            if (metadata.width && metadata.height) {
-              imageMetadata = {
-                width: metadata.width,
-                height: metadata.height
-              };
+            // Oriented, not raw — see orientedDimensions (#1185).
+            const dims = require('./imageProcessor').orientedDimensions(metadata);
+            if (dims.width && dims.height) {
+              imageMetadata = { width: dims.width, height: dims.height };
             }
           } catch (metadataError) {
             logger.warn(`Could not extract image dimensions for ${file.originalname}:`, metadataError.message);
@@ -544,9 +543,11 @@ async function processPhoto(photoId) {
         try {
           const sharp = require('sharp');
           const metadata = await sharp(proc.path).metadata();
-          if (metadata.width && metadata.height) {
-            updateData.width = metadata.width;
-            updateData.height = metadata.height;
+          // Oriented, not raw — see orientedDimensions (#1185).
+          const dims = require('./imageProcessor').orientedDimensions(metadata);
+          if (dims.width && dims.height) {
+            updateData.width = dims.width;
+            updateData.height = dims.height;
           }
         } catch (e) {
           logger.warn(`processPhoto: dimensions extraction failed for ${photoId}`, { error: e.message });

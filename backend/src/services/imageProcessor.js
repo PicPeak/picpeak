@@ -260,6 +260,22 @@ async function generateThumbnail(imagePath, options = {}) {
       failOn: 'none'
     });
 
+    // Apply EXIF orientation before resizing (#1185). Without this a photo
+    // whose Orientation tag is not 1 — routine for portrait shots on bodies
+    // that tag rather than rotate the sensor data — is resized from the raw
+    // pixels and comes out sideways. `.withMetadata(false)` below then strips
+    // the tag, so the browser has no hint left to correct it either, which is
+    // why this cannot be left to the client.
+    //
+    // Unconditional, unlike resizeToBox and generatePreviewImage. Those open
+    // multi-frame sources with `animated: true` and must not rotate them,
+    // because `.rotate()` flattens to the first frame. This one never passes
+    // that option, so it already produces a still — guarding on `pages` here
+    // would protect an animation that was being discarded anyway, and leave
+    // the thumbnail in raw orientation while the stored dimensions describe
+    // the rotated one.
+    sharpInstance = sharpInstance.rotate();
+
     // Strip EXIF/metadata from thumbnails (privacy: prevent GPS leak etc.)
     sharpInstance = sharpInstance.withMetadata(false);
 
@@ -336,6 +352,31 @@ async function isThumbnailValid(thumbnailPath) {
   } catch (error) {
     return false;
   }
+}
+
+/**
+ * The dimensions a viewer actually sees, given EXIF orientation (#1185).
+ *
+ * sharp reports `metadata.width`/`height` as the pixels are stored, not as
+ * they are displayed. Orientation values 5-8 carry a 90° rotation, so for
+ * those the two are swapped — which is why a portrait photo from a body that
+ * tags rather than rotates was landing in the database as landscape, and why
+ * masonry and justified layouts sized its tile with the wrong aspect ratio on
+ * top of the image itself being unrotated.
+ *
+ * Everything that renders these photos now applies `.rotate()`, so the stored
+ * numbers have to describe the rotated result to match.
+ *
+ * @param {Object} metadata - a sharp metadata object
+ * @returns {{ width: number|null, height: number|null }}
+ */
+function orientedDimensions(metadata) {
+  if (!metadata || !metadata.width || !metadata.height) return { width: null, height: null };
+  const swap = metadata.orientation >= 5 && metadata.orientation <= 8;
+  return {
+    width: swap ? metadata.height : metadata.width,
+    height: swap ? metadata.width : metadata.height,
+  };
 }
 
 /**
@@ -513,6 +554,11 @@ async function generateHeroImage(imagePath, options = {}) {
       sequentialRead: true,
       failOn: 'none'
     });
+
+    // EXIF orientation, same reasoning as generateThumbnail (#1185) — and
+    // unconditional for the same reason: no `animated: true` on the input, so
+    // this output is a still whatever the source was.
+    sharpInstance = sharpInstance.rotate();
 
     // Strip EXIF/metadata from hero images (privacy: prevent GPS leak etc.)
     sharpInstance = sharpInstance.withMetadata(false);
@@ -734,6 +780,21 @@ async function generatePreviewImage(imagePath, options = {}) {
       // than decoded, and the caller falls back to the original.
       animated: isAnimated,
     });
+
+    // EXIF orientation (#1185). Guarded here and not in the thumbnail/hero
+    // generators because this one DOES open multi-frame sources with
+    // `animated: true` above, and `.rotate()` would flatten them to a single
+    // frame — trading an animation for an orientation.
+    //
+    // Which leaves one corner unsolved: a multi-frame source that also carries
+    // an orientation tag keeps its raw orientation here while the thumbnail
+    // and the stored dimensions describe the rotated one. GIF has no EXIF at
+    // all and animated WebP effectively never sets it, so this is a real gap
+    // rather than a common one, and closing it properly means rotating frame
+    // by frame rather than dropping the animation.
+    if (!isAnimated) {
+      sharpInstance = sharpInstance.rotate();
+    }
 
     // Strip EXIF — same privacy reasoning as thumbnails/heroes.
     sharpInstance = sharpInstance.withMetadata(false);
@@ -1243,6 +1304,7 @@ async function resizeToBox(inputBuffer, box, options = {}) {
 }
 
 module.exports = {
+  orientedDimensions,
   ensurePreviewImageAtWidth,
   ensureThumbnailAtWidth,
   thumbnailTierKeys,

@@ -1,4 +1,5 @@
 const sharp = require('sharp');
+const { orientedDimensions } = require('./imageProcessor');
 const path = require('path');
 const fs = require('fs').promises;
 const { db } = require('../database/db');
@@ -115,9 +116,24 @@ class WatermarkService {
         }
       }
 
-      // Load the main image
-      const image = sharp(imagePath);
-      const metadata = await image.metadata();
+      // Load the main image.
+      //
+      // .rotate() for the same reason as the other generators (#1185): sharp
+      // decodes the pixels as stored, so an orientation-tagged photo would be
+      // composited and re-encoded sideways — and gallery.js serves
+      // watermark_path ahead of the original, so this is exactly what a guest
+      // sees.
+      const image = sharp(imagePath).rotate();
+
+      // Deliberately NOT `await image.metadata()`: .rotate() does not change
+      // what metadata() reports — a 400x200 source tagged orientation 6 still
+      // reads 400x200 there, even though the pipeline now emits 200x400. Every
+      // use below is positioning (watermark scale, font size, composite
+      // extent), so it has to be the DISPLAYED size or the mark lands against
+      // the wrong axis.
+      const rawMetadata = await sharp(imagePath).metadata();
+      const oriented = orientedDimensions(rawMetadata);
+      const metadata = { ...rawMetadata, width: oriented.width, height: oriented.height };
 
       let watermarkBuffer;
       let watermarkMetadata;
@@ -190,11 +206,17 @@ class WatermarkService {
         settings.position
       );
 
-      // Apply watermark with high quality output to preserve original image quality
+      // Apply watermark with high quality output to preserve original image quality.
+      //
+      // Floored: getPositionCoordinates derives from the SVG's estimated text
+      // extent, which is fractional, and sharp rejects a non-integer offset
+      // outright — applyWatermark then catches its own error and silently
+      // returns the unwatermarked original. Whether it lands on a whole pixel
+      // was previously luck; nothing guaranteed it.
       let watermarkedImage = image.composite([{
         input: watermarkBuffer,
-        top: position.top,
-        left: position.left
+        top: Math.max(0, Math.floor(position.top)),
+        left: Math.max(0, Math.floor(position.left))
       }]);
 
       // Preserve original format with high quality settings
