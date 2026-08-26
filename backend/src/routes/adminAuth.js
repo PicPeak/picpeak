@@ -101,6 +101,9 @@ router.post('/change-password', [
 
   const { currentPassword, newPassword } = req.body;
   const userId = req.admin.id;
+  // The session being replaced was or wasn't a remembered one; the new token
+  // has to inherit that (#1186).
+  const rememberMe = req.admin.rememberMe === true;
 
   // Validate new password strength
   const passwordValidation = validatePasswordStrength(newPassword);
@@ -148,13 +151,19 @@ router.post('/change-password', [
     type: 'admin',
     role: user.role_name,
     iat: iatAfterPasswordChange,
-    loginTime: Date.now()
+    loginTime: Date.now(),
+    // Must ride along in the payload too, or the reissued session loses its
+    // exemption from the idle timeout and dies within the hour.
+    rememberMe
   }, process.env.JWT_SECRET, {
-    expiresIn: '24h',
+    // Carried from the session being replaced (#1186): a password change —
+    // which is mandatory for new and reset accounts — would otherwise drop a
+    // remembered admin straight back to 24h.
+    expiresIn: rememberMe ? '30d' : '24h',
     issuer: 'picpeak-auth'
   });
 
-  setAdminAuthCookie(res, newToken);
+  setAdminAuthCookie(res, newToken, { rememberMe });
 
   // Log activity
   await logActivity('password_changed',

@@ -134,7 +134,12 @@ async function adminAuth(req, res, next) {
       username: admin.username,
       email: admin.email,
       roleId: admin.role_id,
-      roleName: admin.role_name
+      roleName: admin.role_name,
+      // From the token, not the database: it is a property of this session
+      // rather than of the account (#1186). Carried so a route that reissues
+      // the token — change-password — can preserve the choice instead of
+      // silently dropping the session back to 24h.
+      rememberMe: decoded.rememberMe === true
     };
     req.token = token; // Store token for potential revocation
     

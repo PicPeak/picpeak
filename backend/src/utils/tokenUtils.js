@@ -9,6 +9,9 @@ const GUEST_COOKIE_PREFIX = 'guest_token_';
 const CUSTOMER_COOKIE_NAME = 'customer_token';
 
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+// "Remember me" (#1186). Opt-in only: the default stays 24h, so a stolen
+// cookie is worth a day unless the operator explicitly asked for longer.
+const REMEMBER_ME_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 /**
  * Cookie "Secure" flag mode:
@@ -109,9 +112,14 @@ function sanitizeSlugForCookie(slug = '') {
   return String(slug).replace(/[^A-Za-z0-9_-]/g, '_');
 }
 
-function setAdminAuthCookie(res, token) {
+function setAdminAuthCookie(res, token, { rememberMe = false } = {}) {
   if (!token) return;
-  res.cookie(ADMIN_COOKIE_NAME, token, buildCookieOptionsWithExpiry(res));
+  // The cookie's lifetime has to track the JWT's, or one outlives the other:
+  // a 30-day cookie carrying a 24h token means a silent 401 the next morning,
+  // and a 24h cookie carrying a 30-day token throws away the session the user
+  // asked to keep.
+  const maxAge = rememberMe ? REMEMBER_ME_MAX_AGE_MS : DEFAULT_MAX_AGE_MS;
+  res.cookie(ADMIN_COOKIE_NAME, token, buildCookieOptionsWithExpiry(res, maxAge));
 }
 
 function clearAdminAuthCookie(res) {
@@ -231,6 +239,8 @@ function getGuestTokenFromRequest(req, slug) {
 module.exports = {
   ADMIN_COOKIE_NAME,
   buildCookieOptionsWithExpiry,
+  DEFAULT_MAX_AGE_MS,
+  REMEMBER_ME_MAX_AGE_MS,
   buildClearCookieOptions,
   GALLERY_COOKIE_NAME,
   GALLERY_COOKIE_PREFIX,

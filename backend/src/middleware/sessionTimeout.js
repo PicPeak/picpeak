@@ -94,6 +94,16 @@ async function sessionTimeoutMiddleware(req, res, next) {
       return next();
     }
     
+    // "Remember me" opts out of the IDLE timeout (#1186). Not out of expiry:
+    // the token still dies on its own 30-day `exp`, and every other control
+    // (revocation, deactivation, password change) is untouched. Without this
+    // the checkbox does nothing observable — the default idle timeout is 60
+    // minutes, so a remembered admin was logged out the same hour.
+    if (decoded.rememberMe === true) {
+      sessions.set(token, Date.now());
+      return next();
+    }
+
     const now = Date.now();
     const lastActivity = sessions.get(token);
     const timeout = await getSessionTimeout();
@@ -164,6 +174,10 @@ async function sessionTimeoutMiddleware(req, res, next) {
 // tracks activity; /auth/session is read-only by design.
 async function isSessionExpired(token, decoded) {
   if (!token || !decoded || !decoded.id) return false;
+  // Same exemption as sessionTimeoutMiddleware (#1186) — these two must agree,
+  // or /auth/session and the request path would disagree about whether the
+  // caller is still logged in.
+  if (decoded.rememberMe === true) return false;
   const now = Date.now();
   const timeout = await getSessionTimeout();
   const lastActivity = sessions.get(token);
