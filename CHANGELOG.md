@@ -5,6 +5,18 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.116.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.115.4-beta.0...v3.116.0-beta.0) (2026-08-26)
+
+
+### Features
+
+* **auth:** make the admin "Remember me" checkbox actually do something ([#1186](https://github.com/PicPeak/picpeak/issues/1186)) ([#1195](https://github.com/PicPeak/picpeak/issues/1195)) ([d3e9a7c](https://github.com/PicPeak/picpeak/commit/d3e9a7cf0d55aaf0c83bd32031f00259da2af11f))
+
+
+### Bug Fixes
+
+* **gallery:** show colour labels in the Carousel layout ([#1189](https://github.com/PicPeak/picpeak/issues/1189)) ([#1196](https://github.com/PicPeak/picpeak/issues/1196)) ([da80216](https://github.com/PicPeak/picpeak/commit/da802169a87602d34d89f58eb311d1e99b40e8bd))
+
 ## [3.115.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.115.3-beta.0...v3.115.4-beta.0) (2026-08-26)
 
 
