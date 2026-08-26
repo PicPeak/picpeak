@@ -1201,6 +1201,17 @@
       "save": "Enregistrer les modifications",
       "saved": "Marque du tableau de bord client enregistrée",
       "error": "Impossible d'enregistrer les paramètres"
+    },
+    "captureDates": {
+      "title": "Dates de prise de vue",
+      "totalPhotos": "Photos au total",
+      "withDates": "Avec date de prise de vue",
+      "missingDates": "Sans date de prise de vue",
+      "button": "Compléter les dates",
+      "running": "Traitement...",
+      "noneToFill": "Toutes les photos ont déjà une date de prise de vue",
+      "resultSuccess": "Dernier passage : {{success}} mises à jour, {{noExif}} sans date trouvée, {{failed}} inaccessibles",
+      "description": "Complète la « date de prise de vue » depuis les EXIF pour les photos importées avant sa lecture. Les imports externes n'en enregistraient aucune, si bien que ces galeries se trient par ordre d'import plutôt que par date de prise de vue."
     }
   },
   "analytics": {

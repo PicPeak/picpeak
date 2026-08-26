@@ -31,8 +31,9 @@ describe('regenerate-thumbnails script (#1148)', () => {
     process.env.NODE_ENV = 'test';
     process.env.TEST_DATABASE_PATH = path.join(tmpDir, 'data', 'test.db');
     process.env.STORAGE_PATH = path.join(tmpDir, 'storage');
-    // External sources are sandboxed under EXTERNAL_MEDIA_ROOT; event
-    // external_path is relative to it, exactly as on a real install.
+    // External sources are sandboxed under EXTERNAL_MEDIA_ROOT. Rows carry a
+    // path relative to that root (#1163), so the 'wedding/' prefix on each
+    // external_relpath below is the event folder, not decoration.
     process.env.EXTERNAL_MEDIA_ROOT = path.join(tmpDir, 'media');
     externalRoot = path.join(process.env.EXTERNAL_MEDIA_ROOT, 'wedding');
 
@@ -72,7 +73,7 @@ describe('regenerate-thumbnails script (#1148)', () => {
       path: 'regen-script-event/shot.jpg',
       type: 'individual',
       source_origin: 'external',
-      external_relpath: 'shot.jpg',
+      external_relpath: 'wedding/shot.jpg',
       uploaded_at: new Date().toISOString(),
     }).returning('id');
     externalPhotoId = typeof p === 'object' ? p.id : p;
@@ -85,7 +86,7 @@ describe('regenerate-thumbnails script (#1148)', () => {
       media_type: 'video',
       mime_type: 'video/mp4',
       source_origin: 'external',
-      external_relpath: 'clip.mp4',
+      external_relpath: 'wedding/clip.mp4',
       uploaded_at: new Date().toISOString(),
     }).returning('id');
     videoPhotoId = typeof v === 'object' ? v.id : v;
@@ -108,7 +109,7 @@ describe('regenerate-thumbnails script (#1148)', () => {
       type: 'video',
       mime_type: 'video/mp4',
       source_origin: 'external',
-      external_relpath: 'watched.mp4',
+      external_relpath: 'wedding/watched.mp4',
       uploaded_at: new Date().toISOString(),
     }).returning('id');
     watcherVideoId = typeof wv === 'object' ? wv.id : wv;
@@ -125,7 +126,7 @@ describe('regenerate-thumbnails script (#1148)', () => {
       type: 'individual',
       thumbnail_path: 'thumbnails/thumb_ext_missing_repair.jpg',
       source_origin: 'external',
-      external_relpath: 'repair.jpg',
+      external_relpath: 'wedding/repair.jpg',
       uploaded_at: new Date().toISOString(),
     }).returning('id');
     repairPhotoId = typeof rp === 'object' ? rp.id : rp;
@@ -142,7 +143,7 @@ describe('regenerate-thumbnails script (#1148)', () => {
       path: 'regen-script-event/vanishing.jpg',
       type: 'individual',
       source_origin: 'external',
-      external_relpath: 'vanishing.jpg',
+      external_relpath: 'wedding/vanishing.jpg',
       uploaded_at: new Date().toISOString(),
     }).returning('id');
     vanishingPhotoId = typeof vp === 'object' ? vp.id : vp;

@@ -5,6 +5,35 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.115.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.115.1-beta.0...v3.115.2-beta.0) (2026-08-26)
+
+
+### Bug Fixes
+
+* **external-media:** store external paths from the media root ([#1163](https://github.com/PicPeak/picpeak/issues/1163)) ([#1168](https://github.com/PicPeak/picpeak/issues/1168)) ([a7b74bc](https://github.com/PicPeak/picpeak/commit/a7b74bcd87fa9700351331e65a631e31c89d1354))
+
+## [3.115.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.115.0-beta.0...v3.115.1-beta.0) (2026-08-26)
+
+
+### Bug Fixes
+
+* **external-media:** one row per external file per event ([#1162](https://github.com/PicPeak/picpeak/issues/1162)) ([#1167](https://github.com/PicPeak/picpeak/issues/1167)) ([06da1b9](https://github.com/PicPeak/picpeak/commit/06da1b9f7eefa5ff216a068f64fa648f49e7084a))
+
+## [3.115.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.114.0-beta.0...v3.115.0-beta.0) (2026-08-23)
+
+
+### Features
+
+* **faces:** make "not the same person" survive a re-scan ([#1132](https://github.com/PicPeak/picpeak/issues/1132)) ([#1145](https://github.com/PicPeak/picpeak/issues/1145)) ([c305ad4](https://github.com/PicPeak/picpeak/commit/c305ad41469bd04647e71ba768bfce26f20c4c96))
+
+
+### Bug Fixes
+
+* **gallery:** a guest's own hidden feedback is hidden from them too ([#1150](https://github.com/PicPeak/picpeak/issues/1150)) ([#1153](https://github.com/PicPeak/picpeak/issues/1153)) ([2c81888](https://github.com/PicPeak/picpeak/commit/2c81888eafadc083a4654464ea6e955abc7e8704))
+* **gallery:** guest filters respect show_feedback_to_guests, and marks survive a mid-write clear ([#1147](https://github.com/PicPeak/picpeak/issues/1147)) ([00b20b2](https://github.com/PicPeak/picpeak/commit/00b20b2d72ffb9a8418cda4479d1e34df1b65ccf))
+* **gallery:** no Logout button on galleries that don't require a password ([#1149](https://github.com/PicPeak/picpeak/issues/1149)) ([#1152](https://github.com/PicPeak/picpeak/issues/1152)) ([e4a8be8](https://github.com/PicPeak/picpeak/commit/e4a8be8e7e8ede850f07a43c229c3e4e28e0e59f))
+* **scripts:** regenerate-thumbnails resolves external sources through ensureThumbnail ([#1148](https://github.com/PicPeak/picpeak/issues/1148)) ([#1151](https://github.com/PicPeak/picpeak/issues/1151)) ([b581267](https://github.com/PicPeak/picpeak/commit/b5812670318a852b4731d326f15f2623e0302395))
+
 ## [3.114.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.113.0-beta.0...v3.114.0-beta.0) (2026-08-23)
 
 

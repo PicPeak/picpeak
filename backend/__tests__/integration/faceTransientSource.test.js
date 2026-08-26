@@ -72,7 +72,10 @@ async function seedExternalPhoto({ externalPath, relpath = 'individual/a.jpg' })
     processing_status: 'complete',
     face_status: 'processing',
     source_origin: 'external',
-    external_relpath: relpath,
+    // Stored relative to EXTERNAL_MEDIA_ROOT (#1163), which is what the import
+    // route writes — `relpath` above is expressed relative to the event's
+    // folder only because that reads better at the call sites.
+    external_relpath: path.join(externalPath, relpath),
   }).returning('id');
   return { eventId, photoId: typeof p === 'object' ? p.id : p };
 }
