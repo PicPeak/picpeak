@@ -9,8 +9,23 @@ const { db, logActivity } = require('../database/db');
 const sharp = require('sharp');
 const logger = require('../utils/logger');
 const { generateThumbnail } = require('../services/imageProcessor');
+const { isUniqueViolation } = require('../utils/dbErrors');
 
 const router = express.Router();
+
+// Events with an import running in THIS process (#1162).
+//
+// The second line of defence, not the first: migration 176 puts a unique index
+// on (event_id, external_relpath), and that is what actually makes a duplicate
+// impossible — it holds across replicas, across restarts, and against anything
+// that inserts external rows without going through this route.
+//
+// This set exists for the reason the duplicates got filed in the first place:
+// a large tree takes long enough that the run LOOKS hung, so admins click
+// again. Letting that second run walk the whole tree only to have every insert
+// bounce off the index wastes minutes of CPU and reports a nonsense
+// `skipped: 6012` back. Failing it immediately with 409 says what happened.
+const importsInFlight = new Set();
 
 // GET /api/admin/external-media/list?path=relative/dir
 router.get('/list', adminAuth, requirePermission('photos.view'), async (req, res) => {
@@ -50,8 +65,14 @@ async function walkDir(dir, baseDir) {
 // POST /api/admin/events/:id/import-external
 // Body: { external_path: string, recursive?: boolean, map?: { individual?: string, collages?: string } }
 router.post('/events/:id/import-external', adminAuth, requirePermission('photos.upload'), requireEventOwnership, async (req, res) => {
+  const eventId = parseInt(req.params.id);
+  if (importsInFlight.has(eventId)) {
+    return res.status(409).json({
+      error: 'An import is already running for this event. Wait for it to finish before starting another.'
+    });
+  }
+  importsInFlight.add(eventId);
   try {
-    const eventId = parseInt(req.params.id);
     const { external_path, recursive = true, map = { individual: 'individual', collages: 'collages' } } = req.body || {};
     if (!external_path) return res.status(400).json({ error: 'external_path is required' });
 
@@ -107,7 +128,13 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
       if (segs[0] === map.individual) type = 'individual';
 
       try {
-        // Check if already exists (by external_relpath)
+        // Fast path only. This SELECT settles the common case — a re-import of
+        // a folder already in the event — without paying for a stat and a
+        // Sharp metadata read per file. It is NOT the guard: those two calls
+        // sit between here and the INSERT below, which is exactly the window
+        // two overlapping imports both walked through (#1162). The unique
+        // index from migration 176 is the guard, and the catch below is how
+        // this loop converges when it fires.
         const exists = await db('photos')
           .where({ event_id: eventId, external_relpath: f.rel })
           .first();
@@ -125,21 +152,33 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
           logger.warn(`Could not extract dimensions for ${f.rel}: ${dimErr.message}`);
         }
 
-        const inserted = await db('photos')
-          .insert({
-            event_id: eventId,
-            filename: f.name,
-            // Keep path as a hint for legacy code but not used for resolution in external mode
-            path: path.join(event.slug, f.name),
-            thumbnail_path: null,
-            type,
-            size_bytes: stats.size,
-            width,
-            height,
-            source_origin: 'external',
-            external_relpath: f.rel
-          })
-          .returning('id');
+        let inserted;
+        try {
+          inserted = await db('photos')
+            .insert({
+              event_id: eventId,
+              filename: f.name,
+              // Keep path as a hint for legacy code but not used for resolution in external mode
+              path: path.join(event.slug, f.name),
+              thumbnail_path: null,
+              type,
+              size_bytes: stats.size,
+              width,
+              height,
+              source_origin: 'external',
+              external_relpath: f.rel
+            })
+            .returning('id');
+        } catch (insertErr) {
+          // Another writer inserted this exact path while we were reading
+          // metadata. That is the outcome the index exists to produce, and it
+          // is a skip rather than a failure — the row is there, it just isn't
+          // ours. Counting it as `skipped` keeps the reported totals honest;
+          // before the index this landed in the outer catch as a nameless
+          // failure, or (more often) never fired at all and duplicated the row.
+          if (isUniqueViolation(insertErr)) { skipped++; continue; }
+          throw insertErr;
+        }
 
         const photoId = Array.isArray(inserted) && inserted.length
           ? (typeof inserted[0] === 'object' ? inserted[0].id : inserted[0])
@@ -193,6 +232,11 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
       error: error.message
     });
     res.status(500).json({ error: 'Failed to import external media' });
+  } finally {
+    // In `finally` and not at the end of `try`: an import that throws must
+    // still release the event, or a single failure locks out every retry
+    // until the process restarts.
+    importsInFlight.delete(eventId);
   }
 });
 
