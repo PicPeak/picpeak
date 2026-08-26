@@ -126,6 +126,25 @@ describe('EXIF orientation in thumbnails, heroes and previews (#1185)', () => {
     expect(out.height).toBeGreaterThan(out.width);
   });
 
+  test('the watermarked rendition is oriented too', async () => {
+    // gallery.js serves photos.watermark_path ahead of the original when
+    // branding watermarking is on, so this is the rendition a guest actually
+    // sees — and it went through its own sharp pipeline that nobody had
+    // rotated.
+    const watermarkService = require('../../src/services/watermarkService');
+    const buf = await watermarkService.applyWatermark(landscapeTaggedPortrait, {
+      enabled: true, position: 'bottom-right', opacity: 50, size: 15,
+      // companyName, not text — the SVG branch reads this one, and without it
+      // the service falls through without compositing anything.
+      companyName: 'PicPeak',
+    });
+    expect(Buffer.isBuffer(buf)).toBe(true);
+
+    const out = await sharp(buf).metadata();
+    // 400x200 stored, tagged 6 — so the watermarked output must be portrait.
+    expect(out.height).toBeGreaterThan(out.width);
+  });
+
   test('the orientation tag is gone from the output, so nothing double-rotates', async () => {
     // The pixels are corrected now, so a surviving tag would make a viewer
     // rotate an already-rotated image. withMetadata(false) strips it; this
