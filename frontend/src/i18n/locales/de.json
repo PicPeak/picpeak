@@ -3827,7 +3827,8 @@
     "colorLabelError": "Farbmarkierung konnte nicht gespeichert werden",
     "removeColorLabel": "Markierung {{color}} entfernen",
     "setColorLabel": "Als {{color}} markieren",
-    "markedAs": "Markiert als {{color}}"
+    "markedAs": "Markiert als {{color}}",
+    "alsoMarkedBy": "Auch von anderen markiert: {{colors}}"
   },
   "filter": {
     "feedbackFilters": "Feedback-Filter",

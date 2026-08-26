@@ -2739,7 +2739,8 @@
     "colorLabelError": "Не удалось обновить цветовую метку",
     "removeColorLabel": "Убрать метку «{{color}}»",
     "setColorLabel": "Отметить как «{{color}}»",
-    "markedAs": "Отмечено как «{{color}}»"
+    "markedAs": "Отмечено как «{{color}}»",
+    "alsoMarkedBy": "Также отмечено другими: {{colors}}"
   },
   "filter": {
     "feedbackFilters": "Фильтры отзывов",

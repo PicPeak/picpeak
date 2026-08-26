@@ -133,7 +133,10 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
       />
 
       {/* Colour label (#1044) — same badge every layout uses. */}
-      <ColorLabelBadge colorLabel={photo.my_color_label} />
+      <ColorLabelBadge
+        colorLabel={photo.my_color_label}
+        otherColorLabels={photo.other_color_labels}
+      />
 
       {/* Overlay Gradient */}
       <div className="gallery-premium-photo-overlay" />

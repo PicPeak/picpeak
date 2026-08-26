@@ -2679,7 +2679,8 @@
     "colorLabelError": "Bijwerken van kleurlabel mislukt",
     "removeColorLabel": "Label {{color}} verwijderen",
     "setColorLabel": "Markeren als {{color}}",
-    "markedAs": "Gemarkeerd als {{color}}"
+    "markedAs": "Gemarkeerd als {{color}}",
+    "alsoMarkedBy": "Ook door anderen gemarkeerd: {{colors}}"
   },
   "filter": {
     "feedbackFilters": "Feedbackfilters",

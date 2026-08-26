@@ -117,7 +117,10 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
       </a>
 
       {/* Colour label (#1044) — same badge every layout uses. */}
-      <ColorLabelBadge colorLabel={photo.my_color_label} />
+      <ColorLabelBadge
+        colorLabel={photo.my_color_label}
+        otherColorLabels={photo.other_color_labels}
+      />
 
       {/* Overlay */}
       <div className="story-photo-card-overlay" />

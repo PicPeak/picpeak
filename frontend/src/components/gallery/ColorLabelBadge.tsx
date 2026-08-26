@@ -4,6 +4,13 @@ import { COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.s
 
 interface ColorLabelBadgeProps {
   colorLabel?: string | null;
+  /**
+   * Distinct colours OTHER viewers gave this photo (#1178). Rendered as small
+   * dots beside the viewer's own badge, so a label set by someone else is
+   * visible on the tile instead of only in the lightbox. Empty when the
+   * gallery has feedback sharing switched off.
+   */
+  otherColorLabels?: string[];
   /** Extra classes for positioning inside the tile. */
   className?: string;
 }
@@ -16,31 +23,75 @@ interface ColorLabelBadgeProps {
  * loud: an inset ring around the tile plus a corner dot. Both are
  * pointer-events-none so they never swallow a click meant for the tile.
  */
-export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({ colorLabel, className = '' }) => {
+export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
+  colorLabel,
+  otherColorLabels = [],
+  className = '',
+}) => {
   const { t } = useTranslation();
 
-  if (!colorLabel || !(colorLabel in COLOR_LABEL_SWATCHES)) return null;
-  const swatch = COLOR_LABEL_SWATCHES[colorLabel as ColorLabel];
-  const name = t(`feedback.colorLabels.${colorLabel}`, colorLabel);
+  const mine = colorLabel && colorLabel in COLOR_LABEL_SWATCHES ? (colorLabel as ColorLabel) : null;
+  // Capped at three: a tile has room for a few dots, and "exactly who marked
+  // this, and how many" is a question the lightbox answers properly.
+  const others = otherColorLabels
+    .filter((c) => c in COLOR_LABEL_SWATCHES && c !== colorLabel)
+    .slice(0, 3) as ColorLabel[];
+
+  if (!mine && others.length === 0) return null;
+
+  const swatch = mine ? COLOR_LABEL_SWATCHES[mine] : null;
+  const name = mine ? t(`feedback.colorLabels.${mine}`, mine) : '';
+
+  const othersLabel = t('feedback.alsoMarkedBy', 'Also marked by others: {{colors}}', {
+    colors: others.map((c) => t(`feedback.colorLabels.${c}`, c)).join(', '),
+  });
 
   return (
     <>
-      <span
-        className={`absolute inset-0 pointer-events-none rounded-[inherit] ${className}`}
-        // Inset rather than an outline: the tile is often flush against its
-        // neighbours in masonry/justified layouts, where an outer ring would
-        // be clipped.
-        style={{ boxShadow: `inset 0 0 0 3px ${swatch.fill}` }}
-        aria-hidden="true"
-      />
-      <span
-        className="absolute top-2 left-2 pointer-events-none flex items-center justify-center w-5 h-5 rounded-full border-2 border-white/90 shadow"
-        style={{ backgroundColor: swatch.fill }}
-        // Colour alone can't carry the meaning — the accessible name does.
-        title={t('feedback.markedAs', 'Marked as {{color}}', { color: name })}
-        role="img"
-        aria-label={t('feedback.markedAs', 'Marked as {{color}}', { color: name })}
-      />
+      {mine && swatch && (
+        <span
+          className={`absolute inset-0 pointer-events-none rounded-[inherit] ${className}`}
+          // Inset rather than an outline: the tile is often flush against its
+          // neighbours in masonry/justified layouts, where an outer ring would
+          // be clipped.
+          style={{ boxShadow: `inset 0 0 0 3px ${swatch.fill}` }}
+          aria-hidden="true"
+        />
+      )}
+      {/* One row in the corner the colour-label dot already owns, rather than a
+          second corner of its own. Bottom-left is taken across the layouts —
+          Timeline puts a timestamp chip there on every tile, Grid/Mosaic/
+          Masonry a media-type badge — and anything placed there gets painted
+          over. Sharing this position also reads better: your mark and everyone
+          else's are the same kind of information. */}
+      <span className="absolute top-2 left-2 pointer-events-none flex items-center gap-1">
+        {mine && swatch && (
+          <span
+            className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-white/90 shadow"
+            style={{ backgroundColor: swatch.fill }}
+            // Colour alone can't carry the meaning — the accessible name does.
+            title={t('feedback.markedAs', 'Marked as {{color}}', { color: name })}
+            role="img"
+            aria-label={t('feedback.markedAs', 'Marked as {{color}}', { color: name })}
+          />
+        )}
+        {others.length > 0 && (
+          <span
+            className="flex items-center gap-1"
+            role="img"
+            aria-label={othersLabel}
+            title={othersLabel}
+          >
+            {others.map((c) => (
+              <span
+                key={c}
+                className="block w-2.5 h-2.5 rounded-full border border-white/90 shadow-sm"
+                style={{ backgroundColor: COLOR_LABEL_SWATCHES[c].fill }}
+              />
+            ))}
+          </span>
+        )}
+      </span>
     </>
   );
 };

@@ -2473,7 +2473,8 @@
     "colorLabelError": "No se pudo actualizar la etiqueta de color",
     "removeColorLabel": "Quitar la etiqueta {{color}}",
     "setColorLabel": "Marcar como {{color}}",
-    "markedAs": "Marcado como {{color}}"
+    "markedAs": "Marcado como {{color}}",
+    "alsoMarkedBy": "También marcado por otros: {{colors}}"
   },
   "filter": {
     "feedbackFilters": "Filtros de feedback",
