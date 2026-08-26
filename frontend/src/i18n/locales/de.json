@@ -2067,6 +2067,17 @@
       "enableFailed": "Zwei-Faktor-Authentifizierung konnte nicht aktiviert werden. Prüfe den Code und versuche es erneut.",
       "disableFailed": "Zwei-Faktor-Authentifizierung konnte nicht deaktiviert werden. Prüfe den Code und versuche es erneut.",
       "regenerateFailed": "Wiederherstellungscodes konnten nicht neu erzeugt werden. Prüfe den Code und versuche es erneut."
+    },
+    "captureDates": {
+      "title": "Aufnahmedaten",
+      "totalPhotos": "Fotos gesamt",
+      "withDates": "Mit Aufnahmedatum",
+      "missingDates": "Ohne Aufnahmedatum",
+      "button": "Aufnahmedaten nachtragen",
+      "running": "Wird nachgetragen...",
+      "noneToFill": "Alle Fotos haben bereits ein Aufnahmedatum",
+      "resultSuccess": "Letzter Lauf: {{success}} aktualisiert, {{noExif}} ohne gefundenes Datum, {{failed}} nicht erreichbar",
+      "description": "Trägt „Aufnahmedatum\" aus den EXIF-Daten nach, für Fotos die vor dieser Auswertung importiert wurden. Externe Importe haben nie eines gespeichert, dadurch sortieren diese Galerien nach Importreihenfolge statt nach Aufnahmezeit."
     }
   },
   "branding": {

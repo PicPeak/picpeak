@@ -1608,6 +1608,17 @@
       "enableFailed": "Could not enable two-factor authentication. Check the code and try again.",
       "disableFailed": "Could not disable two-factor authentication. Check the code and try again.",
       "regenerateFailed": "Could not regenerate recovery codes. Check the code and try again."
+    },
+    "captureDates": {
+      "title": "Capture Dates",
+      "totalPhotos": "Total Photos",
+      "withDates": "With Capture Date",
+      "missingDates": "Missing Capture Date",
+      "button": "Backfill Capture Dates",
+      "running": "Backfilling...",
+      "noneToFill": "All photos already have a capture date",
+      "resultSuccess": "Last run: {{success}} updated, {{noExif}} with no date found, {{failed}} unreachable",
+      "description": "Backfill \"Date Taken\" from EXIF for photos imported before capture dates were read. External/reference imports never recorded one, so their galleries sort by import order instead of when the photos were taken."
     }
   },
   "analytics": {
