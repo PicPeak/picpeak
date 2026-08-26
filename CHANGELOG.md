@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.115.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.115.3-beta.0...v3.115.4-beta.0) (2026-08-26)
+
+
+### Bug Fixes
+
+* **images:** backfill orientation for libraries that predate the fix ([#1199](https://github.com/PicPeak/picpeak/issues/1199)) ([edef4d7](https://github.com/PicPeak/picpeak/commit/edef4d73653e92a3e884f703c7ac578e4288ba41))
+* **images:** respect EXIF orientation in thumbnails, heroes and previews ([#1194](https://github.com/PicPeak/picpeak/issues/1194)) ([c18f54e](https://github.com/PicPeak/picpeak/commit/c18f54ede065c47fec47aca0e0c35c139ae4410a))
+
 ## [3.115.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.115.2-beta.0...v3.115.3-beta.0) (2026-08-26)
 
 
