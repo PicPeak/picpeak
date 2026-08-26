@@ -62,13 +62,25 @@ export const StatusTab: React.FC<StatusTabProps> = ({
   const { storageInfo, systemStatus } = useStatusTab(isActive);
   const queryClient = useQueryClient();
 
+  // Gated on the same permission the endpoint requires, so a role without it
+  // never starts the poll. Without this the card would poll a 403 every ten
+  // seconds for anyone who can open the Status tab but cannot run the repair,
+  // filling the logs with denials for a panel they were never shown.
+  //
+  // Named for the card it gates rather than for the permission, because #1179
+  // adds a second system.manage-gated card to this same component. Two flags
+  // with one name merge without a conflict and then fail to compile
+  // (TS2451) — and since each PR is green on its own, nothing catches it until
+  // main's build breaks. Once both have landed these can collapse into one.
+  const canRepairDimensions = usePermission('system.manage');
+
   const { data: dimensionStatus } = useQuery({
     queryKey: ['photo-dimension-status'],
     queryFn: async () => {
       const res = await api.get('/admin/photos/repair-dimensions/status');
       return res.data;
     },
-    enabled: isActive,
+    enabled: isActive && canRepairDimensions,
     refetchInterval: 10000,
   });
 
@@ -594,7 +606,11 @@ export const StatusTab: React.FC<StatusTabProps> = ({
       )}
 
       {/* Photo Dimensions */}
-      {dimensionStatus && (
+      {/* canRepairDimensions as well as the payload: TanStack keeps the cached
+          status after `enabled` flips false, so without it a lower-privileged
+          admin logging in behind a system.manage user inside the cache lifetime
+          would still be shown the card and a button whose POST 403s. */}
+      {dimensionStatus && canRepairDimensions && (
         <Card padding="md">
           <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
             <Ruler className="w-5 h-5" />

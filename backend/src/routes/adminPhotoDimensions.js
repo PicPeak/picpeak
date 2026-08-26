@@ -64,7 +64,14 @@ function startLeaseKeeper(jobName, token) {
 }
 
 // Repair photo dimensions (background job)
-router.post('/repair-dimensions', adminAuth, requirePermission('photos.edit'), async (req, res) => {
+//
+// system.manage, not photos.edit: the query below is unscoped, so this walks
+// every event in the install, reads every original off S3 or the NAS mount, and
+// rewrites their metadata. photos.edit is held by the team_photographer preset
+// (175_granular_permissions_and_presets.js:106), which exists for a contributing
+// second shooter — someone who should be able to edit the photos they work on,
+// not start a whole-library scan or touch another owner's events.
+router.post('/repair-dimensions', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
     // Claimed before the candidate query, not after: that query is an await,
     // and two requests arriving inside it would both read "not running" and
@@ -211,7 +218,13 @@ router.post('/repair-dimensions', adminAuth, requirePermission('photos.edit'), a
 });
 
 // Get dimension repair status
-router.get('/repair-dimensions/status', adminAuth, requirePermission('photos.view'), async (req, res) => {
+//
+// The same permission as the POST, not the read-only system.view. The two are
+// independent grants, and StatusTab has no permission gate of its own — a
+// successful status payload is what renders the card and its enabled button
+// (StatusTab.tsx:558). system.view alone would therefore show a live Repair
+// button whose every click 403s with no error surfaced.
+router.get('/repair-dimensions/status', adminAuth, requirePermission('system.manage'), async (req, res) => {
   try {
     const totalPhotos = await db('photos')
       .where(function () {
