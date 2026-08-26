@@ -9,6 +9,7 @@ import {
   Activity,
   Ruler,
   CalendarClock,
+  RotateCw,
 } from 'lucide-react';
 import { Button, Card, Input } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
@@ -111,6 +112,30 @@ export const StatusTab: React.FC<StatusTabProps> = ({
     },
     enabled: isActive && canManageSystem,
     refetchInterval: 10000,
+  });
+
+  // Orientation backfill (#1198). No backlog counter of its own: unlike the
+  // other two it cannot know how many rows need it without re-reading every
+  // original, which is the job itself. So the button is always available and
+  // the result line is what tells the operator whether it found anything.
+  const { data: orientationStatus } = useQuery({
+    queryKey: ['photo-orientation-status'],
+    queryFn: async () => {
+      const res = await api.get('/admin/photos/repair-orientation/status');
+      return res.data;
+    },
+    enabled: isActive && canManageSystem,
+    refetchInterval: 10000,
+  });
+
+  const orientationMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/admin/photos/repair-orientation');
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['photo-orientation-status'] });
+    },
   });
 
   const captureDateMutation = useMutation({
@@ -726,6 +751,54 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                 : Number(captureDateStatus.withoutCaptureDate) === 0
                   ? t('settings.captureDates.noneToFill', 'All photos already have a capture date')
                   : t('settings.captureDates.button', 'Backfill Capture Dates')}
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {orientationStatus && canManageSystem && (
+        <Card padding="md">
+          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
+            <RotateCw className="w-5 h-5 text-primary-600" />
+            {t('settings.orientationBackfill.title', 'Photo Orientation')}
+          </h2>
+
+          <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+            {t('settings.orientationBackfill.description', 'Re-read EXIF orientation for photos imported before rotation was applied, correct their stored dimensions, and clear the thumbnails, previews and hero images generated from the unrotated originals. Only photos whose orientation actually changed are touched.')}
+          </p>
+
+          {orientationStatus.lastResult && (
+            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+              {t('settings.orientationBackfill.resultSuccess', {
+                checked: orientationStatus.lastResult.checked,
+                corrected: orientationStatus.lastResult.corrected,
+                requeued: orientationStatus.lastResult.requeuedFaces,
+                failed: orientationStatus.lastResult.failed,
+                defaultValue: 'Last run: {{checked}} checked, {{corrected}} corrected, {{requeued}} requeued for face scanning, {{failed}} unreachable',
+              })}
+              {Number(orientationStatus.lastResult.staleTiers) > 0 && (
+                <span className="block text-amber-600 dark:text-amber-400 mt-1">
+                  {t('settings.orientationBackfill.staleTiers', {
+                    count: orientationStatus.lastResult.staleTiers,
+                    defaultValue: '{{count}} cached size(s) could not be deleted and will keep serving the old orientation — re-run once storage is writable.',
+                  })}
+                </span>
+              )}
+            </p>
+          )}
+
+          <div className="flex justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => orientationMutation.mutate()}
+              isLoading={orientationMutation.isPending || orientationStatus.isRunning}
+              disabled={orientationStatus.isRunning}
+              leftIcon={<RotateCw className="w-4 h-4" />}
+            >
+              {orientationStatus.isRunning
+                ? t('settings.orientationBackfill.running', 'Checking orientation...')
+                : t('settings.orientationBackfill.button', 'Fix Photo Orientation')}
             </Button>
           </div>
         </Card>

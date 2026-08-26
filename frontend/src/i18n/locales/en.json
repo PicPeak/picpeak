@@ -1904,6 +1904,14 @@
       "noneToFill": "All photos already have a capture date",
       "resultSuccess": "Last run: {{success}} updated, {{noExif}} with no date found, {{failed}} unreachable",
       "description": "Backfill \"Date Taken\" from EXIF for photos imported before capture dates were read. External/reference imports never recorded one, so their galleries sort by import order instead of when the photos were taken."
+    },
+    "orientationBackfill": {
+      "title": "Photo Orientation",
+      "description": "Re-read EXIF orientation for photos imported before rotation was applied, correct their stored dimensions, and clear the thumbnails, previews and hero images generated from the unrotated originals. Only photos whose orientation actually changed are touched.",
+      "button": "Fix Photo Orientation",
+      "running": "Checking orientation...",
+      "resultSuccess": "Last run: {{checked}} checked, {{corrected}} corrected, {{requeued}} requeued for face scanning, {{failed}} unreachable",
+      "staleTiers": "{{count}} cached size(s) could not be deleted and will keep serving the old orientation — re-run once storage is writable."
     }
   },
   "analytics": {

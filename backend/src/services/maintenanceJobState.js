@@ -43,6 +43,7 @@ const logger = require('../utils/logger');
 
 const JOB_DIMENSION_REPAIR = 'photo_dimension_repair';
 const JOB_CAPTURE_DATE_BACKFILL = 'photo_capture_date_backfill';
+const JOB_ORIENTATION_BACKFILL = 'photo_orientation_backfill';
 
 // How long a run may go without renewing its lease before another replica is
 // allowed to take it over. Generous on purpose: these jobs walk the whole
@@ -173,6 +174,7 @@ module.exports = {
   read,
   JOB_DIMENSION_REPAIR,
   JOB_CAPTURE_DATE_BACKFILL,
+  JOB_ORIENTATION_BACKFILL,
   DEFAULT_STALE_MS,
   HEARTBEAT_INTERVAL_MS,
 };
