@@ -334,25 +334,30 @@ class FeedbackService {
   }
 
   /**
-   * Update photo feedback statistics
+   * Update photo feedback statistics.
+   *
+   * `trx` so a caller running outside the request path — the duplicate-photo
+   * dedupe (#1162), which reparents feedback rows and must leave the
+   * survivor's denormalized totals correct — can recompute on its own
+   * connection.
    */
-  async updatePhotoFeedbackStats(photoId) {
+  async updatePhotoFeedbackStats(photoId, trx = db) {
     try {
       // Get aggregated stats
-      const stats = await db('photo_feedback')
+      const stats = await trx('photo_feedback')
         .where('photo_id', photoId)
         .where('is_hidden', false)
         .select(
-          db.raw('COUNT(CASE WHEN feedback_type = ? AND is_approved = ? THEN 1 END) as comment_count', ['comment', formatBoolean(true)]),
-          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as like_count', ['like']),
-          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as favorite_count', ['favorite']),
-          db.raw('AVG(CASE WHEN feedback_type = ? THEN rating END) as average_rating', ['rating']),
-          db.raw('COUNT(DISTINCT COALESCE(CAST(guest_id AS VARCHAR), guest_identifier)) as feedback_count')
+          trx.raw('COUNT(CASE WHEN feedback_type = ? AND is_approved = ? THEN 1 END) as comment_count', ['comment', formatBoolean(true)]),
+          trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as like_count', ['like']),
+          trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as favorite_count', ['favorite']),
+          trx.raw('AVG(CASE WHEN feedback_type = ? THEN rating END) as average_rating', ['rating']),
+          trx.raw('COUNT(DISTINCT COALESCE(CAST(guest_id AS VARCHAR), guest_identifier)) as feedback_count')
         )
         .first();
       
       // Update photo table
-      await db('photos')
+      await trx('photos')
         .where('id', photoId)
         .update({
           feedback_count: stats.feedback_count || 0,
