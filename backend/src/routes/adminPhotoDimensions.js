@@ -19,7 +19,7 @@ const maintenanceJobs = require('../services/maintenanceJobState');
 // Two separate rows, for the same reason the two objects were separate: the
 // jobs walk the same photos but read different things out of them, and one
 // running must not block or report for the other.
-const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL } = maintenanceJobs;
+const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFILL } = maintenanceJobs;
 
 const { HEARTBEAT_INTERVAL_MS } = maintenanceJobs;
 
@@ -516,6 +516,227 @@ router.get('/repair-capture-dates/status', adminAuth, requirePermission('system.
   } catch (error) {
     logger.error('Error fetching capture date backfill status:', error);
     res.status(500).json({ error: 'Failed to fetch capture date backfill status' });
+  }
+});
+
+/**
+ * Backfill orientation for a library that predates #1185 (#1198).
+ *
+ * The orientation fix corrected the generators and every ingest path, but did
+ * nothing for photos already in the database. Those rows are worse off than
+ * untouched ones in one specific way: before the fix a rotated photo was
+ * CONSISTENTLY wrong — a sideways image in a tile shaped to match. Afterwards
+ * the regenerated thumbnail is correct while photos.width/height still
+ * describe the raw sensor order, so masonry and justified size a portrait
+ * photo with a landscape ratio.
+ *
+ * The dimension repair above cannot reach them: it only selects rows with a
+ * NULL dimension, and an affected row has both — just transposed.
+ *
+ * Its own job rather than a mode of that one, because it does strictly more:
+ * where the EXIF transform means the pixels have moved, the derived images and
+ * face data generated against the old orientation are no longer valid and have
+ * to be invalidated with the write.
+ */
+router.post('/repair-orientation', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    const token = await maintenanceJobs.claim(JOB_ORIENTATION_BACKFILL);
+    if (!token) {
+      return res.status(409).json({ error: 'Orientation backfill is already running' });
+    }
+    const lease = startLeaseKeeper(JOB_ORIENTATION_BACKFILL, token);
+
+    let photos;
+    try {
+      photos = await db('photos')
+        .join('events', 'photos.event_id', 'events.id')
+        .where(function () {
+          this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
+        })
+        .where(function () {
+          this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
+        })
+        .where(function () {
+          this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
+        })
+        // Archiving deletes the originals and keeps the rows, so every archived
+        // photo would fail its read and add nothing but noise to a run that
+        // already walks the whole library.
+        .where(function () {
+          this.where('events.is_archived', false).orWhereNull('events.is_archived');
+        })
+        .select(
+          'photos.id', 'photos.path', 'photos.filename',
+          'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
+          'photos.width', 'photos.height', 'photos.preview_path', 'photos.face_status',
+          'events.source_mode', 'events.external_path', 'events.slug'
+        );
+    } catch (err) {
+      lease.stop();
+      await maintenanceJobs.release(JOB_ORIENTATION_BACKFILL, token);
+      throw err;
+    }
+
+    if (photos.length === 0) {
+      lease.stop();
+      await maintenanceJobs.release(JOB_ORIENTATION_BACKFILL, token);
+      return res.json({ message: 'No photos to check', count: 0 });
+    }
+
+    res.json({ message: `Checking orientation for ${photos.length} photos`, count: photos.length });
+
+    setImmediate(async () => {
+      const sharp = require('sharp');
+      const {
+        orientedDimensions, hasOrientationTransform, withLocalCopy, withProcessableImage,
+        deletePreviewTiers,
+      } = require('../services/imageProcessor');
+      const { resolvePhotoStorageKey } = require('../services/photoResolver');
+
+      let checked = 0;
+      let corrected = 0;
+      let requeuedFaces = 0;
+      let errorCount = 0;
+      let lostClaim = false;
+
+      try {
+        for (const photo of photos) {
+          if (lease.lost()) { lostClaim = true; break; }
+
+          try {
+            const event = {
+              source_mode: photo.source_mode,
+              external_path: photo.external_path,
+              slug: photo.slug,
+            };
+            const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+
+            // Read the metadata the same way every other maintenance path
+            // does. The dimension repair reads with resolvePhotoFilePath and
+            // plain sharp, which means it does nothing at all on an S3 install
+            // and rejects RAW/DNG — this job walks the WHOLE library, so both
+            // of those stop being edge cases.
+            let metadata;
+            if (isExternal) {
+              const fullPath = resolvePhotoFilePath(event, photo);
+              await fs.access(fullPath);
+              const proc = await withProcessableImage(fullPath, photo.filename);
+              try {
+                metadata = await sharp(proc.path).metadata();
+              } finally {
+                await proc.cleanup();
+              }
+            } else {
+              const sourceKey = resolvePhotoStorageKey(event, photo);
+              metadata = await withLocalCopy(sourceKey, async (localPath) => {
+                await fs.access(localPath);
+                const proc = await withProcessableImage(localPath, photo.filename);
+                try {
+                  return await sharp(proc.path).metadata();
+                } finally {
+                  await proc.cleanup();
+                }
+              });
+            }
+
+            checked++;
+
+            const dims = orientedDimensions(metadata);
+            if (!dims.width || !dims.height) continue;
+
+            const dimsWrong = photo.width !== dims.width || photo.height !== dims.height;
+            // NOT the same question as "did the dimensions change". Orientation
+            // 2, 3 and 4 move every pixel while leaving width and height alone,
+            // as does 5-8 on a square image — and those are exactly the rows
+            // whose derived data is stale while a dimension check says nothing
+            // happened.
+            const transformed = hasOrientationTransform(metadata);
+
+            if (!dimsWrong && !transformed) continue;
+
+            // One transaction. If the dimension write commits and the
+            // invalidation does not, the row keeps stale face boxes AND a
+            // retry computes "already correct" — so nothing would ever fix it.
+            await db.transaction(async (trx) => {
+              if (dimsWrong) {
+                await trx('photos').where({ id: photo.id })
+                  .update({ width: dims.width, height: dims.height });
+              }
+
+              if (transformed) {
+                // Clear the canonical preview BEFORE queueing the rescan.
+                // ensurePreviewImage returns the cached preview whenever it is
+                // still a valid image (imageProcessor.js), and a pre-fix
+                // unrotated preview is perfectly valid — so requeueing without
+                // this makes the rescan read unrotated pixels and scale those
+                // boxes by the corrected dimensions. Worse than leaving it.
+                await trx('photos').where({ id: photo.id }).update({ preview_path: null });
+
+                // whereNotNull: face_status NULL means this photo was never
+                // scanned, and an install that never enabled the feature must
+                // not start scanning because of a dimension repair.
+                requeuedFaces += await trx('photos')
+                  .where({ id: photo.id })
+                  .whereNotNull('face_status')
+                  .whereNot('face_status', 'pending')
+                  .update({ face_status: 'pending' });
+              }
+            });
+
+            // Outside the transaction on purpose: these delete files, and a
+            // storage error must not roll back a correct database write. A
+            // leftover tier is regenerated on next read; a rolled-back write
+            // is silent corruption.
+            if (transformed) {
+              await deletePreviewTiers(photo).catch(() => {});
+            }
+
+            if (dimsWrong) corrected++;
+
+            if ((corrected + requeuedFaces) % 50 === 0 && (corrected + requeuedFaces) > 0) {
+              logger.info(`Orientation backfill progress: ${corrected} corrected...`);
+            }
+          } catch (error) {
+            logger.error(`Error backfilling orientation for photo ${photo.id}:`, error);
+            errorCount++;
+          }
+        }
+
+        if (lostClaim) {
+          logger.warn(`Orientation backfill stopped: claim taken over after ${corrected} corrected`);
+          return;
+        }
+        await maintenanceJobs.release(JOB_ORIENTATION_BACKFILL, token, {
+          checked, corrected, requeuedFaces, failed: errorCount,
+        });
+        logger.info(
+          `Orientation backfill complete: ${checked} checked, ${corrected} corrected, `
+          + `${requeuedFaces} requeued for face scanning, ${errorCount} errors`
+        );
+      } catch (err) {
+        logger.error('Orientation backfill aborted:', err);
+        await maintenanceJobs
+          .release(JOB_ORIENTATION_BACKFILL, token, {
+            checked, corrected, requeuedFaces, failed: errorCount, error: err.message,
+          })
+          .catch(() => {});
+      } finally {
+        lease.stop();
+      }
+    });
+  } catch (error) {
+    logger.error('Error starting orientation backfill:', error);
+    res.status(500).json({ error: 'Failed to start orientation backfill' });
+  }
+});
+
+router.get('/repair-orientation/status', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    const state = await maintenanceJobs.read(JOB_ORIENTATION_BACKFILL);
+    res.json({ isRunning: state.isRunning, lastResult: state.lastResult });
+  } catch (error) {
+    logger.error('Error fetching orientation backfill status:', error);
+    res.status(500).json({ error: 'Failed to fetch orientation backfill status' });
   }
 });
 

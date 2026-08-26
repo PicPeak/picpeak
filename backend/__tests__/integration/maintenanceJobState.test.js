@@ -71,7 +71,10 @@ describe('maintenance job state (#1181)', () => {
 
   test('the migration seeds a row for each job', async () => {
     const names = await db('maintenance_jobs').pluck('job_name');
-    expect(names.sort()).toEqual(['photo_capture_date_backfill', 'photo_dimension_repair']);
+    // 190 seeds the orientation backfill alongside 189's two (#1198).
+    expect(names.sort()).toEqual([
+      'photo_capture_date_backfill', 'photo_dimension_repair', 'photo_orientation_backfill',
+    ]);
   });
 
   test('a second claim is refused while the first is alive', async () => {

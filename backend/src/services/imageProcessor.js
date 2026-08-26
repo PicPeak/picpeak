@@ -370,6 +370,28 @@ async function isThumbnailValid(thumbnailPath) {
  * @param {Object} metadata - a sharp metadata object
  * @returns {{ width: number|null, height: number|null }}
  */
+/**
+ * Does this image's EXIF orientation mean `.rotate()` will move its pixels?
+ * (#1198)
+ *
+ * Distinct from orientedDimensions, and the distinction matters. Orientations
+ * 2, 3 and 4 are a mirror, a 180° turn and a mirrored 180° turn: every pixel
+ * moves, but width and height are unchanged. A square image with 5-8 is the
+ * same story. So "did the dimensions change?" is not the same question as "was
+ * this image transformed", and anything keyed to derived data — face bounding
+ * boxes, cached previews — has to ask the second one or it silently skips
+ * exactly those cases.
+ *
+ * 1 means no transform. Absent means no tag, which is also no transform.
+ *
+ * @param {Object} metadata - a sharp metadata object
+ * @returns {boolean}
+ */
+function hasOrientationTransform(metadata) {
+  const o = metadata && metadata.orientation;
+  return typeof o === 'number' && o >= 2 && o <= 8;
+}
+
 function orientedDimensions(metadata) {
   if (!metadata || !metadata.width || !metadata.height) return { width: null, height: null };
   const swap = metadata.orientation >= 5 && metadata.orientation <= 8;
@@ -1305,6 +1327,7 @@ async function resizeToBox(inputBuffer, box, options = {}) {
 
 module.exports = {
   orientedDimensions,
+  hasOrientationTransform,
   ensurePreviewImageAtWidth,
   ensureThumbnailAtWidth,
   thumbnailTierKeys,
