@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.115.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.115.2-beta.0...v3.115.3-beta.0) (2026-08-26)
+
+
+### Bug Fixes
+
+* **admin:** gate the dimension repair as system maintenance ([#1182](https://github.com/PicPeak/picpeak/issues/1182)) ([3991dc3](https://github.com/PicPeak/picpeak/commit/3991dc3ccb67e4e33a91b171dd9eb77c0c262502))
+* **admin:** make "Storage used" report storage used ([#1164](https://github.com/PicPeak/picpeak/issues/1164)) ([#1170](https://github.com/PicPeak/picpeak/issues/1170)) ([849a580](https://github.com/PicPeak/picpeak/commit/849a5807b7174d05e7f4769c8984843e0d0805e2))
+* **admin:** move the maintenance sweeps' run state into the database ([#1181](https://github.com/PicPeak/picpeak/issues/1181)) ([#1184](https://github.com/PicPeak/picpeak/issues/1184)) ([05e23ef](https://github.com/PicPeak/picpeak/commit/05e23ef1a1c78b426a21d3106ca5d732958c31a6))
+* **external-media:** record capture dates on import, and backfill existing libraries ([#1172](https://github.com/PicPeak/picpeak/issues/1172)) ([#1179](https://github.com/PicPeak/picpeak/issues/1179)) ([410b8f8](https://github.com/PicPeak/picpeak/commit/410b8f8f6f7258c285446b3454164c9a20f2280f))
+* **gallery:** show other guests' colour labels in the grid ([#1178](https://github.com/PicPeak/picpeak/issues/1178)) ([#1180](https://github.com/PicPeak/picpeak/issues/1180)) ([51d20c5](https://github.com/PicPeak/picpeak/commit/51d20c5920ec6cd5aa9bbe8504fd2aa59c180545))
+* **gallery:** stop the lightbox loading originals to display a photo ([#1166](https://github.com/PicPeak/picpeak/issues/1166)) ([#1169](https://github.com/PicPeak/picpeak/issues/1169)) ([77953c1](https://github.com/PicPeak/picpeak/commit/77953c15c12affd1987bd2e78bac815ffa64d0fc))
+* **previews:** preserve alpha and animation in the preview tier ([#1171](https://github.com/PicPeak/picpeak/issues/1171)) ([1366d6d](https://github.com/PicPeak/picpeak/commit/1366d6d14cd07e05ede043ff8cfb368cddc76362))
+
 ## [3.115.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.115.1-beta.0...v3.115.2-beta.0) (2026-08-26)
 
 
