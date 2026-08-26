@@ -59,39 +59,30 @@ describe('lightboxImageUrl (#1166)', () => {
     })).toBe('/api/gallery/g/preview/47?wm=3');
   });
 
-  it.each(['image/gif', 'image/apng', 'image/png'])(
-    'keeps the original for %s, which the preview tier would flatten',
+  it.each(['image/gif', 'image/apng', 'image/png', 'image/webp', 'image/jpeg'])(
+    'uses the preview tier for %s — the backend preserves alpha and frames now',
     (mime_type) => {
-      // generatePreviewImage encodes JPEG: no second frame, no alpha channel.
-      expect(lightboxImageUrl({ ...PHOTO, mime_type })).toBe('/api/gallery/g/photo/47');
+      // The bypass list this replaces existed because generatePreviewImage
+      // always encoded JPEG. Previews of alpha or multi-page sources are WebP
+      // now, so there is nothing left for the frontend to guess at.
+      expect(lightboxImageUrl({ ...PHOTO, mime_type } as Parameters<typeof lightboxImageUrl>[0]))
+        .toBe('/api/gallery/g/preview/47');
+    },
+  );
+  it.each(['image/gif', 'image/apng', 'image/png', 'image/webp', 'image/jpeg'])(
+    'uses the preview tier for %s — the backend preserves alpha and frames now',
+    (mime_type) => {
+      // The bypass list this replaces existed because generatePreviewImage
+      // always encoded JPEG. Previews of alpha or multi-page sources are WebP
+      // now, so there is nothing left for the frontend to guess at — including
+      // the filename check that worked around migration 039's mislabelling.
+      expect(lightboxImageUrl({ ...PHOTO, mime_type } as Parameters<typeof lightboxImageUrl>[0]))
+        .toBe('/api/gallery/g/preview/47');
     },
   );
 
-  it('catches a PNG that migration 039 mislabelled as image/jpeg', () => {
-    // 039 backfilled every pre-existing photo's mime_type to image/jpeg, and
-    // the external-media importer inserts rows with none at all — so trusting
-    // MIME alone lets exactly the transparent photos through.
-    expect(lightboxImageUrl({
-      url: '/api/gallery/g/photo/47',
-      preview_url: null,
-      slideshow_url: '/api/gallery/g/preview/47',
-      mime_type: 'image/jpeg',
-      filename: 'logo-with-alpha.png',
-    })).toBe('/api/gallery/g/photo/47');
-  });
-
-  it('catches one with no mime_type at all, as external imports write them', () => {
-    expect(lightboxImageUrl({
-      url: '/api/gallery/g/photo/47',
-      preview_url: null,
-      slideshow_url: '/api/gallery/g/preview/47',
-      filename: 'animation.gif',
-    })).toBe('/api/gallery/g/photo/47');
-  });
-
-  it('still uses the preview tier for ordinary still formats', () => {
-    for (const mime_type of ['image/jpeg', 'image/webp', undefined]) {
-      expect(lightboxImageUrl({ ...PHOTO, mime_type })).toBe('/api/gallery/g/preview/47');
-    }
+  it('ignores a filename that used to force the original', () => {
+    expect(lightboxImageUrl({ ...PHOTO, filename: 'legacy.png' } as Parameters<typeof lightboxImageUrl>[0]))
+      .toBe('/api/gallery/g/preview/47');
   });
 });
