@@ -609,8 +609,8 @@ router.post(
       let height = null;
       try {
         const meta = await sharp(tempPath).metadata();
-        width = meta.width || null;
-        height = meta.height || null;
+        // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
+        ({ width, height } = require('../../services/imageProcessor').orientedDimensions(meta));
       } catch { /* non-fatal */ }
 
       let thumbRel = null;

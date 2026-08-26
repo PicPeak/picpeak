@@ -110,8 +110,10 @@ async function processEvent(event, storage) {
         try {
           dimensions = await withLocalCopy(entry.key, async (localPath) => {
             const metadata = await sharp(localPath).metadata();
-            if (metadata.width && metadata.height) {
-              return { width: metadata.width, height: metadata.height };
+            // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
+            const dims = require('./imageProcessor').orientedDimensions(metadata);
+            if (dims.width && dims.height) {
+              return { width: dims.width, height: dims.height };
             }
             return null;
           });

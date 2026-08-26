@@ -123,6 +123,31 @@ const contentTypeFor = (format) => {
  * import path passes a per-photo unique basename so two events both
  * referencing `IMG_0001.jpg` don't clobber each other's thumbnail.
  */
+/**
+ * The dimensions a viewer actually sees, given EXIF orientation (#1185).
+ *
+ * sharp reports `metadata.width`/`height` as the pixels are stored, not as
+ * they are displayed. Orientation values 5-8 carry a 90° rotation, so for
+ * those the two are swapped — which is why a portrait photo from a body that
+ * tags rather than rotates was landing in the database as landscape, and why
+ * masonry and justified layouts sized its tile with the wrong aspect ratio on
+ * top of the image itself being unrotated.
+ *
+ * Everything that renders these photos now applies `.rotate()`, so the stored
+ * numbers have to describe the rotated result to match.
+ *
+ * @param {Object} metadata - a sharp metadata object
+ * @returns {{ width: number|null, height: number|null }}
+ */
+function orientedDimensions(metadata) {
+  if (!metadata || !metadata.width || !metadata.height) return { width: null, height: null };
+  const swap = metadata.orientation >= 5 && metadata.orientation <= 8;
+  return {
+    width: swap ? metadata.height : metadata.width,
+    height: swap ? metadata.width : metadata.height,
+  };
+}
+
 async function generateThumbnail(imagePath, options = {}) {
   const sourceBasename = path.basename(imagePath);
   const outputBasename = options.outputBasename || sourceBasename;
@@ -160,6 +185,18 @@ async function generateThumbnail(imagePath, options = {}) {
       failOn: 'none'
     });
 
+
+    // Apply EXIF orientation before resizing (#1185). Without this a photo
+    // whose Orientation tag is not 1 — routine for portrait shots on bodies
+    // that tag rather than rotate the sensor data — is resized from the raw
+    // pixels and comes out sideways. `.withMetadata(false)` below then strips
+    // the tag, so the browser has no hint left to correct it either.
+    //
+    // Unconditional: this pipeline never passes `animated: true`, so it
+    // already flattens a multi-frame source. Guarding on `pages` would protect
+    // an animation that was being discarded anyway while leaving the output in
+    // raw orientation against corrected dimensions.
+    sharpInstance = sharpInstance.rotate();
     // Strip EXIF/metadata from thumbnails (privacy: prevent GPS leak etc.)
     sharpInstance = sharpInstance.withMetadata(false);
 
@@ -406,6 +443,10 @@ async function generateHeroImage(imagePath, options = {}) {
       failOn: 'none'
     });
 
+
+    // EXIF orientation, same reasoning as generateThumbnail (#1185) — and
+    // unconditional for the same reason: no `animated: true` on the input.
+    sharpInstance = sharpInstance.rotate();
     // Strip EXIF/metadata from hero images (privacy: prevent GPS leak etc.)
     sharpInstance = sharpInstance.withMetadata(false);
 
@@ -619,6 +660,19 @@ async function generatePreviewImage(imagePath, options = {}) {
       animated: isAnimated,
     });
 
+
+    // EXIF orientation (#1185). Guarded here and not in the thumbnail/hero
+    // generators because this one DOES open multi-frame sources with
+    // `animated: true` above, and `.rotate()` would flatten them to a single
+    // frame — trading an animation for an orientation.
+    //
+    // Which leaves one corner unsolved: a multi-frame source that also carries
+    // an orientation tag keeps its raw orientation here while the thumbnail
+    // and the stored dimensions describe the rotated one. GIF has no EXIF at
+    // all and animated WebP effectively never sets it.
+    if (!isAnimated) {
+      sharpInstance = sharpInstance.rotate();
+    }
     // Strip EXIF — same privacy reasoning as thumbnails/heroes.
     sharpInstance = sharpInstance.withMetadata(false);
 
@@ -797,6 +851,7 @@ async function extractCaptureDate(imagePath) {
 }
 
 module.exports = {
+  orientedDimensions,
   generateThumbnail,
   isThumbnailValid,
   ensureThumbnail,

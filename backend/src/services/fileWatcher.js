@@ -101,8 +101,10 @@ async function processNewPhoto(filePath) {
   if (!isVideo) {
     try {
       const metadata = await sharp(filePath).metadata();
-      if (metadata.width && metadata.height) {
-        dimensions = { width: metadata.width, height: metadata.height };
+      // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
+      const dims = require('./imageProcessor').orientedDimensions(metadata);
+      if (dims.width && dims.height) {
+        dimensions = { width: dims.width, height: dims.height };
       }
     } catch (err) {
       logger.debug(`Could not read image dimensions for ${filename}: ${err.message}`);
