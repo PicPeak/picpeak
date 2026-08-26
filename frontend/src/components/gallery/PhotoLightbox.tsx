@@ -11,6 +11,7 @@ import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { VideoPlayer } from './VideoPlayer';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
+import { lightboxImageUrl } from './imageTiers';
 
 interface PhotoLightboxProps {
   photos: Photo[];
@@ -838,12 +839,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   />
                 ) : (
                   <AuthenticatedImage
-                    // Prefer the lightbox preview tier when the admin
-                    // opted in (#492). Falls back to `url` (the
-                    // original) when preview_url is null — happens
-                    // when the toggle is off, when the photo is a
-                    // video, or briefly while lazy generation runs.
-                    src={photo.preview_url || photo.url}
+                    // The preview tier, falling back to slideshow_url when the
+                    // admin never flipped lightbox_preview_enabled (#1166) —
+                    // otherwise a stock install renders the untouched original.
+                    src={lightboxImageUrl(photo)}
                     alt={photo.filename}
                     fallbackSrc={photo.thumbnail_url || undefined}
                     className="max-w-full max-h-full object-contain select-none pointer-events-none"
@@ -867,9 +866,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               onClick={handleImageClick}
             >
               <AuthenticatedImage
-                // Same preview-prefer-with-fallback logic as the
-                // off-screen tile above (#492).
-                src={photo.preview_url || photo.url}
+                // Same source selection as the off-screen tile above (#1166).
+                src={lightboxImageUrl(photo)}
                 alt={photo.filename}
                 fallbackSrc={photo.thumbnail_url || undefined}
                 className="max-w-full max-h-full object-contain select-none"
