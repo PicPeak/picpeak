@@ -14,13 +14,22 @@ const normalizeGalleryResponse = (response: GalleryAuthResponse): GalleryAuthRes
 
 export const authService = {
   // Admin authentication
-  async adminLogin(credentials: { email: string; password: string; recaptchaToken?: string | null }): Promise<AdminLoginResponse> {
+  async adminLogin(credentials: {
+    email: string;
+    password: string;
+    recaptchaToken?: string | null;
+    rememberMe?: boolean;
+  }): Promise<AdminLoginResponse> {
     // Backend expects 'username' field, but we accept email.
     // Returns either { user } (session set) or an MFA challenge { mfaRequired, mfaToken }.
     const response = await api.post<AdminLoginResponse>('/auth/admin/login', {
       username: credentials.email,
       password: credentials.password,
-      recaptchaToken: credentials.recaptchaToken
+      recaptchaToken: credentials.recaptchaToken,
+      // Only sent when checked (#1186). Omitted otherwise, so the backend's
+      // default 24h session is what an untouched form still gets. The MFA
+      // step does not resend it — it rides along inside the mfa_pending token.
+      remember_me: credentials.rememberMe === true
     });
     return response.data;
   },

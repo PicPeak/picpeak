@@ -45,7 +45,7 @@ const router = express.Router();
  * both produce an identical session. `lockoutKey` is the identifier the user
  * typed (username or email) so success/failure tracking stays in one bucket.
  */
-async function establishAdminSession(res, admin, ipAddress, userAgent, lockoutKey) {
+async function establishAdminSession(res, admin, ipAddress, userAgent, lockoutKey, { rememberMe = false } = {}) {
   await trackSuccessfulLogin(lockoutKey, ipAddress, userAgent);
 
   // A normal login means the first-run wizard is over — the wizard never hits
@@ -70,13 +70,21 @@ async function establishAdminSession(res, admin, ipAddress, userAgent, lockoutKe
     type: 'admin',
     role: admin.role_name,
     ip: ipAddress,
-    loginTime: Date.now()
+    loginTime: Date.now(),
+    // In the payload, not just in the expiry, because the idle-timeout
+    // middleware has to see it: a 30-day token is worth nothing if
+    // sessionTimeoutMiddleware still logs the session out after an hour.
+    rememberMe
   }, process.env.JWT_SECRET, {
-    expiresIn: '24h',
+    // "Remember me" (#1186). Opt-in: unchecked behaviour is unchanged at 24h,
+    // so the longer window only exists where somebody asked for it. The cookie
+    // below is given the matching max-age — if the two disagree the session
+    // either dies early or outlives its token.
+    expiresIn: rememberMe ? '30d' : '24h',
     issuer: 'picpeak-auth'
   });
 
-  setAdminAuthCookie(res, token);
+  setAdminAuthCookie(res, token, { rememberMe });
 
   // A fresh login supersedes any SSO marker a previous session left behind
   // (#798 phase 3): sessions can die without /logout (deactivation, expiry,
@@ -97,15 +105,18 @@ async function establishAdminSession(res, admin, ipAddress, userAgent, lockoutKe
   };
 }
 
-async function completeAdminLogin(req, res, admin, ipAddress, userAgent, lockoutKey) {
-  const user = await establishAdminSession(res, admin, ipAddress, userAgent, lockoutKey);
+async function completeAdminLogin(req, res, admin, ipAddress, userAgent, lockoutKey, { rememberMe = false } = {}) {
+  const user = await establishAdminSession(res, admin, ipAddress, userAgent, lockoutKey, { rememberMe });
   return res.json({ user });
 }
 
 // Admin login with enhanced security
 router.post('/admin/login', [
   body('username').notEmpty().trim(),
-  body('password').notEmpty()
+  body('password').notEmpty(),
+  // Optional and boolean-coerced: an absent or malformed value means "no",
+  // so a client that never sends it keeps the 24h session it always had.
+  body('remember_me').optional().isBoolean().toBoolean()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -114,6 +125,9 @@ router.post('/admin/login', [
     }
     
     const { username, password, recaptchaToken } = req.body;
+    // Validator above coerces this to a real boolean and leaves it undefined
+    // when absent, so the fallback keeps the historical 24h session (#1186).
+    const rememberMe = req.body.remember_me === true;
     const ipAddress = getClientIp(req);
     const userAgent = req.headers['user-agent'] || '';
 
@@ -186,7 +200,12 @@ router.post('/admin/login', [
         id: admin.id,
         username: admin.username,
         type: 'mfa_pending',
-        loginId: username
+        loginId: username,
+        // Carried in the signed token rather than re-sent by the client at the
+        // verify step: the choice was made at the password prompt, and this
+        // way the second leg cannot be talked into a longer session than the
+        // first one asked for.
+        rememberMe
       }, process.env.JWT_SECRET, {
         expiresIn: '5m',
         issuer: 'picpeak-auth'
@@ -194,7 +213,7 @@ router.post('/admin/login', [
       return res.json({ mfaRequired: true, mfaToken });
     }
 
-    return await completeAdminLogin(req, res, admin, ipAddress, userAgent, username);
+    return await completeAdminLogin(req, res, admin, ipAddress, userAgent, username, { rememberMe });
   } catch (error) {
     errorResponse(res, error, 500, 'Login failed');
   }
@@ -301,7 +320,12 @@ router.post('/admin/login/mfa', [
       { type: 'admin', id: admin.id, name: admin.username }
     );
 
-    return await completeAdminLogin(req, res, admin, ipAddress, userAgent, lockoutKey);
+    // Taken from the signed mfa_pending token, not from this request: the
+    // choice belongs to the password step, and reading it back out of the
+    // token stops the verify leg asking for a longer session than was agreed.
+    return await completeAdminLogin(req, res, admin, ipAddress, userAgent, lockoutKey, {
+      rememberMe: decoded.rememberMe === true,
+    });
   } catch (error) {
     logger.error('MFA verification error:', error);
     res.status(500).json({ error: 'Verification failed' });
