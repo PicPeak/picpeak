@@ -1211,6 +1211,7 @@
       "running": "Traitement...",
       "noneToFill": "Toutes les photos ont déjà une date de prise de vue",
       "resultSuccess": "Dernier passage : {{success}} mises à jour, {{noExif}} sans date trouvée, {{failed}} inaccessibles",
+      "skipped": "{{count}} photo(s) ont changé pendant la lecture et ont été laissées pour le prochain passage.",
       "description": "Complète la « date de prise de vue » depuis les EXIF pour les photos importées avant sa lecture. Les imports externes n'en enregistraient aucune, si bien que ces galeries se trient par ordre d'import plutôt que par date de prise de vue."
     },
     "orientationBackfill": {

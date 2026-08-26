@@ -2362,6 +2362,7 @@
       "running": "Wird nachgetragen...",
       "noneToFill": "Alle Fotos haben bereits ein Aufnahmedatum",
       "resultSuccess": "Letzter Lauf: {{success}} aktualisiert, {{noExif}} ohne gefundenes Datum, {{failed}} nicht erreichbar",
+      "skipped": "{{count}} Foto(s) haben sich während des Laufs geändert und wurden für den nächsten Lauf übersprungen.",
       "description": "Trägt „Aufnahmedatum\" aus den EXIF-Daten nach, für Fotos die vor dieser Auswertung importiert wurden. Externe Importe haben nie eines gespeichert, dadurch sortieren diese Galerien nach Importreihenfolge statt nach Aufnahmezeit."
     },
     "orientationBackfill": {
