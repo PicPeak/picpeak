@@ -267,11 +267,14 @@ async function generateThumbnail(imagePath, options = {}) {
     // the tag, so the browser has no hint left to correct it either, which is
     // why this cannot be left to the client.
     //
-    // Stills only, for the reason resizeToBox already documents: `.rotate()`
-    // flattens a multi-frame source to its first frame.
-    if ((metadata.pages || 1) <= 1) {
-      sharpInstance = sharpInstance.rotate();
-    }
+    // Unconditional, unlike resizeToBox and generatePreviewImage. Those open
+    // multi-frame sources with `animated: true` and must not rotate them,
+    // because `.rotate()` flattens to the first frame. This one never passes
+    // that option, so it already produces a still — guarding on `pages` here
+    // would protect an animation that was being discarded anyway, and leave
+    // the thumbnail in raw orientation while the stored dimensions describe
+    // the rotated one.
+    sharpInstance = sharpInstance.rotate();
 
     // Strip EXIF/metadata from thumbnails (privacy: prevent GPS leak etc.)
     sharpInstance = sharpInstance.withMetadata(false);
@@ -552,10 +555,10 @@ async function generateHeroImage(imagePath, options = {}) {
       failOn: 'none'
     });
 
-    // EXIF orientation, same reasoning as generateThumbnail (#1185).
-    if ((metadata.pages || 1) <= 1) {
-      sharpInstance = sharpInstance.rotate();
-    }
+    // EXIF orientation, same reasoning as generateThumbnail (#1185) — and
+    // unconditional for the same reason: no `animated: true` on the input, so
+    // this output is a still whatever the source was.
+    sharpInstance = sharpInstance.rotate();
 
     // Strip EXIF/metadata from hero images (privacy: prevent GPS leak etc.)
     sharpInstance = sharpInstance.withMetadata(false);
@@ -778,8 +781,17 @@ async function generatePreviewImage(imagePath, options = {}) {
       animated: isAnimated,
     });
 
-    // EXIF orientation, same reasoning as generateThumbnail (#1185). isAnimated
-    // is already resolved above, so the still-only guard reuses it.
+    // EXIF orientation (#1185). Guarded here and not in the thumbnail/hero
+    // generators because this one DOES open multi-frame sources with
+    // `animated: true` above, and `.rotate()` would flatten them to a single
+    // frame — trading an animation for an orientation.
+    //
+    // Which leaves one corner unsolved: a multi-frame source that also carries
+    // an orientation tag keeps its raw orientation here while the thumbnail
+    // and the stored dimensions describe the rotated one. GIF has no EXIF at
+    // all and animated WebP effectively never sets it, so this is a real gap
+    // rather than a common one, and closing it properly means rotating frame
+    // by frame rather than dropping the animation.
     if (!isAnimated) {
       sharpInstance = sharpInstance.rotate();
     }

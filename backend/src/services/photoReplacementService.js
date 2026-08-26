@@ -78,8 +78,8 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
     try {
       try {
         const metadata = await sharp(proc.path).metadata();
-        width = metadata.width || null;
-        height = metadata.height || null;
+        // Oriented, not raw — see imageProcessor.orientedDimensions (#1185).
+        ({ width, height } = require('./imageProcessor').orientedDimensions(metadata));
       } catch {
         // Non-image or corrupt
       }
