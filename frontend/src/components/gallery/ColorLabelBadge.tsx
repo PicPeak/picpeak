@@ -13,6 +13,19 @@ interface ColorLabelBadgeProps {
   otherColorLabels?: string[];
   /** Extra classes for positioning inside the tile. */
   className?: string;
+  /**
+   * Dot scale. 'sm' is for surfaces smaller than a grid tile — the carousel's
+   * 80px thumbnail strip (#1189), where the default 20px dot plus three 10px
+   * ones covers most of the image.
+   */
+  size?: 'md' | 'sm';
+  /**
+   * Where the dot row sits inside its positioned ancestor. Overridable because
+   * the tile layouts and the carousel have different corners free: the
+   * carousel's own top-left carries its counter and category chips, so the
+   * default would land underneath them (#1189).
+   */
+  position?: string;
 }
 
 /**
@@ -27,6 +40,8 @@ export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
   colorLabel,
   otherColorLabels = [],
   className = '',
+  size = 'md',
+  position = 'top-2 left-2',
 }) => {
   const { t } = useTranslation();
 
@@ -46,6 +61,9 @@ export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
     colors: others.map((c) => t(`feedback.colorLabels.${c}`, c)).join(', '),
   });
 
+  const mineDotClass = size === 'sm' ? 'w-3.5 h-3.5 border' : 'w-5 h-5 border-2';
+  const otherDotClass = size === 'sm' ? 'w-2 h-2' : 'w-2.5 h-2.5';
+
   return (
     <>
       {mine && swatch && (
@@ -64,10 +82,10 @@ export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
           Masonry a media-type badge — and anything placed there gets painted
           over. Sharing this position also reads better: your mark and everyone
           else's are the same kind of information. */}
-      <span className="absolute top-2 left-2 pointer-events-none flex items-center gap-1">
+      <span className={`absolute ${position} pointer-events-none flex items-center gap-1`}>
         {mine && swatch && (
           <span
-            className="flex items-center justify-center w-5 h-5 rounded-full border-2 border-white/90 shadow"
+            className={`flex items-center justify-center ${mineDotClass} rounded-full border-white/90 shadow`}
             style={{ backgroundColor: swatch.fill }}
             // Colour alone can't carry the meaning — the accessible name does.
             title={t('feedback.markedAs', 'Marked as {{color}}', { color: name })}
@@ -85,7 +103,7 @@ export const ColorLabelBadge: React.FC<ColorLabelBadgeProps> = ({
             {others.map((c) => (
               <span
                 key={c}
-                className="block w-2.5 h-2.5 rounded-full border border-white/90 shadow-sm"
+                className={`block ${otherDotClass} rounded-full border border-white/90 shadow-sm`}
                 style={{ backgroundColor: COLOR_LABEL_SWATCHES[c].fill }}
               />
             ))}
