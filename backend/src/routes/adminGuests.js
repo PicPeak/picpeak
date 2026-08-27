@@ -88,19 +88,59 @@ router.get(
         )
         .orderBy('gallery_guests.created_at', 'desc');
 
-      const guests = rows.map((r) => ({
-        ...serializeGuest(r),
-        stats: {
-          likes: parseInt(r.likes, 10) || 0,
-          favorites: parseInt(r.favorites, 10) || 0,
-          comments: parseInt(r.comments, 10) || 0,
-          ratings: parseInt(r.ratings, 10) || 0,
-          reactions: parseInt(r.reactions, 10) || 0,
-          distinct_photos: parseInt(r.distinct_photos, 10) || 0,
-        },
-      }));
+      // Which rows are the same person registered more than once (#1210).
+      //
+      // Registration always inserts, so a returning client whose token has
+      // expired — or who opens the gallery on a second device — becomes a new
+      // guest, and their picks split across the copies. Merging those already
+      // works; nothing told the admin which rows to merge, so the split
+      // selection had to be spotted by eye before the "final" list could be
+      // trusted.
+      //
+      // Grouped in JS rather than a second grouped query: the list is one
+      // event's guests, and the rows are already in hand. Case-folded because
+      // the same person types Tina@ and tina@ on different days, and trimmed
+      // because a trailing space is invisible in the admin list — both would
+      // otherwise read as distinct people. Email is the only key used: two
+      // guests genuinely called "Anna" are not evidence of anything.
+      const byEmail = new Map();
+      for (const r of rows) {
+        const key = (r.email || '').trim().toLowerCase();
+        if (!key) continue;
+        if (!byEmail.has(key)) byEmail.set(key, []);
+        byEmail.get(key).push(r.id);
+      }
 
-      res.json({ guests });
+      const guests = rows.map((r) => {
+        const key = (r.email || '').trim().toLowerCase();
+        const sharing = key ? byEmail.get(key) || [] : [];
+        return {
+          ...serializeGuest(r),
+          // The other rows this one shares an email with, so the UI can offer
+          // the merge it already has rather than asking the admin to find them.
+          duplicate_of: sharing.length > 1 ? sharing.filter((id) => id !== r.id) : [],
+          stats: {
+            likes: parseInt(r.likes, 10) || 0,
+            favorites: parseInt(r.favorites, 10) || 0,
+            comments: parseInt(r.comments, 10) || 0,
+            ratings: parseInt(r.ratings, 10) || 0,
+            reactions: parseInt(r.reactions, 10) || 0,
+            distinct_photos: parseInt(r.distinct_photos, 10) || 0,
+          },
+        };
+      });
+
+      // One number for the banner, so the UI does not have to derive it and
+      // then disagree with the badges when the derivation drifts.
+      const duplicateGroups = [...byEmail.values()].filter((ids) => ids.length > 1);
+
+      res.json({
+        guests,
+        duplicates: {
+          groups: duplicateGroups.length,
+          guests: duplicateGroups.reduce((n, ids) => n + ids.length, 0),
+        },
+      });
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to list guests');
     }

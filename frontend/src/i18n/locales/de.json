@@ -3011,7 +3011,11 @@
         "pending": "Ausstehend",
         "redeemed": "Eingelöst",
         "revoked": "Widerrufen"
-      }
+      },
+      "duplicatesFound": "{{guests}} Gasteinträge sehen nach {{groups}} wiederkehrenden Besucher(n) aus — gleiche E-Mail, mehrfach registriert. Ihre Auswahl bleibt geteilt, bis sie zusammengeführt werden.",
+      "reviewDuplicates": "Prüfen",
+      "duplicateBadge": "Duplikat?",
+      "duplicateHint": "Ein anderer Eintrag in dieser Galerie nutzt dieselbe E-Mail — vermutlich dieselbe Person, zweimal registriert."
     },
     "analytics": "Analytik",
     "activities": {

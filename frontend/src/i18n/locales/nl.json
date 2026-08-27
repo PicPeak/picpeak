@@ -1756,7 +1756,11 @@
         "pending": "In behandeling",
         "redeemed": "Ingewisseld",
         "revoked": "Ingetrokken"
-      }
+      },
+      "duplicatesFound": "{{guests}} gastvermeldingen lijken {{groups}} terugkerende bezoeker(s) — zelfde e-mail, meerdere keren geregistreerd. Hun keuzes blijven gesplitst tot ze zijn samengevoegd.",
+      "reviewDuplicates": "Bekijken",
+      "duplicateBadge": "duplicaat?",
+      "duplicateHint": "Een andere vermelding in deze galerij gebruikt hetzelfde e-mailadres — waarschijnlijk dezelfde persoon die zich twee keer registreerde."
     },
     "analytics": "Analyse",
     "activities": {

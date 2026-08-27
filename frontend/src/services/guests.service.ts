@@ -30,6 +30,10 @@ export interface AdminGuest {
   last_seen_at: string;
   email_verified_at: string | null;
   is_deleted: boolean;
+  // Other guest rows on this event sharing this one's email (#1210) — the
+  // same person who registered again after their token expired or on a
+  // second device. Empty for everyone else.
+  duplicate_of?: number[];
   stats: AdminGuestStats;
 }
 
@@ -110,7 +114,10 @@ class GuestsService {
   // Admin-side
   // ===================================================================
 
-  async getEventGuests(eventId: number): Promise<{ guests: AdminGuest[] }> {
+  async getEventGuests(eventId: number): Promise<{
+    guests: AdminGuest[];
+    duplicates?: { groups: number; guests: number };
+  }> {
     const response = await api.get(`/admin/events/${eventId}/guests`);
     return response.data;
   }

@@ -1781,7 +1781,11 @@
         "pending": "Pendente",
         "redeemed": "Utilizado",
         "revoked": "Revogado"
-      }
+      },
+      "duplicatesFound": "{{guests}} entradas de convidado parecem {{groups}} visitante(s) recorrente(s) — mesmo e-mail, registado mais do que uma vez. As escolhas ficam divididas até serem unidas.",
+      "reviewDuplicates": "Rever",
+      "duplicateBadge": "duplicado?",
+      "duplicateHint": "Outra entrada nesta galeria usa o mesmo e-mail — provavelmente a mesma pessoa registada duas vezes."
     },
     "analytics": "Análise",
     "activities": {

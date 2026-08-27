@@ -79,10 +79,26 @@ function requireGuest(req, res, next) {
 }
 
 /**
- * Sign a new guest JWT. Scoped to a specific event and guest row.
- * Expiry matches the gallery token default (24h).
+ * How long a guest stays recognised (#1210).
+ *
+ * Was 24h, matching the gallery token, and every call site took that default —
+ * so a client reviewing a gallery across two weekends lost their identity in
+ * between and registered again. Each of those re-registrations is a fresh
+ * gallery_guests row, and their likes and favourites scatter across the
+ * duplicates until an admin merges them, which is the harm reported in #1210.
+ *
+ * A guest token is a weaker thing than an admin session: it is scoped to one
+ * event, carries no admin capability, and the gallery itself is already behind
+ * whatever password or share link protects it. 30 days is the shape of a real
+ * proofing cycle. Configurable for operators who want it shorter — the value
+ * goes straight to jsonwebtoken, so it takes any zeit/ms string ('7d', '12h').
  */
-function signGuestToken({ guestId, eventId, identifier, name }, expiresIn = '24h') {
+const GUEST_TOKEN_TTL = process.env.GUEST_TOKEN_TTL || '30d';
+
+/**
+ * Sign a new guest JWT. Scoped to a specific event and guest row.
+ */
+function signGuestToken({ guestId, eventId, identifier, name }, expiresIn = GUEST_TOKEN_TTL) {
   return jwt.sign(
     {
       type: 'guest',
