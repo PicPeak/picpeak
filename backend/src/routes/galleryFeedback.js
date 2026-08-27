@@ -88,7 +88,9 @@ router.get('/:slug/photos/:photoId/feedback',
       // Get feedback based on settings
       const options = {
         approved_only: true,
-        include_hidden: false
+        include_hidden: false,
+        // Only the colour-label set this event is actually using (#1197).
+        identity_mode: settings.identity_mode,
       };
       
       // Include guest's own feedback even if not approved
@@ -96,7 +98,8 @@ router.get('/:slug/photos/:photoId/feedback',
       
       // Get guest's own feedback separately
       const guestFeedback = await feedbackService.getPhotoFeedback(photoId, {
-        guest_identifier: guestIdentifier
+        guest_identifier: guestIdentifier,
+        identity_mode: settings.identity_mode,
       });
 
       // The photo's shared tag (#1197), when the event is in that mode.

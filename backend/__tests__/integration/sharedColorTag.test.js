@@ -306,6 +306,22 @@ describe('shared colour tag (#1197)', () => {
         expect(map[otherPhotoId]).toBeUndefined();
       });
 
+      it('keeps dormant labels out of the raw feedback list too', async () => {
+        // The per-colour tallies were scoped, but the endpoint also returns the
+        // rows themselves. Those carried both sets, so a dormant per-guest
+        // label was still visible to anyone reading the list — and with
+        // sharing off it came back flagged as the caller's own.
+        await seedDormantPerGuestLabels();
+        const body = await feedbackFor('device-A');
+        expect(body.feedback.filter((f) => f.feedback_type === 'color_label')).toHaveLength(0);
+        expect(body.my_feedback.color_label).toBeFalsy();
+
+        await tag('device-A', 'blue');
+        const after = await feedbackFor('device-B');
+        const labels = after.feedback.filter((f) => f.feedback_type === 'color_label');
+        expect(labels.map((f) => f.color_label)).toEqual(['blue']);
+      });
+
       it('does not answer a guest colour filter from a dormant label', async () => {
         await seedDormantPerGuestLabels();
         expect(await photosFor('device-A', '?filter=color:green')).toHaveLength(0);

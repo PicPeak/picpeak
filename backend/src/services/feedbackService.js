@@ -48,6 +48,10 @@ const SINGLE_VALUE_COLUMNS = {
  * only feedback_type='color_label' takes the reserved slot. Everything else
  * falls through to the per-guest path unchanged.
  */
+// Set once the settings table has been seen. Module scope on purpose: the
+// answer is a property of the schema, not of a request.
+let settingsTableKnownToExist = false;
+
 function isSharedColorLabel(identityMode, feedbackType) {
   return identityMode === 'shared' && feedbackType === 'color_label';
 }
@@ -285,10 +289,16 @@ class FeedbackService {
         updated_at: nowIso(),
       }).returning('id');
       outcome = { id: inserted[0]?.id || inserted[0], created: true, shared: true };
+
+      // Inside the transaction, while the photo row is still locked (#1197
+      // review). Recomputing after the commit meant a failure there returned
+      // 500 for a tag that HAD been written — so the client reverted its
+      // swatch, the next tap on the same colour toggled the committed tag off
+      // instead of setting it, and the counters stayed stale meanwhile. It
+      // also let two concurrent writers race their aggregate updates.
+      await this.updatePhotoFeedbackStats(photoId, trx);
     });
 
-    // Outside the transaction: it reads the rows the commit just made visible.
-    await this.updatePhotoFeedbackStats(photoId);
     return outcome;
   }
 
@@ -334,6 +344,21 @@ class FeedbackService {
    */
   async getIdentityModeForPhoto(photoId, trx = db) {
     try {
+      // Asked BEFORE the join, not recovered from afterwards (#1197 review).
+      // On Postgres a failed statement aborts the whole transaction, so
+      // catching the error and carrying on left the caller's trx poisoned:
+      // the aggregate and update that follow would fail with "current
+      // transaction is aborted", which is exactly the migration-time path the
+      // fallback exists to support. A metadata check is safe to ask and does
+      // not abort anything.
+      //
+      // Memoised once true because a table does not un-create itself, and this
+      // sits on the feedback write path; a false answer is not cached, so a
+      // migration that creates the table later is picked up.
+      if (!settingsTableKnownToExist) {
+        settingsTableKnownToExist = await trx.schema.hasTable('event_feedback_settings');
+        if (!settingsTableKnownToExist) return 'simple';
+      }
       const row = await trx('photos')
         .join('event_feedback_settings', 'photos.event_id', 'event_feedback_settings.event_id')
         .where('photos.id', photoId)
@@ -630,6 +655,22 @@ class FeedbackService {
       
       if (options.approved_only) {
         query.where('is_approved', true);
+      }
+
+      // Colour labels belong to one of two sets, and only one is live (#1197
+      // review). Without this the raw feedback list handed back both — dormant
+      // per-guest rows while the event is in shared mode, and the reserved
+      // shared row after switching away — even though the settings panel
+      // promises the other set is not shown. With sharing off it was worse:
+      // the caller's own dormant row came back flagged is_mine.
+      if (options.identity_mode) {
+        query.where(function () {
+          this.whereNot('feedback_type', 'color_label');
+          this.orWhere(function () {
+            this.where('feedback_type', 'color_label');
+            scopeColorLabelsToMode(this, options.identity_mode);
+          });
+        });
       }
       
       if (!options.include_hidden) {
