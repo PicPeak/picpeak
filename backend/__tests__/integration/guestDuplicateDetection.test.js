@@ -188,6 +188,33 @@ describe('duplicate guest detection (#1210)', () => {
     expect((await db('guest_invites').where({ id: inviteId }).first()).guest_id).toBe(old);
   });
 
+  it('canonicalises the survivor\'s address so recovery can still find them', async () => {
+    // Grouping folds case and whitespace, so a merge can be proposed between a
+    // clean address and a legacy one that is not. /guest/recover lowercases
+    // what the guest types and matches on equality, so a survivor left holding
+    // the raw value becomes permanently unrecoverable by email.
+    const legacy = await addGuest('Tina', 'Tina@Example.com ');
+    const other = await addGuest('Tina', 'tina@example.com');
+
+    const res = await request(app)
+      .post(`/api/admin/events/${eventId}/guests/${legacy}/merge`)
+      .send({ mergeIds: [other] });
+    expect(res.status).toBe(200);
+
+    expect((await db('gallery_guests').where({ id: legacy }).first()).email).toBe('tina@example.com');
+  });
+
+  it('leaves an already-canonical survivor untouched', async () => {
+    const kept = await addGuest('Tina', 'tina@example.com');
+    const dupe = await addGuest('Tina', 'Tina@Example.com');
+
+    await request(app)
+      .post(`/api/admin/events/${eventId}/guests/${kept}/merge`)
+      .send({ mergeIds: [dupe] });
+
+    expect((await db('gallery_guests').where({ id: kept }).first()).email).toBe('tina@example.com');
+  });
+
   it('ignores a removed guest', async () => {
     const kept = await addGuest('Tina', 'tina@example.com');
     await addGuest('Tina', 'tina@example.com', { is_deleted: true });

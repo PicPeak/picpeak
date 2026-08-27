@@ -643,6 +643,22 @@ router.post(
 
       const result = await feedbackService.mergeGuestFeedback(Number(keepId), mergeIds.map(Number));
 
+      // Canonicalise the survivor's address (#1210 review). Rows are grouped
+      // for review with the case and whitespace folded out, so a merge can be
+      // proposed between `tina@example.com` and `Tina@Example.com ` — and if
+      // the non-canonical one survives, guest recovery can never find it
+      // again: /guest/recover lowercases and trims what the guest types, then
+      // matches on equality (galleryGuests.js). Every write path normalises
+      // today, so this is for rows that predate that, which are exactly the
+      // rows case-folded grouping surfaces.
+      const survivor = all.find((g) => Number(g.id) === Number(keepId));
+      if (survivor?.email) {
+        const canonical = String(survivor.email).trim().toLowerCase();
+        if (canonical !== survivor.email) {
+          await db('gallery_guests').where({ id: Number(keepId) }).update({ email: canonical });
+        }
+      }
+
       // Carry any unredeemed invite over to the survivor BEFORE the source row
       // is soft-deleted (#1210 review). guest_invites.guest_id points at a real
       // gallery_guests row — creating an invite inserts one — and redemption

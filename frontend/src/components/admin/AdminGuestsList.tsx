@@ -140,12 +140,19 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
     // was newest-first, which would discard an older, email-verified row with
     // most of the picks in favour of a fresh re-registration.
     //
-    // Verified first, then whoever holds the most feedback, then the oldest —
-    // the row with the strongest claim to being the real person. Still only a
-    // proposal: the admin sees it ticked and can change it before merging.
+    // Verified first, then the oldest row — both server-set, neither of them
+    // something a visitor can influence.
+    //
+    // Ranking by feedback volume was the obvious next tiebreak and is exactly
+    // the wrong one (#1210 review). Registration does not verify the address,
+    // so anyone who knows a guest's email can register with it; if the ranking
+    // preferred whoever holds the most picks, that visitor could out-rank the
+    // real person by marking enough photos, be preselected as the survivor,
+    // and have the victim's feedback merged onto an identity whose token they
+    // still hold. distinct_photos is guest-controlled input and has no place
+    // in deciding who survives.
     const rank = (g: AdminGuest) => [
       g.email_verified_at ? 0 : 1,
-      -(g.stats?.distinct_photos ?? 0),
       new Date(g.created_at).getTime(),
     ];
     return [...byGroup.values()]
