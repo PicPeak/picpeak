@@ -1178,7 +1178,6 @@ async function startServer() {
     // admin_users) never prints a throwaway token. Best-effort — never blocks boot.
     let setupToken = null;
     let setupTokenFile = null;
-    let setupTokenFiles = [];
     try {
       const setupSvc = require('./src/services/setupService');
       setupToken = await setupSvc.ensureSetupToken();
@@ -1187,7 +1186,6 @@ async function startServer() {
       // for a stale, read-only or directory-shaped SETUP_TOKEN — suppressing
       // the token here while pointing the operator at content that is not it.
       setupTokenFile = setupSvc.writtenSetupTokenFile();
-      setupTokenFiles = setupSvc.writtenSetupTokenFiles();
     } catch (err) {
       logger.warn(`[setup] ensureSetupToken skipped: ${err.message}`);
     }
@@ -1225,16 +1223,8 @@ async function startServer() {
       if (setupToken) {
         const url = `${process.env.ADMIN_URL || 'http://localhost:3000'}/admin`;
         const line = '='.repeat(64);
-        // Naming every copy (#1218): the all-in-one image writes one beside the
-        // database in DATA_DIR and one at the root of its volume, and the
-        // second is the one a NAS user can actually reach with a file manager.
-        // Printing only the first sent people into a `db/` subdirectory they
-        // had no reason to open.
-        const savedTo = (setupTokenFiles.length > 1 ? setupTokenFiles : [setupTokenFile])
-          .map((f, i) => (i === 0 ? `  Setup token saved to:  ${f}` : `                    and:  ${f}`))
-          .join('\n');
         const secretLine = setupTokenFile
-          ? `${savedTo}\n  (read it there — deliberately not printed)`
+          ? `  Setup token saved to:  ${setupTokenFile}\n  (read it there — deliberately not printed)`
           : `  One-time setup token:  ${setupToken}\n  (could not write the token file, so it is shown here)`;
         console.log(`\n${line}\n  PicPeak first-run setup — no admin account yet.\n  Open:                  ${url}\n${secretLine}\n${line}\n`);
       }

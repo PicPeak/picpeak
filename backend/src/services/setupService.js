@@ -28,15 +28,8 @@ const SETUP_TOKEN_KEY = 'setup_token';
 // could not replace — suppressing the token while pointing the operator at
 // content that is wrong or unreadable.
 let writtenTokenFile = null;
-// Every copy that was actually written this boot (#1218) — the canonical one
-// plus the volume-root copy the all-in-one image gets. The single-file accessor
-// keeps its contract for callers that only want somewhere to point.
-let writtenTokenFiles = [];
 function writtenSetupTokenFile() {
   return writtenTokenFile;
-}
-function writtenSetupTokenFiles() {
-  return writtenTokenFiles;
 }
 
 // One-way flag flipped when the setup wizard finishes (migration 161 marks it
@@ -78,42 +71,17 @@ function setupTokenFilePath() {
   return path.join(dir, 'SETUP_TOKEN');
 }
 
-// Everywhere the token gets written (#1218).
-//
-// The canonical location is DATA_DIR, which the compose stack maps to
-// /app/data — the path the wizard hint and the docs both name. The all-in-one
-// image points DATA_DIR at /data/db instead, a subdirectory of its single
-// volume, so the file lands beside the database: correct, persisted, and
-// somewhere nobody thinks to look. A NAS user with no shell browses the volume
-// they mounted, sees `db/`, `storage/`, `logs/`, `backup/`, and gives up.
-//
-// So when DATA_ROOT names a different directory, the token is written there
-// too. It is the first thing visible on opening the volume. Both copies are
-// 0600 and both are removed the moment setup completes — a second copy of a
-// single-use bootstrap token is only a risk for as long as the first one is,
-// and it stops being one at the same instant.
-function setupTokenFilePaths() {
-  const primary = setupTokenFilePath();
-  const root = process.env.DATA_ROOT;
-  if (!root) return [primary];
-  const rootCopy = path.join(root, 'SETUP_TOKEN');
-  return path.resolve(rootCopy) === path.resolve(primary) ? [primary] : [primary, rootCopy];
-}
-
 // Called once at startup. Idempotent: generates + surfaces a token only while
 // the instance still needs an admin, and clears any stale token afterwards.
 // Clear the token everywhere — the app_settings row AND the on-disk file — so a
 // completed (or restored) install leaves no stale token behind.
 async function clearSetupToken() {
   await upsertAppSetting(SETUP_TOKEN_KEY, null, 'string');
-  for (const file of setupTokenFilePaths()) {
-    try { fs.unlinkSync(file); } catch (_) { /* file may be absent — best-effort */ }
-  }
+  try { fs.unlinkSync(setupTokenFilePath()); } catch (_) { /* file may be absent — best-effort */ }
 }
 
 async function ensureSetupToken() {
   writtenTokenFile = null;
-  writtenTokenFiles = [];
   if (!(await noAdminExists())) {
     await clearSetupToken();
     return null;
@@ -141,66 +109,71 @@ async function ensureSetupToken() {
   // volume-root copy succeeds still leaves the operator a readable token, and
   // the reverse is the compose case where there is only ever one — so success
   // is "at least one file exists", not "the first one did".
-  const written = [];
-  // Copies that turned out to be readable by others AND could not be deleted.
-  // Tracked separately because a success elsewhere clears writeError, and an
-  // exposed credential must not be silenced by an unrelated success.
-  const leftReadable = [];
+  // One file, in DATA_DIR (#1218). A second copy at the volume root was tried
+  // for discoverability and dropped: it carried almost the whole security
+  // surface of this function — a second inode to race, to verify, and to
+  // revoke — for a convenience the documentation covers better, by pointing
+  // NAS users at ADMIN_PASSWORD, which needs no file at all.
+  const candidate = setupTokenFilePath();
+  let written = null;
+  // Set when the file is readable by others AND cannot be deleted: a live
+  // credential we do not control. Kept separate from writeError because it
+  // must not be cleared by anything else succeeding.
+  let leftReadable = null;
   let writeError = null;
-  for (const candidate of setupTokenFilePaths()) {
+  // Whether a write was attempted (so a partial file must be cleaned up) and
+  // whether another process had already produced a good file.
+  let mayExist = false;
+  let concurrent = false;
+  try {
+    fs.mkdirSync(path.dirname(candidate), { recursive: true });
+
+    // ENOENT only. A file we could not remove for any other reason — a 0666
+    // file owned by someone else in a sticky or ACL-controlled directory — is
+    // still writable, so writing anyway would drop the live token into a
+    // foreign, world-readable inode. And on a restart the token is reused from
+    // the database, so whatever is in that file may well be live: treat it as
+    // exposed so the revocation below fires.
+    try {
+      fs.unlinkSync(candidate);
+    } catch (err) {
+      if (err.code !== 'ENOENT') {
+        leftReadable = candidate;
+        throw err;
+      }
+    }
+
     // Set before the write, not after: writeFileSync can create the inode and
     // then throw (ENOSPC, a short write, a delayed close on a network mount),
     // and a file that exists has to be cleaned up whether or not the call
-    // returned (#1218 review).
-    let mayExist = false;
+    // returned.
+    mayExist = true;
     try {
-      fs.mkdirSync(path.dirname(candidate), { recursive: true });
-
-      // ENOENT only. A file we could not remove for any other reason — a 0666
-      // file owned by someone else in a sticky or ACL-controlled directory —
-      // is still writable, so writing anyway would drop the live token into a
-      // foreign, world-readable inode.
-      try {
-        fs.unlinkSync(candidate);
-      } catch (err) {
-        if (err.code !== 'ENOENT') {
-          // It survived, and on a restart it may well hold the token we are
-          // about to reuse from the database. Treat it as live and exposed:
-          // `created` never becomes true on this path, so without this the
-          // revocation below would not fire and /setup/admin would keep
-          // accepting whatever is in that file.
-          leftReadable.push(candidate);
-          throw err;
-        }
-      }
-
       // 'wx' is O_CREAT|O_EXCL: it fails if the path exists, and it does not
       // follow a symlink. Without it, a local user on a group-writable mount
       // can drop a symlink at this path in the window between the unlink and
       // the write, and the token lands in a file they own and can read.
-      mayExist = true;
-      try {
-        fs.writeFileSync(candidate, `${token}\n`, { mode: 0o600, flag: 'wx' });
-      } catch (err) {
-        // Another worker got there first — the shipped PM2 cluster config runs
-        // several against one DATA_DIR. If what they wrote is private and holds
-        // the same token, that is this loop's job already done; falling through
-        // to the failure path would make THIS worker print the live token to
-        // its log while a perfectly good file exists.
-        if (err.code !== 'EEXIST') throw err;
-        const existing = fs.lstatSync(candidate);
-        const sameToken = fs.readFileSync(candidate, 'utf8').trim() === token;
-        if (!existing.isFile() || (existing.mode & 0o077) || !sameToken) throw err;
-        written.push(candidate);
-        continue;
-      }
+      fs.writeFileSync(candidate, `${token}\n`, { mode: 0o600, flag: 'wx' });
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      // Another worker got there first — the shipped PM2 cluster config runs
+      // several against one DATA_DIR. If what they wrote is private, a regular
+      // file and holds the same token, the job is already done; falling
+      // through would make THIS worker print the live token to its own log
+      // while a perfectly good file exists.
+      const existing = fs.lstatSync(candidate);
+      const sameToken = fs.readFileSync(candidate, 'utf8').trim() === token;
+      if (!existing.isFile() || (existing.mode & 0o077) || !sameToken) throw err;
+      concurrent = true;
+    }
 
+    if (!concurrent) {
       try { fs.chmodSync(candidate, 0o600); } catch (_) { /* verified next */ }
 
       // Asking is not the same as succeeding. A CIFS/SMB mount — what a NAS
       // commonly offers — carries no Unix modes: chmod is a silent no-op and
       // the file keeps whatever file_mode= the mount forces, typically 0644.
-      // lstat, not stat: the check must describe the file itself.
+      // lstat, not stat: the check must describe the file, not a link target.
       const mode = fs.lstatSync(candidate).mode & 0o777;
       if (mode & 0o077) {
         throw new Error(
@@ -208,20 +181,19 @@ async function ensureSetupToken() {
           + `(mode ${mode.toString(8)})`
         );
       }
-      written.push(candidate);
-    } catch (err) {
-      // One cleanup path for every failure after the write was attempted — a
-      // bad mode, an lstat that threw on a flaky mount, a write that created
-      // the file and then failed. Leaving a live credential behind because the
-      // verification itself failed is the same exposure as leaving one behind
-      // deliberately.
-      if (mayExist && fs.existsSync(candidate)) {
-        try { fs.unlinkSync(candidate); } catch (_) { leftReadable.push(candidate); }
-      }
-      // Remembered only if nothing else worked; a failed second copy must not
-      // push a working install onto the log-the-token fallback below.
-      writeError = writeError || err;
     }
+
+    written = candidate;
+  } catch (err) {
+    // One cleanup path for every failure after the write was attempted — a bad
+    // mode, an lstat that threw on a flaky mount, a write that created the file
+    // and then failed. Leaving a live credential behind because the
+    // verification itself failed is the same exposure as leaving one behind
+    // deliberately.
+    if (mayExist && fs.existsSync(candidate)) {
+      try { fs.unlinkSync(candidate); } catch (_) { leftReadable = candidate; }
+    }
+    writeError = err;
   }
 
   // Publish what landed, for server.js's banner. Dropping these assignments
@@ -229,11 +201,10 @@ async function ensureSetupToken() {
   // banner take its failure branch and print the live token to stdout, so a
   // perfectly good 0600 file coexists with the credential in `docker logs` —
   // the exact leak this whole path exists to close.
-  writtenTokenFile = written[0] || null;
-  writtenTokenFiles = written;
-  if (written.length > 0) writeError = null;
+  writtenTokenFile = written;
+  if (written) writeError = null;
 
-  if (leftReadable.length > 0) {
+  if (leftReadable) {
     // Fail closed (#1218 review). A readable copy that cannot be deleted is a
     // live first-admin credential sitting where anyone on the mount can read
     // it, and /setup/admin would go on accepting it — so the token is revoked
@@ -243,15 +214,14 @@ async function ensureSetupToken() {
     // which is about to stop working. The next boot mints a fresh token, and
     // the undeletable file is skipped rather than rewritten because its unlink
     // still fails — so this converges instead of looping on the same exposure.
-    for (const file of written) {
-      try { fs.unlinkSync(file); } catch (_) { /* best-effort */ }
+    if (written) {
+      try { fs.unlinkSync(written); } catch (_) { /* best-effort */ }
     }
     await upsertAppSetting(SETUP_TOKEN_KEY, null, 'string');
     writtenTokenFile = null;
-    writtenTokenFiles = [];
 
     logger.error(
-      `[setup] A setup token file at ${leftReadable.join(' and ')} is readable by other `
+      `[setup] The setup token file at ${leftReadable} is readable by other `
       + 'users and could not be removed, so the token has been revoked and no admin '
       + 'can be created with it. Delete that file, then restart to issue a new one.'
     );
@@ -275,7 +245,7 @@ async function ensureSetupToken() {
   } else {
     logger.warn(
       '[setup] No admin account yet — open /admin to finish setup. '
-      + `The one-time setup token is in ${written.join(' and ')} (not logged).`
+      + `The one-time setup token is in ${written} (not logged).`
     );
   }
   return token;
@@ -367,9 +337,7 @@ async function createInitialAdmin({ token, email, password, ip }) {
   // all-in-one image also keeps one at the volume root, and a burned token
   // left lying there is a live-looking credential that no longer works: an
   // operator would paste it, be rejected, and have nothing to fall back on.
-  for (const file of setupTokenFilePaths()) {
-    try { fs.unlinkSync(file); } catch (_) { /* best-effort */ }
-  }
+  try { fs.unlinkSync(setupTokenFilePath()); } catch (_) { /* best-effort */ }
   logger.info(`[setup] Initial super_admin created (id=${id}, email=${cleanEmail})`);
 
   const authToken = jwt.sign(
@@ -393,9 +361,7 @@ module.exports = {
   getSetupStatus,
   ensureSetupToken,
   setupTokenFilePath,
-  setupTokenFilePaths,
   writtenSetupTokenFile,
-  writtenSetupTokenFiles,
   verifySetupToken,
   createInitialAdmin,
   isSetupWizardCompleted,
