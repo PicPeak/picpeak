@@ -250,6 +250,19 @@ describe('setupService (first-run bootstrap)', () => {
     }
   });
 
+  it('tells the startup banner where the token went, so it is never printed (#1218)', async () => {
+    // server.js prints the token itself only when no file was written. If this
+    // reports nothing after a successful write, the banner takes that failure
+    // branch and puts the live credential into stdout and `docker logs` beside
+    // a perfectly good 0600 file.
+    const token = await setupService.ensureSetupToken();
+    expect(token).toBeTruthy();
+
+    const primary = setupService.writtenSetupTokenFile();
+    expect(primary).toBe(path.join(tmpDir, 'SETUP_TOKEN'));
+    expect(setupService.writtenSetupTokenFiles()).toContain(primary);
+  });
+
   it('refuses to create a second admin (setup already complete)', async () => {
     const token = await setupService.ensureSetupToken();
     await setupService.createInitialAdmin({ token, email: 'first@example.com', password: VALID_PW });

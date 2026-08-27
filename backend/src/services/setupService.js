@@ -201,6 +201,13 @@ async function ensureSetupToken() {
     }
   }
 
+  // Publish what landed, for server.js's banner. Dropping these assignments
+  // is not a cosmetic bug: writtenSetupTokenFile() reading null makes the
+  // banner take its failure branch and print the live token to stdout, so a
+  // perfectly good 0600 file coexists with the credential in `docker logs` —
+  // the exact leak this whole path exists to close.
+  writtenTokenFile = written[0] || null;
+  writtenTokenFiles = written;
   if (written.length > 0) writeError = null;
 
   if (leftReadable.length > 0) {
