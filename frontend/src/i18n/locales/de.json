@@ -1046,7 +1046,7 @@
       "emailLabel": "E-Mail (optional)",
       "emailPlaceholder": "Sie@beispiel.de",
       "submit": "Weiter",
-      "returningHint": "Schon einmal hier gewesen? Deine bisherige Auswahl ist noch gespeichert.",
+      "returningHint": "Schon einmal hier gewesen? Ihre bisherige Auswahl ist noch gespeichert.",
       "recoverPicks": "Auswahl zurückholen"
     },
     "footer": {
