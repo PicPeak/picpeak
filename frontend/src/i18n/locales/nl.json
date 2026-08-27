@@ -330,7 +330,7 @@
       "emailLabel": "E-mail (optioneel)",
       "emailPlaceholder": "u@voorbeeld.nl",
       "submit": "Doorgaan",
-      "returningHint": "Al eerder hier geweest? Je eerdere keuzes zijn nog bewaard.",
+      "returningHint": "Al eerder hier geweest? Uw eerdere keuzes zijn nog bewaard.",
       "recoverPicks": "Keuzes terughalen"
     },
     "footer": {

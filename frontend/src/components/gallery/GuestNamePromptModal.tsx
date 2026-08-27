@@ -151,8 +151,17 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
               the server whether an address is already registered would answer
               "is this person in this gallery" to anyone who asked, which is
               why /guest/recover deliberately cannot be used that way. */}
-          <div className="pt-3 mt-1 border-t border-neutral-200 dark:border-neutral-700 text-center">
-            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          {/* Theme tokens, not neutral-* with a dark: variant (#1210 review).
+              A dark gallery preset is delivered through CSS variables and does
+              NOT add Tailwind's .dark class, so the dark: half never fires and
+              this block would render dark grey on a dark surface. The rest of
+              the modal uses text-theme / text-muted-theme for exactly this
+              reason. */}
+          <div
+            className="pt-3 mt-1 border-t text-center"
+            style={{ borderColor: 'var(--color-surface-border, #e5e5e5)' }}
+          >
+            <p className="text-sm text-muted-theme">
               {t(
                 'gallery.guestPrompt.returningHint',
                 'Been here before? Your earlier picks are still saved.'
