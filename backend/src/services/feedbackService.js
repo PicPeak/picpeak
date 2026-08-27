@@ -52,6 +52,30 @@ function isSharedColorLabel(identityMode, feedbackType) {
   return identityMode === 'shared' && feedbackType === 'color_label';
 }
 
+/**
+ * Narrow a colour-label query to the rows the event's current mode actually
+ * uses (#1197).
+ *
+ * Switching modes is deliberately non-destructive: per-guest labels are kept
+ * when an event moves to shared, and the shared row is kept when it moves
+ * back. That leaves both sets in the table at once with only one of them live,
+ * so every read has to say which it means. Without this the dormant set is
+ * still counted, still tallied in the lightbox, still matches the admin colour
+ * filter and can still decide the exported dominant colour — the labels would
+ * be "hidden" only on the badge, which is not what the settings panel promises.
+ *
+ * The NULL arm matters: rows written before migration 078 carry no identifier
+ * at all, and they are per-guest rows, so they belong to the non-shared set.
+ */
+function scopeColorLabelsToMode(query, identityMode, column = 'guest_identifier') {
+  if (identityMode === 'shared') {
+    return query.where(column, SHARED_COLOR_LABEL_IDENTITY);
+  }
+  return query.where(function () {
+    this.whereNot(column, SHARED_COLOR_LABEL_IDENTITY).orWhereNull(column);
+  });
+}
+
 function pickSettingsColumns(settings) {
   const picked = {};
   for (const column of FEEDBACK_SETTINGS_COLUMNS) {
@@ -252,6 +276,24 @@ class FeedbackService {
     // Outside the transaction: it reads the rows the commit just made visible.
     await this.updatePhotoFeedbackStats(photoId);
     return outcome;
+  }
+
+  /**
+   * The identity mode of the event a photo belongs to (#1197).
+   *
+   * One small join rather than threading the mode through every caller of
+   * updatePhotoFeedbackStats — including the duplicate-photo dedupe (#1162),
+   * which recomputes totals from a background service with no request settings
+   * in hand. Falls back to 'simple' for a photo whose event has no feedback
+   * settings row, which is the same default getEventFeedbackSettings applies.
+   */
+  async getIdentityModeForPhoto(photoId, trx = db) {
+    const row = await trx('photos')
+      .join('event_feedback_settings', 'photos.event_id', 'event_feedback_settings.event_id')
+      .where('photos.id', photoId)
+      .select('event_feedback_settings.identity_mode')
+      .first();
+    return row?.identity_mode || 'simple';
   }
 
   /**
@@ -617,11 +659,19 @@ class FeedbackService {
    * Per-colour tallies for one photo (#1044) — the colour-label sibling of
    * getPhotoReactionCounts.
    */
-  async getPhotoColorLabelCounts(photoId) {
+  async getPhotoColorLabelCounts(photoId, identityMode = undefined) {
     try {
-      const rows = await db('photo_feedback')
-        .where({ photo_id: photoId, feedback_type: 'color_label' })
-        .where('is_hidden', false)
+      // Resolved here rather than pushed onto every caller (#1197): the admin
+      // grid, the XMP export and the lightbox all reach colour labels through
+      // this helper and its event-wide sibling, so scoping them at the source
+      // is what keeps a dormant label out of all three at once.
+      const mode = identityMode ?? await this.getIdentityModeForPhoto(photoId);
+      const rows = await scopeColorLabelsToMode(
+        db('photo_feedback')
+          .where({ photo_id: photoId, feedback_type: 'color_label' })
+          .where('is_hidden', false),
+        mode,
+      )
         .groupBy('color_label')
         .select('color_label')
         .count('id as count');
@@ -646,11 +696,15 @@ class FeedbackService {
    * @param {number[]} [photoIds] - optional narrowing to the visible page
    * @returns {Promise<Object>} { [photoId]: { green: 2, red: 1 } }
    */
-  async getEventColorLabelCounts(eventId, photoIds = null) {
+  async getEventColorLabelCounts(eventId, photoIds = null, identityMode = undefined) {
     try {
-      const query = db('photo_feedback')
-        .where({ event_id: eventId, feedback_type: 'color_label' })
-        .where('is_hidden', false)
+      const mode = identityMode ?? (await this.getEventFeedbackSettings(eventId)).identity_mode;
+      const query = scopeColorLabelsToMode(
+        db('photo_feedback')
+          .where({ event_id: eventId, feedback_type: 'color_label' })
+          .where('is_hidden', false),
+        mode,
+      )
         .groupBy('photo_id', 'color_label')
         .select('photo_id', 'color_label')
         .count('id as count');
@@ -684,6 +738,20 @@ class FeedbackService {
    */
   async updatePhotoFeedbackStats(photoId, trx = db) {
     try {
+      // Which colour labels are live for this photo's event (#1197). The other
+      // four counters are identity-agnostic; only the colour tag has two
+      // possible sets sitting in the table at once.
+      const sharedColors = (await this.getIdentityModeForPhoto(photoId, trx)) === 'shared';
+      const colorLabelCount = sharedColors
+        ? trx.raw(
+          'COUNT(CASE WHEN feedback_type = ? AND guest_identifier = ? THEN 1 END) as color_label_count',
+          ['color_label', SHARED_COLOR_LABEL_IDENTITY],
+        )
+        : trx.raw(
+          'COUNT(CASE WHEN feedback_type = ? AND (guest_identifier IS NULL OR guest_identifier <> ?) THEN 1 END) as color_label_count',
+          ['color_label', SHARED_COLOR_LABEL_IDENTITY],
+        );
+
       // Get aggregated stats
       const stats = await trx('photo_feedback')
         .where('photo_id', photoId)
@@ -693,7 +761,7 @@ class FeedbackService {
           trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as like_count', ['like']),
           trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as favorite_count', ['favorite']),
           trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as reaction_count', ['reaction']),
-          trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as color_label_count', ['color_label']),
+          colorLabelCount,
           trx.raw('AVG(CASE WHEN feedback_type = ? THEN rating END) as average_rating', ['rating']),
           trx.raw('COUNT(DISTINCT COALESCE(CAST(guest_id AS VARCHAR), guest_identifier)) as feedback_count')
         )

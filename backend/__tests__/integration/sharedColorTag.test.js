@@ -266,6 +266,69 @@ describe('shared colour tag (#1197)', () => {
       await setMode('shared');
       expect((await photoFor('device-B')).my_color_label).toBe('green');
     });
+
+    // "Kept but not shown" has to mean every surface, not just the badge. The
+    // dormant set is still sitting in photo_feedback, so a read that does not
+    // say which set it means will happily count, tally, filter and export it.
+    describe('the dormant set stays out of every reading of the live one', () => {
+      const seedDormantPerGuestLabels = async () => {
+        await setMode('simple');
+        await tag('device-A', 'green');
+        await tag('device-B', 'red', otherPhotoId);
+        await setMode('shared');
+      };
+
+      it('keeps dormant labels out of the per-colour tallies', async () => {
+        await seedDormantPerGuestLabels();
+        // The lightbox renders this map. Green belongs to a per-guest row the
+        // mode does not use, so the photo reads as untagged.
+        expect(await feedbackService.getPhotoColorLabelCounts(photoId)).toEqual({});
+
+        await tag('device-C', 'blue');
+        expect(await feedbackService.getPhotoColorLabelCounts(photoId)).toEqual({ blue: 1 });
+      });
+
+      it('keeps dormant labels out of color_label_count', async () => {
+        await seedDormantPerGuestLabels();
+        await feedbackService.updatePhotoFeedbackStats(photoId);
+        expect((await db('photos').where('id', photoId).first()).color_label_count).toBe(0);
+
+        await tag('device-C', 'blue');
+        expect((await db('photos').where('id', photoId).first()).color_label_count).toBe(1);
+      });
+
+      it('keeps dormant labels out of the admin grid and the XMP/CSV export', async () => {
+        await seedDormantPerGuestLabels();
+        // getEventColorLabelCounts feeds dominant_color_label, which is what
+        // the admin badge shows and what xmp:Label round-trips into Lightroom.
+        const map = await feedbackService.getEventColorLabelCounts(eventId, [photoId, otherPhotoId]);
+        expect(map[photoId]).toBeUndefined();
+        expect(map[otherPhotoId]).toBeUndefined();
+      });
+
+      it('does not answer a guest colour filter from a dormant label', async () => {
+        await seedDormantPerGuestLabels();
+        expect(await photosFor('device-A', '?filter=color:green')).toHaveLength(0);
+      });
+
+      it('does not show the shared tag as another guest\'s dot after switching back', async () => {
+        await tag('device-A', 'green');
+        await setMode('simple');
+        // The shared row belongs to nobody, so in a per-guest mode it is not
+        // "another viewer's label" either — it is simply not in play.
+        const photo = await photoFor('device-B');
+        expect(photo.my_color_label).toBeFalsy();
+        expect(photo.other_color_labels || []).toHaveLength(0);
+      });
+
+      it('does not count the shared tag once the event is back on per-guest labels', async () => {
+        await tag('device-A', 'green');
+        await setMode('simple');
+        await feedbackService.updatePhotoFeedbackStats(photoId);
+        expect((await db('photos').where('id', photoId).first()).color_label_count).toBe(0);
+        expect(await feedbackService.getPhotoColorLabelCounts(photoId)).toEqual({});
+      });
+    });
   });
 
   describe('the mode is scoped to the colour tag', () => {

@@ -194,6 +194,13 @@ module.exports = (router) => {
         require_name_email = false,
         moderate_comments = true,
         show_feedback_to_guests = true,
+        // The create form has always shown the identity-mode chooser and this
+        // route has never read it, so a gallery created as 'guest' quietly came
+        // out 'simple' and the photographer had to set it again on the event.
+        // Surfaced by adding a third mode (#1197); the fix is the same for all
+        // three. Unknown values fall back rather than reaching the column,
+        // which on Postgres is guarded by a CHECK constraint.
+        identity_mode: identityModeInput,
         // CSS Template
         css_template_id = null,
         // Hero logo settings
@@ -549,6 +556,9 @@ module.exports = (router) => {
           require_name_email: formatBoolean(require_name_email),
           moderate_comments: formatBoolean(moderate_comments),
           show_feedback_to_guests: formatBoolean(show_feedback_to_guests),
+          identity_mode: ['simple', 'guest', 'shared'].includes(identityModeInput)
+            ? identityModeInput
+            : 'simple',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });

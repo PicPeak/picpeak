@@ -910,10 +910,20 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
             guestColorLabels?.[color]?.forEach(id => include.add(id));
           }
           if (showFeedbackToGuests) {
-            const colorRows = await db('photo_feedback')
+            const aggregateColors = db('photo_feedback')
               .where({ event_id: req.event.id, feedback_type: 'color_label', is_hidden: false })
-              .whereIn('color_label', requestedColors)
-              .select('photo_id');
+              .whereIn('color_label', requestedColors);
+            // Only the set the mode is actually using (#1197). A dormant
+            // per-guest label left behind by a switch would otherwise pull its
+            // photo into a colour filter while the tile shows no such colour.
+            if (sharedColorMode) {
+              aggregateColors.where('guest_identifier', SHARED_COLOR_LABEL_IDENTITY);
+            } else {
+              aggregateColors.where(function () {
+                this.whereNot('guest_identifier', SHARED_COLOR_LABEL_IDENTITY).orWhereNull('guest_identifier');
+              });
+            }
+            const colorRows = await aggregateColors.select('photo_id');
             colorRows.forEach(row => include.add(row.photo_id));
           }
         }
@@ -1035,7 +1045,14 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
       const othersQuery = db('photo_feedback')
         .where({ event_id: req.event.id, feedback_type: 'color_label', is_hidden: false })
         .whereIn('photo_id', photos.map(p => p.id))
-        .whereNotNull('color_label');
+        .whereNotNull('color_label')
+        // The other direction of the same rule (#1197): an event switched back
+        // out of shared mode keeps its shared tag, and it is nobody's — so
+        // without this it would show up as an anonymous other viewer's dot on
+        // every tile that still carries one.
+        .where(function () {
+          this.whereNot('guest_identifier', SHARED_COLOR_LABEL_IDENTITY).orWhereNull('guest_identifier');
+        });
       if (req.guest?.id) {
         othersQuery.where(function () {
           this.whereNot('guest_id', req.guest.id).orWhereNull('guest_id');

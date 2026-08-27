@@ -14,6 +14,7 @@ const { PhotoFilterBuilder } = require('../utils/photoFilterBuilder');
 const { getPagination } = require('../utils/routeHelpers');
 const { PhotoExportService } = require('../services/photoExportService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
+const feedbackService = require('../services/feedbackService');
 const logger = require('../utils/logger');
 
 const exportService = new PhotoExportService();
@@ -76,6 +77,11 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), re
     const order = req.query.order || 'desc';
     const { page, limit } = getPagination(req, { limit: 50 });
 
+    // Which colour-label set this event is currently using (#1197). A dormant
+    // set left behind by a mode switch must not answer a colour filter.
+    const { identity_mode: identityMode } =
+      await feedbackService.getEventFeedbackSettings(eventId);
+
     // Build filtered query
     const filterBuilder = new PhotoFilterBuilder(
       db('photos')
@@ -96,7 +102,8 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), re
           'photos.uploaded_at',
           'photo_categories.name as category_name'
         ),
-      eventId
+      eventId,
+      identityMode
     );
 
     filterBuilder
@@ -108,13 +115,13 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), re
 
     // Get count of filtered photos
     const countResult = await withRetry(() =>
-      PhotoFilterBuilder.buildCountQuery(db, eventId, filters)
+      PhotoFilterBuilder.buildCountQuery(db, eventId, filters, identityMode)
     );
     const filteredCount = parseInt(countResult[0]?.count) || 0;
 
     // Get summary counts
     const summary = await withRetry(() =>
-      PhotoFilterBuilder.getSummary(db, eventId)
+      PhotoFilterBuilder.getSummary(db, eventId, identityMode)
     );
 
     res.json({
@@ -144,9 +151,11 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), re
 router.get('/:eventId/filter-summary', adminAuth, requirePermission('photos.view'), requireEventOwnership, async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId);
+    const { identity_mode: identityMode } =
+      await feedbackService.getEventFeedbackSettings(eventId);
 
     const summary = await withRetry(() =>
-      PhotoFilterBuilder.getSummary(db, eventId)
+      PhotoFilterBuilder.getSummary(db, eventId, identityMode)
     );
 
     // Per-colour counts for the caller's OWN marks (#1044 follow-up), so the
@@ -199,9 +208,12 @@ router.post('/:eventId/export', adminAuth, requirePermission('photos.download'),
     let photoIds = photo_ids;
 
     if (!photoIds && filter) {
+      const { identity_mode: identityMode } =
+        await feedbackService.getEventFeedbackSettings(eventId);
       const filterBuilder = new PhotoFilterBuilder(
         db('photos').select('id'),
-        eventId
+        eventId,
+        identityMode
       );
       // admin_id comes from the session, so a my-marks filter in the body can
       // only ever mean the caller's own marks.

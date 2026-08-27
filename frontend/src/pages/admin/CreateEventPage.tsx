@@ -70,6 +70,7 @@ interface FormData {
     require_name_email: boolean;
     moderate_comments: boolean;
     show_feedback_to_guests: boolean;
+    identity_mode: 'simple' | 'guest' | 'shared';
     enable_rate_limiting: boolean;
     rate_limit_window_minutes?: number;
     rate_limit_max_requests?: number;
@@ -141,6 +142,7 @@ export const CreateEventPage: React.FC = () => {
       require_name_email: false,
       moderate_comments: true,
       show_feedback_to_guests: true,
+      identity_mode: 'simple',
       enable_rate_limiting: true,
       rate_limit_window_minutes: 15,
       rate_limit_max_requests: 10,
@@ -502,6 +504,9 @@ export const CreateEventPage: React.FC = () => {
       require_name_email: feedbackSettings.require_name_email,
       moderate_comments: feedbackSettings.moderate_comments,
       show_feedback_to_guests: feedbackSettings.show_feedback_to_guests,
+      // The chooser has always been on this form; the value was never sent, so
+      // the gallery came out in the default mode whatever was picked (#1197).
+      identity_mode: feedbackSettings.identity_mode,
       // Client access (#172)
       client_access_enabled: formData.client_access_enabled,
       client_password: formData.client_access_enabled ? formData.client_password : undefined,
