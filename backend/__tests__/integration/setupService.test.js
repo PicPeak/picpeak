@@ -122,30 +122,32 @@ describe('setupService (first-run bootstrap)', () => {
     expect(fs.statSync(canonical).mode & 0o777).toBe(0o600);
   });
 
-  it('removes a token copy it cannot make private, rather than leaving it readable (#1218)', async () => {
-    // The CIFS/SMB case this feature is aimed at: the mount carries no Unix
-    // modes, so chmod is a silent no-op and the file keeps the mount's
-    // file_mode. Simulated by making chmod do nothing and stat report 0644.
+  it('never publishes a token it cannot make private (#1218)', async () => {
+    // The CIFS/SMB case this targets: the mount carries no Unix modes, so
+    // chmod is a silent no-op. The check runs on the temporary file, before
+    // the rename, so a credential that cannot be protected never reaches the
+    // published path at all.
     const canonical = path.join(tmpDir, 'SETUP_TOKEN');
-    const realStat = fs.lstatSync;
+    try { fs.unlinkSync(canonical); } catch (_) { /* start clean */ }
     const chmodSpy = jest.spyOn(fs, 'chmodSync').mockImplementation(() => {});
-    const statSpy = jest.spyOn(fs, 'lstatSync').mockImplementation((target, ...rest) => {
-      const st = realStat(target, ...rest);
-      if (String(target) === canonical) {
-        return { ...st, mode: (st.mode & ~0o777) | 0o644 };
-      }
-      return st;
+    const realLstat = fs.lstatSync;
+    const lstatSpy = jest.spyOn(fs, 'lstatSync').mockImplementation((target, ...rest) => {
+      const st = realLstat(target, ...rest);
+      return String(target).includes('SETUP_TOKEN')
+        ? { ...st, mode: (st.mode & ~0o777) | 0o644 }
+        : st;
     });
 
     try {
       const token = await setupService.ensureSetupToken();
-      // The token still exists — setup must remain completable — but not as a
-      // world-readable file on a shared mount.
+      // Setup stays completable — server.js prints the token on stdout when no
+      // file was written — but nothing readable was left on the volume.
       expect(token).toBeTruthy();
       expect(fs.existsSync(canonical)).toBe(false);
+      expect(fs.readdirSync(tmpDir).filter((f) => f.includes('.tmp'))).toEqual([]);
     } finally {
       chmodSpy.mockRestore();
-      statSpy.mockRestore();
+      lstatSpy.mockRestore();
     }
   });
 
@@ -155,12 +157,14 @@ describe('setupService (first-run bootstrap)', () => {
     // file we just refused to leave, and it outlives setup. stdout is the
     // fallback instead, which server.js prints.
     const logger = require('../../src/utils/logger');
+    try { fs.unlinkSync(path.join(tmpDir, 'SETUP_TOKEN')); } catch (_) { /* start clean */ }
     const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
     const chmodSpy = jest.spyOn(fs, 'chmodSync').mockImplementation(() => {});
     const realStat = fs.lstatSync;
     const statSpy = jest.spyOn(fs, 'lstatSync').mockImplementation((target, ...rest) => {
       const st = realStat(target, ...rest);
-      return String(target).endsWith('SETUP_TOKEN')
+      // The mode check runs on the temporary file, so match the prefix.
+      return String(target).includes('SETUP_TOKEN')
         ? { ...st, mode: (st.mode & ~0o777) | 0o644 }
         : st;
     });
@@ -177,51 +181,6 @@ describe('setupService (first-run bootstrap)', () => {
     }
   });
 
-  it('revokes the token when an exposed copy cannot be deleted (#1218)', async () => {
-    // ACL-backed or CIFS directories can allow creation and deny deletion. The
-    // old behaviour logged an error and carried on, so a world-readable file
-    // held a token /setup/admin still accepted — anyone who could read the
-    // mount could take the first super-admin. Fail closed instead.
-    const canonical = path.join(tmpDir, 'SETUP_TOKEN');
-    const chmodSpy = jest.spyOn(fs, 'chmodSync').mockImplementation(() => {});
-    const realLstat = fs.lstatSync;
-    const lstatSpy = jest.spyOn(fs, 'lstatSync').mockImplementation((target, ...rest) => {
-      const st = realLstat(target, ...rest);
-      return String(target) === canonical
-        ? { ...st, mode: (st.mode & ~0o777) | 0o644 }
-        : st;
-    });
-    const realUnlink = fs.unlinkSync;
-    const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation((target, ...rest) => {
-      // Creation is allowed, deletion is not — the shape this guards against.
-      if (String(target) === canonical && fs.existsSync(canonical)) {
-        const err = new Error('EPERM'); err.code = 'EPERM'; throw err;
-      }
-      return realUnlink(target, ...rest);
-    });
-
-    try {
-      const token = await setupService.ensureSetupToken();
-
-      // No token surfaced, and nothing in the database will accept the value
-      // sitting in that unreadable-to-us, readable-to-others file.
-      expect(token).toBeNull();
-      expect(await getAppSetting('setup_token')).toBeFalsy();
-      await expect(
-        setupService.createInitialAdmin({
-          token: fs.readFileSync(canonical, 'utf8').trim(),
-          email: 'attacker@example.com',
-          password: VALID_PW,
-        })
-      ).rejects.toThrow();
-    } finally {
-      chmodSpy.mockRestore();
-      lstatSpy.mockRestore();
-      unlinkSpy.mockRestore();
-      try { realUnlink(canonical); } catch (_) { /* already gone */ }
-    }
-  });
-
   it('tells the startup banner where the token went, so it is never printed (#1218)', async () => {
     // server.js prints the token itself only when no file was written. If this
     // reports nothing after a successful write, the banner takes that failure
@@ -233,50 +192,44 @@ describe('setupService (first-run bootstrap)', () => {
     expect(setupService.writtenSetupTokenFile()).toBe(path.join(tmpDir, 'SETUP_TOKEN'));
   });
 
-  it('accepts a private copy another worker wrote first (#1218)', async () => {
+  it('lets a second worker publish without disturbing the first (#1218)', async () => {
     // The shipped PM2 cluster config runs several workers against one DATA_DIR.
-    // Both pass the unlink, one wins the exclusive create, and the loser used
-    // to fall through to the failure path — printing the live token into its
-    // own log while a perfectly good 0600 file already existed.
+    // Publishing through rename means they simply overwrite the same value in
+    // turn — no shared inode to race, and neither worker can end up reporting
+    // nothing written and printing the live token to its own log.
     const canonical = path.join(tmpDir, 'SETUP_TOKEN');
     const first = await setupService.ensureSetupToken();
+    expect(setupService.writtenSetupTokenFile()).toBe(canonical);
 
-    // Second worker: same token in the database, file already on disk.
-    const realUnlink = fs.unlinkSync;
-    const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation((target, ...rest) => {
-      if (String(target) === canonical) return undefined; // lost the race
-      return realUnlink(target, ...rest);
-    });
-    try {
-      const second = await setupService.ensureSetupToken();
-      expect(second).toBe(first);
-      // Reported as written, so the banner stays quiet on this worker too.
-      expect(setupService.writtenSetupTokenFile()).toBe(canonical);
-    } finally {
-      unlinkSpy.mockRestore();
-    }
+    const second = await setupService.ensureSetupToken();
+
+    expect(second).toBe(first);
+    expect(setupService.writtenSetupTokenFile()).toBe(canonical);
+    expect(fs.readFileSync(canonical, 'utf8').trim()).toBe(first);
+    expect(fs.statSync(canonical).mode & 0o777).toBe(0o600);
+    // No temporary files left lying about.
+    expect(fs.readdirSync(tmpDir).filter((f) => f.includes('.tmp'))).toEqual([]);
   });
 
-  it('revokes a pre-existing exposed copy it cannot remove (#1218)', async () => {
-    // A restart reuses the token from the database. If an old copy holding
-    // that value survives, is readable by others and cannot be deleted, the
-    // credential is live and exposed even though this run created nothing.
+  it('revokes the token when it cannot replace an exposed file (#1218)', async () => {
+    // A restart reuses the token from the database, so a file left at the
+    // token path may hold the live value. If it cannot be replaced — an
+    // ACL-backed or read-only directory — that credential is out of our
+    // control, and /setup/admin would go on accepting it.
     const canonical = path.join(tmpDir, 'SETUP_TOKEN');
     await setupService.ensureSetupToken();
 
-    const realUnlink = fs.unlinkSync;
-    const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation((target, ...rest) => {
-      if (String(target) === canonical) {
-        const err = new Error('EPERM'); err.code = 'EPERM'; throw err;
-      }
-      return realUnlink(target, ...rest);
+    const renameSpy = jest.spyOn(fs, 'renameSync').mockImplementation(() => {
+      const err = new Error('EACCES'); err.code = 'EACCES'; throw err;
     });
     try {
       expect(await setupService.ensureSetupToken()).toBeNull();
       expect(await getAppSetting('setup_token')).toBeFalsy();
+      // And the temporary file did not survive the failure.
+      expect(fs.readdirSync(tmpDir).filter((f) => f.includes('.tmp'))).toEqual([]);
     } finally {
-      unlinkSpy.mockRestore();
-      try { realUnlink(canonical); } catch (_) { /* may be gone */ }
+      renameSpy.mockRestore();
+      try { fs.unlinkSync(canonical); } catch (_) { /* may be gone */ }
     }
   });
 

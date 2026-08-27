@@ -121,77 +121,54 @@ async function ensureSetupToken() {
   // must not be cleared by anything else succeeding.
   let leftReadable = null;
   let writeError = null;
-  // Whether a write was attempted (so a partial file must be cleaned up) and
-  // whether another process had already produced a good file.
-  let mayExist = false;
-  let concurrent = false;
+  // Written to a private temporary file and published with rename(2)
+  // (#1218 review). Every earlier shape raced: unlink-then-create left a
+  // window for a symlink, and exclusive-create left two PM2 workers fighting
+  // over one inode — the loser could see the winner's file after creation but
+  // before its content landed, judge it wrong, and delete it, after which both
+  // workers reported nothing written and both printed the live token.
+  //
+  // rename is atomic and replaces the path entry itself, so: the name is
+  // unique to this process and cannot be raced, the file never appears at the
+  // final path with the wrong mode or half its content, a symlink sitting
+  // there is replaced rather than followed, and concurrent workers simply
+  // publish the same value one after another.
+  const tmp = `${candidate}.${process.pid}.tmp`;
+  let createdTmp = false;
   try {
     fs.mkdirSync(path.dirname(candidate), { recursive: true });
 
-    // ENOENT only. A file we could not remove for any other reason — a 0666
-    // file owned by someone else in a sticky or ACL-controlled directory — is
-    // still writable, so writing anyway would drop the live token into a
-    // foreign, world-readable inode. And on a restart the token is reused from
-    // the database, so whatever is in that file may well be live: treat it as
-    // exposed so the revocation below fires.
-    try {
-      fs.unlinkSync(candidate);
-    } catch (err) {
-      if (err.code !== 'ENOENT') {
-        leftReadable = candidate;
-        throw err;
-      }
+    fs.writeFileSync(tmp, `${token}\n`, { mode: 0o600, flag: 'wx' });
+    createdTmp = true;
+    try { fs.chmodSync(tmp, 0o600); } catch (_) { /* verified next */ }
+
+    // Checked before publishing, not after. Asking is not the same as
+    // succeeding: a CIFS/SMB mount — what a NAS commonly offers — carries no
+    // Unix modes, so chmod is a silent no-op and the file keeps whatever
+    // file_mode= the mount forces, typically 0644. Verifying here means a
+    // credential that cannot be made private never reaches the published path
+    // at all. lstat, not stat: it must describe the file, not a link target.
+    const mode = fs.lstatSync(tmp).mode & 0o777;
+    if (mode & 0o077) {
+      throw new Error(
+        `refusing to write a group/world-readable setup token (mode ${mode.toString(8)})`
+      );
     }
 
-    // Set before the write, not after: writeFileSync can create the inode and
-    // then throw (ENOSPC, a short write, a delayed close on a network mount),
-    // and a file that exists has to be cleaned up whether or not the call
-    // returned.
-    mayExist = true;
-    try {
-      // 'wx' is O_CREAT|O_EXCL: it fails if the path exists, and it does not
-      // follow a symlink. Without it, a local user on a group-writable mount
-      // can drop a symlink at this path in the window between the unlink and
-      // the write, and the token lands in a file they own and can read.
-      fs.writeFileSync(candidate, `${token}\n`, { mode: 0o600, flag: 'wx' });
-    } catch (err) {
-      if (err.code !== 'EEXIST') throw err;
-      // Another worker got there first — the shipped PM2 cluster config runs
-      // several against one DATA_DIR. If what they wrote is private, a regular
-      // file and holds the same token, the job is already done; falling
-      // through would make THIS worker print the live token to its own log
-      // while a perfectly good file exists.
-      const existing = fs.lstatSync(candidate);
-      const sameToken = fs.readFileSync(candidate, 'utf8').trim() === token;
-      if (!existing.isFile() || (existing.mode & 0o077) || !sameToken) throw err;
-      concurrent = true;
-    }
-
-    if (!concurrent) {
-      try { fs.chmodSync(candidate, 0o600); } catch (_) { /* verified next */ }
-
-      // Asking is not the same as succeeding. A CIFS/SMB mount — what a NAS
-      // commonly offers — carries no Unix modes: chmod is a silent no-op and
-      // the file keeps whatever file_mode= the mount forces, typically 0644.
-      // lstat, not stat: the check must describe the file, not a link target.
-      const mode = fs.lstatSync(candidate).mode & 0o777;
-      if (mode & 0o077) {
-        throw new Error(
-          `refusing to leave a group/world-readable setup token at ${candidate} `
-          + `(mode ${mode.toString(8)})`
-        );
-      }
-    }
-
+    fs.renameSync(tmp, candidate);
+    createdTmp = false;
     written = candidate;
   } catch (err) {
-    // One cleanup path for every failure after the write was attempted — a bad
-    // mode, an lstat that threw on a flaky mount, a write that created the file
-    // and then failed. Leaving a live credential behind because the
-    // verification itself failed is the same exposure as leaving one behind
-    // deliberately.
-    if (mayExist && fs.existsSync(candidate)) {
-      try { fs.unlinkSync(candidate); } catch (_) { leftReadable = candidate; }
+    if (createdTmp) {
+      try { fs.unlinkSync(tmp); } catch (_) { /* best-effort */ }
+    }
+    // Publishing failed and something is still sitting at the token path. On a
+    // restart the token is reused from the database, so that file may hold the
+    // live value — and we could not replace it. Treat it as exposed: the
+    // revocation below turns what is there into a dead string rather than
+    // leaving a credential we do not control.
+    if (fs.existsSync(candidate)) {
+      leftReadable = candidate;
     }
     writeError = err;
   }
