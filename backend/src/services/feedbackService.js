@@ -821,7 +821,17 @@ class FeedbackService {
           trx.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as reaction_count', ['reaction']),
           colorLabelCount,
           trx.raw('AVG(CASE WHEN feedback_type = ? THEN rating END) as average_rating', ['rating']),
-          trx.raw('COUNT(DISTINCT COALESCE(CAST(guest_id AS VARCHAR), guest_identifier)) as feedback_count')
+          // The shared tag is not a participant (#1197). It carries the
+          // reserved identifier rather than a person's, so counting it here
+          // added a phantom guest: a photo with one rating and a shared tag
+          // reported two, and this column is exported as `rating_count` in the
+          // CSV/JSON export (photoExportService.js) — so merely tagging a
+          // photo inflated its rating count.
+          trx.raw(
+            'COUNT(DISTINCT CASE WHEN guest_identifier IS NULL OR guest_identifier <> ? '
+            + 'THEN COALESCE(CAST(guest_id AS VARCHAR), guest_identifier) END) as feedback_count',
+            [SHARED_COLOR_LABEL_IDENTITY],
+          )
         )
         .first();
 

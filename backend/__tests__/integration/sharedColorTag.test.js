@@ -338,6 +338,21 @@ describe('shared colour tag (#1197)', () => {
         expect((await db('photos').where('id', photoId).first()).color_label_count).toBe(1);
       });
 
+      it('does not count the shared tag as a participant', async () => {
+        // feedback_count is COUNT(DISTINCT guest identity) and is exported as
+        // rating_count. The shared tag has a reserved identifier rather than a
+        // person's, so counting it made tagging a photo look like a second
+        // guest had left feedback — and inflated the exported rating count.
+        await request(app)
+          .post(`/api/gallery/${SLUG}/photos/${photoId}/feedback`)
+          .set(asGuest('device-A'))
+          .send({ feedback_type: 'rating', rating: 5 });
+        expect((await db('photos').where('id', photoId).first()).feedback_count).toBe(1);
+
+        await tag('device-B', 'green');
+        expect((await db('photos').where('id', photoId).first()).feedback_count).toBe(1);
+      });
+
       it('keeps dormant labels out of the event feedback summary', async () => {
         await seedDormantPerGuestLabels();
         // Feeds the admin analytics total_feedback and the guest

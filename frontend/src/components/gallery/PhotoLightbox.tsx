@@ -477,7 +477,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     // a repeat submission off. With nothing set there is nothing to clear.
     const value = color ?? myColorLabel;
     if (!value) return;
-    const willBeSet = value === myColorLabel ? null : value;
+    // What the server did, not what this client guessed. In shared mode the
+    // tag belongs to the photo and another guest can move it between this
+    // viewer's last read and this keypress (#1197), so a locally computed
+    // toggle can blank a swatch the server has just set. The per-guest modes
+    // always agree with the guess — only the guest can move their own label.
+    const resolve = (result: any) => (result?.removed ? null : value);
 
     if (isGuestMode && guestIdentity) {
       try {
@@ -486,11 +491,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         return;
       }
       try {
-        await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
+        const result = await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
           feedback_type: 'color_label',
           color_label: value,
         });
-        setMyColorLabel(willBeSet);
+        setMyColorLabel(resolve(result));
         if (onFeedbackChange) onFeedbackChange();
       } catch (err) {
         if (handleLimitError(err)) return;
@@ -506,13 +511,13 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       return;
     }
     try {
-      await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
+      const result = await feedbackService.submitFeedback(slug, String(currentPhoto.id), {
         feedback_type: 'color_label',
         color_label: value,
         guest_name: savedIdentity?.name,
         guest_email: savedIdentity?.email,
       });
-      setMyColorLabel(willBeSet);
+      setMyColorLabel(resolve(result));
       if (onFeedbackChange) onFeedbackChange();
     } catch (err) {
       if (handleLimitError(err)) return;
