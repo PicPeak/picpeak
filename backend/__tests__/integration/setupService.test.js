@@ -263,6 +263,53 @@ describe('setupService (first-run bootstrap)', () => {
     expect(setupService.writtenSetupTokenFiles()).toContain(primary);
   });
 
+  it('accepts a private copy another worker wrote first (#1218)', async () => {
+    // The shipped PM2 cluster config runs several workers against one DATA_DIR.
+    // Both pass the unlink, one wins the exclusive create, and the loser used
+    // to fall through to the failure path — printing the live token into its
+    // own log while a perfectly good 0600 file already existed.
+    const canonical = path.join(tmpDir, 'SETUP_TOKEN');
+    const first = await setupService.ensureSetupToken();
+
+    // Second worker: same token in the database, file already on disk.
+    const realUnlink = fs.unlinkSync;
+    const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation((target, ...rest) => {
+      if (String(target) === canonical) return undefined; // lost the race
+      return realUnlink(target, ...rest);
+    });
+    try {
+      const second = await setupService.ensureSetupToken();
+      expect(second).toBe(first);
+      // Reported as written, so the banner stays quiet on this worker too.
+      expect(setupService.writtenSetupTokenFile()).toBe(canonical);
+    } finally {
+      unlinkSpy.mockRestore();
+    }
+  });
+
+  it('revokes a pre-existing exposed copy it cannot remove (#1218)', async () => {
+    // A restart reuses the token from the database. If an old copy holding
+    // that value survives, is readable by others and cannot be deleted, the
+    // credential is live and exposed even though this run created nothing.
+    const canonical = path.join(tmpDir, 'SETUP_TOKEN');
+    await setupService.ensureSetupToken();
+
+    const realUnlink = fs.unlinkSync;
+    const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation((target, ...rest) => {
+      if (String(target) === canonical) {
+        const err = new Error('EPERM'); err.code = 'EPERM'; throw err;
+      }
+      return realUnlink(target, ...rest);
+    });
+    try {
+      expect(await setupService.ensureSetupToken()).toBeNull();
+      expect(await getAppSetting('setup_token')).toBeFalsy();
+    } finally {
+      unlinkSpy.mockRestore();
+      try { realUnlink(canonical); } catch (_) { /* may be gone */ }
+    }
+  });
+
   it('refuses to create a second admin (setup already complete)', async () => {
     const token = await setupService.ensureSetupToken();
     await setupService.createInitialAdmin({ token, email: 'first@example.com', password: VALID_PW });

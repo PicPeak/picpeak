@@ -148,10 +148,11 @@ async function ensureSetupToken() {
   const leftReadable = [];
   let writeError = null;
   for (const candidate of setupTokenFilePaths()) {
-    // Whether THIS iteration put a file on disk. Cleanup below keys off it:
-    // anything created but not confirmed private has to go, however the
-    // failure arrived (#1218 review).
-    let created = false;
+    // Set before the write, not after: writeFileSync can create the inode and
+    // then throw (ENOSPC, a short write, a delayed close on a network mount),
+    // and a file that exists has to be cleaned up whether or not the call
+    // returned (#1218 review).
+    let mayExist = false;
     try {
       fs.mkdirSync(path.dirname(candidate), { recursive: true });
 
@@ -162,16 +163,37 @@ async function ensureSetupToken() {
       try {
         fs.unlinkSync(candidate);
       } catch (err) {
-        if (err.code !== 'ENOENT') throw err;
+        if (err.code !== 'ENOENT') {
+          // It survived, and on a restart it may well hold the token we are
+          // about to reuse from the database. Treat it as live and exposed:
+          // `created` never becomes true on this path, so without this the
+          // revocation below would not fire and /setup/admin would keep
+          // accepting whatever is in that file.
+          leftReadable.push(candidate);
+          throw err;
+        }
       }
 
       // 'wx' is O_CREAT|O_EXCL: it fails if the path exists, and it does not
       // follow a symlink. Without it, a local user on a group-writable mount
       // can drop a symlink at this path in the window between the unlink and
-      // the write, and the token lands in a file they own and can read. Having
-      // just unlinked, anything present again is that race.
-      fs.writeFileSync(candidate, `${token}\n`, { mode: 0o600, flag: 'wx' });
-      created = true;
+      // the write, and the token lands in a file they own and can read.
+      mayExist = true;
+      try {
+        fs.writeFileSync(candidate, `${token}\n`, { mode: 0o600, flag: 'wx' });
+      } catch (err) {
+        // Another worker got there first — the shipped PM2 cluster config runs
+        // several against one DATA_DIR. If what they wrote is private and holds
+        // the same token, that is this loop's job already done; falling through
+        // to the failure path would make THIS worker print the live token to
+        // its log while a perfectly good file exists.
+        if (err.code !== 'EEXIST') throw err;
+        const existing = fs.lstatSync(candidate);
+        const sameToken = fs.readFileSync(candidate, 'utf8').trim() === token;
+        if (!existing.isFile() || (existing.mode & 0o077) || !sameToken) throw err;
+        written.push(candidate);
+        continue;
+      }
 
       try { fs.chmodSync(candidate, 0o600); } catch (_) { /* verified next */ }
 
@@ -188,11 +210,12 @@ async function ensureSetupToken() {
       }
       written.push(candidate);
     } catch (err) {
-      // One cleanup path for every failure after creation — a bad mode, an
-      // lstat that threw on a flaky network mount, anything. Leaving a live
-      // credential behind because the verification itself failed is the same
-      // exposure as leaving one behind deliberately.
-      if (created) {
+      // One cleanup path for every failure after the write was attempted — a
+      // bad mode, an lstat that threw on a flaky mount, a write that created
+      // the file and then failed. Leaving a live credential behind because the
+      // verification itself failed is the same exposure as leaving one behind
+      // deliberately.
+      if (mayExist && fs.existsSync(candidate)) {
         try { fs.unlinkSync(candidate); } catch (_) { leftReadable.push(candidate); }
       }
       // Remembered only if nothing else worked; a failed second copy must not
