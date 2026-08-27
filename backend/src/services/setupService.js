@@ -148,69 +148,84 @@ async function ensureSetupToken() {
   const leftReadable = [];
   let writeError = null;
   for (const candidate of setupTokenFilePaths()) {
+    // Whether THIS iteration put a file on disk. Cleanup below keys off it:
+    // anything created but not confirmed private has to go, however the
+    // failure arrived (#1218 review).
+    let created = false;
     try {
       fs.mkdirSync(path.dirname(candidate), { recursive: true });
-      // Unlink first, then create (#1218 review). The `mode` option applies
-      // only when the file is CREATED — writing over an existing inode
-      // truncates it and leaves its permissions alone. A token file someone
-      // had copied to the volume root by hand at 0644 would keep that mode and
-      // sit world-readable on a shared NAS mount while this code claimed 0600.
-      // Recreating rather than chmod-after-write also closes the window where
-      // the credential is on disk under the wrong mode.
-      // ENOENT only. A file we could not remove for any OTHER reason — a
-      // 0666 file owned by someone else in a sticky or ACL-controlled
-      // directory — is still writable, so writing anyway would drop the live
-      // token into a foreign, world-readable inode (#1218 review).
+
+      // ENOENT only. A file we could not remove for any other reason — a 0666
+      // file owned by someone else in a sticky or ACL-controlled directory —
+      // is still writable, so writing anyway would drop the live token into a
+      // foreign, world-readable inode.
       try {
         fs.unlinkSync(candidate);
       } catch (err) {
         if (err.code !== 'ENOENT') throw err;
       }
-      fs.writeFileSync(candidate, `${token}\n`, { mode: 0o600 });
-      // Belt and braces: an unlink that failed for a reason other than absence
-      // (an immutable bit, a read-only parent) would leave the old inode in
-      // place and the write above landing on it.
-      try { fs.chmodSync(candidate, 0o600); } catch (_) { /* verified below */ }
 
-      // Then check, because asking is not the same as succeeding (#1218
-      // review). A CIFS/SMB mount — which is what a NAS often offers — carries
-      // no Unix modes: chmod is a silent no-op and the file keeps whatever
-      // file_mode= the mount forces, typically 0644. This code targets exactly
-      // those hosts, so it verifies rather than assumes.
-      //
-      // A credential that cannot be made private is removed rather than left
-      // lying there. Dropping this candidate is not silent: it only counts as
-      // written if it survives, so an install where NEITHER copy can be
-      // protected falls through to the log fallback below, which is the
-      // documented last resort and reaches the operator alone.
-      const mode = fs.statSync(candidate).mode & 0o777;
+      // 'wx' is O_CREAT|O_EXCL: it fails if the path exists, and it does not
+      // follow a symlink. Without it, a local user on a group-writable mount
+      // can drop a symlink at this path in the window between the unlink and
+      // the write, and the token lands in a file they own and can read. Having
+      // just unlinked, anything present again is that race.
+      fs.writeFileSync(candidate, `${token}\n`, { mode: 0o600, flag: 'wx' });
+      created = true;
+
+      try { fs.chmodSync(candidate, 0o600); } catch (_) { /* verified next */ }
+
+      // Asking is not the same as succeeding. A CIFS/SMB mount — what a NAS
+      // commonly offers — carries no Unix modes: chmod is a silent no-op and
+      // the file keeps whatever file_mode= the mount forces, typically 0644.
+      // lstat, not stat: the check must describe the file itself.
+      const mode = fs.lstatSync(candidate).mode & 0o777;
       if (mode & 0o077) {
-        let removed = true;
-        try { fs.unlinkSync(candidate); } catch (_) { removed = false; }
-        if (!removed) leftReadable.push(candidate);
         throw new Error(
-          `refusing to leave a group/world-readable setup token at ${candidate} (mode ${mode.toString(8)})`
-          + (removed ? '' : ' — and it could not be removed')
+          `refusing to leave a group/world-readable setup token at ${candidate} `
+          + `(mode ${mode.toString(8)})`
         );
       }
       written.push(candidate);
     } catch (err) {
+      // One cleanup path for every failure after creation — a bad mode, an
+      // lstat that threw on a flaky network mount, anything. Leaving a live
+      // credential behind because the verification itself failed is the same
+      // exposure as leaving one behind deliberately.
+      if (created) {
+        try { fs.unlinkSync(candidate); } catch (_) { leftReadable.push(candidate); }
+      }
       // Remembered only if nothing else worked; a failed second copy must not
       // push a working install onto the log-the-token fallback below.
       writeError = writeError || err;
     }
   }
-  const file = written[0] || null;
-  writtenTokenFile = file;
-  writtenTokenFiles = written;
+
   if (written.length > 0) writeError = null;
 
   if (leftReadable.length > 0) {
-    // No token in this line: it names a file that is already too readable.
+    // Fail closed (#1218 review). A readable copy that cannot be deleted is a
+    // live first-admin credential sitting where anyone on the mount can read
+    // it, and /setup/admin would go on accepting it — so the token is revoked
+    // instead of merely reported. What is left on disk becomes a dead string.
+    //
+    // Copies that DID land privately are removed too: they hold the same value,
+    // which is about to stop working. The next boot mints a fresh token, and
+    // the undeletable file is skipped rather than rewritten because its unlink
+    // still fails — so this converges instead of looping on the same exposure.
+    for (const file of written) {
+      try { fs.unlinkSync(file); } catch (_) { /* best-effort */ }
+    }
+    await upsertAppSetting(SETUP_TOKEN_KEY, null, 'string');
+    writtenTokenFile = null;
+    writtenTokenFiles = [];
+
     logger.error(
       `[setup] A setup token file at ${leftReadable.join(' and ')} is readable by other `
-      + 'users and could not be removed. Delete it by hand once setup is complete.'
+      + 'users and could not be removed, so the token has been revoked and no admin '
+      + 'can be created with it. Delete that file, then restart to issue a new one.'
     );
+    return null;
   }
 
   if (writeError) {

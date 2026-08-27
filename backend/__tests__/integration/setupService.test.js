@@ -155,9 +155,9 @@ describe('setupService (first-run bootstrap)', () => {
     // modes, so chmod is a silent no-op and the file keeps the mount's
     // file_mode. Simulated by making chmod do nothing and stat report 0644.
     const canonical = path.join(tmpDir, 'SETUP_TOKEN');
-    const realStat = fs.statSync;
+    const realStat = fs.lstatSync;
     const chmodSpy = jest.spyOn(fs, 'chmodSync').mockImplementation(() => {});
-    const statSpy = jest.spyOn(fs, 'statSync').mockImplementation((target, ...rest) => {
+    const statSpy = jest.spyOn(fs, 'lstatSync').mockImplementation((target, ...rest) => {
       const st = realStat(target, ...rest);
       if (String(target) === canonical) {
         return { ...st, mode: (st.mode & ~0o777) | 0o644 };
@@ -185,8 +185,8 @@ describe('setupService (first-run bootstrap)', () => {
     const logger = require('../../src/utils/logger');
     const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
     const chmodSpy = jest.spyOn(fs, 'chmodSync').mockImplementation(() => {});
-    const realStat = fs.statSync;
-    const statSpy = jest.spyOn(fs, 'statSync').mockImplementation((target, ...rest) => {
+    const realStat = fs.lstatSync;
+    const statSpy = jest.spyOn(fs, 'lstatSync').mockImplementation((target, ...rest) => {
       const st = realStat(target, ...rest);
       return String(target).endsWith('SETUP_TOKEN')
         ? { ...st, mode: (st.mode & ~0o777) | 0o644 }
@@ -202,6 +202,51 @@ describe('setupService (first-run bootstrap)', () => {
       warnSpy.mockRestore();
       chmodSpy.mockRestore();
       statSpy.mockRestore();
+    }
+  });
+
+  it('revokes the token when an exposed copy cannot be deleted (#1218)', async () => {
+    // ACL-backed or CIFS directories can allow creation and deny deletion. The
+    // old behaviour logged an error and carried on, so a world-readable file
+    // held a token /setup/admin still accepted — anyone who could read the
+    // mount could take the first super-admin. Fail closed instead.
+    const canonical = path.join(tmpDir, 'SETUP_TOKEN');
+    const chmodSpy = jest.spyOn(fs, 'chmodSync').mockImplementation(() => {});
+    const realLstat = fs.lstatSync;
+    const lstatSpy = jest.spyOn(fs, 'lstatSync').mockImplementation((target, ...rest) => {
+      const st = realLstat(target, ...rest);
+      return String(target) === canonical
+        ? { ...st, mode: (st.mode & ~0o777) | 0o644 }
+        : st;
+    });
+    const realUnlink = fs.unlinkSync;
+    const unlinkSpy = jest.spyOn(fs, 'unlinkSync').mockImplementation((target, ...rest) => {
+      // Creation is allowed, deletion is not — the shape this guards against.
+      if (String(target) === canonical && fs.existsSync(canonical)) {
+        const err = new Error('EPERM'); err.code = 'EPERM'; throw err;
+      }
+      return realUnlink(target, ...rest);
+    });
+
+    try {
+      const token = await setupService.ensureSetupToken();
+
+      // No token surfaced, and nothing in the database will accept the value
+      // sitting in that unreadable-to-us, readable-to-others file.
+      expect(token).toBeNull();
+      expect(await getAppSetting('setup_token')).toBeFalsy();
+      await expect(
+        setupService.createInitialAdmin({
+          token: fs.readFileSync(canonical, 'utf8').trim(),
+          email: 'attacker@example.com',
+          password: VALID_PW,
+        })
+      ).rejects.toThrow();
+    } finally {
+      chmodSpy.mockRestore();
+      lstatSpy.mockRestore();
+      unlinkSpy.mockRestore();
+      try { realUnlink(canonical); } catch (_) { /* already gone */ }
     }
   });
 
