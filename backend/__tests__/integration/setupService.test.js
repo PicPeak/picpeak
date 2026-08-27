@@ -134,6 +134,22 @@ describe('setupService (first-run bootstrap)', () => {
     }
   });
 
+  it('restores 0600 on a token file that already existed with looser permissions (#1218)', async () => {
+    // fs.writeFileSync's `mode` applies only when the file is created, so
+    // writing over a 0644 file left the first-admin credential group- and
+    // world-readable while the code claimed otherwise. On a NAS the volume is
+    // often a shared mount, which is exactly where that matters.
+    const canonical = path.join(tmpDir, 'SETUP_TOKEN');
+    fs.writeFileSync(canonical, 'stale\n', { mode: 0o644 });
+    fs.chmodSync(canonical, 0o644);
+    expect(fs.statSync(canonical).mode & 0o777).toBe(0o644);
+
+    const token = await setupService.ensureSetupToken();
+
+    expect(fs.readFileSync(canonical, 'utf8').trim()).toBe(token);
+    expect(fs.statSync(canonical).mode & 0o777).toBe(0o600);
+  });
+
   it('refuses to create a second admin (setup already complete)', async () => {
     const token = await setupService.ensureSetupToken();
     await setupService.createInitialAdmin({ token, email: 'first@example.com', password: VALID_PW });

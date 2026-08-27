@@ -146,7 +146,19 @@ async function ensureSetupToken() {
   for (const candidate of setupTokenFilePaths()) {
     try {
       fs.mkdirSync(path.dirname(candidate), { recursive: true });
+      // Unlink first, then create (#1218 review). The `mode` option applies
+      // only when the file is CREATED — writing over an existing inode
+      // truncates it and leaves its permissions alone. A token file someone
+      // had copied to the volume root by hand at 0644 would keep that mode and
+      // sit world-readable on a shared NAS mount while this code claimed 0600.
+      // Recreating rather than chmod-after-write also closes the window where
+      // the credential is on disk under the wrong mode.
+      try { fs.unlinkSync(candidate); } catch (_) { /* absent is the normal case */ }
       fs.writeFileSync(candidate, `${token}\n`, { mode: 0o600 });
+      // Belt and braces: an unlink that failed for a reason other than absence
+      // (an immutable bit, a read-only parent) would leave the old inode in
+      // place and the write above landing on it.
+      fs.chmodSync(candidate, 0o600);
       written.push(candidate);
     } catch (err) {
       // Remembered only if nothing else worked; a failed second copy must not
