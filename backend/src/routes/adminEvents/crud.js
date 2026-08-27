@@ -1205,6 +1205,10 @@ module.exports = (router) => {
           require_name_email: sourceFeedback.require_name_email,
           moderate_comments: sourceFeedback.moderate_comments,
           show_feedback_to_guests: sourceFeedback.show_feedback_to_guests,
+          // Including the identity mode (#1197): a clone that silently came
+          // back in 'simple' would drop the shared tag on a gallery duplicated
+          // precisely to reuse its proofing setup.
+          identity_mode: sourceFeedback.identity_mode || 'simple',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });

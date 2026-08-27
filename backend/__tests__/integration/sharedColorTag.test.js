@@ -321,6 +321,34 @@ describe('shared colour tag (#1197)', () => {
         expect(photo.other_color_labels || []).toHaveLength(0);
       });
 
+      it('recounts the stored per-photo counter when the mode changes', async () => {
+        // color_label_count is denormalized and recomputed on feedback writes.
+        // A mode switch changes which rows are live without any write, so
+        // without an explicit recount the tiles and the admin summary keep
+        // reporting the old mode's totals until each photo is touched again —
+        // on a finished gallery, never.
+        await setMode('simple');
+        await tag('device-A', 'green');
+        expect((await db('photos').where('id', photoId).first()).color_label_count).toBe(1);
+
+        await feedbackService.updateEventFeedbackSettings(eventId, { identity_mode: 'shared' });
+        expect((await db('photos').where('id', photoId).first()).color_label_count).toBe(0);
+
+        await feedbackService.updateEventFeedbackSettings(eventId, { identity_mode: 'simple' });
+        expect((await db('photos').where('id', photoId).first()).color_label_count).toBe(1);
+      });
+
+      it('keeps dormant labels out of the event feedback summary', async () => {
+        await seedDormantPerGuestLabels();
+        // Feeds the admin analytics total_feedback and the guest
+        // /feedback-summary response.
+        const summary = await feedbackService.getEventFeedbackSummary(eventId);
+        expect(Number(summary.stats.total_color_labels)).toBe(0);
+
+        await tag('device-C', 'blue');
+        expect(Number((await feedbackService.getEventFeedbackSummary(eventId)).stats.total_color_labels)).toBe(1);
+      });
+
       it('does not count the shared tag once the event is back on per-guest labels', async () => {
         await tag('device-A', 'green');
         await setMode('simple');

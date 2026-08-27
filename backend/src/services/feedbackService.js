@@ -147,6 +147,16 @@ class FeedbackService {
 
       const writable = pickSettingsColumns(settings);
 
+      // Changing identity_mode changes which colour labels are live, and
+      // photos.color_label_count is denormalized — recomputed on a feedback
+      // write, not on a settings write (#1197). Without this the tiles, the
+      // admin grid and PhotoFilterBuilder.getSummary keep reporting the
+      // previous mode's totals until each photo happens to receive another
+      // mutation, which on a finished gallery is never.
+      const modeChanged = Object.prototype.hasOwnProperty.call(writable, 'identity_mode')
+        && existing
+        && (existing.identity_mode || 'simple') !== (writable.identity_mode || 'simple');
+
       if (existing) {
         await db('event_feedback_settings')
           .where('event_id', eventId)
@@ -161,6 +171,10 @@ class FeedbackService {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         });
+      }
+
+      if (modeChanged) {
+        await this.recountEventColorLabels(eventId, writable.identity_mode || 'simple');
       }
 
       await logActivity('feedback_settings_updated', writable, eventId);
@@ -276,6 +290,37 @@ class FeedbackService {
     // Outside the transaction: it reads the rows the commit just made visible.
     await this.updatePhotoFeedbackStats(photoId);
     return outcome;
+  }
+
+  /**
+   * Rebuild photos.color_label_count for a whole event against the set the
+   * given mode makes live (#1197).
+   *
+   * Two statements rather than updatePhotoFeedbackStats per photo: a mode
+   * switch on a 5,000-photo gallery would otherwise be 5,000 aggregate queries
+   * and 5,000 updates, for a counter that four of its five components cannot
+   * have changed. Zero everything first, then write the photos that actually
+   * carry a live label — usually a small fraction of the event.
+   */
+  async recountEventColorLabels(eventId, identityMode) {
+    await db.transaction(async (trx) => {
+      await trx('photos').where({ event_id: eventId }).update({ color_label_count: 0 });
+
+      const rows = await scopeColorLabelsToMode(
+        trx('photo_feedback')
+          .where({ event_id: eventId, feedback_type: 'color_label', is_hidden: false }),
+        identityMode,
+      )
+        .groupBy('photo_id')
+        .select('photo_id')
+        .count('id as count');
+
+      for (const row of rows) {
+        await trx('photos')
+          .where({ id: row.photo_id })
+          .update({ color_label_count: Number(row.count) || 0 });
+      }
+    });
   }
 
   /**
@@ -602,6 +647,7 @@ class FeedbackService {
         .orderBy('average_rating', 'desc')
         .orderBy('like_count', 'desc');
       
+      const sharedColors = (await this.getEventFeedbackSettings(eventId)).identity_mode === 'shared';
       const totalStats = await db('photo_feedback')
         .where('event_id', eventId)
         // Hidden rows do not count, the same rule the photo counters above
@@ -616,7 +662,19 @@ class FeedbackService {
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_comments', ['comment']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_favorites', ['favorite']),
           db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_reactions', ['reaction']),
-          db.raw('COUNT(CASE WHEN feedback_type = ? THEN 1 END) as total_color_labels', ['color_label'])
+          // Scoped to the live colour-label set (#1197), like every other
+          // colour read. Unscoped, a dormant set left behind by a mode switch
+          // inflated total_feedback in the admin analytics and the guest
+          // /feedback-summary while every other surface hid it.
+          sharedColors
+            ? db.raw(
+              'COUNT(CASE WHEN feedback_type = ? AND guest_identifier = ? THEN 1 END) as total_color_labels',
+              ['color_label', SHARED_COLOR_LABEL_IDENTITY],
+            )
+            : db.raw(
+              'COUNT(CASE WHEN feedback_type = ? AND (guest_identifier IS NULL OR guest_identifier <> ?) THEN 1 END) as total_color_labels',
+              ['color_label', SHARED_COLOR_LABEL_IDENTITY],
+            )
         )
         .first();
       
