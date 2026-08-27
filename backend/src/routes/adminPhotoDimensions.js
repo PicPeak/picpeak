@@ -350,6 +350,7 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('settings.edit
       let successCount = 0;
       let missingCount = 0;
       let errorCount = 0;
+      let skippedCount = 0;
       let lostClaim = false;
 
       // Same reasoning as the dimension repair: detached from the request, so
@@ -424,11 +425,29 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('settings.edit
             // large library, and an import or a replacement finishing meanwhile
             // has already written a date this pass would otherwise overwrite
             // with the same-or-worse value.
+            //
+            // Fenced on path and filename as well as the id (#1201):
+            // replacePhoto — reachable from the replace_by_name upload path
+            // (adminPhotos.js) — swaps a NEW file under an existing row and
+            // rewrites path/filename. That replacement carries no date of its
+            // own, so captured_at is still NULL and whereNull alone would let
+            // the previous file's EXIF date land on it. Matching the identity
+            // that was actually read means the update affects no rows and the
+            // row is simply skipped.
             const updated = await db('photos')
-              .where({ id: photo.id })
+              .where({ id: photo.id, path: photo.path, filename: photo.filename })
               .whereNull('captured_at')
               .update({ captured_at: captured.toISOString() });
-            if (updated) successCount++;
+            // Counted, not dropped: without this a candidate that was read but
+            // not written falls out of the run's arithmetic entirely, and
+            // success + noExif + failed silently stops adding up to the count
+            // the operator was shown when they started it. Two ways to land
+            // here, both "another writer got there first" — the row was dated
+            // meanwhile (whereNull), or its file changed under us (the fence).
+            // Neither is an error and neither needs a retry: captured_at is
+            // still NULL for the fenced case, so the status endpoint keeps
+            // reporting it as backlog and the next run picks it up.
+            if (updated) successCount++; else skippedCount++;
 
             if (successCount % 50 === 0 && successCount > 0) {
               logger.info(`Capture date backfill progress: ${successCount} updated...`);
@@ -443,12 +462,15 @@ router.post('/repair-capture-dates', adminAuth, requirePermission('settings.edit
           logger.warn(`Capture date backfill stopped: claim taken over after ${successCount} updated, ${errorCount} errors`);
           return;
         }
-        await maintenanceJobs.release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount });
-        logger.info(`Capture date backfill complete: ${successCount} updated, ${missingCount} without EXIF, ${errorCount} errors`);
+        await maintenanceJobs.release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount });
+        logger.info(
+          `Capture date backfill complete: ${successCount} updated, ${missingCount} without EXIF, `
+          + `${errorCount} errors, ${skippedCount} skipped (dated or replaced mid-run)`
+        );
       } catch (err) {
         logger.error('Capture date backfill aborted:', err);
         await maintenanceJobs
-          .release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, error: err.message })
+          .release(JOB_CAPTURE_DATE_BACKFILL, token, { success: successCount, noExif: missingCount, failed: errorCount, skipped: skippedCount, error: err.message })
           .catch(() => {});
       } finally {
         lease.stop();

@@ -198,5 +198,30 @@ describe('capture date backfill (#1172)', () => {
 
     expect(new Date((await db('photos').where({ id: photoId }).first()).captured_at).toISOString()).toBe(claimed);
     expect(done.body.lastResult.success).toBe(0);
+    // Read but not written, so it is accounted for rather than dropped.
+    expect(done.body.lastResult.skipped).toBe(1);
+  });
+
+  it('does not date a row whose file was replaced while it was reading (#1201)', async () => {
+    // replacePhoto swaps a NEW file under an existing row and rewrites
+    // path/filename (reachable from replace_by_name). The replacement carries
+    // no date of its own, so captured_at is still NULL and the whereNull guard
+    // alone would let the previous file's EXIF date land on it. The write is
+    // fenced on the identity that was read, so the row is skipped instead —
+    // and not counted as updated either.
+    const { photoId } = await seed({ relpath: 'orig.jpg', exifIso: '2026-06-03T09:00:00Z' });
+
+    const res = await request(app).post('/api/admin/photos/repair-capture-dates');
+    expect(res.body.count).toBe(1);
+    // Simulate the replacement landing before the loop writes.
+    await db('photos').where({ id: photoId })
+      .update({ path: 'capfill/replaced.jpg', filename: 'replaced.jpg' });
+    const done = await settle();
+
+    expect((await db('photos').where({ id: photoId }).first()).captured_at).toBeNull();
+    expect(done.body.lastResult.success).toBe(0);
+    // Not an error and not "no EXIF" — the date was found, another writer just
+    // got there first. It stays in the backlog for the next run.
+    expect(done.body.lastResult).toMatchObject({ noExif: 0, failed: 0, skipped: 1 });
   });
 });
