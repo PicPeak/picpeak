@@ -155,6 +155,28 @@ describe('shift-click range selection (#1212)', () => {
     expect(selectedIds(onSelectionChange)).toEqual([4]);
   });
 
+  it('forgets the anchor when the selection is cleared', async () => {
+    // The anchor is invisible. Left behind by Deselect All, it made the next
+    // shift-click reach back into a selection session the user had already
+    // ended — selecting a range they never started (#1212 review).
+    const user = userEvent.setup();
+    const { onSelectionChange } = renderGrid(FIVE);
+
+    await user.click(checkbox(1));
+    // Select All then again to deselect — with one tile picked the button is
+    // still "Select All", so a single click would select rather than clear.
+    await user.click(screen.getByRole('button', { name: /select all/i }));
+    await user.click(screen.getByRole('button', { name: /deselect all/i }));
+    expect(selectedIds(onSelectionChange)).toEqual([]);
+
+    await user.keyboard('{Shift>}');
+    await user.click(checkbox(4));
+    await user.keyboard('{/Shift}');
+
+    // A plain toggle of the tile that was clicked, not 1..4.
+    expect(selectedIds(onSelectionChange)).toEqual([4]);
+  });
+
   it('refuses to measure a range from an anchor the list has moved under', async () => {
     const user = userEvent.setup();
     const { onSelectionChange, view } = renderGrid(FIVE);

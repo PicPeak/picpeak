@@ -117,6 +117,11 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     let newSelected: Set<number>;
     if (selectedPhotos.size === photos.length) {
       newSelected = new Set();
+      // Clearing the selection clears what a range would measure from (#1212
+      // review). The anchor is invisible, so an anchor that outlived the
+      // selection made the next shift-click reach back into a session the user
+      // had already ended and select a range they never started.
+      setAnchor(null);
     } else {
       newSelected = new Set(photos.map(p => p.id));
     }
@@ -162,6 +167,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       await photosService.deletePhotos(eventId, selectedIds);
       toast.success(`${count} photo${count > 1 ? 's' : ''} deleted successfully`);
       setSelectedPhotos(new Set());
+      setAnchor(null);
       setIsSelectionMode(false);
       onSelectionChange?.([]);
       onPhotosDeleted();
@@ -187,6 +193,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     setIsSelectionMode(!isSelectionMode);
     if (isSelectionMode) {
       setSelectedPhotos(new Set());
+      setAnchor(null);
       onSelectionChange?.([]);
     }
   };
@@ -209,6 +216,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
         })
       );
       setSelectedPhotos(new Set());
+      setAnchor(null);
       setIsSelectionMode(false);
       onSelectionChange?.([]);
       setIsCategoryModalOpen(false);
