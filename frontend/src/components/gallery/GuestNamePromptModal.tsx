@@ -139,16 +139,36 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              closePrompt();
-              openRecovery();
-            }}
-            className="text-sm text-accent hover:underline w-full text-center pt-2"
-          >
-            {t('gallery.guestPrompt.alreadyHere', "I've been here before")}
-          </button>
+          {/* A returning guest who fills the form in again becomes a second
+              guest row, and their earlier likes and favourites stop counting
+              as theirs (#1210). Recovery has always been here to prevent that,
+              as a small link under the button that people reasonably read as
+              fine print and skipped.
+
+              Given its own block and told in terms of what the guest loses by
+              missing it, rather than "I've been here before" — which reads as
+              a greeting, not a warning. Still a choice and not a check: asking
+              the server whether an address is already registered would answer
+              "is this person in this gallery" to anyone who asked, which is
+              why /guest/recover deliberately cannot be used that way. */}
+          <div className="pt-3 mt-1 border-t border-neutral-200 dark:border-neutral-700 text-center">
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              {t(
+                'gallery.guestPrompt.returningHint',
+                'Been here before? Your earlier picks are still saved.'
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                closePrompt();
+                openRecovery();
+              }}
+              className="mt-1 text-sm font-medium text-accent hover:underline"
+            >
+              {t('gallery.guestPrompt.recoverPicks', 'Get them back')}
+            </button>
+          </div>
         </form>
       </div>
     </div>

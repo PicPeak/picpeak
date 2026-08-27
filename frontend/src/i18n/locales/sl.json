@@ -326,7 +326,8 @@
       "emailLabel": "E-pošta (neobvezno)",
       "emailPlaceholder": "vi@example.com",
       "submit": "Nadaljuj",
-      "alreadyHere": "Tukaj sem že bil"
+      "returningHint": "Ste že bili tukaj? Vaša prejšnja izbira je še shranjena.",
+      "recoverPicks": "Prikliči izbiro"
     },
     "footer": {
       "forgetMeConfirm": "Vaše ime in izbire bodo odstranjeni iz te galerije.",
