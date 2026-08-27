@@ -83,16 +83,19 @@ describe('duplicate guest detection (#1210)', () => {
     await db('gallery_guests').where({ event_id: eventId }).del();
   });
 
-  it('points each duplicate at the other rows that share its email', async () => {
+  it('groups duplicates under a shared key', async () => {
     const first = await addGuest('Tina', 'tina@example.com');
     const second = await addGuest('Tina', 'tina@example.com');
     const other = await addGuest('Marc', 'marc@example.com');
 
     const body = await listGuests();
 
-    expect(byId(body, first).duplicate_of).toEqual([second]);
-    expect(byId(body, second).duplicate_of).toEqual([first]);
-    expect(byId(body, other).duplicate_of).toEqual([]);
+    // A shared group key rather than a list of sibling ids: the payload stays
+    // linear in the number of guests, and the case/whitespace folding lives in
+    // one place instead of being reimplemented on the client.
+    expect(byId(body, first).duplicate_group).toBe('tina@example.com');
+    expect(byId(body, second).duplicate_group).toBe('tina@example.com');
+    expect(byId(body, other).duplicate_group).toBeNull();
   });
 
   it('counts the groups and the rows in them', async () => {
@@ -113,7 +116,8 @@ describe('duplicate guest detection (#1210)', () => {
     const b = await addGuest('Tina', 'Tina@Example.com ');
 
     const body = await listGuests();
-    expect(byId(body, a).duplicate_of).toEqual([b]);
+    expect(byId(body, a).duplicate_group).toBe('tina@example.com');
+    expect(byId(body, b).duplicate_group).toBe('tina@example.com');
     expect(body.duplicates).toEqual({ groups: 1, guests: 2 });
   });
 
@@ -124,8 +128,8 @@ describe('duplicate guest detection (#1210)', () => {
     const b = await addGuest('Anon', null);
 
     const body = await listGuests();
-    expect(byId(body, a).duplicate_of).toEqual([]);
-    expect(byId(body, b).duplicate_of).toEqual([]);
+    expect(byId(body, a).duplicate_group).toBeNull();
+    expect(byId(body, b).duplicate_group).toBeNull();
     expect(body.duplicates).toEqual({ groups: 0, guests: 0 });
   });
 
@@ -134,8 +138,54 @@ describe('duplicate guest detection (#1210)', () => {
     const b = await addGuest('Anna', 'anna.m@example.com');
 
     const body = await listGuests();
-    expect(byId(body, a).duplicate_of).toEqual([]);
-    expect(byId(body, b).duplicate_of).toEqual([]);
+    expect(byId(body, a).duplicate_group).toBeNull();
+    expect(byId(body, b).duplicate_group).toBeNull();
+  });
+
+  it('moves a pending invite to the survivor instead of stranding it', async () => {
+    // Creating an invite inserts a real gallery_guests row, so an admin who
+    // pre-mints one and then sees the guest self-register has two rows — and
+    // this feature now points that pair out and offers the merge. Redemption
+    // resolves guest_invites.guest_id with `is_deleted: false`, so merging
+    // without moving the invite leaves the emailed link returning 404
+    // guest_missing while the invite dialog still shows it as Pending.
+    const placeholder = await addGuest('Tina', 'tina@example.com');
+    const selfRegistered = await addGuest('Tina', 'tina@example.com');
+    const [inv] = await db('guest_invites').insert({
+      event_id: eventId, guest_id: placeholder, token: 'invite-token-1',
+      created_by_admin_id: 1, created_at: new Date().toISOString(),
+    }).returning('id');
+    const inviteId = typeof inv === 'object' ? inv.id : inv;
+
+    const res = await request(app)
+      .post(`/api/admin/events/${eventId}/guests/${selfRegistered}/merge`)
+      .send({ mergeIds: [placeholder] });
+    expect(res.status).toBe(200);
+
+    const invite = await db('guest_invites').where({ id: inviteId }).first();
+    expect(invite.guest_id).toBe(selfRegistered);
+    // And it still resolves: the survivor is not soft-deleted.
+    const target = await db('gallery_guests').where({ id: invite.guest_id }).first();
+    expect(Boolean(target.is_deleted)).toBe(false);
+  });
+
+  it('leaves a spent invite pointing at what it actually redeemed', async () => {
+    // A redeemed invite is a record of who redeemed what. Retargeting it would
+    // rewrite that history to name a guest who was never on the other end.
+    const old = await addGuest('Tina', 'tina@example.com');
+    const kept = await addGuest('Tina', 'tina@example.com');
+    const [inv] = await db('guest_invites').insert({
+      event_id: eventId, guest_id: old, token: 'invite-token-2',
+      created_by_admin_id: 1, redeemed_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    const inviteId = typeof inv === 'object' ? inv.id : inv;
+
+    await request(app)
+      .post(`/api/admin/events/${eventId}/guests/${kept}/merge`)
+      .send({ mergeIds: [old] });
+
+    expect((await db('guest_invites').where({ id: inviteId }).first()).guest_id).toBe(old);
   });
 
   it('ignores a removed guest', async () => {
@@ -146,7 +196,7 @@ describe('duplicate guest detection (#1210)', () => {
     // The deleted row is not listed at all, so the survivor is not a duplicate
     // of something the admin cannot see or merge.
     expect(body.guests.map((g) => g.id)).toEqual([kept]);
-    expect(byId(body, kept).duplicate_of).toEqual([]);
+    expect(byId(body, kept).duplicate_group).toBeNull();
     expect(body.duplicates).toEqual({ groups: 0, guests: 0 });
   });
 });

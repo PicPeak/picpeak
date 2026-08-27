@@ -101,11 +101,17 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
       return;
     }
     const [keepId, ...mergeIds] = mergeSelection;
-    const keepName = data?.guests.find((g) => g.id === keepId)?.name;
+    const keep = data?.guests.find((g) => g.id === keepId);
+    // Name plus email (#1210 review): duplicates are the same person, so the
+    // names are usually identical — "Merge 2 guests into Tina?" told the admin
+    // nothing about which Tina is about to absorb the other.
+    const keepLabel = keep
+      ? [keep.name, keep.email].filter(Boolean).join(' · ')
+      : `#${keepId}`;
     const confirmMsg = t(
       'admin.guests.mergeConfirm',
       'Merge {{count}} guests into {{name}}? This cannot be undone.',
-      { count: mergeSelection.length, name: keepName || '#' + keepId }
+      { count: mergeSelection.length, name: keepLabel }
     );
     if (window.confirm(confirmMsg)) {
       mergeMutation.mutate({ keepId, mergeIds });
@@ -121,17 +127,36 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
   // badged. The API returns the summary too; it is a cheap cross-check, not a
   // second source of truth.
   const duplicateGroups = useMemo(() => {
-    const byEmail = new Map<string, number[]>();
+    const byGroup = new Map<string, AdminGuest[]>();
     for (const g of guests) {
-      if (!(g.duplicate_of?.length)) continue;
-      const key = (g.email || '').trim().toLowerCase();
-      if (!key) continue;
-      if (!byEmail.has(key)) byEmail.set(key, []);
-      byEmail.get(key)!.push(g.id);
+      if (!g.duplicate_group) continue;
+      if (!byGroup.has(g.duplicate_group)) byGroup.set(g.duplicate_group, []);
+      byGroup.get(g.duplicate_group)!.push(g);
     }
-    return [...byEmail.values()].filter((ids) => ids.length > 1);
+
+    // The order inside a group is not cosmetic: performMerge keeps
+    // mergeSelection[0] and soft-deletes the rest, so whichever row this puts
+    // first is the one that survives (#1210 review). Left in API order that
+    // was newest-first, which would discard an older, email-verified row with
+    // most of the picks in favour of a fresh re-registration.
+    //
+    // Verified first, then whoever holds the most feedback, then the oldest —
+    // the row with the strongest claim to being the real person. Still only a
+    // proposal: the admin sees it ticked and can change it before merging.
+    const rank = (g: AdminGuest) => [
+      g.email_verified_at ? 0 : 1,
+      -(g.stats?.distinct_photos ?? 0),
+      new Date(g.created_at).getTime(),
+    ];
+    return [...byGroup.values()]
+      .filter((group) => group.length > 1)
+      .map((group) => [...group].sort((a, b) => {
+        const ra = rank(a); const rb = rank(b);
+        for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+        return 0;
+      }));
   }, [guests]);
-  const duplicateCount = duplicateGroups.reduce((n, ids) => n + ids.length, 0);
+  const duplicateCount = duplicateGroups.reduce((n, group) => n + group.length, 0);
 
   if (isLoading) {
     return <Loading size="lg" text={t('admin.guests.loading', 'Loading guests...')} />;
@@ -243,7 +268,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
             size="sm"
             onClick={() => {
               setMergeMode(true);
-              setMergeSelection(duplicateGroups[0]);
+              setMergeSelection(duplicateGroups[0].map((g) => g.id));
             }}
             className="shrink-0"
           >
@@ -316,7 +341,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                     </td>
                     <td className="px-4 py-3 text-sm text-neutral-600 dark:text-neutral-400">
                       {guest.email || '—'}
-                      {(guest.duplicate_of?.length ?? 0) > 0 && (
+                      {guest.duplicate_group && (
                         <span
                           className="ml-2 inline-block rounded px-1.5 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200"
                           title={t('admin.guests.duplicateHint', 'Another entry on this gallery uses the same email — likely the same person registered twice.')}

@@ -116,9 +116,14 @@ router.get(
         const sharing = key ? byEmail.get(key) || [] : [];
         return {
           ...serializeGuest(r),
-          // The other rows this one shares an email with, so the UI can offer
-          // the merge it already has rather than asking the admin to find them.
-          duplicate_of: sharing.length > 1 ? sharing.filter((id) => id !== r.id) : [],
+          // A group key, not the list of sibling ids (#1210 review). Listing
+          // the others meant every row carried the other n-1 ids, so a group of
+          // n registrations serialised n² ids — and nothing consumed them: the
+          // UI only asks whether a row is in a group and then regroups by this
+          // key anyway. Emitting the normalised email keeps the payload linear
+          // AND keeps the case/whitespace folding in one place instead of
+          // reimplemented on the client.
+          duplicate_group: sharing.length > 1 ? key : null,
           stats: {
             likes: parseInt(r.likes, 10) || 0,
             favorites: parseInt(r.favorites, 10) || 0,
@@ -637,6 +642,22 @@ router.post(
       }
 
       const result = await feedbackService.mergeGuestFeedback(Number(keepId), mergeIds.map(Number));
+
+      // Carry any unredeemed invite over to the survivor BEFORE the source row
+      // is soft-deleted (#1210 review). guest_invites.guest_id points at a real
+      // gallery_guests row — creating an invite inserts one — and redemption
+      // looks it up with `is_deleted: false`. Merging without this leaves the
+      // emailed link resolving to a deleted guest: the client gets a 404
+      // `guest_missing` while the admin's invite dialog still shows the invite
+      // as Pending, so nothing anywhere says the link is dead.
+      //
+      // Only unredeemed, unrevoked invites move. A spent invite is a historical
+      // record of who redeemed what and retargeting it would rewrite that.
+      await db('guest_invites')
+        .whereIn('guest_id', mergeIds.map(Number))
+        .whereNull('redeemed_at')
+        .whereNull('revoked_at')
+        .update({ guest_id: Number(keepId) });
 
       // Soft-delete the merged (source) guests.
       await db('gallery_guests')
