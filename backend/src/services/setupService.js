@@ -158,7 +158,26 @@ async function ensureSetupToken() {
       // Belt and braces: an unlink that failed for a reason other than absence
       // (an immutable bit, a read-only parent) would leave the old inode in
       // place and the write above landing on it.
-      fs.chmodSync(candidate, 0o600);
+      try { fs.chmodSync(candidate, 0o600); } catch (_) { /* verified below */ }
+
+      // Then check, because asking is not the same as succeeding (#1218
+      // review). A CIFS/SMB mount — which is what a NAS often offers — carries
+      // no Unix modes: chmod is a silent no-op and the file keeps whatever
+      // file_mode= the mount forces, typically 0644. This code targets exactly
+      // those hosts, so it verifies rather than assumes.
+      //
+      // A credential that cannot be made private is removed rather than left
+      // lying there. Dropping this candidate is not silent: it only counts as
+      // written if it survives, so an install where NEITHER copy can be
+      // protected falls through to the log fallback below, which is the
+      // documented last resort and reaches the operator alone.
+      const mode = fs.statSync(candidate).mode & 0o777;
+      if (mode & 0o077) {
+        try { fs.unlinkSync(candidate); } catch (_) { /* best-effort */ }
+        throw new Error(
+          `refusing to leave a group/world-readable setup token at ${candidate} (mode ${mode.toString(8)})`
+        );
+      }
       written.push(candidate);
     } catch (err) {
       // Remembered only if nothing else worked; a failed second copy must not

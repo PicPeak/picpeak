@@ -150,6 +150,33 @@ describe('setupService (first-run bootstrap)', () => {
     expect(fs.statSync(canonical).mode & 0o777).toBe(0o600);
   });
 
+  it('removes a token copy it cannot make private, rather than leaving it readable (#1218)', async () => {
+    // The CIFS/SMB case this feature is aimed at: the mount carries no Unix
+    // modes, so chmod is a silent no-op and the file keeps the mount's
+    // file_mode. Simulated by making chmod do nothing and stat report 0644.
+    const canonical = path.join(tmpDir, 'SETUP_TOKEN');
+    const realStat = fs.statSync;
+    const chmodSpy = jest.spyOn(fs, 'chmodSync').mockImplementation(() => {});
+    const statSpy = jest.spyOn(fs, 'statSync').mockImplementation((target, ...rest) => {
+      const st = realStat(target, ...rest);
+      if (String(target) === canonical) {
+        return { ...st, mode: (st.mode & ~0o777) | 0o644 };
+      }
+      return st;
+    });
+
+    try {
+      const token = await setupService.ensureSetupToken();
+      // The token still exists — setup must remain completable — but not as a
+      // world-readable file on a shared mount.
+      expect(token).toBeTruthy();
+      expect(fs.existsSync(canonical)).toBe(false);
+    } finally {
+      chmodSpy.mockRestore();
+      statSpy.mockRestore();
+    }
+  });
+
   it('refuses to create a second admin (setup already complete)', async () => {
     const token = await setupService.ensureSetupToken();
     await setupService.createInitialAdmin({ token, email: 'first@example.com', password: VALID_PW });
