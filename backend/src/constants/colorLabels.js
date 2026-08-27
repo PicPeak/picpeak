@@ -83,11 +83,30 @@ function dominantColorLabel(counts) {
   return best;
 }
 
+/**
+ * The identity a shared colour tag is stored under (#1197).
+ *
+ * In identity_mode='shared' the colour label has no owner: one tag per photo,
+ * any guest can overwrite it. It is still an ordinary photo_feedback row —
+ * which is what keeps the filters, the per-colour tallies, the moderation
+ * queue and the XMP/CSV export working unchanged — but its guest_identifier is
+ * this reserved value rather than a person or a device.
+ *
+ * Cannot collide with a real guest. generateGuestIdentifier returns either a
+ * 64-char sha256 hex or a guest's identifier, and those are crypto.randomUUID()
+ * values minted server-side and read back from the guests table
+ * (galleryGuests.js:85, guestAuth.js:57) — never a string the client supplies.
+ * The write path asserts it anyway: a caller must not reach the shared slot
+ * except through the shared-mode branch.
+ */
+const SHARED_COLOR_LABEL_IDENTITY = '__shared__';
+
 module.exports = {
   COLOR_LABELS,
   COLOR_LABEL_TO_XMP,
   COLOR_LABEL_PRIORITY,
   KEYBIND_SCHEMES,
+  SHARED_COLOR_LABEL_IDENTITY,
   isValidColorLabel,
   dominantColorLabel,
 };

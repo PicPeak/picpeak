@@ -1,6 +1,6 @@
 import { api } from '../config/api';
 
-export type IdentityMode = 'simple' | 'guest';
+export type IdentityMode = 'simple' | 'guest' | 'shared';
 
 // Emoji reactions (#839): the fixed curated set. Mirrored in
 // backend/src/constants/reactions.js — update both together.

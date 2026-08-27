@@ -210,8 +210,12 @@ const validateFeedbackSettings = [
   body('require_name_email').optional().isBoolean(),
   body('moderate_comments').optional().isBoolean(),
   body('show_feedback_to_guests').optional().isBoolean(),
-  body('identity_mode').optional().isIn(['simple', 'guest'])
-    .withMessage('identity_mode must be "simple" or "guest"'),
+  // 'shared' (#1197) is a third identity model, not a third kind of person:
+  // it drops the identity dimension from the COLOUR TAG only — one tag per
+  // photo that any guest can overwrite — and leaves likes, ratings, comments,
+  // favourites and reactions behaving exactly as in 'simple'.
+  body('identity_mode').optional().isIn(['simple', 'guest', 'shared'])
+    .withMessage('identity_mode must be "simple", "guest" or "shared"'),
   // Per-guest caps (#655). null / 0 = unlimited; positive integers enforced.
   // Upper bound is intentionally generous — operators occasionally run
   // "everyone, pick everything you like" galleries.

@@ -31,7 +31,7 @@ const { verifyGalleryAccess, denySlideshowToken, isAdminPreview } = require('../
 const withPreview = (req, url) => (req.isAdminPreview ? `${url}${url.includes('?') ? '&' : '?'}admin_preview=1` : url);
 const { resolveGuest } = require('../middleware/guestAuth');
 const { generateGuestIdentifier } = require('../middleware/feedbackRateLimit');
-const { COLOR_LABELS } = require('../constants/colorLabels');
+const { COLOR_LABELS, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const secureImageService = require('../services/secureImageService');
 const logger = require('../utils/logger');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
@@ -752,6 +752,10 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     const feedbackService = require('../services/feedbackService');
     const feedbackSettings = await feedbackService.getEventFeedbackSettings(req.event.id);
     const showFeedbackToGuests = isClient || parseBooleanInput(feedbackSettings.show_feedback_to_guests, true);
+    // One identity-less colour tag per photo, any guest may overwrite it
+    // (#1197). Read in three places below: the colour filters, the per-viewer
+    // badge, and the "other viewers" dots that must not double-render it.
+    const sharedColorMode = feedbackSettings?.identity_mode === 'shared';
 
     // Apply filtering if requested (supports global stats + per-guest interactions)
     if (filter) {
@@ -833,6 +837,30 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
             acc[row.color_label].add(row.photo_id);
             return acc;
           }, {});
+
+          // In shared mode the query above finds nothing for colours — the tag
+          // is not filed under this viewer — so "my greens" is answered from
+          // the shared rows instead (#1197). It belongs in the viewer's half
+          // rather than the aggregate half below, which is gated on
+          // show_feedback_to_guests: the shared tag is this viewer's tag, and
+          // a gallery with sharing off would otherwise show colours on the
+          // tiles while `color:green` returned nothing.
+          if (sharedColorMode) {
+            const sharedRows = await db('photo_feedback')
+              .where({
+                event_id: req.event.id,
+                feedback_type: 'color_label',
+                guest_identifier: SHARED_COLOR_LABEL_IDENTITY,
+                is_hidden: false,
+              })
+              .whereNotNull('color_label')
+              .select('photo_id', 'color_label');
+            guestColorLabels = sharedRows.reduce((acc, row) => {
+              if (!acc[row.color_label]) acc[row.color_label] = new Set();
+              acc[row.color_label].add(row.photo_id);
+              return acc;
+            }, {});
+          }
         }
 
         const includeGuestMatches = (type) => {
@@ -952,8 +980,20 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     // above. NOT gated on showFeedbackToGuests: a guest's own label is their
     // own selection, not shared aggregate data, and hiding it would blank the
     // grid badges on every refresh in a gallery with sharing switched off.
+    //
+    // In shared identity mode (#1197) there is no per-viewer label to read:
+    // the photo carries one tag and it belongs to everyone, so it arrives on
+    // this same field. The badge, the lightbox swatch and the keyboard
+    // shortcuts then work unchanged — they were already reading "the colour on
+    // this photo, from my point of view", which is precisely what the shared
+    // tag is.
     const myColorLabelByPhoto = {};
-    if (photos.length > 0) {
+    if (photos.length > 0 && sharedColorMode) {
+      Object.assign(
+        myColorLabelByPhoto,
+        await feedbackService.getSharedColorLabels(req.event.id, photos.map(p => p.id)),
+      );
+    } else if (photos.length > 0) {
       const colorQuery = db('photo_feedback')
         // Same rule as the heart above (#1150).
         .where({ event_id: req.event.id, feedback_type: 'color_label', is_hidden: false })
@@ -984,8 +1024,14 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
     //
     // Gated on showFeedbackToGuests, like every other aggregate: this is other
     // people's feedback, unlike my_color_label above.
+    //
+    // Skipped entirely in shared mode (#1197). There are no other viewers'
+    // labels there — there is one tag, already delivered as my_color_label
+    // above. Without this the shared row would come back here too (its
+    // reserved identity is not the viewer's), and every tile would render the
+    // same colour twice: once as the badge, once as a dot beside it.
     const otherColorLabelsByPhoto = {};
-    if (photos.length > 0 && showFeedbackToGuests) {
+    if (photos.length > 0 && showFeedbackToGuests && !sharedColorMode) {
       const othersQuery = db('photo_feedback')
         .where({ event_id: req.event.id, feedback_type: 'color_label', is_hidden: false })
         .whereIn('photo_id', photos.map(p => p.id))

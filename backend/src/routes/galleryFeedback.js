@@ -98,6 +98,11 @@ router.get('/:slug/photos/:photoId/feedback',
       const guestFeedback = await feedbackService.getPhotoFeedback(photoId, {
         guest_identifier: guestIdentifier
       });
+
+      // The photo's shared tag (#1197), when the event is in that mode.
+      const sharedColorLabel = settings.identity_mode === 'shared'
+        ? (await feedbackService.getSharedColorLabels(event.id, [photoId]))[photoId] || null
+        : null;
       
       // Combine and deduplicate
       const allFeedback = [...feedback];
@@ -156,7 +161,17 @@ router.get('/:slug/photos/:photoId/feedback',
           liked: !!guestFeedback.find(f => f.feedback_type === 'like'),
           favorited: !!guestFeedback.find(f => f.feedback_type === 'favorite'),
           reaction: guestFeedback.find(f => f.feedback_type === 'reaction')?.reaction || null,
-          color_label: guestFeedback.find(f => f.feedback_type === 'color_label')?.color_label || null
+          // In shared mode the photo's one tag IS this viewer's tag (#1197):
+          // there is no per-guest row to find, and returning null here would
+          // leave the lightbox swatch unselected while the photo plainly
+          // carries a colour. Delivered through my_feedback rather than the
+          // gated `color_labels` map above on purpose — the shared tag is the
+          // photo's own state, so it stays visible even with
+          // show_feedback_to_guests off, while the per-colour tallies (which
+          // are other people's data) stay hidden.
+          color_label: settings.identity_mode === 'shared'
+            ? sharedColorLabel
+            : (guestFeedback.find(f => f.feedback_type === 'color_label')?.color_label || null)
         }
       });
     } catch (error) {
@@ -258,6 +273,10 @@ router.post('/:slug/photos/:photoId/feedback',
         comment_text: req.body.comment_text,
         reaction: req.body.reaction,
         color_label: req.body.color_label,
+        // Read by the service to route a colour label to the photo's one
+        // shared slot instead of the guest's own row (#1197). Passed rather
+        // than re-fetched: the settings are already in hand here.
+        identity_mode: settings.identity_mode,
         guest_name: req.guest?.name ?? req.body.guest_name,
         guest_email: req.guest?.email ?? req.body.guest_email,
         guest_id: req.guest?.id ?? null,

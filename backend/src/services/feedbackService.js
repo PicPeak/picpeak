@@ -2,7 +2,7 @@ const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
 const { REACTION_EMOJIS } = require('../constants/reactions');
-const { isValidColorLabel } = require('../constants/colorLabels');
+const { isValidColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const { resolveEventFeedbackDefaults, DEFAULT_KEYBIND_MODE, KEYBIND_MODES } = require('./feedbackDefaults');
 
 // Every writable column on event_feedback_settings (#1030). The admin form
@@ -39,6 +39,18 @@ const SINGLE_VALUE_COLUMNS = {
   reaction: 'reaction',
   color_label: 'color_label',
 };
+
+/**
+ * Is this write the identity-less shared colour tag (#1197)?
+ *
+ * Narrow on purpose. 'shared' is a mode for the colour tag, not for the event:
+ * a like or a rating in a shared-mode gallery is still that guest's own, so
+ * only feedback_type='color_label' takes the reserved slot. Everything else
+ * falls through to the per-guest path unchanged.
+ */
+function isSharedColorLabel(identityMode, feedbackType) {
+  return identityMode === 'shared' && feedbackType === 'color_label';
+}
 
 function pickSettingsColumns(settings) {
   const picked = {};
@@ -162,6 +174,110 @@ class FeedbackService {
     return parseInt(result?.count, 10) || 0;
   }
 
+  /**
+   * Write the photo's one shared colour tag (#1197).
+   *
+   * Last write wins, and re-sending the colour that is already there clears it
+   * — the same toggle every other colour path uses, and the only way to remove
+   * a tag without inventing a second control for it. Any guest can do either:
+   * that is the mode, not a hole in it.
+   *
+   * The transaction plus the lock on the photo row is what makes "last write
+   * wins" mean one value rather than two. Without it, two guests tapping
+   * different colours in the same instant both read "no tag", both insert, and
+   * the photo ends up carrying two shared tags at once — which is exactly the
+   * per-guest tally this mode exists to get rid of. SQLite ignores forUpdate
+   * but serialises writers anyway; on Postgres it is doing real work.
+   *
+   * No guest_name, guest_email or guest_id is stored. Attribution is gone by
+   * design here — the tag is the photo's state, not a person's opinion — so
+   * the admin feedback list shows a shared tag with no name against it.
+   */
+  async submitSharedColorLabel(photoId, eventId, colorLabel, { ip_address, user_agent } = {}) {
+    const nowIso = () => new Date().toISOString();
+    let outcome;
+
+    await db.transaction(async (trx) => {
+      await trx('photos').where({ id: photoId }).forUpdate().first();
+
+      // Visible rows only, like every other single-value path (#1150): a
+      // hidden tag is the admin's moderation record, and a guest writing over
+      // it must create a fresh visible row rather than quietly unhide it. The
+      // unhide path in moderateFeedback collapses the pair back to one.
+      const sharedScope = () => trx('photo_feedback').where({
+        photo_id: photoId,
+        event_id: eventId,
+        feedback_type: 'color_label',
+        guest_identifier: SHARED_COLOR_LABEL_IDENTITY,
+        is_hidden: false,
+      });
+
+      const existing = await sharedScope().first();
+
+      if (existing && existing.color_label === colorLabel) {
+        await sharedScope().delete();
+        outcome = { removed: true, shared: true };
+        return;
+      }
+
+      if (existing) {
+        // Converge on one row, the same defence the per-guest path uses: if a
+        // race ever did leave duplicates behind, the next tap collapses them.
+        await sharedScope().whereNot('id', existing.id).delete();
+        await trx('photo_feedback')
+          .where('id', existing.id)
+          .update({ color_label: colorLabel, updated_at: nowIso() });
+        outcome = { id: existing.id, updated: true, shared: true };
+        return;
+      }
+
+      const inserted = await trx('photo_feedback').insert({
+        photo_id: photoId,
+        event_id: eventId,
+        feedback_type: 'color_label',
+        color_label: colorLabel,
+        guest_identifier: SHARED_COLOR_LABEL_IDENTITY,
+        guest_id: null,
+        guest_name: null,
+        guest_email: null,
+        ip_address,
+        user_agent,
+        is_approved: true,
+        created_at: nowIso(),
+        updated_at: nowIso(),
+      }).returning('id');
+      outcome = { id: inserted[0]?.id || inserted[0], created: true, shared: true };
+    });
+
+    // Outside the transaction: it reads the rows the commit just made visible.
+    await this.updatePhotoFeedbackStats(photoId);
+    return outcome;
+  }
+
+  /**
+   * The shared tag for a set of photos (#1197), as { [photoId]: colour }.
+   *
+   * One query for the whole page — the gallery list renders hundreds of tiles
+   * and a per-photo lookup would be a query each.
+   */
+  async getSharedColorLabels(eventId, photoIds) {
+    if (!photoIds || photoIds.length === 0) return {};
+    const rows = await db('photo_feedback')
+      .where({
+        event_id: eventId,
+        feedback_type: 'color_label',
+        guest_identifier: SHARED_COLOR_LABEL_IDENTITY,
+        is_hidden: false,
+      })
+      .whereIn('photo_id', photoIds)
+      .whereNotNull('color_label')
+      .select('photo_id', 'color_label');
+
+    const byPhoto = {};
+    rows.forEach((row) => { byPhoto[row.photo_id] = row.color_label; });
+    return byPhoto;
+  }
+
   async submitFeedback(photoId, eventId, feedbackData, guestIdentifier) {
     try {
       const { feedback_type, rating, comment_text, reaction, color_label, guest_name, guest_email, ip_address, user_agent, guest_id } = feedbackData;
@@ -180,6 +296,24 @@ class FeedbackService {
       // Same contract for colour labels (#1044).
       if (feedback_type === 'color_label' && !isValidColorLabel(color_label)) {
         throw new Error('Invalid color label');
+      }
+
+      // The shared tag (#1197) leaves before any of the per-guest machinery
+      // below runs: none of it applies to a row that belongs to the photo
+      // rather than to a person.
+      if (isSharedColorLabel(feedbackData.identity_mode, feedback_type)) {
+        return await this.submitSharedColorLabel(photoId, eventId, color_label, {
+          ip_address,
+          user_agent,
+        });
+      }
+
+      // Belt and braces: nothing but the branch above may write the reserved
+      // slot. If some future caller ever passed it as a guest identifier, a
+      // per-guest write would land on the photo's shared tag and every guest
+      // in the gallery would see it as their own.
+      if (guestIdentifier === SHARED_COLOR_LABEL_IDENTITY) {
+        throw new Error('Reserved guest identifier');
       }
 
       // Rating 0 clears the guest's rating (#884). Only the explicit zero
