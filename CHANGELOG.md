@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.116.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.116.0-beta.0...v3.116.1-beta.0) (2026-08-27)
+
+
+### Bug Fixes
+
+* **images:** fence the capture-date backfill on the file it read ([#1201](https://github.com/PicPeak/picpeak/issues/1201)) ([#1204](https://github.com/PicPeak/picpeak/issues/1204)) ([cec8eff](https://github.com/PicPeak/picpeak/commit/cec8eff70ce55d93bdb0b582ec39de400711892b))
+
 ## [3.116.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.115.4-beta.0...v3.116.0-beta.0) (2026-08-26)
 
 
