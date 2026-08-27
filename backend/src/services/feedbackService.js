@@ -333,12 +333,27 @@ class FeedbackService {
    * settings row, which is the same default getEventFeedbackSettings applies.
    */
   async getIdentityModeForPhoto(photoId, trx = db) {
-    const row = await trx('photos')
-      .join('event_feedback_settings', 'photos.event_id', 'event_feedback_settings.event_id')
-      .where('photos.id', photoId)
-      .select('event_feedback_settings.identity_mode')
-      .first();
-    return row?.identity_mode || 'simple';
+    try {
+      const row = await trx('photos')
+        .join('event_feedback_settings', 'photos.event_id', 'event_feedback_settings.event_id')
+        .where('photos.id', photoId)
+        .select('event_feedback_settings.identity_mode')
+        .first();
+      return row?.identity_mode || 'simple';
+    } catch (error) {
+      // updatePhotoFeedbackStats is called from MIGRATIONS as well as from the
+      // request path — migration 186's duplicate-photo dedupe (#1162)
+      // recomputes the survivor's totals — and a migration runs against a
+      // half-built schema where event_feedback_settings need not exist yet.
+      // Letting that throw took the whole stats update down with it, so the
+      // reparented rows were never counted.
+      //
+      // 'simple' is the right answer in that situation rather than merely a
+      // safe one: an install with no feedback settings table has no event in
+      // shared mode, so the non-shared scope is exactly correct.
+      logger.debug(`Identity mode lookup for photo ${photoId} fell back to 'simple': ${error.message}`);
+      return 'simple';
+    }
   }
 
   /**
