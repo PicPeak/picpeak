@@ -25,6 +25,8 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
   const [selectedGuest, setSelectedGuest] = useState<AdminGuest | null>(null);
   const [mergeMode, setMergeMode] = useState(false);
   const [mergeSelection, setMergeSelection] = useState<number[]>([]);
+  // Which row absorbs the others. Never defaulted: see the grouping comment.
+  const [keepId, setKeepId] = useState<number | null>(null);
   const inviteModal = useModal();
 
   const { data, isLoading, refetch } = useQuery({
@@ -47,6 +49,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
     onSuccess: () => {
       setMergeMode(false);
       setMergeSelection([]);
+      setKeepId(null);
     },
     errorMessage: () => t('admin.guests.mergedError', 'Failed to merge guests'),
   });
@@ -100,7 +103,11 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
       toast.warning(t('admin.guests.mergeSelectAtLeastTwo', 'Select at least 2 guests to merge'));
       return;
     }
-    const [keepId, ...mergeIds] = mergeSelection;
+    if (keepId === null || !mergeSelection.includes(keepId)) {
+      toast.warning(t('admin.guests.mergePickKeep', 'Choose which entry to keep'));
+      return;
+    }
+    const mergeIds = mergeSelection.filter((id) => id !== keepId);
     const keep = data?.guests.find((g) => g.id === keepId);
     // Name plus email (#1210 review): duplicates are the same person, so the
     // names are usually identical — "Merge 2 guests into Tina?" told the admin
@@ -134,34 +141,13 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
       byGroup.get(g.duplicate_group)!.push(g);
     }
 
-    // The order inside a group is not cosmetic: performMerge keeps
-    // mergeSelection[0] and soft-deletes the rest, so whichever row this puts
-    // first is the one that survives (#1210 review). Left in API order that
-    // was newest-first, which would discard an older, email-verified row with
-    // most of the picks in favour of a fresh re-registration.
-    //
-    // Verified first, then the oldest row — both server-set, neither of them
-    // something a visitor can influence.
-    //
-    // Ranking by feedback volume was the obvious next tiebreak and is exactly
-    // the wrong one (#1210 review). Registration does not verify the address,
-    // so anyone who knows a guest's email can register with it; if the ranking
-    // preferred whoever holds the most picks, that visitor could out-rank the
-    // real person by marking enough photos, be preselected as the survivor,
-    // and have the victim's feedback merged onto an identity whose token they
-    // still hold. distinct_photos is guest-controlled input and has no place
-    // in deciding who survives.
-    const rank = (g: AdminGuest) => [
-      g.email_verified_at ? 0 : 1,
-      new Date(g.created_at).getTime(),
-    ];
-    return [...byGroup.values()]
-      .filter((group) => group.length > 1)
-      .map((group) => [...group].sort((a, b) => {
-        const ra = rank(a); const rb = rank(b);
-        for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
-        return 0;
-      }));
+    // Deliberately NOT ordered to imply a survivor (#1210 review, three
+    // rounds on this one point). Every automatic rule was wrong somewhere:
+    // most-feedback is guest-controlled, and oldest-first keeps the row whose
+    // token expired while deleting the visitor's currently active identity —
+    // the exact shape of the common case. The data does not say which row is
+    // really the person, so the UI asks instead of guessing.
+    return [...byGroup.values()].filter((group) => group.length > 1);
   }, [guests]);
   const duplicateCount = duplicateGroups.reduce((n, group) => n + group.length, 0);
 
@@ -197,10 +183,15 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
               <span className="text-sm text-neutral-600 dark:text-neutral-400">
                 {t('admin.guests.mergeSelected', '{{count}} selected', { count: mergeSelection.length })}
               </span>
-              <Button variant="primary" size="sm" onClick={performMerge} disabled={mergeSelection.length < 2}>
+              {keepId === null && (
+                <span className="text-sm text-amber-700 dark:text-amber-300">
+                  {t('admin.guests.mergePickKeepHint', 'Pick the entry to keep')}
+                </span>
+              )}
+              <Button variant="primary" size="sm" onClick={performMerge} disabled={mergeSelection.length < 2 || keepId === null}>
                 {t('admin.guests.mergeNow', 'Merge selected')}
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => { setMergeMode(false); setMergeSelection([]); }}>
+              <Button variant="ghost" size="sm" onClick={() => { setMergeMode(false); setMergeSelection([]); setKeepId(null); }}>
                 {t('common.cancel', 'Cancel')}
               </Button>
             </>
@@ -276,6 +267,7 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
             onClick={() => {
               setMergeMode(true);
               setMergeSelection(duplicateGroups[0].map((g) => g.id));
+              setKeepId(null);
             }}
             className="shrink-0"
           >
@@ -297,6 +289,11 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
               <thead className="bg-neutral-50 dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700">
                 <tr>
                   {mergeMode && <th className="px-4 py-3 w-8" />}
+                  {mergeMode && (
+                    <th className="px-4 py-3 w-16 text-left text-xs font-medium text-neutral-600 dark:text-neutral-400 uppercase">
+                      {t('admin.guests.mergeKeepColumn', 'Keep')}
+                    </th>
+                  )}
                   <th className="px-4 py-3 text-left text-xs font-medium text-neutral-600 dark:text-neutral-400 uppercase">
                     {t('admin.guests.columns.name', 'Name')}
                   </th>
@@ -334,9 +331,25 @@ export const AdminGuestsList: React.FC<AdminGuestsListProps> = ({ eventId, event
                       <td className="px-4 py-3">
                         <input
                           type="checkbox"
+                          aria-label={t('admin.guests.mergeInclude', 'Include {{name}} in the merge', { name: guest.name })}
                           checked={mergeSelection.includes(guest.id)}
                           onChange={() => toggleMergeSelection(guest.id)}
                           className="w-4 h-4 text-accent rounded focus:ring-primary-500"
+                        />
+                      </td>
+                    )}
+                    {mergeMode && (
+                      <td className="px-4 py-3">
+                        {/* The survivor, chosen rather than derived. Only
+                            selectable among the rows actually being merged. */}
+                        <input
+                          type="radio"
+                          name="merge-keep"
+                          aria-label={t('admin.guests.mergeKeepRow', 'Keep {{name}}', { name: guest.name })}
+                          checked={keepId === guest.id}
+                          disabled={!mergeSelection.includes(guest.id)}
+                          onChange={() => setKeepId(guest.id)}
+                          className="w-4 h-4 text-accent focus:ring-primary-500 disabled:opacity-40"
                         />
                       </td>
                     )}

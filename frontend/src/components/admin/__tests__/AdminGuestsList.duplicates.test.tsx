@@ -25,8 +25,16 @@ vi.mock('react-i18next', async () => {
   return {
     ...actual,
     useTranslation: () => ({
-      t: (_key: string, fallback?: any) => {
-        if (typeof fallback === 'string') return fallback;
+      // Interpolates like the real i18n so aria-labels built from
+      // `t(key, 'Keep {{name}}', { name })` are queryable by their rendered text.
+      t: (_key: string, fallback?: any, opts?: any) => {
+        if (typeof fallback === 'string') {
+          if (!opts) return fallback;
+          return Object.entries(opts).reduce(
+            (acc, [k, v]) => acc.replaceAll(`{{${k}}}`, String(v)),
+            fallback,
+          );
+        }
         if (fallback && typeof fallback === 'object' && 'defaultValue' in fallback) {
           return String(fallback.defaultValue)
             .replace('{{guests}}', String(fallback.guests))
@@ -125,31 +133,52 @@ describe('duplicate guests in the admin list (#1210)', () => {
     expect(screen.queryByText(/duplicate\?/i)).not.toBeInTheDocument();
   });
 
-  it('proposes the verified row as the survivor, not the newest', async () => {
-    // performMerge keeps mergeSelection[0] and soft-deletes the rest, so the
-    // order this preselects decides who survives. The API returns newest-first;
-    // taking that order would discard an older, email-verified row holding most
-    // of the picks in favour of a fresh re-registration. Asserted through the
-    // call the merge actually makes, since the selection order is not otherwise
-    // visible in the DOM.
+  it('refuses to merge until the admin says which entry survives', async () => {
+    // Three review rounds went into this: every automatic survivor rule was
+    // wrong somewhere. Most-feedback is guest-controlled; oldest-first keeps
+    // the row whose token expired and deletes the visitor's live identity. The
+    // data cannot answer it, so the UI must ask.
     const { guestsService } = await import('../../../services/guests.service');
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     getEventGuests.mockResolvedValue({
       guests: [
-        guest(2, 'Tina', 'tina@example.com', 'tina@example.com',
-          { created_at: '2026-08-05T19:44:00Z', distinct_photos: 4 }),
+        guest(2, 'Tina', 'tina@example.com', 'tina@example.com'),
         guest(1, 'Tina Ferrarelli', 'tina@example.com', 'tina@example.com',
-          { email_verified_at: '2026-08-01T10:14:00Z', created_at: '2026-08-01T10:12:00Z', distinct_photos: 21 }),
+          { email_verified_at: '2026-08-01T10:14:00Z' }),
       ],
       duplicates: { groups: 1, guests: 2 },
     });
 
     renderList();
     await userEvent.click(await screen.findByRole('button', { name: /^Review$/i }));
-    await userEvent.click(await screen.findByRole('button', { name: /merge selected/i }));
 
-    // keepId 1 — the verified row with 21 photos — absorbs the newer one.
+    // Group is ticked, but nothing is nominated to survive yet.
+    expect((await screen.findAllByRole('checkbox')).filter((c) => (c as HTMLInputElement).checked)).toHaveLength(2);
+    expect(screen.getAllByRole('radio').every((r) => !(r as HTMLInputElement).checked)).toBe(true);
+    expect(screen.getByRole('button', { name: /merge selected/i })).toBeDisabled();
+
+    // Choosing one enables it, and that is the id the merge keeps.
+    await userEvent.click(screen.getByRole('radio', { name: /Keep Tina Ferrarelli/i }));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await userEvent.click(screen.getByRole('button', { name: /merge selected/i }));
+
     expect(guestsService.mergeGuests).toHaveBeenCalledWith(7, 1, [2]);
+  });
+
+  it('will not nominate a row that is not part of the merge', async () => {
+    getEventGuests.mockResolvedValue({
+      guests: [
+        guest(1, 'Tina', 'tina@example.com', 'tina@example.com'),
+        guest(2, 'Tina', 'tina@example.com', 'tina@example.com'),
+        guest(3, 'Marc', 'marc@example.com'),
+      ],
+      duplicates: { groups: 1, guests: 2 },
+    });
+
+    renderList();
+    await userEvent.click(await screen.findByRole('button', { name: /^Review$/i }));
+
+    // Marc is not in the group, so he cannot be made the survivor of it.
+    expect(await screen.findByRole('radio', { name: /Keep Marc/i })).toBeDisabled();
   });
 
   it('hands the group to the merge flow instead of merging on its own', async () => {

@@ -2590,7 +2590,12 @@
       "duplicatesFound": "{{guests}} guest entries look like {{groups}} returning visitor(s) — same email, registered more than once. Their picks are split until they are merged.",
       "reviewDuplicates": "Review",
       "duplicateBadge": "duplicate?",
-      "duplicateHint": "Another entry on this gallery uses the same email — likely the same person registered twice."
+      "duplicateHint": "Another entry on this gallery uses the same email — likely the same person registered twice.",
+      "mergePickKeep": "Choose which entry to keep",
+      "mergePickKeepHint": "Pick the entry to keep",
+      "mergeKeepColumn": "Keep",
+      "mergeKeepRow": "Keep {{name}}",
+      "mergeInclude": "Include {{name}} in the merge"
     },
     "analytics": "Analytics",
     "activities": {
