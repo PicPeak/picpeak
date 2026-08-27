@@ -5,6 +5,7 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-32-characters-long!!';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const request = require('supertest');
 const { bootCrmDb, buildRouteApp } = require('./helpers/crmDb');
@@ -103,6 +104,34 @@ describe('setupService (first-run bootstrap)', () => {
     expect(fs.readFileSync(tokenFile, 'utf8').trim()).toBe(token);
     await setupService.createInitialAdmin({ token, email: 'owner@example.com', password: VALID_PW });
     expect(fs.existsSync(tokenFile)).toBe(false); // burned in DB + file removed
+  });
+
+  it('writes and clears the volume-root copy too, for the all-in-one layout (#1218)', async () => {
+    // DATA_DIR points into a subdirectory of the volume in the AIO image
+    // (/data/db), which is where the token used to hide. With DATA_ROOT set,
+    // a second copy lands at the volume root where a file manager finds it.
+    const volumeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-aio-vol-'));
+    process.env.DATA_ROOT = volumeRoot;
+    try {
+      const rootCopy = path.join(volumeRoot, 'SETUP_TOKEN');
+      const canonical = path.join(tmpDir, 'SETUP_TOKEN');
+
+      const token = await setupService.ensureSetupToken();
+      expect(fs.readFileSync(canonical, 'utf8').trim()).toBe(token);
+      expect(fs.readFileSync(rootCopy, 'utf8').trim()).toBe(token);
+      // Both are bootstrap credentials; neither may be world-readable.
+      expect(fs.statSync(rootCopy).mode & 0o777).toBe(0o600);
+
+      await setupService.createInitialAdmin({ token, email: 'aio@example.com', password: VALID_PW });
+
+      // A second copy is only acceptable because it stops existing at the same
+      // moment the first one does.
+      expect(fs.existsSync(canonical)).toBe(false);
+      expect(fs.existsSync(rootCopy)).toBe(false);
+    } finally {
+      delete process.env.DATA_ROOT;
+      fs.rmSync(volumeRoot, { recursive: true, force: true });
+    }
   });
 
   it('refuses to create a second admin (setup already complete)', async () => {

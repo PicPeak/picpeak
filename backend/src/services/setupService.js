@@ -28,8 +28,15 @@ const SETUP_TOKEN_KEY = 'setup_token';
 // could not replace — suppressing the token while pointing the operator at
 // content that is wrong or unreadable.
 let writtenTokenFile = null;
+// Every copy that was actually written this boot (#1218) — the canonical one
+// plus the volume-root copy the all-in-one image gets. The single-file accessor
+// keeps its contract for callers that only want somewhere to point.
+let writtenTokenFiles = [];
 function writtenSetupTokenFile() {
   return writtenTokenFile;
+}
+function writtenSetupTokenFiles() {
+  return writtenTokenFiles;
 }
 
 // One-way flag flipped when the setup wizard finishes (migration 161 marks it
@@ -71,17 +78,42 @@ function setupTokenFilePath() {
   return path.join(dir, 'SETUP_TOKEN');
 }
 
+// Everywhere the token gets written (#1218).
+//
+// The canonical location is DATA_DIR, which the compose stack maps to
+// /app/data — the path the wizard hint and the docs both name. The all-in-one
+// image points DATA_DIR at /data/db instead, a subdirectory of its single
+// volume, so the file lands beside the database: correct, persisted, and
+// somewhere nobody thinks to look. A NAS user with no shell browses the volume
+// they mounted, sees `db/`, `storage/`, `logs/`, `backup/`, and gives up.
+//
+// So when DATA_ROOT names a different directory, the token is written there
+// too. It is the first thing visible on opening the volume. Both copies are
+// 0600 and both are removed the moment setup completes — a second copy of a
+// single-use bootstrap token is only a risk for as long as the first one is,
+// and it stops being one at the same instant.
+function setupTokenFilePaths() {
+  const primary = setupTokenFilePath();
+  const root = process.env.DATA_ROOT;
+  if (!root) return [primary];
+  const rootCopy = path.join(root, 'SETUP_TOKEN');
+  return path.resolve(rootCopy) === path.resolve(primary) ? [primary] : [primary, rootCopy];
+}
+
 // Called once at startup. Idempotent: generates + surfaces a token only while
 // the instance still needs an admin, and clears any stale token afterwards.
 // Clear the token everywhere — the app_settings row AND the on-disk file — so a
 // completed (or restored) install leaves no stale token behind.
 async function clearSetupToken() {
   await upsertAppSetting(SETUP_TOKEN_KEY, null, 'string');
-  try { fs.unlinkSync(setupTokenFilePath()); } catch (_) { /* file may be absent — best-effort */ }
+  for (const file of setupTokenFilePaths()) {
+    try { fs.unlinkSync(file); } catch (_) { /* file may be absent — best-effort */ }
+  }
 }
 
 async function ensureSetupToken() {
   writtenTokenFile = null;
+  writtenTokenFiles = [];
   if (!(await noAdminExists())) {
     await clearSetupToken();
     return null;
@@ -105,17 +137,27 @@ async function ensureSetupToken() {
   // existsSync() guess: printing the token there lands it in `docker logs` /
   // journald, which is the very leak this closes, and suppressing it when the
   // file is NOT actually current strands the operator with no token at all.
-  let file = null;
+  // Every copy is attempted independently. The canonical one failing while the
+  // volume-root copy succeeds still leaves the operator a readable token, and
+  // the reverse is the compose case where there is only ever one — so success
+  // is "at least one file exists", not "the first one did".
+  const written = [];
   let writeError = null;
-  try {
-    file = setupTokenFilePath();
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, `${token}\n`, { mode: 0o600 });
-    writtenTokenFile = file;
-  } catch (err) {
-    writeError = err;
-    file = null;
+  for (const candidate of setupTokenFilePaths()) {
+    try {
+      fs.mkdirSync(path.dirname(candidate), { recursive: true });
+      fs.writeFileSync(candidate, `${token}\n`, { mode: 0o600 });
+      written.push(candidate);
+    } catch (err) {
+      // Remembered only if nothing else worked; a failed second copy must not
+      // push a working install onto the log-the-token fallback below.
+      writeError = writeError || err;
+    }
   }
+  const file = written[0] || null;
+  writtenTokenFile = file;
+  writtenTokenFiles = written;
+  if (written.length > 0) writeError = null;
 
   if (writeError) {
     logger.warn(
@@ -126,7 +168,7 @@ async function ensureSetupToken() {
   } else {
     logger.warn(
       '[setup] No admin account yet — open /admin to finish setup. '
-      + `The one-time setup token is in ${file} (not logged).`
+      + `The one-time setup token is in ${written.join(' and ')} (not logged).`
     );
   }
   return token;
@@ -213,8 +255,14 @@ async function createInitialAdmin({ token, email, password, ip }) {
     return inserted[0]?.id || inserted[0];
   });
 
-  // DB token cleared inside the tx; remove the on-disk file too (best-effort).
-  try { fs.unlinkSync(setupTokenFilePath()); } catch (_) { /* best-effort */ }
+  // DB token cleared inside the tx; remove the on-disk files too
+  // (best-effort). Every copy, not just the canonical one (#1218) — the
+  // all-in-one image also keeps one at the volume root, and a burned token
+  // left lying there is a live-looking credential that no longer works: an
+  // operator would paste it, be rejected, and have nothing to fall back on.
+  for (const file of setupTokenFilePaths()) {
+    try { fs.unlinkSync(file); } catch (_) { /* best-effort */ }
+  }
   logger.info(`[setup] Initial super_admin created (id=${id}, email=${cleanEmail})`);
 
   const authToken = jwt.sign(
@@ -238,7 +286,9 @@ module.exports = {
   getSetupStatus,
   ensureSetupToken,
   setupTokenFilePath,
+  setupTokenFilePaths,
   writtenSetupTokenFile,
+  writtenSetupTokenFiles,
   verifySetupToken,
   createInitialAdmin,
   isSetupWizardCompleted,
