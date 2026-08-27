@@ -177,6 +177,34 @@ describe('setupService (first-run bootstrap)', () => {
     }
   });
 
+  it('keeps the token out of the log files when no private copy is possible (#1218)', async () => {
+    // LOG_DIR is on the same mount as the token in the all-in-one image, so
+    // logging the credential would put it in combined.log — as readable as the
+    // file we just refused to leave, and it outlives setup. stdout is the
+    // fallback instead, which server.js prints.
+    const logger = require('../../src/utils/logger');
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    const chmodSpy = jest.spyOn(fs, 'chmodSync').mockImplementation(() => {});
+    const realStat = fs.statSync;
+    const statSpy = jest.spyOn(fs, 'statSync').mockImplementation((target, ...rest) => {
+      const st = realStat(target, ...rest);
+      return String(target).endsWith('SETUP_TOKEN')
+        ? { ...st, mode: (st.mode & ~0o777) | 0o644 }
+        : st;
+    });
+
+    try {
+      const token = await setupService.ensureSetupToken();
+      const logged = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toMatch(/could not write a private setup token file/i);
+      expect(logged).not.toContain(token);
+    } finally {
+      warnSpy.mockRestore();
+      chmodSpy.mockRestore();
+      statSpy.mockRestore();
+    }
+  });
+
   it('refuses to create a second admin (setup already complete)', async () => {
     const token = await setupService.ensureSetupToken();
     await setupService.createInitialAdmin({ token, email: 'first@example.com', password: VALID_PW });

@@ -142,6 +142,10 @@ async function ensureSetupToken() {
   // the reverse is the compose case where there is only ever one — so success
   // is "at least one file exists", not "the first one did".
   const written = [];
+  // Copies that turned out to be readable by others AND could not be deleted.
+  // Tracked separately because a success elsewhere clears writeError, and an
+  // exposed credential must not be silenced by an unrelated success.
+  const leftReadable = [];
   let writeError = null;
   for (const candidate of setupTokenFilePaths()) {
     try {
@@ -153,7 +157,15 @@ async function ensureSetupToken() {
       // sit world-readable on a shared NAS mount while this code claimed 0600.
       // Recreating rather than chmod-after-write also closes the window where
       // the credential is on disk under the wrong mode.
-      try { fs.unlinkSync(candidate); } catch (_) { /* absent is the normal case */ }
+      // ENOENT only. A file we could not remove for any OTHER reason — a
+      // 0666 file owned by someone else in a sticky or ACL-controlled
+      // directory — is still writable, so writing anyway would drop the live
+      // token into a foreign, world-readable inode (#1218 review).
+      try {
+        fs.unlinkSync(candidate);
+      } catch (err) {
+        if (err.code !== 'ENOENT') throw err;
+      }
       fs.writeFileSync(candidate, `${token}\n`, { mode: 0o600 });
       // Belt and braces: an unlink that failed for a reason other than absence
       // (an immutable bit, a read-only parent) would leave the old inode in
@@ -173,9 +185,12 @@ async function ensureSetupToken() {
       // documented last resort and reaches the operator alone.
       const mode = fs.statSync(candidate).mode & 0o777;
       if (mode & 0o077) {
-        try { fs.unlinkSync(candidate); } catch (_) { /* best-effort */ }
+        let removed = true;
+        try { fs.unlinkSync(candidate); } catch (_) { removed = false; }
+        if (!removed) leftReadable.push(candidate);
         throw new Error(
           `refusing to leave a group/world-readable setup token at ${candidate} (mode ${mode.toString(8)})`
+          + (removed ? '' : ' — and it could not be removed')
         );
       }
       written.push(candidate);
@@ -190,11 +205,27 @@ async function ensureSetupToken() {
   writtenTokenFiles = written;
   if (written.length > 0) writeError = null;
 
+  if (leftReadable.length > 0) {
+    // No token in this line: it names a file that is already too readable.
+    logger.error(
+      `[setup] A setup token file at ${leftReadable.join(' and ')} is readable by other `
+      + 'users and could not be removed. Delete it by hand once setup is complete.'
+    );
+  }
+
   if (writeError) {
+    // Deliberately WITHOUT the token (#1218 review). This branch fires when no
+    // copy could be written privately — on the all-in-one image that is
+    // typically a mount with no Unix modes, and LOG_DIR sits on that same
+    // mount, so logger.warn would write the credential into combined.log:
+    // exactly as readable as the file we just refused to leave, and it
+    // outlives setup. server.js prints the token on stdout instead when no
+    // file was written, which reaches `docker logs` without landing on the
+    // shared volume.
     logger.warn(
-      `[setup] Could not write the setup token file (${writeError.message}) — `
-      + 'falling back to the log. No admin account yet; open /admin to finish setup. '
-      + `One-time setup token: ${token}`
+      `[setup] Could not write a private setup token file (${writeError.message}). `
+      + 'No admin account yet; open /admin to finish setup. The token is printed '
+      + 'on stdout at startup — it is deliberately not written to the log files.'
     );
   } else {
     logger.warn(
