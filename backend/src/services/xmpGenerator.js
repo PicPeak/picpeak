@@ -4,6 +4,7 @@
  */
 
 const { COLOR_LABEL_TO_XMP, dominantColorLabel } = require('../constants/colorLabels');
+const { roundRating } = require('./markMerge');
 
 class XmpGenerator {
   /**
@@ -50,12 +51,10 @@ class XmpGenerator {
    * @returns {number} XMP rating (0-5, integer)
    */
   mapRating(avgRating) {
-    if (!avgRating || avgRating === 0) return 0;
-    if (avgRating >= 4.5) return 5;
-    if (avgRating >= 3.5) return 4;
-    if (avgRating >= 2.5) return 3;
-    if (avgRating >= 1.5) return 2;
-    return 1;
+    // Delegates to markMerge.roundRating (#745) so the sidecar and the v1 API
+    // can never disagree about how many stars a photo has. The thresholds
+    // used to live here; they moved rather than being copied.
+    return roundRating(avgRating);
   }
 
   /**

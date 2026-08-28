@@ -136,6 +136,10 @@ async function processNewPhoto(filePath) {
     const insertResult = await db('photos').insert({
       event_id: event.id,
       filename: path.basename(filePath),
+      // The camera-original name. This path never sets original_filename, so
+      // without this the Lightroom round-trip (#745) has nothing to match a
+      // RAW against for auto-imported galleries.
+      source_filename: path.basename(filePath),
       path: relativePath,
       thumbnail_path: relativeThumbPath,
       type: isVideo ? 'video' : photoType,

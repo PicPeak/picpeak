@@ -33,6 +33,9 @@ class PhotoExportService {
         'photos.id',
         'photos.filename',
         'photos.original_filename',
+        // Camera-original name, preserved across replaces (migration 193) so
+        // the Lightroom round-trip can still match after a re-upload (#745).
+        'photos.source_filename',
         'photos.path',
         'photos.average_rating',
         'photos.feedback_count',

@@ -60,9 +60,31 @@ async function extractRawPreview(rawPath) {
       }
     } catch (err) {
       lastErr = err;
+      // exiftool missing is a DEPLOYMENT fault, not a bad file, and it fails
+      // identically for every tag — so stop rather than retrying the same
+      // spawn twice more and reporting the last one as if it described the
+      // photo.
+      if (err && err.code === 'ENOENT') break;
     }
   }
   await fsp.rm(outDir, { recursive: true, force: true }).catch(() => {});
+
+  // Distinguish "the tool isn't installed" from "this file has no preview".
+  // Both used to surface as `No usable embedded preview in RAW file X:
+  // spawn exiftool ENOENT`, which reads as a corrupt photo and sends people
+  // hunting through their RAWs instead of installing a package. RAW upload is
+  // the only feature that needs exiftool, so an install can be missing it and
+  // not find out until someone uploads a CR3.
+  if (lastErr && lastErr.code === 'ENOENT') {
+    throw new Error(
+      'exiftool is not installed on the server, and it is required to read '
+      + `RAW files (${path.basename(rawPath)}). Install it (Debian/Ubuntu: `
+      + 'apt-get install libimage-exiftool-perl, Alpine: apk add exiftool, '
+      + 'macOS: brew install exiftool) and retry. JPEG and other ordinary '
+      + 'images do not need it.'
+    );
+  }
+
   throw new Error(`No usable embedded preview in RAW file ${path.basename(rawPath)}: ${lastErr ? lastErr.message : 'no preview tag returned data'}`);
 }
 

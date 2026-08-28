@@ -37,8 +37,17 @@ const { slugify } = require('../../utils/slug');
 const { formatBoolean } = require('../../utils/dbCompat');
 const { parseBooleanInput } = require('../../utils/parsers');
 const { isValidEventType } = require('../../services/eventTypeService');
+const { replacePhoto } = require('../../services/photoReplacementService');
+const downloadZipService = require('../../services/downloadZipService');
+const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
+const { PhotoExportService } = require('../../services/photoExportService');
+const { mergeMarks } = require('../../services/markMerge');
 
 const router = express.Router();
+
+// Reused for its getPhotosWithFeedback() enrichment (colour tallies + the
+// caller's own marks); the v1 surface exposes no export formats.
+const photoExportService = new PhotoExportService();
 
 const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../../storage');
 
@@ -599,7 +608,7 @@ router.get('/events/:id', apiTokenAuth, requireApiScope('read'), requirePermissi
  *                 size_bytes: { type: integer }
  *                 category_id: { type: integer, nullable: true }
  *       400: { description: No file or invalid type }
- *       404: { description: Event not found }
+ *       404: { description: Event not found, or replaces_photo_id not in this event }
  */
 router.post(
   '/events/:id/photos',
@@ -649,6 +658,82 @@ router.post(
         }
       }
 
+      // Replacement (#745). The Lightroom plugin stores the picpeak photo id
+      // on the catalogue photo, so the id rides along even after the editor
+      // renames the render — which makes the id, not the filename, the
+      // reliable key for putting a finished edit back over its proof.
+      //
+      // Scoped to this event on purpose: a token inherits its owner's powers
+      // across every event they can see, so an id from another gallery would
+      // otherwise overwrite a photo the caller never named in the URL.
+      const rawReplacesId = req.body?.replaces_photo_id;
+      if (rawReplacesId !== undefined && rawReplacesId !== null && rawReplacesId !== '') {
+        const replacesId = parseInt(rawReplacesId, 10);
+        if (Number.isNaN(replacesId)) {
+          // Cleanup is in this route's catch block, so an early return has to
+          // drop the multer temp file itself or it leaks.
+          await fs.unlink(tempPath).catch(() => {});
+          tempPath = null;
+          return res.status(400).json({ error: 'replaces_photo_id must be an integer' });
+        }
+        const target = await db('photos')
+          .where({ id: replacesId, event_id: event.id })
+          .first();
+        if (!target) {
+          await fs.unlink(tempPath).catch(() => {});
+          tempPath = null;
+          return res.status(404).json({
+            error: `No photo ${replacesId} in event ${event.id}`,
+          });
+        }
+
+        const result = await replacePhoto(target, tempPath, {
+          originalFilename: req.file.originalname,
+          mimeType: req.file.mimetype,
+          event,
+        });
+        // replacePhoto unlinks the temp file on success. Unlink again anyway:
+        // a FAILED replacement returns before doing so, and this route only
+        // cleans up in its catch block, so the failure path would otherwise
+        // strand the upload. Already-gone is not an error here.
+        await fs.unlink(tempPath).catch(() => {});
+        tempPath = null;
+        if (!result.success) {
+          return res.status(500).json({ error: `Replacement failed: ${result.error}` });
+        }
+
+        // Guests are served a cached ZIP of the whole gallery. Without this
+        // they keep downloading the pre-edit photo indefinitely, which
+        // defeats the point of putting the edit back. adminPhotos.js does the
+        // same after its replacements.
+        downloadZipService.invalidate(event.id);
+
+        // event.id, not null: the dashboard feed excludes NULL-event rows for
+        // scoped callers (GHSA-jhcf), so a system-level entry would vanish
+        // from the audit trail of the photographer who owns the event.
+        await logActivity('photo_replaced', {
+          photoId: result.photo.id,
+          originalFilename: req.file.originalname,
+          previousFilename: result.previousFilename,
+          eventName: event.event_name,
+          via: 'v1_api',
+        }, event.id, { type: 'admin', id: req.admin.id, name: req.admin.username });
+
+        return res.status(200).json({
+          replaced: true,
+          photo: {
+            id: result.photo.id,
+            filename: result.photo.filename,
+            original_filename: result.photo.original_filename,
+            source_filename: result.photo.source_filename,
+            previous_filename: result.previousFilename,
+            size_bytes: result.photo.size_bytes,
+            width: result.photo.width,
+            height: result.photo.height,
+          },
+        });
+      }
+
       const ext = path.extname(req.file.originalname);
       const finalName = `${Date.now()}_${crypto.randomBytes(4).toString('hex')}${ext}`;
       // photo.path is stored relative to events/active so resolvePhotoStorageKey
@@ -687,6 +772,10 @@ router.post(
         event_id: event.id,
         filename: finalName,
         original_filename: req.file.originalname,
+        // The camera-original name, kept separate so a later replace can
+        // overwrite original_filename without losing the round-trip's match
+        // key (migration 193, #745).
+        source_filename: req.file.originalname,
         path: relPath,
         thumbnail_path: thumbRel,
         type: photoType,
@@ -770,5 +859,229 @@ router.get('/events/:id/share-link', apiTokenAuth, requireApiScope('read'), requ
     res.status(500).json({ error: 'Failed to build share link' });
   }
 });
+
+/**
+ * @openapi
+ * /events/{id}/photos:
+ *   get:
+ *     summary: List an event's photos with their proofing marks
+ *     description: >
+ *       Feeds the Lightroom round-trip (#745): the plugin fetches the photos a
+ *       client (or the photographer) marked while proofing, matches them to
+ *       local RAW files by `source_filename`, and applies the stars and colour
+ *       labels in the catalogue. Also usable for any automation that needs to
+ *       know what was picked.
+ *     tags: [Photos]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+ *       - in: query
+ *         name: marked_only
+ *         schema: { type: boolean }
+ *         description: Only photos carrying a star rating or colour label from `mark_source`.
+ *       - in: query
+ *         name: mark_source
+ *         schema: { type: string, enum: [client, mine, either], default: either }
+ *         description: >
+ *           Whose marks `marked_only` and the merged `label`/`rating` fields
+ *           reflect. `mine` is the calling token owner's own triage.
+ *       - in: query
+ *         name: color_labels
+ *         schema: { type: string }
+ *         description: Comma-separated client colours, e.g. `green,yellow`.
+ *       - in: query
+ *         name: my_color_labels
+ *         schema: { type: string }
+ *         description: Comma-separated colours from the token owner's own marks.
+ *       - in: query
+ *         name: min_rating
+ *         schema: { type: number, minimum: 0, maximum: 5 }
+ *       - in: query
+ *         name: my_min_rating
+ *         schema: { type: integer, minimum: 1, maximum: 5 }
+ *       - in: query
+ *         name: logic
+ *         schema: { type: string, enum: [AND, OR], default: AND }
+ *     responses:
+ *       200:
+ *         description: Photos with feedback
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 photos:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id: { type: integer }
+ *                       filename: { type: string }
+ *                       original_filename: { type: string, nullable: true }
+ *                       source_filename:
+ *                         type: string
+ *                         nullable: true
+ *                         description: Camera-original name, preserved across replaces. Match on this.
+ *                       average_rating: { type: number }
+ *                       feedback_count: { type: integer }
+ *                       like_count: { type: integer }
+ *                       favorite_count: { type: integer }
+ *                       comment_count: { type: integer }
+ *                       color_labels:
+ *                         type: object
+ *                         description: >
+ *                           Per-colour tallies across guests, keyed by colour —
+ *                           for example a green count of 2 and a red count of 1.
+ *                           Braces are spelled out here on purpose: an inline
+ *                           JSON example in an unquoted YAML scalar parses as a
+ *                           flow mapping and swagger-jsdoc drops the whole route.
+ *                       dominant_color_label: { type: string, nullable: true }
+ *                       my_rating: { type: integer, nullable: true }
+ *                       my_color_label: { type: string, nullable: true }
+ *                       color_label:
+ *                         type: string
+ *                         nullable: true
+ *                         description: Merged colour for `mark_source`. What a client should apply.
+ *                       rating:
+ *                         type: integer
+ *                         nullable: true
+ *                         description: Merged 0-5 rating for `mark_source`.
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page: { type: integer }
+ *                     limit: { type: integer }
+ *                     total: { type: integer }
+ *                     filtered: { type: integer }
+ *                     pages: { type: integer }
+ *       403: { description: Token lacks scope or permission }
+ *       404: { description: Event not found }
+ */
+router.get(
+  '/events/:id/photos',
+  apiTokenAuth,
+  requireApiScope('read'),
+  requirePermission('photos.view'),
+  requireEventOwnership,
+  [
+    query('page').optional().isInt({ min: 1 }).toInt(),
+    query('limit').optional().isInt({ min: 1, max: 100 }).toInt(),
+    query('marked_only').optional().isBoolean(),
+    query('mark_source').optional().isIn(['client', 'mine', 'either']),
+    query('color_labels').optional().isString(),
+    query('my_color_labels').optional().isString(),
+    query('min_rating').optional().isFloat({ min: 0, max: 5 }).toFloat(),
+    query('my_min_rating').optional().isInt({ min: 1, max: 5 }).toInt(),
+    query('logic').optional().isIn(['AND', 'OR'])
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const eventId = parseInt(req.params.id, 10);
+      const event = await db('events').where({ id: eventId }).first();
+      if (!event) return res.status(404).json({ error: 'Event not found' });
+
+      const page = req.query.page || 1;
+      const limit = req.query.limit || 50;
+      const markSource = req.query.mark_source || 'either';
+
+      const filters = {
+        min_rating: req.query.min_rating,
+        my_min_rating: req.query.my_min_rating,
+        color_labels: req.query.color_labels,
+        my_color_labels: req.query.my_color_labels,
+        marked_only: req.query.marked_only,
+        mark_source: markSource,
+        // The token's owning admin. `my_*` filters and marks are per-admin
+        // (migration 183 is unique on photo_id + admin_id), so a second
+        // admin's triage is deliberately invisible here.
+        admin_id: req.admin.id,
+        logic: req.query.logic || 'AND'
+      };
+
+      // Two-step on purpose: PhotoFilterBuilder knows how to FILTER on marks
+      // but its select list carries none of them, while
+      // photoExportService.getPhotosWithFeedback knows how to ENRICH but does
+      // not filter. Filter to a page of ids first, then enrich just those —
+      // which also keeps the per-colour tally query bounded by page size.
+      const filterBuilder = new PhotoFilterBuilder(
+        db('photos').select('photos.id'),
+        eventId
+      );
+      filterBuilder
+        .applyFilters(filters)
+        .applySorting('filename', 'asc')
+        .applyPagination(page, limit);
+
+      const [idRows, countResult, summary] = await Promise.all([
+        filterBuilder.getQuery(),
+        PhotoFilterBuilder.buildCountQuery(db, eventId, filters),
+        PhotoFilterBuilder.getSummary(db, eventId)
+      ]);
+
+      const pageIds = idRows.map(r => r.id);
+      const photos = pageIds.length
+        ? await photoExportService.getPhotosWithFeedback(eventId, pageIds, req.admin.id)
+        : [];
+
+      const filtered = parseInt(countResult[0]?.count, 10) || 0;
+
+      res.json({
+        photos: photos.map(photo => {
+          const merged = mergeMarks(photo, markSource);
+          return {
+            id: photo.id,
+            filename: photo.filename,
+            original_filename: photo.original_filename || null,
+            // What the round-trip matches on. Null only for rows predating
+            // migration 193 that had no original_filename either.
+            // filename is the last fallback on purpose: fileWatcher and
+            // external-media ingest never set original_filename, so for NAS
+            // and auto-import galleries the camera name lives only there.
+            source_filename: photo.source_filename || photo.original_filename || photo.filename || null,
+            category: photo.category_name || null,
+            average_rating: photo.average_rating ? parseFloat(photo.average_rating) : 0,
+            feedback_count: photo.feedback_count || 0,
+            like_count: photo.like_count || 0,
+            favorite_count: photo.favorite_count || 0,
+            comment_count: photo.comment_count || 0,
+            color_labels: photo.color_labels || {},
+            dominant_color_label: photo.dominant_color_label || null,
+            my_rating: photo.my_rating ?? null,
+            my_color_label: photo.my_color_label || null,
+            color_label: merged.color_label,
+            rating: merged.rating,
+            width: photo.width || null,
+            height: photo.height || null,
+            uploaded_at: photo.uploaded_at || null
+          };
+        }),
+        pagination: {
+          page,
+          limit,
+          total: summary.total,
+          filtered,
+          pages: Math.ceil(filtered / limit) || 0
+        }
+      });
+    } catch (error) {
+      logger.error('v1 GET /events/:id/photos failed', { error: error.message });
+      res.status(500).json({ error: 'Failed to list photos' });
+    }
+  }
+);
 
 module.exports = router;

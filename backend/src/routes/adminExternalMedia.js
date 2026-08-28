@@ -237,6 +237,11 @@ router.post('/events/:id/import-external', adminAuth, requirePermission('photos.
             .insert({
               event_id: eventId,
               filename: f.name,
+              // The camera-original name (#745). External ingest never sets
+              // original_filename, and NAS-mounted galleries are among the
+              // most likely to be driven from Lightroom — without this the
+              // round-trip has nothing to match a RAW against.
+              source_filename: f.name,
               // Keep path as a hint for legacy code but not used for resolution in external mode
               path: path.join(event.slug, f.name),
               thumbnail_path: null,
