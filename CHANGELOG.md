@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.120.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.119.0-beta.0...v3.120.0-beta.0) (2026-08-28)
+
+
+### Features
+
+* **api:** Lightroom round-trip — read proofing marks, put finished edits back ([#745](https://github.com/PicPeak/picpeak/issues/745)) ([#1165](https://github.com/PicPeak/picpeak/issues/1165)) ([8db8527](https://github.com/PicPeak/picpeak/commit/8db8527f9ea3edda7e3267512d4cb1eadaaa95d7))
+
 ## [3.119.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.118.0-beta.0...v3.119.0-beta.0) (2026-08-28)
 
 
