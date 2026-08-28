@@ -105,6 +105,133 @@ describe('setupService (first-run bootstrap)', () => {
     expect(fs.existsSync(tokenFile)).toBe(false); // burned in DB + file removed
   });
 
+  it('restores 0600 on a token file that already existed with looser permissions (#1218)', async () => {
+    // fs.writeFileSync's `mode` applies only when the file is created, so
+    // writing over a 0644 file left the first-admin credential group- and
+    // world-readable while the code claimed otherwise. On a NAS the volume is
+    // often a shared mount, which is exactly where that matters.
+    const canonical = path.join(tmpDir, 'SETUP_TOKEN');
+    fs.writeFileSync(canonical, 'stale\n', { mode: 0o644 });
+    fs.chmodSync(canonical, 0o644);
+    expect(fs.statSync(canonical).mode & 0o777).toBe(0o644);
+
+    const token = await setupService.ensureSetupToken();
+
+    expect(fs.readFileSync(canonical, 'utf8').trim()).toBe(token);
+    expect(fs.statSync(canonical).mode & 0o777).toBe(0o600);
+  });
+
+  it('never publishes a token it cannot make private (#1218)', async () => {
+    // The CIFS/SMB case this targets: the mount carries no Unix modes, so
+    // chmod is a silent no-op. The check runs on the temporary file, before
+    // the rename, so a credential that cannot be protected never reaches the
+    // published path at all.
+    const canonical = path.join(tmpDir, 'SETUP_TOKEN');
+    try { fs.unlinkSync(canonical); } catch (_) { /* start clean */ }
+    const chmodSpy = jest.spyOn(fs, 'chmodSync').mockImplementation(() => {});
+    const realLstat = fs.lstatSync;
+    const lstatSpy = jest.spyOn(fs, 'lstatSync').mockImplementation((target, ...rest) => {
+      const st = realLstat(target, ...rest);
+      return String(target).includes('SETUP_TOKEN')
+        ? { ...st, mode: (st.mode & ~0o777) | 0o644 }
+        : st;
+    });
+
+    try {
+      const token = await setupService.ensureSetupToken();
+      // Setup stays completable — server.js prints the token on stdout when no
+      // file was written — but nothing readable was left on the volume.
+      expect(token).toBeTruthy();
+      expect(fs.existsSync(canonical)).toBe(false);
+      expect(fs.readdirSync(tmpDir).filter((f) => f.includes('.tmp'))).toEqual([]);
+    } finally {
+      chmodSpy.mockRestore();
+      lstatSpy.mockRestore();
+    }
+  });
+
+  it('keeps the token out of the log files when no private copy is possible (#1218)', async () => {
+    // LOG_DIR is on the same mount as the token in the all-in-one image, so
+    // logging the credential would put it in combined.log — as readable as the
+    // file we just refused to leave, and it outlives setup. stdout is the
+    // fallback instead, which server.js prints.
+    const logger = require('../../src/utils/logger');
+    try { fs.unlinkSync(path.join(tmpDir, 'SETUP_TOKEN')); } catch (_) { /* start clean */ }
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+    const chmodSpy = jest.spyOn(fs, 'chmodSync').mockImplementation(() => {});
+    const realStat = fs.lstatSync;
+    const statSpy = jest.spyOn(fs, 'lstatSync').mockImplementation((target, ...rest) => {
+      const st = realStat(target, ...rest);
+      // The mode check runs on the temporary file, so match the prefix.
+      return String(target).includes('SETUP_TOKEN')
+        ? { ...st, mode: (st.mode & ~0o777) | 0o644 }
+        : st;
+    });
+
+    try {
+      const token = await setupService.ensureSetupToken();
+      const logged = warnSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toMatch(/could not write a private setup token file/i);
+      expect(logged).not.toContain(token);
+    } finally {
+      warnSpy.mockRestore();
+      chmodSpy.mockRestore();
+      statSpy.mockRestore();
+    }
+  });
+
+  it('tells the startup banner where the token went, so it is never printed (#1218)', async () => {
+    // server.js prints the token itself only when no file was written. If this
+    // reports nothing after a successful write, the banner takes that failure
+    // branch and puts the live credential into stdout and `docker logs` beside
+    // a perfectly good 0600 file.
+    const token = await setupService.ensureSetupToken();
+    expect(token).toBeTruthy();
+
+    expect(setupService.writtenSetupTokenFile()).toBe(path.join(tmpDir, 'SETUP_TOKEN'));
+  });
+
+  it('lets a second worker publish without disturbing the first (#1218)', async () => {
+    // The shipped PM2 cluster config runs several workers against one DATA_DIR.
+    // Publishing through rename means they simply overwrite the same value in
+    // turn — no shared inode to race, and neither worker can end up reporting
+    // nothing written and printing the live token to its own log.
+    const canonical = path.join(tmpDir, 'SETUP_TOKEN');
+    const first = await setupService.ensureSetupToken();
+    expect(setupService.writtenSetupTokenFile()).toBe(canonical);
+
+    const second = await setupService.ensureSetupToken();
+
+    expect(second).toBe(first);
+    expect(setupService.writtenSetupTokenFile()).toBe(canonical);
+    expect(fs.readFileSync(canonical, 'utf8').trim()).toBe(first);
+    expect(fs.statSync(canonical).mode & 0o777).toBe(0o600);
+    // No temporary files left lying about.
+    expect(fs.readdirSync(tmpDir).filter((f) => f.includes('.tmp'))).toEqual([]);
+  });
+
+  it('revokes the token when it cannot replace an exposed file (#1218)', async () => {
+    // A restart reuses the token from the database, so a file left at the
+    // token path may hold the live value. If it cannot be replaced — an
+    // ACL-backed or read-only directory — that credential is out of our
+    // control, and /setup/admin would go on accepting it.
+    const canonical = path.join(tmpDir, 'SETUP_TOKEN');
+    await setupService.ensureSetupToken();
+
+    const renameSpy = jest.spyOn(fs, 'renameSync').mockImplementation(() => {
+      const err = new Error('EACCES'); err.code = 'EACCES'; throw err;
+    });
+    try {
+      expect(await setupService.ensureSetupToken()).toBeNull();
+      expect(await getAppSetting('setup_token')).toBeFalsy();
+      // And the temporary file did not survive the failure.
+      expect(fs.readdirSync(tmpDir).filter((f) => f.includes('.tmp'))).toEqual([]);
+    } finally {
+      renameSpy.mockRestore();
+      try { fs.unlinkSync(canonical); } catch (_) { /* may be gone */ }
+    }
+  });
+
   it('refuses to create a second admin (setup already complete)', async () => {
     const token = await setupService.ensureSetupToken();
     await setupService.createInitialAdmin({ token, email: 'first@example.com', password: VALID_PW });

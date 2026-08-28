@@ -105,28 +105,124 @@ async function ensureSetupToken() {
   // existsSync() guess: printing the token there lands it in `docker logs` /
   // journald, which is the very leak this closes, and suppressing it when the
   // file is NOT actually current strands the operator with no token at all.
-  let file = null;
+  // Every copy is attempted independently. The canonical one failing while the
+  // volume-root copy succeeds still leaves the operator a readable token, and
+  // the reverse is the compose case where there is only ever one — so success
+  // is "at least one file exists", not "the first one did".
+  // One file, in DATA_DIR (#1218). A second copy at the volume root was tried
+  // for discoverability and dropped: it carried almost the whole security
+  // surface of this function — a second inode to race, to verify, and to
+  // revoke — for a convenience the documentation covers better, by pointing
+  // NAS users at ADMIN_PASSWORD, which needs no file at all.
+  const candidate = setupTokenFilePath();
+  let written = null;
+  // Set when the file is readable by others AND cannot be deleted: a live
+  // credential we do not control. Kept separate from writeError because it
+  // must not be cleared by anything else succeeding.
+  let leftReadable = null;
   let writeError = null;
+  // Written to a private temporary file and published with rename(2)
+  // (#1218 review). Every earlier shape raced: unlink-then-create left a
+  // window for a symlink, and exclusive-create left two PM2 workers fighting
+  // over one inode — the loser could see the winner's file after creation but
+  // before its content landed, judge it wrong, and delete it, after which both
+  // workers reported nothing written and both printed the live token.
+  //
+  // rename is atomic and replaces the path entry itself, so: the name is
+  // unique to this process and cannot be raced, the file never appears at the
+  // final path with the wrong mode or half its content, a symlink sitting
+  // there is replaced rather than followed, and concurrent workers simply
+  // publish the same value one after another.
+  const tmp = `${candidate}.${process.pid}.tmp`;
+  let createdTmp = false;
   try {
-    file = setupTokenFilePath();
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, `${token}\n`, { mode: 0o600 });
-    writtenTokenFile = file;
+    fs.mkdirSync(path.dirname(candidate), { recursive: true });
+
+    fs.writeFileSync(tmp, `${token}\n`, { mode: 0o600, flag: 'wx' });
+    createdTmp = true;
+    try { fs.chmodSync(tmp, 0o600); } catch (_) { /* verified next */ }
+
+    // Checked before publishing, not after. Asking is not the same as
+    // succeeding: a CIFS/SMB mount — what a NAS commonly offers — carries no
+    // Unix modes, so chmod is a silent no-op and the file keeps whatever
+    // file_mode= the mount forces, typically 0644. Verifying here means a
+    // credential that cannot be made private never reaches the published path
+    // at all. lstat, not stat: it must describe the file, not a link target.
+    const mode = fs.lstatSync(tmp).mode & 0o777;
+    if (mode & 0o077) {
+      throw new Error(
+        `refusing to write a group/world-readable setup token (mode ${mode.toString(8)})`
+      );
+    }
+
+    // rename consumes tmp, so the catch below has nothing left to clean up.
+    fs.renameSync(tmp, candidate);
+    written = candidate;
   } catch (err) {
+    if (createdTmp) {
+      try { fs.unlinkSync(tmp); } catch (_) { /* best-effort */ }
+    }
+    // Publishing failed and something is still sitting at the token path. On a
+    // restart the token is reused from the database, so that file may hold the
+    // live value — and we could not replace it. Treat it as exposed: the
+    // revocation below turns what is there into a dead string rather than
+    // leaving a credential we do not control.
+    if (fs.existsSync(candidate)) {
+      leftReadable = candidate;
+    }
     writeError = err;
-    file = null;
+  }
+
+  // Publish what landed, for server.js's banner. Dropping these assignments
+  // is not a cosmetic bug: writtenSetupTokenFile() reading null makes the
+  // banner take its failure branch and print the live token to stdout, so a
+  // perfectly good 0600 file coexists with the credential in `docker logs` —
+  // the exact leak this whole path exists to close.
+  writtenTokenFile = written;
+  if (written) writeError = null;
+
+  if (leftReadable) {
+    // Fail closed (#1218 review). A readable copy that cannot be deleted is a
+    // live first-admin credential sitting where anyone on the mount can read
+    // it, and /setup/admin would go on accepting it — so the token is revoked
+    // instead of merely reported. What is left on disk becomes a dead string.
+    //
+    // Copies that DID land privately are removed too: they hold the same value,
+    // which is about to stop working. The next boot mints a fresh token, and
+    // the undeletable file is skipped rather than rewritten because its unlink
+    // still fails — so this converges instead of looping on the same exposure.
+    if (written) {
+      try { fs.unlinkSync(written); } catch (_) { /* best-effort */ }
+    }
+    await upsertAppSetting(SETUP_TOKEN_KEY, null, 'string');
+    writtenTokenFile = null;
+
+    logger.error(
+      `[setup] The setup token file at ${leftReadable} is readable by other `
+      + 'users and could not be removed, so the token has been revoked and no admin '
+      + 'can be created with it. Delete that file, then restart to issue a new one.'
+    );
+    return null;
   }
 
   if (writeError) {
+    // Deliberately WITHOUT the token (#1218 review). This branch fires when no
+    // copy could be written privately — on the all-in-one image that is
+    // typically a mount with no Unix modes, and LOG_DIR sits on that same
+    // mount, so logger.warn would write the credential into combined.log:
+    // exactly as readable as the file we just refused to leave, and it
+    // outlives setup. server.js prints the token on stdout instead when no
+    // file was written, which reaches `docker logs` without landing on the
+    // shared volume.
     logger.warn(
-      `[setup] Could not write the setup token file (${writeError.message}) — `
-      + 'falling back to the log. No admin account yet; open /admin to finish setup. '
-      + `One-time setup token: ${token}`
+      `[setup] Could not write a private setup token file (${writeError.message}). `
+      + 'No admin account yet; open /admin to finish setup. The token is printed '
+      + 'on stdout at startup — it is deliberately not written to the log files.'
     );
   } else {
     logger.warn(
       '[setup] No admin account yet — open /admin to finish setup. '
-      + `The one-time setup token is in ${file} (not logged).`
+      + `The one-time setup token is in ${written} (not logged).`
     );
   }
   return token;
@@ -213,7 +309,11 @@ async function createInitialAdmin({ token, email, password, ip }) {
     return inserted[0]?.id || inserted[0];
   });
 
-  // DB token cleared inside the tx; remove the on-disk file too (best-effort).
+  // DB token cleared inside the tx; remove the on-disk files too
+  // (best-effort). Every copy, not just the canonical one (#1218) — the
+  // all-in-one image also keeps one at the volume root, and a burned token
+  // left lying there is a live-looking credential that no longer works: an
+  // operator would paste it, be rejected, and have nothing to fall back on.
   try { fs.unlinkSync(setupTokenFilePath()); } catch (_) { /* best-effort */ }
   logger.info(`[setup] Initial super_admin created (id=${id}, email=${cleanEmail})`);
 
