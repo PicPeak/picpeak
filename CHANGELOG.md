@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.118.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.117.0-beta.0...v3.118.0-beta.0) (2026-08-28)
+
+
+### Features
+
+* **feedback:** a third identity mode with one shared colour tag per photo ([#1197](https://github.com/PicPeak/picpeak/issues/1197)) ([#1208](https://github.com/PicPeak/picpeak/issues/1208)) ([22e00f8](https://github.com/PicPeak/picpeak/commit/22e00f80b6f2afe3f0721a29f5eeab0835e4c2c0))
+
 ## [3.117.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.116.1-beta.0...v3.117.0-beta.0) (2026-08-28)
 
 
