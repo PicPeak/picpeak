@@ -5,7 +5,6 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-at-least-32-characters-long!!';
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const request = require('supertest');
 const { bootCrmDb, buildRouteApp } = require('./helpers/crmDb');

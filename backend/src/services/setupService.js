@@ -155,8 +155,8 @@ async function ensureSetupToken() {
       );
     }
 
+    // rename consumes tmp, so the catch below has nothing left to clean up.
     fs.renameSync(tmp, candidate);
-    createdTmp = false;
     written = candidate;
   } catch (err) {
     if (createdTmp) {
