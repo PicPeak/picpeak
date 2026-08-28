@@ -5,6 +5,30 @@ const { REACTION_EMOJIS } = require('../constants/reactions');
 const { isValidColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const { resolveEventFeedbackDefaults, DEFAULT_KEYBIND_MODE, KEYBIND_MODES } = require('./feedbackDefaults');
 
+// The camera-original name, for the feedback exports (#1224). Both exports
+// used to carry only `photos.filename` — the sanitized stored name
+// (`wedding-smith_individual_1755892345.jpg`), which matches nothing in a
+// Lightroom catalog. Acting on client picks means finding the master file, so
+// the export has to name it.
+//
+// `source_filename` first, NOT `original_filename` alone: the latter is
+// overwritten the first time an edited render is uploaded over a proof, so an
+// export taken after a Lightroom round-trip (#745) would name the render
+// rather than the master and silently stop matching. `source_filename` is
+// written once at ingest and survives a replace by design (migration 193),
+// and its backfill already covers rows that predate it.
+//
+// Aliased to `original_filename` because that is what the sibling photo export
+// calls this column, and it is the question the reader is asking ("what did
+// the camera call it"). Left empty rather than falling back to the stored
+// name: blank reads as "no match possible", where repeating the sanitized
+// name invites a match attempt that cannot succeed.
+//
+// A SQL string rather than a prebuilt db.raw(): the raw is constructed per
+// query, so this does not depend on `db` being connected at module load.
+const CAMERA_NAME_SQL =
+  'COALESCE(photos.source_filename, photos.original_filename) as original_filename';
+
 // Every writable column on event_feedback_settings (#1030). The admin form
 // posts its whole client-side state back, including UI-only keys that were
 // never columns — `enable_rate_limiting`, `rate_limit_window_minutes`,
@@ -1065,6 +1089,7 @@ class FeedbackService {
         .where('photo_feedback.event_id', eventId)
         .select(
           'photos.filename',
+          db.raw(CAMERA_NAME_SQL),
           'photo_feedback.feedback_type',
           'photo_feedback.rating',
           'photo_feedback.comment_text',
@@ -1104,6 +1129,7 @@ class FeedbackService {
         .where('photo_feedback.is_hidden', false)
         .select(
           'photos.filename',
+          db.raw(CAMERA_NAME_SQL),
           'photo_feedback.feedback_type',
           'photo_feedback.rating',
           'photo_feedback.comment_text',
@@ -1128,6 +1154,7 @@ class FeedbackService {
         if (!entry) {
           entry = {
             filename: row.filename,
+            original_filename: row.original_filename || '',
             guest_name: row.guest_name || '',
             guest_email: row.guest_email || '',
             is_favorited: false,
