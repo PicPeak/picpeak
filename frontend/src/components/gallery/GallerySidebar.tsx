@@ -29,6 +29,13 @@ interface GallerySidebarProps {
   allowDownloads?: boolean;
   photoCounts?: Record<number | string, number>;
   totalPhotos: number;
+  /**
+   * Event-wide count for the Download All control (#1160). `totalPhotos` is the
+   * current folder scope and drives the category list; Download All fetches the
+   * whole event, so labelling it from the scoped count would understate it and
+   * disable it entirely on a folder-only root.
+   */
+  downloadAllTotal?: number;
   isMobile: boolean;
   galleryLayout?: string;
   allowUploads?: boolean;
@@ -71,6 +78,7 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
   allowDownloads = true,
   photoCounts = {},
   totalPhotos,
+  downloadAllTotal,
   isMobile,
   galleryLayout,
   allowUploads,
@@ -205,10 +213,10 @@ export const GallerySidebar: React.FC<GallerySidebarProps> = ({
                   size="sm"
                   leftIcon={<Download className="w-4 h-4" />}
                   onClick={onDownloadAll}
-                  disabled={isDownloading || totalPhotos === 0}
+                  disabled={isDownloading || (downloadAllTotal ?? totalPhotos) === 0}
                   className="gallery-btn gallery-btn-download w-full"
                 >
-                  {t('gallery.downloadAll')} ({totalPhotos})
+                  {t('gallery.downloadAll')} ({downloadAllTotal ?? totalPhotos})
                 </Button>
 
                 <Button

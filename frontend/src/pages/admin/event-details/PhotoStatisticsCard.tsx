@@ -7,7 +7,7 @@ import type { EventDetailsTab } from './types';
 
 interface PhotoStatisticsCardProps {
   event: Event;
-  categories: Array<{ id: number; name: string; slug: string }>;
+  categories: Array<{ id: number; name: string; slug: string; is_folder?: boolean }>;
   setActiveTab: (tab: EventDetailsTab) => void;
 }
 

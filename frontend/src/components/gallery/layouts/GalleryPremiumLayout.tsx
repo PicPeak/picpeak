@@ -193,9 +193,12 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
 
 interface GalleryPremiumLayoutProps extends BaseGalleryLayoutProps {
   heroPhotoOverride?: Photo | null;
+  suppressEmptyState?: boolean;
 }
 
 export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
+  // #1160: folder-only root — render the shell, skip the empty message.
+  suppressEmptyState = false,
   photos,
   slug,
   onPhotoClick: _onPhotoClick,
@@ -477,7 +480,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     day: '2-digit'
   }) : null;
 
-  if (photos.length === 0) {
+  // #1160: a folder-only root has no photos to show here, but the folder tiles
+  // above prove the gallery isn't empty — render the shell (hero, logout,
+  // controls) without the contradictory message.
+  if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">{t('gallery.noPhotosFound')}</p>
@@ -570,7 +576,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                 <Heart className="w-4 h-4" />
               </button>
             )}
-            {allowDownloads && (
+            {allowDownloads && photos.length > 0 && (
               <button
                 className="gallery-premium-nav-btn"
                 title={t('common.downloadAll', 'Download All')}

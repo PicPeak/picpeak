@@ -340,7 +340,14 @@
     "downloadSelected_one": "Prenesi {{count}} fotografijo",
     "downloadSelected_other": "Prenesi {{count}} fotografij",
     "colorFilter": "Barva",
-    "filterByColor": "Prikaži samo {{color}}"
+    "filterByColor": "Prikaži samo {{color}}",
+    "folders": "Mape",
+    "openFolder": "Odpri mapo {{name}}",
+    "folderPhotoCount": "{{count}} fotografij",
+    "backToGallery": "Vse fotografije",
+    "downloadFolder": "Prenesi mapo ({{count}})",
+    "downloadFolderCapped": "Prenesi prvih {{limit}} od {{total}}",
+    "downloadEverything": "Prenesi vse fotografije"
   },
   "categories": {
     "title": "Kategorije fotografij",

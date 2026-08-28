@@ -348,7 +348,14 @@
     "photosCount_one": "{{count}} foto",
     "photosCount_other": "{{count}} fotos",
     "colorFilter": "Cor",
-    "filterByColor": "Mostrar apenas {{color}}"
+    "filterByColor": "Mostrar apenas {{color}}",
+    "folders": "Pastas",
+    "openFolder": "Abrir pasta {{name}}",
+    "folderPhotoCount": "{{count}} fotos",
+    "backToGallery": "Todas as fotos",
+    "downloadFolder": "Baixar pasta ({{count}})",
+    "downloadFolderCapped": "Baixar as primeiras {{limit}} de {{total}}",
+    "downloadEverything": "Baixar todas as fotos"
   },
   "categories": {
     "title": "Categorias de Fotos",

@@ -83,10 +83,25 @@ interface PhotoGridWithLayoutsProps {
   // show "In this photo: …". Undefined when the feature is off.
   people?: GalleryPerson[];
   onSelectPerson?: (personId: number) => void;
+  /**
+   * Suppress the "no photos found" message (#1160). A gallery whose photos all
+   * live in folders has an empty root grid while its folder tiles sit directly
+   * above — printing "no photos" there contradicts the tiles. Only the message
+   * is suppressed: the full-page layouts render their hero, title, logout and
+   * download controls from inside this component, so unmounting it would strip
+   * the whole gallery shell.
+   */
+  suppressEmptyState?: boolean;
+  /** #1160: event-wide count + whole-gallery download for layout chrome. */
+  eventPhotoCount?: number;
+  onDownloadEverything?: () => void;
 }
 
 export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   photos,
+  suppressEmptyState = false,
+  eventPhotoCount,
+  onDownloadEverything,
   slug,
   categoryId,
   heroPhotoOverride,
@@ -224,11 +239,15 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   };
 
   if (photos.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
-      </div>
-    );
+    // Suppressed (#1160): a folder-only root has folder tiles above proving the
+    // gallery isn't empty, so the message would contradict them.
+    if (!suppressEmptyState) {
+      return (
+        <div className="text-center py-12">
+          <p className="text-muted-theme">{t('gallery.noPhotosFound')}</p>
+        </div>
+      );
+    }
   }
 
   // Get the current layout from theme
@@ -237,6 +256,12 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
   // Select the appropriate layout component
   const layoutProps = {
     photos,
+    // Forwarded so the full-bleed layouts, which render their OWN
+    // noPhotosFound return, don't contradict the folder tiles above them on a
+    // folder-only root (#1160).
+    suppressEmptyState,
+    eventPhotoCount,
+    onDownloadEverything,
     slug,
     // Face data (#1074) must reach the full-page layouts too — they render
     // their OWN lightbox rather than the one below, so without this the
@@ -309,6 +334,14 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
 
   // Gallery Premium and Gallery Story layouts have their own integrated hero/header
   const isFullPageLayout = galleryLayout === 'gallery-premium' || galleryLayout === 'gallery-story';
+
+  // Folder-only root (#1160). The full-bleed layouts own the hero/logout chrome,
+  // so they are mounted even with an empty set. Every other layout is skipped
+  // instead: CarouselGalleryLayout returns before four of its useState calls, so
+  // driving one instance between empty and non-empty changes its hook count and
+  // React throws. Skipping only the child keeps this component's own HeroHeader
+  // and welcome message on screen.
+  const skipEmptyLayoutChild = photos.length === 0 && suppressEmptyState && !isFullPageLayout;
 
   return (
     <>
@@ -400,7 +433,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
       )}
 
       {/* Render the selected layout */}
-      <LayoutComponent {...layoutProps} />
+      {skipEmptyLayoutChild ? null : <LayoutComponent {...layoutProps} />}
 
       {/* Lightbox - skip for full-page layouts which have their own lightbox */}
       {selectedPhotoIndex !== null && !isFullPageLayout && (

@@ -51,6 +51,9 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   eventName,
   eventDate,
   allowDownloads = true,
+  suppressEmptyState = false,
+  eventPhotoCount,
+  onDownloadEverything,
   downloadChoices,
   onPickResolution,
   protectionLevel = 'standard',
@@ -139,7 +142,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     }));
   }, [photos, searchQuery, t]);
 
-  const totalPhotos = photos.length;
+  // #1160: on a folder-only root this component renders its shell with an empty
+  // scope, so fall back to the event-wide count rather than announcing 0 Photos
+  // directly above folder tiles that hold them.
+  const totalPhotos = photos.length || eventPhotoCount || 0;
   const stats = `${totalPhotos} ${t('gallery.photos', 'Photos')}`;
 
   const handleToggleFavorite = useCallback(async (photoId: number) => {
@@ -237,22 +243,31 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   }, [selectedPhotoForFeedback, ratings, slug, savedIdentity, onFeedbackChange]);
 
   const handleDownloadAll = useCallback(async () => {
+    // Whole-gallery path when available: posting ids would hit the server's
+    // 500-id cap and silently truncate a large gallery (#1160).
+    if (onDownloadEverything) {
+      onDownloadEverything();
+      return;
+    }
     const ids = photos.map(p => p.id);
     // #858: hand off to the resolution picker when the gallery offers a choice.
     if (downloadChoices && downloadChoices.length > 1 && onPickResolution) {
       onPickResolution(ids);
       return;
     }
-    toast.info(t('gallery.downloading', { count: photos.length }));
+    toast.info(t('gallery.downloading', { count: ids.length }));
     try {
       await galleryService.downloadSelectedPhotos(slug, ids);
       analyticsService.trackGalleryEvent('bulk_download', { gallery: slug, photo_count: ids.length });
     } catch {
       toast.error(t('gallery.downloadError'));
     }
-  }, [photos, slug, t, downloadChoices, onPickResolution]);
+  }, [photos, onDownloadEverything, slug, t, downloadChoices, onPickResolution]);
 
-  if (photos.length === 0) {
+  // #1160: a folder-only root has no photos to show here, but the folder tiles
+  // above prove the gallery isn't empty — render the shell (hero, logout,
+  // controls) without the contradictory message.
+  if (photos.length === 0 && !suppressEmptyState) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">{t('gallery.noPhotosFound')}</p>
@@ -373,7 +388,11 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         <p className="story-footer-text">
           {welcomeMessage || t('gallery.thankYouMessage', 'For being part of our story and making our special day unforgettable.')}
         </p>
-        {allowDownloads && (
+        {/* Needs something to download: either the whole-gallery callback, or
+            photos in the current scope. On a folder-only root of a gallery with
+            a category download opt-out it has neither, and posting an empty id
+            list is a 400 (#1160). */}
+        {allowDownloads && (onDownloadEverything || photos.length > 0) && (
           <button className="story-footer-btn" onClick={handleDownloadAll}>
             {t('common.downloadAll', 'Download All Photos')}
           </button>

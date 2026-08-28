@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, X, Loader2, Image as ImageIcon, Check, Download, DownloadCloud, ArrowUp, ArrowDown, RotateCcw } from 'lucide-react';
+import { Plus, X, Loader2, Image as ImageIcon, Check, Download, DownloadCloud, ArrowUp, ArrowDown, RotateCcw, Folder, FolderOpen } from 'lucide-react';
 import { categoriesService, type PhotoCategory } from '../../services/categories.service';
 import { photosService } from '../../services/photos.service';
 import { Button, Card, AuthenticatedImage } from '../common';
@@ -86,6 +86,23 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
         ? t('categories.downloadsEnabled', 'Downloads enabled for this category')
         : t('categories.downloadsDisabled', 'Downloads disabled for this category'),
     errorMessage: t('categories.failedToToggleDownloads', 'Failed to update download permission'),
+  });
+
+  // Folder vs filter (#1160). Flipping this moves the category's photos out of
+  // the root grid (or back into it) with no re-upload — it changes where they
+  // render, never which photos exist or who can reach them.
+  const folderToggleMutation = useMutationWithToast({
+    mutationFn: ({ category, isFolder }: { category: PhotoCategory; isFolder: boolean }) =>
+      categoriesService.updateCategory(category.id, category.name, { is_folder: isFolder }),
+    // EventDetailsPage caches the same rows under a DIFFERENT key and feeds them
+    // to the Photos tab's move dialog, so invalidating only this one left that
+    // dialog labelling a fresh folder as a plain category (#1160).
+    invalidateKeys: [['event-categories', eventId], ['admin-event-categories', String(eventId)]],
+    successMessage: (_data, variables) =>
+      variables.isFolder
+        ? t('categories.folderEnabled', 'Photos in this category now sit inside a folder')
+        : t('categories.folderDisabled', 'This category filters the gallery again'),
+    errorMessage: t('categories.failedToToggleFolder', 'Failed to update folder setting'),
   });
 
   // Per-event order override (#782). Sends the full ordered id list; the backend
@@ -283,6 +300,31 @@ export const EventCategoryManager: React.FC<EventCategoryManagerProps> = ({ even
                       only. Global categories are managed in Settings. */}
                   {!category.is_global && (
                     <>
+                      <button
+                        onClick={() => folderToggleMutation.mutate({
+                          category,
+                          isFolder: !category.is_folder,
+                        })}
+                        className={`p-1 transition-colors ${
+                          category.is_folder
+                            ? 'text-primary-600 dark:text-primary-400 hover:text-neutral-400'
+                            : 'text-neutral-400 dark:text-neutral-500 hover:text-primary-600 dark:hover:text-primary-400'
+                        }`}
+                        title={
+                          category.is_folder
+                            ? t('categories.disableFolderTitle', 'Folder: these photos are hidden from the main grid and shown only inside the folder. Click to make it a filter again.')
+                            : t('categories.enableFolderTitle', 'Filter: these photos stay in the main grid. Click to turn it into a folder — hides them from the grid, does NOT restrict access.')
+                        }
+                        disabled={folderToggleMutation.isPending}
+                      >
+                        {folderToggleMutation.isPending ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : category.is_folder ? (
+                          <FolderOpen className="w-3 h-3" />
+                        ) : (
+                          <Folder className="w-3 h-3" />
+                        )}
+                      </button>
                       <button
                         onClick={() => downloadToggleMutation.mutate({
                           category,

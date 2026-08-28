@@ -6,6 +6,10 @@ import { Button, Card } from '../common';
 interface CategoryOption {
   id: number;
   name: string;
+  // #1160: moving photos into a folder takes them OUT of the main grid, which is
+  // a materially different outcome from tagging them with a filter category.
+  // The option is labelled so the admin knows which one they picked.
+  is_folder?: boolean;
 }
 
 interface BulkCategoryModalProps {
@@ -70,7 +74,9 @@ export const BulkCategoryModal: React.FC<BulkCategoryModalProps> = ({
               <option value="">{t('photos.uncategorized', 'Uncategorized')}</option>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
-                  {category.name}
+                  {category.is_folder
+                    ? t('photos.folderOption', '{{name}} (folder — hidden from the main grid)', { name: category.name })
+                    : category.name}
                 </option>
               ))}
             </select>

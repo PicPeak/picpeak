@@ -31,7 +31,7 @@ interface OverviewTabProps {
   setShowNewPassword: (show: boolean) => void;
   feedbackSettings: FeedbackSettingsType;
   setFeedbackSettings: React.Dispatch<React.SetStateAction<FeedbackSettingsType>>;
-  categories: Array<{ id: number; name: string; slug: string }>;
+  categories: Array<{ id: number; name: string; slug: string; is_folder?: boolean }>;
   photos: AdminPhoto[];
   phoneFieldEnabled: boolean;
   daysUntilExpiration: number | null;

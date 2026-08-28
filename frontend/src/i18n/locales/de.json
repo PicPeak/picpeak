@@ -1086,7 +1086,14 @@
       "downloadThese": "Diese {{count}} herunterladen"
     },
     "colorFilter": "Farbe",
-    "filterByColor": "Nur {{color}} anzeigen"
+    "filterByColor": "Nur {{color}} anzeigen",
+    "folders": "Ordner",
+    "openFolder": "Ordner {{name}} öffnen",
+    "folderPhotoCount": "{{count}} Fotos",
+    "backToGallery": "Alle Fotos",
+    "downloadFolder": "Ordner herunterladen ({{count}})",
+    "downloadFolderCapped": "Erste {{limit}} von {{total}} herunterladen",
+    "downloadEverything": "Alle Fotos herunterladen"
   },
   "categories": {
     "title": "Fotokategorien",
@@ -1121,7 +1128,12 @@
     "downloadsDisabled": "Downloads für diese Kategorie deaktiviert",
     "enableDownloadsTitle": "Klicken zum Aktivieren der Downloads für diese Kategorie",
     "disableDownloadsTitle": "Klicken zum Deaktivieren der Downloads für diese Kategorie",
-    "failedToToggleDownloads": "Aktualisierung der Download-Berechtigung fehlgeschlagen"
+    "failedToToggleDownloads": "Aktualisierung der Download-Berechtigung fehlgeschlagen",
+    "folderEnabled": "Fotos dieser Kategorie liegen jetzt in einem Ordner",
+    "folderDisabled": "Diese Kategorie filtert die Galerie wieder",
+    "failedToToggleFolder": "Ordner-Einstellung konnte nicht geändert werden",
+    "disableFolderTitle": "Ordner: Diese Fotos sind im Hauptraster ausgeblendet und nur im Ordner sichtbar. Klicken, um wieder einen Filter daraus zu machen.",
+    "enableFolderTitle": "Filter: Diese Fotos bleiben im Hauptraster. Klicken, um einen Ordner daraus zu machen — blendet sie aus, schränkt den Zugriff aber NICHT ein."
   },
   "events": {
     "revealMode": "Reveal-Modus (Galerie bis zur Freigabe verbergen)",
@@ -4200,7 +4212,8 @@
     "movedToCategory_one": "{{count}} Foto nach {{category}} verschoben",
     "movedToCategory_other": "{{count}} Fotos nach {{category}} verschoben",
     "moveToCategoryFailed": "Fotos konnten nicht in die Kategorie verschoben werden",
-    "moveToCategory": "In Kategorie verschieben"
+    "moveToCategory": "In Kategorie verschieben",
+    "folderOption": "{{name}} (Ordner — im Hauptraster ausgeblendet)"
   },
   "customer": {
     "login": {

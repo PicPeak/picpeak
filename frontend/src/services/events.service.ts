@@ -232,7 +232,7 @@ export const eventsService = {
   },
 
   // Get event categories
-  async getEventCategories(eventId: number): Promise<Array<{ id: number; name: string; slug: string }>> {
+  async getEventCategories(eventId: number): Promise<Array<{ id: number; name: string; slug: string; is_folder?: boolean }>> {
     const response = await api.get(`/admin/categories/event/${eventId}`);
     return response.data || [];
   },

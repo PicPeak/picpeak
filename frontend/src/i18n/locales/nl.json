@@ -340,7 +340,14 @@
     "photosCount_one": "{{count}} foto",
     "photosCount_other": "{{count}} foto's",
     "colorFilter": "Kleur",
-    "filterByColor": "Alleen {{color}} tonen"
+    "filterByColor": "Alleen {{color}} tonen",
+    "folders": "Mappen",
+    "openFolder": "Map {{name}} openen",
+    "folderPhotoCount": "{{count}} foto's",
+    "backToGallery": "Alle foto's",
+    "downloadFolder": "Map downloaden ({{count}})",
+    "downloadFolderCapped": "Eerste {{limit}} van {{total}} downloaden",
+    "downloadEverything": "Alle foto's downloaden"
   },
   "categories": {
     "title": "Fotocategorieen",

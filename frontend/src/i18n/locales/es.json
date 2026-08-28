@@ -320,7 +320,14 @@
     "rated": "Valorado",
     "commented": "Comentado",
     "colorFilter": "Color",
-    "filterByColor": "Mostrar solo {{color}}"
+    "filterByColor": "Mostrar solo {{color}}",
+    "folders": "Carpetas",
+    "openFolder": "Abrir carpeta {{name}}",
+    "folderPhotoCount": "{{count}} fotos",
+    "backToGallery": "Todas las fotos",
+    "downloadFolder": "Descargar carpeta ({{count}})",
+    "downloadFolderCapped": "Descargar las primeras {{limit}} de {{total}}",
+    "downloadEverything": "Descargar todas las fotos"
   },
   "categories": {
     "title": "Categorías de fotos",

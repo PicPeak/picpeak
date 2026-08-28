@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
+const { parseBooleanInput } = require('../utils/parsers');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
@@ -42,7 +43,8 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
   body('name').notEmpty().withMessage('Category name is required'),
   body('slug').optional(),
   body('is_global').optional().isBoolean(),
-  body('event_id').optional().isInt()
+  body('event_id').optional().isInt(),
+  body('is_folder').optional().isBoolean()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -50,7 +52,7 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
       return res.status(400).json({ errors: errors.array() });
     }
     
-    const { name, slug, is_global = true, event_id = null } = req.body;
+    const { name, slug, is_global = true, event_id = null, is_folder = false } = req.body;
     
     // Generate slug if not provided
     const categorySlug = slug || name
@@ -97,7 +99,12 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
       slug: categorySlug,
       is_global,
       event_id: is_global ? null : event_id,
-      display_order: nextOrder
+      display_order: nextOrder,
+      // #1160: a folder contains its photos instead of filtering them.
+      // parseBooleanInput, not `!!`: express-validator's isBoolean() accepts the
+      // STRINGS "false" and "0", and `!!'false'` is true — a form-encoded caller
+      // asking for a filter would silently get a folder.
+      is_folder: formatBoolean(parseBooleanInput(is_folder, false))
     }).returning('id');
     
     const categoryId = insertResult[0]?.id || insertResult[0];
@@ -125,7 +132,8 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
     if (value === null || value === undefined) return true;
     return Number.isInteger(Number(value));
   }).withMessage('hero_photo_id must be an integer or null'),
-  body('allow_downloads').optional().isBoolean()
+  body('allow_downloads').optional().isBoolean(),
+  body('is_folder').optional().isBoolean()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -170,6 +178,13 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
     // Per-category download permission (#640). AND with event-level allow_downloads.
     if (Object.prototype.hasOwnProperty.call(req.body, 'allow_downloads')) {
       updateData.allow_downloads = req.body.allow_downloads;
+    }
+
+    // Folder vs filter (#1160). Flipping this moves the category's photos out of
+    // (or back into) the root grid with no re-upload — it only changes where they
+    // render, never which photos exist or who may reach them.
+    if (Object.prototype.hasOwnProperty.call(req.body, 'is_folder')) {
+      updateData.is_folder = formatBoolean(parseBooleanInput(req.body.is_folder, false));
     }
 
     await db('photo_categories')
