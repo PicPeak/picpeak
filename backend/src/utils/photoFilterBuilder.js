@@ -3,7 +3,20 @@
  * Builds Knex queries for filtering photos by feedback metrics
  */
 
-const { COLOR_LABELS } = require('../constants/colorLabels');
+const { COLOR_LABELS, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
+
+// The colour-label rows the event's current mode actually uses (#1197).
+// Switching identity_mode is non-destructive, so an event can hold a dormant
+// set alongside the live one; a filter that ignored the distinction would
+// match photos on labels the mode does not show.
+function scopeColorLabelsToMode(query, identityMode, column = 'photo_feedback.guest_identifier') {
+  if (identityMode === 'shared') {
+    return query.where(column, SHARED_COLOR_LABEL_IDENTITY);
+  }
+  return query.where(function () {
+    this.whereNot(column, SHARED_COLOR_LABEL_IDENTITY).orWhereNull(column);
+  });
+}
 
 /**
  * Accept a colour filter as an array or a comma-separated string, drop
@@ -21,9 +34,13 @@ function normalizeColorLabels(value) {
 }
 
 class PhotoFilterBuilder {
-  constructor(queryBuilder, eventId) {
+  constructor(queryBuilder, eventId, identityMode = 'simple') {
     this.query = queryBuilder;
     this.eventId = eventId;
+    // Which colour-label set is live (#1197). Passed in rather than looked up:
+    // applyFilters is synchronous, and every caller already has the event's
+    // settings in hand.
+    this.identityMode = identityMode;
   }
 
   /**
@@ -85,13 +102,17 @@ class PhotoFilterBuilder {
     // photo_feedback_color_label_idx index from migration 180.
     const requestedColors = normalizeColorLabels(color_labels);
     if (requestedColors.length > 0) {
+      const identityMode = this.identityMode;
       conditions.push(builder => builder.whereExists(function () {
-        this.select('*')
-          .from('photo_feedback')
-          .whereRaw('photo_feedback.photo_id = photos.id')
-          .where('photo_feedback.feedback_type', 'color_label')
-          .where('photo_feedback.is_hidden', false)
-          .whereIn('photo_feedback.color_label', requestedColors);
+        scopeColorLabelsToMode(
+          this.select('*')
+            .from('photo_feedback')
+            .whereRaw('photo_feedback.photo_id = photos.id')
+            .where('photo_feedback.feedback_type', 'color_label')
+            .where('photo_feedback.is_hidden', false)
+            .whereIn('photo_feedback.color_label', requestedColors),
+          identityMode,
+        );
       }));
     }
 
@@ -173,10 +194,11 @@ class PhotoFilterBuilder {
   /**
    * Build a count query for the same filters
    */
-  static buildCountQuery(db, eventId, filters = {}) {
+  static buildCountQuery(db, eventId, filters = {}, identityMode = 'simple') {
     const builder = new PhotoFilterBuilder(
       db('photos').count('* as count'),
-      eventId
+      eventId,
+      identityMode
     );
     builder.applyFilters(filters);
     return builder.getQuery();
@@ -185,7 +207,7 @@ class PhotoFilterBuilder {
   /**
    * Build a summary query for feedback counts
    */
-  static async getSummary(db, eventId) {
+  static async getSummary(db, eventId, identityMode = 'simple') {
     const result = await db('photos')
       .where('event_id', eventId)
       .select(
@@ -200,9 +222,12 @@ class PhotoFilterBuilder {
 
     // Per-colour totals for the filter chips (#1044) — the swatch row shows
     // "Green 42" so the photographer knows which colours are worth filtering.
-    const colorRows = await db('photo_feedback')
-      .where({ event_id: eventId, feedback_type: 'color_label' })
-      .where('is_hidden', false)
+    const colorRows = await scopeColorLabelsToMode(
+      db('photo_feedback')
+        .where({ event_id: eventId, feedback_type: 'color_label' })
+        .where('is_hidden', false),
+      identityMode,
+    )
       .groupBy('color_label')
       .select('color_label')
       .countDistinct('photo_id as count');

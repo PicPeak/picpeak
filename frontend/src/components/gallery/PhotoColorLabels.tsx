@@ -71,7 +71,21 @@ export const PhotoColorLabels: React.FC<PhotoColorLabelsProps> = ({
       }
       return { previousColor };
     },
-    onSuccess: () => {
+    onSuccess: (result, data) => {
+      // Correct the optimistic guess with what the server actually did.
+      //
+      // In shared mode the tag belongs to the photo, so another guest can have
+      // changed it between this viewer's last read and this click (#1197). The
+      // optimistic branch above assumes the toggle is computed against a
+      // current value: if this viewer still had green on screen while the tag
+      // had already become red, clicking green SETS green server-side, but the
+      // optimistic path read "same colour, so clear" and blanked the swatch.
+      // The response says which of the two happened, so use it rather than the
+      // guess. In the per-guest modes the two always agree — only the guest
+      // themself can move their own label — so this costs nothing there.
+      if (onColorLabelChange) {
+        onColorLabelChange(result?.removed ? null : data.color);
+      }
       queryClient.invalidateQueries({ queryKey: ['photo-feedback', gallerySlug, photoId] });
     },
     onError: (_error, _data, context) => {

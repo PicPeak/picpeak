@@ -13,7 +13,7 @@ const {
   pickRawDownloadName,
 } = require('../services/downloadFilenameService');
 const { escapeLikePattern } = require('../utils/sqlSecurity');
-const { COLOR_LABELS, dominantColorLabel } = require('../constants/colorLabels');
+const { COLOR_LABELS, dominantColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const feedbackService = require('../services/feedbackService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
 const { validateUploadedFiles } = require('../middleware/uploadValidation');
@@ -1157,6 +1157,11 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       .map(value => value.trim().toLowerCase())
       .filter(value => COLOR_LABELS.includes(value));
     if (requestedColorLabels.length > 0) {
+      // Only the colour-label set the event's mode actually uses (#1197).
+      // Switching identity_mode leaves the other set in place, and a filter
+      // that matched it would return photos whose badge shows no such colour.
+      const { identity_mode: identityMode } =
+        await feedbackService.getEventFeedbackSettings(eventId);
       feedbackConditions.push(qb => qb.whereExists(function () {
         this.select('*')
           .from('photo_feedback')
@@ -1164,6 +1169,14 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
           .where('photo_feedback.feedback_type', 'color_label')
           .where('photo_feedback.is_hidden', false)
           .whereIn('photo_feedback.color_label', requestedColorLabels);
+        if (identityMode === 'shared') {
+          this.where('photo_feedback.guest_identifier', SHARED_COLOR_LABEL_IDENTITY);
+        } else {
+          this.where(function () {
+            this.whereNot('photo_feedback.guest_identifier', SHARED_COLOR_LABEL_IDENTITY)
+              .orWhereNull('photo_feedback.guest_identifier');
+          });
+        }
       }));
     }
     // The same filter against the caller's OWN marks (#1044 follow-up).
