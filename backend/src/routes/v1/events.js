@@ -38,6 +38,7 @@ const { formatBoolean } = require('../../utils/dbCompat');
 const { parseBooleanInput } = require('../../utils/parsers');
 const { isValidEventType } = require('../../services/eventTypeService');
 const { replacePhoto } = require('../../services/photoReplacementService');
+const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
 const { PhotoExportService } = require('../../services/photoExportService');
 const { mergeMarks } = require('../../services/markMerge');
@@ -691,20 +692,32 @@ router.post(
           mimeType: req.file.mimetype,
           event,
         });
-        // replacePhoto moves the temp file itself; clearing the handle stops
-        // the finally block unlinking a path that is gone or, worse, reused.
+        // replacePhoto unlinks the temp file on success. Unlink again anyway:
+        // a FAILED replacement returns before doing so, and this route only
+        // cleans up in its catch block, so the failure path would otherwise
+        // strand the upload. Already-gone is not an error here.
+        await fs.unlink(tempPath).catch(() => {});
         tempPath = null;
         if (!result.success) {
           return res.status(500).json({ error: `Replacement failed: ${result.error}` });
         }
 
+        // Guests are served a cached ZIP of the whole gallery. Without this
+        // they keep downloading the pre-edit photo indefinitely, which
+        // defeats the point of putting the edit back. adminPhotos.js does the
+        // same after its replacements.
+        downloadZipService.invalidate(event.id);
+
+        // event.id, not null: the dashboard feed excludes NULL-event rows for
+        // scoped callers (GHSA-jhcf), so a system-level entry would vanish
+        // from the audit trail of the photographer who owns the event.
         await logActivity('photo_replaced', {
           photoId: result.photo.id,
           originalFilename: req.file.originalname,
           previousFilename: result.previousFilename,
           eventName: event.event_name,
           via: 'v1_api',
-        }, null, { type: 'admin', id: req.admin.id, name: req.admin.username });
+        }, event.id, { type: 'admin', id: req.admin.id, name: req.admin.username });
 
         return res.status(200).json({
           replaced: true,
@@ -1035,7 +1048,10 @@ router.get(
             original_filename: photo.original_filename || null,
             // What the round-trip matches on. Null only for rows predating
             // migration 185 that had no original_filename either.
-            source_filename: photo.source_filename || photo.original_filename || null,
+            // filename is the last fallback on purpose: fileWatcher and
+            // external-media ingest never set original_filename, so for NAS
+            // and auto-import galleries the camera name lives only there.
+            source_filename: photo.source_filename || photo.original_filename || photo.filename || null,
             category: photo.category_name || null,
             average_rating: photo.average_rating ? parseFloat(photo.average_rating) : 0,
             feedback_count: photo.feedback_count || 0,

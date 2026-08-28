@@ -12,7 +12,6 @@
  * and the plugin can never drift apart on it.
  */
 
-const { COLOR_LABEL_PRIORITY } = require('../constants/colorLabels');
 
 /**
  * Collapse a guest star average to Lightroom's 0-5 integer scale.
@@ -31,23 +30,6 @@ function roundRating(avgRating) {
   if (value >= 2.5) return 3;
   if (value >= 1.5) return 2;
   return 1;
-}
-
-/**
- * Pick the higher-priority of two colours.
- *
- * COLOR_LABEL_PRIORITY is green-first because in the proofing workflow this
- * exists for, green means "1st choice" — the pick that must survive a
- * disagreement.
- */
-function higherPriorityColor(a, b) {
-  if (!a) return b || null;
-  if (!b) return a;
-  const ia = COLOR_LABEL_PRIORITY.indexOf(a);
-  const ib = COLOR_LABEL_PRIORITY.indexOf(b);
-  if (ia === -1) return b;
-  if (ib === -1) return a;
-  return ia <= ib ? a : b;
 }
 
 /**
@@ -93,5 +75,4 @@ function mergeMarks(photo, markSource = 'either') {
 module.exports = {
   mergeMarks,
   roundRating,
-  higherPriorityColor,
 };

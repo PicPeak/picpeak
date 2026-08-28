@@ -38,10 +38,18 @@ exports.up = async function (knex) {
   // replaced before this migration existed has already lost it and cannot be
   // recovered; it gets the current name, which is the best available answer
   // and no worse than the NULL it would otherwise keep.
+  //
+  // COALESCE, not a plain copy: fileWatcher auto-imports and external-media
+  // scans never set original_filename at all — for those rows the camera name
+  // only ever lived in `filename`. Copying original_filename alone left every
+  // NAS-mounted and auto-imported gallery with a NULL match key, which is to
+  // say the round-trip could not see the galleries most likely to be driven
+  // from Lightroom.
   await knex('photos')
     .whereNull('source_filename')
-    .whereNotNull('original_filename')
-    .update({ source_filename: knex.ref('original_filename') });
+    .update({
+      source_filename: knex.raw('COALESCE(original_filename, filename)'),
+    });
 
   // Outside the column guard, for the same reason as migration 182: a run
   // that died between the two statements would leave the column present and

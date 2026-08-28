@@ -73,13 +73,28 @@ async function findReplacementCandidate(eventId, originalFilename, opts = {}) {
     if (!token) return null;
 
     // The token has to be compared against the STEM of the stored name, not
-    // the whole string, so `IMG_1234.JPG` yields `1234` on both sides. Doing
-    // that in SQL across two engines is more trouble than it is worth, so the
-    // candidate set is narrowed by event and the run extracted in JS —
-    // reading only the three columns the match needs, so a 5000-photo event
-    // doesn't pull 5000 full rows through memory to answer one question.
+    // the whole string, so `IMG_1234.JPG` yields `1234` on both sides. That
+    // comparison stays in JS — expressing it in SQL across two engines is
+    // more trouble than it is worth — but the CANDIDATE SET is narrowed in
+    // SQL first.
+    //
+    // Without the LIKE this read every photo row in the event, once per
+    // uploaded file, and twice per file when a photo cap is configured. At
+    // the 2000-file upload limit against a 5000-photo event that is up to 20M
+    // rows before any image processing starts. The token is a digit run
+    // extracted by regex, so it is safe to interpolate and cannot carry a
+    // LIKE wildcard.
+    //
+    // The LIKE over-matches on purpose (it ignores position and extension);
+    // the exact trailing-run check below is still what decides, so semantics
+    // are unchanged and only the row count drops.
+    const pattern = '%' + token + '%';
     const rows = await db('photos')
       .where({ event_id: eventId })
+      .where(function () {
+        this.where('source_filename', 'like', pattern)
+          .orWhere('original_filename', 'like', pattern);
+      })
       .select('id', 'source_filename', 'original_filename');
 
     const matches = rows.filter((row) => {
@@ -185,8 +200,15 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       // Ignore — watermark may not exist
     }
 
-    // Upload the new original.
+    // Upload the new original. `putFromFile` COPIES (LocalFsStorage) or
+    // uploads (S3) — neither consumes the source, and this function used to
+    // leave it behind. The v1 route additionally stops its own cleanup on the
+    // (wrong) assumption that this moved the file, so every replacement
+    // stranded up to 100 MB in storage/temp. Cleaning up here closes the v1
+    // and the admin path at once: adminPhotos only unlinks in its
+    // new-files branch, so replaced files leaked there too.
     await storage.putFromFile(finalKey, newFileTempPath, { contentType: mimeType });
+    await fsp.unlink(newFileTempPath).catch(() => {});
 
     // Update DB record — preserve id, event_id, category_id, type, visibility,
     // uploaded_at, sort_order, feedback counts, view/download counts
@@ -209,6 +231,17 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       captured_at: capturedAt,
       mime_type: mimeType,
       media_type: mimeType?.startsWith('video/') ? 'video' : 'image',
+      // The replacement lives in the managed backend, so the row has to say
+      // so. resolvePhotoStorageKey gives photo.source_origin precedence over
+      // everything and returns null for 'reference'/'external' — so leaving
+      // these set meant the new file was stored and recorded while every
+      // viewer kept being served the untouched NAS original, with the upload
+      // orphaned and the API reporting success.
+      //
+      // The external file itself is never touched: this repoints the row,
+      // it does not delete or move anything on the share.
+      source_origin: 'managed',
+      external_relpath: null,
     };
 
     // Face data (#1074): the row keeps its id but now points at a DIFFERENT

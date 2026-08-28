@@ -140,6 +140,83 @@ describe('findReplacementCandidate', () => {
   });
 });
 
+describe('replacePhoto — review blockers on #1165', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { replacePhoto } = require('../../src/services/photoReplacementService');
+
+  const makeTempFile = () => {
+    const p = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'lr-replace-')), 'render.jpg');
+    // A 1x1 JPEG is enough: sharp may fail on it, and replacePhoto is
+    // required to survive that (thumbnail generation is best-effort).
+    fs.writeFileSync(p, Buffer.from(
+      '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a'
+      + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA'
+      + 'AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64'));
+    return p;
+  };
+
+  it('repoints an external row to managed, so viewers stop getting the old file', async () => {
+    // resolvePhotoStorageKey gives photo.source_origin precedence and returns
+    // null for 'external' — so a replacement that left it set would upload the
+    // edit, report success, and keep serving the untouched NAS original.
+    const id = await addPhoto({
+      filename: 'ext.jpg', originalFilename: 'IMG_7001.JPG', sourceFilename: 'IMG_7001.JPG',
+    });
+    await db('photos').where({ id }).update({
+      source_origin: 'external', external_relpath: 'nas/sub/IMG_7001.JPG',
+    });
+
+    const existing = await db('photos').where({ id }).first();
+    const event = await db('events').where({ id: eventId }).first();
+    const result = await replacePhoto(existing, makeTempFile(), {
+      originalFilename: 'Edited_7001.jpg', mimeType: 'image/jpeg', event,
+    });
+
+    expect(result.success).toBe(true);
+    const row = await db('photos').where({ id }).first();
+    expect(row.source_origin).toBe('managed');
+    expect(row.external_relpath).toBeNull();
+  });
+
+  it('deletes the temp file it was handed', async () => {
+    // putFromFile copies rather than moves, and the v1 route disables its own
+    // cleanup — so leaving this behind stranded up to 100 MB per replacement.
+    const id = await addPhoto({
+      filename: 'leak.jpg', originalFilename: 'IMG_7002.JPG', sourceFilename: 'IMG_7002.JPG',
+    });
+    const existing = await db('photos').where({ id }).first();
+    const event = await db('events').where({ id: eventId }).first();
+    const tempPath = makeTempFile();
+
+    const result = await replacePhoto(existing, tempPath, {
+      originalFilename: 'Edited_7002.jpg', mimeType: 'image/jpeg', event,
+    });
+
+    expect(result.success).toBe(true);
+    expect(fs.existsSync(tempPath)).toBe(false);
+  });
+});
+
+describe('migration 185 backfill reaches watcher and external rows', () => {
+  it('falls back to filename when original_filename was never set', async () => {
+    // fileWatcher and adminExternalMedia insert `filename` only. Copying
+    // original_filename alone left those galleries with a NULL match key.
+    const [row] = await db('photos').insert({
+      event_id: eventId, filename: 'IMG_8001.JPG', original_filename: null,
+      source_filename: null, path: 'slug/IMG_8001.JPG', type: 'individual',
+    }).returning('id');
+    const id = row?.id || row;
+
+    const migration = require('../../migrations/core/185_add_photo_source_filename.js');
+    await migration.up(db);
+
+    const after = await db('photos').where({ id }).first();
+    expect(after.source_filename).toBe('IMG_8001.JPG');
+  });
+});
+
 describe('mergeMarks', () => {
   const photo = {
     dominant_color_label: 'green',
