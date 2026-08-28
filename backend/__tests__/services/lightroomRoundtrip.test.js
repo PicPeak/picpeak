@@ -177,7 +177,11 @@ describe('replacePhoto — review blockers on #1165', () => {
     expect(result.success).toBe(true);
     const row = await db('photos').where({ id }).first();
     expect(row.source_origin).toBe('managed');
-    expect(row.external_relpath).toBeNull();
+    // Kept, not cleared: adminExternalMedia dedupes a re-scan on
+    // (event_id, external_relpath). Clearing it would make the next scan
+    // re-import the NAS original as a duplicate of the photo that just
+    // replaced it.
+    expect(row.external_relpath).toBe('nas/sub/IMG_7001.JPG');
   });
 
   it('deletes the temp file it was handed', async () => {

@@ -234,14 +234,22 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       // The replacement lives in the managed backend, so the row has to say
       // so. resolvePhotoStorageKey gives photo.source_origin precedence over
       // everything and returns null for 'reference'/'external' — so leaving
-      // these set meant the new file was stored and recorded while every
+      // this set meant the new file was stored and recorded while every
       // viewer kept being served the untouched NAS original, with the upload
       // orphaned and the API reporting success.
       //
-      // The external file itself is never touched: this repoints the row,
-      // it does not delete or move anything on the share.
+      // external_relpath is deliberately KEPT. It is no longer used to
+      // resolve the photo — source_origin decides that, and every other
+      // consumer reads the two together — but it is still the key
+      // adminExternalMedia dedupes on when the folder is re-scanned
+      // (`where({ event_id, external_relpath })`) and the column the unique
+      // index from migration 186 covers. Clearing it would make the next scan
+      // treat the NAS original as a new file and import a duplicate
+      // alongside the photo that just replaced it.
+      //
+      // The external file itself is never touched: this repoints the row, it
+      // does not delete or move anything on the share.
       source_origin: 'managed',
-      external_relpath: null,
     };
 
     // Face data (#1074): the row keeps its id but now points at a DIFFERENT
