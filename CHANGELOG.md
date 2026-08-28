@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.117.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.116.1-beta.0...v3.117.0-beta.0) (2026-08-28)
+
+
+### Features
+
+* **gallery:** folders that contain photos instead of filtering them ([#1160](https://github.com/PicPeak/picpeak/issues/1160)) ([#1161](https://github.com/PicPeak/picpeak/issues/1161)) ([0a36ca6](https://github.com/PicPeak/picpeak/commit/0a36ca605662db5ff6d215ea7164e13b166b3121))
+
+
+### Bug Fixes
+
+* **admin:** the "Uncategorized" photo filter returns every photo ([#1211](https://github.com/PicPeak/picpeak/issues/1211)) ([#1214](https://github.com/PicPeak/picpeak/issues/1214)) ([a490b64](https://github.com/PicPeak/picpeak/commit/a490b649542371c70493feb79b0af844deeae006))
+* **setup:** put the setup token where a NAS user can find it ([#1218](https://github.com/PicPeak/picpeak/issues/1218)) ([#1219](https://github.com/PicPeak/picpeak/issues/1219)) ([696c69a](https://github.com/PicPeak/picpeak/commit/696c69a6d02e6f1cf01d83470825215feacacd00))
+
 ## [3.116.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.116.0-beta.0...v3.116.1-beta.0) (2026-08-27)
 
 
