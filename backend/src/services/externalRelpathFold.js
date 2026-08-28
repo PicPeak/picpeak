@@ -169,7 +169,7 @@ async function foldExternalRelpaths(knex, log = () => {}) {
     const rows = await knex('photos')
       .where('event_id', eventId)
       .whereNotNull('external_relpath')
-      .select('id', 'external_relpath', 'size_bytes');
+      .select('id', 'external_relpath', 'size_bytes', 'source_origin');
 
     // Deciding health from a SAMPLE was the tempting shortcut and it is not
     // safe: a rebased event whose first few rows happen to come from the most
@@ -227,7 +227,24 @@ async function foldExternalRelpaths(knex, log = () => {}) {
     const claimed = new Map();
     const resolved = [];
     const losers = new Map();
-    for (const [row, chosen] of placements) {
+
+    // A replaced photo keeps its external_relpath so the folder re-scan can
+    // still dedupe on it (#745), but its source_origin is now 'managed' and
+    // its file is the edit the photographer delivered. Collisions here DELETE
+    // the loser, and the survivor was whichever row happened to be claimed
+    // first — so a delivered edit could be destroyed in favour of the
+    // untouched camera original sitting next to it on the share.
+    //
+    // Managed rows claim first, which makes them the survivor in any
+    // collision. The external row that loses is the recoverable one: it is
+    // still on the share and a re-scan re-imports it. The edit is not.
+    const claimOrder = placements.slice().sort((a, b) => {
+      const aManaged = a[0].source_origin === 'managed' ? 0 : 1;
+      const bManaged = b[0].source_origin === 'managed' ? 0 : 1;
+      return aManaged - bManaged;
+    });
+
+    for (const [row, chosen] of claimOrder) {
       const next = chosen ? `${chosen}/${row.external_relpath}` : row.external_relpath;
       const winner = claimed.get(next);
       if (winner != null) { losers.set(row.id, winner); collided++; continue; }

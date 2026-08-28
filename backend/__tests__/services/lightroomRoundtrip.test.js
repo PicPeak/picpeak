@@ -221,6 +221,37 @@ describe('migration 193 backfill reaches watcher and external rows', () => {
   });
 });
 
+describe('externalRelpathFold — a delivered edit must survive a collision', () => {
+  it('claims managed rows first, so they win and the external row loses', () => {
+    // The fold DELETES collision losers, and the survivor used to be
+    // whichever row was claimed first. A replaced photo keeps its
+    // external_relpath (so re-scans still dedupe) but holds the edit the
+    // photographer delivered — losing that to the untouched camera original
+    // is unrecoverable, where losing the external row is not.
+    const placements = [
+      [{ id: 1, source_origin: 'external', external_relpath: 'shoot/IMG_1.jpg' }, 'base'],
+      [{ id: 2, source_origin: 'managed', external_relpath: 'shoot/IMG_1.jpg' }, 'base'],
+    ];
+    const claimOrder = placements.slice().sort((a, b) => {
+      const aManaged = a[0].source_origin === 'managed' ? 0 : 1;
+      const bManaged = b[0].source_origin === 'managed' ? 0 : 1;
+      return aManaged - bManaged;
+    });
+
+    const claimed = new Map();
+    const losers = new Map();
+    for (const [row, chosen] of claimOrder) {
+      const next = chosen ? `${chosen}/${row.external_relpath}` : row.external_relpath;
+      const winner = claimed.get(next);
+      if (winner != null) { losers.set(row.id, winner); continue; }
+      claimed.set(next, row.id);
+    }
+
+    expect([...losers.keys()]).toEqual([1]);
+    expect([...claimed.values()]).toEqual([2]);
+  });
+});
+
 describe('mergeMarks', () => {
   const photo = {
     dominant_color_label: 'green',
