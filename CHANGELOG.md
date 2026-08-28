@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.119.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.118.0-beta.0...v3.119.0-beta.0) (2026-08-28)
+
+
+### Features
+
+* **admin:** shift-click range selection in the photo grid ([#1212](https://github.com/PicPeak/picpeak/issues/1212)) ([#1213](https://github.com/PicPeak/picpeak/issues/1213)) ([f18bc56](https://github.com/PicPeak/picpeak/commit/f18bc568c88dabcd305595f365838ab6470b975f))
+
+
+### Bug Fixes
+
+* **gallery:** make the returning-guest recovery findable ([#1210](https://github.com/PicPeak/picpeak/issues/1210)) ([#1217](https://github.com/PicPeak/picpeak/issues/1217)) ([1f3f7e9](https://github.com/PicPeak/picpeak/commit/1f3f7e9c0299806eb6b981669c1ba3ec811ab266))
+* **guests:** surface duplicate guest registrations, and stop making so many ([#1210](https://github.com/PicPeak/picpeak/issues/1210)) ([#1216](https://github.com/PicPeak/picpeak/issues/1216)) ([5c85e0c](https://github.com/PicPeak/picpeak/commit/5c85e0c0e42a826eb7f63f2be8ed1a3908ca0d91))
+
 ## [3.118.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.117.0-beta.0...v3.118.0-beta.0) (2026-08-28)
 
 
