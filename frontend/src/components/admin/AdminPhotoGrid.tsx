@@ -43,6 +43,15 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   const { format: formatDate } = useLocalizedDate();
   const queryClient = useQueryClient();
   const [selectedPhotos, setSelectedPhotos] = useState<Set<number>>(new Set());
+  // Where a shift-click measures its range from: the last tile clicked without
+  // the shift key (#1212). The index is what a range needs — a span of the
+  // current ordering — but the id is carried with it so the anchor can prove
+  // it still points at the tile it was set on. Filtering or re-sorting leaves
+  // index 5 meaning a different photo, and a range measured from a stale
+  // anchor selects the wrong span silently, which is worse than not selecting
+  // at all. Validating at use beats clearing on every list change: a
+  // background refetch hands back an equal list and the anchor stays good.
+  const [anchor, setAnchor] = useState<{ index: number; photoId: number } | null>(null);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingPhotos, setDeletingPhotos] = useState<Set<number>>(new Set());
@@ -59,7 +68,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     setPhotoViewMode(mode);
   };
 
-  const handlePhotoSelect = (photoId: number, e?: React.MouseEvent) => {
+  const handlePhotoSelect = (photoId: number, e?: React.MouseEvent, index?: number) => {
     if (e) {
       e.stopPropagation();
     }
@@ -68,11 +77,38 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       setIsSelectionMode(true);
     }
     const newSelected = new Set(selectedPhotos);
+
+    // Shift-click selects the span from the last plain click to here (#1212),
+    // the way every file manager does it. Re-assigning a category across a few
+    // hundred imported photos is otherwise a few hundred individual clicks.
+    //
+    // Extends rather than replaces: the grid already lets you accumulate tiles
+    // one at a time, so a range is another addition to that set, not a reset
+    // of it. And it only ever adds — dragging a range back over itself to
+    // deselect is a different gesture, and guessing at it would make a
+    // mis-aimed shift-click destroy a selection instead of growing it.
+    const anchorStillValid = anchor !== null && photos[anchor.index]?.id === anchor.photoId;
+    if (e?.shiftKey && anchorStillValid && index !== undefined) {
+      const from = Math.min(anchor.index, index);
+      const to = Math.max(anchor.index, index);
+      for (let i = from; i <= to; i++) {
+        const photo = photos[i];
+        if (photo) newSelected.add(photo.id);
+      }
+      setSelectedPhotos(newSelected);
+      onSelectionChange?.(Array.from(newSelected));
+      // Anchor deliberately left where it was, so a second shift-click
+      // re-aims the same range from the original point rather than walking
+      // the anchor along behind the cursor.
+      return;
+    }
+
     if (newSelected.has(photoId)) {
       newSelected.delete(photoId);
     } else {
       newSelected.add(photoId);
     }
+    if (index !== undefined) setAnchor({ index, photoId });
     setSelectedPhotos(newSelected);
     onSelectionChange?.(Array.from(newSelected));
   };
@@ -81,6 +117,11 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     let newSelected: Set<number>;
     if (selectedPhotos.size === photos.length) {
       newSelected = new Set();
+      // Clearing the selection clears what a range would measure from (#1212
+      // review). The anchor is invisible, so an anchor that outlived the
+      // selection made the next shift-click reach back into a session the user
+      // had already ended and select a range they never started.
+      setAnchor(null);
     } else {
       newSelected = new Set(photos.map(p => p.id));
     }
@@ -126,6 +167,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
       await photosService.deletePhotos(eventId, selectedIds);
       toast.success(`${count} photo${count > 1 ? 's' : ''} deleted successfully`);
       setSelectedPhotos(new Set());
+      setAnchor(null);
       setIsSelectionMode(false);
       onSelectionChange?.([]);
       onPhotosDeleted();
@@ -151,6 +193,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     setIsSelectionMode(!isSelectionMode);
     if (isSelectionMode) {
       setSelectedPhotos(new Set());
+      setAnchor(null);
       onSelectionChange?.([]);
     }
   };
@@ -173,6 +216,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
         })
       );
       setSelectedPhotos(new Set());
+      setAnchor(null);
       setIsSelectionMode(false);
       onSelectionChange?.([]);
       setIsCategoryModalOpen(false);
@@ -336,7 +380,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
               className={`absolute top-2 right-2 z-20 transition-opacity ${
                 selectedPhotos.has(photo.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
               }`}
-              onClick={(e) => handlePhotoSelect(photo.id, e)}
+              onClick={(e) => handlePhotoSelect(photo.id, e, index)}
             >
               <div className={`w-6 h-6 rounded border-2 flex items-center justify-center ${
                 selectedPhotos.has(photo.id)
@@ -602,7 +646,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                       role="checkbox"
                       aria-checked={isSelected}
                       data-testid={`admin-photo-row-checkbox-${photo.id}`}
-                      onClick={(e) => handlePhotoSelect(photo.id, e)}
+                      onClick={(e) => handlePhotoSelect(photo.id, e, index)}
                     >
                       <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
                         isSelected
