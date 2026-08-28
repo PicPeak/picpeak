@@ -583,7 +583,8 @@
       "emailLabel": "Email (optional)",
       "emailPlaceholder": "you@example.com",
       "submit": "Continue",
-      "alreadyHere": "I've been here before"
+      "returningHint": "Been here before? Your earlier picks are still saved.",
+      "recoverPicks": "Get them back"
     },
     "footer": {
       "forgetMeConfirm": "Your name and selections will be removed from this gallery.",

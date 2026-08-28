@@ -139,16 +139,45 @@ export const GuestNamePromptModal: React.FC<GuestNamePromptModalProps> = ({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              closePrompt();
-              openRecovery();
-            }}
-            className="text-sm text-accent hover:underline w-full text-center pt-2"
+          {/* A returning guest who fills the form in again becomes a second
+              guest row, and their earlier likes and favourites stop counting
+              as theirs (#1210). Recovery has always been here to prevent that,
+              as a small link under the button that people reasonably read as
+              fine print and skipped.
+
+              Given its own block and told in terms of what the guest loses by
+              missing it, rather than "I've been here before" — which reads as
+              a greeting, not a warning. Still a choice and not a check: asking
+              the server whether an address is already registered would answer
+              "is this person in this gallery" to anyone who asked, which is
+              why /guest/recover deliberately cannot be used that way. */}
+          {/* Theme tokens, not neutral-* with a dark: variant (#1210 review).
+              A dark gallery preset is delivered through CSS variables and does
+              NOT add Tailwind's .dark class, so the dark: half never fires and
+              this block would render dark grey on a dark surface. The rest of
+              the modal uses text-theme / text-muted-theme for exactly this
+              reason. */}
+          <div
+            className="pt-3 mt-1 border-t text-center"
+            style={{ borderColor: 'var(--color-surface-border, #e5e5e5)' }}
           >
-            {t('gallery.guestPrompt.alreadyHere', "I've been here before")}
-          </button>
+            <p className="text-sm text-muted-theme">
+              {t(
+                'gallery.guestPrompt.returningHint',
+                'Been here before? Your earlier picks are still saved.'
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                closePrompt();
+                openRecovery();
+              }}
+              className="mt-1 text-sm font-medium text-accent hover:underline"
+            >
+              {t('gallery.guestPrompt.recoverPicks', 'Get them back')}
+            </button>
+          </div>
         </form>
       </div>
     </div>

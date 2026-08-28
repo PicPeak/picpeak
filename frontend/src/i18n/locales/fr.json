@@ -326,7 +326,8 @@
       "emailLabel": "E-mail (optionnel)",
       "emailPlaceholder": "vous@example.com",
       "submit": "Continuer",
-      "alreadyHere": "J'ai déjà été ici"
+      "returningHint": "Déjà venu ? Vos choix précédents sont toujours enregistrés.",
+      "recoverPicks": "Les récupérer"
     },
     "footer": {
       "forgetMeConfirm": "Votre nom et vos sélections seront supprimés de cette galerie.",

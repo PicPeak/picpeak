@@ -330,7 +330,8 @@
       "emailLabel": "E-mail (optioneel)",
       "emailPlaceholder": "u@voorbeeld.nl",
       "submit": "Doorgaan",
-      "alreadyHere": "Ik ben hier al eerder geweest"
+      "returningHint": "Al eerder hier geweest? Uw eerdere keuzes zijn nog bewaard.",
+      "recoverPicks": "Keuzes terughalen"
     },
     "footer": {
       "forgetMeConfirm": "Uw naam en selecties worden verwijderd uit deze galerij.",
