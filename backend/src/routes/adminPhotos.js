@@ -390,7 +390,7 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
             original_filename: file.originalname,
             // Camera-original name, kept separate so a later replace can
             // overwrite original_filename without losing the Lightroom
-            // round-trip's match key (migration 185, #745).
+            // round-trip's match key (migration 193, #745).
             source_filename: file.originalname,
             path: relativePath,
             thumbnail_path: null,

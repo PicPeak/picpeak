@@ -774,7 +774,7 @@ router.post(
         original_filename: req.file.originalname,
         // The camera-original name, kept separate so a later replace can
         // overwrite original_filename without losing the round-trip's match
-        // key (migration 185, #745).
+        // key (migration 193, #745).
         source_filename: req.file.originalname,
         path: relPath,
         thumbnail_path: thumbRel,
@@ -1047,7 +1047,7 @@ router.get(
             filename: photo.filename,
             original_filename: photo.original_filename || null,
             // What the round-trip matches on. Null only for rows predating
-            // migration 185 that had no original_filename either.
+            // migration 193 that had no original_filename either.
             // filename is the last fallback on purpose: fileWatcher and
             // external-media ingest never set original_filename, so for NAS
             // and auto-import galleries the camera name lives only there.

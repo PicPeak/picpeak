@@ -2,7 +2,7 @@
  * Lightroom round-trip (#745) — pins the pieces that let a client's proofing
  * verdict reach a desktop catalogue and a finished edit come back:
  *
- *  - migration 185 adds photos.source_filename and backfills it, so galleries
+ *  - migration 193 adds photos.source_filename and backfills it, so galleries
  *    that predate the round-trip can still match on their first pass
  *  - source_filename survives replacePhoto(); original_filename does not.
  *    This is the whole point of the column: without it, the first re-upload
@@ -64,7 +64,7 @@ beforeAll(async () => {
 
 afterAll(async () => { await cleanup(); });
 
-describe('migration 185 — photos.source_filename', () => {
+describe('migration 193 — photos.source_filename', () => {
   it('adds the column', async () => {
     expect(await db.schema.hasColumn('photos', 'source_filename')).toBe(true);
   });
@@ -75,7 +75,7 @@ describe('migration 185 — photos.source_filename', () => {
     const id = await addPhoto({
       filename: 'legacy.jpg', originalFilename: 'IMG_9001.JPG', sourceFilename: null,
     });
-    const migration = require('../../migrations/core/185_add_photo_source_filename.js');
+    const migration = require('../../migrations/core/193_add_photo_source_filename.js');
     await migration.up(db);
 
     const row = await db('photos').where({ id }).first();
@@ -199,7 +199,7 @@ describe('replacePhoto — review blockers on #1165', () => {
   });
 });
 
-describe('migration 185 backfill reaches watcher and external rows', () => {
+describe('migration 193 backfill reaches watcher and external rows', () => {
   it('falls back to filename when original_filename was never set', async () => {
     // fileWatcher and adminExternalMedia insert `filename` only. Copying
     // original_filename alone left those galleries with a NULL match key.
@@ -209,7 +209,7 @@ describe('migration 185 backfill reaches watcher and external rows', () => {
     }).returning('id');
     const id = row?.id || row;
 
-    const migration = require('../../migrations/core/185_add_photo_source_filename.js');
+    const migration = require('../../migrations/core/193_add_photo_source_filename.js');
     await migration.up(db);
 
     const after = await db('photos').where({ id }).first();

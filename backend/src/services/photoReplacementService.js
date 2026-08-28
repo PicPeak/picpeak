@@ -52,7 +52,7 @@ function trailingDigitRun(filename) {
  *   a much weaker key than a filename.
  *
  * Both modes prefer `source_filename` (the camera-original name, preserved
- * across replaces by migration 185) and fall back to `original_filename` for
+ * across replaces by migration 193) and fall back to `original_filename` for
  * rows that predate it.
  *
  * Returns the photo row on exactly one match, `{ ambiguous: true, count }`
@@ -219,7 +219,7 @@ async function replacePhoto(existingPhoto, newFileTempPath, { originalFilename, 
       // camera-original name and must survive a replace, otherwise the
       // Lightroom round-trip (#745) loses its match key the first time an
       // editor uploads a renamed render over the proof. Backfilled here only
-      // when the row predates migration 185 and has nothing stored yet.
+      // when the row predates migration 193 and has nothing stored yet.
       ...(existingPhoto.source_filename
         ? {}
         : { source_filename: existingPhoto.original_filename || originalFilename }),
