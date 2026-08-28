@@ -3011,7 +3011,16 @@
         "pending": "Ausstehend",
         "redeemed": "Eingelöst",
         "revoked": "Widerrufen"
-      }
+      },
+      "duplicatesFound": "{{guests}} Gasteinträge sehen nach {{groups}} wiederkehrenden Besucher(n) aus — gleiche E-Mail, mehrfach registriert. Ihre Auswahl bleibt geteilt, bis sie zusammengeführt werden.",
+      "reviewDuplicates": "Prüfen",
+      "duplicateBadge": "Duplikat?",
+      "duplicateHint": "Ein anderer Eintrag in dieser Galerie nutzt dieselbe E-Mail — vermutlich dieselbe Person, zweimal registriert.",
+      "mergePickKeep": "Bitte wählen, welcher Eintrag bleiben soll",
+      "mergePickKeepHint": "Eintrag zum Behalten wählen",
+      "mergeKeepColumn": "Behalten",
+      "mergeKeepRow": "{{name}} behalten",
+      "mergeInclude": "{{name}} in die Zusammenführung einbeziehen"
     },
     "analytics": "Analytik",
     "activities": {

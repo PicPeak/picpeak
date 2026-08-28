@@ -1776,7 +1776,16 @@
         "pending": "Čaka",
         "redeemed": "Unovčeno",
         "revoked": "Preklicano"
-      }
+      },
+      "duplicatesFound": "{{guests}} vnosov gostov je videti kot {{groups}} vračajočih se obiskovalcev — isti e-naslov, večkrat registriran. Njihova izbira ostane razdeljena, dokler jih ne združite.",
+      "reviewDuplicates": "Preveri",
+      "duplicateBadge": "dvojnik?",
+      "duplicateHint": "Drug vnos v tej galeriji uporablja isti e-naslov — najverjetneje ista oseba, registrirana dvakrat.",
+      "mergePickKeep": "Izberite, kateri vnos naj ostane",
+      "mergePickKeepHint": "Izberite vnos za ohranitev",
+      "mergeKeepColumn": "Ohrani",
+      "mergeKeepRow": "Ohrani {{name}}",
+      "mergeInclude": "Vključi {{name}} v združitev"
     },
     "analytics": "Analitika",
     "activities": {

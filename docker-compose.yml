@@ -45,6 +45,10 @@ services:
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # How long a gallery guest stays recognised (#1210). Unset = 30d.
+      # Listed explicitly because this service takes an environment list, so a
+      # value in .env that is not named here never reaches the container.
+      - GUEST_TOKEN_TTL=${GUEST_TOKEN_TTL:-}
       - DATABASE_CLIENT=pg
       - DB_TYPE=postgresql
       - DB_HOST=postgres

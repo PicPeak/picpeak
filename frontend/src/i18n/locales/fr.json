@@ -1787,7 +1787,16 @@
         "pending": "En attente",
         "redeemed": "Utilisé",
         "revoked": "Révoqué"
-      }
+      },
+      "duplicatesFound": "{{guests}} entrées invité ressemblent à {{groups}} visiteur(s) de retour — même e-mail, inscrit plusieurs fois. Leurs choix restent séparés tant qu’ils ne sont pas fusionnés.",
+      "reviewDuplicates": "Vérifier",
+      "duplicateBadge": "doublon ?",
+      "duplicateHint": "Une autre entrée de cette galerie utilise le même e-mail — probablement la même personne inscrite deux fois.",
+      "mergePickKeep": "Choisissez l'entrée à conserver",
+      "mergePickKeepHint": "Choisir l'entrée à conserver",
+      "mergeKeepColumn": "Conserver",
+      "mergeKeepRow": "Conserver {{name}}",
+      "mergeInclude": "Inclure {{name}} dans la fusion"
     },
     "analytics": "Analytique",
     "activities": {

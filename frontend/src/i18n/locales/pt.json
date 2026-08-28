@@ -1781,7 +1781,16 @@
         "pending": "Pendente",
         "redeemed": "Utilizado",
         "revoked": "Revogado"
-      }
+      },
+      "duplicatesFound": "{{guests}} entradas de convidado parecem {{groups}} visitante(s) recorrente(s) — mesmo e-mail, registado mais do que uma vez. As escolhas ficam divididas até serem unidas.",
+      "reviewDuplicates": "Rever",
+      "duplicateBadge": "duplicado?",
+      "duplicateHint": "Outra entrada nesta galeria usa o mesmo e-mail — provavelmente a mesma pessoa registada duas vezes.",
+      "mergePickKeep": "Escolha qual entrada manter",
+      "mergePickKeepHint": "Escolha a entrada a manter",
+      "mergeKeepColumn": "Manter",
+      "mergeKeepRow": "Manter {{name}}",
+      "mergeInclude": "Incluir {{name}} na junção"
     },
     "analytics": "Análise",
     "activities": {
