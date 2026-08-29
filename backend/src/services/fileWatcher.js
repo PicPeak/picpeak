@@ -63,6 +63,27 @@ function startFileWatcher() {
   logger.info('File watcher started');
 }
 
+/**
+ * Has this watched file already been imported into this event?
+ *
+ * Exported so the regression test drives this query rather than a copy of it.
+ * See the caller for why source_filename is one of the arms.
+ *
+ * @param {number} eventId
+ * @param {string} basename    the file's basename on disk
+ * @param {string} relativePath the path the import would store
+ */
+async function findExistingPhoto(eventId, basename, relativePath) {
+  return db('photos')
+    .where({ event_id: eventId })
+    .where(function() {
+      this.where('filename', basename)
+        .orWhere('source_filename', basename)
+        .orWhere('path', relativePath);
+    })
+    .first();
+}
+
 async function processNewPhoto(filePath) {
   const relativePath = path.relative(WATCH_PATH(), filePath);
   const pathParts = relativePath.split(path.sep);
@@ -122,14 +143,23 @@ async function processNewPhoto(filePath) {
     }
   }
 
-  // Check if photo already exists (by filename or path, to handle replacements)
-  const existingPhoto = await db('photos')
-    .where({ event_id: event.id })
-    .where(function() {
-      this.where('filename', path.basename(filePath))
-        .orWhere('path', relativePath);
-    })
-    .first();
+  // Check if photo already exists.
+  //
+  // `source_filename` is in here, not just filename/path, because a REPLACEMENT
+  // changes both of those (#1226). replacePhoto generates a fresh filename and
+  // a fresh managed path, so a watched-folder photo that had its file replaced
+  // — through the Lightroom round-trip (#745) or the admin replace — stopped
+  // matching either arm, and the next sweep imported the untouched original a
+  // second time. The gallery then held the edit AND the original: the same
+  // duplicate shape external_relpath prevents for reference galleries.
+  //
+  // source_filename is the stable key: written once at ingest (below) and
+  // preserved across a replace by design. Rows predating migration 193 are
+  // covered too — its backfill sets source_filename from
+  // COALESCE(original_filename, filename), and this path never wrote
+  // original_filename, so for watcher rows that resolves to the basename this
+  // compares against.
+  const existingPhoto = await findExistingPhoto(event.id, path.basename(filePath), relativePath);
 
   if (!existingPhoto) {
     // Add to database
@@ -192,4 +222,4 @@ async function removePhoto(filePath) {
   logger.info(`Removed photo: ${relativePath}`);
 }
 
-module.exports = { startFileWatcher };
+module.exports = { startFileWatcher, findExistingPhoto };
