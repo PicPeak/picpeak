@@ -7,6 +7,33 @@ const {
   normaliseSchedule,
 } = require('../utils/businessHours');
 const { hasColumnCached } = require('../utils/schemaCache');
+const emailWebhookTransport = require('./emailWebhookTransport');
+
+/**
+ * The From identity for an outbound message (#1225).
+ *
+ * `email_configs` holds it normally, but migration 001 seeds that row only when
+ * SMTP_HOST is set — so the install this feature exists for, a fresh one with
+ * no SMTP at all, has no row and every send would die on "Email configuration
+ * not found". Under the webhook transport the address therefore falls back to
+ * EMAIL_FROM, which already exists for config-as-code deploys.
+ *
+ * Returns null when nothing is configured, so callers keep their existing
+ * error. SMTP behaviour is unchanged: the fallback only applies in webhook mode.
+ */
+async function resolveFromIdentity() {
+  const config = await db('email_configs').first();
+  if (config && config.from_email) {
+    return { fromEmail: config.from_email, fromName: config.from_name };
+  }
+  if (emailWebhookTransport.isEnabled() && process.env.EMAIL_FROM) {
+    return {
+      fromEmail: process.env.EMAIL_FROM,
+      fromName: process.env.EMAIL_FROM_NAME || 'PicPeak',
+    };
+  }
+  return null;
+}
 
 let transporter = null;
 let lastConfigHash = null;
@@ -104,6 +131,12 @@ async function getSupportEmail() {
     if (config && config.from_email) return config.from_email;
   } catch (err) {
     logger.debug('getSupportEmail: email_configs lookup failed', { error: err.message });
+  }
+  // Same reason as resolveFromIdentity (#1225): a webhook-only install has no
+  // email_configs row, and returning '' here silently drops the support
+  // contact out of the archive and expiration templates that print it.
+  if (emailWebhookTransport.isEnabled() && process.env.EMAIL_FROM) {
+    return process.env.EMAIL_FROM;
   }
   return '';
 }
@@ -705,10 +738,16 @@ async function processTemplate(template, variables, language = 'en') {
 // Send email using template
 async function sendTemplateEmail(to, templateKey, variables) {
   try {
-    // Always check for configuration changes before sending
-    transporter = await initializeTransporter();
-    if (!transporter) {
-      throw new Error('Email service not configured');
+    // Webhook transport (#1225) replaces SMTP entirely when configured, so an
+    // instance using it has no SMTP settings to initialise and must not be
+    // told it is "not configured".
+    const viaWebhook = emailWebhookTransport.isEnabled();
+    if (!viaWebhook) {
+      // Always check for configuration changes before sending
+      transporter = await initializeTransporter();
+      if (!transporter) {
+        throw new Error('Email service not configured');
+      }
     }
 
     // Get email template
@@ -720,10 +759,15 @@ async function sendTemplateEmail(to, templateKey, variables) {
       throw new Error(`Email template '${templateKey}' not found`);
     }
 
-    // Get email config for from address
-    const config = await db('email_configs').first();
-    if (!config) {
-      throw new Error('Email configuration not found');
+    // Get the From identity. Under the webhook transport this can come from
+    // EMAIL_FROM, because a webhook-only install has no email_configs row.
+    const identity = await resolveFromIdentity();
+    if (!identity) {
+      throw new Error(
+        viaWebhook
+          ? 'No sender address configured — set EMAIL_FROM for the webhook transport'
+          : 'Email configuration not found'
+      );
     }
 
     // Determine recipient language. An explicit `__language` in the email data
@@ -755,15 +799,18 @@ async function sendTemplateEmail(to, templateKey, variables) {
       : undefined;
 
     // Send email
-    const info = await transporter.sendMail({
-      from: `${config.from_name} <${config.from_email}>`,
+    const mail = {
+      from: `${identity.fromName} <${identity.fromEmail}>`,
       to: to,
       cc: ccList,
       subject: subject,
       html: htmlBody,
       text: textBody || htmlToText(htmlBody),
       attachments,
-    });
+    };
+    const info = viaWebhook
+      ? await emailWebhookTransport.send(mail)
+      : await transporter.sendMail(mail);
 
     logger.info(`Email sent successfully: ${info.messageId} (${language})`);
     // Return the rendered HTML so the queue processor can persist the ACTUAL
@@ -804,13 +851,22 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
       fromName = acct.from_name || '';
     }
   }
+  // Webhook transport (#1225) stands in for the GLOBAL transport only. A mail
+  // account with its own smtp_host above was configured deliberately for that
+  // identity, so it keeps sending through it rather than being silently
+  // redirected.
+  let viaWebhook = false;
   if (!tx) {
-    tx = await initializeTransporter();
-    if (!tx) throw new Error('Email service not configured');
-    const config = await db('email_configs').first();
-    if (!config || !config.from_email) throw new Error('Email service not configured');
-    fromEmail = config.from_email;
-    fromName = config.from_name;
+    const identity = await resolveFromIdentity();
+    if (!identity) throw new Error('Email service not configured');
+    fromEmail = identity.fromEmail;
+    fromName = identity.fromName;
+    if (emailWebhookTransport.isEnabled()) {
+      viaWebhook = true;
+    } else {
+      tx = await initializeTransporter();
+      if (!tx) throw new Error('Email service not configured');
+    }
   }
 
   const ccList = Array.isArray(cc) ? cc.filter(Boolean) : (cc ? [cc] : undefined);
@@ -818,7 +874,7 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
     ? attachments.filter((a) => a && (a.contentPath || a.path || a.content))
         .map((a) => ({ filename: a.filename, path: a.contentPath || a.path, content: a.content, contentType: a.contentType }))
     : undefined;
-  const info = await tx.sendMail({
+  const mail = {
     from: `${fromName || 'picpeak'} <${fromEmail}>`,
     to,
     cc: ccList,
@@ -826,7 +882,10 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
     html,
     text: text || htmlToText(html),
     attachments: atts,
-  });
+  };
+  const info = viaWebhook
+    ? await emailWebhookTransport.send(mail)
+    : await tx.sendMail(mail);
   logger.info(`Manual email sent: ${info.messageId}`);
   return { messageId: info.messageId, html };
 }
@@ -868,8 +927,12 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
   const result = { processed: 0, sent: 0, failed: 0 };
 
   try {
-    // Try to initialize transporter if it's null (in case it failed at startup)
-    if (!transporter) {
+    // Try to initialize transporter if it's null (in case it failed at startup).
+    // Skipped entirely under the webhook transport (#1225): that deploy has no
+    // SMTP settings to initialise, and this guard would otherwise return early
+    // and leave the queue permanently unprocessed — every email silently stuck
+    // pending, which is the whole feature dead rather than degraded.
+    if (!transporter && !emailWebhookTransport.isEnabled()) {
       logger.info('Transporter not initialized, attempting to initialize...');
       transporter = await initializeTransporter();
       if (!transporter) {
@@ -1162,6 +1225,7 @@ function stopEmailQueueProcessor() {
 
 module.exports = {
   initializeTransporter,
+  resolveFromIdentity,
   startEmailQueueProcessor,
   sendTemplateEmail,
   sendRawEmail,

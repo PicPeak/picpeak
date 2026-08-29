@@ -13,7 +13,8 @@ const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
-const { initializeTransporter, wrapEmailHtml } = require('./emailProcessor');
+const { initializeTransporter, wrapEmailHtml, resolveFromIdentity } = require('./emailProcessor');
+const emailWebhookTransport = require('./emailWebhookTransport');
 
 const CODE_TTL_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -45,13 +46,22 @@ async function createCode(eventId, email) {
 }
 
 async function sendRecoveryEmail(toEmail, code, eventName = 'your gallery') {
-  const transporter = await initializeTransporter();
-  if (!transporter) {
-    throw new Error('Email service not configured');
+  // This composes its own message rather than going through a template, so it
+  // has to select the transport itself (#1225). Without this it called
+  // initializeTransporter() unconditionally and dereferenced the null it
+  // returns on a webhook-only install — recovery codes failed outright on
+  // exactly the deploys the webhook transport exists for.
+  const viaWebhook = emailWebhookTransport.isEnabled();
+  let transporter = null;
+  if (!viaWebhook) {
+    transporter = await initializeTransporter();
+    if (!transporter) {
+      throw new Error('Email service not configured');
+    }
   }
 
-  const config = await db('email_configs').first();
-  if (!config) {
+  const identity = await resolveFromIdentity();
+  if (!identity) {
     throw new Error('Email configuration not found');
   }
 
@@ -70,13 +80,18 @@ async function sendRecoveryEmail(toEmail, code, eventName = 'your gallery') {
   `;
   const styledHtml = await wrapEmailHtml(htmlBody, subject, 'en');
 
-  await transporter.sendMail({
-    from: `${config.from_name} <${config.from_email}>`,
+  const mail = {
+    from: `${identity.fromName} <${identity.fromEmail}>`,
     to: toEmail,
     subject,
     html: styledHtml,
     text: `Your verification code is ${code}. It expires in 15 minutes.`,
-  });
+  };
+  if (viaWebhook) {
+    await emailWebhookTransport.send(mail);
+  } else {
+    await transporter.sendMail(mail);
+  }
 
   logger.info('Guest recovery code sent', { email: toEmail });
 }

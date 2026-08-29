@@ -81,6 +81,7 @@ const { startDownloadJobCleanup } = require('./src/services/downloadJobCleanupSe
 const { startRevealScheduler } = require('./src/services/revealScheduler');
 const { startInvoiceScheduler } = require('./src/services/invoiceSchedulerService');
 const { initializeTransporter, startEmailQueueProcessor } = require('./src/services/emailProcessor');
+const emailWebhookTransport = require('./src/services/emailWebhookTransport');
 const { startBackupService } = require('./src/services/backupService');
 const { startScheduledBackups } = require('./src/services/databaseBackup');
 const backgroundProcessor = require('./src/services/backgroundProcessor');
@@ -1069,8 +1070,14 @@ async function startServer() {
     // flag is OFF (the service short-circuits on empty result sets).
     startInvoiceScheduler();
     
-    // Initialize email transporter and start queue processor
-    await initializeTransporter();
+    // Initialize email transporter and start queue processor.
+    // Skipped under the webhook transport (#1225): an install that switched to
+    // it may still carry an old, now-unreachable SMTP row, and nodemailer's
+    // verify() would sit on a connection timeout here — delaying boot for a
+    // transport that will never send anything.
+    if (!emailWebhookTransport.isEnabled()) {
+      await initializeTransporter();
+    }
     // Seed CRM / contract / event-reminder email templates and recover
     // any queue rows that exhausted retries because their template
     // didn't exist yet. Runs once per boot via module-level caches in

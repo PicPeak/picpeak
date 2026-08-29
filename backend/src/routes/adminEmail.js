@@ -8,7 +8,8 @@ const { requirePermission } = require('../middleware/permissions');
 // /email mount — the pre-existing config/queue/received endpoints stay ungated).
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const messagingGate = requireFeatureFlag('messaging');
-const { wrapEmailHtml, processEmailQueue } = require('../services/emailProcessor');
+const { wrapEmailHtml, processEmailQueue, resolveFromIdentity } = require('../services/emailProcessor');
+const emailWebhookTransport = require('../services/emailWebhookTransport');
 const { errorResponse } = require('../utils/routeHelpers');
 const logger = require('../utils/logger');
 const router = express.Router();
@@ -369,8 +370,12 @@ router.get('/identities', adminAuth, messagingGate, requirePermission('email.vie
       const cust = await db('mail_accounts').where({ account_key: 'customers' }).first();
       customers = cust?.imap_user || cust?.from_email || null;
     } catch (_) { customers = null; }
+    // A webhook-only install has no email_configs row (#1225), so reading the
+    // automated address from it alone shows "—" in the Messages sidebar for an
+    // instance that is sending perfectly well from EMAIL_FROM.
+    const identity = await resolveFromIdentity();
     res.json({
-      automated: cfg?.from_email || null,
+      automated: cfg?.from_email || identity?.fromEmail || null,
       accounting: cfg?.imap_user || null,
       customers,
     });
@@ -463,6 +468,46 @@ router.post('/test', adminAuth, requirePermission('email.send'), async (req, res
     
     if (!test_email) {
       return res.status(400).json({ error: 'Test email address is required' });
+    }
+
+    // Webhook transport (#1225): this endpoint is the "does email work" button,
+    // so it has to exercise the transport that actually sends. Left as-is it
+    // built a nodemailer transport from email_configs and told a webhook-only
+    // admin to go configure SMTP — settings their install does not use, on an
+    // instance whose mail is working fine.
+    if (emailWebhookTransport.isEnabled()) {
+      const identity = await resolveFromIdentity();
+      if (!identity) {
+        return res.status(400).json({
+          error: 'No sender address configured. Set EMAIL_FROM for the webhook transport.',
+        });
+      }
+      const webhookSubject = 'Test Email - Photo Sharing Platform';
+      const webhookHtml = await wrapEmailHtml(
+        '<h2>Test Email Successful!</h2>'
+        + '<p>This message was delivered through the configured email webhook, not SMTP.</p>',
+        webhookSubject
+      );
+      try {
+        await emailWebhookTransport.send({
+          from: `${identity.fromName} <${identity.fromEmail}>`,
+          to: test_email,
+          subject: webhookSubject,
+          html: webhookHtml,
+          text: 'Test Email Successful! Delivered through the configured email webhook.',
+        });
+      } catch (webhookError) {
+        // Handled here, not by the outer catch: that one maps ECONNREFUSED and
+        // friends to "Failed to connect to SMTP server — check your SMTP
+        // settings", which on a webhook-only install points the admin at
+        // configuration this deploy does not use.
+        logger.error('Webhook test email failed:', webhookError);
+        return res.status(502).json({
+          error: 'Failed to deliver through the email webhook',
+          details: webhookError.message,
+        });
+      }
+      return res.json({ message: 'Test email sent successfully' });
     }
 
     // Get email config
