@@ -9,6 +9,32 @@ const {
 const { hasColumnCached } = require('../utils/schemaCache');
 const emailWebhookTransport = require('./emailWebhookTransport');
 
+/**
+ * The From identity for an outbound message (#1225).
+ *
+ * `email_configs` holds it normally, but migration 001 seeds that row only when
+ * SMTP_HOST is set — so the install this feature exists for, a fresh one with
+ * no SMTP at all, has no row and every send would die on "Email configuration
+ * not found". Under the webhook transport the address therefore falls back to
+ * EMAIL_FROM, which already exists for config-as-code deploys.
+ *
+ * Returns null when nothing is configured, so callers keep their existing
+ * error. SMTP behaviour is unchanged: the fallback only applies in webhook mode.
+ */
+async function resolveFromIdentity() {
+  const config = await db('email_configs').first();
+  if (config && config.from_email) {
+    return { fromEmail: config.from_email, fromName: config.from_name };
+  }
+  if (emailWebhookTransport.isEnabled() && process.env.EMAIL_FROM) {
+    return {
+      fromEmail: process.env.EMAIL_FROM,
+      fromName: process.env.EMAIL_FROM_NAME || 'PicPeak',
+    };
+  }
+  return null;
+}
+
 let transporter = null;
 let lastConfigHash = null;
 
@@ -727,10 +753,15 @@ async function sendTemplateEmail(to, templateKey, variables) {
       throw new Error(`Email template '${templateKey}' not found`);
     }
 
-    // Get email config for from address
-    const config = await db('email_configs').first();
-    if (!config) {
-      throw new Error('Email configuration not found');
+    // Get the From identity. Under the webhook transport this can come from
+    // EMAIL_FROM, because a webhook-only install has no email_configs row.
+    const identity = await resolveFromIdentity();
+    if (!identity) {
+      throw new Error(
+        viaWebhook
+          ? 'No sender address configured — set EMAIL_FROM for the webhook transport'
+          : 'Email configuration not found'
+      );
     }
 
     // Determine recipient language. An explicit `__language` in the email data
@@ -763,7 +794,7 @@ async function sendTemplateEmail(to, templateKey, variables) {
 
     // Send email
     const mail = {
-      from: `${config.from_name} <${config.from_email}>`,
+      from: `${identity.fromName} <${identity.fromEmail}>`,
       to: to,
       cc: ccList,
       subject: subject,
@@ -820,10 +851,10 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
   // redirected.
   let viaWebhook = false;
   if (!tx) {
-    const config = await db('email_configs').first();
-    if (!config || !config.from_email) throw new Error('Email service not configured');
-    fromEmail = config.from_email;
-    fromName = config.from_name;
+    const identity = await resolveFromIdentity();
+    if (!identity) throw new Error('Email service not configured');
+    fromEmail = identity.fromEmail;
+    fromName = identity.fromName;
     if (emailWebhookTransport.isEnabled()) {
       viaWebhook = true;
     } else {
@@ -1133,13 +1164,6 @@ async function queueEmail(eventId, recipientEmail, emailType, emailData, options
 // Test email connection
 async function testEmailConnection() {
   try {
-    // Under the webhook transport there is no SMTP connection to verify, and
-    // reporting "email is broken" to an admin whose mail is working fine would
-    // send them chasing SMTP settings this deploy does not use. The webhook's
-    // own reachability surfaces on the first send, where the failure is real.
-    if (emailWebhookTransport.isEnabled()) {
-      return true;
-    }
     if (!transporter) {
       await initializeTransporter();
     }
@@ -1195,6 +1219,7 @@ function stopEmailQueueProcessor() {
 
 module.exports = {
   initializeTransporter,
+  resolveFromIdentity,
   startEmailQueueProcessor,
   sendTemplateEmail,
   sendRawEmail,

@@ -104,6 +104,17 @@ async function encodeAttachments(attachments) {
     if (att.content) {
       buffer = Buffer.isBuffer(att.content) ? att.content : Buffer.from(att.content);
     } else if (att.path) {
+      // stat BEFORE reading. Checking the cap only after readFile means a file
+      // large enough to exhaust memory kills the process before the guard it is
+      // supposed to trip — the cap would exist and never fire. The post-read
+      // check below still applies, because the file can grow between the two.
+      const { size } = await fs.stat(att.path);
+      if (total + size > MAX_ATTACHMENT_BYTES) {
+        throw new Error(
+          `attachments exceed the ${Math.round(MAX_ATTACHMENT_BYTES / 1024 / 1024)}MB `
+          + 'webhook payload limit; send this message over SMTP instead'
+        );
+      }
       buffer = await fs.readFile(att.path);
     } else {
       continue;
@@ -126,10 +137,22 @@ async function encodeAttachments(attachments) {
   return encoded;
 }
 
+/**
+ * Recipients as a flat list of single addresses.
+ *
+ * Splits inside array elements too, not just bare strings: sendRawEmail wraps a
+ * string cc in an array before it reaches here, so "a@x, b@y" arrives as ONE
+ * element. Passing that through would put a combined address in the payload,
+ * which a relay treating each element as one mailbox rejects or misaddresses.
+ */
 function normalizeRecipients(value) {
   if (!value) return [];
-  if (Array.isArray(value)) return value.filter(Boolean);
-  return String(value).split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+  const parts = Array.isArray(value) ? value : [value];
+  return parts
+    .filter(Boolean)
+    .flatMap((entry) => String(entry).split(/[,;]+/))
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -180,6 +203,12 @@ async function send(mail) {
     // axios's, which does not say which webhook failed.
     validateStatus: () => true,
     maxRedirects: 0,
+    // Only the status and an optional messageId are read, so cap what a
+    // receiver can make us buffer. Without this a faulty or hostile endpoint
+    // streams an unbounded body into memory on every queue attempt. Same
+    // ceiling as webhookDeliveryWorker.
+    maxContentLength: 10 * 1024,
+    maxBodyLength: rawBody.length + 1024,
   });
 
   if (response.status < 200 || response.status >= 300) {

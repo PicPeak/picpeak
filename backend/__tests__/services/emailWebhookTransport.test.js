@@ -103,6 +103,15 @@ describe('signing', () => {
     expect(payload.subject).toBe('Your gallery is ready');
     expect(payload.html).toBe('<p>hello</p>');
   });
+
+  it('splits a combined address that arrives INSIDE an array', async () => {
+    // sendRawEmail wraps a string cc in an array before it reaches here, so
+    // "a@x, b@y" lands as one element. Left unsplit, the payload carries one
+    // combined address that a relay treating each element as a mailbox rejects.
+    await transport.send({ ...MAIL, cc: ['a@example.com, b@example.com'] });
+    const payload = JSON.parse(axios.post.mock.calls[0][1]);
+    expect(payload.cc).toEqual(['a@example.com', 'b@example.com']);
+  });
 });
 
 describe('SSRF preflight', () => {
@@ -156,6 +165,37 @@ describe('attachments', () => {
       attachments: [{ filename: 'huge.bin', content: huge }],
     })).rejects.toThrow(/exceed/);
     expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('rejects an oversized FILE by its size, without reading it into memory', async () => {
+    // The cap has to be checked from stat, not after readFile — otherwise a
+    // file big enough to exhaust memory kills the process before the guard
+    // that exists to stop it ever fires.
+    const bigPath = path.join(tmpDir, 'big.bin');
+    fsSync.writeFileSync(bigPath, Buffer.alloc(1024));
+    const statSpy = jest.spyOn(require('fs').promises, 'stat')
+      .mockResolvedValue({ size: transport.__testing.MAX_ATTACHMENT_BYTES + 1 });
+    const readSpy = jest.spyOn(require('fs').promises, 'readFile');
+
+    await expect(transport.send({
+      ...MAIL,
+      attachments: [{ filename: 'big.bin', path: bigPath }],
+    })).rejects.toThrow(/exceed/);
+    expect(readSpy).not.toHaveBeenCalled();
+
+    statSpy.mockRestore();
+    readSpy.mockRestore();
+  });
+});
+
+describe('response handling', () => {
+  it('caps how much of a receiver response it will buffer', async () => {
+    await transport.send(MAIL);
+    const opts = axios.post.mock.calls[0][2];
+    // Only the status and an optional messageId are read; an unbounded body
+    // from a faulty or hostile receiver must not be buffered into memory.
+    expect(opts.maxContentLength).toBeLessThanOrEqual(10 * 1024);
+    expect(opts.maxBodyLength).toEqual(expect.any(Number));
   });
 });
 

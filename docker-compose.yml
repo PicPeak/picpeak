@@ -63,6 +63,13 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
       - EMAIL_FROM=${EMAIL_FROM:-noreply@picpeak.local}
+      # Webhook email transport (#1225). Listed here because this service
+      # declares an explicit `environment:` block — a variable only present in
+      # .env is NOT passed through, so without these three the documented
+      # "uncomment in .env and restart" flow silently leaves the transport off.
+      - EMAIL_WEBHOOK_URL=${EMAIL_WEBHOOK_URL:-}
+      - EMAIL_WEBHOOK_SECRET=${EMAIL_WEBHOOK_SECRET:-}
+      - EMAIL_WEBHOOK_ALLOW_PRIVATE_URLS=${EMAIL_WEBHOOK_ALLOW_PRIVATE_URLS:-false}
       # Unset by default (#705): an injected value would always win over the
       # `general_site_url` admin setting, so the setup wizard could never
       # take effect. Set this only to pin the origin from config-as-code.
