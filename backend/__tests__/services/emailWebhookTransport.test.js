@@ -197,6 +197,17 @@ describe('response handling', () => {
     expect(opts.maxContentLength).toBeLessThanOrEqual(10 * 1024);
     expect(opts.maxBodyLength).toEqual(expect.any(Number));
   });
+
+  it('sizes the request cap in UTF-8 bytes, so non-ASCII mail is not rejected', async () => {
+    // axios enforces maxBodyLength against the UTF-8 buffer it sends. Sizing it
+    // from String#length counts UTF-16 code units, so a German or Japanese
+    // message would exceed its own budget and never leave the process.
+    await transport.send({ ...MAIL, subject: 'Grüße', html: '<p>これはテストです。ありがとう。</p>' });
+    const [, body, opts] = axios.post.mock.calls[0];
+    expect(opts.maxBodyLength).toBeGreaterThanOrEqual(Buffer.byteLength(body, 'utf8'));
+    // And the gap is real: bytes genuinely exceed code units for this payload.
+    expect(Buffer.byteLength(body, 'utf8')).toBeGreaterThan(body.length);
+  });
 });
 
 describe('delivery result', () => {

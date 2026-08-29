@@ -132,6 +132,12 @@ async function getSupportEmail() {
   } catch (err) {
     logger.debug('getSupportEmail: email_configs lookup failed', { error: err.message });
   }
+  // Same reason as resolveFromIdentity (#1225): a webhook-only install has no
+  // email_configs row, and returning '' here silently drops the support
+  // contact out of the archive and expiration templates that print it.
+  if (emailWebhookTransport.isEnabled() && process.env.EMAIL_FROM) {
+    return process.env.EMAIL_FROM;
+  }
   return '';
 }
 

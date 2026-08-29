@@ -208,7 +208,13 @@ async function send(mail) {
     // streams an unbounded body into memory on every queue attempt. Same
     // ceiling as webhookDeliveryWorker.
     maxContentLength: 10 * 1024,
-    maxBodyLength: rawBody.length + 1024,
+    // Byte length, not String#length. axios enforces this against the UTF-8
+    // buffer it sends, while rawBody.length counts UTF-16 code units — every
+    // umlaut is 2 bytes and every CJK character 3, so a German or Japanese
+    // message would blow past a code-unit budget and axios would reject it
+    // before posting. With base64 attachments in the body the gap is easily
+    // more than the slack.
+    maxBodyLength: Buffer.byteLength(rawBody, 'utf8') + 1024,
   });
 
   if (response.status < 200 || response.status >= 300) {
