@@ -126,6 +126,35 @@ async function rootUsable(root) {
 }
 
 /**
+ * The order rows claim their folded path in — managed rows first (#745).
+ *
+ * A replaced photo keeps its external_relpath so the folder re-scan can still
+ * dedupe on it, but its source_origin is now 'managed' and its file is the edit
+ * the photographer delivered. Collisions below DELETE the loser, and the
+ * survivor used to be whichever row happened to be claimed first — so a
+ * delivered edit could be destroyed in favour of the untouched camera original
+ * sitting next to it on the share.
+ *
+ * Managed rows claim first, which makes them the survivor in any collision. The
+ * external row that loses is the recoverable one: it is still on the share and
+ * a re-scan re-imports it. The edit is not.
+ *
+ * Exported so the regression test can drive THIS function rather than a copy of
+ * it — a test that re-implements the ordering passes no matter what this does.
+ * The sort is stable, so rows of the same kind keep their relative order.
+ *
+ * @param {Array<[object, string|null]>} placements [row, chosenBase] pairs
+ * @returns {Array<[object, string|null]>} the same pairs, managed rows first
+ */
+function claimOrderFor(placements) {
+  return placements.slice().sort((a, b) => {
+    const aManaged = a[0].source_origin === 'managed' ? 0 : 1;
+    const bManaged = b[0].source_origin === 'managed' ? 0 : 1;
+    return aManaged - bManaged;
+  });
+}
+
+/**
  * @param {import('knex')} knex  a knex instance, or a transaction from a caller
  *   that is already inside one (the restore).
  * @param {(msg: string) => void} [log]
@@ -228,23 +257,7 @@ async function foldExternalRelpaths(knex, log = () => {}) {
     const resolved = [];
     const losers = new Map();
 
-    // A replaced photo keeps its external_relpath so the folder re-scan can
-    // still dedupe on it (#745), but its source_origin is now 'managed' and
-    // its file is the edit the photographer delivered. Collisions here DELETE
-    // the loser, and the survivor was whichever row happened to be claimed
-    // first — so a delivered edit could be destroyed in favour of the
-    // untouched camera original sitting next to it on the share.
-    //
-    // Managed rows claim first, which makes them the survivor in any
-    // collision. The external row that loses is the recoverable one: it is
-    // still on the share and a re-scan re-imports it. The edit is not.
-    const claimOrder = placements.slice().sort((a, b) => {
-      const aManaged = a[0].source_origin === 'managed' ? 0 : 1;
-      const bManaged = b[0].source_origin === 'managed' ? 0 : 1;
-      return aManaged - bManaged;
-    });
-
-    for (const [row, chosen] of claimOrder) {
+    for (const [row, chosen] of claimOrderFor(placements)) {
       const next = chosen ? `${chosen}/${row.external_relpath}` : row.external_relpath;
       const winner = claimed.get(next);
       if (winner != null) { losers.set(row.id, winner); collided++; continue; }
@@ -318,4 +331,4 @@ async function foldExternalRelpaths(knex, log = () => {}) {
 }
 
 
-module.exports = { foldExternalRelpaths, MARKER };
+module.exports = { foldExternalRelpaths, claimOrderFor, MARKER };
