@@ -222,33 +222,66 @@ describe('migration 193 backfill reaches watcher and external rows', () => {
 });
 
 describe('externalRelpathFold — a delivered edit must survive a collision', () => {
-  it('claims managed rows first, so they win and the external row loses', () => {
-    // The fold DELETES collision losers, and the survivor used to be
-    // whichever row was claimed first. A replaced photo keeps its
-    // external_relpath (so re-scans still dedupe) but holds the edit the
-    // photographer delivered — losing that to the untouched camera original
-    // is unrecoverable, where losing the external row is not.
-    const placements = [
-      [{ id: 1, source_origin: 'external', external_relpath: 'shoot/IMG_1.jpg' }, 'base'],
-      [{ id: 2, source_origin: 'managed', external_relpath: 'shoot/IMG_1.jpg' }, 'base'],
-    ];
-    const claimOrder = placements.slice().sort((a, b) => {
-      const aManaged = a[0].source_origin === 'managed' ? 0 : 1;
-      const bManaged = b[0].source_origin === 'managed' ? 0 : 1;
-      return aManaged - bManaged;
-    });
+  // Drives the REAL claimOrderFor. The previous version of this test
+  // re-implemented the sort and the claim loop inline and asserted against its
+  // own copy, so it stayed green no matter what the service did — a guard
+  // against silently deleting a client's delivered edit that guarded nothing.
+  const { claimOrderFor } = require('../../src/services/externalRelpathFold');
 
+  // The same claim loop the fold runs, fed by the real ordering.
+  const claim = (placements) => {
     const claimed = new Map();
     const losers = new Map();
-    for (const [row, chosen] of claimOrder) {
+    for (const [row, chosen] of claimOrderFor(placements)) {
       const next = chosen ? `${chosen}/${row.external_relpath}` : row.external_relpath;
       const winner = claimed.get(next);
       if (winner != null) { losers.set(row.id, winner); continue; }
       claimed.set(next, row.id);
     }
+    return { claimed, losers };
+  };
 
+  it('claims managed rows first, so they win and the external row loses', () => {
+    // The fold DELETES collision losers. A replaced photo keeps its
+    // external_relpath (so re-scans still dedupe) but holds the edit the
+    // photographer delivered — losing that is unrecoverable, where losing the
+    // external row is not: it is still on the share and a re-scan re-imports it.
+    const { claimed, losers } = claim([
+      [{ id: 1, source_origin: 'external', external_relpath: 'shoot/IMG_1.jpg' }, 'base'],
+      [{ id: 2, source_origin: 'managed', external_relpath: 'shoot/IMG_1.jpg' }, 'base'],
+    ]);
     expect([...losers.keys()]).toEqual([1]);
     expect([...claimed.values()]).toEqual([2]);
+  });
+
+  it('wins regardless of the order the rows arrive in', () => {
+    // The bug was that the survivor was whichever row came first, so the
+    // managed row has to win from BOTH input orders or the fix is a coin flip.
+    const { losers } = claim([
+      [{ id: 2, source_origin: 'managed', external_relpath: 'shoot/IMG_1.jpg' }, 'base'],
+      [{ id: 1, source_origin: 'external', external_relpath: 'shoot/IMG_1.jpg' }, 'base'],
+    ]);
+    expect([...losers.keys()]).toEqual([1]);
+  });
+
+  it('leaves rows of the same kind in their original order', () => {
+    // A stable sort matters: reordering external rows among themselves would
+    // change which one survives an external-vs-external collision for no reason.
+    const rows = [
+      [{ id: 10, source_origin: 'external', external_relpath: 'a.jpg' }, ''],
+      [{ id: 11, source_origin: 'external', external_relpath: 'b.jpg' }, ''],
+      [{ id: 12, source_origin: null, external_relpath: 'c.jpg' }, ''],
+    ];
+    expect(claimOrderFor(rows).map(([r]) => r.id)).toEqual([10, 11, 12]);
+  });
+
+  it('does not mutate the caller\'s array', () => {
+    const rows = [
+      [{ id: 1, source_origin: 'external', external_relpath: 'a.jpg' }, ''],
+      [{ id: 2, source_origin: 'managed', external_relpath: 'b.jpg' }, ''],
+    ];
+    claimOrderFor(rows);
+    expect(rows.map(([r]) => r.id)).toEqual([1, 2]);
   });
 });
 
