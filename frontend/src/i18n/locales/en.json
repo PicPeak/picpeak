@@ -903,7 +903,9 @@
       "passwordLabel": "Gallery password",
       "passwordPlaceholder": "Enter the gallery password",
       "passwordHelp": "Re-type the password set at creation (or pick a new one). The email includes this exact text; the backend re-hashes it so the gallery login still works.",
-      "errorMinLength": "Password must be at least 6 characters long."
+      "errorMinLength": "Password must be at least 6 characters long.",
+      "notifyLabel": "Send the gallery email now",
+      "notifyHelp": "Uncheck to publish quietly — the gallery goes live and nothing is sent. You can send the email later from this page."
     },
     "duplicateEvent": "Duplicate gallery",
     "duplicateDialog": {
@@ -1054,6 +1056,13 @@
       "title": "Use hero photo as social-share preview",
       "help": "When this gallery URL is shared on WhatsApp, Facebook, Slack, etc., the link preview will show the hero photo above. The thumbnail is fetched unauthenticated by link-preview crawlers — anyone with the URL effectively makes this image public. Off by default; pick a hero you are comfortable surfacing publicly before enabling.",
       "heroRequired": "Pick a hero photo above first — this option uses it as the WhatsApp / Facebook / Slack preview image."
+    },
+    "publishQuietSuccess": "Gallery published. No email was sent.",
+    "sendGalleryEmail": {
+      "button": "Send gallery email",
+      "help": "Sends the gallery link and password to the customer.",
+      "confirm": "Send the gallery email to {{recipient}}?",
+      "success": "Gallery email queued to {{recipient}}."
     }
   },
   "settings": {

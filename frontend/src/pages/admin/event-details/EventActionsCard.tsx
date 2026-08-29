@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Archive, Send, Copy } from 'lucide-react';
+import { Archive, Send, Copy, Mail } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, Card } from '../../../components/common';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
@@ -13,6 +13,9 @@ interface EventActionsCardProps {
   isPublishing: boolean;
   setShowDuplicateDialog: (show: boolean) => void;
   isDuplicating: boolean;
+  /** Send the gallery email for an already-published gallery (#1235). */
+  onSendGalleryEmail: () => void;
+  isSendingGalleryEmail: boolean;
 }
 
 export const EventActionsCard: React.FC<EventActionsCardProps> = ({
@@ -22,7 +25,9 @@ export const EventActionsCard: React.FC<EventActionsCardProps> = ({
   setShowPublishDialog,
   isPublishing,
   setShowDuplicateDialog,
-  isDuplicating
+  isDuplicating,
+  onSendGalleryEmail,
+  isSendingGalleryEmail
 }) => {
   const { t } = useTranslation();
 
@@ -48,6 +53,34 @@ export const EventActionsCard: React.FC<EventActionsCardProps> = ({
           </PermissionGate>
         ) : (
           <PermissionGate permission="events.archive">
+            {/* Send the gallery email after publishing (#1235). The pair to
+                publishing quietly — the address often arrives later than the
+                gallery — and it doubles as a re-send when the first one was
+                lost. Hidden without a recipient, since there is nowhere to
+                send it. */}
+            {(event.customer_email || event.host_email) && (
+              <PermissionGate permission="events.edit">
+                <Button
+                  variant="outline"
+                  leftIcon={<Mail className="w-4 h-4" />}
+                  onClick={() => {
+                    if (confirm(t('events.sendGalleryEmail.confirm', {
+                      recipient: event.customer_email || event.host_email,
+                      defaultValue: 'Send the gallery email to {{recipient}}?',
+                    }))) {
+                      onSendGalleryEmail();
+                    }
+                  }}
+                  isLoading={isSendingGalleryEmail}
+                  className="w-full justify-center"
+                >
+                  {t('events.sendGalleryEmail.button', 'Send gallery email')}
+                </Button>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center mb-3">
+                  {t('events.sendGalleryEmail.help', 'Sends the gallery link and password to the customer.')}
+                </p>
+              </PermissionGate>
+            )}
             <Button
               variant="outline"
               leftIcon={<Archive className="w-4 h-4" />}

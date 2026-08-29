@@ -245,13 +245,40 @@ export const EventDetailsPage: React.FC = () => {
   // Publish mutation (Draft mode). Accepts the admin-typed password so the
   // gallery_created email can carry the real plaintext (#627).
   const publishMutation = useMutation({
-    mutationFn: (password?: string) =>
-      eventsService.publishEvent(parseInt(id!), password ? { password } : undefined),
-    onSuccess: () => {
+    mutationFn: (vars: { password?: string; notifyCustomer?: boolean }) =>
+      eventsService.publishEvent(parseInt(id!), {
+        password: vars.password,
+        notifyCustomer: vars.notifyCustomer,
+      }),
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
       queryClient.invalidateQueries({ queryKey: ['admin-events'] });
-      toast.success(t('events.publishSuccess'));
+      // Say which of the two happened — "published" and "published and
+      // emailed your customer" are different enough that a single message
+      // would leave the admin unsure whether anything went out (#1235).
+      toast.success(
+        result?.notified_customer === false
+          ? t('events.publishQuietSuccess', 'Gallery published. No email was sent.')
+          : t('events.publishSuccess'),
+      );
       setShowPublishDialog(false);
+    },
+    onError: () => {
+      toast.error(t('errors.somethingWentWrong'));
+    },
+  });
+
+  // Send the gallery email after the fact (#1235). Pairs with publishing
+  // quietly: the address usually arrives later than the gallery does.
+  const sendGalleryEmailMutation = useMutation({
+    mutationFn: () => eventsService.sendGalleryEmail(parseInt(id!)),
+    onSuccess: (result) => {
+      toast.success(
+        t('events.sendGalleryEmail.success', {
+          recipient: result.recipient,
+          defaultValue: 'Gallery email queued to {{recipient}}.',
+        }),
+      );
     },
     onError: () => {
       toast.error(t('errors.somethingWentWrong'));
@@ -627,6 +654,8 @@ export const EventDetailsPage: React.FC = () => {
           setShowPasswordReset={setShowPasswordReset}
           setShowPublishDialog={setShowPublishDialog}
           setShowDuplicateDialog={setShowDuplicateDialog}
+          onSendGalleryEmail={() => sendGalleryEmailMutation.mutate()}
+          isSendingGalleryEmail={sendGalleryEmailMutation.isPending}
           onArchive={() => archiveMutation.mutate()}
           isArchiving={archiveMutation.isPending}
           isPublishing={publishMutation.isPending}
@@ -710,7 +739,7 @@ export const EventDetailsPage: React.FC = () => {
           customerEmail={event.customer_email}
           assignedCustomerCount={((event as { customer_accounts?: Array<{ id: number }> }).customer_accounts || []).length}
           isPublishing={publishMutation.isPending}
-          onConfirm={(password) => publishMutation.mutate(password)}
+          onConfirm={(password, notifyCustomer) => publishMutation.mutate({ password, notifyCustomer })}
           onClose={() => {
             if (!publishMutation.isPending) setShowPublishDialog(false);
           }}

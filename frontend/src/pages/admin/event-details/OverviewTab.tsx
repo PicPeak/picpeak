@@ -40,6 +40,8 @@ interface OverviewTabProps {
   setActiveTab: (tab: EventDetailsTab) => void;
   setShowPasswordReset: (show: boolean) => void;
   setShowPublishDialog: (show: boolean) => void;
+  onSendGalleryEmail: () => void;
+  isSendingGalleryEmail: boolean;
   setShowDuplicateDialog: (show: boolean) => void;
   onArchive: () => void;
   isArchiving: boolean;
@@ -72,6 +74,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   setActiveTab,
   setShowPasswordReset,
   setShowPublishDialog,
+  onSendGalleryEmail,
+  isSendingGalleryEmail,
   setShowDuplicateDialog,
   onArchive,
   isArchiving,
@@ -177,6 +181,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               isPublishing={isPublishing}
               setShowDuplicateDialog={setShowDuplicateDialog}
               isDuplicating={isDuplicating}
+              onSendGalleryEmail={onSendGalleryEmail}
+              isSendingGalleryEmail={isSendingGalleryEmail}
             />
           </PermissionGate>
         )}
