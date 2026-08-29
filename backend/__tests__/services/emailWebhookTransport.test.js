@@ -48,6 +48,7 @@ beforeEach(() => {
   process.env.EMAIL_WEBHOOK_SECRET = SECRET;
   transport.__testing.setAllowPrivateUrls(false);
   transport.__testing.resetSecretWarning();
+  transport.__testing.setReadTimeout(10000);
   validateExternalUrlAsync.mockResolvedValue({ valid: true, reason: 'ok' });
   axios.post.mockResolvedValue({ status: 200, data: streamOf('') });
 });
@@ -255,6 +256,45 @@ describe('delivery result', () => {
     axios.post.mockResolvedValue({ status: 200, data: flood });
     const result = await transport.send(MAIL);
     expect(result.messageId).toEqual(expect.any(String));
+  });
+
+  it('never lets the request body escape inside a network error', async () => {
+    // An AxiosError carries config.data — the whole serialised message, base64
+    // attachments included — and config.headers holds the signature. Callers
+    // log the error object and winston serialises it, so propagating the raw
+    // error writes password-reset links and invoices into combined.log.
+    const axiosError = Object.assign(new Error('connect ECONNREFUSED'), {
+      code: 'ECONNREFUSED',
+      config: {
+        data: JSON.stringify({ html: 'RESET-LINK-SECRET' }),
+        headers: { 'X-PicPeak-Signature': 'the-signature' },
+      },
+    });
+    axios.post.mockRejectedValue(axiosError);
+
+    const caught = await transport.send(MAIL).catch((e) => e);
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught.config).toBeUndefined();
+    const serialised = JSON.stringify({ msg: caught.message, ...caught });
+    expect(serialised).not.toContain('RESET-LINK-SECRET');
+    expect(serialised).not.toContain('the-signature');
+    // The useful part still survives for diagnosis.
+    expect(caught.message).toContain('ECONNREFUSED');
+  });
+
+  it('gives up on a response stream that never closes, instead of hanging', async () => {
+    // axios' timeout covers the headers; with responseType 'stream' it has
+    // already resolved. Without a deadline this await hangs, the queue row
+    // stays pending, and the next pass sends the same email again.
+    const { PassThrough } = require('stream');
+    const neverEnds = new PassThrough(); // written to by nobody, never ended
+    axios.post.mockResolvedValue({ status: 200, data: neverEnds });
+    transport.__testing.setReadTimeout(25);
+
+    const result = await transport.send(MAIL);
+    expect(result.messageId).toEqual(expect.any(String));
+    // The stream is torn down rather than left dangling.
+    expect(neverEnds.destroyed).toBe(true);
   });
 
   it('prefers a messageId the receiver reports', async () => {
