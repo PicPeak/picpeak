@@ -48,7 +48,6 @@ beforeEach(() => {
   process.env.EMAIL_WEBHOOK_SECRET = SECRET;
   transport.__testing.setAllowPrivateUrls(false);
   transport.__testing.resetSecretWarning();
-  transport.__testing.setReadTimeout(10000);
   validateExternalUrlAsync.mockResolvedValue({ valid: true, reason: 'ok' });
   axios.post.mockResolvedValue({ status: 200, data: streamOf('') });
 });
@@ -212,13 +211,16 @@ describe('attachments', () => {
 });
 
 describe('response handling', () => {
-  it('caps how much of a receiver response it will buffer', async () => {
+  it('streams the response and discards it unread', async () => {
+    const body = streamOf('{"messageId":"ignored"}');
+    axios.post.mockResolvedValue({ status: 200, data: body });
     await transport.send(MAIL);
+
     const opts = axios.post.mock.calls[0][2];
-    // Only the status and an optional messageId are read; an unbounded body
-    // from a faulty or hostile receiver must not be buffered into memory.
+    // 'stream' stops axios buffering; destroying it means not a byte is read,
+    // so a hostile or unbounded body costs neither memory nor time.
     expect(opts.responseType).toBe('stream');
-    expect(opts.maxBodyLength).toEqual(expect.any(Number));
+    expect(body.destroyed).toBe(true);
   });
 
   it('sizes the request cap in UTF-8 bytes, so non-ASCII mail is not rejected', async () => {
@@ -282,23 +284,29 @@ describe('delivery result', () => {
     expect(caught.message).toContain('ECONNREFUSED');
   });
 
-  it('gives up on a response stream that never closes, instead of hanging', async () => {
-    // axios' timeout covers the headers; with responseType 'stream' it has
-    // already resolved. Without a deadline this await hangs, the queue row
-    // stays pending, and the next pass sends the same email again.
+  it('cannot hang on a response stream that never closes', async () => {
+    // The body is never read, so there is nothing to wait on. This used to
+    // need a deadline: without one the await hung, the queue row stayed
+    // pending, and the next pass sent the same email again.
     const { PassThrough } = require('stream');
     const neverEnds = new PassThrough(); // written to by nobody, never ended
     axios.post.mockResolvedValue({ status: 200, data: neverEnds });
-    transport.__testing.setReadTimeout(25);
 
     const result = await transport.send(MAIL);
     expect(result.messageId).toEqual(expect.any(String));
-    // The stream is torn down rather than left dangling.
     expect(neverEnds.destroyed).toBe(true);
   });
 
-  it('prefers a messageId the receiver reports', async () => {
-    axios.post.mockResolvedValue({ status: 200, data: streamOf(JSON.stringify({ messageId: 'from-n8n-123' })) });
-    expect((await transport.send(MAIL)).messageId).toBe('from-n8n-123');
+  it('survives a stream that errors on destroy', async () => {
+    // destroy() can emit on a socket-backed stream, and an unhandled 'error'
+    // on a stream throws. The listener attached before destroying is what
+    // stops a receiver's teardown from failing a delivered send.
+    const { PassThrough } = require('stream');
+    const angry = new PassThrough();
+    const originalDestroy = angry.destroy.bind(angry);
+    angry.destroy = () => { angry.emit('error', new Error('socket hang up')); originalDestroy(); };
+    axios.post.mockResolvedValue({ status: 200, data: angry });
+
+    await expect(transport.send(MAIL)).resolves.toBeTruthy();
   });
 });
