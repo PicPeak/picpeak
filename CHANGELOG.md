@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.121.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.120.0-beta.0...v3.121.0-beta.0) (2026-08-29)
+
+
+### Features
+
+* **email:** webhook transport as an alternative to SMTP ([#1225](https://github.com/PicPeak/picpeak/issues/1225)) ([#1231](https://github.com/PicPeak/picpeak/issues/1231)) ([d62407f](https://github.com/PicPeak/picpeak/commit/d62407f431b8e34c228ecefb9338df325fbd97a3))
+
+
+### Bug Fixes
+
+* **export:** name the camera master in photo exports, not the delivered render ([#1229](https://github.com/PicPeak/picpeak/issues/1229)) ([#1230](https://github.com/PicPeak/picpeak/issues/1230)) ([f4c054a](https://github.com/PicPeak/picpeak/commit/f4c054a661e8cb52e1f75a2445b07a427ad613f2))
+* **feedback:** name the camera original in the exports, not just the stored file ([#1224](https://github.com/PicPeak/picpeak/issues/1224)) ([#1228](https://github.com/PicPeak/picpeak/issues/1228)) ([4f684eb](https://github.com/PicPeak/picpeak/commit/4f684eb482ee3bef9a6d4d3e63fe35be0cb99700))
+
 ## [3.120.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.119.0-beta.0...v3.120.0-beta.0) (2026-08-28)
 
 
