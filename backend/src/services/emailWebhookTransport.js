@@ -29,6 +29,10 @@ const { validateExternalUrlAsync } = require('../utils/networkValidation');
 
 const SIGNATURE_HEADER = 'X-PicPeak-Signature';
 const HTTP_TIMEOUT_MS = 15000;
+// Wall clock for reading the response body. Separate from HTTP_TIMEOUT_MS,
+// which axios applies to the headers only. Mutable so a test can shrink it
+// rather than actually waiting ten seconds.
+let READ_TIMEOUT_MS = 10000;
 
 // Attachments are base64 in the JSON body, which inflates them by a third.
 // Invoices and quotes are the real users of this and run to a few hundred KB;
@@ -138,14 +142,6 @@ async function encodeAttachments(attachments) {
 }
 
 /**
- * Recipients as a flat list of single addresses.
- *
- * Splits inside array elements too, not just bare strings: sendRawEmail wraps a
- * string cc in an array before it reaches here, so "a@x, b@y" arrives as ONE
- * element. Passing that through would put a combined address in the payload,
- * which a relay treating each element as one mailbox rejects or misaddresses.
- */
-/**
  * Read at most MAX_RESPONSE_BYTES from a response stream, then stop.
  *
  * Only a messageId is wanted, so the rest is dropped on the floor rather than
@@ -160,7 +156,27 @@ function readBounded(stream) {
   return new Promise((resolve) => {
     const chunks = [];
     let size = 0;
-    const finish = () => resolve(Buffer.concat(chunks).toString('utf8'));
+    let done = false;
+    // A deadline, not just a size cap. axios' `timeout` covers the response
+    // HEADERS; with responseType 'stream' it has already resolved by the time
+    // we get here, so a receiver that answers 2xx and then never closes its
+    // body — or trickles bytes forever — would leave this await hanging. The
+    // queue row would stay pending and the next processor pass would POST the
+    // same message again, so an unclosed stream becomes duplicate email.
+    const timer = setTimeout(() => {
+      stream.destroy();
+      finish();
+    }, READ_TIMEOUT_MS);
+    // Node's unref keeps a hung read from holding the process open at exit.
+    if (typeof timer.unref === 'function') timer.unref();
+
+    function finish() {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    }
+
     stream.on('data', (chunk) => {
       size += chunk.length;
       if (size <= MAX_RESPONSE_BYTES) {
@@ -171,11 +187,19 @@ function readBounded(stream) {
       }
     });
     stream.on('end', finish);
-    stream.on('error', () => resolve(''));
+    stream.on('error', finish);
     stream.on('close', finish);
   });
 }
 
+/**
+ * Recipients as a flat list of single addresses.
+ *
+ * Splits inside array elements too, not just bare strings: sendRawEmail wraps a
+ * string cc in an array before it reaches here, so "a@x, b@y" arrives as ONE
+ * element. Passing that through would put a combined address in the payload,
+ * which a relay treating each element as one mailbox rejects or misaddresses.
+ */
 function normalizeRecipients(value) {
   if (!value) return [];
   const parts = Array.isArray(value) ? value : [value];
@@ -238,31 +262,47 @@ async function send(mail) {
   const rawBody = JSON.stringify(payload);
   const signature = signPayload(secret, rawBody);
 
-  const response = await axios.post(url, rawBody, {
-    headers: {
-      'Content-Type': 'application/json',
-      [SIGNATURE_HEADER]: signature,
-    },
-    timeout: HTTP_TIMEOUT_MS,
-    // Resolve on any status so a 4xx/5xx becomes our error message rather than
-    // axios's, which does not say which webhook failed.
-    validateStatus: () => true,
-    maxRedirects: 0,
-    // Streamed, NOT buffered with maxContentLength. axios enforces that limit
-    // while reading, so a receiver that delivered the mail and then echoed a
-    // large body would make this throw AFTER a successful delivery — the queue
-    // would retry and the recipient would get the same email again. Reading it
-    // ourselves means an oversized response costs us the messageId, never a
-    // duplicate send.
-    responseType: 'stream',
-    // Byte length, not String#length. axios enforces this against the UTF-8
-    // buffer it sends, while rawBody.length counts UTF-16 code units — every
-    // umlaut is 2 bytes and every CJK character 3, so a German or Japanese
-    // message would blow past a code-unit budget and axios would reject it
-    // before posting. With base64 attachments in the body the gap is easily
-    // more than the slack.
-    maxBodyLength: Buffer.byteLength(rawBody, 'utf8') + 1024,
-  });
+  // Every axios rejection is caught and replaced. An AxiosError carries the
+  // request it failed on — `config.data` is the ENTIRE serialised message,
+  // base64 attachments included, and `config.headers` holds the signature.
+  // Callers log the error object (emailProcessor's `logger.error('Error
+  // sending template email:', error)`), and winston serialises it, so a DNS
+  // blip or a connection refusal would write password-reset links, recovery
+  // codes and multi-megabyte invoices into combined.log — the log file being
+  // exactly where none of that belongs. Only the message survives.
+  let response;
+  try {
+    response = await axios.post(url, rawBody, {
+      headers: {
+        'Content-Type': 'application/json',
+        [SIGNATURE_HEADER]: signature,
+      },
+      timeout: HTTP_TIMEOUT_MS,
+      // Resolve on any status so a 4xx/5xx becomes our error message rather than
+      // axios's, which does not say which webhook failed.
+      validateStatus: () => true,
+      maxRedirects: 0,
+      // Streamed, NOT buffered with maxContentLength. axios enforces that limit
+      // while reading, so a receiver that delivered the mail and then echoed a
+      // large body would make this throw AFTER a successful delivery — the queue
+      // would retry and the recipient would get the same email again. Reading it
+      // ourselves means an oversized response costs us the messageId, never a
+      // duplicate send.
+      responseType: 'stream',
+      // Byte length, not String#length. axios enforces this against the UTF-8
+      // buffer it sends, while rawBody.length counts UTF-16 code units — every
+      // umlaut is 2 bytes and every CJK character 3, so a German or Japanese
+      // message would blow past a code-unit budget and axios would reject it
+      // before posting. With base64 attachments in the body the gap is easily
+      // more than the slack.
+      maxBodyLength: Buffer.byteLength(rawBody, 'utf8') + 1024,
+    });
+  } catch (err) {
+    // Message and code only — deliberately NOT the error object, so nothing
+    // downstream can serialise the request back out of it.
+    const detail = err && err.code ? `${err.code}: ${err.message}` : (err && err.message) || 'request failed';
+    throw new Error(`email webhook request failed (${detail})`);
+  }
 
   // Status first: it is the delivery verdict, and it is known before a single
   // byte of the body is read.
@@ -290,6 +330,7 @@ module.exports = {
     MAX_ATTACHMENT_BYTES,
     encodeAttachments,
     setAllowPrivateUrls(value) { allowPrivateUrls = !!value; },
+    setReadTimeout(ms) { READ_TIMEOUT_MS = ms; },
     resetSecretWarning() { warnedAboutMissingSecret = false; },
   },
 };
