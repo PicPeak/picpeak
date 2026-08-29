@@ -1375,7 +1375,8 @@
       "passwordHelp": "Gib das bei der Erstellung gesetzte Passwort erneut ein (oder wähle ein neues). Die E-Mail enthält genau diesen Text; das Backend hasht es erneut, sodass die Galerie-Anmeldung weiterhin funktioniert.",
       "errorMinLength": "Das Passwort muss mindestens 6 Zeichen lang sein.",
       "notifyLabel": "Galerie-E-Mail jetzt senden",
-      "notifyHelp": "Abwählen, um still zu veröffentlichen — die Galerie geht online, es wird nichts versendet. Die E-Mail lässt sich später auf dieser Seite senden."
+      "notifyHelp": "Abwählen, um still zu veröffentlichen — die Galerie geht online, es wird nichts versendet. Die E-Mail lässt sich später auf dieser Seite senden.",
+      "descriptionQuiet": "Durch das Veröffentlichen wird \"{{eventName}}\" zugänglich. Es wird keine E-Mail versendet — Sie können sie später auf dieser Seite senden."
     },
     "duplicateEvent": "Galerie duplizieren",
     "duplicateDialog": {

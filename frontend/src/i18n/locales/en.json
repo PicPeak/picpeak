@@ -905,7 +905,8 @@
       "passwordHelp": "Re-type the password set at creation (or pick a new one). The email includes this exact text; the backend re-hashes it so the gallery login still works.",
       "errorMinLength": "Password must be at least 6 characters long.",
       "notifyLabel": "Send the gallery email now",
-      "notifyHelp": "Uncheck to publish quietly — the gallery goes live and nothing is sent. You can send the email later from this page."
+      "notifyHelp": "Uncheck to publish quietly — the gallery goes live and nothing is sent. You can send the email later from this page.",
+      "descriptionQuiet": "Publishing \"{{eventName}}\" makes the gallery accessible. No email will be sent — you can send it later from this page."
     },
     "duplicateEvent": "Duplicate gallery",
     "duplicateDialog": {

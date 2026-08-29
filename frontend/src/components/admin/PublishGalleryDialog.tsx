@@ -81,7 +81,16 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
         </div>
 
         <p className="text-neutral-600 dark:text-neutral-400 mb-4">
-          {customerEmail
+          {/* Follows the checkbox. Left static it contradicted itself — the
+              text promised an email to the customer while the box beneath it
+              said none would be sent. */}
+          {willNotify && !notifyCustomer
+            ? t('events.publishDialog.descriptionQuiet', {
+                eventName,
+                defaultValue:
+                  'Publishing "{{eventName}}" makes the gallery accessible. No email will be sent — you can send it later from this page.',
+              })
+            : customerEmail
             ? t('events.publishDialog.descriptionWithEmail', {
                 eventName,
                 customerEmail,
