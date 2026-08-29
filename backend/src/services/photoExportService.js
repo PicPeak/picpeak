@@ -14,6 +14,32 @@ const { db } = require('../database/db');
 const path = require('path');
 const fs = require('fs').promises;
 
+/**
+ * The name the camera gave the file, or null when nothing was recorded (#1229).
+ *
+ * `source_filename` first. `original_filename` is overwritten the first time an
+ * edited render is uploaded over a proof (#745), so after a Lightroom
+ * round-trip it holds the render's name — and every export here is for finding
+ * the master on disk, which that name no longer does. `source_filename` is
+ * written once at ingest and survives a replace by design (migration 193).
+ *
+ * Null rather than the stored name: this feeds the two dedicated
+ * "original_filename" fields, where blank honestly reports "not recorded"
+ * instead of echoing a sanitized name that matches nothing.
+ */
+function cameraName(photo) {
+  return photo.source_filename || photo.original_filename || null;
+}
+
+/**
+ * A filename to actually write: the camera name when known, else the stored
+ * one. Used where the output needs *some* name — the text list, the CSV's
+ * filename cell, the XMP sidecar — and an empty string would be useless.
+ */
+function cameraFilenameOrStored(photo) {
+  return cameraName(photo) || photo.filename;
+}
+
 class PhotoExportService {
   constructor() {
     this.xmpGenerator = new XmpGenerator();
@@ -135,7 +161,7 @@ class PhotoExportService {
 
     const filenames = photos.map(photo => {
       const name = filename_format === 'original'
-        ? (photo.original_filename || photo.filename)
+        ? cameraFilenameOrStored(photo)
         : photo.filename;
       return include_extension ? name : path.parse(name).name;
     });
@@ -185,8 +211,8 @@ class PhotoExportService {
     ];
 
     const rows = photos.map(photo => [
-      filename_format === 'original' ? (photo.original_filename || photo.filename) : photo.filename,
-      photo.original_filename || '',
+      filename_format === 'original' ? cameraFilenameOrStored(photo) : photo.filename,
+      cameraName(photo) || '',
       photo.average_rating ? parseFloat(photo.average_rating).toFixed(2) : '0.00',
       photo.feedback_count || 0,
       photo.like_count || 0,
@@ -239,8 +265,10 @@ class PhotoExportService {
     archive.pipe(passthrough);
 
     for (const photo of photos) {
+      // The sidecar is written next to a RAW master. Naming it after the
+      // edited render means Lightroom never associates the two.
       const baseFilename = filename_format === 'original'
-        ? (photo.original_filename || photo.filename)
+        ? cameraFilenameOrStored(photo)
         : photo.filename;
       const xmpFilename = this.xmpGenerator.getXmpFilename(baseFilename);
       const xmpContent = this.xmpGenerator.generateXmp(project(photo), options);
@@ -279,7 +307,7 @@ class PhotoExportService {
       photos: photos.map(photo => ({
         id: photo.id,
         filename: photo.filename,
-        original_filename: photo.original_filename || null,
+        original_filename: cameraName(photo),
         category: photo.category_name || null,
         rating: {
           average: photo.average_rating ? parseFloat(parseFloat(photo.average_rating).toFixed(2)) : 0,
