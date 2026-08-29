@@ -226,8 +226,34 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // Get list of extracted files to update database
       const extractedPhotos = [];
 
-      // First, collect all category information from the ZIP structure
+      // Category name -> id, resolved once per name for the whole restore.
       const categoriesMap = new Map();
+
+      // Find-or-create the category by name, scoped to this event.
+      const resolveCategoryId = async (categoryName) => {
+        if (!categoryName) return null;
+        if (categoriesMap.has(categoryName)) return categoriesMap.get(categoryName);
+
+        const existingCategory = await db('photo_categories')
+          .where('event_id', archive.id)
+          .where('name', categoryName)
+          .first();
+
+        if (existingCategory) {
+          categoriesMap.set(categoryName, existingCategory.id);
+        } else {
+          const insertResult = await db('photo_categories').insert({
+            event_id: archive.id,
+            name: categoryName,
+            slug: slugify(categoryName),
+            created_at: new Date()
+          }).returning('id');
+
+          categoriesMap.set(categoryName, insertResult[0]?.id || insertResult[0]);
+        }
+
+        return categoriesMap.get(categoryName);
+      };
 
       for (const entry of entries) {
         if (!entry.isDirectory && entry.name.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
@@ -238,39 +264,20 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
           try {
             // Check if file was extracted successfully
             const stats = await fs.stat(actualFilePath);
-            
-            // Determine category from directory structure
-            let categoryId = null;
-            if (dirPath && dirPath !== '.') {
-              // Get the first level directory as category
-              const categoryName = dirPath.split(path.sep)[0];
-              
-              if (!categoriesMap.has(categoryName)) {
-                // Check if this category exists in the database
-                const existingCategory = await db('photo_categories')
-                  .where('event_id', archive.id)
-                  .where('name', categoryName)
-                  .first();
-                
-                if (existingCategory) {
-                  categoriesMap.set(categoryName, existingCategory.id);
-                } else {
-                  // Create the category if it doesn't exist
-                  const insertResult = await db('photo_categories').insert({
-                    event_id: archive.id,
-                    name: categoryName,
-                    slug: slugify(categoryName),
-                    created_at: new Date()
-                  }).returning('id');
-                  
-                  const newCategoryId = insertResult[0]?.id || insertResult[0];
-                  categoriesMap.set(categoryName, newCategoryId);
-                }
-              }
-              
-              categoryId = categoriesMap.get(categoryName);
+
+            const manifestEntry = manifestByFilename.get(filename);
+
+            // The manifest is the only faithful source for the category: the
+            // archive stores photos exactly as they sit on disk, and events
+            // whose photos live in the gallery root produce a flat ZIP with
+            // no directory to read a category from. Falling back to the first
+            // path segment keeps archives that DO have subfolders working,
+            // and legacy archives (no manifest) behave as before.
+            let categoryId = await resolveCategoryId(manifestEntry?.category_name);
+            if (!categoryId && dirPath && dirPath !== '.') {
+              categoryId = await resolveCategoryId(dirPath.split(path.sep)[0]);
             }
-          
+
             // Check if photo already exists in database
             const existingPhoto = await db('photos')
               .where('event_id', archive.id)
@@ -280,7 +287,6 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             if (!existingPhoto) {
               // Store relative path from storage root
               const relativePath = path.relative(storagePath, actualFilePath);
-              const manifestEntry = manifestByFilename.get(filename);
               extractedPhotos.push({
                 event_id: archive.id,
                 filename: filename,

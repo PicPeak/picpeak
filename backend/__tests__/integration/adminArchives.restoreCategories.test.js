@@ -1,0 +1,177 @@
+/**
+ * Restoring an archive must put the photos back into their categories.
+ *
+ * The archive writer already persists `category_name` per photo in
+ * `photos_manifest.json` — that is why the manifest exists, and the comment
+ * above it says so: "(and category linkage) can't be derived from the
+ * extracted files alone". The restore route then read only
+ * `original_filename` from it and kept deriving the category from the ZIP's
+ * first path segment.
+ *
+ * Archives store photos exactly as they sit on disk, so an event whose photos
+ * live in the gallery root produces a FLAT zip. `path.dirname()` is '.' for
+ * every entry, no category is resolved, and every restored photo lands with
+ * `category_id = null` — silently, with a 200 response.
+ *
+ * These pin the manifest as the source of truth, with the directory as the
+ * fallback that keeps foldered and legacy archives working.
+ */
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const express = require('express');
+const request = require('supertest');
+
+describe('archive restore restores categories (flat archives included)', () => {
+  let tmpDir; let db; let cleanup; let app; let storagePath;
+
+  beforeAll(async () => {
+    tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'picpeak-restore-cat-'));
+    storagePath = path.join(tmpDir, 'storage');
+    process.env.NODE_ENV = 'test';
+    process.env.TEST_DATABASE_PATH = path.join(tmpDir, 'data', 'test.db');
+    process.env.STORAGE_PATH = storagePath;
+    await fs.promises.mkdir(path.dirname(process.env.TEST_DATABASE_PATH), { recursive: true });
+    await fs.promises.mkdir(path.join(storagePath, 'archives'), { recursive: true });
+
+    jest.resetModules();
+    jest.doMock('../../src/middleware/auth', () => ({
+      adminAuth: (req, _res, next) => { req.admin = { id: 1, username: 'tester' }; next(); },
+    }));
+    jest.doMock('../../src/middleware/permissions', () => ({
+      requirePermission: () => (_req, _res, next) => next(),
+    }));
+    jest.doMock('../../src/middleware/ownership', () => ({
+      requireEventOwnership: (_req, _res, next) => next(),
+    }));
+
+    ({ db, cleanup } = await require('./helpers/crmDb').bootCrmDb());
+    // bootCrmDb points STORAGE_PATH at its own tmp dir; follow it rather than
+    // fighting it, so the archives the tests write are where the route looks.
+    storagePath = process.env.STORAGE_PATH;
+    await fs.promises.mkdir(path.join(storagePath, 'archives'), { recursive: true });
+
+    app = express();
+    app.use(express.json());
+    app.use('/admin/archives', require('../../src/routes/adminArchives'));
+  }, 180000);
+
+  afterAll(async () => {
+    if (cleanup) await cleanup();
+    await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  beforeEach(async () => {
+    await db('photos').del();
+    await db('photo_categories').del();
+    await db('events').del();
+  });
+
+  /** A one-pixel JPEG is enough; the route only stats the extracted file. */
+  const PIXEL = Buffer.from(
+    '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a'
+    + 'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA'
+    + 'AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==',
+    'base64',
+  );
+
+  async function writeArchive(name, entries) {
+    // Required lazily: the suite calls jest.resetModules() in beforeAll, and
+    // archiver's readable-stream copy does not survive being split across the
+    // two module registries.
+    const archiver = require('archiver');
+    const archivePath = path.join(storagePath, 'archives', name);
+    await new Promise((resolve, reject) => {
+      const output = fs.createWriteStream(archivePath);
+      const zip = archiver('zip', { zlib: { level: 0 } });
+      output.on('close', resolve);
+      zip.on('error', reject);
+      zip.pipe(output);
+      for (const [entryName, buffer] of Object.entries(entries)) {
+        zip.append(buffer, { name: entryName });
+      }
+      zip.finalize();
+    });
+    return path.join('archives', name);
+  }
+
+  async function seedArchivedEvent(archiveRelPath, slug) {
+    const [row] = await db('events').insert({
+      slug,
+      event_type: 'wedding',
+      event_name: slug,
+      event_date: '2026-06-27',
+      host_email: 'h@example.com',
+      admin_email: 'a@example.com',
+      password_hash: 'x',
+      share_link: `${slug}-share`,
+      expires_at: new Date().toISOString(),
+      is_archived: 1,  // sqlite stores booleans as 0/1, see utils/dbCompat
+      archive_path: archiveRelPath,
+    }).returning('id');
+    return typeof row === 'object' ? row.id : row;
+  }
+
+  const categoryOf = async (filename) => {
+    const photo = await db('photos').where('filename', filename).first();
+    if (!photo || !photo.category_id) return null;
+    const category = await db('photo_categories').where('id', photo.category_id).first();
+    return category ? category.name : null;
+  };
+
+  it('takes the category from the manifest when the archive is flat', async () => {
+    // Exactly the shape a gallery-root event archives to: no directories.
+    const manifest = JSON.stringify([
+      { filename: 'a.jpg', original_filename: 'DSC_0001.jpg', category_name: 'Polterabend' },
+      { filename: 'b.jpg', original_filename: 'DSC_0002.jpg', category_name: 'Ceremony' },
+    ]);
+    const archiveRelPath = await writeArchive('flat.zip', {
+      'a.jpg': PIXEL,
+      'b.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(manifest, 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'flat-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    // The whole bug: both of these used to be null.
+    expect(await categoryOf('a.jpg')).toBe('Polterabend');
+    expect(await categoryOf('b.jpg')).toBe('Ceremony');
+  });
+
+  it('reuses an existing category row instead of creating a duplicate', async () => {
+    const archiveRelPath = await writeArchive('reuse.zip', {
+      'c.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'c.jpg', original_filename: 'DSC_0003.jpg', category_name: 'Party' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'reuse-event');
+    await db('photo_categories').insert({
+      event_id: eventId, name: 'Party', slug: 'party', created_at: new Date(),
+    });
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await categoryOf('c.jpg')).toBe('Party');
+    const rows = await db('photo_categories').where({ event_id: eventId, name: 'Party' });
+    expect(rows).toHaveLength(1);
+  });
+
+  it('still falls back to the first path segment for foldered legacy archives', async () => {
+    // No manifest at all — the shape every archive had before the manifest
+    // landed. The directory is the only signal left, and it must keep working.
+    const archiveRelPath = await writeArchive('foldered.zip', {
+      'Drohne/d.jpg': PIXEL,
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'foldered-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await categoryOf('d.jpg')).toBe('Drohne');
+  });
+});
