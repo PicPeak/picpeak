@@ -145,6 +145,37 @@ async function encodeAttachments(attachments) {
  * element. Passing that through would put a combined address in the payload,
  * which a relay treating each element as one mailbox rejects or misaddresses.
  */
+/**
+ * Read at most MAX_RESPONSE_BYTES from a response stream, then stop.
+ *
+ * Only a messageId is wanted, so the rest is dropped on the floor rather than
+ * buffered — a faulty or hostile receiver must not be able to grow this
+ * process's memory on every queue attempt. Any read failure resolves empty:
+ * the delivery verdict is the status code, which is already known by the time
+ * this runs, so a broken body must never turn a delivered message into a retry.
+ */
+function readBounded(stream) {
+  const MAX_RESPONSE_BYTES = 10 * 1024;
+  if (!stream || typeof stream.on !== 'function') return Promise.resolve('');
+  return new Promise((resolve) => {
+    const chunks = [];
+    let size = 0;
+    const finish = () => resolve(Buffer.concat(chunks).toString('utf8'));
+    stream.on('data', (chunk) => {
+      size += chunk.length;
+      if (size <= MAX_RESPONSE_BYTES) {
+        chunks.push(chunk);
+      } else {
+        stream.destroy();
+        finish();
+      }
+    });
+    stream.on('end', finish);
+    stream.on('error', () => resolve(''));
+    stream.on('close', finish);
+  });
+}
+
 function normalizeRecipients(value) {
   if (!value) return [];
   const parts = Array.isArray(value) ? value : [value];
@@ -168,6 +199,20 @@ async function send(mail) {
   // check is what stops an operator-supplied URL becoming a request to link
   // local metadata or a service on the host network.
   if (!allowPrivateUrls) {
+    // https for anything leaving the machine. The HMAC proves who sent the
+    // body, not who can read it — and these bodies carry password-reset links
+    // and guest recovery codes, which are usable by anyone on the path. The
+    // private-network opt-in doubles as the plaintext opt-in, because http to
+    // a container on the same host is a different risk from http across the
+    // internet.
+    if (!/^https:\/\//i.test(url)) {
+      throw new Error(
+        'EMAIL_WEBHOOK_URL must use https:// — the payload carries password-reset '
+        + 'links and recovery codes, which plaintext exposes to anyone on the path. '
+        + 'Set EMAIL_WEBHOOK_ALLOW_PRIVATE_URLS=true only if the receiver is on a '
+        + 'private network you trust.'
+      );
+    }
     const check = await validateExternalUrlAsync(url);
     if (!check.valid) {
       throw new Error(
@@ -203,11 +248,13 @@ async function send(mail) {
     // axios's, which does not say which webhook failed.
     validateStatus: () => true,
     maxRedirects: 0,
-    // Only the status and an optional messageId are read, so cap what a
-    // receiver can make us buffer. Without this a faulty or hostile endpoint
-    // streams an unbounded body into memory on every queue attempt. Same
-    // ceiling as webhookDeliveryWorker.
-    maxContentLength: 10 * 1024,
+    // Streamed, NOT buffered with maxContentLength. axios enforces that limit
+    // while reading, so a receiver that delivered the mail and then echoed a
+    // large body would make this throw AFTER a successful delivery — the queue
+    // would retry and the recipient would get the same email again. Reading it
+    // ourselves means an oversized response costs us the messageId, never a
+    // duplicate send.
+    responseType: 'stream',
     // Byte length, not String#length. axios enforces this against the UTF-8
     // buffer it sends, while rawBody.length counts UTF-16 code units — every
     // umlaut is 2 bytes and every CJK character 3, so a German or Japanese
@@ -217,15 +264,21 @@ async function send(mail) {
     maxBodyLength: Buffer.byteLength(rawBody, 'utf8') + 1024,
   });
 
-  if (response.status < 200 || response.status >= 300) {
+  // Status first: it is the delivery verdict, and it is known before a single
+  // byte of the body is read.
+  const delivered = response.status >= 200 && response.status < 300;
+  const body = await readBounded(response.data);
+  if (!delivered) {
     throw new Error(`email webhook returned ${response.status}`);
   }
 
   // The queue stores a messageId for the record. There is no SMTP id here, so
   // synthesise one that is obviously not from a mail server.
-  const messageId = (response.data && response.data.messageId)
-    || `webhook-${signature.slice(0, 16)}`;
-  return { messageId };
+  let reported = null;
+  try {
+    reported = body ? JSON.parse(body).messageId : null;
+  } catch { /* a receiver is not obliged to answer JSON */ }
+  return { messageId: reported || `webhook-${signature.slice(0, 16)}` };
 }
 
 module.exports = {

@@ -49,8 +49,14 @@ beforeEach(() => {
   transport.__testing.setAllowPrivateUrls(false);
   transport.__testing.resetSecretWarning();
   validateExternalUrlAsync.mockResolvedValue({ valid: true, reason: 'ok' });
-  axios.post.mockResolvedValue({ status: 200, data: {} });
+  axios.post.mockResolvedValue({ status: 200, data: streamOf('') });
 });
+
+// The transport reads the response as a stream, so mocks must behave like one.
+function streamOf(text) {
+  const { Readable } = require('stream');
+  return Readable.from([Buffer.from(text, 'utf8')]);
+}
 
 afterEach(() => {
   delete process.env.EMAIL_WEBHOOK_URL;
@@ -111,6 +117,22 @@ describe('signing', () => {
     await transport.send({ ...MAIL, cc: ['a@example.com, b@example.com'] });
     const payload = JSON.parse(axios.post.mock.calls[0][1]);
     expect(payload.cc).toEqual(['a@example.com', 'b@example.com']);
+  });
+});
+
+describe('transport security', () => {
+  it('refuses plaintext http:// — the HMAC signs, it does not conceal', async () => {
+    // These bodies carry password-reset links and guest recovery codes, which
+    // are usable by anyone on the path.
+    process.env.EMAIL_WEBHOOK_URL = 'http://n8n.example.com/webhook/picpeak-mail';
+    await expect(transport.send(MAIL)).rejects.toThrow(/https/);
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  it('allows http only under the private-network opt-in', async () => {
+    process.env.EMAIL_WEBHOOK_URL = 'http://n8n.internal:5678/webhook/mail';
+    transport.__testing.setAllowPrivateUrls(true);
+    await expect(transport.send(MAIL)).resolves.toBeTruthy();
   });
 });
 
@@ -194,7 +216,7 @@ describe('response handling', () => {
     const opts = axios.post.mock.calls[0][2];
     // Only the status and an optional messageId are read; an unbounded body
     // from a faulty or hostile receiver must not be buffered into memory.
-    expect(opts.maxContentLength).toBeLessThanOrEqual(10 * 1024);
+    expect(opts.responseType).toBe('stream');
     expect(opts.maxBodyLength).toEqual(expect.any(Number));
   });
 
@@ -212,7 +234,7 @@ describe('response handling', () => {
 
 describe('delivery result', () => {
   it('treats a non-2xx as a failure so the queue retries', async () => {
-    axios.post.mockResolvedValue({ status: 502, data: {} });
+    axios.post.mockResolvedValue({ status: 502, data: streamOf('') });
     await expect(transport.send(MAIL)).rejects.toThrow(/502/);
   });
 
@@ -222,8 +244,21 @@ describe('delivery result', () => {
     expect(result.messageId.length).toBeGreaterThan(0);
   });
 
+  it('does NOT retry a delivered message just because the response was huge', async () => {
+    // A receiver that delivered the mail and then echoed a large body must not
+    // turn into a failure — the queue would resend and the recipient would get
+    // the same email twice. The status is the verdict; the body is optional.
+    const { Readable } = require('stream');
+    const flood = Readable.from(
+      Array.from({ length: 40 }, () => Buffer.alloc(1024, 0x61))
+    );
+    axios.post.mockResolvedValue({ status: 200, data: flood });
+    const result = await transport.send(MAIL);
+    expect(result.messageId).toEqual(expect.any(String));
+  });
+
   it('prefers a messageId the receiver reports', async () => {
-    axios.post.mockResolvedValue({ status: 200, data: { messageId: 'from-n8n-123' } });
+    axios.post.mockResolvedValue({ status: 200, data: streamOf(JSON.stringify({ messageId: 'from-n8n-123' })) });
     expect((await transport.send(MAIL)).messageId).toBe('from-n8n-123');
   });
 });

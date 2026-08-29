@@ -370,8 +370,12 @@ router.get('/identities', adminAuth, messagingGate, requirePermission('email.vie
       const cust = await db('mail_accounts').where({ account_key: 'customers' }).first();
       customers = cust?.imap_user || cust?.from_email || null;
     } catch (_) { customers = null; }
+    // A webhook-only install has no email_configs row (#1225), so reading the
+    // automated address from it alone shows "—" in the Messages sidebar for an
+    // instance that is sending perfectly well from EMAIL_FROM.
+    const identity = await resolveFromIdentity();
     res.json({
-      automated: cfg?.from_email || null,
+      automated: cfg?.from_email || identity?.fromEmail || null,
       accounting: cfg?.imap_user || null,
       customers,
     });
@@ -484,13 +488,25 @@ router.post('/test', adminAuth, requirePermission('email.send'), async (req, res
         + '<p>This message was delivered through the configured email webhook, not SMTP.</p>',
         webhookSubject
       );
-      await emailWebhookTransport.send({
-        from: `${identity.fromName} <${identity.fromEmail}>`,
-        to: test_email,
-        subject: webhookSubject,
-        html: webhookHtml,
-        text: 'Test Email Successful! Delivered through the configured email webhook.',
-      });
+      try {
+        await emailWebhookTransport.send({
+          from: `${identity.fromName} <${identity.fromEmail}>`,
+          to: test_email,
+          subject: webhookSubject,
+          html: webhookHtml,
+          text: 'Test Email Successful! Delivered through the configured email webhook.',
+        });
+      } catch (webhookError) {
+        // Handled here, not by the outer catch: that one maps ECONNREFUSED and
+        // friends to "Failed to connect to SMTP server — check your SMTP
+        // settings", which on a webhook-only install points the admin at
+        // configuration this deploy does not use.
+        logger.error('Webhook test email failed:', webhookError);
+        return res.status(502).json({
+          error: 'Failed to deliver through the email webhook',
+          details: webhookError.message,
+        });
+      }
       return res.json({ message: 'Test email sent successfully' });
     }
 
