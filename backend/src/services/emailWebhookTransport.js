@@ -29,10 +29,6 @@ const { validateExternalUrlAsync } = require('../utils/networkValidation');
 
 const SIGNATURE_HEADER = 'X-PicPeak-Signature';
 const HTTP_TIMEOUT_MS = 15000;
-// Wall clock for reading the response body. Separate from HTTP_TIMEOUT_MS,
-// which axios applies to the headers only. Mutable so a test can shrink it
-// rather than actually waiting ten seconds.
-let READ_TIMEOUT_MS = 10000;
 
 // Attachments are base64 in the JSON body, which inflates them by a third.
 // Invoices and quotes are the real users of this and run to a few hundred KB;
@@ -139,57 +135,6 @@ async function encodeAttachments(attachments) {
     });
   }
   return encoded;
-}
-
-/**
- * Read at most MAX_RESPONSE_BYTES from a response stream, then stop.
- *
- * Only a messageId is wanted, so the rest is dropped on the floor rather than
- * buffered — a faulty or hostile receiver must not be able to grow this
- * process's memory on every queue attempt. Any read failure resolves empty:
- * the delivery verdict is the status code, which is already known by the time
- * this runs, so a broken body must never turn a delivered message into a retry.
- */
-function readBounded(stream) {
-  const MAX_RESPONSE_BYTES = 10 * 1024;
-  if (!stream || typeof stream.on !== 'function') return Promise.resolve('');
-  return new Promise((resolve) => {
-    const chunks = [];
-    let size = 0;
-    let done = false;
-    // A deadline, not just a size cap. axios' `timeout` covers the response
-    // HEADERS; with responseType 'stream' it has already resolved by the time
-    // we get here, so a receiver that answers 2xx and then never closes its
-    // body — or trickles bytes forever — would leave this await hanging. The
-    // queue row would stay pending and the next processor pass would POST the
-    // same message again, so an unclosed stream becomes duplicate email.
-    const timer = setTimeout(() => {
-      stream.destroy();
-      finish();
-    }, READ_TIMEOUT_MS);
-    // Node's unref keeps a hung read from holding the process open at exit.
-    if (typeof timer.unref === 'function') timer.unref();
-
-    function finish() {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      resolve(Buffer.concat(chunks).toString('utf8'));
-    }
-
-    stream.on('data', (chunk) => {
-      size += chunk.length;
-      if (size <= MAX_RESPONSE_BYTES) {
-        chunks.push(chunk);
-      } else {
-        stream.destroy();
-        finish();
-      }
-    });
-    stream.on('end', finish);
-    stream.on('error', finish);
-    stream.on('close', finish);
-  });
 }
 
 /**
@@ -304,21 +249,29 @@ async function send(mail) {
     throw new Error(`email webhook request failed (${detail})`);
   }
 
-  // Status first: it is the delivery verdict, and it is known before a single
-  // byte of the body is read.
-  const delivered = response.status >= 200 && response.status < 300;
-  const body = await readBounded(response.data);
-  if (!delivered) {
+  // The body is discarded unread. Only the status matters — it is the delivery
+  // verdict — and the id below is synthesised either way.
+  //
+  // Reading it used to be worth 41 lines of bounded-read-with-deadline, to
+  // recover a messageId a receiver MIGHT return. That value was only ever
+  // logged: nothing persists it, there is no email_queue.message_id column. It
+  // was not worth its bugs — the size cap made a delivered message retry, and
+  // the missing deadline let an unclosed stream hang the queue and resend. Not
+  // reading is how those stop being reachable rather than defended against.
+  //
+  // An error listener first: destroy() can emit on a socket-backed stream, and
+  // an unhandled 'error' on a stream throws.
+  if (response.data && typeof response.data.destroy === 'function') {
+    response.data.on('error', () => {});
+    response.data.destroy();
+  }
+
+  if (response.status < 200 || response.status >= 300) {
     throw new Error(`email webhook returned ${response.status}`);
   }
 
-  // The queue stores a messageId for the record. There is no SMTP id here, so
-  // synthesise one that is obviously not from a mail server.
-  let reported = null;
-  try {
-    reported = body ? JSON.parse(body).messageId : null;
-  } catch { /* a receiver is not obliged to answer JSON */ }
-  return { messageId: reported || `webhook-${signature.slice(0, 16)}` };
+  // Deterministic, traceable, and obviously not from a mail server.
+  return { messageId: `webhook-${signature.slice(0, 16)}` };
 }
 
 module.exports = {
@@ -330,7 +283,6 @@ module.exports = {
     MAX_ATTACHMENT_BYTES,
     encodeAttachments,
     setAllowPrivateUrls(value) { allowPrivateUrls = !!value; },
-    setReadTimeout(ms) { READ_TIMEOUT_MS = ms; },
     resetSecretWarning() { warnedAboutMissingSecret = false; },
   },
 };
