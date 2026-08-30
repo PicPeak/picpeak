@@ -211,7 +211,19 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         const parsed = JSON.parse(manifestRaw);
         if (Array.isArray(parsed)) {
           for (const m of parsed) {
-            if (m && m.filename) manifestByFilename.set(m.filename, m);
+            if (!m || !m.filename) continue;
+            manifestByFilename.set(m.filename, m);
+            // Also index by original_filename. When
+            // general_use_original_filenames_for_downloads was on at archive
+            // time, archiveService names each ZIP entry after the ORIGINAL
+            // filename, while the manifest stays keyed by the internal
+            // photos.filename — so a lookup by the extracted basename misses
+            // every entry and the restore silently loses categories on exactly
+            // those archives. Never overwrite a real filename key: that one is
+            // authoritative if both happen to collide.
+            if (m.original_filename && !manifestByFilename.has(m.original_filename)) {
+              manifestByFilename.set(m.original_filename, m);
+            }
           }
         }
         logger.info(`Loaded photos manifest: ${manifestByFilename.size} entries`);
@@ -229,14 +241,21 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // Category name -> id, resolved once per name for the whole restore.
       const categoriesMap = new Map();
 
-      // Find-or-create the category by name, scoped to this event.
+      // Find-or-create the category by name, among the ones this event can see.
       const resolveCategoryId = async (categoryName) => {
         if (!categoryName) return null;
         if (categoriesMap.has(categoryName)) return categoriesMap.get(categoryName);
 
+        // Globals count as existing. A photo filed under the seeded "Ceremony"
+        // has event_id NULL on its category row, so an event-only lookup misses
+        // it and creates a second "Ceremony" — and since is_global defaults to
+        // TRUE, that duplicate then shows up in every other event's category
+        // list. Same visibility rule the photo routes use: own rows or global.
         const existingCategory = await db('photo_categories')
-          .where('event_id', archive.id)
           .where('name', categoryName)
+          .where(function () {
+            this.where('event_id', archive.id).orWhere('is_global', formatBoolean(true));
+          })
           .first();
 
         if (existingCategory) {
@@ -246,6 +265,10 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             event_id: archive.id,
             name: categoryName,
             slug: slugify(categoryName),
+            // Explicit: the column defaults to true, and a restore inventing a
+            // GLOBAL category would leak this event's naming into every other
+            // gallery. Anything created here belongs to this event alone.
+            is_global: formatBoolean(false),
             created_at: new Date()
           }).returning('id');
 
@@ -264,7 +287,7 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
           try {
             // Check if file was extracted successfully
             const stats = await fs.stat(actualFilePath);
-
+            
             const manifestEntry = manifestByFilename.get(filename);
 
             // The manifest is the only faithful source for the category, and
@@ -312,7 +335,7 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
                 type: path.extname(filename).substring(1).toLowerCase(),
                 size_bytes: stats.size,
                 category_id: categoryId,
-                uploaded_at: new Date().toISOString()
+                uploaded_at: new Date()
               });
             }
           } catch (statError) {
@@ -451,19 +474,6 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
           // Ignore errors - thumbnail might already be deleted
         }
       }
-    }
-
-    // Face data (#1074, #1132). This route deletes the event row directly and
-    // relies on the FK cascade, but SQLite only honours ON DELETE CASCADE with
-    // `PRAGMA foreign_keys = ON`, which PicPeak does not set — and
-    // event_people_merge_dismissals has no event FK at all, on either engine.
-    // archiveEvent's purge step is deliberately nonfatal, so an event can
-    // still be carrying face data when it reaches this permanent delete.
-    // Delete explicitly, the same way deleteEventCascade does.
-    await db('photo_faces').where('event_id', req.params.id).del();
-    await db('event_people').where('event_id', req.params.id).del();
-    if (await db.schema.hasTable('event_people_merge_dismissals')) {
-      await db('event_people_merge_dismissals').where('event_id', req.params.id).del();
     }
 
     // Delete from database (cascade will delete photos and logs)

@@ -182,6 +182,73 @@ describe('archive restore restores categories (flat archives included)', () => {
     expect(await categoryOf('d.jpg')).toBe('individual');
   });
 
+  it('reuses a GLOBAL category instead of cloning it into the event', async () => {
+    // Seeded categories (Ceremony, Reception, ...) have event_id NULL. An
+    // event-only lookup misses them, so the restore used to create a second
+    // "Ceremony" — and because is_global defaults to TRUE, that duplicate then
+    // appeared in every other event's category list.
+    const [g] = await db('photo_categories').insert({
+      event_id: null, name: 'Ceremony', slug: 'ceremony', is_global: true, created_at: new Date(),
+    }).returning('id');
+    const globalId = typeof g === 'object' ? g.id : g;
+
+    const archiveRelPath = await writeArchive('global.zip', {
+      'individual/gl.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'gl.jpg', original_filename: 'DSC_1.jpg', category_name: 'Ceremony' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'global-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    const photo = await db('photos').where('filename', 'gl.jpg').first();
+    expect(photo.category_id).toBe(globalId);
+    // No clone, global or otherwise.
+    const all = await db('photo_categories').where('name', 'Ceremony');
+    expect(all).toHaveLength(1);
+  });
+
+  it('does not create a GLOBAL category when it has to invent one', async () => {
+    // is_global defaults to true on this column, so an unqualified insert would
+    // leak a restore's category name into every gallery on the instance.
+    const archiveRelPath = await writeArchive('newcat.zip', {
+      'individual/nc.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'nc.jpg', original_filename: 'DSC_2.jpg', category_name: 'Polterabend' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'newcat-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    const created = await db('photo_categories').where('name', 'Polterabend').first();
+    expect(created.event_id).toBe(eventId);
+    expect(created.is_global === false || created.is_global === 0).toBe(true);
+  });
+
+  it('matches the manifest when the ZIP was written with original filenames', async () => {
+    // With general_use_original_filenames_for_downloads on at archive time,
+    // archiveService names entries after the ORIGINAL filename while the
+    // manifest stays keyed by photos.filename. Looking up the extracted
+    // basename missed every entry, so categories were lost on exactly those
+    // archives.
+    const archiveRelPath = await writeArchive('original-names.zip', {
+      'individual/DSC_4242.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'stored_9f8e7d.jpg', original_filename: 'DSC_4242.jpg', category_name: 'Drohne' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'original-names-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await categoryOf('DSC_4242.jpg')).toBe('Drohne');
+  });
+
   it('honours a manifest that says UNCATEGORIZED, instead of inventing one from the directory', async () => {
     // The case the manifest-first change was for. A real archive puts every
     // photo under `individual/`, so a photo the manifest records as having no
