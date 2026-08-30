@@ -990,6 +990,17 @@ module.exports = (router) => {
       }
 
       const requirePassword = parseBooleanInput(event.require_password, true);
+
+      // Persist the password before queueing, exactly as publish does (#627).
+      // The dialog invites the admin to "pick a new one", and without this the
+      // email would carry a password the gallery does not accept — worse than
+      // the sentinel it replaced, because it looks usable.
+      if (requirePassword && password) {
+        await db('events').where('id', id).update({
+          password_hash: await bcrypt.hash(password, getBcryptRounds()),
+        });
+      }
+
       const queued = await queueGalleryCreatedEmail(event, { password, requirePassword });
       if (!queued) {
         // No inline recipient, but the gallery may be assigned to registered

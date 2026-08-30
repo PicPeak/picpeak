@@ -232,6 +232,27 @@ describe('publish quietly (#1235)', () => {
     expect(JSON.parse(queued.email_data).gallery_password).toBe('sup3r-secret');
   });
 
+  it('persists a changed password so the emailed one actually works', async () => {
+    // The dialog invites "or pick a new one". Queueing that plaintext without
+    // rehashing would email a password the gallery rejects — worse than the
+    // sentinel, because it looks usable.
+    const id = await seedDraft({ slug: 'rehash', isDraft: false });
+    await db('events').where({ id }).update({ require_password: 1, password_hash: 'stale-hash' });
+
+    const res = await request(app)
+      .post(`/admin/events/${id}/send-gallery-email`)
+      .send({ password: 'brand-new-pass' });
+    expect(res.status).toBe(200);
+
+    const bcrypt = require('bcrypt');
+    const row = await db('events').where({ id }).first();
+    expect(row.password_hash).not.toBe('stale-hash');
+    expect(await bcrypt.compare('brand-new-pass', row.password_hash)).toBe(true);
+
+    const [queued] = await queuedFor(id);
+    expect(JSON.parse(queued.email_data).gallery_password).toBe('brand-new-pass');
+  });
+
   it('re-sending is allowed — a lost email should not need an unpublish/republish', async () => {
     const id = await seedDraft({ slug: 'resend' });
     await request(app).post(`/admin/events/${id}/publish`).send({});

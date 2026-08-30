@@ -183,6 +183,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               isDuplicating={isDuplicating}
               onSendGalleryEmail={onSendGalleryEmail}
               isSendingGalleryEmail={isSendingGalleryEmail}
+              assignedCustomerCount={((event as { customer_accounts?: Array<{ id: number }> }).customer_accounts || []).length}
             />
           </PermissionGate>
         )}

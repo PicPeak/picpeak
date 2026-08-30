@@ -907,7 +907,7 @@
       "notifyLabel": "Send the gallery email now",
       "notifyHelp": "Uncheck to publish quietly — the gallery goes live and nothing is sent. You can send the email later from this page.",
       "descriptionQuiet": "Publishing \"{{eventName}}\" makes the gallery accessible. No email will be sent — you can send it later from this page.",
-      "descriptionWhatsapp": "Publishing \"{{eventName}}\" makes the gallery accessible and sends the customer a WhatsApp notification."
+      "descriptionWhatsapp": "Publishing \"{{eventName}}\" makes the gallery accessible. If WhatsApp is configured, the customer is notified there."
     },
     "duplicateEvent": "Duplicate gallery",
     "duplicateDialog": {

@@ -738,7 +738,7 @@ export const EventDetailsPage: React.FC = () => {
       {showPublishDialog && (
         <PublishGalleryDialog
           eventName={event.event_name}
-          requirePassword={isGalleryPublic(event) ? false : true}
+          requirePassword={!isGalleryPublic(event.require_password)}
           customerEmail={event.customer_email}
           customerPhone={event.customer_phone}
           assignedCustomerCount={((event as { customer_accounts?: Array<{ id: number }> }).customer_accounts || []).length}
@@ -758,7 +758,7 @@ export const EventDetailsPage: React.FC = () => {
         <SendGalleryEmailDialog
           eventName={event.event_name}
           recipient={event.customer_email}
-          requirePassword={!isGalleryPublic(event)}
+          requirePassword={!isGalleryPublic(event.require_password)}
           isSending={sendGalleryEmailMutation.isPending}
           onConfirm={(password) => sendGalleryEmailMutation.mutate(password)}
           onClose={() => {

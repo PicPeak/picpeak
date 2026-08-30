@@ -16,6 +16,8 @@ interface EventActionsCardProps {
   /** Send the gallery email for an already-published gallery (#1235). */
   onSendGalleryEmail: () => void;
   isSendingGalleryEmail: boolean;
+  /** Assigned customer accounts — a recipient even with no inline email. */
+  assignedCustomerCount?: number;
 }
 
 export const EventActionsCard: React.FC<EventActionsCardProps> = ({
@@ -27,7 +29,8 @@ export const EventActionsCard: React.FC<EventActionsCardProps> = ({
   setShowDuplicateDialog,
   isDuplicating,
   onSendGalleryEmail,
-  isSendingGalleryEmail
+  isSendingGalleryEmail,
+  assignedCustomerCount = 0
 }) => {
   const { t } = useTranslation();
 
@@ -63,7 +66,11 @@ export const EventActionsCard: React.FC<EventActionsCardProps> = ({
                 default editor role has events.edit but not events.archive, so
                 nesting hid this action from exactly the people allowed to use
                 the endpoint behind it. */}
-            {event.customer_email && (
+            {/* Assigned accounts count as a recipient: the route falls through
+                to the customer-account notice when there is no inline email,
+                and the publish dialog promises that notice can be sent later —
+                so hiding the button here made that promise unkeepable. */}
+            {(event.customer_email || assignedCustomerCount > 0) && (
               <PermissionGate permission="events.edit">
                 <Button
                   variant="outline"

@@ -114,7 +114,7 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
                 ? t('events.publishDialog.descriptionWhatsapp', {
                     eventName,
                     defaultValue:
-                      'Publishing "{{eventName}}" makes the gallery accessible and sends the customer a WhatsApp notification.',
+                      'Publishing "{{eventName}}" makes the gallery accessible. If WhatsApp is configured, the customer is notified there.',
                   })
               : t('events.publishDialog.descriptionNoEmail', {
                   eventName,

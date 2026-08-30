@@ -1377,7 +1377,7 @@
       "notifyLabel": "Galerie-E-Mail jetzt senden",
       "notifyHelp": "Abwählen, um still zu veröffentlichen — die Galerie geht online, es wird nichts versendet. Die E-Mail lässt sich später auf dieser Seite senden.",
       "descriptionQuiet": "Durch das Veröffentlichen wird \"{{eventName}}\" zugänglich. Es wird keine E-Mail versendet — Sie können sie später auf dieser Seite senden.",
-      "descriptionWhatsapp": "Durch das Veröffentlichen wird \"{{eventName}}\" zugänglich und der Kunde erhält eine WhatsApp-Benachrichtigung."
+      "descriptionWhatsapp": "Durch das Veröffentlichen wird \"{{eventName}}\" zugänglich. Sofern WhatsApp eingerichtet ist, wird der Kunde dort benachrichtigt."
     },
     "duplicateEvent": "Galerie duplizieren",
     "duplicateDialog": {
