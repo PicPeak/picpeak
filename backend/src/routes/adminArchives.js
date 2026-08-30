@@ -10,6 +10,7 @@ const archiver = require('archiver');
 const StreamZip = require('node-stream-zip');
 const { requireEventOwnership } = require('../middleware/ownership');
 const { assertZipEntriesWithin } = require('../utils/safePath');
+const { sanitizeForZipEntry } = require('../utils/filenameSanitizer');
 const logger = require('../utils/logger');
 const { getPagination } = require('../utils/routeHelpers');
 const router = express.Router();
@@ -221,8 +222,20 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             // every entry and the restore silently loses categories on exactly
             // those archives. Never overwrite a real filename key: that one is
             // authoritative if both happen to collide.
-            if (m.original_filename && !manifestByFilename.has(m.original_filename)) {
-              manifestByFilename.set(m.original_filename, m);
+            // Index the name as the ZIP would have EMITTED it, not the raw
+            // column: archiveService runs original names through
+            // sanitizeForZipEntry() before writing the entry, so an original
+            // with a slash or a control byte lands under a different name than
+            // the manifest records. Index both, so either spelling resolves.
+            //
+            // Still not total: uniquifyZipNames() appends `_1` when two photos
+            // in one event share an original name, and that suffix cannot be
+            // reconstructed from the manifest. Those few fall through to the
+            // directory, exactly as they did before this fix — no worse, just
+            // not better. Closing that needs the emitted name recorded at
+            // archive time, which is a writer change and a new archive format.
+            for (const alias of [m.original_filename, sanitizeForZipEntry(m.original_filename)]) {
+              if (alias && !manifestByFilename.has(alias)) manifestByFilename.set(alias, m);
             }
           }
         }
@@ -251,12 +264,19 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         // it and creates a second "Ceremony" — and since is_global defaults to
         // TRUE, that duplicate then shows up in every other event's category
         // list. Same visibility rule the photo routes use: own rows or global.
-        const existingCategory = await db('photo_categories')
-          .where('name', categoryName)
-          .where(function () {
-            this.where('event_id', archive.id).orWhere('is_global', formatBoolean(true));
-          })
-          .first();
+        // Two queries, not one with an OR: an event-scoped category and a
+        // global one may share a name, and a single .first() would return
+        // whichever the engine felt like — silently reassigning a photo to the
+        // global row and losing event-local settings like allow_downloads.
+        // The event's own row is the more specific answer, so it wins.
+        const existingCategory =
+          await db('photo_categories')
+            .where({ event_id: archive.id, name: categoryName })
+            .first()
+          || await db('photo_categories')
+            .where('name', categoryName)
+            .where('is_global', formatBoolean(true))
+            .first();
 
         if (existingCategory) {
           categoriesMap.set(categoryName, existingCategory.id);

@@ -249,6 +249,50 @@ describe('archive restore restores categories (flat archives included)', () => {
     expect(await categoryOf('DSC_4242.jpg')).toBe('Drohne');
   });
 
+  it('prefers the event-scoped category when a global shares its name', async () => {
+    // The category API permits both. A single OR-lookup with .first() returned
+    // whichever the engine chose, so a photo could be reassigned to the global
+    // row and lose event-local settings such as allow_downloads.
+    const archiveRelPath = await writeArchive('collide.zip', {
+      'individual/co.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'co.jpg', original_filename: 'DSC_3.jpg', category_name: 'Reception' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'collide-event');
+
+    await db('photo_categories').insert({
+      event_id: null, name: 'Reception', slug: 'reception-global', is_global: true, created_at: new Date(),
+    });
+    const [own] = await db('photo_categories').insert({
+      event_id: eventId, name: 'Reception', slug: 'reception-own', is_global: false, created_at: new Date(),
+    }).returning('id');
+    const ownId = typeof own === 'object' ? own.id : own;
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    const photo = await db('photos').where('filename', 'co.jpg').first();
+    expect(photo.category_id).toBe(ownId);
+  });
+
+  it('matches a sanitized original filename, as the ZIP would have written it', async () => {
+    // archiveService runs original names through sanitizeForZipEntry() before
+    // writing the entry, so the emitted name differs from the manifest column.
+    const archiveRelPath = await writeArchive('sanitized.zip', {
+      'individual/od_dr_DSC_5.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'stored_abc.jpg', original_filename: 'od/dr/DSC_5.jpg', category_name: 'Strand' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'sanitized-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await categoryOf('od_dr_DSC_5.jpg')).toBe('Strand');
+  });
+
   it('honours a manifest that says UNCATEGORIZED, instead of inventing one from the directory', async () => {
     // The case the manifest-first change was for. A real archive puts every
     // photo under `individual/`, so a photo the manifest records as having no
