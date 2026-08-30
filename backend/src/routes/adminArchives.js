@@ -267,14 +267,27 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
 
             const manifestEntry = manifestByFilename.get(filename);
 
-            // The manifest is the only faithful source for the category: the
-            // archive stores photos exactly as they sit on disk, and events
-            // whose photos live in the gallery root produce a flat ZIP with
-            // no directory to read a category from. Falling back to the first
-            // path segment keeps archives that DO have subfolders working,
-            // and legacy archives (no manifest) behave as before.
-            let categoryId = await resolveCategoryId(manifestEntry?.category_name);
-            if (!categoryId && dirPath && dirPath !== '.') {
+            // The manifest is the only faithful source for the category, and
+            // it is authoritative INCLUDING when it says "none". A manifest
+            // entry with a null category_name means the photo was genuinely
+            // uncategorized, so falling through to the directory would
+            // contradict the very record being restored from.
+            //
+            // That matters because the directory is not a category. Archive
+            // entry names are the storage key minus `events/active/{slug}`,
+            // and that layout is `individual/{filename}` / `collages/…` —
+            // categories have never been directories there. Reading the first
+            // path segment on a real archive therefore invents categories
+            // literally named "individual" and "collages".
+            //
+            // So the fallback is confined to photos with NO manifest entry at
+            // all: archives written before the manifest existed, where the
+            // directory is the only signal left and inventing those two names
+            // is still better than losing every category.
+            let categoryId = null;
+            if (manifestEntry) {
+              categoryId = await resolveCategoryId(manifestEntry.category_name);
+            } else if (dirPath && dirPath !== '.') {
               categoryId = await resolveCategoryId(dirPath.split(path.sep)[0]);
             }
 

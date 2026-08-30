@@ -161,17 +161,47 @@ describe('archive restore restores categories (flat archives included)', () => {
     expect(rows).toHaveLength(1);
   });
 
-  it('still falls back to the first path segment for foldered legacy archives', async () => {
+  it('still falls back to the directory for legacy archives with no manifest', async () => {
     // No manifest at all — the shape every archive had before the manifest
     // landed. The directory is the only signal left, and it must keep working.
+    //
+    // `individual/` is what a REAL archive contains: entry names are the
+    // storage key minus `events/active/{slug}`, and that layout is
+    // `individual/` / `collages/`. Categories have never been directories, so
+    // the fallback invents a category with that name — not useful, but better
+    // than losing every category, and this pins what actually happens rather
+    // than a category-shaped folder no archive produces.
     const archiveRelPath = await writeArchive('foldered.zip', {
-      'Drohne/d.jpg': PIXEL,
+      'individual/d.jpg': PIXEL,
     });
     const eventId = await seedArchivedEvent(archiveRelPath, 'foldered-event');
 
     const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
     expect(res.status).toBe(200);
 
-    expect(await categoryOf('d.jpg')).toBe('Drohne');
+    expect(await categoryOf('d.jpg')).toBe('individual');
+  });
+
+  it('honours a manifest that says UNCATEGORIZED, instead of inventing one from the directory', async () => {
+    // The case the manifest-first change was for. A real archive puts every
+    // photo under `individual/`, so a photo the manifest records as having no
+    // category used to come back filed under a category called "individual" —
+    // the manifest being authoritative for "category X" but not for "none".
+    const manifest = JSON.stringify([
+      { filename: 'u.jpg', original_filename: 'DSC_7000.jpg', category_name: null },
+    ]);
+    const archiveRelPath = await writeArchive('uncategorized.zip', {
+      'individual/u.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(manifest, 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'uncategorized-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await categoryOf('u.jpg')).toBeNull();
+    // And no junk category row was created as a side effect.
+    const rows = await db('photo_categories').where({ event_id: eventId });
+    expect(rows).toHaveLength(0);
   });
 });
