@@ -205,6 +205,8 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // manifest the archive process writes. Older archives have no manifest;
       // we fall back to filename for those.
       const manifestByFilename = new Map();
+      // Aliases that more than one manifest row claims — see the loop below.
+      const ambiguousAliases = new Set();
       try {
         const manifestRaw = await fs.readFile(
           path.join(eventDir, 'photos_manifest.json'), 'utf8',
@@ -235,9 +237,28 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             // not better. Closing that needs the emitted name recorded at
             // archive time, which is a writer change and a new archive format.
             for (const alias of [m.original_filename, sanitizeForZipEntry(m.original_filename)]) {
-              if (alias && !manifestByFilename.has(alias)) manifestByFilename.set(alias, m);
+              if (!alias) continue;
+              if (manifestByFilename.has(alias)) {
+                // Two rows want the same alias — e.g. `individual/IMG.jpg` and
+                // `collages/IMG.jpg`, which archiveService treats as distinct
+                // paths and does not suffix, but which collapse to one basename
+                // here. Whichever won would give the other photo someone else's
+                // category. Drop the alias so both fall through to the
+                // directory instead: an unresolved category is recoverable, a
+                // confidently wrong one is not.
+                if (manifestByFilename.get(alias) !== m) ambiguousAliases.add(alias);
+                continue;
+              }
+              manifestByFilename.set(alias, m);
             }
           }
+        }
+        for (const alias of ambiguousAliases) manifestByFilename.delete(alias);
+        if (ambiguousAliases.size) {
+          logger.warn(
+            `Photos manifest: ${ambiguousAliases.size} original-filename alias(es) claimed by more than one `
+            + 'photo; those fall back to the directory for their category.'
+          );
         }
         logger.info(`Loaded photos manifest: ${manifestByFilename.size} entries`);
       } catch (e) {
@@ -269,12 +290,20 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         // whichever the engine felt like — silently reassigning a photo to the
         // global row and losing event-local settings like allow_downloads.
         // The event's own row is the more specific answer, so it wins.
+        //
+        // The global arm requires event_id IS NULL, not just is_global. The
+        // bug fixed here left legacy rows behind on upgraded instances —
+        // event-owned AND is_global true, because the column defaults true —
+        // and matching on the flag alone would let one event's leftover row be
+        // adopted by another event's restore, tying photos to a category that
+        // vanishes with someone else's gallery.
         const existingCategory =
           await db('photo_categories')
             .where({ event_id: archive.id, name: categoryName })
             .first()
           || await db('photo_categories')
             .where('name', categoryName)
+            .whereNull('event_id')
             .where('is_global', formatBoolean(true))
             .first();
 

@@ -293,6 +293,59 @@ describe('archive restore restores categories (flat archives included)', () => {
     expect(await categoryOf('od_dr_DSC_5.jpg')).toBe('Strand');
   });
 
+  it('ignores a legacy event-owned row when falling back to globals', async () => {
+    // The bug fixed here left rows behind on upgraded instances: event-owned
+    // AND is_global true, because the column defaults true. Matching on the
+    // flag alone would let one event's leftover be adopted by another event's
+    // restore, tying photos to a category that vanishes with someone else's
+    // gallery.
+    const otherEventId = await seedArchivedEvent('archives/none.zip', 'legacy-owner-event');
+    await db('photo_categories').insert({
+      event_id: otherEventId, name: 'Sunset', slug: 'sunset-legacy',
+      is_global: true, created_at: new Date(),
+    });
+
+    const archiveRelPath = await writeArchive('legacy-global.zip', {
+      'individual/lg.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'lg.jpg', original_filename: 'DSC_6.jpg', category_name: 'Sunset' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'legacy-global-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    const photo = await db('photos').where('filename', 'lg.jpg').first();
+    const cat = await db('photo_categories').where('id', photo.category_id).first();
+    // Its own row, not the other event's leftover.
+    expect(cat.event_id).toBe(eventId);
+  });
+
+  it('drops an ambiguous original-name alias rather than guessing', async () => {
+    // Two photos in different ZIP folders can share an original basename;
+    // archiveService treats the paths as distinct and suffixes neither. Both
+    // would collapse onto one alias, and whichever won would hand the other
+    // photo someone else's category.
+    const archiveRelPath = await writeArchive('ambiguous.zip', {
+      'individual/SHARED.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'a_stored.jpg', original_filename: 'SHARED.jpg', category_name: 'Alpha' },
+        { filename: 'b_stored.jpg', original_filename: 'SHARED.jpg', category_name: 'Beta' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'ambiguous-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    // Falls back to the directory rather than picking Alpha or Beta at random.
+    expect(await categoryOf('SHARED.jpg')).toBe('individual');
+    for (const name of ['Alpha', 'Beta']) {
+      expect(await db('photo_categories').where({ event_id: eventId, name }).first()).toBeFalsy();
+    }
+  });
+
   it('honours a manifest that says UNCATEGORIZED, instead of inventing one from the directory', async () => {
     // The case the manifest-first change was for. A real archive puts every
     // photo under `individual/`, so a photo the manifest records as having no
