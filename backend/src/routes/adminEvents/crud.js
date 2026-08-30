@@ -990,18 +990,22 @@ module.exports = (router) => {
       }
 
       const requirePassword = parseBooleanInput(event.require_password, true);
+      const hasInlineRecipient = !!(event.customer_email || event.host_email);
 
-      // Persist the password before queueing, exactly as publish does (#627).
-      // The dialog invites the admin to "pick a new one", and without this the
-      // email would carry a password the gallery does not accept — worse than
-      // the sentinel it replaced, because it looks usable.
-      if (requirePassword && password) {
+      // Persist the password ONLY when the mail that carries it is actually
+      // going out (#627). The account-only fallback below sends
+      // customer_gallery_assigned, which links to the customer portal and
+      // never mentions a password — rehashing for that would silently change
+      // the live gallery password and lock out everyone holding the old one,
+      // in exchange for nothing.
+      if (hasInlineRecipient && requirePassword && password) {
         await db('events').where('id', id).update({
           password_hash: await bcrypt.hash(password, getBcryptRounds()),
         });
       }
 
-      const queued = await queueGalleryCreatedEmail(event, { password, requirePassword });
+      const queued = hasInlineRecipient
+        && await queueGalleryCreatedEmail(event, { password, requirePassword });
       if (!queued) {
         // No inline recipient, but the gallery may be assigned to registered
         // customer account(s) — the same path publish takes. Without this the

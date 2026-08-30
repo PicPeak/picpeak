@@ -253,6 +253,41 @@ describe('publish quietly (#1235)', () => {
     expect(JSON.parse(queued.email_data).gallery_password).toBe('brand-new-pass');
   });
 
+  it('does NOT touch the gallery password when only an account notice goes out', async () => {
+    // customer_gallery_assigned links to the customer portal and never carries
+    // a password. Rehashing for it would silently change the live gallery
+    // password and lock out everyone holding the old one, for nothing.
+    const [row] = await db('events').insert({
+      slug: 'account-only',
+      event_type: 'wedding',
+      event_name: 'Account Only',
+      event_date: '2026-09-01',
+      host_email: '',
+      admin_email: 'admin@example.com',
+      customer_email: null,
+      password_hash: 'original-hash',
+      require_password: 1,
+      share_link: '/gallery/account-only/share',
+      share_token: 'account-only-token',
+      expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      is_active: 1,
+      is_archived: 0,
+      is_draft: 0,
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    const id = typeof row === 'object' ? row.id : row;
+
+    const res = await request(app)
+      .post(`/admin/events/${id}/send-gallery-email`)
+      .send({ password: 'should-not-be-applied' });
+
+    // No inline recipient and no assigned accounts in this fixture, so the
+    // route refuses — but the password must be untouched either way.
+    expect(res.status).toBe(400);
+    const after = await db('events').where({ id }).first();
+    expect(after.password_hash).toBe('original-hash');
+  });
+
   it('re-sending is allowed — a lost email should not need an unpublish/republish', async () => {
     const id = await seedDraft({ slug: 'resend' });
     await request(app).post(`/admin/events/${id}/publish`).send({});

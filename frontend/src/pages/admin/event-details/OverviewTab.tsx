@@ -183,7 +183,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               isDuplicating={isDuplicating}
               onSendGalleryEmail={onSendGalleryEmail}
               isSendingGalleryEmail={isSendingGalleryEmail}
-              assignedCustomerCount={((event as { customer_accounts?: Array<{ id: number }> }).customer_accounts || []).length}
+              assignedCustomerCount={
+                ((event as { customer_accounts?: Array<{ id: number; is_active?: boolean }> })
+                  .customer_accounts || [])
+                  // Only ACTIVE accounts count: the endpoint filters the rest
+                  // out, so counting them would show a button that then fails.
+                  .filter((c) => c.is_active !== false).length
+              }
             />
           </PermissionGate>
         )}

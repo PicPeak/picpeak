@@ -34,6 +34,15 @@ export const EventActionsCard: React.FC<EventActionsCardProps> = ({
 }) => {
   const { t } = useTranslation();
 
+  // Mirror the endpoint's own eligibility rules. Showing a button the backend
+  // is guaranteed to reject just walks the admin through a dialog to reach a
+  // generic error toast — the archived case is already handled by the caller,
+  // which does not render this card at all for archived events.
+  const hasRecipient = !!event.customer_email || assignedCustomerCount > 0;
+  const isExpired = !!event.expires_at && new Date(event.expires_at) <= new Date();
+  const isInactive = event.is_active === false;
+  const canSendGalleryEmail = hasRecipient && !isExpired && !isInactive;
+
   return (
     <Card padding="md">
       <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('events.actions')}</h2>
@@ -70,7 +79,7 @@ export const EventActionsCard: React.FC<EventActionsCardProps> = ({
                 to the customer-account notice when there is no inline email,
                 and the publish dialog promises that notice can be sent later —
                 so hiding the button here made that promise unkeepable. */}
-            {(event.customer_email || assignedCustomerCount > 0) && (
+            {canSendGalleryEmail && (
               <PermissionGate permission="events.edit">
                 <Button
                   variant="outline"
