@@ -7,6 +7,8 @@ interface PublishGalleryDialogProps {
   eventName: string;
   requirePassword: boolean;
   customerEmail?: string | null;
+  /** WhatsApp recipient — publish notifies this too, so it counts as "someone gets told". */
+  customerPhone?: string | null;
   /** Assigned customer accounts — notified via the account "your galleries" email when there's no inline email. */
   assignedCustomerCount?: number;
   isPublishing: boolean;
@@ -30,15 +32,19 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
   eventName,
   requirePassword,
   customerEmail,
+  customerPhone,
   assignedCustomerCount = 0,
   isPublishing,
   onConfirm,
   onClose,
 }) => {
   const { t } = useTranslation();
-  // Someone gets notified if there's an inline email OR an assigned account
-  // (the latter via the account "your galleries" email).
-  const willNotify = !!customerEmail || assignedCustomerCount > 0;
+  // Someone gets notified if there's an inline email, an assigned account (the
+  // account "your galleries" email), OR a phone — publish queues a WhatsApp
+  // for that last one. Leaving the phone out hid the opt-out on phone-only
+  // galleries AND told the admin nothing would be sent, while the WhatsApp
+  // went out anyway.
+  const willNotify = !!customerEmail || !!customerPhone || assignedCustomerCount > 0;
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -104,6 +110,12 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
                   defaultValue:
                     'Publishing "{{eventName}}" makes the gallery accessible. The assigned customer account(s) will be notified by email (in their language) that it is available.',
                 })
+              : customerPhone
+                ? t('events.publishDialog.descriptionWhatsapp', {
+                    eventName,
+                    defaultValue:
+                      'Publishing "{{eventName}}" makes the gallery accessible and sends the customer a WhatsApp notification.',
+                  })
               : t('events.publishDialog.descriptionNoEmail', {
                   eventName,
                   defaultValue:

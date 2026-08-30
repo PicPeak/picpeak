@@ -193,6 +193,45 @@ describe('publish quietly (#1235)', () => {
     expect(Number(event.is_draft)).toBe(0);
   });
 
+  it('refuses to send for an archived, inactive or expired gallery', async () => {
+    // The link in the email would be rejected by the gallery middleware, so
+    // sending it hands the customer a dead link with no explanation.
+    const cases = [
+      { slug: 'arch-ev', patch: { is_archived: 1 }, match: /archived/i },
+      { slug: 'inactive-ev', patch: { is_active: 0 }, match: /inactive/i },
+      {
+        slug: 'expired-ev',
+        patch: { expires_at: new Date(Date.now() - 3600 * 1000).toISOString() },
+        match: /expired/i,
+      },
+    ];
+    for (const c of cases) {
+      const id = await seedDraft({ slug: c.slug, isDraft: false });
+      await db('events').where({ id }).update(c.patch);
+      const res = await request(app).post(`/admin/events/${id}/send-gallery-email`).send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(c.match);
+      expect(await queuedFor(id)).toHaveLength(0);
+    }
+  });
+
+  it('carries the password the admin supplies, instead of the sentinel', async () => {
+    // password_hash is a hash, so the plaintext only exists in this request.
+    // Without it the email says "(set at creation)", which cannot get anyone
+    // into the gallery — and the send-later action is most useful right after
+    // a quiet publish, the path that never collected a password.
+    const id = await seedDraft({ slug: 'with-password', isDraft: false });
+    await db('events').where({ id }).update({ require_password: 1 });
+
+    const res = await request(app)
+      .post(`/admin/events/${id}/send-gallery-email`)
+      .send({ password: 'sup3r-secret' });
+    expect(res.status).toBe(200);
+
+    const [queued] = await queuedFor(id);
+    expect(JSON.parse(queued.email_data).gallery_password).toBe('sup3r-secret');
+  });
+
   it('re-sending is allowed — a lost email should not need an unpublish/republish', async () => {
     const id = await seedDraft({ slug: 'resend' });
     await request(app).post(`/admin/events/${id}/publish`).send({});

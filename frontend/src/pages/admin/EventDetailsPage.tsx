@@ -6,7 +6,7 @@ import { toast } from 'react-toastify';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
 import { Loading } from '../../components/common';
-import { PasswordResetModal, PublishGalleryDialog, DuplicateEventDialog, EventRenameDialog, AdminGuestsList } from '../../components/admin';
+import { PasswordResetModal, PublishGalleryDialog, SendGalleryEmailDialog, DuplicateEventDialog, EventRenameDialog, AdminGuestsList } from '../../components/admin';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
@@ -60,6 +60,7 @@ export const EventDetailsPage: React.FC = () => {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [showSendEmailDialog, setShowSendEmailDialog] = useState(false);
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
   const [currentTheme, setCurrentTheme] = useState<ThemeConfig | null>(null);
   const [currentPresetName, setCurrentPresetName] = useState<string>('default');
@@ -271,7 +272,8 @@ export const EventDetailsPage: React.FC = () => {
   // Send the gallery email after the fact (#1235). Pairs with publishing
   // quietly: the address usually arrives later than the gallery does.
   const sendGalleryEmailMutation = useMutation({
-    mutationFn: () => eventsService.sendGalleryEmail(parseInt(id!)),
+    mutationFn: (password?: string) =>
+      eventsService.sendGalleryEmail(parseInt(id!), password ? { password } : undefined),
     onSuccess: (result) => {
       toast.success(
         t('events.sendGalleryEmail.success', {
@@ -279,6 +281,7 @@ export const EventDetailsPage: React.FC = () => {
           defaultValue: 'Gallery email queued to {{recipient}}.',
         }),
       );
+      setShowSendEmailDialog(false);
     },
     onError: () => {
       toast.error(t('errors.somethingWentWrong'));
@@ -654,7 +657,7 @@ export const EventDetailsPage: React.FC = () => {
           setShowPasswordReset={setShowPasswordReset}
           setShowPublishDialog={setShowPublishDialog}
           setShowDuplicateDialog={setShowDuplicateDialog}
-          onSendGalleryEmail={() => sendGalleryEmailMutation.mutate()}
+          onSendGalleryEmail={() => setShowSendEmailDialog(true)}
           isSendingGalleryEmail={sendGalleryEmailMutation.isPending}
           onArchive={() => archiveMutation.mutate()}
           isArchiving={archiveMutation.isPending}
@@ -737,11 +740,29 @@ export const EventDetailsPage: React.FC = () => {
           eventName={event.event_name}
           requirePassword={isGalleryPublic(event) ? false : true}
           customerEmail={event.customer_email}
+          customerPhone={event.customer_phone}
           assignedCustomerCount={((event as { customer_accounts?: Array<{ id: number }> }).customer_accounts || []).length}
           isPublishing={publishMutation.isPending}
           onConfirm={(password, notifyCustomer) => publishMutation.mutate({ password, notifyCustomer })}
           onClose={() => {
             if (!publishMutation.isPending) setShowPublishDialog(false);
+          }}
+        />
+      )}
+
+      {/* Send Gallery Email Dialog (#1235) — asks for the password for the
+          same reason publish does: the plaintext only exists in this request,
+          and this action is most useful right after a quiet publish, which
+          never collected one. */}
+      {showSendEmailDialog && (
+        <SendGalleryEmailDialog
+          eventName={event.event_name}
+          recipient={event.customer_email}
+          requirePassword={!isGalleryPublic(event)}
+          isSending={sendGalleryEmailMutation.isPending}
+          onConfirm={(password) => sendGalleryEmailMutation.mutate(password)}
+          onClose={() => {
+            if (!sendGalleryEmailMutation.isPending) setShowSendEmailDialog(false);
           }}
         />
       )}

@@ -906,7 +906,8 @@
       "errorMinLength": "Password must be at least 6 characters long.",
       "notifyLabel": "Send the gallery email now",
       "notifyHelp": "Uncheck to publish quietly — the gallery goes live and nothing is sent. You can send the email later from this page.",
-      "descriptionQuiet": "Publishing \"{{eventName}}\" makes the gallery accessible. No email will be sent — you can send it later from this page."
+      "descriptionQuiet": "Publishing \"{{eventName}}\" makes the gallery accessible. No email will be sent — you can send it later from this page.",
+      "descriptionWhatsapp": "Publishing \"{{eventName}}\" makes the gallery accessible and sends the customer a WhatsApp notification."
     },
     "duplicateEvent": "Duplicate gallery",
     "duplicateDialog": {
@@ -1061,9 +1062,12 @@
     "publishQuietSuccess": "Gallery published. No email was sent.",
     "sendGalleryEmail": {
       "button": "Send gallery email",
-      "help": "Sends the gallery link and password to the customer.",
+      "help": "Sends the gallery link to the customer. You confirm the password first if the gallery has one.",
       "confirm": "Send the gallery email to {{recipient}}?",
-      "success": "Gallery email queued to {{recipient}}."
+      "success": "Gallery email queued to {{recipient}}.",
+      "title": "Send gallery email",
+      "description": "Sends the gallery link for \"{{eventName}}\" to {{recipient}}.",
+      "passwordHelp": "The email includes this exact text. Re-type the gallery password (or pick a new one) — the backend re-hashes it so the login still works."
     }
   },
   "settings": {

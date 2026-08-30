@@ -52,35 +52,34 @@ export const EventActionsCard: React.FC<EventActionsCardProps> = ({
             </p>
           </PermissionGate>
         ) : (
-          <PermissionGate permission="events.archive">
+          <>
             {/* Send the gallery email after publishing (#1235). The pair to
                 publishing quietly — the address often arrives later than the
                 gallery — and it doubles as a re-send when the first one was
                 lost. Hidden without a recipient, since there is nowhere to
-                send it. */}
-            {(event.customer_email || event.host_email) && (
+                send it.
+
+                Its own gate, NOT nested inside the archive one below: the
+                default editor role has events.edit but not events.archive, so
+                nesting hid this action from exactly the people allowed to use
+                the endpoint behind it. */}
+            {event.customer_email && (
               <PermissionGate permission="events.edit">
                 <Button
                   variant="outline"
                   leftIcon={<Mail className="w-4 h-4" />}
-                  onClick={() => {
-                    if (confirm(t('events.sendGalleryEmail.confirm', {
-                      recipient: event.customer_email || event.host_email,
-                      defaultValue: 'Send the gallery email to {{recipient}}?',
-                    }))) {
-                      onSendGalleryEmail();
-                    }
-                  }}
+                  onClick={onSendGalleryEmail}
                   isLoading={isSendingGalleryEmail}
                   className="w-full justify-center"
                 >
                   {t('events.sendGalleryEmail.button', 'Send gallery email')}
                 </Button>
                 <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center mb-3">
-                  {t('events.sendGalleryEmail.help', 'Sends the gallery link and password to the customer.')}
+                  {t('events.sendGalleryEmail.help', 'Sends the gallery link to the customer. You confirm the password first if the gallery has one.')}
                 </p>
               </PermissionGate>
             )}
+            <PermissionGate permission="events.archive">
             <Button
               variant="outline"
               leftIcon={<Archive className="w-4 h-4" />}
@@ -97,7 +96,8 @@ export const EventActionsCard: React.FC<EventActionsCardProps> = ({
             <p className="text-xs text-neutral-500 dark:text-neutral-400 text-center">
               {t('events.archivingInfo')}
             </p>
-          </PermissionGate>
+            </PermissionGate>
+          </>
         )}
         {/* Duplicate (#626) — visible in both draft and live mode.
             Creates a new draft inheriting this gallery's config. */}

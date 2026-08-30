@@ -975,10 +975,51 @@ module.exports = (router) => {
         // URL the customer cannot open. Publishing is the action they want.
         return res.status(400).json({ error: 'Event is still a draft — publish it first' });
       }
+      // Same reason, for the other three ways a gallery stops being reachable:
+      // the link in the email would be rejected by the gallery middleware, so
+      // sending it is worse than refusing — the customer gets a dead link with
+      // no explanation.
+      if (parseBooleanInput(event.is_archived, false)) {
+        return res.status(400).json({ error: 'Event is archived — restore it before sending' });
+      }
+      if (!parseBooleanInput(event.is_active, true)) {
+        return res.status(400).json({ error: 'Event is inactive — the gallery link would not work' });
+      }
+      if (event.expires_at && new Date(event.expires_at) <= new Date()) {
+        return res.status(400).json({ error: 'Event has expired — extend it before sending' });
+      }
 
       const requirePassword = parseBooleanInput(event.require_password, true);
       const queued = await queueGalleryCreatedEmail(event, { password, requirePassword });
       if (!queued) {
+        // No inline recipient, but the gallery may be assigned to registered
+        // customer account(s) — the same path publish takes. Without this the
+        // publish dialog's promise that the notice can be sent later is false
+        // for exactly those galleries.
+        let notified = 0;
+        try {
+          const customerAccountsService = require('../../services/customerAccountsService');
+          const assigned = await customerAccountsService.getAssignmentsForEvent(parseInt(id, 10));
+          for (const c of assigned.filter((a) => a.is_active !== false && a.is_active !== 0 && a.email)) {
+            await customerAccountsService
+              .notifyCustomerOfNewAssignments(c.id, [parseInt(id, 10)])
+              .then(() => { notified += 1; })
+              .catch((err) => logger.warn('Send gallery email: customer notice failed', { customerId: c.id, error: err.message }));
+          }
+        } catch (err) {
+          logger.warn('Send gallery email: assigned-customer lookup failed', { eventId: id, error: err.message });
+        }
+        if (notified > 0) {
+          await logActivity('gallery_email_sent',
+            { event_name: event.event_name, assigned_accounts: notified },
+            id,
+            { type: 'admin', id: req.admin.id, name: req.admin.username }
+          );
+          return res.json({
+            message: 'Gallery notice queued',
+            recipient: `${notified} assigned customer account(s)`,
+          });
+        }
         return res.status(400).json({
           error: 'No customer email is set for this event',
         });
