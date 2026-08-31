@@ -368,4 +368,49 @@ describe('archive restore restores categories (flat archives included)', () => {
     const rows = await db('photo_categories').where({ event_id: eventId });
     expect(rows).toHaveLength(0);
   });
+
+  it('drops a canonical filename that two photos claim, rather than guessing', async () => {
+    // photos.filename is not unique within an event: s3AutoImporter takes
+    // path.basename(entry.key) and dedupes by path, so two imported files in
+    // different subfolders both land as IMG_1234.jpg. Both ZIP entries reduce
+    // to the same basename at restore, so keeping the last row seen would give
+    // one photo the other's category.
+    const archiveRelPath = await writeArchive('dup-canonical.zip', {
+      'individual/IMG_1234.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'IMG_1234.jpg', original_filename: 'a.jpg', category_name: 'Alpha' },
+        { filename: 'IMG_1234.jpg', original_filename: 'b.jpg', category_name: 'Beta' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'dup-canonical-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await categoryOf('IMG_1234.jpg')).toBe('individual');
+    for (const name of ['Alpha', 'Beta']) {
+      expect(await db('photo_categories').where({ event_id: eventId, name }).first()).toBeFalsy();
+    }
+  });
+
+  it("keeps a canonical filename when another row's original_filename collides with it", async () => {
+    // The alias pass must not be able to evict a canonical key. Previously the
+    // outcome depended on manifest iteration order — the archive query has no
+    // ORDER BY — so the canonical row lost its category roughly half the time.
+    const archiveRelPath = await writeArchive('alias-vs-canonical.zip', {
+      'individual/CANON.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'CANON.jpg', original_filename: 'unrelated.jpg', category_name: 'Canonical' },
+        { filename: 'other_stored.jpg', original_filename: 'CANON.jpg', category_name: 'Aliased' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'alias-vs-canonical-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    // The canonical row owns the name; the alias never gets to claim or drop it.
+    expect(await categoryOf('CANON.jpg')).toBe('Canonical');
+  });
+
 });

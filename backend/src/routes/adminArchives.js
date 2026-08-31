@@ -213,9 +213,43 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         );
         const parsed = JSON.parse(manifestRaw);
         if (Array.isArray(parsed)) {
-          for (const m of parsed) {
-            if (!m || !m.filename) continue;
+          // Two passes, and the order is the point. Canonical photos.filename
+          // keys are claimed first and never yielded afterwards; aliases only
+          // fill names no canonical row wanted. Interleaving them made the
+          // result depend on manifest iteration order — the query has no
+          // ORDER BY — and could delete a canonical key because some OTHER
+          // row's original_filename happened to collide with it.
+          const rows = parsed.filter((m) => m && m.filename);
+
+          // photos.filename is not unique within an event: s3AutoImporter
+          // takes path.basename(entry.key) and dedupes by path, so two
+          // imported files in different subfolders both land as `IMG_1234.jpg`
+          // with different `path` values. At restore both ZIP entries reduce
+          // to the same basename, so whichever row won the key would hand the
+          // other photo someone else's category. Contested names are dropped
+          // rather than guessed.
+          const contestedFilenames = new Set();
+          for (const m of rows) {
+            const held = manifestByFilename.get(m.filename);
+            if (held && held !== m) {
+              contestedFilenames.add(m.filename);
+              continue;
+            }
             manifestByFilename.set(m.filename, m);
+          }
+          for (const name of contestedFilenames) manifestByFilename.delete(name);
+          if (contestedFilenames.size) {
+            logger.warn(
+              `Photos manifest: ${contestedFilenames.size} filename(s) claimed by more than one photo; `
+              + 'those fall back to the directory for their category.'
+            );
+          }
+
+          // Every canonical name, contested ones included — an alias must not
+          // claim a name that a canonical row wanted and lost, either.
+          const canonicalNames = new Set(rows.map((m) => m.filename));
+
+          for (const m of rows) {
             // Also index by original_filename. When
             // general_use_original_filenames_for_downloads was on at archive
             // time, archiveService names each ZIP entry after the ORIGINAL
@@ -238,6 +272,11 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             // archive time, which is a writer change and a new archive format.
             for (const alias of [m.original_filename, sanitizeForZipEntry(m.original_filename)]) {
               if (!alias) continue;
+              // A canonical filename outranks any alias and is never dropped
+              // on its account — previously an alias colliding with someone
+              // else's canonical name marked it ambiguous, and the sweep below
+              // then deleted the canonical entry.
+              if (canonicalNames.has(alias)) continue;
               if (manifestByFilename.has(alias)) {
                 // Two rows want the same alias — e.g. `individual/IMG.jpg` and
                 // `collages/IMG.jpg`, which archiveService treats as distinct
