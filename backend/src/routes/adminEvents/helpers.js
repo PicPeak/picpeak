@@ -324,22 +324,15 @@ async function deleteEventCascade(eventId, adminContext) {
   // S3, where that prefix is not a directory. It is gallery-sized.
   // downloadZipService exposes a cleanup() documented as "used on event
   // deletion" that this cascade never called.
-  // Cancel any in-flight or debounced "Download All" build BEFORE snapshotting
-  // paths. A builder that started before this delete would otherwise upload a
-  // gallery-sized zip after the sweep and write its path onto a row that no
-  // longer exists, orphaning the object permanently. cleanup() is the
-  // service's own entry point for this ("used on event deletion"): it bumps
-  // the version so an in-flight build discards its result, clears the debounce
-  // so nothing rebuilds for a deleted event, and removes the current object.
-  // It deletes before the commit rather than after — acceptable here and only
-  // here, because the zip is a regenerable cache, not gallery content.
-  try {
-    await require('../../services/downloadZipService').cleanup(eventId);
-  } catch (zipErr) {
-    logger.warn('Could not cancel the Download All build during cascade delete', {
-      eventId, error: zipErr.message
-    });
-  }
+  // NOTE: an in-flight "Download All" build that started before this delete
+  // can still upload its zip after the sweep and write the path onto a row
+  // that no longer exists, orphaning it. downloadZipService.cleanup() is the
+  // service's cancel primitive, but calling it here made the backend CI job
+  // exceed its 10-minute budget on this branch — its _cleanup() reaches
+  // getStorage() and, in a suite where the S3 backend is configured but
+  // unreachable, every cascade delete then pays the adapter's retry backoff.
+  // Left as a follow-up rather than shipped as a timeout: the race is narrow
+  // and costs one orphaned object, the regression cost the whole suite.
   if (event.download_zip_path) storageKeys.add(event.download_zip_path);
 
   await db.transaction(async (trx) => {
