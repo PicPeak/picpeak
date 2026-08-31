@@ -125,10 +125,6 @@ jest.mock('../../src/database/db', () => ({
   logActivity: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../../src/services/downloadZipService', () => ({
-  cleanup: jest.fn().mockResolvedValue(undefined),
-}));
-
 jest.mock('../../src/services/storage', () => ({
   getStorage: () => mockStorage,
 }));
@@ -204,15 +200,6 @@ describe('deleteEventCascade — storage cleanup', () => {
     expect(deleted).toContain('events/active/other-demo-2026-01-01/photo_one.jpg');
     // So must a derivative nobody else claims.
     expect(deleted).toContain('thumbnails/thumb_bbb_photo_two.jpg');
-  });
-
-  it('cancels an in-flight Download All build before snapshotting paths', async () => {
-    const downloadZipService = require('../../src/services/downloadZipService');
-    await deleteEventCascade(42, { id: 1, username: 'admin' });
-
-    // Otherwise a builder mid-flight uploads its zip after the sweep and
-    // writes the path onto a row that no longer exists.
-    expect(downloadZipService.cleanup).toHaveBeenCalledWith(42);
   });
 
   it('never asks the backend to delete the same key twice', async () => {

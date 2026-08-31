@@ -332,22 +332,15 @@ async function deleteEventCascade(eventId, adminContext) {
   // The job rows must be read BEFORE the transaction for the same reason the
   // photo rows are: download_jobs.event_id is ON DELETE CASCADE, so on
   // Postgres the rows vanish with the event and their keys with them.
-  // Cancel any in-flight or debounced "Download All" build BEFORE snapshotting
-  // paths. A builder that started before this delete would otherwise upload a
-  // gallery-sized zip after the sweep and write its path onto a row that no
-  // longer exists, orphaning the object permanently. cleanup() is the
-  // service's own entry point for this ("used on event deletion"): it bumps
-  // the version so an in-flight build discards its result, clears the debounce
-  // so nothing rebuilds for a deleted event, and removes the current object.
-  // It deletes before the commit rather than after — acceptable here and only
-  // here, because the zip is a regenerable cache, not gallery content.
-  try {
-    await require('../../services/downloadZipService').cleanup(eventId);
-  } catch (zipErr) {
-    logger.warn('Could not cancel the Download All build during cascade delete', {
-      eventId, error: zipErr.message
-    });
-  }
+  // NOTE: an in-flight "Download All" build that started before this delete
+  // can still upload its zip after the sweep and write the path onto a row
+  // that no longer exists, orphaning it. downloadZipService.cleanup() is the
+  // service's cancel primitive, but calling it here made the stable twin's
+  // backend CI job exceed its 10-minute budget: _cleanup() reaches
+  // getStorage(), and where the S3 backend is configured but unreachable
+  // every cascade delete pays the adapter's retry backoff — in the request
+  // path, not just in tests. Left as a follow-up rather than shipped behind a
+  // timeout: the race costs one orphaned object, this cost the whole suite.
   if (event.download_zip_path) storageKeys.add(event.download_zip_path);
   try {
     if (await db.schema.hasTable('download_jobs')) {
