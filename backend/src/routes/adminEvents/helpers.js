@@ -275,6 +275,14 @@ async function deleteEventCascade(eventId, adminContext) {
   // the `fs.unlink` below is a no-op on S3 and the zip outlives its event.
   if (event.archive_path) storageKeys.add(event.archive_path);
 
+  // The pre-built "Download All" zip is the subtle one: it lives UNDER
+  // events/active/{slug}/.download-cache/ (downloadZipService.js:42), so the
+  // recursive fs.rm below covers it on local disk and nothing covers it on
+  // S3, where that prefix is not a directory. It is gallery-sized.
+  // downloadZipService exposes a cleanup() documented as "used on event
+  // deletion" that this cascade never called.
+  if (event.download_zip_path) storageKeys.add(event.download_zip_path);
+
   await db.transaction(async (trx) => {
     // 1. Delete activity logs (audit trail)
     await trx('activity_logs').where('event_id', eventId).del();
@@ -345,16 +353,37 @@ async function deleteEventCascade(eventId, adminContext) {
     let removed = 0;
     try {
       const storage = getStorage();
-      for (const key of storageKeys) {
-        try {
-          await storage.delete(key);
-          removed++;
-        } catch (delErr) {
-          logger.warn('Failed to delete stored object during cascade delete', {
-            eventId, key, error: delErr.message
-          });
+      const keys = Array.from(storageKeys);
+
+      // Bounded concurrency rather than one await per key. A 400-photo gallery
+      // owns well over a thousand objects once the derived tiers are counted,
+      // and on S3 that many sequential DeleteObject round trips runs to
+      // minutes — long enough for a proxy to time the request out AFTER the
+      // commit, leaving the event deleted and the sweep half-finished.
+      // Deleting is idempotent and order-independent, so there is nothing to
+      // serialise for.
+      //
+      // A pool, not Promise.all over every key: an unbounded fan-out would
+      // open one socket per object and exhaust the S3 client's connection
+      // pool.
+      const CONCURRENCY = 16;
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < keys.length) {
+          const key = keys[cursor++];
+          try {
+            await storage.delete(key);
+            removed++;
+          } catch (delErr) {
+            logger.warn('Failed to delete stored object during cascade delete', {
+              eventId, key, error: delErr.message
+            });
+          }
         }
-      }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, keys.length) }, worker)
+      );
     } catch (storageErr) {
       logger.warn('Storage backend unavailable during cascade delete', {
         eventId, error: storageErr.message

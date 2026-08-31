@@ -31,6 +31,9 @@ const mockEvent = {
   // Written through the backend by archiveService, so it is a bucket object
   // and the fs.unlink in the cascade never touched it on S3.
   archive_path: 'archives/other-demo-2026-01-01.zip',
+  // The pre-built "Download All" zip. Lives under the event prefix, so the
+  // recursive fs.rm covers it on local disk and nothing covers it on S3.
+  download_zip_path: 'events/active/other-demo-2026-01-01/.download-cache/all.zip',
 };
 const mockPhotos = [
   {
@@ -133,6 +136,16 @@ describe('deleteEventCascade — storage cleanup', () => {
       'watermarked/wm_aaa_photo_one.jpg',
       'archives/other-demo-2026-01-01.zip',
     ]));
+  });
+
+  it('deletes the Download All cache, which only fs.rm ever covered', async () => {
+    await deleteEventCascade(42, { id: 1, username: 'admin' });
+
+    const deleted = mockStorage.delete.mock.calls.map(([key]) => key);
+
+    expect(deleted).toContain(
+      'events/active/other-demo-2026-01-01/.download-cache/all.zip'
+    );
   });
 
   it('never asks the backend to delete the same key twice', async () => {
