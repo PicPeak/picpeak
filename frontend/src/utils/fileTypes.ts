@@ -53,6 +53,31 @@ export function extensionsToAcceptString(extString?: string | null): string {
 }
 
 /**
+ * `accept` for the guest upload input (#1117).
+ *
+ * Recent Android versions route an `<input>` whose accept list is entirely
+ * image and video types to the system *photo picker*, which has no camera
+ * entry — so a guest at the event cannot take a photo, only pick one already
+ * in their gallery. Including a type the photo picker can't handle forces
+ * Android back to the general document chooser, which does offer the camera.
+ *
+ * Gated on the UA because iOS and desktop pickers behave correctly and would
+ * only gain a selectable PDF that `addFiles` then rejects. Picking one on
+ * Android is rejected the same way — `extensionsToMimeTypes` only ever emits
+ * types it has a mapping for, so `application/pdf` can never be in the
+ * allowlist and the existing "Invalid file type" guard already covers it.
+ *
+ * UA sniffing is the wrong tool in general, but there is no feature query for
+ * "which picker will this open"; the failure mode of a wrong guess is one
+ * extra unusable entry in a file chooser.
+ */
+export function buildUploadAcceptString(extString?: string | null, userAgent?: string): string {
+  const accept = extensionsToAcceptString(extString);
+  const ua = userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '');
+  return /Android/i.test(ua) ? `${accept},.pdf` : accept;
+}
+
+/**
  * Human-readable, de-duplicated list of the configured extensions for the
  * upload requirements hint, e.g. "JPG, PNG, WEBP, MOV". Only extensions the
  * app actually supports (present in EXTENSION_TO_MIME) are shown, so the hint
