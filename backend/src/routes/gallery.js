@@ -1584,6 +1584,44 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     }
     const box = isVideo ? null : parseResolution(requested);
 
+    // A HEAD is a metadata probe, not a download. Answering it below the
+    // counters recorded every probe as a real download, and answering it below
+    // renderPhotoForDownload fetched and watermarked an image whose body Node
+    // then discards. Both happen before this point in a GET, so HEAD leaves
+    // here — with no side effects and no bytes read.
+    if (req.method === 'HEAD') {
+      const headUseOriginal = await getUseOriginalFilenames();
+      const headHeaders = {
+        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Content-Disposition': buildContentDisposition(pickRawDownloadName(photo, headUseOriginal)),
+        'Accept-Ranges': 'bytes',
+      };
+
+      // Content-Length only when the bytes ship untransformed AND the size can
+      // be read without fetching them. A watermark or resize changes the
+      // length, and the only way to learn the new one is to do the work this
+      // branch exists to avoid — HEAD is allowed to omit it.
+      const headWatermark = await resolveWatermarkSettings(req.event);
+      if (!box && !headWatermark) {
+        try {
+          const headKey = resolvePhotoStorageKey(req.event, photo);
+          const headStorage = getStorage();
+          if (headKey && headStorage.kind() !== 'local') {
+            const headStat = await headStorage.stat(headKey);
+            if (!headStat) return res.status(404).json({ error: 'Photo file not found' });
+            headHeaders['Content-Length'] = headStat.size;
+            if (headStat.mtime) headHeaders['Last-Modified'] = new Date(headStat.mtime).toUTCString();
+          }
+        } catch (headErr) {
+          // No length is a valid HEAD; not worth failing the probe over.
+          logger.debug('HEAD probe could not stat the object', { photoId, error: headErr.message });
+        }
+      }
+
+      res.set(headHeaders);
+      return res.end();
+    }
+
     // Admin preview (#868) downloads are excluded from the download count +
     // guest analytics — kept out of client-facing stats.
     if (!req.isAdminPreview) {
@@ -1725,16 +1763,6 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       const ifRange = req.headers['if-range'];
       const staleValidator = !!ifRange && (!lastModified || ifRange.trim() !== lastModified);
       const range = staleValidator ? null : parseByteRange(req.headers.range, stat.size);
-
-      // Express routes HEAD through this GET handler, and Node then discards
-      // the body — but the pipe still drains the whole object out of S3
-      // first, so a metadata probe from a download manager costs a full
-      // transfer in egress and latency. Everything a HEAD needs is already in
-      // `stat`.
-      if (req.method === 'HEAD') {
-        res.set({ ...headers, 'Content-Length': stat.size });
-        return res.end();
-      }
 
       // Open the stream BEFORE any header is staged or sent. stat() succeeding
       // does not mean get() will: a concurrent delete or replace, or a
