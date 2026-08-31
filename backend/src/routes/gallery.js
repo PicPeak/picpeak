@@ -30,7 +30,7 @@ const { generateGuestIdentifier } = require('../middleware/feedbackRateLimit');
 const secureImageService = require('../services/secureImageService');
 const logger = require('../utils/logger');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
-const { resolvePhotoFilePath } = require('../services/photoResolver');
+const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
 const { getEventShareToken, resolveShareIdentifier, buildShareLinkVariants } = require('../services/shareLinkService');
 const { handleAsync, errorResponse } = require('../utils/routeHelpers');
 const { NotFoundError } = require('../utils/errors');
@@ -53,6 +53,43 @@ const fs = require('fs');
 
 // Get storage path from environment or default
 const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+
+/**
+ * Parse a single-range `Range: bytes=` header against a known size.
+ *
+ * Returns null for absent, malformed, multi-range or unsatisfiable headers —
+ * every one of which the caller answers with a normal 200 full body, which is
+ * what a client that sent an unparseable range would get today anyway.
+ * Validating matters because an unchecked parse yields NaN bounds and a 206
+ * with a nonsense Content-Range, which corrupts a resumed download rather
+ * than merely failing it.
+ */
+function parseByteRange(header, size) {
+  if (!header || typeof header !== 'string' || !size) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match) return null;
+
+  const [, rawStart, rawEnd] = match;
+  if (rawStart === '' && rawEnd === '') return null;
+
+  let start;
+  let end;
+  if (rawStart === '') {
+    // Suffix form: the last N bytes.
+    const suffix = parseInt(rawEnd, 10);
+    if (!suffix) return null;
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = parseInt(rawStart, 10);
+    end = rawEnd === '' ? size - 1 : parseInt(rawEnd, 10);
+  }
+
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  if (start > end || start >= size) return null;
+  return { start, end: Math.min(end, size - 1) };
+}
+
 
 // Check for slug redirect (for renamed events)
 async function checkSlugRedirect(slug) {
@@ -1008,11 +1045,19 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       photo_id: photoId
     });
     
-    let filePath;
+    // Where the bytes actually live. Managed photos sit behind the storage
+    // abstraction and on an S3/R2 deployment are not on local disk at all —
+    // resolving a filesystem path unconditionally here is what made every
+    // single-photo download fail in S3 mode, while download-all and
+    // secure-images worked because they already went through getStorage().
+    //
+    // resolvePhotoStorageKey returns null for external/reference photos: those
+    // live on a local mount and keep the filesystem path.
+    let storageKey = null;
     try {
-      filePath = resolvePhotoFilePath(req.event, photo);
+      storageKey = resolvePhotoStorageKey(req.event, photo);
     } catch (resolveError) {
-      logger.error('Failed to resolve photo path for download', {
+      logger.error('Failed to resolve photo storage key for download', {
         slug: req.params.slug,
         photoId,
         eventId: req.event.id,
@@ -1020,7 +1065,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       });
       return res.status(404).json({ error: 'Photo file not found' });
     }
-    
+
     // Get watermark settings - apply if global setting OR event-level setting is enabled
     const watermarkSettings = await watermarkService.getWatermarkSettings();
     const eventWatermarkEnabled = req.event.watermark_downloads === true || req.event.watermark_downloads === 1;
@@ -1041,7 +1086,28 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
         enabled: true,
         text: req.event.watermark_text || watermarkSettings?.text || 'Protected'
       };
-      const watermarkedBuffer = await watermarkService.applyWatermark(filePath, effectiveSettings);
+
+      // applyWatermark takes a PATH, and caches on it — buffer inputs skip the
+      // cache deliberately. In S3 mode materialize a tmp local copy and hand
+      // it the copy's path, exactly as the zip builders below do, so the cache
+      // still applies and the full-size original isn't re-processed per
+      // download.
+      let watermarkedBuffer;
+      try {
+        watermarkedBuffer = storageKey
+          ? await withLocalCopy(storageKey, (localPath) =>
+            watermarkService.applyWatermark(localPath, effectiveSettings))
+          : await watermarkService.applyWatermark(
+            resolvePhotoFilePath(req.event, photo), effectiveSettings);
+      } catch (watermarkError) {
+        logger.error('Failed to watermark photo for download', {
+          slug: req.params.slug,
+          photoId,
+          eventId: req.event.id,
+          error: watermarkError.message,
+        });
+        return res.status(404).json({ error: 'Photo file not found' });
+      }
 
       res.set({
         'Content-Type': photo.mime_type || 'image/jpeg',
@@ -1049,27 +1115,88 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
         'Content-Length': watermarkedBuffer.length
       });
 
-      res.send(watermarkedBuffer);
-    } else {
-      // res.download() builds Content-Disposition itself but doesn't emit the
-      // RFC 5987 filename* parameter, so unicode camera filenames would lose
-      // their bytes on download. Set the header explicitly and stream the
-      // file with res.sendFile-equivalent semantics.
-      res.set({
+      return res.send(watermarkedBuffer);
+    }
+
+    const storage = getStorage();
+    if (storageKey && storage.kind() !== 'local') {
+      // Deliberately NOT the local path: res.sendFile emits Content-Length,
+      // Accept-Ranges, ETag and Last-Modified and answers Range requests with
+      // a 206, and a bare stream.pipe(res) has none of that. On local disk
+      // sendFile stays the better implementation, so it stays the branch.
+      //
+      // On S3 the parts that matter for a download are reproduced: the length
+      // (browsers need it for the progress indicator, which matters most on
+      // exactly the large files this route serves) and Range, so an
+      // interrupted download resumes instead of appending a second full body
+      // onto the partial file.
+      const stat = await storage.stat(storageKey);
+      if (!stat) {
+        logger.error('Photo not found in storage backend for download', {
+          slug: req.params.slug,
+          photoId,
+          eventId: req.event.id,
+          storageKey,
+        });
+        return res.status(404).json({ error: 'Photo file not found' });
+      }
+
+      const headers = {
         'Content-Type': photo.mime_type || 'image/jpeg',
         'Content-Disposition': contentDisposition,
-      });
-      res.sendFile(filePath, (downloadError) => {
-        if (downloadError) {
-          logger.error('Error streaming gallery download', {
-            slug: req.params.slug,
-            photoId,
-            eventId: req.event.id,
-            error: downloadError.message,
-          });
-        }
-      });
+        'Accept-Ranges': 'bytes',
+      };
+      if (stat.mtime) headers['Last-Modified'] = new Date(stat.mtime).toUTCString();
+
+      const range = parseByteRange(req.headers.range, stat.size);
+      if (range) {
+        res.writeHead(206, {
+          ...headers,
+          'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}`,
+          'Content-Length': (range.end - range.start) + 1,
+        });
+        const partial = await storage.getRange(storageKey, range.start, range.end);
+        pipeStreamToResponse(partial, res, { context: `download range for photo ${photo.id}` });
+        return;
+      }
+
+      res.set({ ...headers, 'Content-Length': stat.size });
+      const stream = await storage.get(storageKey);
+      pipeStreamToResponse(stream, res, { context: `download for photo ${photo.id}` });
+      return;
     }
+
+    let filePath;
+    try {
+      filePath = resolvePhotoFilePath(req.event, photo);
+    } catch (resolveError) {
+      logger.error('Failed to resolve photo path for download', {
+        slug: req.params.slug,
+        photoId,
+        eventId: req.event.id,
+        error: resolveError.message,
+      });
+      return res.status(404).json({ error: 'Photo file not found' });
+    }
+
+    // res.download() builds Content-Disposition itself but doesn't emit the
+    // RFC 5987 filename* parameter, so unicode camera filenames would lose
+    // their bytes on download. Set the header explicitly and stream the
+    // file with res.sendFile-equivalent semantics.
+    res.set({
+      'Content-Type': photo.mime_type || 'image/jpeg',
+      'Content-Disposition': contentDisposition,
+    });
+    res.sendFile(filePath, (downloadError) => {
+      if (downloadError) {
+        logger.error('Error streaming gallery download', {
+          slug: req.params.slug,
+          photoId,
+          eventId: req.event.id,
+          error: downloadError.message,
+        });
+      }
+    });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to download photo');
   }
