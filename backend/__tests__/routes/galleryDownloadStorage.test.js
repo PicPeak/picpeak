@@ -239,6 +239,9 @@ describe('single-photo download through the storage backend (#1048)', () => {
   });
 
   it('answers HEAD from stat instead of draining the object out of S3', async () => {
+    const before = (await db('photos').where('id', photoId).first()).download_count || 0;
+    const logsBefore = (await db('access_logs').where({ photo_id: photoId, action: 'download' })).length;
+
     const res = await request(app).head(`/api/gallery/${SLUG}/download/${photoId}`);
 
     expect(res.status).toBe(200);
@@ -247,6 +250,12 @@ describe('single-photo download through the storage backend (#1048)', () => {
     // The whole point: no egress for a metadata probe.
     expect(mockStorage.get).not.toHaveBeenCalled();
     expect(mockStorage.getRange).not.toHaveBeenCalled();
+
+    // And no side effects: a probe is not a download.
+    const after = (await db('photos').where('id', photoId).first()).download_count || 0;
+    expect(after).toBe(before);
+    const logsAfter = (await db('access_logs').where({ photo_id: photoId, action: 'download' })).length;
+    expect(logsAfter).toBe(logsBefore);
   });
 
   it('returns a clean error when the range stream dies before its first chunk', async () => {
