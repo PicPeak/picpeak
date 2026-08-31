@@ -31,7 +31,16 @@ const mockEvent = {
   // Written through the backend by archiveService, so it is a bucket object
   // and the fs.unlink in the cascade never touched it on S3.
   archive_path: 'archives/other-demo-2026-01-01.zip',
+  // The pre-built "Download All" zip. Lives under the event prefix, so the
+  // recursive fs.rm covers it on local disk and nothing covers it on S3.
+  download_zip_path: 'events/active/other-demo-2026-01-01/.download-cache/all.zip',
 };
+
+// One zip per custom-resolution download job, same prefix. The rows are
+// ON DELETE CASCADE, so they must be read before the transaction.
+const mockDownloadJobs = [
+  { zip_path: 'events/active/other-demo-2026-01-01/.download-cache/job-abc123.zip' },
+];
 const mockPhotos = [
   {
     id: 1,
@@ -64,13 +73,18 @@ const mockPhotos = [
 ];
 
 let mockPhotoRowsDeleted = false;
+let mockJobRowsDeleted = false;
 
 function mockMakeDb() {
   const table = (name) => {
     const chain = {
       where: () => chain,
       first: async () => (name === 'events' ? mockEvent : undefined),
+      whereNotNull: () => chain,
       select: async () => {
+        if (name === 'download_jobs') {
+          return mockJobRowsDeleted ? [] : mockDownloadJobs;
+        }
         if (name === 'photos') {
           // The whole point: if this runs after the transaction, the rows
           // are gone and we would collect nothing.
@@ -80,13 +94,14 @@ function mockMakeDb() {
       },
       del: async () => {
         if (name === 'photos') mockPhotoRowsDeleted = true;
+        if (name === 'download_jobs') mockJobRowsDeleted = true;
         return 1;
       },
     };
     return chain;
   };
   // #1132 guards the merge-dismissals delete behind a hasTable check.
-  table.schema = { hasTable: async () => false };
+  table.schema = { hasTable: async (t) => t === 'download_jobs' };
   table.transaction = async (cb) => cb(table);
   return table;
 }
@@ -106,6 +121,7 @@ describe('deleteEventCascade — storage cleanup', () => {
   beforeEach(() => {
     mockStorage.delete.mockClear();
     mockPhotoRowsDeleted = false;
+    mockJobRowsDeleted = false;
   });
 
   it('deletes originals and every derived tier from the storage backend', async () => {
@@ -132,6 +148,20 @@ describe('deleteEventCascade — storage cleanup', () => {
     expect(deleted).toEqual(expect.arrayContaining([
       'watermarked/wm_aaa_photo_one.jpg',
       'archives/other-demo-2026-01-01.zip',
+    ]));
+  });
+
+  it('deletes the download caches, which only fs.rm ever covered', async () => {
+    await deleteEventCascade(42, { id: 1, username: 'admin' });
+
+    const deleted = mockStorage.delete.mock.calls.map(([key]) => key);
+
+    // Both sit under events/active/{slug}/.download-cache/ — swept by the
+    // recursive fs.rm on local disk, invisible to it on S3 where the prefix
+    // is not a directory. Both are gallery-sized.
+    expect(deleted).toEqual(expect.arrayContaining([
+      'events/active/other-demo-2026-01-01/.download-cache/all.zip',
+      'events/active/other-demo-2026-01-01/.download-cache/job-abc123.zip',
     ]));
   });
 

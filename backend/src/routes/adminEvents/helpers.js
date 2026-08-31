@@ -278,6 +278,32 @@ async function deleteEventCascade(eventId, adminContext) {
   // zip outlives the event it belongs to.
   if (event.archive_path) storageKeys.add(event.archive_path);
 
+  // The download caches are the subtle ones: they live UNDER
+  // events/active/{slug}/.download-cache/, so the recursive fs.rm below covers
+  // them on local disk and nothing covers them on S3, where the prefix is not
+  // a directory. Both are gallery-sized.
+  //
+  //   - the pre-built "Download All" zip (downloadZipService.js:44)
+  //   - one zip per custom-resolution download job (downloadJobService.js:77)
+  //
+  // The job rows must be read BEFORE the transaction for the same reason the
+  // photo rows are: download_jobs.event_id is ON DELETE CASCADE, so on
+  // Postgres the rows vanish with the event and their keys with them.
+  if (event.download_zip_path) storageKeys.add(event.download_zip_path);
+  try {
+    if (await db.schema.hasTable('download_jobs')) {
+      const jobs = await db('download_jobs')
+        .where('event_id', eventId)
+        .whereNotNull('zip_path')
+        .select('zip_path');
+      for (const job of jobs) storageKeys.add(job.zip_path);
+    }
+  } catch (jobErr) {
+    logger.warn('Could not enumerate download job archives before cascade delete', {
+      eventId, error: jobErr.message
+    });
+  }
+
   await db.transaction(async (trx) => {
     // 1. Delete activity logs (audit trail)
     await trx('activity_logs').where('event_id', eventId).del();
@@ -378,16 +404,36 @@ async function deleteEventCascade(eventId, adminContext) {
     let removed = 0;
     try {
       const storage = getStorage();
-      for (const key of storageKeys) {
-        try {
-          await storage.delete(key);
-          removed++;
-        } catch (delErr) {
-          logger.warn('Failed to delete stored object during cascade delete', {
-            eventId, key, error: delErr.message
-          });
+      const keys = Array.from(storageKeys);
+
+      // Bounded concurrency rather than one await per key. A 400-photo gallery
+      // owns ~1600 objects once the derived tiers are counted, and on S3 that
+      // many sequential DeleteObject round trips runs to minutes — long enough
+      // for a proxy to time the request out AFTER the commit, leaving the
+      // event deleted and the sweep half-finished. Deleting is idempotent and
+      // order-independent, so there is nothing to serialise for.
+      //
+      // A pool, not Promise.all over every key: an unbounded fan-out would
+      // open one socket per object and exhaust the S3 client's connection
+      // pool, which is what #1049 just finished making failures survivable.
+      const CONCURRENCY = 16;
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < keys.length) {
+          const key = keys[cursor++];
+          try {
+            await storage.delete(key);
+            removed++;
+          } catch (delErr) {
+            logger.warn('Failed to delete stored object during cascade delete', {
+              eventId, key, error: delErr.message
+            });
+          }
         }
-      }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, keys.length) }, worker)
+      );
     } catch (storageErr) {
       logger.warn('Storage backend unavailable during cascade delete', {
         eventId, error: storageErr.message
