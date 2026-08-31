@@ -393,10 +393,13 @@ describe('archive restore restores categories (flat archives included)', () => {
     }
   });
 
-  it("keeps a canonical filename when another row's original_filename collides with it", async () => {
-    // The alias pass must not be able to evict a canonical key. Previously the
-    // outcome depended on manifest iteration order — the archive query has no
-    // ORDER BY — so the canonical row lost its category roughly half the time.
+  it("drops a name that one row owns canonically and another claims as an alias", async () => {
+    // Undecidable: with original-filename archiving ON the ZIP entry under
+    // this name is the ALIAS owner's file, with it OFF it is the canonical
+    // owner's, and the manifest does not record which mode was used. The
+    // point of the two-pass split is that this now resolves the same way
+    // every run — the archive query has no ORDER BY, so it used to be a coin
+    // flip between dropping the name and overwriting it.
     const archiveRelPath = await writeArchive('alias-vs-canonical.zip', {
       'individual/CANON.jpg': PIXEL,
       'photos_manifest.json': Buffer.from(JSON.stringify([
@@ -409,8 +412,35 @@ describe('archive restore restores categories (flat archives included)', () => {
     const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
     expect(res.status).toBe(200);
 
-    // The canonical row owns the name; the alias never gets to claim or drop it.
-    expect(await categoryOf('CANON.jpg')).toBe('Canonical');
+    // Falls back to the directory rather than guessing either row.
+    expect(await categoryOf('CANON.jpg')).toBe('individual');
+    for (const name of ['Canonical', 'Aliased']) {
+      expect(await db('photo_categories').where({ event_id: eventId, name }).first()).toBeFalsy();
+    }
+  });
+
+  it('does not invent a category for a photo row that already exists', async () => {
+    // archiveEvent retains photo rows, so a restore can skip every insert.
+    // Resolving categories before that check created one from the stale
+    // manifest name that nothing then used — renaming a category while its
+    // event was archived left the old name behind as an empty duplicate.
+    const archiveRelPath = await writeArchive('existing-rows.zip', {
+      'individual/KEPT.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'KEPT.jpg', original_filename: 'KEPT.jpg', category_name: 'OldName' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'existing-rows-event');
+    await db('photos').insert({
+      event_id: eventId, filename: 'KEPT.jpg', path: 'whatever/KEPT.jpg', type: 'jpg',
+      uploaded_at: new Date().toISOString(),
+    });
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await db('photo_categories').where({ event_id: eventId, name: 'OldName' }).first())
+      .toBeFalsy();
   });
 
 });

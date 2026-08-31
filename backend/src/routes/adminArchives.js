@@ -272,11 +272,23 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             // archive time, which is a writer change and a new archive format.
             for (const alias of [m.original_filename, sanitizeForZipEntry(m.original_filename)]) {
               if (!alias) continue;
-              // A canonical filename outranks any alias and is never dropped
-              // on its account — previously an alias colliding with someone
-              // else's canonical name marked it ambiguous, and the sweep below
-              // then deleted the canonical entry.
-              if (canonicalNames.has(alias)) continue;
+              // An alias colliding with someone else's canonical name is
+              // genuinely undecidable, so it is dropped rather than resolved
+              // either way. Which photo the ZIP emitted under that name
+              // depends on whether original-filename archiving was on at
+              // archive time, and the manifest does not record that: with it
+              // ON the entry is the ALIAS owner's file, with it OFF it is the
+              // canonical owner's. Preferring either one silently mislabels
+              // the other half of the time.
+              //
+              // What the two-pass split buys is that this is now decided the
+              // same way every run — the archive query has no ORDER BY, so
+              // interleaving the passes previously made it a coin flip
+              // between dropping the name and overwriting it.
+              if (canonicalNames.has(alias)) {
+                if (manifestByFilename.get(alias) !== m) ambiguousAliases.add(alias);
+                continue;
+              }
               if (manifestByFilename.has(alias)) {
                 // Two rows want the same alias — e.g. `individual/IMG.jpg` and
                 // `collages/IMG.jpg`, which archiveService treats as distinct
@@ -395,20 +407,26 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             // all: archives written before the manifest existed, where the
             // directory is the only signal left and inventing those two names
             // is still better than losing every category.
-            let categoryId = null;
-            if (manifestEntry) {
-              categoryId = await resolveCategoryId(manifestEntry.category_name);
-            } else if (dirPath && dirPath !== '.') {
-              categoryId = await resolveCategoryId(dirPath.split(path.sep)[0]);
-            }
-
             // Check if photo already exists in database
             const existingPhoto = await db('photos')
               .where('event_id', archive.id)
               .where('filename', filename)
               .first();
-            
+
             if (!existingPhoto) {
+              // Resolved HERE, not above: resolveCategoryId find-or-CREATES,
+              // and archiveEvent retains photo rows. Resolving before this
+              // check meant restoring an archive whose rows still exist
+              // created a category from the stale manifest name that nothing
+              // then used — so renaming a category while its event was
+              // archived left the old name behind as an empty duplicate.
+              let categoryId = null;
+              if (manifestEntry) {
+                categoryId = await resolveCategoryId(manifestEntry.category_name);
+              } else if (dirPath && dirPath !== '.') {
+                categoryId = await resolveCategoryId(dirPath.split(path.sep)[0]);
+              }
+
               // Store relative path from storage root
               const relativePath = path.relative(storagePath, actualFilePath);
               extractedPhotos.push({
