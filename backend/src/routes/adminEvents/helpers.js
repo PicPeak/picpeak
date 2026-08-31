@@ -238,6 +238,9 @@ async function deleteEventCascade(eventId, adminContext) {
   // gallery's hero and preview can resolve to one object) and deleting it
   // twice would log a spurious failure for the second attempt.
   const storageKeys = new Set();
+  // Derived keys separately: unlike the originals, whose keys embed the event
+  // slug, these are not event-scoped and need a shared-ownership check below.
+  const derivedKeys = new Set();
   try {
     const { resolvePhotoStorageKey } = require('../../services/photoResolver');
     const photos = await db('photos')
@@ -261,13 +264,53 @@ async function deleteEventCascade(eventId, adminContext) {
       // path (watermarkService.deleteWatermarkFile) and leaked here the same
       // way the originals did.
       for (const derived of [photo.thumbnail_path, photo.hero_path, photo.preview_path, photo.watermark_path]) {
-        if (derived) storageKeys.add(derived);
+        if (derived) {
+          storageKeys.add(derived);
+          derivedKeys.add(derived);
+        }
       }
     }
   } catch (collectErr) {
     logger.warn('Could not enumerate stored objects before cascade delete', {
       eventId, error: collectErr.message
     });
+  }
+
+  // A canonical derivative can belong to more than one gallery. Its basename
+  // comes from the photo's filename — imageProcessor passes no outputBasename
+  // for managed photos, so the key is `thumbnails/thumb_w300_<filename>` with
+  // nothing event-scoped in it — and filenames are not unique across events.
+  // The responsive-tier code says exactly that, which is why THOSE keys carry
+  // a p{id}_ prefix; the canonical ones predate it. Deleting a shared key here
+  // would blank a surviving gallery's tile until something regenerated it, so
+  // anything another event still points at is left alone. Originals need no
+  // such check: their keys embed the slug.
+  const derived = Array.from(derivedKeys);
+  try {
+    // Chunked: SQLite caps bind variables at 999 and this is four columns wide.
+    for (let i = 0; i < derived.length; i += 200) {
+      const chunk = derived.slice(i, i + 200);
+      const shared = await db('photos')
+        .whereNot('event_id', eventId)
+        .where((qb) => qb
+          .whereIn('thumbnail_path', chunk)
+          .orWhereIn('hero_path', chunk)
+          .orWhereIn('preview_path', chunk)
+          .orWhereIn('watermark_path', chunk))
+        .select('thumbnail_path', 'hero_path', 'preview_path', 'watermark_path');
+      for (const row of shared) {
+        for (const key of [row.thumbnail_path, row.hero_path, row.preview_path, row.watermark_path]) {
+          if (key && derivedKeys.has(key)) storageKeys.delete(key);
+        }
+      }
+    }
+  } catch (sharedErr) {
+    // Can't prove ownership — keep the objects. An orphan costs storage; a
+    // deleted derivative costs someone else's gallery.
+    logger.warn('Could not check for shared derivatives; leaving them in place', {
+      eventId, error: sharedErr.message
+    });
+    for (const key of derivedKeys) storageKeys.delete(key);
   }
 
   // The archive zip is typically the largest single object an event owns, and
@@ -281,6 +324,22 @@ async function deleteEventCascade(eventId, adminContext) {
   // S3, where that prefix is not a directory. It is gallery-sized.
   // downloadZipService exposes a cleanup() documented as "used on event
   // deletion" that this cascade never called.
+  // Cancel any in-flight or debounced "Download All" build BEFORE snapshotting
+  // paths. A builder that started before this delete would otherwise upload a
+  // gallery-sized zip after the sweep and write its path onto a row that no
+  // longer exists, orphaning the object permanently. cleanup() is the
+  // service's own entry point for this ("used on event deletion"): it bumps
+  // the version so an in-flight build discards its result, clears the debounce
+  // so nothing rebuilds for a deleted event, and removes the current object.
+  // It deletes before the commit rather than after — acceptable here and only
+  // here, because the zip is a regenerable cache, not gallery content.
+  try {
+    await require('../../services/downloadZipService').cleanup(eventId);
+  } catch (zipErr) {
+    logger.warn('Could not cancel the Download All build during cascade delete', {
+      eventId, error: zipErr.message
+    });
+  }
   if (event.download_zip_path) storageKeys.add(event.download_zip_path);
 
   await db.transaction(async (trx) => {

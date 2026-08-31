@@ -35,6 +35,7 @@ const mockEvent = {
   // recursive fs.rm covers it on local disk and nothing covers it on S3.
   download_zip_path: 'events/active/other-demo-2026-01-01/.download-cache/all.zip',
 };
+
 const mockPhotos = [
   {
     id: 1,
@@ -67,12 +68,28 @@ const mockPhotos = [
 ];
 
 let mockPhotoRowsDeleted = false;
+let mockJobRowsDeleted = false;
+
+// Photos in OTHER events that share a canonical derivative key with this one.
+let mockSharedDerivatives = [];
+
+// The shared-derivative probe: db('photos').whereNot(...).where(cb).select(...)
+const sharedProbe = {
+  where: () => sharedProbe,
+  whereIn: () => sharedProbe,
+  orWhereIn: () => sharedProbe,
+  select: async () => mockSharedDerivatives,
+};
 
 function mockMakeDb() {
   const table = (name) => {
     const chain = {
       where: () => chain,
       first: async () => (name === 'events' ? mockEvent : undefined),
+      whereNotNull: () => chain,
+      whereNot: () => sharedProbe,
+      orWhereIn: () => chain,
+      whereIn: () => chain,
       select: async () => {
         if (name === 'photos') {
           // The whole point: if this runs after the transaction, the rows
@@ -83,6 +100,7 @@ function mockMakeDb() {
       },
       del: async () => {
         if (name === 'photos') mockPhotoRowsDeleted = true;
+        if (name === 'download_jobs') mockJobRowsDeleted = true;
         return 1;
       },
     };
@@ -99,6 +117,10 @@ jest.mock('../../src/database/db', () => ({
   logActivity: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../src/services/downloadZipService', () => ({
+  cleanup: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock('../../src/services/storage', () => ({
   getStorage: () => mockStorage,
 }));
@@ -109,6 +131,8 @@ describe('deleteEventCascade — storage cleanup', () => {
   beforeEach(() => {
     mockStorage.delete.mockClear();
     mockPhotoRowsDeleted = false;
+    mockJobRowsDeleted = false;
+    mockSharedDerivatives = [];
   });
 
   it('deletes originals and every derived tier from the storage backend', async () => {
@@ -143,9 +167,44 @@ describe('deleteEventCascade — storage cleanup', () => {
 
     const deleted = mockStorage.delete.mock.calls.map(([key]) => key);
 
+    // Sits under events/active/{slug}/.download-cache/ — swept by the
+    // recursive fs.rm on local disk, invisible to it on S3 where the prefix
+    // is not a directory. Gallery-sized. (download_jobs is main-only, so the
+    // per-job archives main also sweeps have no counterpart here.)
     expect(deleted).toContain(
       'events/active/other-demo-2026-01-01/.download-cache/all.zip'
     );
+  });
+
+  it('leaves a derivative alone when another event still points at it', async () => {
+    // Canonical thumbnail/hero/preview keys are not event-scoped — the
+    // basename is the photo's filename, and filenames are not unique across
+    // events. Deleting one a surviving gallery still references would blank
+    // its tile.
+    mockSharedDerivatives = [{
+      thumbnail_path: 'thumbnails/thumb_aaa_photo_one.jpg',
+      hero_path: null,
+      preview_path: null,
+      watermark_path: null,
+    }];
+
+    await deleteEventCascade(42, { id: 1, username: 'admin' });
+
+    const deleted = mockStorage.delete.mock.calls.map(([key]) => key);
+    expect(deleted).not.toContain('thumbnails/thumb_aaa_photo_one.jpg');
+    // The originals are slug-scoped and must still go.
+    expect(deleted).toContain('events/active/other-demo-2026-01-01/photo_one.jpg');
+    // So must a derivative nobody else claims.
+    expect(deleted).toContain('thumbnails/thumb_bbb_photo_two.jpg');
+  });
+
+  it('cancels an in-flight Download All build before snapshotting paths', async () => {
+    const downloadZipService = require('../../src/services/downloadZipService');
+    await deleteEventCascade(42, { id: 1, username: 'admin' });
+
+    // Otherwise a builder mid-flight uploads its zip after the sweep and
+    // writes the path onto a row that no longer exists.
+    expect(downloadZipService.cleanup).toHaveBeenCalledWith(42);
   });
 
   it('never asks the backend to delete the same key twice', async () => {
