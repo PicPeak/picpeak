@@ -28,6 +28,9 @@ const mockEvent = {
   slug: 'other-demo-2026-01-01',
   event_name: 'Demo',
   source_mode: 'managed',
+  // Written through the backend by archiveService, so it is a bucket object
+  // and the fs.unlink in the cascade never touched it on S3.
+  archive_path: 'archives/other-demo-2026-01-01.zip',
 };
 const mockPhotos = [
   {
@@ -36,6 +39,7 @@ const mockPhotos = [
     thumbnail_path: 'thumbnails/thumb_aaa_photo_one.jpg',
     hero_path: null,
     preview_path: 'previews/prev_aaa_photo_one.jpg',
+    watermark_path: 'watermarked/wm_aaa_photo_one.jpg',
     source_origin: 'managed',
   },
   {
@@ -44,6 +48,7 @@ const mockPhotos = [
     thumbnail_path: 'thumbnails/thumb_bbb_photo_two.jpg',
     hero_path: null,
     preview_path: null,
+    watermark_path: null,
     source_origin: 'managed',
   },
   {
@@ -53,6 +58,7 @@ const mockPhotos = [
     thumbnail_path: null,
     hero_path: null,
     preview_path: null,
+    watermark_path: null,
     source_origin: 'external',
   },
 ];
@@ -114,6 +120,29 @@ describe('deleteEventCascade — storage cleanup', () => {
       'thumbnails/thumb_bbb_photo_two.jpg',
       'previews/prev_aaa_photo_one.jpg',
     ]));
+  });
+
+  it('deletes pre-generated watermarks and the archive zip', async () => {
+    await deleteEventCascade(42, { id: 1, username: 'admin' });
+
+    const deleted = mockStorage.delete.mock.calls.map(([key]) => key);
+
+    // Both are storage-backend objects that only fs.unlink ever touched, so
+    // both survived an event delete on S3.
+    expect(deleted).toEqual(expect.arrayContaining([
+      'watermarked/wm_aaa_photo_one.jpg',
+      'archives/other-demo-2026-01-01.zip',
+    ]));
+  });
+
+  it('never asks the backend to delete the same key twice', async () => {
+    await deleteEventCascade(42, { id: 1, username: 'admin' });
+
+    const managed = mockStorage.delete.mock.calls
+      .map(([key]) => key)
+      .filter((key) => !key.startsWith('thumbnails/thumb_w') && !key.startsWith('previews/preview_w'));
+
+    expect(managed).toEqual([...new Set(managed)]);
   });
 
   it('leaves external/reference photos in place', async () => {

@@ -240,9 +240,12 @@ async function deleteEventCascade(eventId, adminContext) {
   const tieredPhotos = await db('photos')
     .where('event_id', eventId)
     .select('id', 'path', 'filename', 'source_origin', 'external_relpath',
-      'thumbnail_path', 'hero_path', 'preview_path');
+      'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path');
 
-  const storageKeys = [];
+  // A Set because a photo can carry the same key in two columns (an unresized
+  // gallery's hero and preview can resolve to one object) and deleting it
+  // twice would log a spurious failure for the second attempt.
+  const storageKeys = new Set();
   try {
     const { resolvePhotoStorageKey } = require('../../services/photoResolver');
     for (const photo of tieredPhotos) {
@@ -251,15 +254,16 @@ async function deleteEventCascade(eventId, adminContext) {
         // outside the managed backend and must NOT be deleted — PicPeak does
         // not own those bytes.
         const originalKey = resolvePhotoStorageKey(event, photo);
-        if (originalKey) storageKeys.push(originalKey);
+        if (originalKey) storageKeys.add(originalKey);
       } catch (keyErr) {
         logger.warn('Could not resolve storage key during cascade delete', {
           eventId, photoId: photo.id, error: keyErr.message
         });
       }
-      // Derived tiers are stored as canonical keys and pass through verbatim.
-      for (const derived of [photo.thumbnail_path, photo.hero_path, photo.preview_path]) {
-        if (derived) storageKeys.push(derived);
+      // Derived tiers are stored as canonical keys and pass through verbatim,
+      // the same list adminPhotoDimensions.js:801 sweeps on a re-render.
+      for (const derived of [photo.thumbnail_path, photo.hero_path, photo.preview_path, photo.watermark_path]) {
+        if (derived) storageKeys.add(derived);
       }
     }
   } catch (collectErr) {
@@ -267,6 +271,12 @@ async function deleteEventCascade(eventId, adminContext) {
       eventId, error: collectErr.message
     });
   }
+
+  // The archive zip is typically the largest single object an event owns, and
+  // archiveService writes it through the backend (`storage.putFromFile`, see
+  // archiveService.js:160) — so the `fs.unlink` below is a no-op on S3 and the
+  // zip outlives the event it belongs to.
+  if (event.archive_path) storageKeys.add(event.archive_path);
 
   await db.transaction(async (trx) => {
     // 1. Delete activity logs (audit trail)
@@ -359,8 +369,11 @@ async function deleteEventCascade(eventId, adminContext) {
 
   // Managed objects, post-commit for the same reason: a rolled-back
   // transaction must never leave files destroyed for an event that still
-  // exists.
-  if (storageKeys.length > 0) {
+  // exists. Every key here goes through the backend on both engines — on
+  // local disk the folder sweep above already covers the originals, but the
+  // tiers, watermarks and the archive live outside the event folder and would
+  // otherwise leak there too.
+  if (storageKeys.size > 0) {
     const { getStorage } = require('../../services/storage');
     let removed = 0;
     try {
@@ -381,7 +394,7 @@ async function deleteEventCascade(eventId, adminContext) {
       });
     }
     logger.info('Cascade delete removed stored objects', {
-      eventId, removed, total: storageKeys.length
+      eventId, removed, total: storageKeys.size
     });
   }
 
