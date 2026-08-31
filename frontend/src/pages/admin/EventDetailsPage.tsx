@@ -758,7 +758,13 @@ export const EventDetailsPage: React.FC = () => {
         <SendGalleryEmailDialog
           eventName={event.event_name}
           recipient={event.customer_email}
-          requirePassword={!isGalleryPublic(event.require_password)}
+          // Only the inline-email path carries the password. With no
+          // customer_email the backend takes the account fallback, which sends
+          // customer_gallery_assigned — a portal link that never mentions a
+          // password — and deliberately skips the rehash (crud.js). Asking for
+          // one there blocks the send behind a value nothing consumes, and the
+          // dialog's promise that it will be rehashed would be false.
+          requirePassword={!!event.customer_email && !isGalleryPublic(event.require_password)}
           isSending={sendGalleryEmailMutation.isPending}
           onConfirm={(password) => sendGalleryEmailMutation.mutate(password)}
           onClose={() => {

@@ -4,6 +4,7 @@ import { Archive, Send, Copy, Mail } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, Card } from '../../../components/common';
 import { PermissionGate } from '../../../components/admin/PermissionGate';
+import { toBoolean } from '../../../utils/parsers';
 
 interface EventActionsCardProps {
   event: Event;
@@ -40,7 +41,7 @@ export const EventActionsCard: React.FC<EventActionsCardProps> = ({
   // which does not render this card at all for archived events.
   const hasRecipient = !!event.customer_email || assignedCustomerCount > 0;
   const isExpired = !!event.expires_at && new Date(event.expires_at) <= new Date();
-  const isInactive = event.is_active === false;
+  const isInactive = !toBoolean(event.is_active, true);
   const canSendGalleryEmail = hasRecipient && !isExpired && !isInactive;
 
   return (

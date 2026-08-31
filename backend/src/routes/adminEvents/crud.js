@@ -933,6 +933,12 @@ module.exports = (router) => {
           display_name: c.display_name,
           first_name: c.first_name,
           last_name: c.last_name,
+          // The send-gallery-email fallback below filters on this, so the UI
+          // needs it to predict whether the action has any recipient at all.
+          // Without it every assigned account looked active and a gallery
+          // whose only assignments were deactivated offered a button that
+          // then 400'd.
+          is_active: c.is_active,
         })),
       }));
     } catch (error) {

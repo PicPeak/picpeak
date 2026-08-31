@@ -20,6 +20,7 @@ import { EventActionsCard } from './EventActionsCard';
 import { PhotoStatisticsCard } from './PhotoStatisticsCard';
 import { EventThemeSection } from './EventThemeSection';
 import { ArchiveStatusCard } from './ArchiveStatusCard';
+import { toBoolean } from '../../../utils/parsers';
 
 interface OverviewTabProps {
   event: Event;
@@ -184,11 +185,15 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               onSendGalleryEmail={onSendGalleryEmail}
               isSendingGalleryEmail={isSendingGalleryEmail}
               assignedCustomerCount={
-                ((event as { customer_accounts?: Array<{ id: number; is_active?: boolean }> })
-                  .customer_accounts || [])
-                  // Only ACTIVE accounts count: the endpoint filters the rest
-                  // out, so counting them would show a button that then fails.
-                  .filter((c) => c.is_active !== false).length
+                ((event as {
+                  customer_accounts?: Array<{ id: number; email?: string; is_active?: unknown }>
+                }).customer_accounts || [])
+                  // Only accounts the endpoint would actually mail count, or
+                  // the button appears and then 400s. Same predicate the
+                  // fallback uses (crud.js): active, and holding an address.
+                  // toBoolean rather than `!== false` because SQLite returns
+                  // 0/1 and `0 !== false` is true.
+                  .filter((c) => toBoolean(c.is_active, true) && !!c.email).length
               }
             />
           </PermissionGate>

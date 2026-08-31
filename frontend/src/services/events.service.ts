@@ -1,6 +1,7 @@
 import { api } from '../config/api';
 import type { Event } from '../types';
 import { normalizeRequirePassword } from '../utils/accessControl';
+import { toBoolean } from '../utils/parsers';
 
 const normalizeEvent = (event: Event): Event => {
   const legacyHostName = (event as any)?.host_name;
@@ -14,6 +15,10 @@ const normalizeEvent = (event: Event): Event => {
     customer_name: customerName,
     customer_email: customerEmail,
     require_password: normalizeRequirePassword((event as any)?.require_password, true),
+    // SQLite hands these back as 0/1, so a strict `=== false` consumer reads
+    // an inactive gallery as active (the #1028 class). Coerced once here with
+    // the same default the backend's parseBooleanInput uses.
+    is_active: toBoolean((event as any)?.is_active, true),
   };
 };
 
