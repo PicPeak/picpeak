@@ -1697,28 +1697,64 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
         return res.status(404).json({ error: 'Photo file not found' });
       }
 
+      const lastModified = stat.mtime ? new Date(stat.mtime).toUTCString() : null;
       const headers = {
         'Content-Type': photo.mime_type || 'image/jpeg',
         'Content-Disposition': contentDisposition,
         'Accept-Ranges': 'bytes',
       };
-      if (stat.mtime) headers['Last-Modified'] = new Date(stat.mtime).toUTCString();
+      if (lastModified) headers['Last-Modified'] = lastModified;
 
-      const range = parseByteRange(req.headers.range, stat.size);
+      // If-Range: a client resuming an interrupted download sends back the
+      // validator it was given last time. If the object has been replaced
+      // since — the watcher re-importing a swapped file, an admin re-upload —
+      // answering 206 from the NEW bytes lets the client splice two different
+      // versions into one corrupt file. A validator that doesn't match means
+      // a full 200, which is the whole point of the header.
+      const ifRange = req.headers['if-range'];
+      const staleValidator = !!ifRange && (!lastModified || ifRange.trim() !== lastModified);
+      const range = staleValidator ? null : parseByteRange(req.headers.range, stat.size);
+
+      // Open the stream BEFORE any header is staged or sent. stat() succeeding
+      // does not mean get() will: a concurrent delete or replace, or a
+      // transient backend error, lands here. Once writeHead(206) has gone out
+      // the outer catch can do nothing but throw ERR_HTTP_HEADERS_SENT, and in
+      // the non-range case it would send its 500 JSON underneath the staged
+      // image/jpeg attachment headers — a .jpg file full of JSON.
+      let stream;
+      try {
+        stream = range
+          ? await storage.getRange(storageKey, range.start, range.end)
+          : await storage.get(storageKey);
+      } catch (fetchError) {
+        const gone = fetchError.code === 'ENOENT'
+          || fetchError.name === 'NoSuchKey'
+          || fetchError.name === 'NotFound'
+          || fetchError.$metadata?.httpStatusCode === 404;
+        logger.error('Failed to open photo stream for download', {
+          slug: req.params.slug,
+          photoId,
+          eventId: req.event.id,
+          storageKey,
+          error: fetchError.message,
+        });
+        return gone
+          ? res.status(404).json({ error: 'Photo file not found' })
+          : res.status(500).json({ error: 'Failed to download photo' });
+      }
+
       if (range) {
         res.writeHead(206, {
           ...headers,
           'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}`,
           'Content-Length': (range.end - range.start) + 1,
         });
-        const partial = await storage.getRange(storageKey, range.start, range.end);
-        pipeStreamToResponse(partial, res, { context: `download range for photo ${photo.id}` });
-        return;
+      } else {
+        res.set({ ...headers, 'Content-Length': stat.size });
       }
-
-      res.set({ ...headers, 'Content-Length': stat.size });
-      const stream = await storage.get(storageKey);
-      pipeStreamToResponse(stream, res, { context: `download for photo ${photo.id}` });
+      pipeStreamToResponse(stream, res, {
+        context: range ? `download range for photo ${photo.id}` : `download for photo ${photo.id}`,
+      });
       return;
     }
 

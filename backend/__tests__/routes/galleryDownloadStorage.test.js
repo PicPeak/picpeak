@@ -187,4 +187,54 @@ describe('single-photo download through the storage backend (#1048)', () => {
 
     fs.rmSync(abs, { force: true });
   });
+
+  it('does not serve a partial body when the If-Range validator is stale', async () => {
+    // The object was replaced since the client's last attempt. Answering 206
+    // from the new bytes would let it splice two versions into one file.
+    const res = await request(app)
+      .get(`/api/gallery/${SLUG}/download/${photoId}`)
+      .set('Range', 'bytes=0-9')
+      .set('If-Range', new Date('2020-01-01T00:00:00Z').toUTCString());
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-range']).toBeUndefined();
+    expect(res.headers['content-length']).toBe(String(mockObjectBody.length));
+  });
+
+  it('still serves 206 when the If-Range validator matches', async () => {
+    const res = await request(app)
+      .get(`/api/gallery/${SLUG}/download/${photoId}`)
+      .set('Range', 'bytes=0-9')
+      .set('If-Range', new Date('2026-08-20T10:00:00Z').toUTCString());
+
+    expect(res.status).toBe(206);
+    expect(res.headers['content-range']).toBe(`bytes 0-9/${mockObjectBody.length}`);
+  });
+
+  it('errors cleanly when the object vanishes between stat and get', async () => {
+    // HeadObject succeeding does not mean GetObject will — a concurrent
+    // delete lands here. The staged image headers must not escape with it.
+    const gone = new Error('NoSuchKey');
+    gone.name = 'NoSuchKey';
+    mockStorage.get.mockRejectedValueOnce(gone);
+
+    const res = await request(app).get(`/api/gallery/${SLUG}/download/${photoId}`);
+
+    expect(res.status).toBe(404);
+    expect(res.headers['content-type']).toMatch(/json/);
+    expect(res.headers['content-disposition']).toBeUndefined();
+  });
+
+  it('does not send 206 headers before the range fetch can fail', async () => {
+    // writeHead(206) before the await would make this ERR_HTTP_HEADERS_SENT.
+    mockStorage.getRange.mockRejectedValueOnce(new Error('connection reset'));
+
+    const res = await request(app)
+      .get(`/api/gallery/${SLUG}/download/${photoId}`)
+      .set('Range', 'bytes=0-9');
+
+    expect(res.status).toBe(500);
+    expect(res.headers['content-type']).toMatch(/json/);
+    expect(res.headers['content-range']).toBeUndefined();
+  });
 });
