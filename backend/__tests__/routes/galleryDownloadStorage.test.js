@@ -237,4 +237,33 @@ describe('single-photo download through the storage backend (#1048)', () => {
     expect(res.headers['content-type']).toMatch(/json/);
     expect(res.headers['content-range']).toBeUndefined();
   });
+
+  it('answers HEAD from stat instead of draining the object out of S3', async () => {
+    const res = await request(app).head(`/api/gallery/${SLUG}/download/${photoId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-length']).toBe(String(mockObjectBody.length));
+    expect(res.headers['accept-ranges']).toBe('bytes');
+    // The whole point: no egress for a metadata probe.
+    expect(mockStorage.get).not.toHaveBeenCalled();
+    expect(mockStorage.getRange).not.toHaveBeenCalled();
+  });
+
+  it('returns a clean error when the range stream dies before its first chunk', async () => {
+    // Resolves, then errors — writeHead would already have committed the 206,
+    // leaving a connection reset as the only possible outcome.
+    const { Readable: R } = require('stream');
+    mockStorage.getRange.mockImplementationOnce(async () => {
+      const dead = new R({ read() { this.destroy(new Error('socket hang up')); } });
+      return dead;
+    });
+
+    const res = await request(app)
+      .get(`/api/gallery/${SLUG}/download/${photoId}`)
+      .set('Range', 'bytes=0-9');
+
+    expect(res.status).toBe(500);
+    expect(res.headers['content-type']).toMatch(/json/);
+    expect(res.headers['content-range']).toBeUndefined();
+  });
 });
