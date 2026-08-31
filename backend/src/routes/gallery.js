@@ -1630,13 +1630,24 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     try {
       rendered = await renderPhotoForDownload(req.event, photo, box, effectiveSettings);
     } catch (renderError) {
+      // Classify, the same way the pass-through branch below does. This can
+      // reject because the source object is gone, but equally because
+      // getToFile timed out, the tmp filesystem filled up, or sharp failed —
+      // and reporting an operational failure as 404 tells the guest their
+      // photo does not exist and tells us nothing.
+      const gone = renderError.code === 'ENOENT'
+        || renderError.name === 'NoSuchKey'
+        || renderError.name === 'NotFound'
+        || renderError.$metadata?.httpStatusCode === 404;
       logger.error('Failed to render photo for download', {
         slug: req.params.slug,
         photoId,
         eventId: req.event.id,
         error: renderError.message,
       });
-      return res.status(404).json({ error: 'Photo file not found' });
+      return gone
+        ? res.status(404).json({ error: 'Photo file not found' })
+        : res.status(500).json({ error: 'Failed to download photo' });
     }
 
     if (rendered) {
@@ -1715,6 +1726,16 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       const staleValidator = !!ifRange && (!lastModified || ifRange.trim() !== lastModified);
       const range = staleValidator ? null : parseByteRange(req.headers.range, stat.size);
 
+      // Express routes HEAD through this GET handler, and Node then discards
+      // the body — but the pipe still drains the whole object out of S3
+      // first, so a metadata probe from a download manager costs a full
+      // transfer in egress and latency. Everything a HEAD needs is already in
+      // `stat`.
+      if (req.method === 'HEAD') {
+        res.set({ ...headers, 'Content-Length': stat.size });
+        return res.end();
+      }
+
       // Open the stream BEFORE any header is staged or sent. stat() succeeding
       // does not mean get() will: a concurrent delete or replace, or a
       // transient backend error, lands here. Once writeHead(206) has gone out
@@ -1744,7 +1765,13 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       }
 
       if (range) {
-        res.writeHead(206, {
+        // status()+set() rather than writeHead(): writeHead commits the
+        // response immediately, so a stream that resolves and THEN errors
+        // before its first chunk would leave pipeStreamToResponse able only to
+        // destroy the connection. Staged headers are flushed by the first body
+        // write, which means an error at byte zero can still clear them and
+        // return a clean, retryable status instead of a transport reset.
+        res.status(206).set({
           ...headers,
           'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}`,
           'Content-Length': (range.end - range.start) + 1,

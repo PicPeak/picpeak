@@ -55,6 +55,11 @@ function pipeStreamToResponse(stream, res, options = {}) {
     res.removeHeader('ETag');
     res.removeHeader('Content-Type');
     res.removeHeader('Content-Disposition');
+    // Range headers describe the body that is no longer coming. Left behind,
+    // a 500 goes out still advertising `Content-Range: bytes 0-9/40`, which
+    // tells a resuming client the error response IS the partial content.
+    res.removeHeader('Content-Range');
+    res.removeHeader('Accept-Ranges');
     res.setHeader('Cache-Control', 'no-store');
 
     if (gone) {
