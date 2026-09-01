@@ -9,8 +9,8 @@
  * POST /admin/customers creates passive (portal-less) customers on purpose.
  */
 import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 
 vi.mock('react-i18next', async () => {
   const actual = await vi.importActual<typeof import('react-i18next')>('react-i18next');
@@ -25,6 +25,19 @@ vi.mock('../../../contexts/FeatureFlagsContext', () => ({
   useFeatureEnabled: () => portalEnabled,
 }));
 
+let canCreate = true;
+vi.mock('../../../hooks/usePermission', () => ({
+  usePermission: () => canCreate,
+}));
+
+// The inline create form is exercised by its own suites; stub it here so this
+// file keeps testing only the gate + the create affordance.
+vi.mock('../InlineCustomerCreate', () => ({
+  InlineCustomerCreate: ({ mode }: { mode?: string }) => (
+    <div data-testid="inline-create">{mode}</div>
+  ),
+}));
+
 vi.mock('../../../services/customerAdmin.service', () => ({
   customerAdminService: { search: vi.fn().mockResolvedValue([]) },
 }));
@@ -33,8 +46,11 @@ import { CustomerAccountPicker } from '../CustomerAccountPicker';
 
 const SEARCH_PLACEHOLDER = 'Search by email, name, or company';
 const PORTAL_LABEL = 'Customer accounts';
+const CREATE_LINK = '+ Create new customer';
 
 describe('CustomerAccountPicker portal gate (QA S10)', () => {
+  beforeEach(() => { canCreate = true; });
+
   it('renders a usable search input with customerPortal off when portalAssignment=false', () => {
     portalEnabled = false;
     render(<CustomerAccountPicker portalAssignment={false} value={[]} onChange={() => {}} />);
@@ -57,6 +73,34 @@ describe('CustomerAccountPicker portal gate (QA S10)', () => {
     render(<CustomerAccountPicker value={[]} onChange={() => {}} />);
 
     expect(screen.getByText(PORTAL_LABEL)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(SEARCH_PLACEHOLDER)).toBeInTheDocument();
+  });
+
+  // B12 — on an Accounting-only install /admin/clients/accounts and every CRM
+  // editor that embeds InlineCustomerCreate are feature-gated, so the picker is
+  // the only place left that can reach POST /admin/customers.
+  it('offers inline create (passive-only) when the portal is off', () => {
+    portalEnabled = false;
+    render(<CustomerAccountPicker portalAssignment={false} value={[]} onChange={() => {}} />);
+
+    fireEvent.click(screen.getByText(CREATE_LINK));
+    expect(screen.getByTestId('inline-create')).toHaveTextContent('passive');
+  });
+
+  it('offers both save modes when the portal is on', () => {
+    portalEnabled = true;
+    render(<CustomerAccountPicker value={[]} onChange={() => {}} />);
+
+    fireEvent.click(screen.getByText(CREATE_LINK));
+    expect(screen.getByTestId('inline-create')).toHaveTextContent('both');
+  });
+
+  it('hides the create affordance without customers.create', () => {
+    portalEnabled = false;
+    canCreate = false;
+    render(<CustomerAccountPicker portalAssignment={false} value={[]} onChange={() => {}} />);
+
+    expect(screen.queryByText(CREATE_LINK)).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText(SEARCH_PLACEHOLDER)).toBeInTheDocument();
   });
 });

@@ -13,6 +13,8 @@ import { Search, X, UserPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { customerAdminService, type CustomerAccountSummary } from '../../services/customerAdmin.service';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
+import { usePermission } from '../../hooks/usePermission';
+import { InlineCustomerCreate } from './InlineCustomerCreate';
 
 export interface SelectedCustomer {
   id: number;
@@ -59,10 +61,18 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
   // crash). That tanked the entire /admin/events/new page through
   // the global error boundary. PR #458 reviewer flag.
   const customerPortalEnabled = useFeatureEnabled('customerPortal');
+  // Inline create is the ONLY way to reach POST /admin/customers on an
+  // Accounting-only install: /admin/clients/accounts and the CRM editors
+  // that embed InlineCustomerCreate are all feature-gated, while the
+  // endpoint itself is permission-gated only and exists precisely to
+  // create passive, portal-less customers. Mirror that with the
+  // permission rather than a flag.
+  const canCreateCustomer = usePermission('customers.create');
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<CustomerAccountSummary[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Debounced search. Aborts in-flight requests so a fast typer doesn't
@@ -115,6 +125,14 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
 
   const remove = (id: number) => {
     onChange(value.filter((v) => v.id !== id));
+  };
+
+  const created = (c: { id: number; email: string; displayName: string | null }) => {
+    onChange([...value, { id: c.id, email: c.email, displayName: c.displayName }]);
+    setIsCreating(false);
+    setQuery('');
+    setResults([]);
+    setIsOpen(false);
   };
 
   const helpText = useMemo(
@@ -172,6 +190,17 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
         </div>
       )}
 
+      {isCreating ? (
+        <InlineCustomerCreate
+          // With the portal off, "Save & send portal invitation" would email
+          // the customer a link to a login that does not exist — offer only
+          // the passive record there.
+          mode={customerPortalEnabled ? 'both' : 'passive'}
+          onCancel={() => setIsCreating(false)}
+          onCreated={created}
+        />
+      ) : (
+      <>
       {/* Search input */}
       <div className="relative">
         <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" />
@@ -186,6 +215,16 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
         />
       </div>
 
+      {!disabled && canCreateCustomer && (
+        <button
+          type="button"
+          onClick={() => { setIsOpen(false); setIsCreating(true); }}
+          className="mt-2 inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline"
+        >
+          {t('customers.create.openLink', '+ Create new customer')}
+        </button>
+      )}
+
       {/* Dropdown */}
       {isOpen && query.trim() !== '' && (
         <div
@@ -197,7 +236,13 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
             </div>
           ) : results.length === 0 ? (
             <div className="px-3 py-3 text-sm text-neutral-500 dark:text-neutral-400">
-              {t('events.customerPicker.noResults', 'No matches. Invite this customer from Clients → Accounts first.')}
+              {/* The old copy pointed at Clients → Accounts, which is
+                  feature-gated and therefore unreachable on an
+                  Accounting-only install. Point at the button that is
+                  always right there instead. */}
+              {canCreateCustomer
+                ? t('events.customerPicker.noResultsCanCreate', 'No matches. Use “Create new customer” to add one.')
+                : t('events.customerPicker.noResultsNoPermission', 'No matches, and your role cannot create customers. Ask an administrator to add this customer.')}
             </div>
           ) : (
             <ul role="listbox">
@@ -216,6 +261,8 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
             </ul>
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   );
