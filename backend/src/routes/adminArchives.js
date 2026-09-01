@@ -348,10 +348,33 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         // and matching on the flag alone would let one event's leftover row be
         // adopted by another event's restore, tying photos to a category that
         // vanishes with someone else's gallery.
+        // Two event-scoped categories CAN share a display name when their
+        // slugs differ, and .first() would then pick one arbitrarily — both
+        // manifest names collapse onto a single id and half the photos
+        // inherit the wrong per-category settings (allow_downloads above all).
+        // Resolving that properly needs a stable category identifier in the
+        // manifest, which is a writer change and an archive-format bump, and
+        // could not help any archive already written. So: surface it instead
+        // of fixing it blind. If this never fires in real logs, the format
+        // change is not worth making; if it does, this is the evidence for it.
+        const ownRows = await db('photo_categories')
+          .where({ event_id: archive.id, name: categoryName })
+          .select('id');
+        if (ownRows.length > 1) {
+          logger.warn(
+            `Photos manifest: category name "${categoryName}" matches ${ownRows.length} rows in event `
+            + `${archive.id}; picking the lowest id. Photos from the other row(s) will inherit its settings.`
+          );
+        }
+
         const existingCategory =
-          await db('photo_categories')
-            .where({ event_id: archive.id, name: categoryName })
-            .first()
+          // Lowest id, not engine order — an arbitrary-but-stable choice beats
+          // a nondeterministic one, so a re-run lands the same way.
+          (ownRows.length
+            ? await db('photo_categories')
+              .where('id', Math.min(...ownRows.map((r) => r.id)))
+              .first()
+            : null)
           || await db('photo_categories')
             .where('name', categoryName)
             .whereNull('event_id')

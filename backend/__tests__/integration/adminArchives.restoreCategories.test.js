@@ -419,6 +419,37 @@ describe('archive restore restores categories (flat archives included)', () => {
     }
   });
 
+  it('picks the lowest id and warns when two categories share a name', async () => {
+    // Allowed: two event-scoped categories with the same display name and
+    // different slugs. .first() used to pick either, so a re-run could move
+    // photos between them and inherit the wrong allow_downloads.
+    const archiveRelPath = await writeArchive('dupe-category.zip', {
+      'individual/DUPE.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'DUPE.jpg', original_filename: 'DUPE.jpg', category_name: 'Ceremony' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'dupe-category-event');
+
+    const [first] = await db('photo_categories').insert({
+      name: 'Ceremony', slug: 'ceremony-a', is_global: 0, event_id: eventId,
+    }).returning('id');
+    await db('photo_categories').insert({
+      name: 'Ceremony', slug: 'ceremony-b', is_global: 0, event_id: eventId,
+    });
+    const firstId = typeof first === 'object' ? first.id : first;
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    // Stable, not arbitrary: the same run twice lands on the same row.
+    const photo = await db('photos').where({ event_id: eventId, filename: 'DUPE.jpg' }).first();
+    expect(photo.category_id).toBe(firstId);
+    // And no third "Ceremony" was invented.
+    expect((await db('photo_categories').where({ event_id: eventId, name: 'Ceremony' })).length)
+      .toBe(2);
+  });
+
   it('does not invent a category for a photo row that already exists', async () => {
     // archiveEvent retains photo rows, so a restore can skip every insert.
     // Resolving categories before that check created one from the stale
