@@ -182,6 +182,170 @@ describe('archive restore restores categories (flat archives included)', () => {
     expect(await categoryOf('d.jpg')).toBe('individual');
   });
 
+  it('reuses a GLOBAL category instead of cloning it into the event', async () => {
+    // Seeded categories (Ceremony, Reception, ...) have event_id NULL. An
+    // event-only lookup misses them, so the restore used to create a second
+    // "Ceremony" — and because is_global defaults to TRUE, that duplicate then
+    // appeared in every other event's category list.
+    const [g] = await db('photo_categories').insert({
+      event_id: null, name: 'Ceremony', slug: 'ceremony', is_global: true, created_at: new Date(),
+    }).returning('id');
+    const globalId = typeof g === 'object' ? g.id : g;
+
+    const archiveRelPath = await writeArchive('global.zip', {
+      'individual/gl.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'gl.jpg', original_filename: 'DSC_1.jpg', category_name: 'Ceremony' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'global-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    const photo = await db('photos').where('filename', 'gl.jpg').first();
+    expect(photo.category_id).toBe(globalId);
+    // No clone, global or otherwise.
+    const all = await db('photo_categories').where('name', 'Ceremony');
+    expect(all).toHaveLength(1);
+  });
+
+  it('does not create a GLOBAL category when it has to invent one', async () => {
+    // is_global defaults to true on this column, so an unqualified insert would
+    // leak a restore's category name into every gallery on the instance.
+    const archiveRelPath = await writeArchive('newcat.zip', {
+      'individual/nc.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'nc.jpg', original_filename: 'DSC_2.jpg', category_name: 'Polterabend' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'newcat-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    const created = await db('photo_categories').where('name', 'Polterabend').first();
+    expect(created.event_id).toBe(eventId);
+    expect(created.is_global === false || created.is_global === 0).toBe(true);
+  });
+
+  it('matches the manifest when the ZIP was written with original filenames', async () => {
+    // With general_use_original_filenames_for_downloads on at archive time,
+    // archiveService names entries after the ORIGINAL filename while the
+    // manifest stays keyed by photos.filename. Looking up the extracted
+    // basename missed every entry, so categories were lost on exactly those
+    // archives.
+    const archiveRelPath = await writeArchive('original-names.zip', {
+      'individual/DSC_4242.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'stored_9f8e7d.jpg', original_filename: 'DSC_4242.jpg', category_name: 'Drohne' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'original-names-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await categoryOf('DSC_4242.jpg')).toBe('Drohne');
+  });
+
+  it('prefers the event-scoped category when a global shares its name', async () => {
+    // The category API permits both. A single OR-lookup with .first() returned
+    // whichever the engine chose, so a photo could be reassigned to the global
+    // row and lose event-local settings such as allow_downloads.
+    const archiveRelPath = await writeArchive('collide.zip', {
+      'individual/co.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'co.jpg', original_filename: 'DSC_3.jpg', category_name: 'Reception' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'collide-event');
+
+    await db('photo_categories').insert({
+      event_id: null, name: 'Reception', slug: 'reception-global', is_global: true, created_at: new Date(),
+    });
+    const [own] = await db('photo_categories').insert({
+      event_id: eventId, name: 'Reception', slug: 'reception-own', is_global: false, created_at: new Date(),
+    }).returning('id');
+    const ownId = typeof own === 'object' ? own.id : own;
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    const photo = await db('photos').where('filename', 'co.jpg').first();
+    expect(photo.category_id).toBe(ownId);
+  });
+
+  it('matches a sanitized original filename, as the ZIP would have written it', async () => {
+    // archiveService runs original names through sanitizeForZipEntry() before
+    // writing the entry, so the emitted name differs from the manifest column.
+    const archiveRelPath = await writeArchive('sanitized.zip', {
+      'individual/od_dr_DSC_5.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'stored_abc.jpg', original_filename: 'od/dr/DSC_5.jpg', category_name: 'Strand' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'sanitized-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await categoryOf('od_dr_DSC_5.jpg')).toBe('Strand');
+  });
+
+  it('ignores a legacy event-owned row when falling back to globals', async () => {
+    // The bug fixed here left rows behind on upgraded instances: event-owned
+    // AND is_global true, because the column defaults true. Matching on the
+    // flag alone would let one event's leftover be adopted by another event's
+    // restore, tying photos to a category that vanishes with someone else's
+    // gallery.
+    const otherEventId = await seedArchivedEvent('archives/none.zip', 'legacy-owner-event');
+    await db('photo_categories').insert({
+      event_id: otherEventId, name: 'Sunset', slug: 'sunset-legacy',
+      is_global: true, created_at: new Date(),
+    });
+
+    const archiveRelPath = await writeArchive('legacy-global.zip', {
+      'individual/lg.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'lg.jpg', original_filename: 'DSC_6.jpg', category_name: 'Sunset' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'legacy-global-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    const photo = await db('photos').where('filename', 'lg.jpg').first();
+    const cat = await db('photo_categories').where('id', photo.category_id).first();
+    // Its own row, not the other event's leftover.
+    expect(cat.event_id).toBe(eventId);
+  });
+
+  it('drops an ambiguous original-name alias rather than guessing', async () => {
+    // Two photos in different ZIP folders can share an original basename;
+    // archiveService treats the paths as distinct and suffixes neither. Both
+    // would collapse onto one alias, and whichever won would hand the other
+    // photo someone else's category.
+    const archiveRelPath = await writeArchive('ambiguous.zip', {
+      'individual/SHARED.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'a_stored.jpg', original_filename: 'SHARED.jpg', category_name: 'Alpha' },
+        { filename: 'b_stored.jpg', original_filename: 'SHARED.jpg', category_name: 'Beta' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'ambiguous-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    // Falls back to the directory rather than picking Alpha or Beta at random.
+    expect(await categoryOf('SHARED.jpg')).toBe('individual');
+    for (const name of ['Alpha', 'Beta']) {
+      expect(await db('photo_categories').where({ event_id: eventId, name }).first()).toBeFalsy();
+    }
+  });
+
   it('honours a manifest that says UNCATEGORIZED, instead of inventing one from the directory', async () => {
     // The case the manifest-first change was for. A real archive puts every
     // photo under `individual/`, so a photo the manifest records as having no
@@ -204,4 +368,110 @@ describe('archive restore restores categories (flat archives included)', () => {
     const rows = await db('photo_categories').where({ event_id: eventId });
     expect(rows).toHaveLength(0);
   });
+
+  it('drops a canonical filename that two photos claim, rather than guessing', async () => {
+    // photos.filename is not unique within an event: s3AutoImporter takes
+    // path.basename(entry.key) and dedupes by path, so two imported files in
+    // different subfolders both land as IMG_1234.jpg. Both ZIP entries reduce
+    // to the same basename at restore, so keeping the last row seen would give
+    // one photo the other's category.
+    const archiveRelPath = await writeArchive('dup-canonical.zip', {
+      'individual/IMG_1234.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'IMG_1234.jpg', original_filename: 'a.jpg', category_name: 'Alpha' },
+        { filename: 'IMG_1234.jpg', original_filename: 'b.jpg', category_name: 'Beta' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'dup-canonical-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await categoryOf('IMG_1234.jpg')).toBe('individual');
+    for (const name of ['Alpha', 'Beta']) {
+      expect(await db('photo_categories').where({ event_id: eventId, name }).first()).toBeFalsy();
+    }
+  });
+
+  it("drops a name that one row owns canonically and another claims as an alias", async () => {
+    // Undecidable: with original-filename archiving ON the ZIP entry under
+    // this name is the ALIAS owner's file, with it OFF it is the canonical
+    // owner's, and the manifest does not record which mode was used. The
+    // point of the two-pass split is that this now resolves the same way
+    // every run — the archive query has no ORDER BY, so it used to be a coin
+    // flip between dropping the name and overwriting it.
+    const archiveRelPath = await writeArchive('alias-vs-canonical.zip', {
+      'individual/CANON.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'CANON.jpg', original_filename: 'unrelated.jpg', category_name: 'Canonical' },
+        { filename: 'other_stored.jpg', original_filename: 'CANON.jpg', category_name: 'Aliased' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'alias-vs-canonical-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    // Falls back to the directory rather than guessing either row.
+    expect(await categoryOf('CANON.jpg')).toBe('individual');
+    for (const name of ['Canonical', 'Aliased']) {
+      expect(await db('photo_categories').where({ event_id: eventId, name }).first()).toBeFalsy();
+    }
+  });
+
+  it('picks the lowest id and warns when two categories share a name', async () => {
+    // Allowed: two event-scoped categories with the same display name and
+    // different slugs. .first() used to pick either, so a re-run could move
+    // photos between them and inherit the wrong allow_downloads.
+    const archiveRelPath = await writeArchive('dupe-category.zip', {
+      'individual/DUPE.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'DUPE.jpg', original_filename: 'DUPE.jpg', category_name: 'Ceremony' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'dupe-category-event');
+
+    const [first] = await db('photo_categories').insert({
+      name: 'Ceremony', slug: 'ceremony-a', is_global: 0, event_id: eventId,
+    }).returning('id');
+    await db('photo_categories').insert({
+      name: 'Ceremony', slug: 'ceremony-b', is_global: 0, event_id: eventId,
+    });
+    const firstId = typeof first === 'object' ? first.id : first;
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    // Stable, not arbitrary: the same run twice lands on the same row.
+    const photo = await db('photos').where({ event_id: eventId, filename: 'DUPE.jpg' }).first();
+    expect(photo.category_id).toBe(firstId);
+    // And no third "Ceremony" was invented.
+    expect((await db('photo_categories').where({ event_id: eventId, name: 'Ceremony' })).length)
+      .toBe(2);
+  });
+
+  it('does not invent a category for a photo row that already exists', async () => {
+    // archiveEvent retains photo rows, so a restore can skip every insert.
+    // Resolving categories before that check created one from the stale
+    // manifest name that nothing then used — renaming a category while its
+    // event was archived left the old name behind as an empty duplicate.
+    const archiveRelPath = await writeArchive('existing-rows.zip', {
+      'individual/KEPT.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'KEPT.jpg', original_filename: 'KEPT.jpg', category_name: 'OldName' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'existing-rows-event');
+    await db('photos').insert({
+      event_id: eventId, filename: 'KEPT.jpg', path: 'whatever/KEPT.jpg', type: 'jpg',
+      uploaded_at: new Date().toISOString(),
+    });
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(await db('photo_categories').where({ event_id: eventId, name: 'OldName' }).first())
+      .toBeFalsy();
+  });
+
 });
