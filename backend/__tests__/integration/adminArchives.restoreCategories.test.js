@@ -141,6 +141,27 @@ describe('archive restore restores categories (flat archives included)', () => {
     expect(await categoryOf('b.jpg')).toBe('Ceremony');
   });
 
+  it('stores a real timestamp on restored photos, not "[object Object]"', async () => {
+    // The jest+sqlite landmine: a Date handed to knex inside jest stores as
+    // the literal string "[object Object]". Production writes ms-numbers and
+    // is unaffected, so this only ever corrupts what tests read back — which
+    // is how it survives unnoticed.
+    const archiveRelPath = await writeArchive('timestamp.zip', {
+      'individual/STAMPED.jpg': PIXEL,
+      'photos_manifest.json': Buffer.from(JSON.stringify([
+        { filename: 'STAMPED.jpg', original_filename: 'STAMPED.jpg', category_name: 'Ceremony' },
+      ]), 'utf8'),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, 'timestamp-event');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    const photo = await db('photos').where({ event_id: eventId, filename: 'STAMPED.jpg' }).first();
+    expect(String(photo.uploaded_at)).not.toBe('[object Object]');
+    expect(Number.isNaN(new Date(photo.uploaded_at).getTime())).toBe(false);
+  });
+
   it('reuses an existing category row instead of creating a duplicate', async () => {
     const archiveRelPath = await writeArchive('reuse.zip', {
       'c.jpg': PIXEL,

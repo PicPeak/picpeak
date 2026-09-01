@@ -464,7 +464,13 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
                 type: path.extname(filename).substring(1).toLowerCase(),
                 size_bytes: stats.size,
                 category_id: categoryId,
-                uploaded_at: new Date()
+                // .toISOString(), not a Date: inside jest the sqlite3 binding's
+                // type dispatch misses sandbox-created Dates and stores the
+                // literal string "[object Object]", so every restored photo
+                // gets a garbage timestamp that any test reading it would
+                // believe. Production stores Dates as ms-numbers and is
+                // unaffected — which is exactly why this survives unnoticed.
+                uploaded_at: new Date().toISOString()
               });
             }
           } catch (statError) {
