@@ -1119,7 +1119,12 @@ async function getAssignmentsForEvent(eventId) {
       'customer_accounts.display_name',
       'customer_accounts.first_name',
       'customer_accounts.last_name',
-      'customer_accounts.is_active'
+      'customer_accounts.is_active',
+      // NOT the hash itself — only whether one exists. A passive customer is
+      // identified by password_hash IS NULL (see createDirect), and callers
+      // that mail a portal link need to know the recipient can actually sign
+      // in to follow it.
+      db.raw('(customer_accounts.password_hash IS NOT NULL) as can_sign_in')
     )
     .orderBy('customer_accounts.email', 'asc');
 }

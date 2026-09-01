@@ -7,10 +7,12 @@ interface PublishGalleryDialogProps {
   eventName: string;
   requirePassword: boolean;
   customerEmail?: string | null;
+  /** WhatsApp recipient — publish notifies this too, so it counts as "someone gets told". */
+  customerPhone?: string | null;
   /** Assigned customer accounts — notified via the account "your galleries" email when there's no inline email. */
   assignedCustomerCount?: number;
   isPublishing: boolean;
-  onConfirm: (password?: string) => void;
+  onConfirm: (password?: string, notifyCustomer?: boolean) => void;
   onClose: () => void;
 }
 
@@ -30,23 +32,32 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
   eventName,
   requirePassword,
   customerEmail,
+  customerPhone,
   assignedCustomerCount = 0,
   isPublishing,
   onConfirm,
   onClose,
 }) => {
   const { t } = useTranslation();
-  // Someone gets notified if there's an inline email OR an assigned account
-  // (the latter via the account "your galleries" email).
-  const willNotify = !!customerEmail || assignedCustomerCount > 0;
+  // Someone gets notified if there's an inline email, an assigned account (the
+  // account "your galleries" email), OR a phone — publish queues a WhatsApp
+  // for that last one. Leaving the phone out hid the opt-out on phone-only
+  // galleries AND told the admin nothing would be sent, while the WhatsApp
+  // went out anyway.
+  const willNotify = !!customerEmail || !!customerPhone || assignedCustomerCount > 0;
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  // Defaults to notifying — that is what publish has always done, and the
+  // quiet path is the exception (#1235).
+  const [notifyCustomer, setNotifyCustomer] = useState(true);
   // The password is only collected (and required) on the inline-email path,
   // because the gallery_created email carries it. With no inline email the field
   // is hidden and the existing hash is kept — so don't gate submit on it, or a
   // password-protected gallery without an email could never be published.
-  const needsPassword = requirePassword && !!customerEmail;
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | undefined>(undefined);
+  // Unchecking "notify" hides it for the same reason: nothing is being sent,
+  // so there is no plaintext to carry and no reason to demand it.
+  const needsPassword = requirePassword && !!customerEmail && notifyCustomer;
 
   const handleSubmit = () => {
     if (needsPassword) {
@@ -56,7 +67,7 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
       }
     }
     setError(undefined);
-    onConfirm(needsPassword ? password : undefined);
+    onConfirm(needsPassword ? password : undefined, notifyCustomer);
   };
 
   return (
@@ -76,7 +87,16 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
         </div>
 
         <p className="text-neutral-600 dark:text-neutral-400 mb-4">
-          {customerEmail
+          {/* Follows the checkbox. Left static it contradicted itself — the
+              text promised an email to the customer while the box beneath it
+              said none would be sent. */}
+          {willNotify && !notifyCustomer
+            ? t('events.publishDialog.descriptionQuiet', {
+                eventName,
+                defaultValue:
+                  'Publishing "{{eventName}}" makes the gallery accessible. No email will be sent — you can send it later from this page.',
+              })
+            : customerEmail
             ? t('events.publishDialog.descriptionWithEmail', {
                 eventName,
                 customerEmail,
@@ -90,12 +110,43 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
                   defaultValue:
                     'Publishing "{{eventName}}" makes the gallery accessible. The assigned customer account(s) will be notified by email (in their language) that it is available.',
                 })
+              : customerPhone
+                ? t('events.publishDialog.descriptionWhatsapp', {
+                    eventName,
+                    defaultValue:
+                      'Publishing "{{eventName}}" makes the gallery accessible. If WhatsApp is configured, the customer is notified there.',
+                  })
               : t('events.publishDialog.descriptionNoEmail', {
                   eventName,
                   defaultValue:
                     'Publishing "{{eventName}}" makes the gallery accessible. No customer email is set, so no notification will be sent.',
                 })}
         </p>
+
+        {willNotify && (
+          <label className="flex items-start gap-3 mb-4 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={notifyCustomer}
+              onChange={(e) => {
+                setNotifyCustomer(e.target.checked);
+                if (error) setError(undefined);
+              }}
+              className="mt-1 h-4 w-4 rounded border-neutral-300 dark:border-neutral-600"
+            />
+            <span className="text-sm">
+              <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                {t('events.publishDialog.notifyLabel', 'Send the gallery email now')}
+              </span>
+              <span className="block text-neutral-600 dark:text-neutral-400">
+                {t(
+                  'events.publishDialog.notifyHelp',
+                  'Uncheck to publish quietly — the gallery goes live and nothing is sent. You can send the email later from this page.',
+                )}
+              </span>
+            </span>
+          </label>
+        )}
 
         {needsPassword && (
           <div className="space-y-3 mb-4">
@@ -151,9 +202,11 @@ export const PublishGalleryDialog: React.FC<PublishGalleryDialogProps> = ({
             onClick={handleSubmit}
             disabled={isPublishing}
             isLoading={isPublishing}
-            leftIcon={willNotify ? <Send className="w-4 h-4" /> : undefined}
+            leftIcon={willNotify && notifyCustomer ? <Send className="w-4 h-4" /> : undefined}
           >
-            {willNotify ? t('events.publishAndNotify') : t('events.publishDialog.justPublish', 'Publish')}
+            {willNotify && notifyCustomer
+              ? t('events.publishAndNotify')
+              : t('events.publishDialog.justPublish', 'Publish')}
           </Button>
         </div>
       </Card>

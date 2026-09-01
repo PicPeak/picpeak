@@ -1373,7 +1373,11 @@
       "passwordLabel": "Galerie-Passwort",
       "passwordPlaceholder": "Galerie-Passwort eingeben",
       "passwordHelp": "Gib das bei der Erstellung gesetzte Passwort erneut ein (oder wähle ein neues). Die E-Mail enthält genau diesen Text; das Backend hasht es erneut, sodass die Galerie-Anmeldung weiterhin funktioniert.",
-      "errorMinLength": "Das Passwort muss mindestens 6 Zeichen lang sein."
+      "errorMinLength": "Das Passwort muss mindestens 6 Zeichen lang sein.",
+      "notifyLabel": "Galerie-E-Mail jetzt senden",
+      "notifyHelp": "Abwählen, um still zu veröffentlichen — die Galerie geht online, es wird nichts versendet. Die E-Mail lässt sich später auf dieser Seite senden.",
+      "descriptionQuiet": "Durch das Veröffentlichen wird \"{{eventName}}\" zugänglich. Es wird keine E-Mail versendet — Sie können sie später auf dieser Seite senden.",
+      "descriptionWhatsapp": "Durch das Veröffentlichen wird \"{{eventName}}\" zugänglich. Sofern WhatsApp eingerichtet ist, wird der Kunde dort benachrichtigt."
     },
     "duplicateEvent": "Galerie duplizieren",
     "duplicateDialog": {
@@ -1513,6 +1517,16 @@
       "title": "Heldenbild als Vorschau für geteilte Links verwenden",
       "help": "Beim Teilen der Galerie-URL auf WhatsApp, Facebook, Slack usw. wird das oben gewählte Heldenbild als Link-Vorschau angezeigt. Das Thumbnail wird von Link-Preview-Crawlern ohne Authentifizierung abgerufen — wer die URL teilt, macht damit faktisch dieses Bild öffentlich. Standardmäßig aus; wähle erst ein Heldenbild, das du bewusst öffentlich zeigen möchtest, bevor du diese Option aktivierst.",
       "heroRequired": "Wähle zuerst oben ein Heldenbild — diese Option verwendet es als WhatsApp- / Facebook- / Slack-Vorschaubild."
+    },
+    "publishQuietSuccess": "Galerie veröffentlicht. Es wurde keine E-Mail versendet.",
+    "sendGalleryEmail": {
+      "button": "Galerie-E-Mail senden",
+      "help": "Sendet den Galerie-Link an den Kunden. Bei Galerien mit Passwort bestätigen Sie es vorher.",
+      "confirm": "Galerie-E-Mail an {{recipient}} senden?",
+      "success": "Galerie-E-Mail an {{recipient}} eingereiht.",
+      "title": "Galerie-E-Mail senden",
+      "description": "Sendet den Galerie-Link für \"{{eventName}}\" an {{recipient}}.",
+      "passwordHelp": "Die E-Mail enthält genau diesen Text. Geben Sie das Galerie-Passwort erneut ein (oder wählen Sie ein neues) — das Backend hasht es neu, damit der Login weiter funktioniert."
     }
   },
   "settings": {

@@ -20,6 +20,7 @@ import { EventActionsCard } from './EventActionsCard';
 import { PhotoStatisticsCard } from './PhotoStatisticsCard';
 import { EventThemeSection } from './EventThemeSection';
 import { ArchiveStatusCard } from './ArchiveStatusCard';
+import { toBoolean } from '../../../utils/parsers';
 
 interface OverviewTabProps {
   event: Event;
@@ -40,6 +41,8 @@ interface OverviewTabProps {
   setActiveTab: (tab: EventDetailsTab) => void;
   setShowPasswordReset: (show: boolean) => void;
   setShowPublishDialog: (show: boolean) => void;
+  onSendGalleryEmail: () => void;
+  isSendingGalleryEmail: boolean;
   setShowDuplicateDialog: (show: boolean) => void;
   onArchive: () => void;
   isArchiving: boolean;
@@ -72,6 +75,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   setActiveTab,
   setShowPasswordReset,
   setShowPublishDialog,
+  onSendGalleryEmail,
+  isSendingGalleryEmail,
   setShowDuplicateDialog,
   onArchive,
   isArchiving,
@@ -177,6 +182,25 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               isPublishing={isPublishing}
               setShowDuplicateDialog={setShowDuplicateDialog}
               isDuplicating={isDuplicating}
+              onSendGalleryEmail={onSendGalleryEmail}
+              isSendingGalleryEmail={isSendingGalleryEmail}
+              assignedCustomerCount={
+                ((event as {
+                  customer_accounts?: Array<{
+                    id: number; email?: string; is_active?: unknown; can_sign_in?: unknown
+                  }>
+                }).customer_accounts || [])
+                  // Only accounts the endpoint would actually mail count, or
+                  // the button appears and then 400s. Mirrors
+                  // canReceiveGalleryNotice in crud.js: active, holding an
+                  // address, and able to sign in — a PASSIVE customer
+                  // (never invited, so no password) would get a portal link
+                  // to a door that will not open. toBoolean rather than
+                  // `!== false` because SQLite returns 0/1.
+                  .filter((c) => toBoolean(c.is_active, true)
+                    && toBoolean(c.can_sign_in, true)
+                    && !!c.email).length
+              }
             />
           </PermissionGate>
         )}

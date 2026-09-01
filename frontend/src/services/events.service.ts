@@ -1,6 +1,7 @@
 import { api } from '../config/api';
 import type { Event } from '../types';
 import { normalizeRequirePassword } from '../utils/accessControl';
+import { toBoolean } from '../utils/parsers';
 
 const normalizeEvent = (event: Event): Event => {
   const legacyHostName = (event as any)?.host_name;
@@ -14,6 +15,10 @@ const normalizeEvent = (event: Event): Event => {
     customer_name: customerName,
     customer_email: customerEmail,
     require_password: normalizeRequirePassword((event as any)?.require_password, true),
+    // SQLite hands these back as 0/1, so a strict `=== false` consumer reads
+    // an inactive gallery as active (the #1028 class). Coerced once here with
+    // the same default the backend's parseBooleanInput uses.
+    is_active: toBoolean((event as any)?.is_active, true),
   };
 };
 
@@ -273,10 +278,29 @@ export const eventsService = {
   // (#627) — the backend also re-hashes it so the stored hash matches.
   async publishEvent(
     eventId: number,
+    options?: { password?: string; notifyCustomer?: boolean },
+  ): Promise<{ message: string; is_draft: boolean; notified_customer?: boolean }> {
+    // Only send what was actually chosen. Omitting notify_customer entirely
+    // when it is true keeps the request identical to the pre-#1235 shape.
+    const body: Record<string, unknown> = {};
+    if (options?.password) body.password = options.password;
+    if (options?.notifyCustomer === false) body.notify_customer = false;
+    const response = await api.post(
+      `/admin/events/${eventId}/publish`,
+      Object.keys(body).length ? body : undefined,
+    );
+    return response.data;
+  },
+
+  // Send the gallery email for an already-published gallery (#1235). The other
+  // half of publishing quietly: the address often arrives after the gallery
+  // does. Also covers an ordinary re-send when the first one was lost.
+  async sendGalleryEmail(
+    eventId: number,
     options?: { password?: string },
-  ): Promise<{ message: string; is_draft: boolean }> {
+  ): Promise<{ message: string; recipient: string }> {
     const body = options?.password ? { password: options.password } : undefined;
-    const response = await api.post(`/admin/events/${eventId}/publish`, body);
+    const response = await api.post(`/admin/events/${eventId}/send-gallery-email`, body);
     return response.data;
   },
 
