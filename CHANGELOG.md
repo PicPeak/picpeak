@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.122.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.121.4-beta.0...v3.122.0-beta.0) (2026-09-01)
+
+
+### Features
+
+* **events:** publish without notifying, and send the gallery email later ([#1235](https://github.com/PicPeak/picpeak/issues/1235)) ([#1241](https://github.com/PicPeak/picpeak/issues/1241)) ([1ef2b3c](https://github.com/PicPeak/picpeak/commit/1ef2b3c85b9410b4ca3c5c4601f6cbb2c866f187))
+
+
+### Bug Fixes
+
+* **events:** delete stored objects when cascading an event delete ([#1051](https://github.com/PicPeak/picpeak/issues/1051)) ([202c553](https://github.com/PicPeak/picpeak/commit/202c553a08fe81f0e3413051a19bf3f4390392f1))
+* single-photo gallery downloads 404 on S3 storage backends ([#1048](https://github.com/PicPeak/picpeak/issues/1048)) ([bb2f709](https://github.com/PicPeak/picpeak/commit/bb2f709fdd9def642117cd52a59a4506d5ce7aff))
+
 ## [3.121.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.121.3-beta.0...v3.121.4-beta.0) (2026-09-01)
 
 
