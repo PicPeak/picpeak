@@ -11,6 +11,7 @@ const StreamZip = require('node-stream-zip');
 const { requireEventOwnership } = require('../middleware/ownership');
 const { assertZipEntriesWithin } = require('../utils/safePath');
 const logger = require('../utils/logger');
+const { sanitizeForZipEntry } = require('../utils/filenameSanitizer');
 const { getPagination } = require('../utils/routeHelpers');
 const router = express.Router();
 
@@ -204,15 +205,111 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // manifest the archive process writes. Older archives have no manifest;
       // we fall back to filename for those.
       const manifestByFilename = new Map();
+      // Aliases that more than one manifest row claims — see the loop below.
+      const ambiguousAliases = new Set();
       try {
         const manifestRaw = await fs.readFile(
           path.join(eventDir, 'photos_manifest.json'), 'utf8',
         );
         const parsed = JSON.parse(manifestRaw);
         if (Array.isArray(parsed)) {
-          for (const m of parsed) {
-            if (m && m.filename) manifestByFilename.set(m.filename, m);
+          // Two passes, and the order is the point. Canonical photos.filename
+          // keys are claimed first and never yielded afterwards; aliases only
+          // fill names no canonical row wanted. Interleaving them made the
+          // result depend on manifest iteration order — the query has no
+          // ORDER BY — and could delete a canonical key because some OTHER
+          // row's original_filename happened to collide with it.
+          const rows = parsed.filter((m) => m && m.filename);
+
+          // photos.filename is not unique within an event: s3AutoImporter
+          // takes path.basename(entry.key) and dedupes by path, so two
+          // imported files in different subfolders both land as `IMG_1234.jpg`
+          // with different `path` values. At restore both ZIP entries reduce
+          // to the same basename, so whichever row won the key would hand the
+          // other photo someone else's category. Contested names are dropped
+          // rather than guessed.
+          const contestedFilenames = new Set();
+          for (const m of rows) {
+            const held = manifestByFilename.get(m.filename);
+            if (held && held !== m) {
+              contestedFilenames.add(m.filename);
+              continue;
+            }
+            manifestByFilename.set(m.filename, m);
           }
+          for (const name of contestedFilenames) manifestByFilename.delete(name);
+          if (contestedFilenames.size) {
+            logger.warn(
+              `Photos manifest: ${contestedFilenames.size} filename(s) claimed by more than one photo; `
+              + 'those fall back to the directory for their category.'
+            );
+          }
+
+          // Every canonical name, contested ones included — an alias must not
+          // claim a name that a canonical row wanted and lost, either.
+          const canonicalNames = new Set(rows.map((m) => m.filename));
+
+          for (const m of rows) {
+            // Also index by original_filename. When
+            // general_use_original_filenames_for_downloads was on at archive
+            // time, archiveService names each ZIP entry after the ORIGINAL
+            // filename, while the manifest stays keyed by the internal
+            // photos.filename — so a lookup by the extracted basename misses
+            // every entry and the restore silently loses categories on exactly
+            // those archives. Never overwrite a real filename key: that one is
+            // authoritative if both happen to collide.
+            // Index the name as the ZIP would have EMITTED it, not the raw
+            // column: archiveService runs original names through
+            // sanitizeForZipEntry() before writing the entry, so an original
+            // with a slash or a control byte lands under a different name than
+            // the manifest records. Index both, so either spelling resolves.
+            //
+            // Still not total: uniquifyZipNames() appends `_1` when two photos
+            // in one event share an original name, and that suffix cannot be
+            // reconstructed from the manifest. Those few fall through to the
+            // directory, exactly as they did before this fix — no worse, just
+            // not better. Closing that needs the emitted name recorded at
+            // archive time, which is a writer change and a new archive format.
+            for (const alias of [m.original_filename, sanitizeForZipEntry(m.original_filename)]) {
+              if (!alias) continue;
+              // An alias colliding with someone else's canonical name is
+              // genuinely undecidable, so it is dropped rather than resolved
+              // either way. Which photo the ZIP emitted under that name
+              // depends on whether original-filename archiving was on at
+              // archive time, and the manifest does not record that: with it
+              // ON the entry is the ALIAS owner's file, with it OFF it is the
+              // canonical owner's. Preferring either one silently mislabels
+              // the other half of the time.
+              //
+              // What the two-pass split buys is that this is now decided the
+              // same way every run — the archive query has no ORDER BY, so
+              // interleaving the passes previously made it a coin flip
+              // between dropping the name and overwriting it.
+              if (canonicalNames.has(alias)) {
+                if (manifestByFilename.get(alias) !== m) ambiguousAliases.add(alias);
+                continue;
+              }
+              if (manifestByFilename.has(alias)) {
+                // Two rows want the same alias — e.g. `individual/IMG.jpg` and
+                // `collages/IMG.jpg`, which archiveService treats as distinct
+                // paths and does not suffix, but which collapse to one basename
+                // here. Whichever won would give the other photo someone else's
+                // category. Drop the alias so both fall through to the
+                // directory instead: an unresolved category is recoverable, a
+                // confidently wrong one is not.
+                if (manifestByFilename.get(alias) !== m) ambiguousAliases.add(alias);
+                continue;
+              }
+              manifestByFilename.set(alias, m);
+            }
+          }
+        }
+        for (const alias of ambiguousAliases) manifestByFilename.delete(alias);
+        if (ambiguousAliases.size) {
+          logger.warn(
+            `Photos manifest: ${ambiguousAliases.size} original-filename alias(es) claimed by more than one `
+            + 'photo; those fall back to the directory for their category.'
+          );
         }
         logger.info(`Loaded photos manifest: ${manifestByFilename.size} entries`);
       } catch (e) {
@@ -229,15 +326,60 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // Category name -> id, resolved once per name for the whole restore.
       const categoriesMap = new Map();
 
-      // Find-or-create the category by name, scoped to this event.
+      // Find-or-create the category by name, among the ones this event can see.
       const resolveCategoryId = async (categoryName) => {
         if (!categoryName) return null;
         if (categoriesMap.has(categoryName)) return categoriesMap.get(categoryName);
 
-        const existingCategory = await db('photo_categories')
-          .where('event_id', archive.id)
-          .where('name', categoryName)
-          .first();
+        // Globals count as existing. A photo filed under the seeded "Ceremony"
+        // has event_id NULL on its category row, so an event-only lookup misses
+        // it and creates a second "Ceremony" — and since is_global defaults to
+        // TRUE, that duplicate then shows up in every other event's category
+        // list. Same visibility rule the photo routes use: own rows or global.
+        // Two queries, not one with an OR: an event-scoped category and a
+        // global one may share a name, and a single .first() would return
+        // whichever the engine felt like — silently reassigning a photo to the
+        // global row and losing event-local settings like allow_downloads.
+        // The event's own row is the more specific answer, so it wins.
+        //
+        // The global arm requires event_id IS NULL, not just is_global. The
+        // bug fixed here left legacy rows behind on upgraded instances —
+        // event-owned AND is_global true, because the column defaults true —
+        // and matching on the flag alone would let one event's leftover row be
+        // adopted by another event's restore, tying photos to a category that
+        // vanishes with someone else's gallery.
+        // Two event-scoped categories CAN share a display name when their
+        // slugs differ, and .first() would then pick one arbitrarily — both
+        // manifest names collapse onto a single id and half the photos
+        // inherit the wrong per-category settings (allow_downloads above all).
+        // Resolving that properly needs a stable category identifier in the
+        // manifest, which is a writer change and an archive-format bump, and
+        // could not help any archive already written. So: surface it instead
+        // of fixing it blind. If this never fires in real logs, the format
+        // change is not worth making; if it does, this is the evidence for it.
+        const ownRows = await db('photo_categories')
+          .where({ event_id: archive.id, name: categoryName })
+          .select('id');
+        if (ownRows.length > 1) {
+          logger.warn(
+            `Photos manifest: category name "${categoryName}" matches ${ownRows.length} rows in event `
+            + `${archive.id}; picking the lowest id. Photos from the other row(s) will inherit its settings.`
+          );
+        }
+
+        const existingCategory =
+          // Lowest id, not engine order — an arbitrary-but-stable choice beats
+          // a nondeterministic one, so a re-run lands the same way.
+          (ownRows.length
+            ? await db('photo_categories')
+              .where('id', Math.min(...ownRows.map((r) => r.id)))
+              .first()
+            : null)
+          || await db('photo_categories')
+            .where('name', categoryName)
+            .whereNull('event_id')
+            .where('is_global', formatBoolean(true))
+            .first();
 
         if (existingCategory) {
           categoriesMap.set(categoryName, existingCategory.id);
@@ -246,6 +388,10 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             event_id: archive.id,
             name: categoryName,
             slug: slugify(categoryName),
+            // Explicit: the column defaults to true, and a restore inventing a
+            // GLOBAL category would leak this event's naming into every other
+            // gallery. Anything created here belongs to this event alone.
+            is_global: formatBoolean(false),
             created_at: new Date()
           }).returning('id');
 
@@ -284,20 +430,26 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             // all: archives written before the manifest existed, where the
             // directory is the only signal left and inventing those two names
             // is still better than losing every category.
-            let categoryId = null;
-            if (manifestEntry) {
-              categoryId = await resolveCategoryId(manifestEntry.category_name);
-            } else if (dirPath && dirPath !== '.') {
-              categoryId = await resolveCategoryId(dirPath.split(path.sep)[0]);
-            }
-
             // Check if photo already exists in database
             const existingPhoto = await db('photos')
               .where('event_id', archive.id)
               .where('filename', filename)
               .first();
-            
+
             if (!existingPhoto) {
+              // Resolved HERE, not above: resolveCategoryId find-or-CREATES,
+              // and archiveEvent retains photo rows. Resolving before this
+              // check meant restoring an archive whose rows still exist
+              // created a category from the stale manifest name that nothing
+              // then used — so renaming a category while its event was
+              // archived left the old name behind as an empty duplicate.
+              let categoryId = null;
+              if (manifestEntry) {
+                categoryId = await resolveCategoryId(manifestEntry.category_name);
+              } else if (dirPath && dirPath !== '.') {
+                categoryId = await resolveCategoryId(dirPath.split(path.sep)[0]);
+              }
+
               // Store relative path from storage root
               const relativePath = path.relative(storagePath, actualFilePath);
               extractedPhotos.push({
