@@ -209,7 +209,11 @@ const InvoiceExpenseModal: React.FC<{ expense: Expense; onClose: () => void; onD
           </p>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">{t('accounting.ledger.invoiceHint', 'This creates a billable line on the client’s next scheduled invoice and locks the expense from further edits.')}</p>
           <div><label className={labelCls}>{t('accounting.inbox.field.customer', 'Client')} *</label>
-            <CustomerAccountPicker value={customer.slice(0, 1)} onChange={(next) => setCustomer(next.slice(-1))} />
+            {/* portalAssignment={false}: re-billing an expense is an Accounting
+                flow gated by `expenses`, not by the customer portal — without
+                this the required field renders a bare label and the submit
+                button can never enable (QA S10). */}
+            <CustomerAccountPicker portalAssignment={false} value={customer.slice(0, 1)} onChange={(next) => setCustomer(next.slice(-1))} />
           </div>
           <div><label className={labelCls}>{t('accounting.inbox.field.markup', 'Markup')}</label>
             <select value={markupType} onChange={(e) => setMarkupType(e.target.value as MarkupType)} className={selectCls}>
