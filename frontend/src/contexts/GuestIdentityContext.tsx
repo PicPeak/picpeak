@@ -24,6 +24,16 @@ interface GuestIdentityContextValue {
   recoverVerify: (email: string, code: string) => Promise<GuestIdentity>;
   forget: () => Promise<void>;
   /**
+   * Drop the stored identity on THIS device without touching the server.
+   *
+   * Distinct from forget(), which soft-deletes the guest row and anonymizes
+   * their feedback. Now that identity survives a tab close (#1265), a second
+   * person on a shared computer can be greeted as whoever used it last — and
+   * their only previous exit was forget(), which would erase that person's
+   * name and selections. This is the non-destructive way out.
+   */
+  signOut: () => void;
+  /**
    * Used by feedback components. Returns the current identity, or opens the
    * prompt and waits until the user registers (or cancels, in which case it
    * throws a "user_cancelled" error).
@@ -144,6 +154,11 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     setIdentity(null);
   }, [slug, identity]);
 
+  const signOut = useCallback((): void => {
+    clearGuestIdentity(slug);
+    setIdentity(null);
+  }, [slug]);
+
   const ensureIdentity = useCallback((): Promise<GuestIdentity> => {
     if (identityMode !== 'guest') {
       // In simple mode, there is no per-person identity. Return a synthetic
@@ -182,6 +197,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       recoverRequest,
       recoverVerify,
       forget,
+      signOut,
       ensureIdentity,
     }),
     [
@@ -199,6 +215,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
       recoverRequest,
       recoverVerify,
       forget,
+      signOut,
       ensureIdentity,
     ]
   );

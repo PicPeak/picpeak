@@ -829,6 +829,19 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                   >
                     {t('gallery.footer.forgetMe', 'Forget me ({{name}})', { name: guestIdentity.identity.name })}
                   </button>
+                  {/* Non-destructive counterpart to "Forget me". Identity now
+                      survives a tab close (#1265), so someone else on a shared
+                      device can be greeted by the previous visitor's name —
+                      and "Forget me" would delete that person's selections.
+                      This only clears the identity on this device. */}
+                  <span className="text-xs text-muted-theme">|</span>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-theme hover:text-theme transition-colors"
+                    onClick={() => guestIdentity.signOut()}
+                  >
+                    {t('gallery.footer.notYou', 'Not you?')}
+                  </button>
                 </>
               )}
             </div>

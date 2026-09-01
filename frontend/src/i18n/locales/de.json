@@ -1120,6 +1120,7 @@
     "footer": {
       "forgetMeConfirm": "Ihr Name und Ihre Auswahl werden aus dieser Galerie entfernt.",
       "forgetMe": "Mich vergessen ({{name}})",
+      "notYou": "Nicht Sie?",
       "socials": "Soziale Netzwerke"
     },
     "photosCount_one": "{{count}} Foto",
