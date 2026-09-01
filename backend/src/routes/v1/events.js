@@ -38,6 +38,7 @@ const { formatBoolean } = require('../../utils/dbCompat');
 const { parseBooleanInput } = require('../../utils/parsers');
 const { isValidEventType } = require('../../services/eventTypeService');
 const { replacePhoto } = require('../../services/photoReplacementService');
+const { getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB } = require('../../services/uploadSettings');
 const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
 const { PhotoExportService } = require('../../services/photoExportService');
@@ -65,14 +66,34 @@ const photoStorage = multer.diskStorage({
     cb(null, `v1_${Date.now()}_${crypto.randomBytes(4).toString('hex')}${ext}`);
   }
 });
-const photoUpload = multer({
+const buildPhotoUpload = (maxFileSizeBytes) => multer({
   storage: photoStorage,
-  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB per file for v1
+  limits: { fileSize: maxFileSizeBytes },
   fileFilter: (_req, file, cb) => {
     if (/^image\//.test(file.mimetype)) cb(null, true);
     else cb(new Error('Only image uploads are accepted on this endpoint'));
   }
-});
+}).single('photo');
+
+// The per-file cap was hardcoded to 100MB here, so general_max_file_size_mb
+// (Settings → General) didn't apply to the v1 upload either. Resolve it per
+// request — the admin can change it at runtime — and turn multer's generic
+// "File too large" into a 400 that names the configured limit.
+const photoUpload = async (req, res, next) => {
+  let maxFileSizeBytes;
+  try {
+    maxFileSizeBytes = await getMaxFileSizeBytes();
+  } catch {
+    maxFileSizeBytes = DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024;
+  }
+  buildPhotoUpload(maxFileSizeBytes)(req, res, (err) => {
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      const limitMb = Math.floor(maxFileSizeBytes / (1024 * 1024));
+      return res.status(400).json({ error: `File too large. Maximum size is ${limitMb} MB per file.` });
+    }
+    next(err);
+  });
+};
 
 // slugify now imported from ../../utils/slug — shared with adminEvents
 // and events.js so the diacritic fix from #502 lands here too (#525).
@@ -616,7 +637,7 @@ router.post(
   requireApiScope('write'),
   requirePermission('photos.upload'),
   requireEventOwnership,
-  photoUpload.single('photo'),
+  photoUpload,
   async (req, res) => {
     let tempPath = null;
     try {

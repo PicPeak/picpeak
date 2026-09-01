@@ -17,7 +17,7 @@ const { COLOR_LABELS, dominantColorLabel, SHARED_COLOR_LABEL_IDENTITY } = requir
 const feedbackService = require('../services/feedbackService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
 const { validateUploadedFiles } = require('../middleware/uploadValidation');
-const { getMaxFilesPerUpload, getAllowedMimeTypes } = require('../services/uploadSettings');
+const { getMaxFilesPerUpload, getAllowedMimeTypes, getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB } = require('../services/uploadSettings');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
@@ -67,10 +67,16 @@ const { validateFileType, createFileUploadValidator } = require('../utils/fileSe
 // The allowed types are fetched from the database once per request (before multer
 // processes files) and attached to req.allowedMimeTypes so that the fileFilter
 // callback can read them synchronously.
-const upload = multer({
+//
+// The per-file size cap is resolved per request too (general_max_file_size_mb),
+// so the uploader has to be built per request like the transfer routes do. It
+// was hardcoded to 10GB here, which meant the advertised "max. 50MB per file"
+// in the dropzone was never enforced anywhere server-side. getMaxFileSizeBytes()
+// clamps to MAX_ALLOWED_FILE_SIZE_MB (10GB), so that hard ceiling still applies.
+const createUpload = (maxFileSizeBytes) => multer({
   storage: storage,
   limits: {
-    fileSize: 10 * 1024 * 1024 * 1024, // 10GB limit per file to support large videos
+    fileSize: maxFileSizeBytes,
     files: 2000, // Hard safety ceiling; actual limit enforced dynamically
     fieldSize: 10 * 1024 * 1024, // 10MB for non-file fields
     parts: 10000,
@@ -105,7 +111,9 @@ const validateUploadContent = async (req, res, next) => {
   const allowedTypes = req.allowedMimeTypes || ['image/jpeg', 'image/png', 'image/webp'];
   const validator = createFileUploadValidator({
     allowedTypes,
-    maxFileSize: 10 * 1024 * 1024 * 1024, // 10GB to support large videos
+    // Same per-request cap multer streamed against, so the two layers can't
+    // disagree; this one names the offending file in the 400.
+    maxFileSize: req.maxFileSizeBytes || DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024,
     validateContent: true
   });
   return validator(req, res, next);
@@ -132,21 +140,25 @@ const uploadTimeout = (timeout = 300000) => { // 5 minutes default
 };
 
 // Upload photos for an event
-// Max file count is configurable via general settings
+// Max file count and max file size are configurable via general settings
 router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, uploadTimeout(600000), resolveAllowedTypes, async (req, res, next) => { // 10 minute timeout
   let maxFilesPerUpload;
+  let maxFileSizeBytes;
   try {
     maxFilesPerUpload = await getMaxFilesPerUpload();
+    maxFileSizeBytes = await getMaxFileSizeBytes();
   } catch (error) {
     return errorResponse(res, error, 500, 'Unable to determine upload limits');
   }
+  req.maxFileSizeBytes = maxFileSizeBytes;
+  const maxFileSizeMb = Math.floor(maxFileSizeBytes / (1024 * 1024));
 
-  upload.array('photos', maxFilesPerUpload)(req, res, (err) => {
+  createUpload(maxFileSizeBytes).array('photos', maxFilesPerUpload)(req, res, (err) => {
     if (err) {
       logger.error('Multer error:', err);
       if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
-          return res.status(400).json({ error: 'File too large. Maximum size is 10GB per file.' });
+          return res.status(400).json({ error: `File too large. Maximum size is ${maxFileSizeMb} MB per file.` });
         }
         if (err.code === 'LIMIT_FILE_COUNT' || err.code === 'LIMIT_UNEXPECTED_FILE') {
           return res.status(400).json({ error: `Too many files. Maximum ${maxFilesPerUpload} files per upload.` });
@@ -1582,10 +1594,18 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
       return res.status(400).json({ error: 'Missing required fields: filename, fileSize, mimeType' });
     }
 
-    // Validate file size (max 10GB)
-    const maxSize = 10 * 1024 * 1024 * 1024;
+    // Validate file size against the configured per-file cap. Hardcoding 10GB
+    // here let the chunked path sidestep general_max_file_size_mb entirely.
+    let maxSize;
+    try {
+      maxSize = await getMaxFileSizeBytes();
+    } catch {
+      maxSize = DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024;
+    }
     if (fileSize > maxSize) {
-      return res.status(400).json({ error: 'File too large. Maximum size is 10GB.' });
+      return res.status(400).json({
+        error: `File too large. Maximum size is ${Math.floor(maxSize / (1024 * 1024))} MB per file.`
+      });
     }
 
     const result = await chunkedUpload.initializeUpload({
