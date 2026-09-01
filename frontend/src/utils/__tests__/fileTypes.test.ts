@@ -40,6 +40,7 @@ describe('fileTypes', () => {
     const ANDROID = 'Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 Chrome/151.0.0.0 Mobile Safari/537.36';
     const IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 Version/26.0 Mobile Safari/604.1';
     const DESKTOP = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36';
+    const FIREFOX_ANDROID = 'Mozilla/5.0 (Android 16; Mobile; rv:140.0) Gecko/140.0 Firefox/140.0';
 
     it('appends the camera token on Android so the chooser offers the camera', () => {
       expect(buildUploadAcceptString('jpg,png', ANDROID)).toBe('image/jpeg,image/png,android/allowCamera');
@@ -55,6 +56,11 @@ describe('fileTypes', () => {
         .toEqual(['image/jpeg', 'image/png']);
     });
 
+
+    it('leaves Firefox for Android alone — its chooser already offers the camera', () => {
+      // The UA says Android, but the behaviour this works around is Chromium's.
+      expect(buildUploadAcceptString('jpg,png', FIREFOX_ANDROID)).toBe('image/jpeg,image/png');
+    });
     it('leaves iOS and desktop untouched — their pickers already work', () => {
       expect(buildUploadAcceptString('jpg,png', IOS)).toBe('image/jpeg,image/png');
       expect(buildUploadAcceptString('jpg,png', DESKTOP)).toBe('image/jpeg,image/png');

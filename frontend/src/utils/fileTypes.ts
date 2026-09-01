@@ -68,7 +68,12 @@ export function extensionsToAcceptString(extString?: string | null): string {
  * `.pdf`, which works by the same mechanism but offers PDFs in the chooser —
  * pick one and you get "Invalid file type" for your trouble.
  *
- * Gated on the UA because iOS, desktop and Firefox pickers behave correctly.
+ * Gated to Android MINUS Firefox. The behaviour is Chromium's — Chrome and
+ * Edge on Android 14/15 — and Firefox for Android, whose UA also says
+ * `Android`, opens a chooser that already offers the camera. Handing it a
+ * token invented to reroute a picker it does not use is at best inert and at
+ * worst changes a chooser that was working.
+ *
  * UA sniffing is the wrong tool in general, but there is no feature query for
  * "which picker will this open", and the failure mode of a wrong guess is an
  * accept token the browser ignores.
@@ -80,7 +85,8 @@ export function extensionsToAcceptString(extString?: string | null): string {
 export function buildUploadAcceptString(extString?: string | null, userAgent?: string): string {
   const accept = extensionsToAcceptString(extString);
   const ua = userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '');
-  return /Android/i.test(ua) ? `${accept},android/allowCamera` : accept;
+  const needsCameraToken = /Android/i.test(ua) && !/Firefox/i.test(ua);
+  return needsCameraToken ? `${accept},android/allowCamera` : accept;
 }
 
 /**
