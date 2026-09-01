@@ -5,6 +5,20 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.46.8](https://github.com/PicPeak/picpeak/compare/v3.46.7...v3.46.8) (2026-09-01)
+
+
+### Bug Fixes
+
+* **archives:** take the restored category from the manifest ([#1240](https://github.com/PicPeak/picpeak/issues/1240)) (stable) ([#1243](https://github.com/PicPeak/picpeak/issues/1243)) ([261e243](https://github.com/PicPeak/picpeak/commit/261e243070b6082ccd8b972de68d2fee15329235))
+* **archives:** write a real timestamp on restored photos ([#1257](https://github.com/PicPeak/picpeak/issues/1257)) ([fed99ac](https://github.com/PicPeak/picpeak/commit/fed99ac03dfde03cf4c55fcb4b1419fea7564156))
+* **auth:** treat zxcvbn suggestions as advice, not blocking errors ([#1247](https://github.com/PicPeak/picpeak/issues/1247)) ([5b69e3e](https://github.com/PicPeak/picpeak/commit/5b69e3ec4c898204c9fcde0f1d49f24edc688891))
+* **auth:** treat zxcvbn suggestions as advice, not blocking errors ([#1247](https://github.com/PicPeak/picpeak/issues/1247)) ([eebca99](https://github.com/PicPeak/picpeak/commit/eebca9900b6f00b222eec16e27fa6be4fe2ce9fa))
+* **events:** apply the gallery password policy to publish ([#1255](https://github.com/PicPeak/picpeak/issues/1255)) ([1d9f0b6](https://github.com/PicPeak/picpeak/commit/1d9f0b6c6491cface22f12651131fd5dfba330f0))
+* **events:** delete stored objects when cascading an event delete ([#1245](https://github.com/PicPeak/picpeak/issues/1245)) ([7102687](https://github.com/PicPeak/picpeak/commit/7102687ee804140bfaca420d2eb7ec0078e50f25))
+* **gallery:** route single-photo downloads through the storage backend ([#1246](https://github.com/PicPeak/picpeak/issues/1246)) ([5470fbe](https://github.com/PicPeak/picpeak/commit/5470fbe4063c3d6c0aeeb50fdb1ce6af74df1b53))
+* **upload:** let Android guests reach the camera without breaking video ([#1248](https://github.com/PicPeak/picpeak/issues/1248)) ([ccc725f](https://github.com/PicPeak/picpeak/commit/ccc725f36edcf20643ab9c3a7aff16b5b93674c1))
+
 ## [3.46.7](https://github.com/PicPeak/picpeak/compare/v3.46.6...v3.46.7) (2026-08-28)
 
 

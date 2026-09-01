@@ -1,6 +1,6 @@
 {
   "name": "picpeak-backend",
-  "version": "3.46.7",
+  "version": "3.46.8",
   "description": "Backend for PicPeak event photo sharing platform",
   "main": "server.js",
   "engines": {
