@@ -66,7 +66,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold">{t('businessProfile.title', 'Business profile')}</h2>
+          <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">{t('businessProfile.title', 'Business profile')}</h2>
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
             {t('businessProfile.subtitle', 'Issuer block shown on every quote and invoice PDF.')}
           </p>
@@ -82,7 +82,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       </div>
 
       <Card>
-        <h3 className="font-semibold mb-3">{t('businessProfile.section.company', 'Company')}</h3>
+        <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('businessProfile.section.company', 'Company')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input label={t('businessProfile.field.companyName', 'Company name') as string} value={profile.companyName}
             onChange={(e) => setProfile({ ...profile, companyName: e.target.value })} />
@@ -116,7 +116,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       </Card>
 
       <Card>
-        <h3 className="font-semibold mb-3">{t('businessProfile.section.contact', 'Contact')}</h3>
+        <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('businessProfile.section.contact', 'Contact')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input label={t('businessProfile.field.phone', 'Phone') as string} value={profile.phone}
             onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
@@ -130,7 +130,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       </Card>
 
       <Card>
-        <h3 className="font-semibold mb-3">{t('businessProfile.section.defaults', 'Defaults')}</h3>
+        <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('businessProfile.section.defaults', 'Defaults')}</h3>
         {/* Pointer so admins who look for the old VAT/hourly-rate fields here
             know where they went. */}
         <p className="mb-3 rounded-md border border-blue-200 dark:border-blue-900/50 bg-blue-50 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-800 dark:text-blue-300">
@@ -147,7 +147,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
             <select
               value={normalizeCurrency(profile.defaultCurrency)}
               onChange={(e) => setProfile({ ...profile, defaultCurrency: e.target.value })}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               {currencyOptions(profile.defaultCurrency).map((c) => (
                 <option key={c} value={c}>{c}</option>
@@ -166,7 +166,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
             <select
               value={profile.timezone || ''}
               onChange={(e) => setProfile({ ...profile, timezone: e.target.value || null })}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
               <option value="">
                 {t('businessProfile.field.timezoneSystemDefault', 'System default')} ({Intl.DateTimeFormat().resolvedOptions().timeZone})
@@ -180,9 +180,9 @@ export const SettingsBusinessProfilePage: React.FC = () => {
               Settings → Accounting (so all financial/VAT config lives in one
               place). See the callout above. */}
           <div>
-            <label className="block text-sm font-medium mb-1">{t('businessProfile.field.defaultQrFormat', 'Default invoice QR')}</label>
+            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">{t('businessProfile.field.defaultQrFormat', 'Default invoice QR')}</label>
             <select value={profile.defaultQrFormat} onChange={(e) => setProfile({ ...profile, defaultQrFormat: e.target.value as QrFormat })}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm">
+              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm">
               <option value="none">{t('businessProfile.qrFormat.none', 'None')}</option>
               <option value="swiss">{t('businessProfile.qrFormat.swiss', 'Swiss QR-bill (CH / LI)')}</option>
               <option value="epc">{t('businessProfile.qrFormat.epc', 'EPC QR (SEPA / EUR)')}</option>
@@ -204,12 +204,12 @@ export const SettingsBusinessProfilePage: React.FC = () => {
             onChange={(e) => setProfile({ ...profile, pdfLogoHeight: Number(e.target.value) })} />
           {/* Folding marks dropdown. */}
           <div>
-            <label className="block text-sm font-medium mb-1">
+            <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
               {t('businessProfile.field.pdfFoldingMarks', 'Folding marks on PDF page edge')}
             </label>
             <select value={profile.pdfFoldingMarks || 'none'}
               onChange={(e) => setProfile({ ...profile, pdfFoldingMarks: e.target.value as any })}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm">
+              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 text-sm">
               <option value="none">{t('businessProfile.foldingMarks.none', 'None')}</option>
               <option value="half">{t('businessProfile.foldingMarks.half', 'Half (148.5mm) — for C5 envelopes')}</option>
               <option value="third">{t('businessProfile.foldingMarks.third', 'Thirds (105 + 210mm) — for DL / DIN long envelopes')}</option>
@@ -280,7 +280,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
       <Card>
         <div className="flex items-center gap-2 mb-1">
           <Clock className="w-5 h-5 text-neutral-500" />
-          <h3 className="font-semibold">{t('businessProfile.businessHours.title', 'Business hours')}</h3>
+          <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">{t('businessProfile.businessHours.title', 'Business hours')}</h3>
         </div>
         <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
           {t('businessProfile.businessHours.subtitle',
@@ -546,7 +546,7 @@ const PdfLogoUploader: React.FC<PdfLogoUploaderProps> = ({ profile, setProfile }
 
   return (
     <div>
-      <label className="block text-sm font-medium mb-1">
+      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
         {t('businessProfile.field.pdfLogoUpload', 'PDF letterhead logo (PNG, JPEG, or SVG)')}
       </label>
       <div className="flex items-center gap-3 flex-wrap">
@@ -655,7 +655,7 @@ const BankAccountsSection: React.FC<BankAccountsSectionProps> = ({ accounts }) =
           onChange={(e) => setDraft({ ...draft, bic: e.target.value })} />
         <Input label={t('businessProfile.bank.currency', 'Currency') as string} value={draft.currency}
           maxLength={3} onChange={(e) => setDraft({ ...draft, currency: e.target.value.toUpperCase() })} />
-        <label className="flex items-center gap-2 text-sm pt-6">
+        <label className="flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200 pt-6">
           <input type="checkbox" checked={draft.isDefault}
             onChange={(e) => setDraft({ ...draft, isDefault: e.target.checked })} />
           {t('businessProfile.bank.isDefault', 'Default for this currency')}
@@ -679,7 +679,7 @@ const BankAccountsSection: React.FC<BankAccountsSectionProps> = ({ accounts }) =
   return (
     <Card>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-semibold">{t('businessProfile.section.banks', 'Bank accounts')}</h3>
+        <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">{t('businessProfile.section.banks', 'Bank accounts')}</h3>
         <Button size="sm" onClick={() => {
           if (openForm === 'new') closeForm();
           else { setDraft(EMPTY_DRAFT); setOpenForm('new'); }
@@ -698,7 +698,7 @@ const BankAccountsSection: React.FC<BankAccountsSectionProps> = ({ accounts }) =
             <React.Fragment key={b.id}>
               <li className="py-2 flex items-center justify-between">
                 <div>
-                  <div className="font-medium text-sm">{b.label || b.iban}
+                  <div className="font-medium text-sm text-neutral-900 dark:text-neutral-100">{b.label || b.iban}
                     {b.isDefault && <Star className="inline w-4 h-4 ml-1 text-amber-500" />}
                   </div>
                   <div className="text-xs text-neutral-500 font-mono">{b.iban.replace(/(.{4})/g, '$1 ').trim()}{b.currency ? ` · ${b.currency}` : ''}</div>

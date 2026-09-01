@@ -72,7 +72,13 @@ interface AdminLayoutInnerProps {
 
 const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSidebarOpen, sidebarCollapsed, setSidebarCollapsed, mustChangePassword }) => {
   return (
-    <div className="h-screen bg-neutral-50 dark:bg-neutral-950 flex overflow-hidden">
+    // Explicit text colour on the admin shell: the branding theme sets
+    // --color-text on <html> app-wide (GlobalThemeProvider applies it on every
+    // non-gallery page, by design), so any admin component that forgot its own
+    // colour class inherited it through `body { color: var(--color-text) }` and
+    // rendered near-invisible on a dark-toned theme. Components with an
+    // explicit class or `text-theme` still win over this.
+    <div className="h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 flex overflow-hidden">
       {/* Mandatory Password Change Modal */}
       {mustChangePassword && <MandatoryPasswordChangeModal />}
       
