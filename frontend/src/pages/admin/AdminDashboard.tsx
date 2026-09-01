@@ -19,6 +19,7 @@ import { parseISO } from 'date-fns';
 import { useQueryClient } from '@tanstack/react-query';
 import { useExpiryRefresh } from '../../hooks/useExpiryRefresh';
 import { useTranslation } from 'react-i18next';
+import i18n from '../../i18n/config';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
 
@@ -28,7 +29,7 @@ import { WhatsNewBanner } from '../../components/admin/WhatsNewBanner';
 import { CrmOverviewSection } from '../../components/admin/CrmOverviewSection';
 import { useQuery } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
-import { adminService, ActivityType } from '../../services/admin.service';
+import { adminService, ActivityType, type Activity } from '../../services/admin.service';
 import { workflowsService } from '../../services/workflows.service';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 
@@ -38,6 +39,30 @@ interface StatCard {
   change?: string;
   icon: React.ComponentType<{ className?: string }>;
   color: string;
+}
+
+/**
+ * Interpolation values for an `admin.activities.*` line.
+ *
+ * The activity's own metadata is spread in first: the keys interpolate
+ * whatever the backend recorded for that type ({{name}} for
+ * webhook_created, {{quoteNumber}} for quote_created, {{contractNumber}},
+ * {{username}}, {{word}}, …). Before that, only a fixed five-value
+ * allowlist was passed, so every other key rendered its raw "{{…}}"
+ * placeholder in the activity feed (QA S7). The explicit entries below
+ * stay as derived/defaulted overrides — they resolve from columns that
+ * are not in metadata, or need a fallback when metadata is empty.
+ */
+export function buildActivityParams(activity: Activity): Record<string, unknown> {
+  const t = i18n.t;
+  return {
+    ...activity.metadata,
+    eventName: activity.eventName || t('common.unknown'),
+    email: activity.metadata?.email || activity.actorName || '',
+    count: activity.metadata?.count || 0,
+    template: activity.metadata?.template_key || '',
+    categoryName: activity.metadata?.category_name || '',
+  };
 }
 
 export const AdminDashboard: React.FC = () => {
@@ -416,17 +441,7 @@ export const AdminDashboard: React.FC = () => {
 
                 // Format activity message with translations
                 const getActivityMessage = (): string => {
-                  const params: Record<string, any> = {
-                    eventName: activity.eventName || t('common.unknown'),
-                    // Customer/account activity keys (customer_login,
-                    // customer_invitation_*, customer_updated, …) interpolate
-                    // {{email}}; without it the literal placeholder rendered.
-                    // Sourced the same way formatActivityMessage does.
-                    email: activity.metadata?.email || activity.actorName || '',
-                    count: activity.metadata?.count || 0,
-                    template: activity.metadata?.template_key || '',
-                    categoryName: activity.metadata?.category_name || ''
-                  };
+                  const params = buildActivityParams(activity);
                   const translated = t(`admin.activities.${activity.type}`, params);
 
                   // Translate; if key missing i18n returns the key string itself

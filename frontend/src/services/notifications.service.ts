@@ -280,7 +280,15 @@ export const notificationsService = {
         return t('admin.notificationMessages.eventLogoRemoved', { eventName: notification.eventName });
       case 'bulk_delete_completed':
         return t('admin.notificationMessages.bulkDeleteCompleted', {
-          count: notification.metadata.deleted || notification.metadata.count || 0,
+          count: notification.metadata.successfulCount ?? notification.metadata.deleted ?? notification.metadata.count ?? 0,
+        });
+      // The bulk routes log `successfulCount` (see adminEvents/archiveBulk.js),
+      // never `count` — without the mapping the default branch below spread a
+      // metadata object with no `count`, so i18next left the literal
+      // "{{count}}" in the bell (QA B.06b).
+      case 'bulk_archive_completed':
+        return t('admin.notificationMessages.bulkArchiveCompleted', {
+          count: notification.metadata.successfulCount ?? notification.metadata.count ?? 0,
         });
       case 'photo_replaced':
         return t('admin.notificationMessages.photoReplaced', { eventName: notification.eventName });
