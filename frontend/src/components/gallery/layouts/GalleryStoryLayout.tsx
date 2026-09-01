@@ -14,7 +14,6 @@ import {
   StoryScene,
   StoryPhotoCard,
   StoryCarousel,
-  StoryFeedbackSheet,
   StoryScrollToTop
 } from './story';
 import { PhotoLightbox } from '../PhotoLightbox';
@@ -60,7 +59,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   useEnhancedProtection = false,
   useCanvasRendering = false,
   feedbackEnabled = false,
-  feedbackOptions,
   heroPhotoOverride,
   welcomeMessage,
   onLogout,
@@ -80,11 +78,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const [scrolled, setScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [favorites, setFavorites] = useState<Set<number>>(new Set());
-  const [selectedPhotoForFeedback, setSelectedPhotoForFeedback] = useState<Photo | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const [comments, setComments] = useState<Record<number, Array<{ id: string; author: string; text: string; date: string }>>>({});
-  const [ratings, setRatings] = useState<Record<number, number>>({});
-  const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
 
   // Track scroll for nav background
   useEffect(() => {
@@ -161,86 +155,17 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
     try {
       await feedbackService.submitFeedback(slug, String(photoId), {
         feedback_type: 'like',
-        guest_name: savedIdentity?.name,
-        guest_email: savedIdentity?.email,
       });
       onFeedbackChange?.();
     } catch (err) {
       console.warn('Like submit failed', err);
     }
-  }, [favorites, slug, savedIdentity, onFeedbackChange]);
-
-  const handleOpenFeedback = useCallback((photo: Photo) => {
-    setSelectedPhotoForFeedback(photo);
-  }, []);
+  }, [favorites, slug, onFeedbackChange]);
 
   const handleOpenLightbox = useCallback((photo: Photo) => {
     const index = photos.findIndex(p => p.id === photo.id);
     setLightboxIndex(index >= 0 ? index : 0);
   }, [photos]);
-
-  const handleCloseFeedback = useCallback(() => {
-    setSelectedPhotoForFeedback(null);
-  }, []);
-
-  const handleAddComment = useCallback(async (text: string, name?: string, email?: string) => {
-    if (!selectedPhotoForFeedback) return;
-
-    if (name && email) {
-      setSavedIdentity({ name, email });
-    }
-
-    const newComment = {
-      id: `${Date.now()}`,
-      author: name || savedIdentity?.name || t('gallery.feedback.anonymous', 'Anonymous'),
-      text,
-      date: new Date().toLocaleDateString()
-    };
-
-    setComments(prev => ({
-      ...prev,
-      [selectedPhotoForFeedback.id]: [...(prev[selectedPhotoForFeedback.id] || []), newComment]
-    }));
-
-    try {
-      await feedbackService.submitFeedback(slug, String(selectedPhotoForFeedback.id), {
-        feedback_type: 'comment',
-        comment_text: text,
-        guest_name: name || savedIdentity?.name,
-        guest_email: email || savedIdentity?.email,
-      });
-      onFeedbackChange?.();
-    } catch (err) {
-      console.warn('Comment submit failed', err);
-    }
-  }, [selectedPhotoForFeedback, slug, savedIdentity, onFeedbackChange, t]);
-
-  const handleRate = useCallback(async (rating: number) => {
-    if (!selectedPhotoForFeedback) return;
-
-    // Clicking the star you already gave clears the rating (#884) —
-    // 0 tells the backend to delete it. Session-local `ratings` is the
-    // source of truth for "my rating" here, never the photo's average.
-    const current = ratings[selectedPhotoForFeedback.id] || 0;
-    const next = rating === current ? 0 : rating;
-
-    setRatings(prev => ({
-      ...prev,
-      [selectedPhotoForFeedback.id]: next
-    }));
-
-    try {
-      await feedbackService.submitFeedback(slug, String(selectedPhotoForFeedback.id), {
-        feedback_type: 'rating',
-        rating: next,
-        guest_name: savedIdentity?.name,
-        guest_email: savedIdentity?.email,
-      });
-      onFeedbackChange?.();
-    } catch (err) {
-      console.warn('Rating submit failed', err);
-    }
-  }, [selectedPhotoForFeedback, ratings, slug, savedIdentity, onFeedbackChange]);
 
   const handleDownloadAll = useCallback(async () => {
     // Whole-gallery path when available: posting ids would hit the server's
@@ -399,7 +324,10 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         )}
       </footer>
 
-      {/* Lightbox */}
+      {/* Lightbox. It owns the whole feedback surface on this theme — ratings,
+          comments, reactions and colour labels — the same way the Premium
+          layout routes feedback through its own lightbox instead of a
+          per-card affordance. */}
       {lightboxIndex !== null && (
         <PhotoLightbox
           photos={photos}
@@ -418,21 +346,6 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
           // chips silently disappear on the Story theme.
           people={people}
           onSelectPerson={onSelectPerson}
-        />
-      )}
-
-      {/* Feedback Sheet */}
-      {feedbackEnabled && (
-        <StoryFeedbackSheet
-          isOpen={!!selectedPhotoForFeedback}
-          onClose={handleCloseFeedback}
-          photo={selectedPhotoForFeedback}
-          comments={selectedPhotoForFeedback ? (comments[selectedPhotoForFeedback.id] || []) : []}
-          rating={selectedPhotoForFeedback ? (ratings[selectedPhotoForFeedback.id] ?? (selectedPhotoForFeedback.average_rating || 0)) : 0}
-          onAddComment={handleAddComment}
-          onRate={handleRate}
-          requireNameEmail={feedbackOptions?.requireNameEmail}
-          savedIdentity={savedIdentity}
         />
       )}
     </div>
