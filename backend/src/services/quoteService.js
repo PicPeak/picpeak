@@ -46,18 +46,46 @@ const { hasColumnCached } = require('../utils/schemaCache');
 const fs = require('fs');
 const path = require('path');
 
-// NOTE: this transition table is currently never consulted — quote status
-// changes are not validated against it anywhere in the codebase. Kept as the
-// documented intent; wiring it up is tracked separately.
-// eslint-disable-next-line no-unused-vars -- unwired state machine, see note above
+// Every write to `quotes.status` goes through assertQuoteTransition below.
+//
+// The table was written before the admin-side flows existed and did not match
+// what the service actually performs; it has been reconciled against every
+// call site rather than the other way round, since each of those flows is
+// deliberate and covered by its own guard:
+//   draft    → accepted   adminAcceptQuote ("customer accepted on the phone")
+//   declined → sent       sendQuote (revise + resend after a decline)
+//   expired  → sent/accepted/declined  sendQuote / adminAccept / adminDecline
+//                         all accept `expired` — a lapsed quote is revivable
+//   accepted → accepted   recordResponse re-affirm inside the toggle window
+//   declined → declined   recordResponse re-decline inside the toggle window
+//
+// `sent → expired` is retained as documented intent: no scheduler sets
+// `expired` today, so nothing reaches that state on its own.
 const VALID_QUOTE_TRANSITIONS = {
-  draft: new Set(['sent', 'declined']),
+  draft: new Set(['sent', 'accepted', 'declined']),
   sent: new Set(['draft', 'accepted', 'declined', 'expired']),
-  accepted: new Set(['converted', 'declined']),
-  declined: new Set(['draft', 'accepted']),
-  expired: new Set(['draft']),
+  accepted: new Set(['accepted', 'converted', 'declined']),
+  declined: new Set(['draft', 'sent', 'accepted', 'declined']),
+  expired: new Set(['draft', 'sent', 'accepted', 'declined']),
   converted: new Set([]),
 };
+
+/**
+ * Backstop for the state machine above. The call sites keep their own, more
+ * specific guards (they produce better-worded 409s naming the exact reason);
+ * this catches anything they miss — including a status the table has never
+ * heard of — as a 409 rather than letting it through or 500ing downstream.
+ */
+function assertQuoteTransition(from, to) {
+  const allowed = VALID_QUOTE_TRANSITIONS[from];
+  if (!allowed || !allowed.has(to)) {
+    throw new AppError(
+      `Cannot change quote status from '${from}' to '${to}'`,
+      409,
+      'QUOTE_INVALID_TRANSITION',
+    );
+  }
+}
 
 // ---------------------------------------------------------------------
 // Helpers
@@ -682,7 +710,10 @@ async function updateQuote(id, payload, adminId) {
       vat_rate: ensureNumber(payload.vatRate ?? existing.vat_rate, 0),
     };
     // Revert sent → draft on edit so the admin must explicitly resend.
-    if (existing.status === 'sent') updates.status = 'draft';
+    if (existing.status === 'sent') {
+      assertQuoteTransition(existing.status, 'draft');
+      updates.status = 'draft';
+    }
     const map = {
       eventName: 'event_name',
       eventDate: 'event_date',
@@ -966,6 +997,7 @@ async function sendQuote(id, adminId) {
   if (!['draft', 'declined', 'expired'].includes(quote.status)) {
     throw new AppError(`Cannot send a quote with status '${quote.status}'`, 409);
   }
+  assertQuoteTransition(quote.status, 'sent');
 
   const customer = await db('customer_accounts').where({ id: quote.customer_account_id }).first();
   ensureCustomerFeatureEnabled(customer, 'quotes');
@@ -1234,6 +1266,7 @@ async function recordResponse({ token, action, ip, tosAccepted }) {
   const newStatus = isAccept ? 'accepted' : 'declined';
   const respondedAt = quote.responded_at || now;
   const responseLockedAt = new Date(new Date(respondedAt).getTime() + windowMinutes * 60 * 1000);
+  assertQuoteTransition(quote.status, newStatus);
 
   await db.transaction(async (trx) => {
     const updates = {
@@ -1303,6 +1336,7 @@ async function adminAcceptQuote(id, adminId) {
   if (quote.status === 'converted') {
     throw new AppError('Quote already converted to an event/invoice', 409, 'QUOTE_CONVERTED');
   }
+  assertQuoteTransition(quote.status, 'accepted');
 
   const now = new Date();
   const windowMinutes = ensureInt(await getAppSetting('crm_quotes_accept_window_minutes')) || 15;
@@ -1402,6 +1436,7 @@ async function adminDeclineQuote(id, adminId, reason = null) {
   if (quote.status === 'converted') {
     throw new AppError('Quote already converted to an event/invoice', 409, 'QUOTE_CONVERTED');
   }
+  assertQuoteTransition(quote.status, 'declined');
 
   const now = new Date();
   const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 5000) : null;
@@ -1471,6 +1506,7 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
   if (quote.status !== 'accepted') {
     throw new AppError(`Cannot convert a quote with status '${quote.status}'`, 409);
   }
+  assertQuoteTransition(quote.status, 'converted');
   if (quote.converted_event_id) {
     // Already has a linked event — nothing to do here; tell the
     // caller to use the event-detail page for new invoices.
@@ -1585,6 +1621,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   if (quote.status !== 'accepted') {
     throw new AppError(`Cannot convert a quote with status '${quote.status}'`, 409);
   }
+  assertQuoteTransition(quote.status, 'converted');
   if (quote.converted_event_id) {
     // Idempotent re-entry (e.g. workflow crash-recovery): hand back the
     // already-created event and its scheduled invoices so the caller can
