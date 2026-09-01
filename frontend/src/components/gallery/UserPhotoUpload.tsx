@@ -10,8 +10,9 @@ import { extensionsToMimeTypes, buildUploadAcceptString, extensionsToLabel } fro
 interface UserPhotoUploadProps {
   eventId: number;
   categoryId: number | null | undefined;
-  /** Receives how many files the server accepted, so the caller can wait for all of them. */
-  onUploadComplete: (queuedCount: number) => void;
+  // Receives the upload-group ids the backend queued the files under, so the
+  // caller can poll their processing status instead of guessing (B7).
+  onUploadComplete: (uploadIds: string[]) => void;
   onClose: () => void;
 }
 
@@ -143,6 +144,10 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     setUploading(true);
     let successCount = 0;
     let failedCount = 0;
+    // The 202 hands back the id of the upload group the files were queued
+    // under. One request per file means one id per file; the gallery polls
+    // them together to know when the background worker is done (B7).
+    const uploadIds: string[] = [];
 
     for (const file of files) {
       const formData = new FormData();
@@ -152,7 +157,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
       }
 
       try {
-        await api.post(`/gallery/${eventId}/upload`, formData, {
+        const response = await api.post<{ upload_id?: string }>(`/gallery/${eventId}/upload`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
@@ -169,7 +174,11 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
             }
           },
         });
-        // Request resolved → file fully processed by backend.
+        // Request resolved → the bytes are stored. Processing continues in the
+        // background worker; `upload_id` is how the gallery follows it.
+        if (response.data?.upload_id) {
+          uploadIds.push(response.data.upload_id);
+        }
         setProcessingFiles(prev => {
           const next = { ...prev };
           delete next[file.name];
@@ -190,7 +199,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
 
     if (successCount > 0) {
       toast.success(t('toast.uploadSuccess') + ` (${successCount} ${t('common.photos')})`);
-      onUploadComplete(successCount);
+      onUploadComplete(uploadIds);
     }
     
     if (failedCount > 0) {
