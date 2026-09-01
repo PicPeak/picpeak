@@ -170,7 +170,7 @@ export const SettingsPage: React.FC = () => {
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { flags, isLoading: flagsLoading } = useFeatureFlags();
-  const { hasAnyPermission } = usePermissions();
+  const { hasAnyPermission, isLoading: permissionsLoading } = usePermissions();
 
   // Read ?tab=… on mount; default to Features per the redesign.
   const initialTab: TabType = isValidTab(searchParams.get('tab'))
@@ -288,7 +288,11 @@ export const SettingsPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flagsLoading, activeTab, flags.quotes, flags.bills, flags.contracts, flags.reminderEmails, flags.accounting, flags.whatsapp, flags.slideshow]);
 
-  if (isLoading) {
+  // Wait for the permissions context too: on a fresh/hard mount it starts out
+  // empty, which filters every nav group down to nothing and left `activeItem`
+  // undefined below (QA J.08 crash). `activeTab` is held in state, so a
+  // deep-linked ?tab= still lands on the right tab once permissions arrive.
+  if (isLoading || permissionsLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loading size="lg" text={t('settings.loadingSettings')} />
@@ -483,7 +487,7 @@ export const SettingsPage: React.FC = () => {
         </aside>
 
         <div className="min-w-0">
-          {showSectionHeading && (
+          {showSectionHeading && activeItem && (
             <div className="mb-4 lg:mb-6 pb-3 border-b border-neutral-200 dark:border-neutral-700">
               <div className="flex items-center gap-2">
                 {/* Section heading icon stays neutral so the Settings
