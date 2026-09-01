@@ -30,6 +30,29 @@ const { getFrontendBaseUrl } = require('../../utils/frontendUrl');
 const downloadZipService = require('../../services/downloadZipService');
 const { validateHeroImageAnchor, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults, getBrandingDefaults, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./helpers');
 
+/**
+ * Validate a gallery password the admin re-typed, against the SAME policy
+ * event creation applies.
+ *
+ * The publish dialog (#627) re-hashes `password_hash` from a plaintext the
+ * admin types again, and validated it with nothing but express-validator's
+ * `isLength({ min: 6 })`. So the configured complexity — moderate by default
+ * — governed creation and reset while this door accepted `aaaaaa` and made it
+ * the live gallery password.
+ *
+ * Returns null when the password passes; otherwise the response body to send.
+ */
+async function checkGalleryPasswordPolicy(password, eventName) {
+  const result = await validatePasswordInContext(password, 'gallery', { eventName });
+  if (result.valid) return null;
+  return {
+    error: 'Password does not meet security requirements',
+    details: result.errors,
+    score: result.score,
+    feedback: result.feedback,
+  };
+}
+
 module.exports = (router) => {
 
 
@@ -854,6 +877,9 @@ module.exports = (router) => {
       // Re-hash so the stored hash matches what the email carries — even if
       // the admin mistypes vs. what was set at draft creation, the gallery
       // password the customer receives is the one that actually works.
+        const policyError = await checkGalleryPasswordPolicy(password, event.event_name);
+        if (policyError) return res.status(400).json(policyError);
+
         publishUpdates.password_hash = await bcrypt.hash(password, getBcryptRounds());
       }
       await db('events').where('id', id).update(publishUpdates);
