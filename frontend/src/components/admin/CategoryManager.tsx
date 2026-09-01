@@ -138,6 +138,7 @@ export const CategoryManager: React.FC = () => {
             onChange={(e) => setNewCategoryName(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleCreate()}
             placeholder={t('categories.categoryName')}
+            maxLength={100}
             className="flex-1 px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-md bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500"
             autoFocus
           />
@@ -188,6 +189,7 @@ export const CategoryManager: React.FC = () => {
                       if (e.key === 'Enter') handleUpdate(category.id);
                       if (e.key === 'Escape') cancelEdit();
                     }}
+                    maxLength={100}
                     className="flex-1 px-3 py-1 border border-neutral-300 dark:border-neutral-600 rounded-md bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500"
                     autoFocus
                   />
