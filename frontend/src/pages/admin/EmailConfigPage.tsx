@@ -80,7 +80,6 @@ const PREVIEW_SAMPLE_VALUES: Record<string, string> = {
   expiry_date: 'January 25, 2025',
   gallery_link: 'https://photos.example.com/gallery/john-jane-wedding',
   gallery_password: '••••••••',
-  password: '••••••••',
   host_name: 'Jane Doe',
   host_email: 'host@example.com',
   admin_email: 'admin@example.com',
@@ -101,69 +100,74 @@ export const buildPreviewSampleData = (variables: string[] = []): Record<string,
     variables.map((name) => [name, PREVIEW_SAMPLE_VALUES[name] ?? `[${name}]`])
   );
 
-const defaultTemplateKeys = [
-  {
-    key: 'gallery_created',
-    name: 'Gallery Created',
-    subject: 'Your {{event_name}} photos are ready!',
-    body: `Hi there!
-
-Your photo gallery for {{event_name}} is now ready to view.
-
-Event: {{event_name}}
-Date: {{event_date}}
-Password: {{password}}
-
-You can access your photos here: {{gallery_link}}
-
-Your gallery will be available until {{expiration_date}}. Make sure to download your photos before they expire!
-
-{{#if welcome_message}}
-Personal message from your host:
-{{welcome_message}}
-{{/if}}
-
-Best regards,
-The Photo Sharing Team`,
-    variables: ['event_name', 'event_date', 'password', 'gallery_link', 'expiration_date', 'welcome_message']
-  },
-  {
-    key: 'expiration_warning',
-    name: 'Expiration Warning',
-    subject: 'Your {{event_name}} photos expire in {{days_remaining}} days!',
-    body: `Important: Your photo gallery is expiring soon!
-
-Your photos from {{event_name}} will no longer be available after {{expiration_date}}.
-
-You have {{days_remaining}} days remaining to download your photos.
-
-Access your gallery here: {{gallery_link}}
-
-Don't forget to download all your favorite memories before they're gone!
-
-Best regards,
-The Photo Sharing Team`,
-    variables: ['event_name', 'days_remaining', 'expiration_date', 'gallery_link']
-  },
-  {
-    key: 'gallery_expired',
-    name: 'Gallery Expired',
-    subject: 'Your {{event_name}} photo gallery has expired',
-    body: `Your photo gallery for {{event_name}} has expired and is no longer accessible.
-
-The photos have been archived for safekeeping. If you need access to them, please contact the event administrator at {{admin_email}}.
-
-Thank you for using our photo sharing service!
-
-Best regards,
-The Photo Sharing Team`,
-    variables: ['event_name', 'admin_email']
-  },
-  {
-    key: 'archive_complete',
-    name: 'Archive Complete (Admin)',
-  }
-];
+/**
+ * Display name per `template_key`, for the sidebar entry and the read-only
+ * "Template name" field. Anything not listed falls back to the raw key.
+ *
+ * This replaces `defaultTemplateKeys`, which carried a stand-in
+ * subject/body/variables triple per template. That payload was dead — only
+ * the name was ever read — and it had drifted: its {{password}} and
+ * {{expiration_date}} tokens exist in no shipped template (they are
+ * {{gallery_password}} and {{expiry_date}}), which is where the stale preview
+ * sample keys came from. It also covered four keys, so every other template
+ * rendered its raw snake_case key as its name.
+ *
+ * Keys come from backend/migrations/core/*.js (core, customers, transfers)
+ * and backend/src/services/{crm,contract,eventReminder}EmailTemplates.js
+ * (quotes, billing, contracts, event reminders).
+ */
+const TEMPLATE_DISPLAY_NAMES: Record<string, string> = {
+  // core / gallery
+  gallery_created: 'Gallery Created',
+  expiration_warning: 'Expiration Warning',
+  gallery_expired: 'Gallery Expired',
+  archive_complete: 'Archive Complete (Admin)',
+  // core / admin
+  admin_invitation: 'Admin Invitation',
+  admin_password_reset: 'Admin Password Reset',
+  // core / backup
+  backup_completed: 'Backup Completed',
+  backup_failed: 'Backup Failed',
+  database_backup_completed: 'Database Backup Completed',
+  database_backup_failed: 'Database Backup Failed',
+  restore_completed: 'Restore Completed',
+  restore_failed: 'Restore Failed',
+  // core / system
+  version_update_available: 'Version Update Available',
+  version_update_test: 'Version Update (Test)',
+  // core / transfers
+  transfer_ready: 'Transfer Ready',
+  transfer_link_expired: 'Transfer Link Expired',
+  // customers
+  customer_invitation: 'Customer Invitation',
+  customer_password_reset: 'Customer Password Reset',
+  customer_gallery_assigned: 'Gallery Assigned to Customer',
+  // quotes
+  quote_sent: 'Quote Sent',
+  quote_accepted_customer: 'Quote Accepted (Customer)',
+  quote_accepted_admin: 'Quote Accepted (Admin)',
+  quote_declined_admin: 'Quote Declined (Admin)',
+  // contracts
+  contract_sent: 'Contract Sent',
+  contract_fully_signed: 'Contract Fully Signed',
+  contract_signed_admin_notification: 'Contract Signed (Admin)',
+  // billing
+  invoice_sent: 'Invoice Sent',
+  invoice_reminder_first: 'Invoice Reminder (1st)',
+  invoice_reminder_second: 'Invoice Reminder (2nd)',
+  invoice_paid_receipt: 'Invoice Paid — Receipt',
+  invoice_paid_admin_notification: 'Invoice Paid (Admin)',
+  invoice_cancelled: 'Invoice Cancelled',
+  invoice_payment_check: 'Payment Check (Admin)',
+  invoice_collections_handoff: 'Collections Handoff',
+  storno_issued: 'Credit Note Issued',
+  // event reminders
+  event_reminder_default: 'Event Reminder (Default)',
+  event_reminder_wedding: 'Event Reminder (Wedding)',
+  event_reminder_birthday: 'Event Reminder (Birthday)',
+  event_reminder_corporate: 'Event Reminder (Corporate)',
+  event_reminder_other: 'Event Reminder (Other)',
+};
 
 export const EmailConfigPage: React.FC = () => {
   const { t } = useTranslation();
@@ -859,7 +863,7 @@ export const EmailConfigPage: React.FC = () => {
               // 2. Renders a single template button. Pulled out so the
               //    flat path and the sub-category path share it.
               const renderTemplate = (template: EmailTemplate) => {
-                const templateInfo = defaultTemplateKeys.find((t) => t.key === template.template_key);
+                const templateName = TEMPLATE_DISPLAY_NAMES[template.template_key] || template.template_key;
                 const translationCount = getTranslationCount(template);
                 const enTranslation = template.translations?.en;
                 const featureOff = template.feature_flag
@@ -880,7 +884,7 @@ export const EmailConfigPage: React.FC = () => {
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-medium text-neutral-900 dark:text-neutral-100 truncate">
-                        {templateInfo?.name || template.template_key}
+                        {templateName}
                       </p>
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         {featureOff && (
@@ -1032,7 +1036,7 @@ export const EmailConfigPage: React.FC = () => {
                   </label>
                   <Input
                     type="text"
-                    value={defaultTemplateKeys.find(t => t.key === selectedTemplateKey)?.name || selectedTemplateKey}
+                    value={TEMPLATE_DISPLAY_NAMES[selectedTemplateKey] || selectedTemplateKey}
                     disabled
                     className="bg-neutral-50 dark:bg-neutral-700"
                   />
