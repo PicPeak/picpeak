@@ -75,6 +75,38 @@ const COLOR_QUOTE_BORDER = '#F59E0B'; // amber-500
 const COLOR_CONTRACT_BORDER = '#A855F7'; // purple-500
 
 /**
+ * Column-header text for the calendar's day headers.
+ *
+ * FC's default in en-US renders as "Thu 5/21" (M/D), which is wrong for
+ * DE / CH operators who expect day.month. dayHeaderContent (NOT
+ * dayHeaderFormat, which only accepts an Intl options object in FC v6 and
+ * throws if handed a function) returns the rendered string directly.
+ * Locale-aware short weekday + explicit DD.MM. to match the project-wide
+ * useLocalizedDate convention (per
+ * feedback_respect_general_format_settings.md).
+ *
+ * Only the time-grid views have one date per column. dayGridMonth's header
+ * row labels seven generic weekday columns shared by every week in the grid,
+ * and FC fills `arg.date` there from its internal reference week
+ * (1970-01-04..10) — which is why the month header used to read a fixed
+ * "Mo 05.01. … So 04.01." whatever month was on screen. The weekday is still
+ * correct, so month view renders the weekday alone: there is no single date
+ * that column could legitimately show.
+ */
+export function formatDayHeader(date: Date, viewType: string, language: string): string {
+  const weekday = date.toLocaleDateString(language || 'en', {
+    weekday: 'short',
+    timeZone: 'UTC',
+  });
+  if (viewType === 'dayGridMonth') {
+    return weekday;
+  }
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${weekday} ${day}.${month}.`;
+}
+
+/**
  * Convert a backend CalendarItem to a FullCalendar EventInput. Embeds
  * the original item in `extendedProps` so the event-click handler can
  * read the `kind` discriminator without re-fetching.
@@ -486,24 +518,9 @@ export const CalendarPage: React.FC = () => {
           locale={i18n.language || 'en'}
           slotLabelFormat={fcTimeFormat}
           eventTimeFormat={fcTimeFormat}
-          // Week-view column headers. FC's default in en-US renders as
-          // "Thu 5/21" (M/D), which is wrong for DE / CH operators who
-          // expect day.month. dayHeaderContent (NOT dayHeaderFormat,
-          // which only accepts an Intl options object in FC v6 and
-          // throws if handed a function) returns the rendered string
-          // directly. Locale-aware short weekday + explicit DD.MM. to
-          // match the project-wide useLocalizedDate convention (per
-          // feedback_respect_general_format_settings.md).
-          dayHeaderContent={(arg) => {
-            const d = arg.date;
-            const day = String(d.getUTCDate()).padStart(2, '0');
-            const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-            const weekday = d.toLocaleDateString(i18n.language || 'en', {
-              weekday: 'short',
-              timeZone: 'UTC',
-            });
-            return `${weekday} ${day}.${month}.`;
-          }}
+          // Column headers — see formatDayHeader above for the per-view
+          // semantics (month headers carry no date).
+          dayHeaderContent={(arg) => formatDayHeader(arg.date, arg.view.type, i18n.language)}
           headerToolbar={{
             left: 'prev,next today',
             center: 'title',
