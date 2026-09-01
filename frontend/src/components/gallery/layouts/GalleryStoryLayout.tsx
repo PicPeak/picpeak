@@ -108,12 +108,17 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
   const scenes = useMemo<CategoryScene[]>(() => {
     const photosByCategory: PhotosByCategory = {};
 
-    // Filter by search query
+    // Filter by search query. `original_filename` is in here because that is
+    // the camera name the guest actually sees on the card/lightbox — matching
+    // only the internal renamed `filename` gave "no results" for a substring
+    // the guest could read on screen (QA P4-B.02).
     const filteredPhotos = searchQuery
-      ? photos.filter(p =>
-          p.filename.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (p.category_name && p.category_name.toLowerCase().includes(searchQuery.toLowerCase()))
-        )
+      ? photos.filter(p => {
+          const term = searchQuery.toLowerCase();
+          return p.filename.toLowerCase().includes(term) ||
+            (p.original_filename?.toLowerCase().includes(term) ?? false) ||
+            (p.category_name && p.category_name.toLowerCase().includes(term));
+        })
       : photos;
 
     // Group by category

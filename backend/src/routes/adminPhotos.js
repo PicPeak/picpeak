@@ -1226,12 +1226,17 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       query = query.where({ 'photos.type': type });
     }
 
-    // Search by filename
+    // Search by filename. original_filename is included because that is the
+    // name printed on every card ("Original: …") — matching only the stored
+    // renamed filename returned 0 results for a substring the admin can read
+    // on screen. Grouped, because the feedback AND/OR conditions are appended
+    // right below and a bare orWhere would leak across them.
     if (search) {
-      query = query.whereRaw(
-        likeWithEscape('photos.filename'),
-        [`%${escapeLikePattern(search)}%`]
-      );
+      const pattern = `%${escapeLikePattern(search)}%`;
+      query = query.where((qb) => {
+        qb.whereRaw(likeWithEscape('photos.filename'), [pattern])
+          .orWhereRaw(likeWithEscape('photos.original_filename'), [pattern]);
+      });
     }
 
     // Feedback filters (has likes / favorites / comments / min rating) with AND/OR logic
