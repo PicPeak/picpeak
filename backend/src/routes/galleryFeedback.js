@@ -295,6 +295,21 @@ router.post('/:slug/photos/:photoId/feedback',
         // Moderate the comment
         const moderationResult = await feedbackModeration.moderateText(req.body.comment_text);
         
+        if (moderationResult.blocked) {
+          // `block` severity means rejected outright — never stored, not even
+          // as a pending row for a moderator to see. Anything else that isn't
+          // approved falls through to the held-for-moderation branch below.
+          logger.warn('Comment rejected by word filter:', {
+            eventId: event.id,
+            reason: moderationResult.reason,
+            violations: moderationResult.violations
+          });
+          return res.status(400).json({
+            error: 'Your comment contains words that are not allowed here.',
+            code: 'COMMENT_BLOCKED'
+          });
+        }
+
         if (!moderationResult.approved) {
           // Still save but mark as not approved
           feedbackData.is_approved = false;

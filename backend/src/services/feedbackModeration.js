@@ -71,8 +71,15 @@ class FeedbackModerationService {
       // low/moderate/high/block levels — rows stored under it still apply.
       const isBlocking = (v) => v.severity === 'block' || v.severity === 'severe';
       if (violations.some(isBlocking)) {
+        // `blocked` is the flag the submit route branches on: the `block`
+        // tier is advertised as "comment is rejected immediately", so it 4xxs
+        // the submission instead of storing it for a moderator. Every other
+        // not-approved outcome (moderate/high, spam checks, and the
+        // moderation-system-error fallback below) deliberately omits it and
+        // keeps the held-for-moderation behaviour.
         return {
           approved: false,
+          blocked: true,
           reason: 'Content contains prohibited words',
           violations: violations.filter(isBlocking)
         };

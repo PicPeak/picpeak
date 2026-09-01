@@ -645,7 +645,14 @@ class FeedbackService {
         guest_id: guest_id || null,
         ip_address,
         user_agent,
-        is_approved: feedback_type !== 'comment' || !feedbackData.moderate_comments,
+        // The submit route can force a comment into moderation (a
+        // `moderate`/`high` word-filter hit) on an event whose
+        // moderate_comments is off — this line used to ignore that entirely,
+        // so those hits published straight away. A caller-supplied `false` is
+        // honoured; nothing a caller passes can RELAX the event's setting.
+        is_approved: feedbackData.is_approved === false
+          ? false
+          : (feedback_type !== 'comment' || !feedbackData.moderate_comments),
         created_at: new Date(),
         updated_at: new Date()
       }).returning('id');
