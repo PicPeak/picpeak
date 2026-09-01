@@ -46,3 +46,40 @@ export function extensionsToMimeTypes(extString?: string | null): string[] {
 export function extensionsToAcceptString(extString?: string | null): string {
   return extensionsToMimeTypes(extString).join(',');
 }
+
+/**
+ * `accept` for the guest upload input (#1117).
+ *
+ * Chrome and Edge on Android 14/15 route an `<input>` whose accept list is
+ * entirely image and video types to the system *photo picker*, which has no
+ * camera tile — so a guest standing at the event can only pick a photo already
+ * in their gallery, never take one. Adding a value that picker cannot satisfy
+ * makes Chrome fall back to the general document chooser, which does offer the
+ * camera.
+ *
+ * `android/allowCamera` is the token the workaround converged on. It is not a
+ * real MIME type and matches no file, which is the point: it flips the picker
+ * without advertising anything extra as selectable. An earlier revision used
+ * `.pdf`, which works by the same mechanism but offers PDFs in the chooser —
+ * pick one and you get "Invalid file type" for your trouble.
+ *
+ * Gated to Android MINUS Firefox. The behaviour is Chromium's — Chrome and
+ * Edge on Android 14/15 — and Firefox for Android, whose UA also says
+ * `Android`, opens a chooser that already offers the camera. Handing it a
+ * token invented to reroute a picker it does not use is at best inert and at
+ * worst changes a chooser that was working.
+ *
+ * UA sniffing is the wrong tool in general, but there is no feature query for
+ * "which picker will this open", and the failure mode of a wrong guess is an
+ * accept token the browser ignores.
+ *
+ * Neither token widens what is actually accepted: `addFiles` validates every
+ * file against `extensionsToMimeTypes`, which only ever emits types it has a
+ * mapping for, so nothing new can get past it.
+ */
+export function buildUploadAcceptString(extString?: string | null, userAgent?: string): string {
+  const accept = extensionsToAcceptString(extString);
+  const ua = userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '');
+  const needsCameraToken = /Android/i.test(ua) && !/Firefox/i.test(ua);
+  return needsCameraToken ? `${accept},android/allowCamera` : accept;
+}

@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { Button } from '../common';
 import { api } from '../../config/api';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
-import { extensionsToMimeTypes, extensionsToAcceptString } from '../../utils/fileTypes';
+import { extensionsToMimeTypes, buildUploadAcceptString } from '../../utils/fileTypes';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -48,8 +48,10 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     [publicSettings?.allowed_file_types]
   );
 
+  // #1117 — on Android this appends a type the photo picker can't handle, so
+  // the system falls back to the chooser that actually offers the camera.
   const acceptString = useMemo(
-    () => extensionsToAcceptString(publicSettings?.allowed_file_types),
+    () => buildUploadAcceptString(publicSettings?.allowed_file_types),
     [publicSettings?.allowed_file_types]
   );
 
