@@ -110,6 +110,11 @@ describe('Admin settings logo upload flow', () => {
       }
     }));
 
+    jest.doMock('../src/middleware/permissions', () => ({
+      requirePermission: () => (req, res, next) => next(),
+      userHasAnyPermission: jest.fn().mockResolvedValue(true)
+    }));
+
     jest.doMock('../src/services/publicSiteService', () => ({
       clearPublicSiteCache: jest.fn(),
       getDefaultPublicSitePayload: jest.fn(),

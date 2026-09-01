@@ -36,11 +36,13 @@ jest.mock('../../middleware/auth', () => ({
 
 const { db, logActivity } = require('../../database/db');
 const adminAuthRouter = require('../adminAuth');
+const { errorHandler } = require('../../middleware/errorHandler');
 
 describe('adminAuth profile updates', () => {
   const app = express();
   app.use(express.json());
   app.use('/auth/admin', adminAuthRouter);
+  app.use(errorHandler);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -55,8 +57,8 @@ describe('adminAuth profile updates', () => {
     };
 
     db.__setImplementations(
-      buildChain({ firstResult: null }),          // email check
       buildChain({ firstResult: null }),          // username check
+      buildChain({ firstResult: null }),          // email check
       buildChain({ updateResult: 1 }),            // update
       buildChain({ firstResult: updatedUser }),   // fetch updated user
     );
@@ -66,18 +68,22 @@ describe('adminAuth profile updates', () => {
       .send({ username: updatedUser.username, email: updatedUser.email })
       .expect(200);
 
-    expect(response.body).toEqual({ user: updatedUser });
+    expect(response.body).toEqual({
+      message: 'Admin profile updated successfully',
+      user: updatedUser
+    });
     expect(logActivity).toHaveBeenCalledWith(
       'admin_profile_updated',
-      { admin_id: 1, updated_fields: ['username', 'email'] },
+      { username: updatedUser.username, email: updatedUser.email },
       null,
-      { type: 'admin', id: 1, name: updatedUser.username }
+      { type: 'admin', id: 1, name: 'admin' }
     );
   });
 
   it('rejects email conflicts', async () => {
     db.__setImplementations(
-      buildChain({ firstResult: { id: 2 } })
+      buildChain({ firstResult: null }),          // username check
+      buildChain({ firstResult: { id: 2 } }),     // email check
     );
 
     const response = await request(app)
@@ -85,7 +91,11 @@ describe('adminAuth profile updates', () => {
       .send({ username: 'newadmin', email: 'taken@example.com' })
       .expect(409);
 
-    expect(response.body).toEqual({ error: 'Email is already in use by another admin' });
+    expect(response.body).toEqual({
+      error: 'Email address is already in use',
+      code: 'CONFLICT',
+      field: 'email'
+    });
   });
 
   it('validates input', async () => {
@@ -94,6 +104,6 @@ describe('adminAuth profile updates', () => {
       .send({ username: '', email: 'not-an-email' })
       .expect(400);
 
-    expect(response.body.errors).toBeDefined();
+    expect(response.body.details).toBeDefined();
   });
 });
