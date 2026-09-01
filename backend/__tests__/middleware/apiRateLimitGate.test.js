@@ -54,6 +54,15 @@ describe('apiRateLimitGate — delegation', () => {
     expect(limiterCalls).toEqual(['/api/admin/events']);
   });
 
+  it('still limits an upper-cased /api path, which Express routes the same', async () => {
+    // Express's `case sensitive routing` is off by default, so /API/admin/events
+    // reaches the same handler. A case-sensitive prefix test in the gate was a
+    // free bypass of the limiter.
+    const res = await request(buildApp()).get('/API/admin/events');
+    expect(res.status).toBe(429);
+    expect(limiterCalls).toEqual(['/API/admin/events']);
+  });
+
   it('leaves non-/api requests alone', async () => {
     const res = await request(buildApp()).get('/photos/x.jpg');
     expect(res.status).toBe(200);

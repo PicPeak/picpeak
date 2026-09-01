@@ -56,9 +56,14 @@ const AUTH_ENDPOINT_RE = /\/(auth|login|gallery\/[^/]+\/verify)$/;
  */
 function createApiRateLimitGate(getLimiter) {
   return function apiRateLimitGate(req, res, next) {
-    if (!req.path.startsWith('/api/')) return next();
-    if (EXEMPT_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
-    if (AUTH_ENDPOINT_RE.test(req.path)) return next();
+    // Lower-cased for matching: Express's `case sensitive routing` is off by
+    // default, so `/API/admin/events` reaches the same handler as
+    // `/api/admin/events`. A case-sensitive prefix test here would have been a
+    // free bypass of the limiter (verified against a real Express app).
+    const path = req.path.toLowerCase();
+    if (!path.startsWith('/api/')) return next();
+    if (EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix))) return next();
+    if (AUTH_ENDPOINT_RE.test(path)) return next();
 
     const limiter = getLimiter();
     // Boot window: the database is not up yet, so there is nothing to delegate

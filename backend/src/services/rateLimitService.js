@@ -138,8 +138,11 @@ function shouldSkipRateLimit(req, config) {
 
   // Check if we only rate limit public endpoints
   if (config.publicEndpointsOnly) {
-    const isPublicEndpoint = req.path.startsWith('/api/public/') || 
-                           req.path.startsWith('/api/gallery/') ||
+    // Lower-cased: Express routing is case-insensitive by default, so an
+    // upper-cased path reaches the same handler and must classify the same way.
+    const lowerPath = req.path.toLowerCase();
+    const isPublicEndpoint = lowerPath.startsWith('/api/public/') ||
+                           lowerPath.startsWith('/api/gallery/') ||
                            isAuthEndpoint;
     return !isPublicEndpoint;
   }
