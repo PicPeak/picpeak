@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, ExternalLink, Copy, CheckCircle, ChevronDown, ChevronRight, ArrowUpCircle } from 'lucide-react';
@@ -123,7 +124,7 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
     }
   };
 
-  return (
+  const node = (
     <div
       className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
       onClick={onClose}
@@ -309,4 +310,11 @@ export const UpdateAvailableModal: React.FC<UpdateAvailableModalProps> = ({
       </Card>
     </div>
   );
+
+  // Portal to body: the modal is rendered from VersionInfo inside the
+  // AdminSidebar, whose root carries a `transform` (mobile slide-in). A
+  // transformed ancestor becomes the containing block for `position: fixed`
+  // descendants, so without this the backdrop sized itself to the 256px
+  // sidebar column instead of the viewport (QA B.07).
+  return createPortal(node, document.body);
 };
