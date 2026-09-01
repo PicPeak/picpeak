@@ -1655,6 +1655,9 @@ module.exports = (router) => {
         // Server-consumed file paths — e.g. DELETE /:id/logo fs.unlink()s
         // hero_logo_path, so a forged value is an arbitrary-delete primitive.
         'hero_logo_path', 'hero_logo_url', 'archive_path', 'download_zip_path',
+        // Written by archiveService from the zip's real byte count; the
+        // archives list both sorts and displays it.
+        'archive_size',
         // Server-managed timestamps
         'download_zip_generated_at', 'archived_at', 'revealed_at', 'event_reminder_sent_at',
         // Lifecycle — governed by dedicated permission-gated routes
