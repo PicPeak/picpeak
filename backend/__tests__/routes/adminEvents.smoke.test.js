@@ -117,6 +117,46 @@ describe('admin events CRUD endpoints (smoke)', () => {
       expect(queued).toHaveLength(0);
     });
 
+    it('409s (not 500) when the slug uniqueness race is lost', async () => {
+      // The route mints the slug with a read-then-insert, so two concurrent
+      // creates for the same name + date both clear the existence check and
+      // the loser's INSERT trips events_slug_unique. Reproduce it without a
+      // timer: slip the colliding row in the instant that existence SELECT is
+      // issued — the route then spends a bcrypt hash before its own INSERT.
+      const { slugify } = require('../../src/utils/slug');
+      const collidingSlug = `wedding-${slugify('Race Wedding')}-2026-09-02`;
+      let injected = null;
+      const onQuery = (q) => {
+        if (injected) return;
+        if (!/from\s+.?events.?\s+where\s+.?slug.?\s*=/i.test(q.sql)) return;
+        injected = insertEvent(db, adminId, { slug: collidingSlug, event_name: 'Race Wedding' });
+      };
+      db.on('query', onQuery);
+
+      try {
+        const res = await auth(request(app).post('/api/admin/events')).send({
+          event_type: 'wedding',
+          event_name: 'Race Wedding',
+          event_date: '2026-09-02',
+          customer_name: 'Client Person',
+          customer_email: 'client@example.com',
+          admin_email: 'admin@example.com',
+          require_password: false,
+          is_draft: true,
+        });
+
+        expect(injected).not.toBeNull(); // the race was actually injected
+        await injected;
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('EVENT_SLUG_TAKEN');
+        expect(res.body.error).toMatch(/already exists/i);
+        // Only the injected row survives — no half-created duplicate.
+        expect(await db('events').where({ slug: collidingSlug })).toHaveLength(1);
+      } finally {
+        db.removeListener('query', onQuery);
+      }
+    });
+
     it('400s on an invalid event type', async () => {
       const res = await auth(request(app).post('/api/admin/events')).send({
         event_type: 'not-a-real-type',
