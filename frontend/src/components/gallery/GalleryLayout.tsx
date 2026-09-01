@@ -506,8 +506,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                 )}
                 {/* Accent Download CTA — also rendered in the minimal header
                     so the action stays one click away regardless of header
-                    style. Intentionally NOT shown in the no-header variant
-                    where the gallery is fully chromeless by design. */}
+                    style. */}
                 {showHeaderDownload && onHeaderDownload && (
                   <HeaderDownloadButton
                     onClick={onHeaderDownload}
@@ -551,6 +550,17 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                   >
                     <span className="hidden sm:inline">{t('gallery.downloadAll')}</span>
                   </Button>
+                )}
+                {/* Accent Download CTA — 'none' suppresses the *title* header,
+                    not the download affordance: this bar still renders the
+                    menu, headerExtra and logout, so leaving the CTA out just
+                    stranded guests with per-tile downloads only (QA P4-B.05). */}
+                {showHeaderDownload && onHeaderDownload && (
+                  <HeaderDownloadButton
+                    onClick={onHeaderDownload}
+                    isDownloading={isDownloading}
+                    label={t('gallery.download', 'Download')}
+                  />
                 )}
                 {showLogout && onLogout && (
                   <Button
@@ -596,9 +606,7 @@ export const GalleryLayout: React.FC<GalleryLayoutProps> = ({
                 )}
 
                 {/* Accent Download CTA — also rendered above the hero so the
-                    primary download action is reachable without scrolling.
-                    Intentionally NOT shown in the no-header variant where
-                    the gallery is fully chromeless by design. */}
+                    primary download action is reachable without scrolling. */}
                 {showHeaderDownload && onHeaderDownload && (
                   <HeaderDownloadButton
                     onClick={onHeaderDownload}
