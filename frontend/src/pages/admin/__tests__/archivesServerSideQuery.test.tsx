@@ -55,9 +55,14 @@ vi.mock('../../../services/archive.service', () => ({
 
 import { ArchivesPage } from '../ArchivesPage';
 
-const page = (archives: unknown[], total: number) => ({
+type Totals = { archives: number; photos: number; archiveSize: number };
+
+const page = (archives: unknown[], total: number, totals?: Totals) => ({
   archives,
   pagination: { page: 1, limit: 20, total, totalPages: Math.ceil(total / 20) },
+  // The aggregates are computed server-side over the filtered set; the page
+  // only renders them.
+  totals: totals ?? { archives: total, photos: total * 3, archiveSize: total * 100 },
 });
 
 const archive = (id: number, eventName: string, eventType = 'wedding') => ({
@@ -132,5 +137,40 @@ describe('ArchivesPage server-side query (QA I.01)', () => {
 
     await userEvent.selectOptions(screen.getByDisplayValue('archives.allTypes'), 'corporate');
     await waitFor(() => expect(getArchives).toHaveBeenLastCalledWith(1, 20, undefined, 'corporate', 'date'));
+  });
+
+  it('reads the stat cards from the server totals, not from the loaded page', async () => {
+    // One row on screen, 802 in the dataset. Summing the rendered rows — what
+    // the cards used to do — would report 1 archive and 100 bytes.
+    getArchives.mockResolvedValue(
+      page([archive(1, 'Alpha Wedding')], 802, { archives: 802, photos: 12345, archiveSize: 999000 })
+    );
+    renderPage();
+
+    expect(await screen.findByText('802')).toBeInTheDocument();
+    // Grouped by the runtime's locale, so ask it rather than hardcoding.
+    expect(screen.getByText((12345).toLocaleString())).toBeInTheDocument();
+    expect(screen.getByText('999000 B')).toBeInTheDocument();
+    // Average is over the whole set too, not over the page.
+    expect(screen.getByText(`${999000 / 802} B`)).toBeInTheDocument();
+  });
+
+  it('keeps the "showing X of Y" count on a single-page result', async () => {
+    // The count used to live inside the `totalPages > 1` guard, so a search
+    // that narrowed to one page hid the number that says how many matched.
+    getArchives.mockResolvedValue(page([archive(1, 'Alpha Wedding')], 1));
+    renderPage();
+
+    expect(await screen.findByText('archives.showing')).toBeInTheDocument();
+    // Page controls stay hidden — there is only one page.
+    expect(screen.queryByText('common.next')).not.toBeInTheDocument();
+  });
+
+  it('shows no count at all when nothing matched', async () => {
+    getArchives.mockResolvedValue(page([], 0));
+    renderPage();
+
+    expect(await screen.findByText('archives.noArchivesFound')).toBeInTheDocument();
+    expect(screen.queryByText('archives.showing')).not.toBeInTheDocument();
   });
 });

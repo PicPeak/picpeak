@@ -43,6 +43,13 @@ export interface ArchivesResponse {
     total: number;
     totalPages: number;
   };
+  // Aggregates over the whole filtered set, not the page — the stat cards
+  // summed the loaded rows, so they described 20 archives out of 802.
+  totals?: {
+    archives: number;
+    photos: number;
+    archiveSize: number;
+  };
 }
 
 export const archiveService = {

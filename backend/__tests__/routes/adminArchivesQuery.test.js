@@ -29,14 +29,31 @@ const { bootCrmDb, seedMinimal, buildRouteApp } = require('../integration/helper
 describe('GET /admin/archives query params (#I.01)', () => {
   let db; let cleanup; let app; let token;
 
-  // name, type, archived_at, photo sizes
+  // name, type, archived_at, photo sizes, archive_size (the zip's own bytes)
+  //
+  // The zip sizes are deliberately in a DIFFERENT order from the summed photo
+  // bytes, because that is the only way a test can tell which of the two the
+  // route sorted by. Echo's zip size is null — an archive whose file could not
+  // be measured.
   const fixtures = [
-    ['Alpha Wedding', 'wedding', '2026-01-05T10:00:00.000Z', [300]],
-    ['Bravo Birthday', 'birthday', '2026-02-05T10:00:00.000Z', [100]],
-    ['Charlie Wedding', 'wedding', '2026-03-05T10:00:00.000Z', [500, 400]],
-    ['Delta Corporate', 'corporate', '2026-04-05T10:00:00.000Z', [200]],
-    ['Echo WEDDING Gala', 'wedding', '2026-05-05T10:00:00.000Z', [50]],
+    ['Alpha Wedding', 'wedding', '2026-01-05T10:00:00.000Z', [300], 100],
+    ['Bravo Birthday', 'birthday', '2026-02-05T10:00:00.000Z', [100], 900],
+    ['Charlie Wedding', 'wedding', '2026-03-05T10:00:00.000Z', [500, 400], 50],
+    ['Delta Corporate', 'corporate', '2026-04-05T10:00:00.000Z', [200], 400],
+    ['Echo WEDDING Gala', 'wedding', '2026-05-05T10:00:00.000Z', [50], null],
+    // Four rows that exist purely to pin LIKE-metacharacter handling: each
+    // metacharacter name is paired with a name that a wildcard reading of it
+    // would also match. Dated in 2025 so they sit at the tail of the default
+    // newest-first ordering. None of them contains "wedding".
+    ['Summer 100% Sale', 'party', '2025-01-05T10:00:00.000Z', [10], 1],
+    ['Summer 100X Sale', 'party', '2025-02-05T10:00:00.000Z', [10], 2],
+    ['Gala_Night', 'party', '2025-03-05T10:00:00.000Z', [10], 3],
+    ['GalaXNight', 'party', '2025-04-05T10:00:00.000Z', [10], 4],
   ];
+
+  // Every fixture's photo bytes and zip bytes, for the aggregate assertions.
+  const ALL_PHOTOS = 10;
+  const ALL_ARCHIVE_BYTES = 100 + 900 + 50 + 400 + 0 + 1 + 2 + 3 + 4;
 
   const list = async (query) => {
     const res = await request(app)
@@ -71,7 +88,7 @@ describe('GET /admin/archives query params (#I.01)', () => {
     );
 
     let i = 0;
-    for (const [eventName, eventType, archivedAt, sizes] of fixtures) {
+    for (const [eventName, eventType, archivedAt, sizes, archiveSize] of fixtures) {
       const slug = `arch-${i++}`;
       const ev = await db('events').insert({
         slug,
@@ -88,6 +105,8 @@ describe('GET /admin/archives query params (#I.01)', () => {
         is_archived: 1,
         is_draft: 0,
         archived_at: archivedAt,
+        archive_path: `events/archived/${slug}.zip`,
+        archive_size: archiveSize,
         created_at: new Date().toISOString(),
       }).returning('id');
       const eventId = ev[0]?.id ?? ev[0];
@@ -132,8 +151,9 @@ describe('GET /admin/archives query params (#I.01)', () => {
     const body = await list({});
     expect(names(body)).toEqual([
       'Echo WEDDING Gala', 'Delta Corporate', 'Charlie Wedding', 'Bravo Birthday', 'Alpha Wedding',
+      'GalaXNight', 'Gala_Night', 'Summer 100X Sale', 'Summer 100% Sale',
     ]);
-    expect(body.pagination.total).toBe(5);
+    expect(body.pagination.total).toBe(9);
   });
 
   test('search filters in SQL and the total describes the filtered set', async () => {
@@ -166,7 +186,7 @@ describe('GET /admin/archives query params (#I.01)', () => {
     expect(filtered.pagination.total).toBe(3);
 
     const all = await list({ type: 'all' });
-    expect(all.pagination.total).toBe(5);
+    expect(all.pagination.total).toBe(9);
   });
 
   test('search and type filter combine', async () => {
@@ -180,30 +200,165 @@ describe('GET /admin/archives query params (#I.01)', () => {
     expect(names(page1)).toEqual(['Alpha Wedding', 'Bravo Birthday']);
 
     const page3 = await list({ sortBy: 'name', limit: 2, page: 3 });
-    expect(names(page3)).toEqual(['Echo WEDDING Gala']);
+    expect(names(page3)).toEqual(['Echo WEDDING Gala', 'GalaXNight']);
   });
 
-  test('sortBy=size orders by archived content size, largest first', async () => {
+  test('sortBy=size orders by the zip size — the number the Size column shows', async () => {
     const body = await list({ sortBy: 'size' });
-    expect(names(body)).toEqual([
-      'Charlie Wedding',  // 900
-      'Alpha Wedding',    // 300
-      'Delta Corporate',  // 200
-      'Bravo Birthday',   // 100
-      'Echo WEDDING Gala' // 50
+    // Ordering by the summed photo bytes (what this did before
+    // events.archive_size existed) would have produced Charlie / Alpha /
+    // Delta / Bravo / Echo — a different list from the one on screen.
+    expect(names(body).slice(0, 5)).toEqual([
+      'Bravo Birthday',   // zip 900, photos 100
+      'Delta Corporate',  // zip 400, photos 200
+      'Alpha Wedding',    // zip 100, photos 300
+      'Charlie Wedding',  // zip  50, photos 900
+      'GalaXNight',       // zip   4
     ]);
+    // The unmeasured zip sorts last, as the 0 it displays.
+    expect(names(body).at(-1)).toBe('Echo WEDDING Gala');
+  });
+
+  test('archiveSize is the stored zip size, and 0 when it was never measured', async () => {
+    const body = await list({ search: 'wedding' });
+    const bySlug = Object.fromEntries(body.archives.map((a) => [a.eventName, a.archiveSize]));
+    expect(bySlug['Alpha Wedding']).toBe(100);
+    expect(bySlug['Charlie Wedding']).toBe(50);
+    expect(bySlug['Echo WEDDING Gala']).toBe(0);
   });
 
   test('an unknown sortBy falls back to the date ordering', async () => {
     const body = await list({ sortBy: 'events.id; drop table events' });
     expect(names(body)[0]).toBe('Echo WEDDING Gala');
-    expect(body.pagination.total).toBe(5);
+    expect(body.pagination.total).toBe(9);
   });
 
   test('quotes in the search are bound as a value, not injected as SQL', async () => {
     const body = await list({ search: '\'; DROP TABLE events; --' });
     expect(body.archives).toEqual([]);
     // The table is still there.
-    expect((await list({})).pagination.total).toBe(5);
+    expect((await list({})).pagination.total).toBe(9);
+  });
+
+  // --- LIKE metacharacters (C2) -------------------------------------------
+  // `%` and `_` are wildcards in a LIKE pattern. An admin typing them into a
+  // search box means them literally, so they are escaped in the bound value
+  // and the pattern carries an explicit ESCAPE clause.
+
+  test('a literal % matches only a literal %', async () => {
+    const body = await list({ search: '100%' });
+    expect(names(body)).toEqual(['Summer 100% Sale']);
+    // Unescaped, "100%" is the prefix wildcard "100" and would also have
+    // matched "Summer 100X Sale".
+    expect(body.pagination.total).toBe(1);
+  });
+
+  test('a bare % is not a match-everything wildcard', async () => {
+    const body = await list({ search: '%' });
+    expect(names(body)).toEqual(['Summer 100% Sale']);
+    expect(body.pagination.total).toBe(1);
+  });
+
+  test('a literal _ matches only a literal _', async () => {
+    const body = await list({ search: 'gala_night' });
+    expect(names(body)).toEqual(['Gala_Night']);
+    // Unescaped, "_" is any single character and would also have matched
+    // "GalaXNight".
+    expect(body.pagination.total).toBe(1);
+  });
+
+  test('a backslash in the search is matched literally, not eaten as an escape', async () => {
+    // Nothing in the fixtures contains a backslash. Without escaping the
+    // escape character itself, "\%" would reach SQL as an escaped percent and
+    // match every row on the engine that honours it.
+    const body = await list({ search: '\\%' });
+    expect(body.archives).toEqual([]);
+    expect(body.pagination.total).toBe(0);
+  });
+
+  // --- Aggregates (C3) -----------------------------------------------------
+
+  test('totals describe the whole filtered set, not the page', async () => {
+    const body = await list({ limit: 2, page: 1 });
+    expect(body.archives).toHaveLength(2);
+    expect(body.totals).toEqual({
+      archives: 9,
+      photos: ALL_PHOTOS,
+      archiveSize: ALL_ARCHIVE_BYTES,
+    });
+
+    // Same numbers from the last page — the stat cards must not move as the
+    // admin pages through the list.
+    const last = await list({ limit: 2, page: 5 });
+    expect(last.totals).toEqual(body.totals);
+  });
+
+  test('totals respect the active search and type filter', async () => {
+    const body = await list({ type: 'wedding' });
+    expect(body.totals).toEqual({
+      archives: 3,
+      photos: 4,                 // Alpha 1 + Charlie 2 + Echo 1
+      archiveSize: 100 + 50 + 0, // Echo's zip was never measured
+    });
+
+    const none = await list({ search: 'zzz-nothing' });
+    expect(none.totals).toEqual({ archives: 0, photos: 0, archiveSize: 0 });
+  });
+
+  // --- Migration backfill (C1) ---------------------------------------------
+
+  test('migration 197 backfills archive_size from the zip on disk', async () => {
+    const migration = require('../../migrations/core/197_add_event_archive_size');
+    const storagePath = process.env.STORAGE_PATH;
+    await fs.promises.mkdir(path.join(storagePath, 'events/archived'), { recursive: true });
+    await fs.promises.writeFile(path.join(storagePath, 'events/archived/backfill.zip'), Buffer.alloc(4096));
+
+    const base = {
+      event_type: 'wedding',
+      event_name: 'Backfill Me',
+      event_date: '2026-08-01',
+      host_email: 'h@example.com',
+      admin_email: 'a@example.com',
+      password_hash: 'x',
+      expires_at: new Date(Date.now() + 7 * 864e5).toISOString(),
+      is_active: 0,
+      is_archived: 1,
+      is_draft: 0,
+      archived_at: '2026-07-05T10:00:00.000Z',
+      archive_size: null,
+      created_at: new Date().toISOString(),
+    };
+    await db('events').insert([
+      {
+        ...base,
+        slug: 'backfill-present',
+        share_token: 'tok-backfill-present',
+        share_link: '/gallery/backfill-present/tok-backfill-present',
+        archive_path: 'events/archived/backfill.zip',
+      },
+      {
+        ...base,
+        slug: 'backfill-missing',
+        share_token: 'tok-backfill-missing',
+        share_link: '/gallery/backfill-missing/tok-backfill-missing',
+        archive_path: 'events/archived/gone.zip',
+      },
+    ]);
+
+    // Re-runnable by design: the column already exists, only the empty rows
+    // are touched.
+    await migration.up(db);
+
+    const present = await db('events').where('slug', 'backfill-present').first();
+    const missing = await db('events').where('slug', 'backfill-missing').first();
+    expect(Number(present.archive_size)).toBe(4096);
+    // A zip that cannot be statted stays NULL rather than claiming 0 bytes.
+    expect(missing.archive_size).toBeNull();
+
+    // A second run must not disturb the value it already wrote.
+    await migration.up(db);
+    expect(Number((await db('events').where('slug', 'backfill-present').first()).archive_size)).toBe(4096);
+
+    await db('events').whereIn('slug', ['backfill-present', 'backfill-missing']).del();
   });
 });

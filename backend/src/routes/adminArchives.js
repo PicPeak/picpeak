@@ -22,18 +22,23 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
     const type = typeof req.query.type === 'string' ? req.query.type.trim() : '';
     const sortBy = ['date', 'name', 'size'].includes(req.query.sortBy) ? req.query.sortBy : 'date';
 
+    // A literal % or _ typed into the search box has to match itself rather
+    // than act as a wildcard. Escape the escape character first, then the two
+    // wildcards. utils/sqlSecurity.js's escapeLikePattern() is not usable
+    // here: it also doubles single quotes, which corrupts a BOUND value —
+    // "Sarah's Birthday" would be searched for as "Sarah''s Birthday".
+    const escapeLike = (value) => value.replace(/[\\%_]/g, '\\$&');
+
     // Search and type filtering run in SQL so both the returned rows and
     // the total count cover the whole archive table, not just the page the
     // client happens to be on. Values are bound, never interpolated.
-    // % and _ are wildcards to LIKE but literal characters to the client-side
-    // `includes()` this replaced, so searching for "100%" would otherwise match
-    // every archive and report a nonsense total. The ESCAPE clause is
-    // load-bearing rather than decorative: SQLite has no default LIKE escape
-    // character, so without it the escaped pattern matches literal backslashes
-    // there while working on Postgres.
-    const escapeLike = (value) => value.replace(/[\\%_]/g, '\\$&');
     const applyFilters = (query) => {
       if (search) {
+        // The ESCAPE clause is explicit because the two engines disagree
+        // without it: Postgres treats a backslash in a LIKE pattern as an
+        // escape by default, SQLite has no default escape character at all and
+        // would match the backslash literally. Naming it makes the escaping
+        // above mean the same thing on both.
         query.whereRaw(
           'LOWER(events.event_name) LIKE ? ESCAPE \'\\\'',
           [`%${escapeLike(search.toLowerCase())}%`]
@@ -45,11 +50,24 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
       return query;
     };
 
-    // Get total count (of the filtered set, so pagination stays truthful)
+    // Totals for the filtered set, so pagination AND the stat cards describe
+    // the whole result rather than the page. Unjoined: joining photos here
+    // would multiply archive_size by the event's photo count.
     const totalCount = await applyFilters(
       db('events').where('events.is_archived', formatBoolean(true))
     )
       .count('events.id as count')
+      .sum({ archive_size: 'events.archive_size' })
+      .first();
+
+    // Photo total needs the join, so it is its own query for the same reason.
+    // count(photos.id) rather than count(*): a left-joined event with no
+    // photos must contribute 0, not 1.
+    const photoTotal = await applyFilters(
+      db('events').where('events.is_archived', formatBoolean(true))
+    )
+      .leftJoin('photos', 'events.id', 'photos.event_id')
+      .count('photos.id as count')
       .first();
 
     // Get archived events
@@ -67,29 +85,20 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
     if (sortBy === 'name') {
       archivesQuery.orderBy('events.event_name', 'asc');
     } else if (sortBy === 'size') {
-      // The zip's on-disk size is only known after the per-row fs.stat below,
-      // so a global size sort has to use the archived content size instead.
-      archivesQuery.orderByRaw('COALESCE(SUM(photos.size_bytes), 0) desc');
+      // events.archive_size — the same number the Size column renders. It was
+      // the archived *content* size (SUM(photos.size_bytes)) until the column
+      // existed, which meant the list could be ordered by a value that is not
+      // on screen. NULL is an archive whose zip could not be measured (missing
+      // file, or a storage backend the backfill could not stat); it sorts as 0,
+      // i.e. last, which is also what it displays as.
+      archivesQuery.orderByRaw('COALESCE(events.archive_size, 0) desc');
     } else {
       archivesQuery.orderBy('events.archived_at', 'desc');
     }
 
     const archives = await archivesQuery.limit(limit).offset(offset);
 
-    // Check if archive files exist and get their sizes
-    const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
-    const archivesWithFileInfo = await Promise.all(archives.map(async (archive) => {
-      let archiveFileSize = 0;
-      if (archive.archive_path) {
-        try {
-          const fullArchivePath = path.join(storagePath, archive.archive_path);
-          const stats = await fs.stat(fullArchivePath);
-          archiveFileSize = stats.size;
-        } catch (error) {
-          logger.error(`Archive file not found: ${archive.archive_path}`);
-        }
-      }
-
+    const archivesWithFileInfo = archives.map((archive) => {
       return {
         id: archive.id,
         slug: archive.slug,
@@ -101,10 +110,11 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
         expiresAt: archive.expires_at ? new Date(archive.expires_at).toISOString() : null,
         photoCount: archive.photo_count || 0,
         originalSize: archive.total_size || 0,
-        archiveSize: archiveFileSize,
+        // Number(): bigInteger comes back from the pg driver as a string.
+        archiveSize: Number(archive.archive_size) || 0,
         archivePath: archive.archive_path
       };
-    }));
+    });
 
     res.json({
       archives: archivesWithFileInfo,
@@ -113,6 +123,14 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
         limit,
         total: totalCount.count,
         totalPages: Math.ceil(totalCount.count / limit)
+      },
+      // Aggregates over the FILTERED set — the stat cards used to sum the rows
+      // the client could see, so every figure was page-scoped while the footer
+      // beside them reported the real total.
+      totals: {
+        archives: Number(totalCount.count) || 0,
+        photos: Number(photoTotal.count) || 0,
+        archiveSize: Number(totalCount.archive_size) || 0
       }
     });
   } catch (error) {
@@ -533,6 +551,10 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         is_archived: false,
         is_active: true,
         archive_path: null,
+        // Cleared with the path it measures — a restored event has no zip, and
+        // a stale size would be re-shown verbatim if it is archived again
+        // before the new archive finishes writing.
+        archive_size: null,
         archived_at: null,
         expires_at: thirtyDaysFromNow.toISOString() // Reset expiration - works on both DBs
       });

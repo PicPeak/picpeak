@@ -166,6 +166,10 @@ async function archiveEvent(event) {
     await db('events').where('id', event.id).update({
       is_archived: true,
       archive_path: archiveRelKey,
+      // The zip's own byte size — the same number the completion email
+      // reports below. Persisted so the archives list can sort and display it
+      // without statting every archive on every request.
+      archive_size: totalBytes,
       archived_at: new Date(),
     });
 
