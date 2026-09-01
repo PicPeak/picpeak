@@ -39,8 +39,8 @@ export const SystemHealthPage: React.FC = () => {
   return (
     <div className="container py-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-theme">{t('systemHealth.title', 'System health')}</h1>
-        <p className="text-sm text-muted-theme mt-1">
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('systemHealth.title', 'System health')}</h1>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">
           {t('systemHealth.subtitle', 'Background failures that need attention.')}
         </p>
       </div>
@@ -52,7 +52,7 @@ export const SystemHealthPage: React.FC = () => {
             {t('systemHealth.stuckEmails.title', 'Stuck / failed emails')}
           </h2>
           {!isLoading && (
-            <span className="ml-1 text-sm text-muted-theme">({stuckEmails.length})</span>
+            <span className="ml-1 text-sm text-neutral-500 dark:text-neutral-400">({stuckEmails.length})</span>
           )}
         </div>
 
