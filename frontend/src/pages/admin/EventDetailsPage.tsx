@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useExpiryRefresh } from '../../hooks/useExpiryRefresh';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -23,9 +23,16 @@ import { OverviewTab } from './event-details/OverviewTab';
 import { PhotosTab } from './event-details/PhotosTab';
 import { CategoriesTab } from './event-details/CategoriesTab';
 
+const ALL_TAB_KEYS: EventDetailsTab[] = ['overview', 'photos', 'categories', 'guests'];
+
+function isValidTab(value: string | null): value is EventDetailsTab {
+  return value !== null && (ALL_TAB_KEYS as string[]).includes(value);
+}
+
 export const EventDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
@@ -55,7 +62,31 @@ export const EventDetailsPage: React.FC = () => {
     rate_limit_window_minutes: 15,
     rate_limit_max_requests: 10,
   });
-  const [activeTab, setActiveTab] = useState<EventDetailsTab>('overview');
+  // Read ?tab=… on mount, same shape as SettingsPage so both surfaces answer
+  // deep links identically; an unknown value falls back to the default tab and
+  // the sync effect below rewrites the URL to match (QA follow-up).
+  const [activeTab, setActiveTab] = useState<EventDetailsTab>(
+    isValidTab(searchParams.get('tab')) ? (searchParams.get('tab') as EventDetailsTab) : 'overview'
+  );
+
+  // Keep the URL in sync when the user clicks tabs, so copy-pasting the address
+  // lands the recipient on the same tab.
+  useEffect(() => {
+    if (searchParams.get('tab') === activeTab) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', activeTab);
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Reflect external URL changes (back/forward) back into local state.
+  useEffect(() => {
+    const urlTab = searchParams.get('tab');
+    if (isValidTab(urlTab) && urlTab !== activeTab) {
+      setActiveTab(urlTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const [showPasswordReset, setShowPasswordReset] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
@@ -115,11 +146,21 @@ export const EventDetailsPage: React.FC = () => {
   useExpiryRefresh([event?.expires_at], bumpExpiryTick);
 
   // Fetch feedback settings
-  const { data: eventFeedbackSettings } = useQuery({
+  const { data: eventFeedbackSettings, isLoading: feedbackSettingsLoading } = useQuery({
     queryKey: ['admin-event-feedback-settings', id],
     queryFn: () => feedbackService.getEventFeedbackSettings(id!),
     enabled: !!id,
   });
+
+  // Guests is only rendered in guest identity mode, so a ?tab=guests deep link
+  // on any other event would show an empty content area. Snap back once the
+  // settings have actually loaded — not while they're still undefined.
+  useEffect(() => {
+    if (feedbackSettingsLoading) return;
+    if (activeTab === 'guests' && eventFeedbackSettings?.identity_mode !== 'guest') {
+      setActiveTab('overview');
+    }
+  }, [feedbackSettingsLoading, eventFeedbackSettings?.identity_mode, activeTab]);
 
   // Update local feedback settings when fetched from server
   useEffect(() => {
@@ -147,7 +188,7 @@ export const EventDetailsPage: React.FC = () => {
   // While any photo is still in pending/processing state we poll every
   // 2s so the admin grid auto-updates as the background worker drains
   // the queue. Once everything is complete/failed the polling stops.
-  const { data: photos = [], isLoading: photosLoading, refetch: refetchPhotos } = useQuery({
+  const { data: photos = [], isLoading: photosLoading, isError: photosError, refetch: refetchPhotos } = useQuery({
     queryKey: ['admin-event-photos', id, combinedPhotoFilters],
     queryFn: () => photosService.getEventPhotos(parseInt(id!), combinedPhotoFilters),
     enabled: !!id && (activeTab === 'photos' || isEditing),
@@ -692,6 +733,7 @@ export const EventDetailsPage: React.FC = () => {
           id={id}
           photos={photos}
           photosLoading={photosLoading}
+          photosError={photosError}
           refetchPhotos={refetchPhotos}
           categories={categories}
           photoFilters={photoFilters}

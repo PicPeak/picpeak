@@ -201,6 +201,7 @@
     "processingStillRunning": "Ihr Upload wird noch verarbeitet — er erscheint in Kürze in der Galerie.",
     "retryFailed": "Fehlgeschlagene erneut versuchen",
     "uploadComplete": "Upload abgeschlossen!",
+    "partialComplete": "{{uploaded}} von {{total}} Dateien hochgeladen — {{failed}} konnten nicht hochgeladen werden.",
     "someFilesFailed": "Einige Dateien konnten nicht hochgeladen werden",
     "failures": {
       "title": "{{count}} Datei(en) konnten nicht hochgeladen werden",

@@ -157,7 +157,11 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
       }
 
       try {
-        const response = await api.post<{ upload_id?: string }>(`/gallery/${eventId}/upload`, formData, {
+        const response = await api.post<{
+          upload_id?: string;
+          count?: number;
+          errors?: Array<{ filename?: string; error?: string }>;
+        }>(`/gallery/${eventId}/upload`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
@@ -174,16 +178,30 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
             }
           },
         });
-        // Request resolved → the bytes are stored. Processing continues in the
-        // background worker; `upload_id` is how the gallery follows it.
-        if (response.data?.upload_id) {
-          uploadIds.push(response.data.upload_id);
-        }
         setProcessingFiles(prev => {
           const next = { ...prev };
           delete next[file.name];
           return next;
         });
+
+        // A 202 does NOT mean the file landed: the route still answers 202
+        // with `count: 0` and an `errors[]` entry when the queue refuses it
+        // (content/type mismatch, cap hit). Counting that as a success fired
+        // "Upload completed successfully" for a photo that never existed —
+        // the guest-side twin of QA P4-B.05 / 7.05.
+        const queuedCount = response.data?.count;
+        if (typeof queuedCount === 'number' && queuedCount === 0) {
+          failedCount++;
+          const reason = response.data?.errors?.[0]?.error || t('upload.someFilesFailed');
+          toast.error(`${file.name}: ${reason}`);
+          continue;
+        }
+
+        // Bytes are stored and queued. Processing continues in the background
+        // worker; `upload_id` is how the gallery follows it.
+        if (response.data?.upload_id) {
+          uploadIds.push(response.data.upload_id);
+        }
         successCount++;
       } catch (error: any) {
         // Upload error handled - user notified via UI

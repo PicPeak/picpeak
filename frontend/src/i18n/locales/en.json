@@ -201,6 +201,7 @@
     "processingStillRunning": "Your upload is still being processed — it will appear in the gallery shortly.",
     "retryFailed": "Retry failed",
     "uploadComplete": "Upload complete!",
+    "partialComplete": "{{uploaded}} of {{total}} files uploaded — {{failed}} could not be uploaded.",
     "someFilesFailed": "Some files failed to upload",
     "failures": {
       "title": "{{count}} file(s) could not be uploaded",

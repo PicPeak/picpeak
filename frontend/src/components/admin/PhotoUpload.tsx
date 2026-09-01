@@ -453,6 +453,17 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
         t('upload.processingFailed', { count: processingAggregate.failed }) ||
           `${processingAggregate.failed} photo(s) failed to process`
       );
+    } else if (transferFailures.length > 0) {
+      // Processing was clean, but files were rejected or lost before they got
+      // there. A plain "Upload complete!" here would contradict the failure
+      // report right below it (QA P4-B.05 / 7.05) — report the real split.
+      toast.warning(
+        t('upload.partialComplete', '{{uploaded}} of {{total}} files uploaded — {{failed}} could not be uploaded.', {
+          uploaded: processingAggregate.complete,
+          total: processingAggregate.complete + transferFailures.length,
+          failed: transferFailures.length,
+        })
+      );
     } else {
       toast.success(
         t('upload.uploadComplete') || `Successfully uploaded ${processingAggregate.complete} photo(s)`
