@@ -2,7 +2,9 @@
  * Admin → Contract block library.
  *
  * Two-column layout intentionally mirroring EmailConfigPage's Templates
- * tab so admins navigate one shape across all template-style editors:
+ * tab so admins navigate one shape across all template-style editors
+ * (the one deliberate divergence is the column ratio — see the grid
+ * below):
  *   - Left: sticky sidebar with sections (basics / scope / privacy /
  *     commercial / nda / closing) as uppercase headings, blocks listed
  *     below each, "+ New block" button at the top. Selected block
@@ -267,11 +269,19 @@ export const BlockLibraryPage: React.FC = () => {
       </div>
 
       {isLoading ? <Loading /> : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        // 2/5 + 3/5, not the email tab's 1/3 + 2/3. Same shape, wider
+        // list column — deliberate (QA S13): a block tile spends a fixed
+        // ~105px of its row on the "System" badge plus the n/6 pill, and
+        // block names are long noun phrases ("Vertragsgegenstand und
+        // Leistungsumfang"). At 1/3 inside the Settings shell that left
+        // the name a handful of characters ("Vertr…"). The email tab's
+        // display names are short and it carries only one badge, so its
+        // ratio stays as-is rather than both moving together.
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
           {/* Sidebar — same shape as EmailConfigPage templates sidebar:
               Card padding="sm" + h3 + +New button up top, then a
               section-grouped list of block tiles. */}
-          <Card padding="sm">
+          <Card padding="sm" className="lg:col-span-2">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
                 {t('contracts.blocks.sidebarHeading', 'Blocks')}
@@ -359,9 +369,8 @@ export const BlockLibraryPage: React.FC = () => {
             </div>
           </Card>
 
-          {/* Right panel — edit / create form. lg:col-span-2 matches the
-              email-templates layout exactly. */}
-          <div className="lg:col-span-2">
+          {/* Right panel — edit / create form. */}
+          <div className="lg:col-span-3">
             {selection === null ? (
               <Card padding="md">
                 <p className="text-center text-neutral-500 dark:text-neutral-400 py-8">
