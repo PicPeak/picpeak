@@ -68,6 +68,39 @@ const CORE_SUBCATEGORY_ORDER: readonly string[] = [
   'system',
 ] as const;
 
+/**
+ * Realistic stand-ins for the variables whose *shape* matters in a
+ * preview — a date has to read like a date, a link like a link. This is
+ * deliberately not a full list of every variable every template declares;
+ * `buildPreviewSampleData` below covers the rest.
+ */
+const PREVIEW_SAMPLE_VALUES: Record<string, string> = {
+  event_name: 'John & Jane Wedding',
+  event_date: 'December 25, 2024',
+  expiry_date: 'January 25, 2025',
+  gallery_link: 'https://photos.example.com/gallery/john-jane-wedding',
+  gallery_password: '••••••••',
+  password: '••••••••',
+  host_name: 'Jane Doe',
+  host_email: 'host@example.com',
+  admin_email: 'admin@example.com',
+  days_remaining: '30',
+  welcome_message: 'Thank you for celebrating our special day with us!',
+};
+
+/**
+ * Build the preview payload from the template's OWN declared `variables`,
+ * so the two can no longer drift apart. The previous hand-maintained key
+ * list had gone stale and left {{host_name}}, {{gallery_password}} and
+ * {{expiry_date}} rendering as raw tokens in the gallery_created preview.
+ * Variables without a curated value get a readable stand-in rather than an
+ * unsubstituted {{token}}.
+ */
+export const buildPreviewSampleData = (variables: string[] = []): Record<string, string> =>
+  Object.fromEntries(
+    variables.map((name) => [name, PREVIEW_SAMPLE_VALUES[name] ?? `[${name}]`])
+  );
+
 const defaultTemplateKeys = [
   {
     key: 'gallery_created',
@@ -395,18 +428,8 @@ export const EmailConfigPage: React.FC = () => {
   const handlePreviewTemplate = async () => {
     if (!selectedTemplateKey || !editedTemplate) return;
 
-    // Generate sample data based on the template
-    const sampleData: Record<string, string> = {
-      event_name: 'John & Jane Wedding',
-      event_date: 'December 25, 2024',
-      password: '••••••••',
-      gallery_link: 'https://photos.example.com/gallery/john-jane-wedding',
-      expiration_date: 'January 25, 2025',
-      welcome_message: 'Thank you for celebrating our special day with us!',
-      days_remaining: '30',
-      admin_email: 'admin@example.com',
-      host_email: 'host@example.com'
-    };
+    // Sample data is derived from the template's declared variables
+    const sampleData = buildPreviewSampleData(editedTemplate.variables);
 
     try {
       const preview = await emailService.previewTemplate(selectedTemplateKey, sampleData, editingLang);
