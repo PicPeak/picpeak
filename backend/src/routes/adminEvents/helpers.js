@@ -230,9 +230,131 @@ async function deleteEventCascade(eventId, adminContext) {
   // transaction is about to delete. So they are read here, while the rows
   // still exist, and swept after the commit; miss that window and every tier
   // this event generated is orphaned with nothing left to derive its key from.
+  //
+  // The managed objects themselves need exactly the same window (#1051), so
+  // one query serves both. On an S3/R2 backend the filesystem sweep below
+  // removes nothing at all — those paths don't exist locally, `fs.rm` happily
+  // succeeds against them, and every originally-uploaded photo stays in the
+  // bucket unreferenced and billable. Measured on a 403-photo event: object
+  // count unchanged, 679 rows gone.
   const tieredPhotos = await db('photos')
     .where('event_id', eventId)
-    .select('id', 'path', 'filename', 'source_origin', 'external_relpath');
+    .select('id', 'path', 'filename', 'source_origin', 'external_relpath',
+      'thumbnail_path', 'hero_path', 'preview_path', 'watermark_path');
+
+  // A Set because a photo can carry the same key in two columns (an unresized
+  // gallery's hero and preview can resolve to one object) and deleting it
+  // twice would log a spurious failure for the second attempt.
+  const storageKeys = new Set();
+  // Derived keys separately: unlike the originals, whose keys embed the event
+  // slug, these are not event-scoped and need a shared-ownership check below.
+  const derivedKeys = new Set();
+  try {
+    const { resolvePhotoStorageKey } = require('../../services/photoResolver');
+    for (const photo of tieredPhotos) {
+      try {
+        // Returns null for reference/external photos, which live on a mount
+        // outside the managed backend and must NOT be deleted — PicPeak does
+        // not own those bytes.
+        const originalKey = resolvePhotoStorageKey(event, photo);
+        if (originalKey) storageKeys.add(originalKey);
+      } catch (keyErr) {
+        logger.warn('Could not resolve storage key during cascade delete', {
+          eventId, photoId: photo.id, error: keyErr.message
+        });
+      }
+      // Derived tiers are stored as canonical keys and pass through verbatim,
+      // the same list adminPhotoDimensions.js:801 sweeps on a re-render.
+      for (const derived of [photo.thumbnail_path, photo.hero_path, photo.preview_path, photo.watermark_path]) {
+        if (derived) {
+          storageKeys.add(derived);
+          derivedKeys.add(derived);
+        }
+      }
+    }
+  } catch (collectErr) {
+    logger.warn('Could not enumerate stored objects before cascade delete', {
+      eventId, error: collectErr.message
+    });
+  }
+
+  // A canonical derivative can belong to more than one gallery. Its basename
+  // comes from the photo's filename — imageProcessor passes no outputBasename
+  // for managed photos, so the key is `thumbnails/thumb_w300_<filename>` with
+  // nothing event-scoped in it — and filenames are not unique across events.
+  // The responsive-tier code says exactly that, which is why THOSE keys carry
+  // a p{id}_ prefix; the canonical ones predate it. Deleting a shared key here
+  // would blank a surviving gallery's tile until something regenerated it, so
+  // anything another event still points at is left alone. Originals need no
+  // such check: their keys embed the slug.
+  const derived = Array.from(derivedKeys);
+  try {
+    // Chunked: SQLite caps bind variables at 999 and this is four columns wide.
+    for (let i = 0; i < derived.length; i += 200) {
+      const chunk = derived.slice(i, i + 200);
+      const shared = await db('photos')
+        .whereNot('event_id', eventId)
+        .where((qb) => qb
+          .whereIn('thumbnail_path', chunk)
+          .orWhereIn('hero_path', chunk)
+          .orWhereIn('preview_path', chunk)
+          .orWhereIn('watermark_path', chunk))
+        .select('thumbnail_path', 'hero_path', 'preview_path', 'watermark_path');
+      for (const row of shared) {
+        for (const key of [row.thumbnail_path, row.hero_path, row.preview_path, row.watermark_path]) {
+          if (key && derivedKeys.has(key)) storageKeys.delete(key);
+        }
+      }
+    }
+  } catch (sharedErr) {
+    // Can't prove ownership — keep the objects. An orphan costs storage; a
+    // deleted derivative costs someone else's gallery.
+    logger.warn('Could not check for shared derivatives; leaving them in place', {
+      eventId, error: sharedErr.message
+    });
+    for (const key of derivedKeys) storageKeys.delete(key);
+  }
+
+  // The archive zip is typically the largest single object an event owns, and
+  // archiveService writes it through the backend (`storage.putFromFile`, see
+  // archiveService.js:160) — so the `fs.unlink` below is a no-op on S3 and the
+  // zip outlives the event it belongs to.
+  if (event.archive_path) storageKeys.add(event.archive_path);
+
+  // The download caches are the subtle ones: they live UNDER
+  // events/active/{slug}/.download-cache/, so the recursive fs.rm below covers
+  // them on local disk and nothing covers them on S3, where the prefix is not
+  // a directory. Both are gallery-sized.
+  //
+  //   - the pre-built "Download All" zip (downloadZipService.js:44)
+  //   - one zip per custom-resolution download job (downloadJobService.js:77)
+  //
+  // The job rows must be read BEFORE the transaction for the same reason the
+  // photo rows are: download_jobs.event_id is ON DELETE CASCADE, so on
+  // Postgres the rows vanish with the event and their keys with them.
+  // NOTE: an in-flight "Download All" build that started before this delete
+  // can still upload its zip after the sweep and write the path onto a row
+  // that no longer exists, orphaning it. downloadZipService.cleanup() is the
+  // service's cancel primitive, but calling it here made the stable twin's
+  // backend CI job exceed its 10-minute budget: _cleanup() reaches
+  // getStorage(), and where the S3 backend is configured but unreachable
+  // every cascade delete pays the adapter's retry backoff — in the request
+  // path, not just in tests. Left as a follow-up rather than shipped behind a
+  // timeout: the race costs one orphaned object, this cost the whole suite.
+  if (event.download_zip_path) storageKeys.add(event.download_zip_path);
+  try {
+    if (await db.schema.hasTable('download_jobs')) {
+      const jobs = await db('download_jobs')
+        .where('event_id', eventId)
+        .whereNotNull('zip_path')
+        .select('zip_path');
+      for (const job of jobs) storageKeys.add(job.zip_path);
+    }
+  } catch (jobErr) {
+    logger.warn('Could not enumerate download job archives before cascade delete', {
+      eventId, error: jobErr.message
+    });
+  }
 
   await db.transaction(async (trx) => {
     // 1. Delete activity logs (audit trail)
@@ -321,6 +443,57 @@ async function deleteEventCascade(eventId, adminContext) {
     }
   } catch (tierErr) {
     logger.warn('Failed to delete responsive tiers during cascade delete', { eventId, error: tierErr.message });
+  }
+
+  // Managed objects, post-commit for the same reason: a rolled-back
+  // transaction must never leave files destroyed for an event that still
+  // exists. Every key here goes through the backend on both engines — on
+  // local disk the folder sweep above already covers the originals, but the
+  // tiers, watermarks and the archive live outside the event folder and would
+  // otherwise leak there too.
+  if (storageKeys.size > 0) {
+    const { getStorage } = require('../../services/storage');
+    let removed = 0;
+    try {
+      const storage = getStorage();
+      const keys = Array.from(storageKeys);
+
+      // Bounded concurrency rather than one await per key. A 400-photo gallery
+      // owns ~1600 objects once the derived tiers are counted, and on S3 that
+      // many sequential DeleteObject round trips runs to minutes — long enough
+      // for a proxy to time the request out AFTER the commit, leaving the
+      // event deleted and the sweep half-finished. Deleting is idempotent and
+      // order-independent, so there is nothing to serialise for.
+      //
+      // A pool, not Promise.all over every key: an unbounded fan-out would
+      // open one socket per object and exhaust the S3 client's connection
+      // pool, which is what #1049 just finished making failures survivable.
+      const CONCURRENCY = 16;
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < keys.length) {
+          const key = keys[cursor++];
+          try {
+            await storage.delete(key);
+            removed++;
+          } catch (delErr) {
+            logger.warn('Failed to delete stored object during cascade delete', {
+              eventId, key, error: delErr.message
+            });
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, keys.length) }, worker)
+      );
+    } catch (storageErr) {
+      logger.warn('Storage backend unavailable during cascade delete', {
+        eventId, error: storageErr.message
+      });
+    }
+    logger.info('Cascade delete removed stored objects', {
+      eventId, removed, total: storageKeys.size
+    });
   }
 
   // Audit trail (outside the transaction so a logging failure can't undo
