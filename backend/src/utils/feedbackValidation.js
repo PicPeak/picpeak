@@ -241,7 +241,7 @@ const validateWordFilter = [
     .withMessage('Word must be between 2 and 100 characters'),
   body('severity')
     .optional()
-    .isIn(['mild', 'moderate', 'severe'])
+    .isIn(['low', 'moderate', 'high', 'block'])
     .withMessage('Invalid severity level')
 ];
 

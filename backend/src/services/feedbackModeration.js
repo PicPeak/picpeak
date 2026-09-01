@@ -66,17 +66,20 @@ class FeedbackModerationService {
         }
       }
       
-      // Check for severe violations
-      if (violations.some(v => v.severity === 'severe')) {
+      // Check for blocking violations. 'severe' is the legacy vocabulary the
+      // validator used to accept before it was aligned with the UI's
+      // low/moderate/high/block levels — rows stored under it still apply.
+      const isBlocking = (v) => v.severity === 'block' || v.severity === 'severe';
+      if (violations.some(isBlocking)) {
         return {
           approved: false,
           reason: 'Content contains prohibited words',
-          violations: violations.filter(v => v.severity === 'severe')
+          violations: violations.filter(isBlocking)
         };
       }
-      
-      // Check for moderate violations
-      if (violations.some(v => v.severity === 'moderate')) {
+
+      // Check for moderate/high violations
+      if (violations.some(v => v.severity === 'moderate' || v.severity === 'high')) {
         return {
           approved: false,
           reason: 'Content requires moderation',
@@ -84,7 +87,7 @@ class FeedbackModerationService {
         };
       }
       
-      // Check for mild violations (may just flag for review)
+      // Check for low-severity violations (may just flag for review)
       if (violations.length > 0) {
         return {
           approved: true,
