@@ -99,6 +99,12 @@ export const CreateEventPage: React.FC = () => {
   const { t } = useTranslation();
   const { format } = useLocalizedDate();
   const isMountedRef = useRef(true);
+  // Re-entrancy guard for the create submit. The Button's
+  // `disabled={createMutation.isPending}` covers the ordinary double-click, but
+  // not a submission that never touches the button (implicit form submission,
+  // a programmatic requestSubmit) — those raced two POSTs onto the same slug,
+  // one of which 500'd on `events_slug_unique` (QA 7.03).
+  const isSubmittingRef = useRef(false);
   const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
   // const [showPreview, setShowPreview] = useState(false);
   
@@ -396,6 +402,9 @@ export const CreateEventPage: React.FC = () => {
         toast.error(errorMessage);
       }
     },
+    onSettled: () => {
+      isSubmittingRef.current = false;
+    },
   });
 
   const validateForm = (): boolean => {
@@ -461,7 +470,11 @@ export const CreateEventPage: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
+    if (isSubmittingRef.current) {
+      return;
+    }
+
     if (!validateForm()) {
       return;
     }
@@ -518,6 +531,7 @@ export const CreateEventPage: React.FC = () => {
       customer_account_ids: formData.customer_accounts.map((c) => c.id),
     };
 
+    isSubmittingRef.current = true;
     createMutation.mutate(payload);
   };
 
