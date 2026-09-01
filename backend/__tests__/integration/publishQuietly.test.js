@@ -225,11 +225,11 @@ describe('publish quietly (#1235)', () => {
 
     const res = await request(app)
       .post(`/admin/events/${id}/send-gallery-email`)
-      .send({ password: 'sup3r-secret' });
+      .send({ password: 'Sup3r-Secret' });
     expect(res.status).toBe(200);
 
     const [queued] = await queuedFor(id);
-    expect(JSON.parse(queued.email_data).gallery_password).toBe('sup3r-secret');
+    expect(JSON.parse(queued.email_data).gallery_password).toBe('Sup3r-Secret');
   });
 
   it('persists a changed password so the emailed one actually works', async () => {
@@ -241,16 +241,16 @@ describe('publish quietly (#1235)', () => {
 
     const res = await request(app)
       .post(`/admin/events/${id}/send-gallery-email`)
-      .send({ password: 'brand-new-pass' });
+      .send({ password: 'Brand-New-Pass1' });
     expect(res.status).toBe(200);
 
     const bcrypt = require('bcrypt');
     const row = await db('events').where({ id }).first();
     expect(row.password_hash).not.toBe('stale-hash');
-    expect(await bcrypt.compare('brand-new-pass', row.password_hash)).toBe(true);
+    expect(await bcrypt.compare('Brand-New-Pass1', row.password_hash)).toBe(true);
 
     const [queued] = await queuedFor(id);
-    expect(JSON.parse(queued.email_data).gallery_password).toBe('brand-new-pass');
+    expect(JSON.parse(queued.email_data).gallery_password).toBe('Brand-New-Pass1');
   });
 
   it('does NOT touch the gallery password when only an account notice goes out', async () => {
@@ -334,6 +334,54 @@ describe('publish quietly (#1235)', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/no customer email/i);
+  });
+
+  it('applies the configured gallery policy before rehashing, on both doors', async () => {
+    // Both endpoints re-hash a plaintext the admin re-types, and both used to
+    // validate it with nothing but isLength({min:6}) — so the configured
+    // complexity governed creation and reset while these two accepted
+    // 'aaaaaa' and made it the live gallery password.
+    const draftId = await seedDraft({ slug: 'weak-publish' });
+    await db('events').where({ id: draftId }).update({ require_password: 1 });
+
+    const publishRes = await request(app)
+      .post(`/admin/events/${draftId}/publish`)
+      .send({ password: 'aaaaaa' });
+
+    expect(publishRes.status).toBe(400);
+    expect(publishRes.body.error).toMatch(/security requirements/i);
+
+    // And the same password must not sneak in through send-later, or a
+    // gallery published quietly could still be weakened afterwards.
+    const [row] = await db('events').insert({
+      slug: 'weak-send',
+      event_type: 'wedding',
+      event_name: 'Weak Send',
+      event_date: '2026-09-01',
+      host_email: '',
+      admin_email: 'admin@example.com',
+      customer_email: 'client@example.com',
+      password_hash: 'original-hash',
+      require_password: 1,
+      share_link: '/gallery/weak-send/share',
+      share_token: 'weak-send-token',
+      expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      is_active: 1,
+      is_archived: 0,
+      is_draft: 0,
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    const sendId = typeof row === 'object' ? row.id : row;
+
+    const sendRes = await request(app)
+      .post(`/admin/events/${sendId}/send-gallery-email`)
+      .send({ password: 'aaaaaa' });
+
+    expect(sendRes.status).toBe(400);
+    expect(sendRes.body.error).toMatch(/security requirements/i);
+    // Rejected means untouched — not rejected after the write.
+    const after = await db('events').where({ id: sendId }).first();
+    expect(after.password_hash).toBe('original-hash');
   });
 
   it('re-sending is allowed — a lost email should not need an unpublish/republish', async () => {
