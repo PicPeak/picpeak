@@ -12,7 +12,7 @@ const {
   getUseOriginalFilenames,
   pickRawDownloadName,
 } = require('../services/downloadFilenameService');
-const { escapeLikePattern } = require('../utils/sqlSecurity');
+const { escapeLikePattern, likeWithEscape } = require('../utils/sqlSecurity');
 const { COLOR_LABELS, dominantColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const feedbackService = require('../services/feedbackService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
@@ -1228,8 +1228,10 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
 
     // Search by filename
     if (search) {
-      const escapedSearch = escapeLikePattern(search);
-      query = query.where('photos.filename', 'like', `%${escapedSearch}%`);
+      query = query.whereRaw(
+        likeWithEscape('photos.filename'),
+        [`%${escapeLikePattern(search)}%`]
+      );
     }
 
     // Feedback filters (has likes / favorites / comments / min rating) with AND/OR logic

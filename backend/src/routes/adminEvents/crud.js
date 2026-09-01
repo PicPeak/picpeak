@@ -13,7 +13,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
-const { escapeLikePattern } = require('../../utils/sqlSecurity');
+const { escapeLikePattern, likeWithEscape } = require('../../utils/sqlSecurity');
 const { validatePasswordInContext, getBcryptRounds } = require('../../utils/passwordValidation');
 const logger = require('../../utils/logger');
 const { sanitizeForLog, sanitizeValidationErrors } = require('../../utils/sanitizeForLog');
@@ -866,12 +866,12 @@ module.exports = (router) => {
 
       // Apply search filter
       if (search) {
-        const escapedSearch = escapeLikePattern(search);
+        const pattern = `%${escapeLikePattern(search)}%`;
         query = query.where((builder) => {
-          builder.where('event_name', 'like', `%${escapedSearch}%`)
-            .orWhere('admin_email', 'like', `%${escapedSearch}%`)
-            .orWhere('customer_email', 'like', `%${escapedSearch}%`)
-            .orWhere('slug', 'like', `%${escapedSearch}%`);
+          builder.whereRaw(likeWithEscape('event_name'), [pattern])
+            .orWhereRaw(likeWithEscape('admin_email'), [pattern])
+            .orWhereRaw(likeWithEscape('customer_email'), [pattern])
+            .orWhereRaw(likeWithEscape('slug'), [pattern]);
         });
       }
 
