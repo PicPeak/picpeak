@@ -19,26 +19,53 @@ const router = express.Router();
 router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) => {
   try {
     const { page, limit, offset } = getPagination(req);
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const type = typeof req.query.type === 'string' ? req.query.type.trim() : '';
+    const sortBy = ['date', 'name', 'size'].includes(req.query.sortBy) ? req.query.sortBy : 'date';
 
-    // Get total count
-    const totalCount = await db('events')
-      .where('is_archived', formatBoolean(true))
-      .count('id as count')
+    // Search and type filtering run in SQL so both the returned rows and
+    // the total count cover the whole archive table, not just the page the
+    // client happens to be on. Values are bound, never interpolated.
+    const applyFilters = (query) => {
+      if (search) {
+        query.whereRaw('LOWER(events.event_name) LIKE ?', [`%${search.toLowerCase()}%`]);
+      }
+      if (type && type !== 'all') {
+        query.where('events.event_type', type);
+      }
+      return query;
+    };
+
+    // Get total count (of the filtered set, so pagination stays truthful)
+    const totalCount = await applyFilters(
+      db('events').where('events.is_archived', formatBoolean(true))
+    )
+      .count('events.id as count')
       .first();
 
     // Get archived events
-    const archives = await db('events')
-      .select(
-        'events.*',
-        db.raw('COUNT(DISTINCT photos.id) as photo_count'),
-        db.raw('SUM(photos.size_bytes) as total_size')
-      )
-      .leftJoin('photos', 'events.id', 'photos.event_id')
-      .where('events.is_archived', formatBoolean(true))
-      .groupBy('events.id')
-      .orderBy('events.archived_at', 'desc')
-      .limit(limit)
-      .offset(offset);
+    const archivesQuery = applyFilters(
+      db('events')
+        .select(
+          'events.*',
+          db.raw('COUNT(DISTINCT photos.id) as photo_count'),
+          db.raw('SUM(photos.size_bytes) as total_size')
+        )
+        .leftJoin('photos', 'events.id', 'photos.event_id')
+        .where('events.is_archived', formatBoolean(true))
+    ).groupBy('events.id');
+
+    if (sortBy === 'name') {
+      archivesQuery.orderBy('events.event_name', 'asc');
+    } else if (sortBy === 'size') {
+      // The zip's on-disk size is only known after the per-row fs.stat below,
+      // so a global size sort has to use the archived content size instead.
+      archivesQuery.orderByRaw('COALESCE(SUM(photos.size_bytes), 0) desc');
+    } else {
+      archivesQuery.orderBy('events.archived_at', 'desc');
+    }
+
+    const archives = await archivesQuery.limit(limit).offset(offset);
 
     // Check if archive files exist and get their sizes
     const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
