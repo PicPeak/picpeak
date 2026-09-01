@@ -145,3 +145,16 @@ ml/venv/
 # SHA-256 at build time; a 90MB blob must not end up in git history.
 ml/*.onnx
 ml/*.h5
+
+# Issue / PR screenshots belong on a `screenshots/*` branch, never on main or
+# stable — that is what those branches exist for. Two landed at the repo root
+# in #1241 and shipped as part of the source tree.
+#
+# Anchored with a leading slash so docs/ keeps its own images.
+/issue-*.png
+/issue-*.jpg
+/screenshot-*.png
+/screenshot-*.jpg
+/*-screenshot.png
+/*-screenshot.jpg
+
