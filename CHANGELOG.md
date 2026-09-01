@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.122.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.0-beta.0...v3.122.1-beta.0) (2026-09-01)
+
+
+### Bug Fixes
+
+* **archives:** restore categories for original-filename archives on main too ([#1252](https://github.com/PicPeak/picpeak/issues/1252)) ([a35d2ba](https://github.com/PicPeak/picpeak/commit/a35d2bad66ff1099f0ebcb697878c44f44d14392))
+* **events:** apply the gallery password policy to publish and send-later ([#1253](https://github.com/PicPeak/picpeak/issues/1253)) ([6938bad](https://github.com/PicPeak/picpeak/commit/6938bad107335af54dd8bfe42822219a03921b8b))
+
 ## [3.122.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.121.4-beta.0...v3.122.0-beta.0) (2026-09-01)
 
 
