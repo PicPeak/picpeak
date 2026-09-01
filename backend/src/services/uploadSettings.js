@@ -11,11 +11,20 @@ const CACHE_TTL_MS = 60_000;
 const DEFAULT_MAX_FILE_SIZE_MB = 50;
 const MAX_ALLOWED_FILE_SIZE_MB = 10 * 1024; // 10 GB — matches the admin path's cap
 
+// Separate per-file cap for videos (general_max_video_size_mb). A single cap
+// for both meant a 50 MB photo limit also blocked every normal clip, so an
+// admin had to raise the photo limit to upload a video. 500 MB is roughly a
+// few minutes of phone footage; the same 10 GB hard ceiling applies.
+const DEFAULT_MAX_VIDEO_SIZE_MB = 500;
+
 let cachedValue = DEFAULT_MAX_FILES_PER_UPLOAD;
 let cacheExpiresAt = 0;
 
 let cachedFileSizeMb = DEFAULT_MAX_FILE_SIZE_MB;
 let fileSizeCacheExpiresAt = 0;
+
+let cachedVideoSizeMb = DEFAULT_MAX_VIDEO_SIZE_MB;
+let videoSizeCacheExpiresAt = 0;
 
 // Map of file extension to MIME type(s)
 const EXTENSION_TO_MIME = {
@@ -118,12 +127,12 @@ const clearMaxFilesPerUploadCache = () => {
   cacheExpiresAt = 0;
 };
 
-const normalizeFileSizeMb = (value) => {
+const normalizeFileSizeMb = (value, fallbackMb = DEFAULT_MAX_FILE_SIZE_MB) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    return DEFAULT_MAX_FILE_SIZE_MB;
+    return fallbackMb;
   }
   const intValue = Math.floor(value);
-  if (intValue < 1) return DEFAULT_MAX_FILE_SIZE_MB;
+  if (intValue < 1) return fallbackMb;
   if (intValue > MAX_ALLOWED_FILE_SIZE_MB) return MAX_ALLOWED_FILE_SIZE_MB;
   return intValue;
 };
@@ -162,6 +171,43 @@ const getMaxFileSizeBytes = async () => {
 
 const clearMaxFileSizeCache = () => {
   fileSizeCacheExpiresAt = 0;
+};
+
+/**
+ * Per-file upload size limit for videos in MB (general_max_video_size_mb).
+ * Same read/cache/clamp contract as getMaxFileSizeMb(); falls back to the
+ * video default (not the photo one) when the setting is absent.
+ */
+const getMaxVideoSizeMb = async () => {
+  if (Date.now() < videoSizeCacheExpiresAt) {
+    return cachedVideoSizeMb;
+  }
+
+  try {
+    const setting = await db('app_settings')
+      .where({ setting_key: 'general_max_video_size_mb' })
+      .first();
+
+    const parsedValue = normalizeFileSizeMb(parseSettingValue(setting), DEFAULT_MAX_VIDEO_SIZE_MB);
+    cachedVideoSizeMb = parsedValue;
+    videoSizeCacheExpiresAt = Date.now() + CACHE_TTL_MS;
+    return parsedValue;
+  } catch (error) {
+    logger.error('Failed to read max video size setting:', error.message);
+    cachedVideoSizeMb = DEFAULT_MAX_VIDEO_SIZE_MB;
+    videoSizeCacheExpiresAt = Date.now() + CACHE_TTL_MS;
+    return DEFAULT_MAX_VIDEO_SIZE_MB;
+  }
+};
+
+/** Per-file video size limit in bytes — convenience for multer `limits.fileSize`. */
+const getMaxVideoSizeBytes = async () => {
+  const mb = await getMaxVideoSizeMb();
+  return mb * 1024 * 1024;
+};
+
+const clearMaxVideoSizeCache = () => {
+  videoSizeCacheExpiresAt = 0;
 };
 
 /**
@@ -232,6 +278,9 @@ module.exports = {
   getMaxFileSizeMb,
   getMaxFileSizeBytes,
   clearMaxFileSizeCache,
+  getMaxVideoSizeMb,
+  getMaxVideoSizeBytes,
+  clearMaxVideoSizeCache,
   getAllowedMimeTypes,
   clearAllowedTypesCache,
   extensionsToMimeTypes,
@@ -239,6 +288,7 @@ module.exports = {
   DEFAULT_MAX_FILES_PER_UPLOAD,
   MAX_ALLOWED_FILES_PER_UPLOAD,
   DEFAULT_MAX_FILE_SIZE_MB,
+  DEFAULT_MAX_VIDEO_SIZE_MB,
   MAX_ALLOWED_FILE_SIZE_MB,
   DEFAULT_ALLOWED_FILE_TYPES
 };

@@ -127,6 +127,17 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
     ? Number(settings?.general_max_file_size_mb)
     : 50;
 
+  // Videos have their own per-file cap; the photo cap would otherwise block
+  // every normal clip. Backend enforces the same two values per request.
+  const maxVideoSizeMb = Number.isFinite(Number(settings?.general_max_video_size_mb))
+    ? Number(settings?.general_max_video_size_mb)
+    : 500;
+
+  const videoUploadsAllowed = allowedMimeTypes.some((type) => type.startsWith('video/'));
+
+  const sizeLimitMbFor = (file: File) =>
+    (file.type.startsWith('video/') ? maxVideoSizeMb : maxFileSizeMb);
+
   const remainingSlots = Math.max(maxFilesPerUpload - selectedFiles.length, 0);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -135,7 +146,17 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
   // the dashed-border zone looked draggable but silently fell through to
   // the browser's default "open the file in a new tab" behaviour.
   const addFiles = (incoming: File[]) => {
-    const imageFiles = incoming.filter((file) => allowedMimeTypes.includes(file.type));
+    const imageFiles = incoming.filter((file) => {
+      if (!allowedMimeTypes.includes(file.type)) return false;
+      // Pre-flight size check, mirroring the guest uploader: without it the
+      // admin streams the whole oversized file before the backend 400s it.
+      const limitMb = sizeLimitMbFor(file);
+      if (file.size > limitMb * 1024 * 1024) {
+        toast.error(t('upload.fileTooLarge', { name: file.name, limit: limitMb }));
+        return false;
+      }
+      return true;
+    });
     if (imageFiles.length === 0) return;
 
     const totalFiles = selectedFiles.length + imageFiles.length;
@@ -522,6 +543,11 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
         <p className="text-sm text-neutral-500 dark:text-neutral-400">
           {t('upload.fileRequirements', { formats: formatsLabel, limit: maxFilesPerUpload, sizeLimit: maxFileSizeMb })}
         </p>
+        {videoUploadsAllowed && (
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">
+            {t('upload.videoSizeLimit', 'Videos: max {{sizeLimit}}MB per file', { sizeLimit: maxVideoSizeMb })}
+          </p>
+        )}
         <p
           className={clsx(
             "text-xs mt-2",

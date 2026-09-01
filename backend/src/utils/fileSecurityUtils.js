@@ -223,50 +223,72 @@ function createFileUploadValidator(options = {}) {
   const {
     allowedTypes = ['image/jpeg', 'image/png', 'image/webp'],
     maxFileSize = 50 * 1024 * 1024, // 50MB default
+    // Videos carry their own per-file cap (general_max_video_size_mb).
+    // Defaults to the photo cap so callers that don't split the two behave
+    // exactly as before.
+    maxVideoFileSize = maxFileSize,
     validateContent = true
   } = options;
-  
+
+  const isVideoType = (mimetype) => typeof mimetype === 'string' && mimetype.startsWith('video/');
+
   return async (req, res, next) => {
+    // Every exit below rejects the whole request, so nothing downstream will
+    // ever read what multer already wrote to disk. Drop those files here or
+    // they leak: the routes register their temp-dir cleanup for the success
+    // path, which a rejection never reaches.
+    const discardUploadedFiles = async () => {
+      await Promise.all((req.files || []).map(async (file) => {
+        if (!file.path) return;
+        try {
+          await fs.unlink(file.path);
+        } catch (err) {
+          if (err.code !== 'ENOENT') {
+            logger.error('Error removing rejected upload:', err);
+          }
+        }
+      }));
+    };
+
     try {
       if (!req.files || req.files.length === 0) {
         return next();
       }
-      
+
       for (const file of req.files) {
         // Validate file type
         if (!validateFileType(file.originalname, file.mimetype, allowedTypes)) {
-          return res.status(400).json({ 
-            error: `Invalid file type: ${file.originalname}. Allowed types: ${allowedTypes.join(', ')}` 
+          await discardUploadedFiles();
+          return res.status(400).json({
+            error: `Invalid file type: ${file.originalname}. Allowed types: ${allowedTypes.join(', ')}`
           });
         }
-        
-        // Validate file size
-        if (file.size > maxFileSize) {
-          return res.status(400).json({ 
-            error: `File too large: ${file.originalname}. Maximum size: ${maxFileSize / 1024 / 1024}MB` 
+
+        // Validate file size against the cap for this kind of file
+        const sizeLimit = isVideoType(file.mimetype) ? maxVideoFileSize : maxFileSize;
+        if (file.size > sizeLimit) {
+          await discardUploadedFiles();
+          return res.status(400).json({
+            error: `File too large: ${file.originalname}. Maximum size: ${sizeLimit / 1024 / 1024}MB`
           });
         }
-        
+
         // Validate file content if enabled
         if (validateContent && file.path) {
           const isValidContent = await validateFileContent(file.path, file.mimetype);
           if (!isValidContent) {
-            // Remove the file if content doesn't match
-            try {
-              await fs.unlink(file.path);
-            } catch (err) {
-              logger.error('Error removing invalid file:', err);
-            }
-            return res.status(400).json({ 
-              error: `File content does not match declared type: ${file.originalname}` 
+            await discardUploadedFiles();
+            return res.status(400).json({
+              error: `File content does not match declared type: ${file.originalname}`
             });
           }
         }
       }
-      
+
       next();
     } catch (error) {
       logger.error('File validation error:', error);
+      await discardUploadedFiles();
       res.status(500).json({ error: 'File validation failed' });
     }
   };

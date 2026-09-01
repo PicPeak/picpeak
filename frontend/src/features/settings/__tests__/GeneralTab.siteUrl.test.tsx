@@ -23,6 +23,7 @@ const base: GeneralSettings = {
   site_url_stored: '',
   default_expiration_days: 30,
   max_file_size_mb: 50,
+  max_video_size_mb: 500,
   max_files_per_upload: 500,
   allowed_file_types: 'jpg,png',
   max_upload_batch_size_mb: 95,
