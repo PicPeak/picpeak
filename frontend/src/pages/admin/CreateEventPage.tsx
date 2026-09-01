@@ -1059,11 +1059,18 @@ export const CreateEventPage: React.FC = () => {
               </label>
               <div className="flex items-center gap-2">
                 <div className="w-32">
+                  {/* `max` is required, not cosmetic: without it Blink
+                      reports the spin button's range as unbounded and the
+                      a11y tree exposes aria-valuemax="0" (QA warning), and
+                      an out-of-range value only fails at INSERT time. The
+                      ceiling is the events.photo_cap column's own — a
+                      signed 32-bit integer (migration 074). */}
                   <Input
                     type="number"
                     value={formData.photo_cap}
                     onChange={(e) => setFormData({ ...formData, photo_cap: parseInt(e.target.value) || 0 })}
                     min={0}
+                    max={2147483647}
                     leftIcon={<Image className="w-5 h-5" />}
                   />
                 </div>

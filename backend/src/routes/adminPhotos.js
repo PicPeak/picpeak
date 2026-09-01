@@ -1368,6 +1368,9 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // so the admin grid's "Hidden" badge could never render and a photo
         // hidden from clients looked identical to a visible one (QA warning).
         visibility: photo.visibility === 'hidden' ? 'hidden' : 'visible',
+        // Same omission: the grid's "Processing…" and "Failed"/Retry
+        // placeholders read this, so neither could ever render either.
+        processing_status: photo.processing_status || 'complete',
         category_id: photo.category_id || photo.type,
         category_name: photo.pc_name || (photo.type === 'individual' ? 'Individual Photos' : 'Collages'),
         category_slug: photo.pc_slug || photo.type,
