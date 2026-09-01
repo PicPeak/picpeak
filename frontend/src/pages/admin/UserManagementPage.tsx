@@ -1023,7 +1023,9 @@ export const UserManagementPage: React.FC = () => {
             confirmDialog.type === 'deactivate' ? t('userManagement.deactivate')
             : confirmDialog.type === 'activate'  ? t('userManagement.activate', 'Reactivate')
             : confirmDialog.type === 'delete'    ? t('userManagement.delete', 'Delete permanently')
-            : t('userManagement.cancel')
+            // Not the generic `cancel` — that collides with ConfirmDialog's own
+            // dismiss button, giving the dialog two "Cancel" buttons (QA I.04).
+            : t('userManagement.cancelInvitation')
           }
           isLoading={
             confirmDialog.type === 'deactivate' ? deactivateUserMutation.isPending
