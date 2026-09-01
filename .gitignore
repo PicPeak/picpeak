@@ -135,3 +135,9 @@ new-layouts/
 # writes event photos into backend/storage/, and the narrower
 # business-docs-only rule let `git add -A` sweep them into a commit.
 backend/storage/
+
+# Python bytecode. The ML sidecar lives on main only, so this branch never
+# needed the rule — which is how a `git add -A` from a shared working tree
+# committed 16 .pyc files here in #1247.
+__pycache__/
+*.pyc
