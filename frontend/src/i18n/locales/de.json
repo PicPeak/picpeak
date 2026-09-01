@@ -189,12 +189,16 @@
     "eventSpecific": "(Veranstaltungsspezifisch)",
     "clickToUpload": "Klicken zum Hochladen oder per Drag & Drop",
     "fileRequirements": "{{formats}} (max. {{sizeLimit}}MB pro Datei, {{limit}} Dateien pro Upload)",
+    "videoSizeLimit": "Videos: max. {{sizeLimit}}MB pro Datei",
     "selectedFiles": "Ausgewählte Dateien",
     "uploading": "Wird hochgeladen...",
     "transferring": "Übertragung",
     "processing": "Fotos werden verarbeitet...",
     "processingHint": "Dateien sind hochgeladen. PicPeak erstellt jetzt Thumbnails und liest Metadaten. Sie können diese Seite verlassen — die Verarbeitung läuft im Hintergrund weiter.",
     "processingProgress": "{{complete}} von {{total}} fertig",
+    "processingFailed_one": "{{count}} Foto konnte nicht verarbeitet werden und erscheint nicht in der Galerie.",
+    "processingFailed_other": "{{count}} Fotos konnten nicht verarbeitet werden und erscheinen nicht in der Galerie.",
+    "processingStillRunning": "Ihr Upload wird noch verarbeitet — er erscheint in Kürze in der Galerie.",
     "retryFailed": "Fehlgeschlagene erneut versuchen",
     "uploadComplete": "Upload abgeschlossen!",
     "someFilesFailed": "Einige Dateien konnten nicht hochgeladen werden",
@@ -366,7 +370,7 @@
     "title": "Workflows",
     "subtitle": "Visuelle Automatisierungen – Auslöser, Bedingungen, Freigaben und Aktionen.",
     "new": "Neuer Workflow",
-    "empty": "Noch keine Workflows. Erstelle einen, um Rechnungsstellung und Buchungsschritte zu automatisieren.",
+    "empty": "Noch keine Workflows. Erstellen Sie einen, um Rechnungsstellung und Buchungsschritte zu automatisieren.",
     "builtin": "integriert",
     "triggerLabel": "Auslöser",
     "enabled": "Aktiv",
@@ -390,12 +394,12 @@
     },
     "approvals": {
       "title": "Freigaben",
-      "subtitle": "Workflow-Durchläufe, die auf deine Bestätigung warten.",
-      "empty": "Aktuell wartet nichts auf dich.",
+      "subtitle": "Workflow-Durchläufe, die auf Ihre Bestätigung warten.",
+      "empty": "Aktuell wartet nichts auf Sie.",
       "confirm": "Bestätigen",
       "deny": "Ablehnen",
       "recorded": "Antwort gespeichert",
-      "defaultPrompt": "Ein Workflow benötigt deine Bestätigung.",
+      "defaultPrompt": "Ein Workflow benötigt Ihre Bestätigung.",
       "pendingTitle": "Offene Freigaben",
       "viewAll": "Alle Freigaben ansehen",
       "openEntity": "{{type}} #{{id}} öffnen",
@@ -542,7 +546,7 @@
       "running": "Prüfe…",
       "error": "Prüfung fehlgeschlagen: {{message}}",
       "scannedAt": "Zuletzt geprüft: {{when}}",
-      "emptyState": "In dieser Sitzung wurde noch keine Prüfung ausgeführt. Klicke auf \"Prüfung starten\", um den Dokumentbestand zu durchsuchen.",
+      "emptyState": "In dieser Sitzung wurde noch keine Prüfung ausgeführt. Klicken Sie auf \"Prüfung starten\", um den Dokumentbestand zu durchsuchen.",
       "summary": {
         "total": "Gesamt",
         "verifiedOk": "Hash-verifiziert",
@@ -1128,7 +1132,7 @@
     },
     "footer": {
       "forgetMeConfirm": "Ihr Name und Ihre Auswahl werden aus dieser Galerie entfernt.",
-      "forgetMe": "Vergiss mich ({{name}})",
+      "forgetMe": "Mich vergessen ({{name}})",
       "socials": "Soziale Netzwerke"
     },
     "photosCount_one": "{{count}} Foto",
@@ -1310,13 +1314,13 @@
     "shareWithGuestsPublic": "Teilen Sie diesen Link mit Gästen. Für diese Galerie ist kein Passwort erforderlich.",
     "shortUrls": {
       "title": "Gebrandete Kurz-URLs",
-      "description": "Erstelle einprägsame Links wie /s/sofia-abschluss, die zu dieser Galerie führen. Die Kurz-URL zeigt selbst die reiche Social-Vorschau — iMessage, Facebook, WhatsApp etc. sehen das Galerie-Foto + den Namen auch beim Einfügen des kurzen Links.",
+      "description": "Erstellen Sie einprägsame Links wie /s/sofia-abschluss, die zu dieser Galerie führen. Die Kurz-URL zeigt selbst die reiche Social-Vorschau — iMessage, Facebook, WhatsApp etc. sehen das Galerie-Foto + den Namen auch beim Einfügen des kurzen Links.",
       "slugPlaceholder": "sofia-abschluss (optional)",
       "slugHelp": "Leer lassen für automatische Generierung aus dem Galerienamen. Erlaubte Zeichen: Kleinbuchstaben, Ziffern, Bindestriche.",
       "create": "Erstellen",
       "created": "Kurz-URL erstellt",
       "deleted": "Kurz-URL gelöscht",
-      "empty": "Noch keine Kurz-URLs. Erstelle oben eine, um diese Galerie mit einem einprägsamen Link zu teilen.",
+      "empty": "Noch keine Kurz-URLs. Erstellen Sie oben eine, um diese Galerie mit einem einprägsamen Link zu teilen.",
       "hits": "{{count}} Aufrufe",
       "lastHit": "zuletzt {{when}}",
       "createdAt": "erstellt {{when}}",
@@ -1354,19 +1358,19 @@
     "passwordReset": {
       "title": "Galerie-Passwort zurücksetzen",
       "newTitle": "Neues Passwort",
-      "description": "Lege ein neues Passwort für {{eventName}} fest oder lasse beide Felder leer, um eines automatisch zu erzeugen.",
+      "description": "Legen Sie ein neues Passwort für {{eventName}} fest oder lassen Sie beide Felder leer, um eines automatisch zu erzeugen.",
       "newPasswordLabel": "Neues Passwort",
       "placeholder": "Leer lassen für automatische Erzeugung",
       "helperText": "Mindestens 6 Zeichen verwenden oder leer lassen für automatische Erzeugung",
       "confirmLabel": "Passwort bestätigen",
       "sendEmail": "E-Mail-Benachrichtigung senden",
       "sendEmailHelp": "Den Host über die Passwortänderung informieren",
-      "warning": "Hinweis: Das alte Passwort funktioniert nicht mehr. Stelle sicher, dass du das neue Passwort an den Host weitergibst.",
+      "warning": "Hinweis: Das alte Passwort funktioniert nicht mehr. Stellen Sie sicher, dass Sie das neue Passwort an den Host weitergeben.",
       "submit": "Passwort zurücksetzen",
       "successHeading": "Passwort erfolgreich zurückgesetzt!",
       "emailSentNote": "Eine E-Mail-Benachrichtigung wurde an den Host gesendet.",
       "generatedLabel": "Automatisch generiertes Galerie-Passwort",
-      "saveSecurelyNote": "Wichtig: Speichere dieses Passwort sicher. Es kann nicht wiederhergestellt werden, sobald du dieses Fenster schließt.",
+      "saveSecurelyNote": "Wichtig: Speichern Sie dieses Passwort sicher. Es kann nicht wiederhergestellt werden, sobald Sie dieses Fenster schließen.",
       "done": "Fertig",
       "toastSuccess": "Passwort erfolgreich zurückgesetzt",
       "toastError": "Passwort zurücksetzen fehlgeschlagen",
@@ -1469,7 +1473,7 @@
       "justPublish": "Veröffentlichen",
       "passwordLabel": "Galerie-Passwort",
       "passwordPlaceholder": "Galerie-Passwort eingeben",
-      "passwordHelp": "Gib das bei der Erstellung gesetzte Passwort erneut ein (oder wähle ein neues). Die E-Mail enthält genau diesen Text; das Backend hasht es erneut, sodass die Galerie-Anmeldung weiterhin funktioniert.",
+      "passwordHelp": "Geben Sie das bei der Erstellung gesetzte Passwort erneut ein (oder wählen Sie ein neues). Die E-Mail enthält genau diesen Text; das Backend hasht es erneut, sodass die Galerie-Anmeldung weiterhin funktioniert.",
       "errorMinLength": "Das Passwort muss mindestens 6 Zeichen lang sein.",
       "notifyLabel": "Galerie-E-Mail jetzt senden",
       "notifyHelp": "Abwählen, um still zu veröffentlichen — die Galerie geht online, es wird nichts versendet. Die E-Mail lässt sich später auf dieser Seite senden.",
@@ -1596,14 +1600,12 @@
     "importFromSelectedFolder": "Aus ausgewähltem Ordner importieren",
     "promoBanner": {
       "title": "Werbebanner",
-      "help": "Lege fest, wie diese Galerie das Werbebanner behandelt. „Übernehmen\" nutzt die globale Vorgabe; „Eigene\" überschreibt sie für dieses Event; „Aus\" blendet das Banner für dieses Event aus.",
+      "help": "Legen Sie fest, wie diese Galerie das Werbebanner behandelt. „Übernehmen\" nutzt die globale Vorgabe; „Eigene\" überschreibt sie für dieses Event; „Aus\" blendet das Banner für dieses Event aus.",
       "mode_inherit": "Globale Vorgabe übernehmen",
       "mode_custom": "Eigene Inhalte für dieses Event",
       "mode_off": "Aus (für dieses Event ausblenden)",
       "placeholder": "Markdown-Inhalt (z. B. **Aktion:** [jetzt Termin buchen](https://example.com))",
-      "preview": "Vorschau",
-      "mode_managed": "Verwaltet (Upload nach PicPeak)",
-      "mode_reference": "Externen Ordner referenzieren"
+      "preview": "Vorschau"
     },
     "infoBanner": {
       "title": "Info-Banner",
@@ -1612,14 +1614,12 @@
       "mode_custom": "Eigener Text für dieses Event",
       "mode_off": "Aus (für dieses Event ausblenden)",
       "placeholder": "Über die Menü-Schaltfläche oben links lassen sich die Fotos filtern.",
-      "preview": "Vorschau",
-      "mode_managed": "Verwaltet (Upload nach PicPeak)",
-      "mode_reference": "Externen Ordner referenzieren"
+      "preview": "Vorschau"
     },
     "ogShare": {
       "title": "Heldenbild als Vorschau für geteilte Links verwenden",
-      "help": "Beim Teilen der Galerie-URL auf WhatsApp, Facebook, Slack usw. wird das oben gewählte Heldenbild als Link-Vorschau angezeigt. Das Thumbnail wird von Link-Preview-Crawlern ohne Authentifizierung abgerufen — wer die URL teilt, macht damit faktisch dieses Bild öffentlich. Standardmäßig aus; wähle erst ein Heldenbild, das du bewusst öffentlich zeigen möchtest, bevor du diese Option aktivierst.",
-      "heroRequired": "Wähle zuerst oben ein Heldenbild — diese Option verwendet es als WhatsApp- / Facebook- / Slack-Vorschaubild."
+      "help": "Beim Teilen der Galerie-URL auf WhatsApp, Facebook, Slack usw. wird das oben gewählte Heldenbild als Link-Vorschau angezeigt. Das Thumbnail wird von Link-Preview-Crawlern ohne Authentifizierung abgerufen — wer die URL teilt, macht damit faktisch dieses Bild öffentlich. Standardmäßig aus; wählen Sie erst ein Heldenbild, das Sie bewusst öffentlich zeigen möchten, bevor Sie diese Option aktivieren.",
+      "heroRequired": "Wählen Sie zuerst oben ein Heldenbild — diese Option verwendet es als WhatsApp- / Facebook- / Slack-Vorschaubild."
     },
     "publishQuietSuccess": "Galerie veröffentlicht. Es wurde keine E-Mail versendet.",
     "sendGalleryEmail": {
@@ -1649,7 +1649,8 @@
       "removeAria": "{{name}} entfernen",
       "placeholder": "Nach E-Mail, Name oder Firma suchen",
       "searching": "Wird gesucht…",
-      "noResults": "Keine Treffer. Laden Sie diesen Kunden zuerst unter Kunden → Konten ein."
+      "noResultsCanCreate": "Keine Treffer. Legen Sie über „Neuen Kunden anlegen“ einen an.",
+      "noResultsNoPermission": "Keine Treffer, und Ihre Rolle darf keine Kunden anlegen. Bitten Sie eine Administratorin oder einen Administrator, diesen Kunden anzulegen."
     }
   },
   "settings": {
@@ -1664,6 +1665,8 @@
       "siteUrlEnvPinned": "Durch die Umgebungsvariable FRONTEND_URL festgelegt; sie überschreibt diese Einstellung. Entfernen Sie sie aus Ihrer .env (oder der Container-Umgebung) und starten Sie neu, um die Adresse hier zu verwalten.",
       "defaultExpiration": "Standardablauf (Tage)",
       "maxFileSize": "Max. Dateigröße (MB)",
+      "maxVideoSize": "Max. Videogröße (MB)",
+      "maxVideoSizeHelp": "Eigenes Limit pro Videodatei, damit für Fotos ein kleineres Limit gelten kann.",
       "maxFilesPerUpload": "Max. Dateien pro Upload",
       "maxFilesPerUploadHelp": "Maximale Anzahl an Fotos pro Upload-Vorgang (1-{{max}}).",
       "maxUploadBatchSize": "Max. Upload-Paketgröße (MB)",
@@ -2030,6 +2033,9 @@
         "custom": "Custom (eigenes Skript einfügen)"
       },
       "providerNoneInfo": "Kein externer Tracker eingebunden. Das Admin-Dashboard zeigt weiterhin Übersichtskarten + den Tagesverlauf aus PicPeaks eigenen access_logs; das Geräte-Diagramm verwendet eine grobe User-Agent-Heuristik.",
+      "proxiedNotice": "Wird über Ihre eigene Domain ausgeliefert",
+      "proxiedNoticeText": "PicPeak lädt das Tracker-Skript und leitet dessen Ereignisse über die eigene Domain weiter, deshalb ist keine Änderung an der Content-Security-Policy oder am Reverse-Proxy nötig — und Werbeblocker sehen First-Party-Anfragen. Ihr Tracker erhält weiterhin IP-Adresse und User-Agent jedes Besuchers (als X-Forwarded-For weitergereicht), Geräte- und Standort-Auswertungen funktionieren also unverändert. Die URL muss vom PicPeak-Server aus erreichbar sein und auf eine öffentliche Adresse auflösen.",
+      "customOnlyCspWarningText": "PicPeak liefert eine strikte CSP aus (`script-src 'self'; connect-src 'self'`). Anders als bei den Optionen Umami und Rybbit oben wird ein eingefügtes Snippet nicht über PicPeak geleitet — tragen Sie die Domain Ihres Trackers sowohl in `script-src` (zum Laden des Skripts) als auch in `connect-src` (für die gesendeten Ereignisse) Ihrer Reverse-Proxy- oder nginx-CSP-Konfiguration ein, sonst blockiert der Browser sie stillschweigend.",
       "rybbitUrl": "Rybbit-URL",
       "rybbitUrlHelp": "URL Ihrer Rybbit-Instanz — `https://app.rybbit.io` für SaaS oder `https://rybbit.ihre-domain.de` für selbst gehostet.",
       "rybbitWebsiteId": "Site-ID",
@@ -2345,7 +2351,7 @@
       },
       "workflows": {
         "title": "Workflows",
-        "description": "Visuelle Automatisierungen auf einer Canvas erstellen – Auslöser, Bedingungen, Verzweigungen, Schleifen und Freigabe-Gates für Admins. Deine Mahnstufen und Buchungsschritte werden zu bearbeitbaren Abläufen. Strikt optional.",
+        "description": "Visuelle Automatisierungen auf einer Canvas erstellen – Auslöser, Bedingungen, Verzweigungen, Schleifen und Freigabe-Gates für Admins. Ihre Mahnstufen und Buchungsschritte werden zu bearbeitbaren Abläufen. Strikt optional.",
         "sidebar": "Workflows"
       },
       "faces": {
@@ -2360,7 +2366,7 @@
       "showLogo": "Logo in der Kundenkopfzeile anzeigen",
       "showLogoHint": "Verwendet das oben konfigurierte Branding-Logo.",
       "showCompanyName": "Firmennamen in der Kundenkopfzeile anzeigen",
-      "showCompanyNameHint": "Ausblenden, wenn dein Logo den Firmennamen bereits enthält.",
+      "showCompanyNameHint": "Ausblenden, wenn Ihr Logo den Firmennamen bereits enthält.",
       "save": "Änderungen speichern",
       "saved": "Branding des Kundendashboards gespeichert",
       "error": "Einstellungen konnten nicht gespeichert werden"
@@ -2445,29 +2451,29 @@
     },
     "mfa": {
       "title": "Zwei-Faktor-Authentifizierung",
-      "description": "Sichere deine Admin-Anmeldung mit einem zweiten Schritt über eine Authenticator-App (TOTP).",
-      "notEnrolled": "Die Zwei-Faktor-Authentifizierung ist für dein Konto nicht aktiviert.",
+      "description": "Sichern Sie Ihre Admin-Anmeldung mit einem zweiten Schritt über eine Authenticator-App (TOTP).",
+      "notEnrolled": "Die Zwei-Faktor-Authentifizierung ist für Ihr Konto nicht aktiviert.",
       "setUp": "Einrichten",
-      "setupScanInstruction": "Scanne diesen QR-Code mit deiner Authenticator-App (z. B. Google Authenticator, 1Password, Authy).",
+      "setupScanInstruction": "Scannen Sie diesen QR-Code mit Ihrer Authenticator-App (z. B. Google Authenticator, 1Password, Authy).",
       "manualEntry": "Oder gib diesen Schlüssel manuell ein:",
       "qrAlt": "QR-Code zur Zwei-Faktor-Einrichtung",
-      "enterCodeLabel": "Gib den 6-stelligen Code aus deiner App ein",
+      "enterCodeLabel": "Geben Sie den 6-stelligen Code aus Ihrer App ein",
       "codePlaceholder": "123456",
       "enable": "Aktivieren",
       "enabledBadge": "Die Zwei-Faktor-Authentifizierung ist aktiviert.",
       "recoveryCodesRemaining": "Noch {{count}} Wiederherstellungscode übrig.",
       "recoveryCodesRemaining_other": "Noch {{count}} Wiederherstellungscodes übrig.",
       "regenerate": "Wiederherstellungscodes neu erzeugen",
-      "regenerateHelp": "Gib einen aktuellen Authentifizierungscode ein, um neue Wiederherstellungscodes zu erzeugen. Deine alten Codes werden ungültig.",
+      "regenerateHelp": "Geben Sie einen aktuellen Authentifizierungscode ein, um neue Wiederherstellungscodes zu erzeugen. Ihre alten Codes werden ungültig.",
       "regenerateConfirm": "Neu erzeugen",
       "disable": "Deaktivieren",
-      "disablePrompt": "Gib einen aktuellen Authentifizierungs- oder Wiederherstellungscode ein, um die Zwei-Faktor-Authentifizierung zu deaktivieren:",
+      "disablePrompt": "Geben Sie einen aktuellen Authentifizierungs- oder Wiederherstellungscode ein, um die Zwei-Faktor-Authentifizierung zu deaktivieren:",
       "disableConfirmTitle": "Zwei-Faktor-Authentifizierung deaktivieren?",
-      "disableConfirmMessage": "Für dein Konto ist bei der Anmeldung dann kein zweiter Schritt mehr erforderlich. Du kannst sie jederzeit wieder aktivieren.",
+      "disableConfirmMessage": "Für Ihr Konto ist bei der Anmeldung dann kein zweiter Schritt mehr erforderlich. Sie können sie jederzeit wieder aktivieren.",
       "disableConfirmButton": "Deaktivieren",
       "disabledToast": "Zwei-Faktor-Authentifizierung deaktiviert.",
       "codeRequired": "Ein Code ist erforderlich.",
-      "recoveryCodesWarning": "Speichere diese Wiederherstellungscodes jetzt. Jeder kann einmal verwendet werden, falls du den Zugriff auf deine Authenticator-App verlierst. Sie werden nicht erneut angezeigt.",
+      "recoveryCodesWarning": "Speichern Sie diese Wiederherstellungscodes jetzt. Jeder kann einmal verwendet werden, falls Sie den Zugriff auf Ihre Authenticator-App verlieren. Sie werden nicht erneut angezeigt.",
       "recoveryCodesAck": "Ich habe meine Wiederherstellungscodes an einem sicheren Ort gespeichert.",
       "copy": "Kopieren",
       "copied": "Kopiert",
@@ -2475,9 +2481,9 @@
       "download": ".txt herunterladen",
       "done": "Fertig",
       "setupFailed": "Zwei-Faktor-Einrichtung konnte nicht gestartet werden. Bitte versuche es erneut.",
-      "enableFailed": "Zwei-Faktor-Authentifizierung konnte nicht aktiviert werden. Prüfe den Code und versuche es erneut.",
-      "disableFailed": "Zwei-Faktor-Authentifizierung konnte nicht deaktiviert werden. Prüfe den Code und versuche es erneut.",
-      "regenerateFailed": "Wiederherstellungscodes konnten nicht neu erzeugt werden. Prüfe den Code und versuche es erneut.",
+      "enableFailed": "Zwei-Faktor-Authentifizierung konnte nicht aktiviert werden. Prüfen Sie den Code und versuchen Sie es erneut.",
+      "disableFailed": "Zwei-Faktor-Authentifizierung konnte nicht deaktiviert werden. Prüfen Sie den Code und versuchen Sie es erneut.",
+      "regenerateFailed": "Wiederherstellungscodes konnten nicht neu erzeugt werden. Prüfen Sie den Code und versuchen Sie es erneut.",
       "recoveryCodesRemaining_one": "Noch {{count}} Wiederherstellungscode übrig."
     },
     "sso": {
@@ -2736,7 +2742,7 @@
     "previewLayout": "Vorschau-Layout",
     "livePreview": "Live-Vorschau",
     "pdfTypography": "PDF-Schriftart",
-    "pdfTypographyHelp": "Wird für Rechnungs- und Angebotsbriefköpfe verwendet. Wähle eine der mitgelieferten Schriftarten aus oder belasse den Standard, um Helvetica zu verwenden.",
+    "pdfTypographyHelp": "Wird für Rechnungs- und Angebotsbriefköpfe verwendet. Wählen Sie eine der mitgelieferten Schriftarten aus oder belassen Sie den Standard, um Helvetica zu verwenden.",
     "pdfFontFamily": "Fließtext-Schrift",
     "pdfFontFamilyDefault": "Helvetica verwenden (Standard)",
     "pdfFontFamilyMissing": "nicht verfügbar",
@@ -3130,6 +3136,7 @@
     "noRecentActivity": "Keine aktuellen Aktivitäten",
     "photos": {
       "hidden": "Versteckt",
+      "hiddenTooltip": "Für Gäste ausgeblendet — dieses Foto erscheint nicht in der Kundengalerie.",
       "hideSelected": "Ausblenden",
       "showSelected": "Einblenden",
       "hiddenSuccess": "Fotos für Gäste ausgeblendet",
@@ -3152,18 +3159,18 @@
         "downloads": "Downloads",
         "likes": "Likes"
       },
-      "myMarks": "Deine Markierungen",
-      "myMarksHelp": "Nur für dich sichtbar. Sie erscheinen nie in der Kundengalerie und werden als XMP nach Lightroom exportiert.",
-      "myRating": "Deine Bewertung",
-      "clearRating": "Deine Bewertung entfernen",
+      "myMarks": "Ihre Markierungen",
+      "myMarksHelp": "Nur für Sie sichtbar. Sie erscheinen nie in der Kundengalerie und werden als XMP nach Lightroom exportiert.",
+      "myRating": "Ihre Bewertung",
+      "clearRating": "Ihre Bewertung entfernen",
       "rateStars": "Mit {{count}} Sternen bewerten",
       "markError": "Markierung konnte nicht gespeichert werden",
-      "yourMarkColor": "Deine Markierung: {{color}}",
-      "yourMarkRating": "Deine Bewertung: {{count}}",
+      "yourMarkColor": "Ihre Markierung: {{color}}",
+      "yourMarkRating": "Ihre Bewertung: {{count}}",
       "rateStars_one": "Mit {{count}} Stern bewerten",
       "rateStars_other": "Mit {{count}} Sternen bewerten",
-      "yourMarkRating_one": "Deine Bewertung: {{count}}",
-      "yourMarkRating_other": "Deine Bewertung: {{count}}"
+      "yourMarkRating_one": "Ihre Bewertung: {{count}}",
+      "yourMarkRating_other": "Ihre Bewertung: {{count}}"
     },
     "events": {
       "tabs": {
@@ -3488,9 +3495,9 @@
       "confirmDelete": "Alle erkannten Personen und Gesichtsdaten dieser Galerie löschen? Dies kann nicht rückgängig gemacht werden. Die Fotos selbst bleiben unverändert.",
       "autoCategories": "Fotos automatisch in Kategorien einsortieren",
       "autoCategoriesHint": "Nutzt die Anzahl der Gesichter, um Fotos als Details, Porträts, Kleine Gruppen oder Gruppen abzulegen. Gilt für alle Galerien, füllt ausschließlich leere Kategorien und ändert niemals eine von Ihnen gesetzte.",
-      "sidecarUnreachable": "Der Gesichtserkennungs-Dienst unter {{url}} ist nicht erreichbar, deshalb werden die {{pending}} eingereihten Fotos nicht verarbeitet. Es geht nichts verloren — der Scan läuft von selbst weiter, sobald der Dienst wieder da ist. Starte ihn mit `docker compose --profile faces up -d`; er beendet sich sofort, wenn FACE_ML_TOKEN nicht auf denselben Wert wie im Backend gesetzt ist — einen Standardwert gibt es nicht.",
-      "sidecarUnauthorized": "Der Gesichtserkennungs-Dienst unter {{url}} weist unser Token zurück; Fotos werden als fehlgeschlagen markiert statt erneut versucht. Setze FACE_ML_TOKEN im Backend und im picpeak-ml-Container identisch, starte beide neu und nutze dann Neu scannen — das Token allein zu korrigieren verarbeitet die bereits fehlgeschlagenen Fotos nicht erneut.",
-      "sidecarRejected": "{{url}} antwortet, aber nicht wie der Gesichtserkennungs-Dienst — Fotos werden als fehlgeschlagen markiert statt erneut versucht. Prüfe, ob FACE_ML_URL auf den picpeak-ml-Container zeigt und kein Proxy dazwischenliegt, und nutze dann Neu scannen für die bereits fehlgeschlagenen Fotos.",
+      "sidecarUnreachable": "Der Gesichtserkennungs-Dienst unter {{url}} ist nicht erreichbar, deshalb werden die {{pending}} eingereihten Fotos nicht verarbeitet. Es geht nichts verloren — der Scan läuft von selbst weiter, sobald der Dienst wieder da ist. Starten Sie ihn mit `docker compose --profile faces up -d`; er beendet sich sofort, wenn FACE_ML_TOKEN nicht auf denselben Wert wie im Backend gesetzt ist — einen Standardwert gibt es nicht.",
+      "sidecarUnauthorized": "Der Gesichtserkennungs-Dienst unter {{url}} weist unser Token zurück; Fotos werden als fehlgeschlagen markiert statt erneut versucht. Setzen Sie FACE_ML_TOKEN im Backend und im picpeak-ml-Container identisch, starten Sie beide neu und nutzen Sie dann Neu scannen — das Token allein zu korrigieren verarbeitet die bereits fehlgeschlagenen Fotos nicht erneut.",
+      "sidecarRejected": "{{url}} antwortet, aber nicht wie der Gesichtserkennungs-Dienst — Fotos werden als fehlgeschlagen markiert statt erneut versucht. Prüfen Sie, ob FACE_ML_URL auf den picpeak-ml-Container zeigt und kein Proxy dazwischenliegt, und nutzen Sie dann Neu scannen für die bereits fehlgeschlagenen Fotos.",
       "sidecarStateNow": "Aktueller Zustand des Dienstes — einige der Fehler oben können eine andere Ursache haben, aber ein erneuter Scan wird erst nach der Behebung erfolgreich sein:",
       "consolidated_one": "Beim letzten Scan wurde {{count}} ähnliches Paar automatisch zusammengeführt. Prüfen Sie es unter „Personen verwalten“ — falsch Zusammengeführtes lässt sich mit „Trennen“ wieder aufteilen.",
       "consolidated_other": "Beim letzten Scan wurden {{count}} ähnliche Paare automatisch zusammengeführt. Prüfen Sie sie unter „Personen verwalten“ — falsch Zusammengeführtes lässt sich mit „Trennen“ wieder aufteilen.",
@@ -3811,7 +3818,7 @@
       "billing": "Rechnungen"
     },
     "featureOff": "Funktion aus",
-    "featureOffTooltip": "Die zugehörige Funktion ist derzeit deaktiviert. Du kannst die Vorlage trotzdem bearbeiten — sie wird verwendet, sobald die Funktion wieder aktiviert ist.",
+    "featureOffTooltip": "Die zugehörige Funktion ist derzeit deaktiviert. Sie können die Vorlage trotzdem bearbeiten — sie wird verwendet, sobald die Funktion wieder aktiviert ist.",
     "subcategories": {
       "gallery": "Galerien",
       "admin": "Admin-Konten",
@@ -3959,7 +3966,7 @@
   },
   "migrationBanner": {
     "title": "Die Image-Registry von PicPeak wurde verschoben",
-    "body": "Aktualisiere deine docker-compose.yml, um Images von {{newPath}} zu beziehen — der alte Pfad wird nicht mehr aktualisiert.",
+    "body": "Aktualisieren Sie Ihre docker-compose.yml, um Images von {{newPath}} zu beziehen — der alte Pfad wird nicht mehr aktualisiert.",
     "link": "Migrationshinweise ansehen"
   },
   "passwordChange": {
@@ -4211,7 +4218,7 @@
     "fiveStarsOnly": "Nur 5 Sterne",
     "colorLabels": "Farbmarkierungen",
     "showOnlyColor": "Nur {{color}} anzeigen",
-    "myColorLabels": "Deine Markierungen",
+    "myColorLabels": "Ihre Markierungen",
     "showOnlyMyColor": "Nur meine Markierungen in {{color}} anzeigen"
   },
   "export": {
@@ -4235,7 +4242,7 @@
     },
     "markSource": "XMP-Sterne & -Farbe aus",
     "markSourceClient": "Kundenauswahl",
-    "markSourceMine": "Deine Markierungen"
+    "markSourceMine": "Ihre Markierungen"
   },
   "slideshow": {
     "adminTitle": "Live-Diashow",
@@ -4420,12 +4427,12 @@
     },
     "community": {
       "subtitle": "Alles bereit",
-      "mission": "PicPeak gibt es, damit Fotografinnen und Fotografen ihre Galerien und Kundendaten selbst besitzen — auf dem eigenen Server, ohne monatliche SaaS-Gebühren. Danke, dass du es ausprobierst.",
+      "mission": "PicPeak gibt es, damit Fotografinnen und Fotografen ihre Galerien und Kundendaten selbst besitzen — auf dem eigenen Server, ohne monatliche SaaS-Gebühren. Danke, dass Sie es ausprobieren.",
       "bugTitle": "Fehler gefunden?",
-      "bugDesc": "Melde ihn und wir sehen ihn uns an.",
+      "bugDesc": "Melden Sie ihn und wir sehen ihn uns an.",
       "featureTitle": "Wunschfunktion?",
-      "featureDesc": "Sag uns, was PicPeak für dich besser machen würde.",
-      "starTitle": "Gefällt es dir? Erzähl davon",
+      "featureDesc": "Sagen Sie uns, was PicPeak für Sie besser machen würde.",
+      "starTitle": "Gefällt es Ihnen? Erzählen Sie davon",
       "starDesc": "Empfiehl es anderen Fotografen, teile es und gib dem Projekt einen Stern auf GitHub.",
       "supportTitle": "Entwicklung unterstützen",
       "supportDesc": "Optional — spendier mir einen Kaffee, um PicPeak am Leben zu halten.",
@@ -4483,8 +4490,8 @@
     "devModeHint": "Entwicklungsmodus: E-Mail: admin@example.com, Passwort: admin123",
     "mfa": {
       "title": "Zwei-Faktor-Authentifizierung",
-      "subtitle": "Gib den 6-stelligen Code aus deiner Authenticator-App ein.",
-      "recoverySubtitle": "Gib einen deiner Wiederherstellungscodes ein.",
+      "subtitle": "Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.",
+      "recoverySubtitle": "Geben Sie einen Ihrer Wiederherstellungscodes ein.",
       "codeLabel": "Authentifizierungscode",
       "codePlaceholder": "123456",
       "recoveryCodeLabel": "Wiederherstellungscode",
@@ -4493,11 +4500,11 @@
       "back": "Zurück",
       "useRecoveryCode": "Stattdessen Wiederherstellungscode verwenden",
       "useAuthenticator": "Stattdessen Authenticator-App verwenden",
-      "codeRequired": "Gib deinen Authentifizierungscode ein",
+      "codeRequired": "Geben Sie Ihren Authentifizierungscode ein",
       "invalidCode": "Ungültiger Code. Bitte versuche es erneut.",
-      "sessionExpired": "Deine Bestätigungssitzung ist abgelaufen. Bitte melde dich erneut an.",
-      "locked": "Konto wegen zu vieler Versuche vorübergehend gesperrt. Versuche es später erneut.",
-      "lockedRetry": "Konto vorübergehend gesperrt. Versuche es in {{seconds}} Sekunden erneut."
+      "sessionExpired": "Ihre Bestätigungssitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
+      "locked": "Konto wegen zu vieler Versuche vorübergehend gesperrt. Versuchen Sie es später erneut.",
+      "lockedRetry": "Konto vorübergehend gesperrt. Versuchen Sie es in {{seconds}} Sekunden erneut."
     },
     "ssoDivider": "oder",
     "ssoSignIn": "Mit SSO anmelden",
@@ -4575,9 +4582,9 @@
       "generalError": "Anmeldung fehlgeschlagen. Bitte erneut versuchen.",
       "acceptedToast": "Konto bereit — bitte anmelden.",
       "adminHint": "Sie suchen das Admin-Panel? Besuchen Sie /admin/login.",
-      "emailPlaceholder": "du@beispiel.de",
-      "passwordPlaceholder": "Dein Passwort",
-      "needHelp": "Brauchst du Hilfe?"
+      "emailPlaceholder": "name@beispiel.de",
+      "passwordPlaceholder": "Ihr Passwort",
+      "needHelp": "Brauchen Sie Hilfe?"
     },
     "acceptInvite": {
       "title": "Konto einrichten",
@@ -4596,7 +4603,7 @@
       "alreadyExists": "Es existiert bereits ein Konto mit dieser E-Mail. Bitte melden Sie sich stattdessen an.",
       "invalidSubmission": "Konto konnte nicht erstellt werden.",
       "generalError": "Konto konnte nicht erstellt werden. Bitte erneut versuchen.",
-      "subtitle": "Bestätige oder ergänze deine Daten. Du kannst alles später im Profil bearbeiten.",
+      "subtitle": "Bestätigen oder ergänzen Sie Ihre Daten. Sie können alles später im Profil bearbeiten.",
       "displayName": "Anzeigename",
       "section": {
         "personal": "Persönlich",
@@ -4606,8 +4613,8 @@
       }
     },
     "dashboard": {
-      "title": "Deine Galerien",
-      "subtitle": "Klicke auf eine Galerie, um sie zu öffnen. Der Download-Button bündelt alle Fotos als ZIP.",
+      "title": "Ihre Galerien",
+      "subtitle": "Klicken Sie auf eine Galerie, um sie zu öffnen. Der Download-Button bündelt alle Fotos als ZIP.",
       "loadError": "Galerien konnten nicht geladen werden. Bitte erneut versuchen.",
       "emptyTitle": "Noch keine Galerien",
       "emptyBody": "Sobald Ihr Fotograf Sie einer Galerie zuweist, erscheint sie hier.",
@@ -4651,9 +4658,9 @@
     },
     "quotes": {
       "title": "Angebote",
-      "subtitle": "Alle Angebote, die dir dein Fotograf gesendet hat. Klicke auf ein offenes Angebot, um es anzunehmen oder abzulehnen.",
+      "subtitle": "Alle Angebote, die Ihnen Ihr Fotograf gesendet hat. Klicken Sie auf ein offenes Angebot, um es anzunehmen oder abzulehnen.",
       "empty": "Noch keine Angebote.",
-      "disabled": "Diese Funktion ist für dein Konto aktuell deaktiviert. Bitte wende dich an deinen Fotografen, falls du hier Angebote erwartest.",
+      "disabled": "Diese Funktion ist für Ihr Konto aktuell deaktiviert. Bitte wenden Sie sich an Ihren Fotografen, falls Sie hier Angebote erwarten.",
       "loadError": "Angebote konnten nicht geladen werden.",
       "noEventName": "—",
       "openToRespond": "Öffnen zum Antworten",
@@ -4662,9 +4669,9 @@
     },
     "bills": {
       "title": "Rechnungen",
-      "subtitle": "Alle Rechnungen, die dir dein Fotograf gesendet hat. Klicke auf „PDF anzeigen“, um sie herunterzuladen.",
+      "subtitle": "Alle Rechnungen, die Ihnen Ihr Fotograf gesendet hat. Klicken Sie auf „PDF anzeigen“, um sie herunterzuladen.",
       "empty": "Noch keine Rechnungen.",
-      "disabled": "Diese Funktion ist für dein Konto aktuell deaktiviert. Bitte wende dich an deinen Fotografen, falls du hier Rechnungen erwartest.",
+      "disabled": "Diese Funktion ist für Ihr Konto aktuell deaktiviert. Bitte wenden Sie sich an Ihren Fotografen, falls Sie hier Rechnungen erwarten.",
       "loadError": "Rechnungen konnten nicht geladen werden.",
       "viewPdf": "PDF anzeigen",
       "popupBlocked": "Erlaube Pop-ups für diese Seite, um das Rechnungs-PDF anzuzeigen.",
@@ -4701,7 +4708,7 @@
     },
     "profile": {
       "title": "Kundenprofil",
-      "subtitle": "Halte Kontakt- und Rechnungsdaten aktuell — sie erscheinen auf Angeboten und Rechnungen, sobald diese Funktionen live sind.",
+      "subtitle": "Halten Sie Kontakt- und Rechnungsdaten aktuell — sie erscheinen auf Angeboten und Rechnungen, sobald diese Funktionen live sind.",
       "savedToast": "Profil gespeichert",
       "saveError": "Profil konnte nicht gespeichert werden.",
       "loadError": "Profil konnte nicht geladen werden.",
@@ -4721,12 +4728,12 @@
       },
       "field": {
         "email": "E-Mail (Login)",
-        "emailHint": "Wende dich an deinen Fotografen, wenn du deine Login-E-Mail ändern möchtest.",
+        "emailHint": "Wenden Sie sich an Ihren Fotografen, wenn Sie Ihre Login-E-Mail ändern möchten.",
         "salutation": "Anrede",
         "firstName": "Vorname",
         "lastName": "Nachname",
         "displayName": "Anzeigename",
-        "displayNameHint": "So begrüßen wir dich im Dashboard.",
+        "displayNameHint": "So begrüßen wir Sie im Dashboard.",
         "phone": "Telefon",
         "companyName": "Firmenname",
         "vatId": "USt-IdNr.",
@@ -4753,7 +4760,7 @@
     },
     "resetPassword": {
       "title": "Passwort zurücksetzen",
-      "invalidToken": "Dieser Link ist ungültig oder abgelaufen. Bitte fordere bei deinem Fotografen einen neuen an.",
+      "invalidToken": "Dieser Link ist ungültig oder abgelaufen. Bitte fordern Sie bei Ihrem Fotografen einen neuen an.",
       "forEmail": "Neues Passwort wird gesetzt für ",
       "password": "Neues Passwort",
       "confirm": "Neues Passwort bestätigen",
@@ -4767,13 +4774,13 @@
     },
     "contracts": {
       "title": "Verträge",
-      "disabled": "Diese Funktion ist für dein Konto aktuell deaktiviert.",
+      "disabled": "Diese Funktion ist für Ihr Konto aktuell deaktiviert.",
       "loadError": "Verträge konnten nicht geladen werden.",
-      "subtitle": "Alle Verträge, die dir dein Fotograf gesendet hat. Öffne bei Verträgen, die noch auf deine Unterschrift warten, den Signatur-Link — oder lade das unterschriebene PDF herunter, sobald beide Seiten unterschrieben haben.",
+      "subtitle": "Alle Verträge, die Ihnen Ihr Fotograf gesendet hat. Öffnen Sie bei Verträgen, die noch auf Ihre Unterschrift warten, den Signatur-Link — oder laden Sie das unterschriebene PDF herunter, sobald beide Seiten unterschrieben haben.",
       "empty": "Noch keine Verträge.",
       "popupBlocked": "Erlaube Pop-ups für diese Seite, um das Vertrags-PDF herunterzuladen.",
       "issued": "Ausgestellt",
-      "signedByYou": "Von dir unterschrieben",
+      "signedByYou": "Von Ihnen unterschrieben",
       "counterSigned": "Gegengezeichnet",
       "openSign": "Öffnen & unterschreiben",
       "downloadSigned": "Unterschriebenes PDF herunterladen",
@@ -4910,7 +4917,7 @@
       "invalidEmail": "Bitte geben Sie eine gültige E-Mail ein",
       "showPrefill": "+ Kontaktdaten hinzufügen (optional)",
       "hidePrefill": "− Kontaktdaten ausblenden",
-      "prefillHint": "Alles, was du ausfüllst, wird auf der Anmeldeseite des Kunden vorausgefüllt — er kann es weiterhin bearbeiten."
+      "prefillHint": "Alles, was Sie ausfüllen, wird auf der Anmeldeseite des Kunden vorausgefüllt — er kann es weiterhin bearbeiten."
     },
     "invitations": {
       "empty": "Keine offenen Einladungen.",
@@ -4975,7 +4982,7 @@
         "button": "Passwort-Reset-E-Mail senden",
         "success": "Passwort-Reset-E-Mail gesendet",
         "error": "Passwort-Reset konnte nicht gesendet werden",
-        "inactive": "Aktiviere den Kunden, bevor du einen Reset sendest."
+        "inactive": "Aktivieren Sie den Kunden, bevor Sie einen Reset senden."
       },
       "manageEvents": "Galerien verwalten",
       "quotesSection": "Angebote",
@@ -5034,12 +5041,12 @@
     },
     "assignedEvents": {
       "title": "Zugewiesene Galerien verwalten",
-      "subtitle": "Wähle jede Galerie aus, auf die dieser Kunde über sein Dashboard zugreifen können soll. Eine hier entfernte Galerie wird beim nächsten Aufruf des Kunden sofort gesperrt.",
+      "subtitle": "Wählen Sie jede Galerie aus, auf die dieser Kunde über sein Dashboard zugreifen können soll. Eine hier entfernte Galerie wird beim nächsten Aufruf des Kunden sofort gesperrt.",
       "currentLabel": "Zugewiesene Galerien",
-      "empty": "Noch keine Galerien zugewiesen. Suche unten, um eine hinzuzufügen.",
+      "empty": "Noch keine Galerien zugewiesen. Suchen Sie unten, um eine hinzuzufügen.",
       "searchLabel": "Galerie hinzufügen",
       "searchPlaceholder": "Nach Eventname suchen",
-      "searchHint": "Beginne zu tippen, um Galerien zu finden.",
+      "searchHint": "Beginnen Sie zu tippen, um Galerien zu finden.",
       "noResults": "Keine passenden Galerien.",
       "removeAria": "{{name}} entfernen",
       "save": "Zuweisungen speichern",
@@ -5061,7 +5068,7 @@
     "navAriaLabel": "CRM-Navigation",
     "empty": {
       "title": "Keine CRM-Funktionen aktiviert",
-      "body": "Aktiviere „Konten\" (oder eine andere CRM-Unterfunktion) unter Einstellungen → Funktionen, um loszulegen."
+      "body": "Aktivieren Sie „Konten\" (oder eine andere CRM-Unterfunktion) unter Einstellungen → Funktionen, um loszulegen."
     },
     "subnav": {
       "overview": "Übersicht",
@@ -5081,7 +5088,7 @@
     "navAriaLabel": "Buchhaltungs-Navigation",
     "empty": {
       "title": "Keine Buchhaltungsfunktionen aktiviert",
-      "body": "Aktiviere die Steuerliste (oder eine andere Buchhaltungs-Unterfunktion) unter Einstellungen → Funktionen, um loszulegen."
+      "body": "Aktivieren Sie die Steuerliste (oder eine andere Buchhaltungs-Unterfunktion) unter Einstellungen → Funktionen, um loszulegen."
     },
     "subnav": {
       "incomingInvoices": "Eingangsrechnungen",
@@ -5103,8 +5110,8 @@
       "duplikat": "Duplikat",
       "abgelehnt": "Abgelehnt",
       "help": {
-        "rebill": "Eigene Lieferantenkosten, die du an einen Kunden weiterverrechnest — meist mit Zuschlag. Wird als Kosten und als weiterverrechneter Ertrag gebucht.",
-        "durchlaufend": "Ein Betrag, den du nur im Namen des Kunden vorstreckst und exakt durchreichst — kein Zuschlag, MwSt-neutral (durchlaufender Posten). Kunde zuordnen, um ihn zum Selbstkostenpreis weiterzuverrechnen.",
+        "rebill": "Eigene Lieferantenkosten, die Sie an einen Kunden weiterverrechnen — meist mit Zuschlag. Wird als Kosten und als weiterverrechneter Ertrag gebucht.",
+        "durchlaufend": "Ein Betrag, den Sie nur im Namen des Kunden vorstrecken und exakt durchreichen — kein Zuschlag, MwSt-neutral (durchlaufender Posten). Kunde zuordnen, um ihn zum Selbstkostenpreis weiterzuverrechnen.",
         "eigener_aufwand": "Eigene Kosten, die nicht weiterverrechnet werden. Kategorie wählen, damit der Posten richtig in der Erfolgsrechnung landet.",
         "duplikat": "Duplikat einer bereits erfassten Rechnung — wird nicht verbucht.",
         "abgelehnt": "Dokument ablehnen — wird nicht verbucht."
@@ -5164,7 +5171,7 @@
         "passthroughCustomerHint": "Optional — einen Kunden zuordnen, um diese durchlaufende Position weiterzuverrechnen; leer lassen, um sie nur auf das Event zu buchen.",
         "supplierCountry": "Lieferantenland",
         "supplierCountryNone": "— unbekannt —",
-        "supplierCountryHint": "Setzt die Steuerbehandlung automatisch: ausserhalb deiner Vorsteuer-Länder → ausländische MwSt (nicht abziehbar)."
+        "supplierCountryHint": "Setzt die Steuerbehandlung automatisch: ausserhalb Ihrer Vorsteuer-Länder → ausländische MwSt (nicht abziehbar)."
       }
     },
     "expenseStatus": {
@@ -5186,7 +5193,7 @@
       "company": "Firma",
       "event": "Event",
       "eventId": "Event-ID",
-      "inboundHint": "Auf welches Event diese Kosten in Auswertungen & Steuerexport entfallen (Firma = allgemeiner Aufwand). Unabhängig davon, an wen du weiterverrechnest."
+      "inboundHint": "Auf welches Event diese Kosten in Auswertungen & Steuerexport entfallen (Firma = allgemeiner Aufwand). Unabhängig davon, an wen Sie weiterverrechnen."
     },
     "incoming": {
       "triageTitle": "Eingangsrechnung kategorisieren",
@@ -5279,7 +5286,7 @@
     "title": "Projektübersicht",
     "subtitle": "Fasse Events zu Projekten zusammen und sieh jede E-Mail, jedes Dokument, jede Galerie und jede Stunde in einem Cockpit.",
     "search": "Nach Name oder Kunde suchen…",
-    "empty": "Noch keine Projekte. Erstelle oben eines, oder vorhandene Events wurden automatisch gruppiert.",
+    "empty": "Noch keine Projekte. Erstellen Sie oben eines, oder vorhandene Events wurden automatisch gruppiert.",
     "notFound": "Projekt nicht gefunden",
     "backToList": "Alle Projekte",
     "noCustomer": "Kein einzelner Kunde",
@@ -5407,7 +5414,7 @@
     "pickPlaceholder": "— Kunde wählen —",
     "emptyList": "Noch keine Kunden mit aktivierter Stundenerfassung. Aktivieren Sie „Stundenerfassung“ zuerst auf der Kundendetailseite.",
     "searchPlaceholder": "Nach E-Mail oder Firma suchen…",
-    "customerLoggingDisabled": "Bei diesem Kunden ist die Stundenerfassung deaktiviert. Aktiviere sie auf der Kundendetailseite, um Stunden zu erfassen.",
+    "customerLoggingDisabled": "Bei diesem Kunden ist die Stundenerfassung deaktiviert. Aktivieren Sie sie auf der Kundendetailseite, um Stunden zu erfassen.",
     "openHours": {
       "title": "Offene Stunden über alle Kunden",
       "subtitle": "Noch nicht abgerechnete Zeitblöcke. Oben einen Kunden wählen oder auf eine Zeile klicken, um Details zu öffnen.",
@@ -5424,7 +5431,7 @@
     "warning": "Diese Werkzeuge lösen echte Nebeneffekte aus (E-Mails, Statusänderungen). Nur gegen Testdaten verwenden.",
     "envDisabled": {
       "title": "Entwicklungs-Tools durch Umgebungsschutz blockiert",
-      "body": "Setze PICPEAK_ENABLE_DEV_TOOLS=1 in der Backend-Env-Datei und starte den Server neu. Der Funktions-Schalter allein reicht nicht — dies ist eine bewusste Produktiv-Schutzschicht.",
+      "body": "Setzen Sie PICPEAK_ENABLE_DEV_TOOLS=1 in der Backend-Env-Datei und starten Sie den Server neu. Der Funktions-Schalter allein reicht nicht — dies ist eine bewusste Produktiv-Schutzschicht.",
       "cardHint": "E-Mail-Vorlagen können nicht geladen werden, solange der Entwicklungs-Tools-Umgebungsschutz nicht geöffnet ist."
     },
     "paymentCheck": {
@@ -5514,7 +5521,7 @@
     }
   },
   "ledger": {
-    "intro": "Dient nur dem Treuhänder-Export — picpeak führt keine doppelte Buchhaltung. Der vorbelegte Kontenplan + die MWST-Codes folgen dem Schweizer/LI KMU-Kontenrahmen; passe sie an das Setup deines Treuhänders an.",
+    "intro": "Dient nur dem Treuhänder-Export — picpeak führt keine doppelte Buchhaltung. Der vorbelegte Kontenplan + die MWST-Codes folgen dem Schweizer/LI KMU-Kontenrahmen; passen Sie sie an das Setup Ihres Treuhänders an.",
     "settingsSaved": "Zuordnungen gespeichert.",
     "saveDefaults": "Zuordnungen speichern",
     "accountType": {
@@ -5581,7 +5588,7 @@
     },
     "export": {
       "title": "Treuhänder-Export",
-      "intro": "Lade das Sammeljournal (Erträge + Kosten als periodengerechte Buchungssätze mit Konto- und MWST-Codes) zum Import in die Buchhaltungssoftware deines Treuhänders herunter.",
+      "intro": "Laden Sie das Sammeljournal (Erträge + Kosten als periodengerechte Buchungssätze mit Konto- und MWST-Codes) zum Import in die Buchhaltungssoftware Ihres Treuhänders herunter.",
       "format": "Zielsoftware",
       "format_generic": "Generisch (alle Spalten)",
       "format_banana": "Banana — doppelte Buchhaltung",
@@ -5589,7 +5596,7 @@
       "format_bexio": "bexio",
       "download": "CSV herunterladen",
       "failed": "Export fehlgeschlagen.",
-      "disclaimer": "Nur periodengerecht (Belegdaten) — Zahlungen/Bankbewegungen sind nicht enthalten. Konto- + MWST-Codes folgen deiner Kontenplan-Zuordnung. Den Import vor der Einreichung immer mit dem Treuhänder prüfen."
+      "disclaimer": "Nur periodengerecht (Belegdaten) — Zahlungen/Bankbewegungen sind nicht enthalten. Konto- + MWST-Codes folgen Ihrer Kontenplan-Zuordnung. Den Import vor der Einreichung immer mit dem Treuhänder prüfen."
     }
   },
   "taxReport": {
@@ -5639,7 +5646,7 @@
       "costs": "Ausgaben",
       "result": "Ergebnis",
       "vatPayable": "MWST-Zahllast (Umsatz- − Vorsteuer)",
-      "vatUnconfigured": "Die MWST-Registrierung ist nicht konfiguriert, daher kann die MWST-Zahllast nicht berechnet werden. Lege sie unter Einstellungen → Buchhaltung fest."
+      "vatUnconfigured": "Die MWST-Registrierung ist nicht konfiguriert, daher kann die MWST-Zahllast nicht berechnet werden. Legen Sie sie unter Einstellungen → Buchhaltung fest."
     },
     "cost": {
       "source": "Art",
@@ -6094,7 +6101,7 @@
     "savedToast": "CRM-Einstellungen gespeichert.",
     "title": "CRM-Einstellungen",
     "subtitle": "Standardwerte für Angebote und Rechnungen.",
-    "emptyState": "Aktuell sind keine CRM-Funktionen aktiv. Aktiviere Angebote, Rechnungen oder Verträge unter Einstellungen → Features, damit die passenden Konfigurationen hier erscheinen.",
+    "emptyState": "Aktuell sind keine CRM-Funktionen aktiv. Aktivieren Sie Angebote, Rechnungen oder Verträge unter Einstellungen → Features, damit die passenden Konfigurationen hier erscheinen.",
     "section": {
       "quotes": "Angebote",
       "invoices": "Rechnungen",
@@ -6168,7 +6175,7 @@
     "crm_invoices_vat_note_text": {
       "label": "MwSt.- / Freitext-Hinweis auf Rechnungen",
       "placeholder": "z. B. Gemäß § 6 Abs. 1 Z 27 UStG 1994 wird keine Umsatzsteuer berechnet (Kleinunternehmer).",
-      "help": "Wird direkt unter der MwSt.-Zeile auf jeder Rechnungs-PDF gedruckt. Leer lassen zum Ausblenden. Bitte den genauen Wortlaut mit deinem Steuerberater abstimmen."
+      "help": "Wird direkt unter der MwSt.-Zeile auf jeder Rechnungs-PDF gedruckt. Leer lassen zum Ausblenden. Bitte den genauen Wortlaut mit Ihrem Steuerberater abstimmen."
     },
     "crm_invoices_skonto_percent_default": {
       "label": "Standard-Skonto %"
@@ -6295,7 +6302,7 @@
     "sectionTemplates": "Vorlagen",
     "defaultLabel": "Standard (Auffang)",
     "usesDefault": "Standard",
-    "usesDefaultTooltip": "Noch keine eigene Vorlage — dieser Anlass-Typ nutzt die Standard-Vorlage. Bearbeite + speichere hier, um eine eigene zu erstellen.",
+    "usesDefaultTooltip": "Noch keine eigene Vorlage — dieser Anlass-Typ nutzt die Standard-Vorlage. Bearbeiten und speichern Sie hier, um eine eigene zu erstellen.",
     "willCreateOnSave": "Dieser Anlass-Typ verwendet die Standard-Vorlage. Die Felder unten sind aus der Standard-Vorlage vorbelegt; beim Speichern wird eine eigene Vorlage für diesen Anlass-Typ erstellt.",
     "variablesHint": "Verfügbare Variablen: {{customer_name}}, {{event_name}}, {{event_date}}, {{event_type}}, {{days_before}}, {{business_name}} — werden beim Versand der E-Mail ersetzt.",
     "subjectLabel": "Betreff",
@@ -6342,8 +6349,8 @@
     "enableLabel": "In Teilzahlungen aufteilen",
     "advancedToggle": "Dynamische Trigger verwenden",
     "simpleToggle": "Einfache Datumsauswahl verwenden",
-    "simpleHint": "Jede Zeile wird an einem festen Datum versendet. Wechsle zu dynamischen Triggern für Pläne, die an das Anlassdatum oder die Lieferung gekoppelt sind.",
-    "advancedHint": "Wähle einen Trigger (Angebot angenommen, vor/nach Anlass, bei Lieferung, festes Datum) und einen Offset in Tagen. Trigger lösen sich neu auf, wenn sich das Anlassdatum später verschiebt.",
+    "simpleHint": "Jede Zeile wird an einem festen Datum versendet. Wechseln Sie zu dynamischen Triggern für Pläne, die an das Anlassdatum oder die Lieferung gekoppelt sind.",
+    "advancedHint": "Wählen Sie einen Trigger (Angebot angenommen, vor/nach Anlass, bei Lieferung, festes Datum) und einen Offset in Tagen. Trigger lösen sich neu auf, wenn sich das Anlassdatum später verschiebt.",
     "percent": "%",
     "label": "Bezeichnung",
     "labelPlaceholder": "Anzahlung / vor Anlass …",
@@ -6630,8 +6637,8 @@
     "send": "Senden",
     "subject": "Betreff",
     "optional": "optional",
-    "bodyHint": "Bearbeite die Nachricht frei — füge vor dem Senden an beliebiger Stelle eine Notiz ein.",
-    "sendsFromHint": "Wird von deiner konfigurierten Absenderadresse gesendet.",
+    "bodyHint": "Bearbeiten Sie die Nachricht frei — fügen Sie vor dem Senden an beliebiger Stelle eine Notiz ein.",
+    "sendsFromHint": "Wird von Ihrer konfigurierten Absenderadresse gesendet.",
     "sentToast": "Nachricht gesendet.",
     "sendFailed": "Nachricht konnte nicht gesendet werden.",
     "onWrote": "Am",
@@ -6641,7 +6648,7 @@
     "createNewDoc": "Neues {{label}} erstellen",
     "existingDocs": "Oder ein bestehendes referenzieren",
     "noExistingDocs": "Für diesen Kunden gibt es noch keine Dokumente.",
-    "galleryCreateOnly": "Galerien sind event-basiert — dies öffnet den Event-Editor, wo du den Kunden zuweisen kannst.",
+    "galleryCreateOnly": "Galerien sind event-basiert — dies öffnet den Event-Editor, wo Sie den Kunden zuweisen können.",
     "syncOk": "Postfächer geprüft — {{count}} neu.",
     "syncDisabled": "Eingehende E-Mails sind deaktiviert — unter Einstellungen → Funktionen aktivieren.",
     "syncUnconfigured": "Zuerst ein Postfach unter Einstellungen → E-Mail konfigurieren.",
@@ -6684,7 +6691,7 @@
   },
   "roleEditor": {
     "loading": "Rollen werden geladen…",
-    "subtitle": "Lege fest, was jede Rolle darf. Beginne mit einer Vorlage, indem du sie duplizierst, und passe die Berechtigungen an.",
+    "subtitle": "Legen Sie fest, was jede Rolle darf. Beginnen Sie mit einer Vorlage, indem Sie sie duplizieren, und passen Sie die Berechtigungen an.",
     "newRole": "Neue Rolle",
     "systemRole": "System",
     "permCount": "{{count}} Berechtigungen",
@@ -6714,9 +6721,9 @@
     "confirmDelete": {
       "title": "Rolle löschen?",
       "message": "Die Rolle \"{{name}}\" endgültig löschen? Dies kann nicht rückgängig gemacht werden.",
-      "hasUsers": "Weise die {{count}} Benutzer der Rolle \"{{name}}\" neu zu, bevor du sie löschst.",
-      "hasUsers_one": "Weise den {{count}} Benutzer der Rolle \"{{name}}\" neu zu, bevor du sie löschst.",
-      "hasUsers_other": "Weise die {{count}} Benutzer der Rolle \"{{name}}\" neu zu, bevor du sie löschst."
+      "hasUsers": "Weisen Sie die {{count}} Benutzer der Rolle \"{{name}}\" neu zu, bevor Sie sie löschen.",
+      "hasUsers_one": "Weisen Sie den {{count}} Benutzer der Rolle \"{{name}}\" neu zu, bevor Sie sie löschen.",
+      "hasUsers_other": "Weisen Sie die {{count}} Benutzer der Rolle \"{{name}}\" neu zu, bevor Sie sie löschen."
     },
     "permCount_one": "{{count}} Berechtigung",
     "permCount_other": "{{count}} Berechtigungen",

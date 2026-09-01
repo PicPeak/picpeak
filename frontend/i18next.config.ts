@@ -24,12 +24,31 @@ export default defineConfig({
 
     primaryLanguage: 'en',
 
-    // Pruning is unsafe in this codebase: a large share of keys is never visible to the
-    // AST extractor because it is built at runtime — t(`admin.activities.${type}`),
-    // t(`admin.notificationMessages.${type}`), t(`projects.status.${status}`) — or held in
-    // constant tables the extractor does not resolve (AdminSidebar `nameKey`,
-    // CrmDevelopmentPage `titleKey`/`descKey`, the crmSettings toggle map). Enabling it
-    // deletes ~355 live keys per locale, so removal stays a manual decision.
+    // Pruning is unsafe in this codebase. A large share of keys is never visible to the
+    // AST extractor because it is built at runtime — 82 distinct dynamic key templates in
+    // src, e.g. admin.activities, admin.notificationMessages, projects.status,
+    // accounting.expenseStatus, crmSettings — or held in constant tables the extractor does
+    // not resolve (AdminSidebar `nameKey`, CrmDevelopmentPage `titleKey`/`descKey`).
+    // Turned on as-is, it deletes 422 keys per locale, 203 of which src references.
+    //
+    // A `preservePatterns` rescue was attempted and measured: 61 globs derived
+    // mechanically from every dynamic template in src, plus 17 for the constant-table
+    // prefixes (78 patterns). That still leaves two unfixable problems:
+    //
+    //  1. 47 of the remaining 158 removals are the base form of a plural key
+    //     (`upload.failures.title` next to `_one`/`_other`). src passes exactly those
+    //     strings to t(), so they are referenced by any honest definition. i18next happens
+    //     to resolve them via the `_other` suffix first, so nothing breaks today — but
+    //     covering them needs 47 literal patterns and one more on every future {{count}}
+    //     key, where forgetting one silently deletes a live key. That is the exact failure
+    //     mode this flag is supposed to prevent.
+    //  2. Pruning is not idempotent. `extract` had to be run three times in a row before
+    //     `extract --ci --dry-run` came back clean — each pass uncovered one further
+    //     removal (`businessProfile.title`, then `cssTemplates.title`). i18n:ci would
+    //     therefore fail on a correct tree until someone happened to run extract enough
+    //     times. With pruning off the extractor settles in a single pass.
+    //
+    // Key removal stays a manual decision.
     removeUnusedKeys: false,
 
     preserveContextVariants: true,

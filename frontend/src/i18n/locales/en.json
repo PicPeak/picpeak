@@ -189,12 +189,16 @@
     "eventSpecific": "(Event specific)",
     "clickToUpload": "Click to upload or drag and drop",
     "fileRequirements": "{{formats}} (max {{sizeLimit}}MB per file, {{limit}} files per upload)",
+    "videoSizeLimit": "Videos: max {{sizeLimit}}MB per file",
     "selectedFiles": "Selected files",
     "uploading": "Uploading...",
     "transferring": "Transferring",
     "processing": "Processing photos...",
     "processingHint": "Files are uploaded. PicPeak is now generating thumbnails and reading metadata. You can leave this page — work continues in the background.",
     "processingProgress": "{{complete}} of {{total}} done",
+    "processingFailed_one": "{{count}} photo could not be processed and will not appear in the gallery.",
+    "processingFailed_other": "{{count}} photos could not be processed and will not appear in the gallery.",
+    "processingStillRunning": "Your upload is still being processed — it will appear in the gallery shortly.",
     "retryFailed": "Retry failed",
     "uploadComplete": "Upload complete!",
     "someFilesFailed": "Some files failed to upload",
@@ -1099,9 +1103,7 @@
       "mode_custom": "Custom override for this event",
       "mode_off": "Off (hide for this event)",
       "placeholder": "Markdown content (e.g. **Special offer:** [book your next session](https://example.com))",
-      "preview": "Preview",
-      "mode_managed": "Managed (upload to PicPeak)",
-      "mode_reference": "Reference external folder"
+      "preview": "Preview"
     },
     "infoBanner": {
       "title": "Info Banner",
@@ -1110,9 +1112,7 @@
       "mode_custom": "Custom override for this event",
       "mode_off": "Off (hide for this event)",
       "placeholder": "Use the menu button in the top-left corner to filter the photos.",
-      "preview": "Preview",
-      "mode_managed": "Managed (upload to PicPeak)",
-      "mode_reference": "Reference external folder"
+      "preview": "Preview"
     },
     "ogShare": {
       "title": "Use hero photo as social-share preview",
@@ -1147,7 +1147,8 @@
       "removeAria": "Remove {{name}}",
       "placeholder": "Search by email, name, or company",
       "searching": "Searching…",
-      "noResults": "No matches. Invite this customer from Clients → Accounts first."
+      "noResultsCanCreate": "No matches. Use “Create new customer” to add one.",
+      "noResultsNoPermission": "No matches, and your role cannot create customers. Ask an administrator to add this customer."
     }
   },
   "settings": {
@@ -1162,6 +1163,8 @@
       "siteUrlEnvPinned": "Pinned by the FRONTEND_URL environment variable, which overrides this setting. Remove it from your .env (or container environment) and restart to manage the address here.",
       "defaultExpiration": "Default Expiration (days)",
       "maxFileSize": "Max File Size (MB)",
+      "maxVideoSize": "Max Video Size (MB)",
+      "maxVideoSizeHelp": "Separate per-file limit for video uploads, so photos can keep a smaller limit.",
       "maxFilesPerUpload": "Max Files per Upload",
       "maxFilesPerUploadHelp": "Maximum number of photos allowed in a single upload batch (1-{{max}}).",
       "maxUploadBatchSize": "Max Upload Batch Size (MB)",
@@ -1528,6 +1531,9 @@
         "custom": "Custom (paste your own script)"
       },
       "providerNoneInfo": "No external tracker injected. The admin dashboard still shows summary cards + the daily chart from PicPeak's own access_logs; the device-breakdown chart uses a coarse user-agent heuristic.",
+      "proxiedNotice": "Served from your own domain",
+      "proxiedNoticeText": "PicPeak loads the tracker script and forwards its events through its own domain, so no Content-Security-Policy or reverse-proxy change is needed — and ad blockers see first-party requests. Your tracker still gets each visitor's IP and user agent (forwarded as X-Forwarded-For), so device and location reporting keeps working. The URL must be reachable from the PicPeak server and resolve to a public address.",
+      "customOnlyCspWarningText": "PicPeak ships with a strict CSP (`script-src 'self'; connect-src 'self'`). Unlike the Umami and Rybbit options above, a pasted snippet is not proxied — add your tracker's domain to BOTH `script-src` (to load the script) and `connect-src` (for the events it sends) in your reverse-proxy or nginx CSP config, otherwise the browser silently blocks it.",
       "rybbitUrl": "Rybbit URL",
       "rybbitUrlHelp": "Your Rybbit instance URL — `https://app.rybbit.io` for the SaaS, or `https://rybbit.yourdomain.com` for self-hosted.",
       "rybbitWebsiteId": "Site ID",
@@ -2662,6 +2668,7 @@
     "noRecentActivity": "No recent activity",
     "photos": {
       "hidden": "Hidden",
+      "hiddenTooltip": "Hidden from guests — this photo is not shown in the client gallery.",
       "hideSelected": "Hide",
       "showSelected": "Show",
       "hiddenSuccess": "Photos hidden from guests",

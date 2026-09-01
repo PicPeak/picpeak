@@ -20,6 +20,14 @@ i18n
     fallbackLng: 'en',
     debug: false,
 
+    // i18next defaults this to `true`, which makes an empty-string translation
+    // a *valid* lookup — it renders as blank UI instead of falling through to
+    // `fallbackLng`. nl/pt/ru/fr/sl/es are deliberately partial locales, so an
+    // empty value landing in one of them must fail safe to English rather than
+    // silently blanking the label. No managed locale has one today; this keeps
+    // it true by construction rather than by vigilance.
+    returnEmptyString: false,
+
     resources,
 
     interpolation: {
