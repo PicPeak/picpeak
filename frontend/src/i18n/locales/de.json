@@ -1527,6 +1527,18 @@
       "title": "Galerie-E-Mail senden",
       "description": "Sendet den Galerie-Link für \"{{eventName}}\" an {{recipient}}.",
       "passwordHelp": "Die E-Mail enthält genau diesen Text. Geben Sie das Galerie-Passwort erneut ein (oder wählen Sie ein neues) — das Backend hasht es neu, damit der Login weiter funktioniert."
+    },
+    "bulkArchive": {
+      "title": "Massen-Archivierung bestätigen",
+      "intro_one": "Sie sind dabei, {{count}} Veranstaltung zu archivieren. Dabei wird:",
+      "intro_other": "Sie sind dabei, {{count}} Veranstaltungen zu archivieren. Dabei wird:",
+      "effectZip": "für jede Veranstaltung ein ZIP-Archiv aller Fotos erstellt",
+      "effectInaccessible": "der Zugriff der Gäste auf die Galerien gesperrt",
+      "effectDelisted": "die Veranstaltung aus den aktiven Listen entfernt",
+      "effectStorage": "durch Komprimieren der Fotos Speicherplatz freigegeben",
+      "listHeading": "Zu archivierende Veranstaltungen:",
+      "submit_one": "{{count}} Veranstaltung archivieren",
+      "submit_other": "{{count}} Veranstaltungen archivieren"
     }
   },
   "settings": {
@@ -1572,7 +1584,11 @@
       "accountEmailInvalid": "Bitte eine gültige E-Mail-Adresse eingeben",
       "accountSaveButton": "Kontodaten speichern",
       "accountSaveSuccess": "Kontodaten aktualisiert",
-      "siteUrlInvalid": "Geben Sie die vollständige Adresse inklusive http:// oder https:// an, zum Beispiel https://galerie.example.com"
+      "siteUrlInvalid": "Geben Sie die vollständige Adresse inklusive http:// oder https:// an, zum Beispiel https://galerie.example.com",
+      "timeFormat": "Zeitformat",
+      "timeFormat24h": "24-Stunden (14:30)",
+      "timeFormat12h": "12-Stunden (2:30 PM)",
+      "timeFormatHelp": "Steuert die Darstellung von Uhrzeiten in der Administration, auf kundenseitigen Seiten und in PDFs. Gespeichert wird weiterhin im 24-Stunden-Format (HH:mm) — nur die Anzeige ändert sich."
     },
     "publicSite": {
       "badge": "Öffentliche Landingpage",
@@ -1724,7 +1740,11 @@
       "blockSuspiciousIps": "Verdächtige IPs automatisch blockieren",
       "logEvents": "Sicherheitsereignisse in Datenbank protokollieren",
       "infoTitle": "Über Bildschutz",
-      "infoText": "Diese Schutzfunktionen helfen, gelegentliches Herunterladen und Kopieren zu verhindern, können aber nicht alle Methoden blockieren. Entschlossene Benutzer finden möglicherweise trotzdem Wege, Bilder zu erfassen. Erwägen Sie die Verwendung von Wasserzeichen und rechtlichen Vereinbarungen für umfassenden Schutz."
+      "infoText": "Diese Schutzfunktionen helfen, gelegentliches Herunterladen und Kopieren zu verhindern, können aber nicht alle Methoden blockieren. Entschlossene Benutzer finden möglicherweise trotzdem Wege, Bilder zu erfassen. Erwägen Sie die Verwendung von Wasserzeichen und rechtlichen Vereinbarungen für umfassenden Schutz.",
+      "imageQualityHelp": "1–100, höher = bessere Qualität",
+      "fragmentationLevelHelp": "1–10, höher = mehr Schutz",
+      "suspiciousActivityThresholdHelp": "Verstöße, bevor als verdächtig markiert wird",
+      "autoBlockThresholdHelp": "Verstöße, bevor die IP automatisch gesperrt wird"
     },
     "seo": {
       "title": "SEO & Robots",
@@ -2014,7 +2034,41 @@
       "createError": "Webhook konnte nicht erstellt werden",
       "updateError": "Webhook konnte nicht aktualisiert werden",
       "deletedToast": "Webhook gelöscht",
-      "deleteError": "Webhook konnte nicht gelöscht werden"
+      "deleteError": "Webhook konnte nicht gelöscht werden",
+      "deliveries": {
+        "back": "Zurück zu den Einstellungen",
+        "notFound": "Webhook nicht gefunden.",
+        "sendTest": "Testereignis senden",
+        "sendTestHelp": "Sendet eine künstliche Zustellung mit Beispiel-Payload an Ihren Empfänger — ohne echte Seiteneffekte.",
+        "refresh": "Aktualisieren",
+        "send": "Senden",
+        "eventType": "Ereignistyp",
+        "total_one": "{{count}} gesamt",
+        "total_other": "{{count}} gesamt",
+        "empty": "Noch keine Zustellungen. Erstellen Sie eine Veranstaltung oder senden Sie ein Testereignis, um hier etwas zu sehen.",
+        "colTime": "Zeit",
+        "colEvent": "Ereignis",
+        "colStatus": "Status",
+        "colAttempts": "Versuche",
+        "colHttp": "HTTP",
+        "colLatency": "Latenz",
+        "replay": "Erneut senden",
+        "replayEnqueued": "Erneute Zustellung eingereiht",
+        "replayError": "Erneutes Senden fehlgeschlagen",
+        "testEnqueued": "Testereignis eingereiht",
+        "testError": "Testereignis konnte nicht gesendet werden",
+        "detailTitle": "Zustellung #{{id}}",
+        "lastError": "Letzter Fehler",
+        "responseStatus": "Antwortstatus",
+        "responseBody": "Antwort-Body (auf 1 KB gekürzt)",
+        "payload": "Payload (signierter Body)",
+        "status": {
+          "all": "alle",
+          "pending": "ausstehend",
+          "success": "erfolgreich",
+          "failed": "fehlgeschlagen"
+        }
+      }
     },
     "sectionLabel": "Einstellungsbereich",
     "navAriaLabel": "Einstellungsnavigation",
@@ -2690,7 +2744,16 @@
       "alignment": "Ausrichtung",
       "alignLeft": "Links",
       "alignCenter": "Zentriert (Standard – wie der Footer)",
-      "alignRight": "Rechts"
+      "alignRight": "Rechts",
+      "title": "Werbebanner in der Galerie",
+      "help": "Markdown, das über oder unter der Galerie-Fußzeile angezeigt wird (z. B. Saisonangebot, Print-Rabatt). Einstellungen auf Veranstaltungsebene haben Vorrang.",
+      "position": "Position",
+      "aboveFooter": "Über der Fußzeile",
+      "belowFooter": "Unter der Fußzeile",
+      "content": "Inhalt (Markdown)",
+      "placeholder": "**Frühlingsaktion**: 20 % Rabatt auf Abzüge mit dem Code SPRING — zum [Print-Shop](https://example.com).",
+      "markdownHelp": "Fett, kursiv, Links, Listen und Überschriften werden unterstützt. HTML wird entfernt.",
+      "preview": "Vorschau"
     },
     "infoBanner": {
       "title": "Info-Banner der Galerie",
@@ -2699,6 +2762,11 @@
       "placeholder": "Über die Menü-Schaltfläche oben links lassen sich die Fotos filtern.",
       "markdownHelp": "Fett, kursiv, Links, Listen und Überschriften werden unterstützt. HTML wird entfernt.",
       "preview": "Vorschau"
+    },
+    "socialMedia": {
+      "title": "Soziale Medien",
+      "help": "Hinterlegen Sie URLs, um Social-Media-Symbole in der Galerie-Fußzeile anzuzeigen. Lassen Sie ein Feld leer, um das jeweilige Symbol auszublenden.",
+      "whatsappHelp": "Eine wa.me-URL oder eine Telefonnummer mit Ländervorwahl (wird umgewandelt)."
     }
   },
   "admin": {
@@ -3621,7 +3689,77 @@
     "noLogo": "keine Überschreibung",
     "replaceLogo": "Logo ersetzen",
     "uploadLogo": "Logo hochladen",
-    "clearLogo": "Seitenstandard verwenden"
+    "clearLogo": "Seitenstandard verwenden",
+    "editor": {
+      "placeholder": "Beginnen Sie hier mit Ihrem Inhalt …",
+      "viewEdit": "Bearbeiten",
+      "viewPreview": "Vorschau",
+      "viewSplit": "Geteilt",
+      "save": "Speichern",
+      "help": "Hilfe & Tastenkürzel",
+      "enterFullscreen": "Vollbild",
+      "exitFullscreen": "Vollbild beenden",
+      "linkUrlPlaceholder": "URL eingeben …",
+      "addLink": "Link einfügen",
+      "wordCount_one": "{{count}} Wort",
+      "wordCount_other": "{{count}} Wörter",
+      "charCount_one": "{{count}} Zeichen",
+      "charCount_other": "{{count}} Zeichen",
+      "lineBreakHint": "Umschalt+Enter für einen Zeilenumbruch, Enter für einen neuen Absatz",
+      "helpTitle": "Editor-Hilfe & Tastenkürzel",
+      "helpFormatting": "Textformatierung",
+      "helpHeadings": "Überschriften",
+      "helpLists": "Listen & Blöcke",
+      "helpAlignment": "Textausrichtung",
+      "helpAlignmentClick": "Ausrichtungs-Schaltflächen in der Symbolleiste anklicken",
+      "helpAlignmentScope": "Funktioniert für Absätze und Überschriften",
+      "helpLineBreaks": "Zeilenumbrüche",
+      "helpNewParagraph": "Neuer Absatz",
+      "helpLineBreak": "Zeilenumbruch (Formatierung bleibt erhalten)",
+      "helpNavigation": "Navigation",
+      "tool": {
+        "heading1": "Überschrift 1 (Strg+Alt+1)",
+        "heading2": "Überschrift 2 (Strg+Alt+2)",
+        "heading3": "Überschrift 3 (Strg+Alt+3)",
+        "heading4": "Überschrift 4 (Strg+Alt+4)",
+        "heading5": "Überschrift 5 (Strg+Alt+5)",
+        "heading6": "Überschrift 6 (Strg+Alt+6)",
+        "bold": "Fett (Strg+B)",
+        "italic": "Kursiv (Strg+I)",
+        "inlineCode": "Inline-Code (Strg+E)",
+        "codeBlock": "Codeblock (Strg+Alt+C)",
+        "bulletList": "Aufzählung (Strg+Umschalt+8)",
+        "numberedList": "Nummerierte Liste (Strg+Umschalt+9)",
+        "blockquote": "Zitatblock (Strg+Umschalt+B)",
+        "addLink": "Link einfügen (Strg+K)",
+        "horizontalRule": "Trennlinie",
+        "alignLeft": "Linksbündig",
+        "alignCenter": "Zentriert",
+        "alignRight": "Rechtsbündig",
+        "justify": "Blocksatz",
+        "clearFormatting": "Formatierung entfernen",
+        "undo": "Rückgängig (Strg+Z)",
+        "redo": "Wiederherstellen (Strg+Y)",
+        "boldShort": "Fett",
+        "italicShort": "Kursiv",
+        "inlineCodeShort": "Inline-Code",
+        "addLinkShort": "Link einfügen",
+        "heading1Short": "Überschrift 1",
+        "heading2Short": "Überschrift 2",
+        "heading3Short": "Überschrift 3",
+        "heading4Short": "Überschrift 4",
+        "heading5Short": "Überschrift 5",
+        "heading6Short": "Überschrift 6",
+        "bulletListShort": "Aufzählung",
+        "numberedListShort": "Nummerierte Liste",
+        "blockquoteShort": "Zitatblock",
+        "codeBlockShort": "Codeblock",
+        "undoShort": "Rückgängig",
+        "redoShort": "Wiederherstellen"
+      }
+    },
+    "showInFooter": "In der Galerie-Fußzeile anzeigen",
+    "showInFooterHelp": "Wenn deaktiviert, wird diese Seite in der öffentlichen Galerie-Fußzeile ausgeblendet. Die Seite selbst bleibt über ihre direkte URL erreichbar."
   },
   "validation": {
     "eventNameRequired": "Veranstaltungsname ist erforderlich",
@@ -4325,7 +4463,8 @@
       "bills": "Rechnungen",
       "profile": "Profil",
       "soon": "Bald",
-      "new": "Neu"
+      "new": "Neu",
+      "contracts": "Verträge"
     },
     "comingSoon": {
       "tag": "Demnächst"
@@ -5007,6 +5146,10 @@
     },
     "error": {
       "customerMismatch": "Das gehört zu einem anderen Kunden als dieses Projekt."
+    },
+    "status": {
+      "active": "Aktiv",
+      "archived": "Archiviert"
     }
   },
   "calendar": {
@@ -5373,7 +5516,14 @@
       "ccPdfEmailPlaceholder": "name@example.com",
       "ccPdfPickFromAdmins": "Aus Admins auswählen:",
       "ccPdfCustom": "Eigene E-Mail-Adresse",
-      "internalNotes": "Interne Notizen (nicht auf der PDF)"
+      "internalNotes": "Interne Notizen (nicht auf der PDF)",
+      "eventType": "Anlassart",
+      "eventTypeNone": "— Standard verwenden —",
+      "eventTypeHint": "Wird für den Anlass verwendet, der bei Annahme dieses Angebots erstellt wird.",
+      "bookingWorkflow": "Buchungs-Workflow (bei Annahme)",
+      "bookingWorkflowNone": "— Keiner —",
+      "bookingWorkflowDisabled": "(deaktiviert)",
+      "bookingWorkflowHint": "Der Ablauf, der startet, wenn der Kunde annimmt. Auf „Keiner“ lassen, um keinen Buchungsablauf auszuführen. Der Ablauf muss aktiviert sein, damit er ausgelöst wird."
     },
     "responseWindowOpen": "Offen bis {{at}}",
     "section": {
@@ -5415,7 +5565,17 @@
       "after_event": "nach dem Anlass",
       "after_delivery": "nach Lieferung",
       "fixed_date": "an festem Datum"
-    }
+    },
+    "acceptOnBehalf": "Im Namen annehmen",
+    "confirmAcceptOnBehalf": "Dieses Angebot im Namen des Kunden als angenommen markieren? Nur verwenden, wenn er mündlich zugestimmt hat (z. B. am Telefon).",
+    "acceptedOnBehalfToast": "Angebot als angenommen markiert.",
+    "convertToInvoice": "Nur in Rechnung umwandeln",
+    "confirmConvertToInvoice": "Dieses Angebot nur in Rechnung(en) umwandeln? Es wird keine Galerie / kein Anlass erstellt.",
+    "convertedToInvoiceToast": "{{count}} Rechnung(en) aus diesem Angebot erstellt",
+    "convertToContract": "In Vertrag umwandeln",
+    "confirmConvertToContract": "Aus diesem Angebot einen Vertrag entwerfen? Kunde und Administrator unterzeichnen beide, bevor Anlass / Rechnung erstellt werden.",
+    "convertedToContractToast": "Vertrag aus diesem Angebot entworfen.",
+    "contractAlreadyLinkedToast": "Aus diesem Angebot wurde bereits ein Vertrag entworfen."
   },
   "crm": {
     "lineItems": {
@@ -5663,7 +5823,22 @@
       "defaultLocale": "Standardsprache",
       "timezone": "Zeitzone (IANA)",
       "defaultQrFormat": "Standard-QR-Format",
-      "footerLine": "Fusszeile"
+      "footerLine": "Fusszeile",
+      "timezoneSystemDefault": "Systemstandard",
+      "pdfLogoUpload": "Logo für den PDF-Briefkopf (PNG, JPEG oder SVG)",
+      "pdfLogoUploadHelp": "Wird auf jedem Angebots- und Rechnungs-PDF verwendet. SVG wird akzeptiert und automatisch in PNG umgewandelt. Ohne Eintrag greift der Renderer auf das globale Branding-Logo zurück.",
+      "pdfLogoHeight": "Höhe des PDF-Logos (pt, 24–200)",
+      "pdfFoldingMarks": "Falzmarken am Rand der PDF-Seite",
+      "pdfShowLogo": "Logo im PDF-Briefkopf anzeigen",
+      "pdfShowLogoHelp": "Wenn deaktiviert, wird das Logo auf jedem PDF unterdrückt — auch wenn ein Logo hochgeladen ist.",
+      "pdfShowCompanyName": "Firmennamen im PDF-Briefkopf anzeigen",
+      "pdfShowCompanyNameHelp": "Wenn deaktiviert, entfällt die Zeile mit dem Firmennamen (nützlich, wenn das Logo bereits eine Wortmarke mit dem Namen ist).",
+      "pdfCompanyNameInline": "Firmennamen direkt über der Adresse darstellen",
+      "pdfCompanyNameInlineHelp": "Wenn aktiviert, erscheint der Firmenname als einfache Zeile direkt über der Strassenadresse (gleiche Grösse und Schriftstärke). Wenn deaktiviert, wird er als fetter Titel unter dem Logo dargestellt.",
+      "pdfQuoteShowNetDays": "Zahlungsfrist (Netto-Tage) auf Angebots-PDFs anzeigen",
+      "pdfQuoteShowNetDaysHelp": "Wenn aktiviert, enthalten Angebots-PDFs die Zeile „X Tage ab Rechnungsdatum.“ im Block mit den Zahlungsbedingungen. Auf Rechnungen wird diese Zeile unabhängig davon immer angezeigt.",
+      "pdfQuoteShowSkonto": "Skonto / Frühzahlerrabatt auf Angebots-PDFs anzeigen",
+      "pdfQuoteShowSkontoHelp": "Wenn aktiviert, enthalten Angebots-PDFs das Skonto-Angebot und die Zeile „Betrag mit Skonto“. Auf Rechnungen werden diese unabhängig davon immer angezeigt."
     },
     "qrFormat": {
       "none": "Kein QR",
@@ -5681,7 +5856,21 @@
       "makeDefault": "Als Standard",
       "confirmDelete": "Diese Bankverbindung wirklich löschen?"
     },
-    "noBanks": "Noch keine Bankverbindungen hinterlegt."
+    "noBanks": "Noch keine Bankverbindungen hinterlegt.",
+    "foldingMarks": {
+      "none": "Keine",
+      "half": "Hälfte (148,5 mm) — für C5-Couverts",
+      "third": "Drittel (105 + 210 mm) — für DL- / DIN-lang-Couverts",
+      "both": "Alle drei Marken"
+    },
+    "qrDisclaimer": {
+      "title": "QR-Rechnung / Bankdaten — vor dem Produktivbetrieb prüfen",
+      "body": "Picpeak ist Open Source. Wir erzeugen den QR-Code und den IBAN-Block aus den von Ihnen eingegebenen Werten — wir prüfen sie nicht. Drucken Sie eine Testrechnung und scannen Sie sie mit der App Ihrer Bank, bevor Sie echte Rechnungen versenden. Für Fehler, die aus dem Versand einer Rechnung mit falschen Daten entstehen, übernehmen wir keine Haftung."
+    },
+    "logoUploadedToast": "PDF-Logo hochgeladen.",
+    "logoConfirmClear": "PDF-Logo entfernen? Der Renderer greift dann auf das Branding-Logo zurück, sofern eines hinterlegt ist.",
+    "logoClearedToast": "PDF-Logo entfernt.",
+    "bankUpdatedToast": "Bankverbindung aktualisiert."
   },
   "crmSettings": {
     "savedToast": "CRM-Einstellungen gespeichert.",
@@ -5971,7 +6160,18 @@
       "cancelled": "Storniert"
     },
     "list": {
-      "new": "Neuer Vertrag"
+      "new": "Neuer Vertrag",
+      "blocksLibrary": "Bausteinbibliothek",
+      "searchPlaceholder": "Nach Nummer, Titel oder Kunde suchen …",
+      "empty": "Noch keine Verträge.",
+      "table": {
+        "number": "Nummer",
+        "customer": "Kunde",
+        "title": "Titel",
+        "issueDate": "Ausgestellt",
+        "status": "Status"
+      },
+      "pagination": "Seite {{page}} von {{total}} · {{count}} Verträge"
     },
     "detail": {
       "previewPdf": "PDF-Vorschau",
@@ -6098,6 +6298,44 @@
       "titleNew": "Neuer Vertrag",
       "titlePlaceholder": "z. B. Hochzeitsvertrag Doe / Müller",
       "validUntil": "Unterzeichnen bis (optional)"
+    },
+    "blocks": {
+      "back": "Zurück zu den Verträgen",
+      "title": "Vertragsbaustein-Bibliothek",
+      "hideInactive": "Inaktive ausblenden",
+      "disclaimerTitle": "Nur Beispiele — lassen Sie sie von Ihrem Anwalt prüfen",
+      "disclaimerBody": "Die mitgelieferten „System“-Bausteine stammen vom picpeak-Maintainer, nicht von einem Anwalt. Sie sind ausschließlich als Ausgangspunkt gedacht — lassen Sie jeden Baustein, den Sie versenden wollen, von Ihrem eigenen Anwalt prüfen und anpassen. Änderungen an System-Bausteinen bleiben erhalten; ersetzen Sie den mitgelieferten Text einfach durch die anwaltlich geprüfte Fassung.",
+      "sidebarHeading": "Bausteine",
+      "new": "Neuer Baustein",
+      "systemBadge": "System",
+      "empty": "Noch keine Bausteine.",
+      "selectPrompt": "Wählen Sie links einen Baustein aus oder erstellen Sie einen neuen, um mit der Bearbeitung zu beginnen.",
+      "active": "Aktiv",
+      "inactive": "Inaktiv",
+      "delete": "Löschen",
+      "deleteConfirm": "Diesen Baustein löschen?",
+      "save": "Speichern",
+      "noTranslation": "Noch keine Übersetzung",
+      "createdToast": "Baustein erstellt.",
+      "createError": "Erstellen fehlgeschlagen",
+      "updatedToast": "Baustein aktualisiert.",
+      "updateError": "Aktualisieren fehlgeschlagen",
+      "deletedToast": "Baustein gelöscht.",
+      "deleteError": "Löschen fehlgeschlagen",
+      "dialog": {
+        "createTitle": "Neuer Baustein",
+        "editTitle": "Baustein bearbeiten",
+        "name": "Name",
+        "section": "Abschnitt",
+        "description": "Beschreibung (interner Hinweis)",
+        "body": "Text",
+        "placeholderHint": "Sie können {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{contract_number}} und {{source_quote_number}} als Platzhalter verwenden — sie werden beim Rendern des Vertrags ersetzt."
+      },
+      "quoteLineItems": {
+        "calloutTitle": "Automatisch erzeugte Tabelle folgt auf den Text",
+        "calloutBody": "Wenn dieser Baustein in einem aus einem Angebot erstellten Vertrag enthalten ist, fügt das PDF direkt nach dem obigen Text eine echte Tabelle mit den Positionen des Ausgangsangebots ein (Nr., Beschreibung, Menge, Einzelpreis, Gesamt). Unterpositionen werden eingerückt mit einem ↳ dargestellt. Verträge ohne Ausgangsangebot lassen die Tabelle weg und zeigen nur den Text.",
+        "previewExample": "Beispielausgabe:"
+      }
     }
   },
   "messages": {

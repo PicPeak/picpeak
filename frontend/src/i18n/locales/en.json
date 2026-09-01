@@ -1068,6 +1068,18 @@
       "title": "Send gallery email",
       "description": "Sends the gallery link for \"{{eventName}}\" to {{recipient}}.",
       "passwordHelp": "The email includes this exact text. Re-type the gallery password (or pick a new one) — the backend re-hashes it so the login still works."
+    },
+    "bulkArchive": {
+      "title": "Confirm Bulk Archive",
+      "intro_one": "You are about to archive {{count}} event. This action will:",
+      "intro_other": "You are about to archive {{count}} events. This action will:",
+      "effectZip": "Create a ZIP archive of all photos for each event",
+      "effectInaccessible": "Make the galleries inaccessible to guests",
+      "effectDelisted": "Remove the events from active listings",
+      "effectStorage": "Free up storage space by compressing photos",
+      "listHeading": "Events to be archived:",
+      "submit_one": "Archive {{count}} event",
+      "submit_other": "Archive {{count}} events"
     }
   },
   "settings": {
@@ -1113,7 +1125,11 @@
       "accountEmailInvalid": "Enter a valid email address",
       "accountSaveButton": "Save account details",
       "accountSaveSuccess": "Account details updated",
-      "siteUrlInvalid": "Enter the full address including http:// or https://, for example https://gallery.example.com"
+      "siteUrlInvalid": "Enter the full address including http:// or https://, for example https://gallery.example.com",
+      "timeFormat": "Time format",
+      "timeFormat24h": "24-hour (14:30)",
+      "timeFormat12h": "12-hour (2:30 PM)",
+      "timeFormatHelp": "Controls how times render across admin views, customer-facing pages, and PDFs. Storage stays 24-hour (HH:mm); only the display switches."
     },
     "publicSite": {
       "badge": "Public Landing",
@@ -1328,7 +1344,11 @@
       "blockSuspiciousIps": "Automatically block suspicious IPs",
       "logEvents": "Log security events to database",
       "infoTitle": "About Image Protection",
-      "infoText": "These protection features help prevent casual downloading and copying but cannot block all methods. Determined users may still find ways to capture images. Consider using watermarks and legal agreements for comprehensive protection."
+      "infoText": "These protection features help prevent casual downloading and copying but cannot block all methods. Determined users may still find ways to capture images. Consider using watermarks and legal agreements for comprehensive protection.",
+      "imageQualityHelp": "1-100, higher = better quality",
+      "fragmentationLevelHelp": "1-10, higher = more protection",
+      "suspiciousActivityThresholdHelp": "Violations before flagging as suspicious",
+      "autoBlockThresholdHelp": "Violations before auto-blocking IP"
     },
     "moderation": {
       "title": "Moderation",
@@ -1555,7 +1575,41 @@
       "createError": "Failed to create webhook",
       "updateError": "Failed to update webhook",
       "deletedToast": "Webhook deleted",
-      "deleteError": "Failed to delete webhook"
+      "deleteError": "Failed to delete webhook",
+      "deliveries": {
+        "back": "Back to Settings",
+        "notFound": "Webhook not found.",
+        "sendTest": "Send test event",
+        "sendTestHelp": "Fires a synthetic delivery to your receiver with a stub payload, no actual side effects.",
+        "refresh": "Refresh",
+        "send": "Send",
+        "eventType": "Event type",
+        "total_one": "{{count}} total",
+        "total_other": "{{count}} total",
+        "empty": "No deliveries yet. Create an event or send a test event to see something here.",
+        "colTime": "Time",
+        "colEvent": "Event",
+        "colStatus": "Status",
+        "colAttempts": "Attempts",
+        "colHttp": "HTTP",
+        "colLatency": "Latency",
+        "replay": "Replay",
+        "replayEnqueued": "Replay enqueued",
+        "replayError": "Failed to replay",
+        "testEnqueued": "Test event enqueued",
+        "testError": "Failed to send test",
+        "detailTitle": "Delivery #{{id}}",
+        "lastError": "Last error",
+        "responseStatus": "Response status",
+        "responseBody": "Response body (truncated to 1KB)",
+        "payload": "Payload (signed body)",
+        "status": {
+          "all": "all",
+          "pending": "pending",
+          "success": "success",
+          "failed": "failed"
+        }
+      }
     },
     "sectionLabel": "Settings section",
     "navAriaLabel": "Settings navigation",
@@ -2265,7 +2319,16 @@
       "alignment": "Alignment",
       "alignLeft": "Left",
       "alignCenter": "Center (default — matches footer)",
-      "alignRight": "Right"
+      "alignRight": "Right",
+      "title": "Gallery Promotional Banner",
+      "help": "Markdown shown above or below the gallery footer (e.g. seasonal offer, print discount). Per-event overrides take priority.",
+      "position": "Position",
+      "aboveFooter": "Above footer",
+      "belowFooter": "Below footer",
+      "content": "Content (markdown)",
+      "placeholder": "**Spring offer**: 20% off prints with code SPRING — see the [print shop](https://example.com).",
+      "markdownHelp": "Bold, italic, links, lists, and headings supported. HTML is stripped.",
+      "preview": "Preview"
     },
     "infoBanner": {
       "title": "Gallery Info Banner",
@@ -2274,6 +2337,11 @@
       "placeholder": "Use the menu button in the top-left corner to filter the photos.",
       "markdownHelp": "Bold, italic, links, lists, and headings supported. HTML is stripped.",
       "preview": "Preview"
+    },
+    "socialMedia": {
+      "title": "Social Media",
+      "help": "Add URLs to render social-media icons in the gallery footer. Leave a field empty to hide that icon.",
+      "whatsappHelp": "A wa.me URL or a phone number with country code (will be converted)."
     }
   },
   "admin": {
@@ -3177,7 +3245,77 @@
     "noLogo": "no override",
     "replaceLogo": "Replace Logo",
     "uploadLogo": "Upload Logo",
-    "clearLogo": "Use site default"
+    "clearLogo": "Use site default",
+    "editor": {
+      "placeholder": "Start typing your content here...",
+      "viewEdit": "Edit",
+      "viewPreview": "Preview",
+      "viewSplit": "Split",
+      "save": "Save",
+      "help": "Help & Keyboard Shortcuts",
+      "enterFullscreen": "Enter Fullscreen",
+      "exitFullscreen": "Exit Fullscreen",
+      "linkUrlPlaceholder": "Enter URL...",
+      "addLink": "Add Link",
+      "wordCount_one": "{{count}} words",
+      "wordCount_other": "{{count}} words",
+      "charCount_one": "{{count}} characters",
+      "charCount_other": "{{count}} characters",
+      "lineBreakHint": "Press Shift+Enter for line break, Enter for new paragraph",
+      "helpTitle": "Editor Help & Keyboard Shortcuts",
+      "helpFormatting": "Text Formatting",
+      "helpHeadings": "Headings",
+      "helpLists": "Lists & Blocks",
+      "helpAlignment": "Text Alignment",
+      "helpAlignmentClick": "Click alignment buttons in toolbar",
+      "helpAlignmentScope": "Works on paragraphs and headings",
+      "helpLineBreaks": "Line Breaks",
+      "helpNewParagraph": "New paragraph",
+      "helpLineBreak": "Line break (preserves formatting)",
+      "helpNavigation": "Navigation",
+      "tool": {
+        "heading1": "Heading 1 (Ctrl+Alt+1)",
+        "heading2": "Heading 2 (Ctrl+Alt+2)",
+        "heading3": "Heading 3 (Ctrl+Alt+3)",
+        "heading4": "Heading 4 (Ctrl+Alt+4)",
+        "heading5": "Heading 5 (Ctrl+Alt+5)",
+        "heading6": "Heading 6 (Ctrl+Alt+6)",
+        "bold": "Bold (Ctrl+B)",
+        "italic": "Italic (Ctrl+I)",
+        "inlineCode": "Inline Code (Ctrl+E)",
+        "codeBlock": "Code Block (Ctrl+Alt+C)",
+        "bulletList": "Bullet List (Ctrl+Shift+8)",
+        "numberedList": "Numbered List (Ctrl+Shift+9)",
+        "blockquote": "Blockquote (Ctrl+Shift+B)",
+        "addLink": "Add Link (Ctrl+K)",
+        "horizontalRule": "Horizontal Rule",
+        "alignLeft": "Align Left",
+        "alignCenter": "Align Center",
+        "alignRight": "Align Right",
+        "justify": "Justify",
+        "clearFormatting": "Clear Formatting",
+        "undo": "Undo (Ctrl+Z)",
+        "redo": "Redo (Ctrl+Y)",
+        "boldShort": "Bold",
+        "italicShort": "Italic",
+        "inlineCodeShort": "Inline code",
+        "addLinkShort": "Add link",
+        "heading1Short": "Heading 1",
+        "heading2Short": "Heading 2",
+        "heading3Short": "Heading 3",
+        "heading4Short": "Heading 4",
+        "heading5Short": "Heading 5",
+        "heading6Short": "Heading 6",
+        "bulletListShort": "Bullet list",
+        "numberedListShort": "Numbered list",
+        "blockquoteShort": "Blockquote",
+        "codeBlockShort": "Code block",
+        "undoShort": "Undo",
+        "redoShort": "Redo"
+      }
+    },
+    "showInFooter": "Show in gallery footer",
+    "showInFooterHelp": "When off, this page is hidden from the public gallery footer. The page itself remains accessible at its direct URL."
   },
   "eventTypes": {
     "title": "Event Types",
@@ -4325,7 +4463,8 @@
       "bills": "Invoices",
       "profile": "Profile",
       "soon": "Soon",
-      "new": "New"
+      "new": "New",
+      "contracts": "Contracts"
     },
     "comingSoon": {
       "tag": "Coming soon"
@@ -5007,6 +5146,10 @@
     },
     "error": {
       "customerMismatch": "That belongs to a different customer than this project."
+    },
+    "status": {
+      "active": "Active",
+      "archived": "Archived"
     }
   },
   "calendar": {
@@ -5365,7 +5508,14 @@
       "ccPdfEmailPlaceholder": "name@example.com",
       "ccPdfPickFromAdmins": "Pick from admins:",
       "ccPdfCustom": "Custom email",
-      "internalNotes": "Internal notes (not on PDF)"
+      "internalNotes": "Internal notes (not on PDF)",
+      "eventType": "Event type",
+      "eventTypeNone": "— Use default —",
+      "eventTypeHint": "Used for the event created when this quote is accepted.",
+      "bookingWorkflow": "Booking workflow (on acceptance)",
+      "bookingWorkflowNone": "— None —",
+      "bookingWorkflowDisabled": "(disabled)",
+      "bookingWorkflowHint": "The flow that runs when the customer accepts. Leave as None to run no booking flow. The flow must be enabled to fire."
     },
     "responseWindowOpen": "Open until {{at}}",
     "section": {
@@ -5415,7 +5565,17 @@
       "after_event": "after event",
       "after_delivery": "after delivery",
       "fixed_date": "on fixed date"
-    }
+    },
+    "acceptOnBehalf": "Accept on behalf",
+    "confirmAcceptOnBehalf": "Mark this quote as accepted on behalf of the customer? Use only when they have verbally agreed (e.g. on the phone).",
+    "acceptedOnBehalfToast": "Quote marked as accepted.",
+    "convertToInvoice": "Convert to invoice only",
+    "confirmConvertToInvoice": "Convert this quote into invoice(s) only? No gallery / event will be created.",
+    "convertedToInvoiceToast": "{{count}} invoice(s) created from this quote",
+    "convertToContract": "Convert to contract",
+    "confirmConvertToContract": "Draft a contract from this quote? The customer + admin will both sign before event / invoice creation.",
+    "convertedToContractToast": "Contract drafted from this quote.",
+    "contractAlreadyLinkedToast": "A contract was already drafted from this quote."
   },
   "crm": {
     "lineItems": {
@@ -5661,7 +5821,22 @@
       "defaultLocale": "Default locale",
       "timezone": "Timezone (IANA)",
       "defaultQrFormat": "Default invoice QR",
-      "footerLine": "PDF footer line"
+      "footerLine": "PDF footer line",
+      "timezoneSystemDefault": "System default",
+      "pdfLogoUpload": "PDF letterhead logo (PNG, JPEG, or SVG)",
+      "pdfLogoUploadHelp": "Used on every quote and invoice PDF. SVG is accepted and rasterised to PNG automatically. When empty, the renderer falls back to the global Branding logo.",
+      "pdfLogoHeight": "PDF logo height (pt, 24-200)",
+      "pdfFoldingMarks": "Folding marks on PDF page edge",
+      "pdfShowLogo": "Show logo in PDF letterhead",
+      "pdfShowLogoHelp": "When off, the logo image is suppressed on every PDF even if a logo is uploaded.",
+      "pdfShowCompanyName": "Show company name in PDF letterhead",
+      "pdfShowCompanyNameHelp": "When off, the company-name line is suppressed (useful if the logo is a wordmark already containing the name).",
+      "pdfCompanyNameInline": "Render company name inline with address",
+      "pdfCompanyNameInlineHelp": "When on, the company name appears as a plain line directly above the street address (same size + weight). When off, it renders as a bold title under the logo.",
+      "pdfQuoteShowNetDays": "Show net payment days on quote PDFs",
+      "pdfQuoteShowNetDaysHelp": "When on, quote PDFs include the \"X days from invoice date.\" line in the payment conditions block. Invoices always show this row regardless.",
+      "pdfQuoteShowSkonto": "Show Skonto / early-payment discount on quote PDFs",
+      "pdfQuoteShowSkontoHelp": "When on, quote PDFs include the Skonto offer and the \"Amount with discount\" line. Invoices always show these regardless."
     },
     "qrFormat": {
       "none": "None",
@@ -5679,7 +5854,21 @@
       "makeDefault": "Make default",
       "confirmDelete": "Remove this bank account?"
     },
-    "noBanks": "No bank accounts configured yet."
+    "noBanks": "No bank accounts configured yet.",
+    "foldingMarks": {
+      "none": "None",
+      "half": "Half (148.5mm) — for C5 envelopes",
+      "third": "Thirds (105 + 210mm) — for DL / DIN long envelopes",
+      "both": "All three marks"
+    },
+    "qrDisclaimer": {
+      "title": "QR-bill / bank data — verify before going live",
+      "body": "Picpeak is open source. We render the QR code and IBAN block from the values you typed — we don't validate them. Print a test invoice and scan it with your bank's app before sending real invoices. We are not responsible for any mistakes that come from sending an invoice with bad data on it."
+    },
+    "logoUploadedToast": "PDF logo uploaded.",
+    "logoConfirmClear": "Remove the PDF logo? The renderer will fall back to the Branding logo if one is set.",
+    "logoClearedToast": "PDF logo removed.",
+    "bankUpdatedToast": "Bank account updated."
   },
   "crmSettings": {
     "savedToast": "CRM settings saved.",
@@ -5969,7 +6158,18 @@
       "cancelled": "Cancelled"
     },
     "list": {
-      "new": "New contract"
+      "new": "New contract",
+      "blocksLibrary": "Block library",
+      "searchPlaceholder": "Search by number, title or customer…",
+      "empty": "No contracts yet.",
+      "table": {
+        "number": "Number",
+        "customer": "Customer",
+        "title": "Title",
+        "issueDate": "Issued",
+        "status": "Status"
+      },
+      "pagination": "Page {{page}} of {{total}} · {{count}} contracts"
     },
     "detail": {
       "previewPdf": "Preview PDF",
@@ -6096,6 +6296,44 @@
       "titleNew": "New contract",
       "titlePlaceholder": "e.g. Wedding contract Doe / Müller",
       "validUntil": "Sign by (optional)"
+    },
+    "blocks": {
+      "back": "Back to contracts",
+      "title": "Contract block library",
+      "hideInactive": "Hide inactive",
+      "disclaimerTitle": "Examples only — have your lawyer review",
+      "disclaimerBody": "The seeded \"System\" blocks are written by the picpeak maintainer, not by a lawyer. They are intended as starting points only — review and adapt every block you intend to send with your own lawyer. Edits to system blocks are persisted; replace the seeded body text with the lawyer-reviewed version in place.",
+      "sidebarHeading": "Blocks",
+      "new": "New block",
+      "systemBadge": "System",
+      "empty": "No blocks yet.",
+      "selectPrompt": "Select a block on the left or create a new one to start editing.",
+      "active": "Active",
+      "inactive": "Inactive",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this block?",
+      "save": "Save",
+      "noTranslation": "No translation yet",
+      "createdToast": "Block created.",
+      "createError": "Create failed",
+      "updatedToast": "Block updated.",
+      "updateError": "Update failed",
+      "deletedToast": "Block deleted.",
+      "deleteError": "Delete failed",
+      "dialog": {
+        "createTitle": "New block",
+        "editTitle": "Edit block",
+        "name": "Name",
+        "section": "Section",
+        "description": "Description (admin hint)",
+        "body": "Body",
+        "placeholderHint": "You can use {{customer_name}}, {{event_name}}, {{event_date}}, {{net_days}}, {{skonto_percent}}, {{skonto_within_days}}, {{cancellation_30d_percent}}, {{currency}}, {{issuer_company_name}}, {{issuer_address}}, {{contract_number}}, {{source_quote_number}} as placeholders — substituted when the contract is rendered."
+      },
+      "quoteLineItems": {
+        "calloutTitle": "Auto-generated table follows the body",
+        "calloutBody": "When this block is included in a contract that was created from a quote, the PDF inserts a real table of the source quote's line items (#, Description, Qty, Unit, Total) immediately after the body text above. Sub-items render indented with a ↳ marker. Contracts without a source quote skip the table and render only the body.",
+        "previewExample": "Example rendered output:"
+      }
     }
   },
   "messages": {

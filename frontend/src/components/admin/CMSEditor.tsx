@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
@@ -52,6 +53,7 @@ interface CMSEditorProps {
 type ViewMode = 'edit' | 'preview' | 'split';
 
 export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave, isSaving }) => {
+  const { t } = useTranslation();
   const [linkUrl, setLinkUrl] = useState('');
   const [showLinkDialog, setShowLinkDialog] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
@@ -91,7 +93,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
         },
       }),
       Placeholder.configure({
-        placeholder: 'Start typing your content here...',
+        placeholder: t('cms.editor.placeholder', 'Start typing your content here...'),
       }),
       CharacterCount.configure({
         limit: null,
@@ -193,15 +195,15 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
             <div className="flex items-center gap-2">
               <button onClick={() => setViewMode('edit')} className={viewModeChipClass('edit')}>
                 <Edit3 className="w-4 h-4 inline-block mr-1" />
-                Edit
+                {t('cms.editor.viewEdit', 'Edit')}
               </button>
               <button onClick={() => setViewMode('preview')} className={viewModeChipClass('preview')}>
                 <Eye className="w-4 h-4 inline-block mr-1" />
-                Preview
+                {t('cms.editor.viewPreview', 'Preview')}
               </button>
               <button onClick={() => setViewMode('split')} className={viewModeChipClass('split')}>
                 <Columns className="w-4 h-4 inline-block mr-1" />
-                Split
+                {t('cms.editor.viewSplit', 'Split')}
               </button>
             </div>
             
@@ -213,20 +215,22 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
                   isLoading={isSaving}
                   leftIcon={<Save className="w-4 h-4" />}
                 >
-                  Save
+                  {t('cms.editor.save', 'Save')}
                 </Button>
               )}
-              
+
               <MenuButton
                 onClick={() => setShowHelp(true)}
-                title="Help & Keyboard Shortcuts"
+                title={t('cms.editor.help', 'Help & Keyboard Shortcuts')}
               >
                 <HelpCircle className="w-4 h-4" />
               </MenuButton>
-              
+
               <MenuButton
                 onClick={toggleFullscreen}
-                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                title={isFullscreen
+                  ? t('cms.editor.exitFullscreen', 'Exit Fullscreen')
+                  : t('cms.editor.enterFullscreen', 'Enter Fullscreen')}
                 active={isFullscreen}
               >
                 <Maximize2 className="w-4 h-4" />
@@ -240,7 +244,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
                 active={editor.isActive('heading', { level: 1 })}
-                title="Heading 1 (Ctrl+Alt+1)"
+                title={t('cms.editor.tool.heading1', "Heading 1 (Ctrl+Alt+1)")}
               >
                 <Heading1 className="w-4 h-4" />
               </MenuButton>
@@ -248,7 +252,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
                 active={editor.isActive('heading', { level: 2 })}
-                title="Heading 2 (Ctrl+Alt+2)"
+                title={t('cms.editor.tool.heading2', "Heading 2 (Ctrl+Alt+2)")}
               >
                 <Heading2 className="w-4 h-4" />
               </MenuButton>
@@ -256,7 +260,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
                 active={editor.isActive('heading', { level: 3 })}
-                title="Heading 3 (Ctrl+Alt+3)"
+                title={t('cms.editor.tool.heading3', "Heading 3 (Ctrl+Alt+3)")}
               >
                 <Heading3 className="w-4 h-4" />
               </MenuButton>
@@ -264,7 +268,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
                 active={editor.isActive('heading', { level: 4 })}
-                title="Heading 4 (Ctrl+Alt+4)"
+                title={t('cms.editor.tool.heading4', "Heading 4 (Ctrl+Alt+4)")}
               >
                 <Heading4 className="w-4 h-4" />
               </MenuButton>
@@ -272,7 +276,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
                 active={editor.isActive('heading', { level: 5 })}
-                title="Heading 5 (Ctrl+Alt+5)"
+                title={t('cms.editor.tool.heading5', "Heading 5 (Ctrl+Alt+5)")}
               >
                 <Heading5 className="w-4 h-4" />
               </MenuButton>
@@ -280,7 +284,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleHeading({ level: 6 }).run()}
                 active={editor.isActive('heading', { level: 6 })}
-                title="Heading 6 (Ctrl+Alt+6)"
+                title={t('cms.editor.tool.heading6', "Heading 6 (Ctrl+Alt+6)")}
               >
                 <Heading6 className="w-4 h-4" />
               </MenuButton>
@@ -290,7 +294,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleBold().run()}
                 active={editor.isActive('bold')}
-                title="Bold (Ctrl+B)"
+                title={t('cms.editor.tool.bold', "Bold (Ctrl+B)")}
               >
                 <Bold className="w-4 h-4" />
               </MenuButton>
@@ -298,7 +302,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleItalic().run()}
                 active={editor.isActive('italic')}
-                title="Italic (Ctrl+I)"
+                title={t('cms.editor.tool.italic', "Italic (Ctrl+I)")}
               >
                 <Italic className="w-4 h-4" />
               </MenuButton>
@@ -306,7 +310,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleCode().run()}
                 active={editor.isActive('code')}
-                title="Inline Code (Ctrl+E)"
+                title={t('cms.editor.tool.inlineCode', "Inline Code (Ctrl+E)")}
               >
                 <Code className="w-4 h-4" />
               </MenuButton>
@@ -314,7 +318,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleCodeBlock().run()}
                 active={editor.isActive('codeBlock')}
-                title="Code Block (Ctrl+Alt+C)"
+                title={t('cms.editor.tool.codeBlock', "Code Block (Ctrl+Alt+C)")}
               >
                 <Code2 className="w-4 h-4" />
               </MenuButton>
@@ -324,7 +328,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleBulletList().run()}
                 active={editor.isActive('bulletList')}
-                title="Bullet List (Ctrl+Shift+8)"
+                title={t('cms.editor.tool.bulletList', "Bullet List (Ctrl+Shift+8)")}
               >
                 <List className="w-4 h-4" />
               </MenuButton>
@@ -332,7 +336,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleOrderedList().run()}
                 active={editor.isActive('orderedList')}
-                title="Numbered List (Ctrl+Shift+9)"
+                title={t('cms.editor.tool.numberedList', "Numbered List (Ctrl+Shift+9)")}
               >
                 <ListOrdered className="w-4 h-4" />
               </MenuButton>
@@ -340,7 +344,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().toggleBlockquote().run()}
                 active={editor.isActive('blockquote')}
-                title="Blockquote (Ctrl+Shift+B)"
+                title={t('cms.editor.tool.blockquote', "Blockquote (Ctrl+Shift+B)")}
               >
                 <Quote className="w-4 h-4" />
               </MenuButton>
@@ -350,14 +354,14 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => setShowLinkDialog(true)}
                 active={editor.isActive('link')}
-                title="Add Link (Ctrl+K)"
+                title={t('cms.editor.tool.addLink', "Add Link (Ctrl+K)")}
               >
                 <LinkIcon className="w-4 h-4" />
               </MenuButton>
               
               <MenuButton
                 onClick={() => editor.chain().focus().setHorizontalRule().run()}
-                title="Horizontal Rule"
+                title={t('cms.editor.tool.horizontalRule', "Horizontal Rule")}
               >
                 <Minus className="w-4 h-4" />
               </MenuButton>
@@ -367,7 +371,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().setTextAlign('left').run()}
                 active={editor.isActive({ textAlign: 'left' })}
-                title="Align Left"
+                title={t('cms.editor.tool.alignLeft', "Align Left")}
               >
                 <AlignLeft className="w-4 h-4" />
               </MenuButton>
@@ -375,7 +379,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().setTextAlign('center').run()}
                 active={editor.isActive({ textAlign: 'center' })}
-                title="Align Center"
+                title={t('cms.editor.tool.alignCenter', "Align Center")}
               >
                 <AlignCenter className="w-4 h-4" />
               </MenuButton>
@@ -383,7 +387,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().setTextAlign('right').run()}
                 active={editor.isActive({ textAlign: 'right' })}
-                title="Align Right"
+                title={t('cms.editor.tool.alignRight', "Align Right")}
               >
                 <AlignRight className="w-4 h-4" />
               </MenuButton>
@@ -391,7 +395,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().setTextAlign('justify').run()}
                 active={editor.isActive({ textAlign: 'justify' })}
-                title="Justify"
+                title={t('cms.editor.tool.justify', "Justify")}
               >
                 <AlignJustify className="w-4 h-4" />
               </MenuButton>
@@ -400,7 +404,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               
               <MenuButton
                 onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}
-                title="Clear Formatting"
+                title={t('cms.editor.tool.clearFormatting', "Clear Formatting")}
               >
                 <RemoveFormatting className="w-4 h-4" />
               </MenuButton>
@@ -410,7 +414,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().undo().run()}
                 disabled={!editor.can().undo()}
-                title="Undo (Ctrl+Z)"
+                title={t('cms.editor.tool.undo', "Undo (Ctrl+Z)")}
               >
                 <Undo className="w-4 h-4" />
               </MenuButton>
@@ -418,7 +422,7 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               <MenuButton
                 onClick={() => editor.chain().focus().redo().run()}
                 disabled={!editor.can().redo()}
-                title="Redo (Ctrl+Y)"
+                title={t('cms.editor.tool.redo', "Redo (Ctrl+Y)")}
               >
                 <Redo className="w-4 h-4" />
               </MenuButton>
@@ -434,16 +438,16 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
               value={linkUrl}
               onChange={(e) => setLinkUrl(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && addLink()}
-              placeholder="Enter URL..."
+              placeholder={t('cms.editor.linkUrlPlaceholder', 'Enter URL...')}
               className="flex-1 px-3 py-1 border border-accent-dark/30 bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 rounded-md focus:ring-2 focus:ring-primary-500"
               autoFocus
             />
-            <Button size="sm" onClick={addLink}>Add Link</Button>
+            <Button size="sm" onClick={addLink}>{t('cms.editor.addLink', 'Add Link')}</Button>
             <Button size="sm" variant="outline" onClick={() => {
               setShowLinkDialog(false);
               setLinkUrl('');
             }}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
           </div>
         )}
@@ -475,11 +479,11 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
         {/* Status Bar */}
         <div className="flex items-center justify-between px-4 py-2 bg-neutral-50 dark:bg-neutral-800 border-t border-neutral-200 dark:border-neutral-700 text-sm text-neutral-600 dark:text-neutral-300">
           <div className="flex items-center gap-4">
-            <span>{wordCount} words</span>
-            <span>{charCount} characters</span>
+            <span>{t('cms.editor.wordCount', '{{count}} words', { count: wordCount })}</span>
+            <span>{t('cms.editor.charCount', '{{count}} characters', { count: charCount })}</span>
           </div>
           <div className="text-xs text-neutral-500 dark:text-neutral-400">
-            Press Shift+Enter for line break, Enter for new paragraph
+            {t('cms.editor.lineBreakHint', 'Press Shift+Enter for line break, Enter for new paragraph')}
           </div>
         </div>
       </div>
@@ -489,68 +493,70 @@ export const CMSEditor: React.FC<CMSEditorProps> = ({ content, onChange, onSave,
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-auto">
             <div className="p-6">
-              <h2 className="text-xl font-semibold mb-4">Editor Help & Keyboard Shortcuts</h2>
-              
+              <h2 className="text-xl font-semibold mb-4">
+                {t('cms.editor.helpTitle', 'Editor Help & Keyboard Shortcuts')}
+              </h2>
+
               <div className="space-y-4">
                 <div>
-                  <h3 className="font-semibold mb-2">Text Formatting</h3>
+                  <h3 className="font-semibold mb-2">{t('cms.editor.helpFormatting', 'Text Formatting')}</h3>
                   <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div><kbd>Ctrl+B</kbd> - Bold</div>
-                    <div><kbd>Ctrl+I</kbd> - Italic</div>
-                    <div><kbd>Ctrl+E</kbd> - Inline code</div>
-                    <div><kbd>Ctrl+K</kbd> - Add link</div>
+                    <div><kbd>Ctrl+B</kbd> - {t('cms.editor.tool.boldShort', 'Bold')}</div>
+                    <div><kbd>Ctrl+I</kbd> - {t('cms.editor.tool.italicShort', 'Italic')}</div>
+                    <div><kbd>Ctrl+E</kbd> - {t('cms.editor.tool.inlineCodeShort', 'Inline code')}</div>
+                    <div><kbd>Ctrl+K</kbd> - {t('cms.editor.tool.addLinkShort', 'Add link')}</div>
                   </div>
                 </div>
-                
+
                 <div>
-                  <h3 className="font-semibold mb-2">Headings</h3>
+                  <h3 className="font-semibold mb-2">{t('cms.editor.helpHeadings', 'Headings')}</h3>
                   <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div><kbd>Ctrl+Alt+1</kbd> - Heading 1</div>
-                    <div><kbd>Ctrl+Alt+2</kbd> - Heading 2</div>
-                    <div><kbd>Ctrl+Alt+3</kbd> - Heading 3</div>
-                    <div><kbd>Ctrl+Alt+4</kbd> - Heading 4</div>
-                    <div><kbd>Ctrl+Alt+5</kbd> - Heading 5</div>
-                    <div><kbd>Ctrl+Alt+6</kbd> - Heading 6</div>
+                    <div><kbd>Ctrl+Alt+1</kbd> - {t('cms.editor.tool.heading1Short', 'Heading 1')}</div>
+                    <div><kbd>Ctrl+Alt+2</kbd> - {t('cms.editor.tool.heading2Short', 'Heading 2')}</div>
+                    <div><kbd>Ctrl+Alt+3</kbd> - {t('cms.editor.tool.heading3Short', 'Heading 3')}</div>
+                    <div><kbd>Ctrl+Alt+4</kbd> - {t('cms.editor.tool.heading4Short', 'Heading 4')}</div>
+                    <div><kbd>Ctrl+Alt+5</kbd> - {t('cms.editor.tool.heading5Short', 'Heading 5')}</div>
+                    <div><kbd>Ctrl+Alt+6</kbd> - {t('cms.editor.tool.heading6Short', 'Heading 6')}</div>
                   </div>
                 </div>
-                
+
                 <div>
-                  <h3 className="font-semibold mb-2">Lists & Blocks</h3>
+                  <h3 className="font-semibold mb-2">{t('cms.editor.helpLists', 'Lists & Blocks')}</h3>
                   <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div><kbd>Ctrl+Shift+8</kbd> - Bullet list</div>
-                    <div><kbd>Ctrl+Shift+9</kbd> - Numbered list</div>
-                    <div><kbd>Ctrl+Shift+B</kbd> - Blockquote</div>
-                    <div><kbd>Ctrl+Alt+C</kbd> - Code block</div>
+                    <div><kbd>Ctrl+Shift+8</kbd> - {t('cms.editor.tool.bulletListShort', 'Bullet list')}</div>
+                    <div><kbd>Ctrl+Shift+9</kbd> - {t('cms.editor.tool.numberedListShort', 'Numbered list')}</div>
+                    <div><kbd>Ctrl+Shift+B</kbd> - {t('cms.editor.tool.blockquoteShort', 'Blockquote')}</div>
+                    <div><kbd>Ctrl+Alt+C</kbd> - {t('cms.editor.tool.codeBlockShort', 'Code block')}</div>
                   </div>
                 </div>
-                
+
                 <div>
-                  <h3 className="font-semibold mb-2">Text Alignment</h3>
+                  <h3 className="font-semibold mb-2">{t('cms.editor.helpAlignment', 'Text Alignment')}</h3>
                   <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>Click alignment buttons in toolbar</div>
-                    <div>Works on paragraphs and headings</div>
+                    <div>{t('cms.editor.helpAlignmentClick', 'Click alignment buttons in toolbar')}</div>
+                    <div>{t('cms.editor.helpAlignmentScope', 'Works on paragraphs and headings')}</div>
                   </div>
                 </div>
-                
+
                 <div>
-                  <h3 className="font-semibold mb-2">Line Breaks</h3>
+                  <h3 className="font-semibold mb-2">{t('cms.editor.helpLineBreaks', 'Line Breaks')}</h3>
                   <div className="space-y-1 text-sm">
-                    <div><kbd>Enter</kbd> - New paragraph</div>
-                    <div><kbd>Shift+Enter</kbd> - Line break (preserves formatting)</div>
+                    <div><kbd>Enter</kbd> - {t('cms.editor.helpNewParagraph', 'New paragraph')}</div>
+                    <div><kbd>Shift+Enter</kbd> - {t('cms.editor.helpLineBreak', 'Line break (preserves formatting)')}</div>
                   </div>
                 </div>
-                
+
                 <div>
-                  <h3 className="font-semibold mb-2">Navigation</h3>
+                  <h3 className="font-semibold mb-2">{t('cms.editor.helpNavigation', 'Navigation')}</h3>
                   <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div><kbd>Ctrl+Z</kbd> - Undo</div>
-                    <div><kbd>Ctrl+Y</kbd> - Redo</div>
+                    <div><kbd>Ctrl+Z</kbd> - {t('cms.editor.tool.undoShort', 'Undo')}</div>
+                    <div><kbd>Ctrl+Y</kbd> - {t('cms.editor.tool.redoShort', 'Redo')}</div>
                   </div>
                 </div>
               </div>
-              
+
               <div className="mt-6 flex justify-end">
-                <Button onClick={() => setShowHelp(false)}>Close</Button>
+                <Button onClick={() => setShowHelp(false)}>{t('common.close', 'Close')}</Button>
               </div>
             </div>
           </div>
