@@ -243,8 +243,11 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     }
     
     // Parse category_id to number if provided (handle string values like 'individual', 'collage')
+    // Same 0-is-not-a-category rule as the PATCH route below: '0' is truthy, so
+    // it parsed to 0 and the scope-validation guard (`if (parsedCategoryId && ...)`)
+    // then skipped on the falsy 0 and let it into the insert unvalidated.
     const rawParsed = category_id ? parseInt(category_id, 10) : NaN;
-    const parsedCategoryId = !isNaN(rawParsed) ? rawParsed : null;
+    const parsedCategoryId = rawParsed > 0 ? rawParsed : null;
 
     // Determine photo type and category name
     let photoType = 'individual'; // default
@@ -846,9 +849,16 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
       // Explicitly clear category
       updateData.category_id = null;
     } else {
-      // Handle numeric category IDs from photo_categories table
+      // Handle numeric category IDs from photo_categories table.
+      // 0 and negatives mean "no category", not category zero: photo_categories.id
+      // is an increments() column so it starts at 1, and a <select> whose "none"
+      // option carries value="0" is exactly how '0' reaches this route. Storing 0
+      // left the photo in a black hole — the grid's category filters never match
+      // it, and the "uncategorized" filter is whereNull() so it misses it too,
+      // while the list mapper renders it as uncategorized because 0 is falsy.
+      // NaN (unparseable input) already fell through to null and still does.
       const numericCategoryId = parseInt(category_id, 10);
-      if (!isNaN(numericCategoryId)) {
+      if (numericCategoryId > 0) {
         updateData.category_id = numericCategoryId;
       } else {
         updateData.category_id = null;
@@ -1031,8 +1041,9 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
         updateData.category_id = null;
       } else {
         // Handle numeric category IDs from photo_categories table
+        // (0/negative mean "no category" — see the PATCH route above)
         const numericCategoryId = parseInt(updates.category_id, 10);
-        if (!isNaN(numericCategoryId)) {
+        if (numericCategoryId > 0) {
           updateData.category_id = numericCategoryId;
         } else {
           updateData.category_id = null;
