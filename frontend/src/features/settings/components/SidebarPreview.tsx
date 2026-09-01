@@ -1,22 +1,14 @@
 import React, { useMemo } from 'react';
 import clsx from 'clsx';
-import {
-  LayoutDashboard,
-  Calendar,
-  Archive,
-  BarChart3,
-  Settings,
-  Users,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { Card } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
+import { adminNavigation } from '../../../components/admin/AdminSidebar';
 import type { FeatureFlags } from '../../../contexts/FeatureFlagsContext';
 
 interface PreviewItem {
   key: string;
   label: string;
-  icon: LucideIcon;
+  icon: React.ComponentType<{ className?: string }>;
   featureDriven: boolean;
 }
 
@@ -28,21 +20,25 @@ interface SidebarPreviewProps {
  * Renders the live shape of the main admin sidebar based on the user's
  * staged (unsaved) feature flags. Items in green (primary tint) are
  * controlled by toggles above; greyscale items are unconditional.
+ *
+ * Derived from AdminSidebar's own `adminNavigation` declaration so every
+ * feature-gated entry is covered automatically — the previous hand-kept
+ * copy had drifted to 2 of the gates (QA J.14). Permissions are
+ * deliberately NOT applied here: the preview answers "what do these flags
+ * do to the sidebar", not "what can this particular admin see".
  */
 export const SidebarPreview: React.FC<SidebarPreviewProps> = ({ staged }) => {
   const { t } = useTranslation();
 
-  const items = useMemo<PreviewItem[]>(() => {
-    const all: Array<PreviewItem & { gate?: keyof FeatureFlags }> = [
-      { key: 'dashboard', label: t('navigation.dashboard'),         icon: LayoutDashboard, featureDriven: false },
-      { key: 'events',    label: t('navigation.events'),            icon: Calendar,        featureDriven: false },
-      { key: 'archives',  label: t('navigation.archives'),          icon: Archive,         featureDriven: false },
-      { key: 'analytics', label: t('admin.analytics', 'Analytics'), icon: BarChart3,       featureDriven: true,  gate: 'analytics' },
-      { key: 'settings',  label: t('navigation.settings'),          icon: Settings,        featureDriven: false },
-      { key: 'users',     label: t('navigation.users'),             icon: Users,           featureDriven: true,  gate: 'userManagement' },
-    ];
-    return all.filter((it) => !it.gate || staged[it.gate]);
-  }, [staged, t]);
+  const items = useMemo<PreviewItem[]>(() => adminNavigation
+    .filter((it) => (!it.featureFlag || staged[it.featureFlag])
+      && (!it.featureFlagsAny?.length || it.featureFlagsAny.some((k) => staged[k])))
+    .map((it) => ({
+      key: it.nameKey,
+      label: t(it.nameKey),
+      icon: it.icon,
+      featureDriven: Boolean(it.featureFlag || it.featureFlagsAny?.length),
+    })), [staged, t]);
 
   return (
     <Card padding="md">
