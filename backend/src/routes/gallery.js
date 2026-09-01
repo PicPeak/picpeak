@@ -35,16 +35,16 @@ const { COLOR_LABELS, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colo
 const secureImageService = require('../services/secureImageService');
 const logger = require('../utils/logger');
 const { pipeStreamToResponse } = require('../utils/streamResponse');
-const { resolvePhotoFilePath } = require('../services/photoResolver');
+const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
 const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
 const { getEventShareToken, resolveShareIdentifier, buildShareLinkVariants } = require('../services/shareLinkService');
 const { handleAsync, errorResponse } = require('../utils/routeHelpers');
 const { isGalleryHidden, guestBlockedByReveal, blockHiddenGallery } = require('../utils/revealMode');
 const { toIso } = require('../utils/dateNormalize');
 const { NotFoundError } = require('../utils/errors');
-const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy, resizeToBox } = require('../services/imageProcessor');
+const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = require('../services/imageProcessor');
 const downloadZipService = require('../services/downloadZipService');
-const { renderPhotoForDownload } = require('../services/downloadRendition');
+const { renderPhotoForDownload, resolveWatermarkSettings } = require('../services/downloadRendition');
 const downloadJobService = require('../services/downloadJobService');
 // Download resolutions (#858) — the standard size a gallery hands out, plus
 // validation of any guest-picked override.
@@ -88,6 +88,42 @@ const fs = require('fs');
 
 // Get storage path from environment or default
 const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+
+/**
+ * Parse a single-range `Range: bytes=` header against a known size.
+ *
+ * Returns null for absent, malformed, multi-range or unsatisfiable headers —
+ * every one of which the caller answers with a normal 200 full body, which is
+ * what a client that sent an unparseable range would get today anyway.
+ * Validating matters because an unchecked parse yields NaN bounds and a 206
+ * with a nonsense Content-Range, which corrupts a resumed download rather
+ * than merely failing it.
+ */
+function parseByteRange(header, size) {
+  if (!header || typeof header !== 'string' || !size) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match) return null;
+
+  const [, rawStart, rawEnd] = match;
+  if (rawStart === '' && rawEnd === '') return null;
+
+  let start;
+  let end;
+  if (rawStart === '') {
+    // Suffix form: the last N bytes.
+    const suffix = parseInt(rawEnd, 10);
+    if (!suffix) return null;
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = parseInt(rawStart, 10);
+    end = rawEnd === '' ? size - 1 : parseInt(rawEnd, 10);
+  }
+
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  if (start > end || start >= size) return null;
+  return { start, end: Math.min(end, size - 1) };
+}
 
 // "Gallery opened" for the admin notification bell (#746). The photo-list
 // endpoint fires on every gallery page load, so notifying per hit would spam
@@ -1548,6 +1584,44 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     }
     const box = isVideo ? null : parseResolution(requested);
 
+    // A HEAD is a metadata probe, not a download. Answering it below the
+    // counters recorded every probe as a real download, and answering it below
+    // renderPhotoForDownload fetched and watermarked an image whose body Node
+    // then discards. Both happen before this point in a GET, so HEAD leaves
+    // here — with no side effects and no bytes read.
+    if (req.method === 'HEAD') {
+      const headUseOriginal = await getUseOriginalFilenames();
+      const headHeaders = {
+        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Content-Disposition': buildContentDisposition(pickRawDownloadName(photo, headUseOriginal)),
+        'Accept-Ranges': 'bytes',
+      };
+
+      // Content-Length only when the bytes ship untransformed AND the size can
+      // be read without fetching them. A watermark or resize changes the
+      // length, and the only way to learn the new one is to do the work this
+      // branch exists to avoid — HEAD is allowed to omit it.
+      const headWatermark = await resolveWatermarkSettings(req.event);
+      if (!box && !headWatermark) {
+        try {
+          const headKey = resolvePhotoStorageKey(req.event, photo);
+          const headStorage = getStorage();
+          if (headKey && headStorage.kind() !== 'local') {
+            const headStat = await headStorage.stat(headKey);
+            if (!headStat) return res.status(404).json({ error: 'Photo file not found' });
+            headHeaders['Content-Length'] = headStat.size;
+            if (headStat.mtime) headHeaders['Last-Modified'] = new Date(headStat.mtime).toUTCString();
+          }
+        } catch (headErr) {
+          // No length is a valid HEAD; not worth failing the probe over.
+          logger.debug('HEAD probe could not stat the object', { photoId, error: headErr.message });
+        }
+      }
+
+      res.set(headHeaders);
+      return res.end();
+    }
+
     // Admin preview (#868) downloads are excluded from the download count +
     // guest analytics — kept out of client-facing stats.
     if (!req.isAdminPreview) {
@@ -1571,6 +1645,174 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       if (res.statusCode < 400 && !req.isAdminPreview) notifySinglePhotoDownload(req.event, req);
     });
     
+    // #493: if the admin enabled "use original filenames", surface the
+    // pre-rename camera filename in Content-Disposition. Storage path is
+    // unchanged — only the user-visible download name is swapped.
+    const useOriginal = await getUseOriginalFilenames();
+    const downloadName = pickRawDownloadName(photo, useOriginal);
+    const contentDisposition = buildContentDisposition(downloadName);
+
+    // The gallery's standard applies to EVERY ordinary download, single photos
+    // included — otherwise a lowered standard is trivially bypassed by
+    // downloading photos one at a time. `box` was resolved above, before the
+    // counters. Videos have no resize path and always ship as-is.
+    //
+    // renderPhotoForDownload (#858) owns the resize-then-watermark ordering
+    // and the storage fetch, and is what the zip builders below already use.
+    // It returns null when the photo needs no transformation at all, which is
+    // the default gallery's common case and lets us ship the stored bytes
+    // without buffering a full-size original into memory.
+    const effectiveSettings = await resolveWatermarkSettings(req.event);
+
+    let rendered;
+    try {
+      rendered = await renderPhotoForDownload(req.event, photo, box, effectiveSettings);
+    } catch (renderError) {
+      // Classify, the same way the pass-through branch below does. This can
+      // reject because the source object is gone, but equally because
+      // getToFile timed out, the tmp filesystem filled up, or sharp failed —
+      // and reporting an operational failure as 404 tells the guest their
+      // photo does not exist and tells us nothing.
+      const gone = renderError.code === 'ENOENT'
+        || renderError.name === 'NoSuchKey'
+        || renderError.name === 'NotFound'
+        || renderError.$metadata?.httpStatusCode === 404;
+      logger.error('Failed to render photo for download', {
+        slug: req.params.slug,
+        photoId,
+        eventId: req.event.id,
+        error: renderError.message,
+      });
+      return gone
+        ? res.status(404).json({ error: 'Photo file not found' })
+        : res.status(500).json({ error: 'Failed to download photo' });
+    }
+
+    if (rendered) {
+      res.set({
+        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Content-Disposition': contentDisposition,
+        'Content-Length': rendered.length
+      });
+
+      return res.send(rendered);
+    }
+
+    // Untransformed: ship the stored bytes.
+    //
+    // Managed photos live behind the storage abstraction and on an S3/R2
+    // deployment are not on local disk at all — resolving a filesystem path
+    // unconditionally here is what made every single-photo download 404 with
+    // ENOENT in S3 mode (#1048), while download-all and secure-images worked
+    // because they already went through getStorage().
+    //
+    // resolvePhotoStorageKey returns null for external/reference photos: those
+    // live on a local mount and keep the sendFile path.
+    let storageKey = null;
+    try {
+      storageKey = resolvePhotoStorageKey(req.event, photo);
+    } catch (resolveError) {
+      logger.error('Failed to resolve photo storage key for download', {
+        slug: req.params.slug,
+        photoId,
+        eventId: req.event.id,
+        error: resolveError.message,
+      });
+      return res.status(404).json({ error: 'Photo file not found' });
+    }
+
+    const storage = getStorage();
+    if (storageKey && storage.kind() !== 'local') {
+      // Deliberately NOT the local path: res.sendFile emits Content-Length,
+      // Accept-Ranges, ETag and Last-Modified and answers Range requests with
+      // a 206, and a bare stream.pipe(res) has none of that. On local disk
+      // sendFile stays the better implementation, so it stays the branch.
+      //
+      // On S3 we reproduce the parts that matter for a download: the length
+      // (browsers need it for the progress indicator, which matters most on
+      // exactly the large files this route serves) and Range, so an
+      // interrupted download resumes instead of appending a second full body
+      // onto the partial file. Conditional requests are not reproduced —
+      // there is no ETag here, so a client revalidating gets the whole body,
+      // same as it does today.
+      const stat = await storage.stat(storageKey);
+      if (!stat) {
+        logger.error('Photo not found in storage backend for download', {
+          slug: req.params.slug,
+          photoId,
+          eventId: req.event.id,
+          storageKey,
+        });
+        return res.status(404).json({ error: 'Photo file not found' });
+      }
+
+      const lastModified = stat.mtime ? new Date(stat.mtime).toUTCString() : null;
+      const headers = {
+        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Content-Disposition': contentDisposition,
+        'Accept-Ranges': 'bytes',
+      };
+      if (lastModified) headers['Last-Modified'] = lastModified;
+
+      // If-Range: a client resuming an interrupted download sends back the
+      // validator it was given last time. If the object has been replaced
+      // since — the watcher re-importing a swapped file, an admin re-upload —
+      // answering 206 from the NEW bytes lets the client splice two different
+      // versions into one corrupt file. A validator that doesn't match means
+      // a full 200, which is the whole point of the header.
+      const ifRange = req.headers['if-range'];
+      const staleValidator = !!ifRange && (!lastModified || ifRange.trim() !== lastModified);
+      const range = staleValidator ? null : parseByteRange(req.headers.range, stat.size);
+
+      // Open the stream BEFORE any header is staged or sent. stat() succeeding
+      // does not mean get() will: a concurrent delete or replace, or a
+      // transient backend error, lands here. Once writeHead(206) has gone out
+      // the outer catch can do nothing but throw ERR_HTTP_HEADERS_SENT, and in
+      // the non-range case it would send its 500 JSON underneath the staged
+      // image/jpeg attachment headers — a .jpg file full of JSON.
+      let stream;
+      try {
+        stream = range
+          ? await storage.getRange(storageKey, range.start, range.end)
+          : await storage.get(storageKey);
+      } catch (fetchError) {
+        const gone = fetchError.code === 'ENOENT'
+          || fetchError.name === 'NoSuchKey'
+          || fetchError.name === 'NotFound'
+          || fetchError.$metadata?.httpStatusCode === 404;
+        logger.error('Failed to open photo stream for download', {
+          slug: req.params.slug,
+          photoId,
+          eventId: req.event.id,
+          storageKey,
+          error: fetchError.message,
+        });
+        return gone
+          ? res.status(404).json({ error: 'Photo file not found' })
+          : res.status(500).json({ error: 'Failed to download photo' });
+      }
+
+      if (range) {
+        // status()+set() rather than writeHead(): writeHead commits the
+        // response immediately, so a stream that resolves and THEN errors
+        // before its first chunk would leave pipeStreamToResponse able only to
+        // destroy the connection. Staged headers are flushed by the first body
+        // write, which means an error at byte zero can still clear them and
+        // return a clean, retryable status instead of a transport reset.
+        res.status(206).set({
+          ...headers,
+          'Content-Range': `bytes ${range.start}-${range.end}/${stat.size}`,
+          'Content-Length': (range.end - range.start) + 1,
+        });
+      } else {
+        res.set({ ...headers, 'Content-Length': stat.size });
+      }
+      pipeStreamToResponse(stream, res, {
+        context: range ? `download range for photo ${photo.id}` : `download for photo ${photo.id}`,
+      });
+      return;
+    }
+
     let filePath;
     try {
       filePath = resolvePhotoFilePath(req.event, photo);
@@ -1583,75 +1825,25 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       });
       return res.status(404).json({ error: 'Photo file not found' });
     }
-    
-    // Get watermark settings - apply if global setting OR event-level setting is enabled
-    const watermarkSettings = await watermarkService.getWatermarkSettings();
-    const eventWatermarkEnabled = req.event.watermark_downloads === true || req.event.watermark_downloads === 1;
-    const shouldApplyWatermark = (watermarkSettings && watermarkSettings.enabled) || eventWatermarkEnabled;
 
-    // #493: if the admin enabled "use original filenames", surface the
-    // pre-rename camera filename in Content-Disposition. Storage path is
-    // unchanged — only the user-visible download name is swapped.
-    const useOriginal = await getUseOriginalFilenames();
-    const downloadName = pickRawDownloadName(photo, useOriginal);
-    const contentDisposition = buildContentDisposition(downloadName);
-
-    // The gallery's standard applies to EVERY ordinary download, single photos
-    // included — otherwise a lowered standard is trivially bypassed by
-    // downloading photos one at a time. `box` was resolved above, before the
-    // counters. Videos have no resize path and always ship as-is.
-    if (shouldApplyWatermark || box) {
-      // Resize BEFORE watermarking: applyWatermark sizes the mark relative to
-      // its input's width, so watermarking the original and then shrinking
-      // would resample the mark and waste work on discarded pixels.
-      //
-      // With no resize (the default 'original' standard) hand applyWatermark
-      // the PATH, not a buffer: buffer inputs deliberately skip its cache, so
-      // buffering here would re-run sharp over the full-size original on every
-      // download and regress the pre-#858 watermark performance.
-      const effectiveSettings = shouldApplyWatermark ? {
-        ...watermarkSettings,
-        enabled: true,
-        text: req.event.watermark_text || watermarkSettings?.text || 'Protected'
-      } : null;
-
-      let buffer;
-      if (!box) {
-        buffer = await watermarkService.applyWatermark(filePath, effectiveSettings);
-      } else {
-        buffer = await resizeToBox(await fs.promises.readFile(filePath), box);
-        if (shouldApplyWatermark) {
-          buffer = await watermarkService.applyWatermark(buffer, effectiveSettings);
-        }
+    // res.download() builds Content-Disposition itself but doesn't emit the
+    // RFC 5987 filename* parameter, so unicode camera filenames would lose
+    // their bytes on download. Set the header explicitly and stream the
+    // file with res.sendFile-equivalent semantics.
+    res.set({
+      'Content-Type': photo.mime_type || 'image/jpeg',
+      'Content-Disposition': contentDisposition,
+    });
+    res.sendFile(filePath, (downloadError) => {
+      if (downloadError) {
+        logger.error('Error streaming gallery download', {
+          slug: req.params.slug,
+          photoId,
+          eventId: req.event.id,
+          error: downloadError.message,
+        });
       }
-
-      res.set({
-        'Content-Type': photo.mime_type || 'image/jpeg',
-        'Content-Disposition': contentDisposition,
-        'Content-Length': buffer.length
-      });
-
-      res.send(buffer);
-    } else {
-      // res.download() builds Content-Disposition itself but doesn't emit the
-      // RFC 5987 filename* parameter, so unicode camera filenames would lose
-      // their bytes on download. Set the header explicitly and stream the
-      // file with res.sendFile-equivalent semantics.
-      res.set({
-        'Content-Type': photo.mime_type || 'image/jpeg',
-        'Content-Disposition': contentDisposition,
-      });
-      res.sendFile(filePath, (downloadError) => {
-        if (downloadError) {
-          logger.error('Error streaming gallery download', {
-            slug: req.params.slug,
-            photoId,
-            eventId: req.event.id,
-            error: downloadError.message,
-          });
-        }
-      });
-    }
+    });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to download photo');
   }
