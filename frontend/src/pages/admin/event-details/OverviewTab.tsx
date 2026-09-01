@@ -186,14 +186,20 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               isSendingGalleryEmail={isSendingGalleryEmail}
               assignedCustomerCount={
                 ((event as {
-                  customer_accounts?: Array<{ id: number; email?: string; is_active?: unknown }>
+                  customer_accounts?: Array<{
+                    id: number; email?: string; is_active?: unknown; can_sign_in?: unknown
+                  }>
                 }).customer_accounts || [])
                   // Only accounts the endpoint would actually mail count, or
-                  // the button appears and then 400s. Same predicate the
-                  // fallback uses (crud.js): active, and holding an address.
-                  // toBoolean rather than `!== false` because SQLite returns
-                  // 0/1 and `0 !== false` is true.
-                  .filter((c) => toBoolean(c.is_active, true) && !!c.email).length
+                  // the button appears and then 400s. Mirrors
+                  // canReceiveGalleryNotice in crud.js: active, holding an
+                  // address, and able to sign in — a PASSIVE customer
+                  // (never invited, so no password) would get a portal link
+                  // to a door that will not open. toBoolean rather than
+                  // `!== false` because SQLite returns 0/1.
+                  .filter((c) => toBoolean(c.is_active, true)
+                    && toBoolean(c.can_sign_in, true)
+                    && !!c.email).length
               }
             />
           </PermissionGate>

@@ -32,6 +32,36 @@ const { resolveEventFeedbackDefaults, applyFeedbackDefaults, KEYBIND_MODES } = r
 const { validateHeroImageAnchor, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults, getBrandingDefaults, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./helpers');
 
 /**
+ * Can this assigned customer account actually receive — and act on — the
+ * gallery notice? (#1235)
+ *
+ * Shared by publish, by the send-later route, and mirrored by the UI that
+ * decides whether to offer the button at all. All four have to agree, or the
+ * admin gets an action that 400s, or worse, one that reports success for a
+ * notice nobody can use.
+ *
+ * - `is_active`: compared loosely because SQLite stores it as 0/1 and a
+ *   strict `!== false` lets 0 through.
+ * - `can_sign_in`: a PASSIVE customer (password_hash IS NULL — see
+ *   customerAccountsService.createDirect) is a real, active account that has
+ *   simply never been invited. customer_gallery_assigned links to
+ *   /customer/dashboard, and customerAuth rejects login without a hash, so
+ *   mailing one sends a link to a door that will not open. Excluded here
+ *   rather than mailed, because a silent non-delivery the admin believes
+ *   succeeded is worse than a visible refusal. Sending them an invitation
+ *   instead is the better answer, and a separate feature.
+ * - the column is emitted by a raw SQL predicate, so it arrives as a boolean
+ *   on Postgres and 0/1 on SQLite; `== false` and `=== 0` cover both, and
+ *   undefined (older callers) stays permissive.
+ */
+function canReceiveGalleryNotice(account) {
+  if (!account || !account.email) return false;
+  if (account.is_active === false || account.is_active === 0) return false;
+  if (account.can_sign_in === false || account.can_sign_in === 0) return false;
+  return true;
+}
+
+/**
  * Queue the gallery_created email for an event (#1235).
  *
  * Shared by publish and by the send-later route, because the two must produce
@@ -933,12 +963,13 @@ module.exports = (router) => {
           display_name: c.display_name,
           first_name: c.first_name,
           last_name: c.last_name,
-          // The send-gallery-email fallback below filters on this, so the UI
-          // needs it to predict whether the action has any recipient at all.
-          // Without it every assigned account looked active and a gallery
-          // whose only assignments were deactivated offered a button that
-          // then 400'd.
+          // The send-gallery-email fallback below filters on these, so the UI
+          // needs them to predict whether the action has any recipient at all.
+          // Without them every assigned account looked reachable and a gallery
+          // whose only assignments were deactivated or passive offered a
+          // button that then 400'd — or worse, reported success.
           is_active: c.is_active,
+          can_sign_in: c.can_sign_in,
         })),
       }));
     } catch (error) {
@@ -1021,7 +1052,7 @@ module.exports = (router) => {
         try {
           const customerAccountsService = require('../../services/customerAccountsService');
           const assigned = await customerAccountsService.getAssignmentsForEvent(parseInt(id, 10));
-          for (const c of assigned.filter((a) => a.is_active !== false && a.is_active !== 0 && a.email)) {
+          for (const c of assigned.filter(canReceiveGalleryNotice)) {
             await customerAccountsService
               .notifyCustomerOfNewAssignments(c.id, [parseInt(id, 10)])
               .then(() => { notified += 1; })
@@ -1123,7 +1154,7 @@ module.exports = (router) => {
           try {
             const customerAccountsService = require('../../services/customerAccountsService');
             const assigned = await customerAccountsService.getAssignmentsForEvent(parseInt(id, 10));
-            for (const c of assigned.filter((a) => a.is_active !== false && a.is_active !== 0 && a.email)) {
+            for (const c of assigned.filter(canReceiveGalleryNotice)) {
               await customerAccountsService
                 .notifyCustomerOfNewAssignments(c.id, [parseInt(id, 10)])
                 .catch((err) => logger.warn('Publish: customer gallery notice failed', { customerId: c.id, error: err.message }));

@@ -288,6 +288,54 @@ describe('publish quietly (#1235)', () => {
     expect(after.password_hash).toBe('original-hash');
   });
 
+  it('refuses to send when the only assigned account is passive', async () => {
+    // A passive customer (created directly, never invited) is active and has
+    // an address, but password_hash IS NULL — customerAuth rejects the login,
+    // so the customer_gallery_assigned portal link goes to a door that will
+    // not open. Reporting success here would leave the admin believing the
+    // customer was told.
+    const [evRow] = await db('events').insert({
+      slug: 'passive-only',
+      event_type: 'wedding',
+      event_name: 'Passive Only',
+      event_date: '2026-09-01',
+      host_email: '',
+      admin_email: 'admin@example.com',
+      customer_email: null,
+      password_hash: 'original-hash',
+      require_password: 1,
+      share_link: '/gallery/passive-only/share',
+      share_token: 'passive-only-token',
+      expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      is_active: 1,
+      is_archived: 0,
+      is_draft: 0,
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    const eventId = typeof evRow === 'object' ? evRow.id : evRow;
+
+    const [custRow] = await db('customer_accounts').insert({
+      email: 'passive@example.com',
+      display_name: 'Passive Person',
+      password_hash: null,          // never invited
+      is_active: 1,
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    const customerId = typeof custRow === 'object' ? custRow.id : custRow;
+
+    await db('event_customer_assignments').insert({
+      event_id: eventId,
+      customer_account_id: customerId,
+    });
+
+    const res = await request(app)
+      .post(`/admin/events/${eventId}/send-gallery-email`)
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/no customer email/i);
+  });
+
   it('re-sending is allowed — a lost email should not need an unpublish/republish', async () => {
     const id = await seedDraft({ slug: 'resend' });
     await request(app).post(`/admin/events/${id}/publish`).send({});
