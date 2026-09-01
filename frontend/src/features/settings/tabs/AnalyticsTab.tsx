@@ -15,6 +15,35 @@ interface AnalyticsTabProps {
 
 const PROVIDER_OPTIONS: TrackerProvider[] = ['none', 'umami', 'rybbit', 'custom'];
 
+/**
+ * The shipped CSP `script-src` is a static allowlist that no configured
+ * tracker domain is ever added to, so a self-hosted Umami/Rybbit instance is
+ * blocked by the browser with nothing but a console error to show for it.
+ * Shown for every provider that loads a script from another origin.
+ */
+const CspWarning: React.FC = () => {
+  const { t } = useTranslation();
+
+  return (
+    <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+      <div className="flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+        <div className="text-sm text-amber-800 dark:text-amber-200">
+          <p className="font-medium mb-1">
+            {t('settings.analytics.customCspWarning', 'Content-Security-Policy reminder')}
+          </p>
+          <p>
+            {t(
+              'settings.analytics.customCspWarningText',
+              'PicPeak ships with a strict CSP (`script-src \'self\'`). If your tracker loads from another domain, add that domain to your reverse-proxy or nginx CSP config — otherwise the browser silently blocks the script.',
+            )}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
   analyticsSettings,
   setAnalyticsSettings,
@@ -128,6 +157,8 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 )}
               </p>
             </div>
+
+            <CspWarning />
           </div>
         )}
 
@@ -191,6 +222,8 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
                 )}
               </p>
             </div>
+
+            <CspWarning />
           </div>
         )}
 
@@ -222,22 +255,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               </p>
             </div>
 
-            <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-                <div className="text-sm text-amber-800 dark:text-amber-200">
-                  <p className="font-medium mb-1">
-                    {t('settings.analytics.customCspWarning', 'Content-Security-Policy reminder')}
-                  </p>
-                  <p>
-                    {t(
-                      'settings.analytics.customCspWarningText',
-                      'PicPeak ships with a strict CSP (`script-src \'self\'`). If your tracker loads from another domain, add that domain to your reverse-proxy or nginx CSP config — otherwise the browser silently blocks the script.',
-                    )}
-                  </p>
-                </div>
-              </div>
-            </div>
+            <CspWarning />
           </div>
         )}
 
