@@ -305,18 +305,6 @@
     "searchMemories": "Buscar recuerdos...",
     "thankYou": "Gracias",
     "thankYouMessage": "Gracias por ser parte de nuestra historia y hacer nuestro día inolvidable.",
-    "feedback": {
-      "title": "Comentarios",
-      "shareThoughts": "Comparte tus pensamientos sobre \"{{name}}\"",
-      "rateThisMoment": "Valora este momento",
-      "comments": "Comentarios",
-      "noComments": "No hay comentarios aún. ¡Sé el primero!",
-      "yourName": "Tu nombre",
-      "yourEmail": "Tu correo",
-      "writeLovelyNote": "Escribe una nota agradable...",
-      "postComment": "Publicar comentario",
-      "anonymous": "Anónimo"
-    },
     "rated": "Valorado",
     "commented": "Comentado",
     "colorFilter": "Color",
@@ -972,7 +960,6 @@
     },
     "moderation": {
       "title": "Moderación",
-      "wordFilters": "Filtros de palabras",
       "description": "Gestiona palabras que deben filtrarse o bloquearse en comentarios",
       "addFilter": "Agregar nuevo filtro",
       "enterWord": "Introduce palabra a filtrar",
@@ -2320,7 +2307,6 @@
     }
   },
   "cssTemplates": {
-    "title": "Plantillas CSS personalizadas",
     "template": "Plantilla",
     "templateName": "Nombre de la plantilla",
     "enableTemplate": "Habilitar esta plantilla",

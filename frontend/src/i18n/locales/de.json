@@ -196,8 +196,8 @@
     "processing": "Fotos werden verarbeitet...",
     "processingHint": "Dateien sind hochgeladen. PicPeak erstellt jetzt Thumbnails und liest Metadaten. Sie können diese Seite verlassen — die Verarbeitung läuft im Hintergrund weiter.",
     "processingProgress": "{{complete}} von {{total}} fertig",
-    "processingFailed_one": "{{count}} Foto konnte nicht verarbeitet werden und erscheint nicht in der Galerie.",
-    "processingFailed_other": "{{count}} Fotos konnten nicht verarbeitet werden und erscheinen nicht in der Galerie.",
+    "processingFailed_one": "{{count}} Foto konnte nicht verarbeitet werden",
+    "processingFailed_other": "{{count}} Fotos konnten nicht verarbeitet werden",
     "processingStillRunning": "Ihr Upload wird noch verarbeitet — er erscheint in Kürze in der Galerie.",
     "retryFailed": "Fehlgeschlagene erneut versuchen",
     "uploadComplete": "Upload abgeschlossen!",
@@ -227,8 +227,6 @@
     "limitReached": "Upload-Limit erreicht ({{limit}} Dateien pro Vorgang)",
     "replacedFiles_one": "{{count}} Foto ersetzt",
     "replacedFiles_other": "{{count}} Fotos ersetzt",
-    "processingFailed_one": "{{count}} Foto konnte nicht verarbeitet werden",
-    "processingFailed_other": "{{count}} Fotos konnten nicht verarbeitet werden",
     "uploadingChunks_one": "{{count}} Teil wird hochgeladen",
     "uploadingChunks_other": "{{count}} Teile werden hochgeladen",
     "fileTooLarge": "Datei zu groß: {{name}} (max. {{limit}}MB)"
@@ -1079,18 +1077,6 @@
     "searchMemories": "Erinnerungen suchen...",
     "thankYou": "Vielen Dank",
     "thankYouMessage": "Dass Sie Teil unserer Geschichte waren und unseren besonderen Tag unvergesslich gemacht haben.",
-    "feedback": {
-      "title": "Feedback",
-      "shareThoughts": "Teilen Sie Ihre Gedanken zu \"{{name}}\"",
-      "rateThisMoment": "Bewerten Sie diesen Moment",
-      "comments": "Kommentare",
-      "noComments": "Noch keine Kommentare. Seien Sie der Erste!",
-      "yourName": "Ihr Name",
-      "yourEmail": "Ihre E-Mail",
-      "writeLovelyNote": "Schreiben Sie eine nette Nachricht...",
-      "postComment": "Kommentar posten",
-      "anonymous": "Anonym"
-    },
     "favorites": "Favoriten",
     "expiresIn_one": "Galerie läuft in {{count}} Tag ab",
     "expiresIn_other": "Galerie läuft in {{count}} Tagen ab",
@@ -1992,7 +1978,6 @@
     },
     "moderation": {
       "title": "Moderation",
-      "wordFilters": "Wortfilter",
       "description": "Verwalten Sie Wörter, die in Kommentaren gefiltert oder blockiert werden sollen",
       "addFilter": "Neuen Filter hinzufügen",
       "enterWord": "Wort zum Filtern eingeben",
@@ -2046,7 +2031,6 @@
       "customHeadHtml": "Eigenes <head>-HTML",
       "customHeadHtmlHelp": "Tracker-`<head>`-Snippet einfügen (Plausible, Matomo, Pirsch, GA4, GoatCounter, Fathom, Cloudflare Web Analytics, …). Beim Speichern bereinigt: nur `<script>`, `<noscript>`, `<link rel=\"preconnect|dns-prefetch\">` und `<meta>` bleiben erhalten; Event-Handler-Attribute werden entfernt. Das Geräte-Diagramm fällt in diesem Modus auf eine serverseitige User-Agent-Heuristik zurück — für tracker-seitige Zahlen Umami oder Rybbit wählen.",
       "customCspWarning": "Hinweis zur Content-Security-Policy",
-      "customCspWarningText": "PicPeak setzt eine strikte CSP (`script-src 'self'`) ein. Wenn Ihr Tracker von einer anderen Domain lädt, müssen Sie diese Domain in Ihrer Reverse-Proxy- oder nginx-CSP-Konfiguration zulassen — sonst blockiert der Browser das Skript stillschweigend.",
       "umamiIntegration": "Umami Analytics Integration",
       "enableUmami": "Umami Analytics aktivieren",
       "umamiUrl": "Umami URL",
@@ -4521,7 +4505,6 @@
     }
   },
   "cssTemplates": {
-    "title": "Benutzerdefinierte CSS-Vorlagen",
     "template": "Vorlage",
     "templateName": "Vorlagenname",
     "enableTemplate": "Diese Vorlage aktivieren",

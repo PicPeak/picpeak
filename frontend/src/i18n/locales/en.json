@@ -196,8 +196,8 @@
     "processing": "Processing photos...",
     "processingHint": "Files are uploaded. PicPeak is now generating thumbnails and reading metadata. You can leave this page — work continues in the background.",
     "processingProgress": "{{complete}} of {{total}} done",
-    "processingFailed_one": "{{count}} photo could not be processed and will not appear in the gallery.",
-    "processingFailed_other": "{{count}} photos could not be processed and will not appear in the gallery.",
+    "processingFailed_one": "{{count}} photo failed to process",
+    "processingFailed_other": "{{count}} photos failed to process",
     "processingStillRunning": "Your upload is still being processed — it will appear in the gallery shortly.",
     "retryFailed": "Retry failed",
     "uploadComplete": "Upload complete!",
@@ -227,8 +227,6 @@
     "limitReached": "Upload limit reached ({{limit}} files per batch)",
     "replacedFiles_one": "{{count}} photo replaced",
     "replacedFiles_other": "{{count}} photos replaced",
-    "processingFailed_one": "{{count}} photo failed to process",
-    "processingFailed_other": "{{count}} photos failed to process",
     "uploadingChunks_one": "{{count}} chunk uploading",
     "uploadingChunks_other": "{{count}} chunks uploading",
     "fileTooLarge": "File too large: {{name}} (max {{limit}}MB)"
@@ -576,18 +574,6 @@
     "searchMemories": "Search memories...",
     "thankYou": "Thank You",
     "thankYouMessage": "For being part of our story and making our special day unforgettable.",
-    "feedback": {
-      "title": "Feedback",
-      "shareThoughts": "Share your thoughts on \"{{name}}\"",
-      "rateThisMoment": "Rate this moment",
-      "comments": "Comments",
-      "noComments": "No comments yet. Be the first!",
-      "yourName": "Your name",
-      "yourEmail": "Your email",
-      "writeLovelyNote": "Write a lovely note...",
-      "postComment": "Post Comment",
-      "anonymous": "Anonymous"
-    },
     "rated": "Rated",
     "commented": "Commented",
     "expiresIn_one": "Gallery expires in {{count}} day",
@@ -1425,7 +1411,6 @@
     },
     "moderation": {
       "title": "Moderation",
-      "wordFilters": "Word Filters",
       "description": "Manage words that should be filtered or blocked in comments",
       "addFilter": "Add New Filter",
       "enterWord": "Enter word to filter",
@@ -1544,7 +1529,6 @@
       "customHeadHtml": "Custom <head> HTML",
       "customHeadHtmlHelp": "Paste your tracker's `<head>` snippet (Plausible, Matomo, Pirsch, GA4, GoatCounter, Fathom, Cloudflare Web Analytics, …). Sanitised on save: only `<script>`, `<noscript>`, `<link rel=\"preconnect|dns-prefetch\">` and `<meta>` tags survive, and event-handler attributes are stripped. The admin dashboard's device-breakdown chart falls back to a server-side user-agent heuristic in this mode — pick Umami or Rybbit if you want the tracker-side numbers.",
       "customCspWarning": "Content-Security-Policy reminder",
-      "customCspWarningText": "PicPeak ships with a strict CSP (`script-src 'self'`). If your tracker loads from another domain, add that domain to your reverse-proxy or nginx CSP config — otherwise the browser silently blocks the script.",
       "umamiIntegration": "Umami Analytics Integration",
       "enableUmami": "Enable Umami Analytics",
       "umamiUrl": "Umami URL",
@@ -3961,7 +3945,6 @@
     }
   },
   "cssTemplates": {
-    "title": "Custom CSS Templates",
     "template": "Template",
     "templateName": "Template Name",
     "enableTemplate": "Enable this template",

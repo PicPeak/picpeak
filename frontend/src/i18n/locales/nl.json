@@ -282,18 +282,6 @@
     "thankYouMessage": "Dat u deel uitmaakte van ons verhaal en onze bijzondere dag onvergetelijk maakte.",
     "rated": "Beoordeeld",
     "commented": "Becommentarieerd",
-    "feedback": {
-      "title": "Feedback",
-      "shareThoughts": "Deel uw gedachten over \"{{name}}\"",
-      "rateThisMoment": "Beoordeel dit moment",
-      "comments": "Opmerkingen",
-      "noComments": "Nog geen opmerkingen. Wees de eerste!",
-      "yourName": "Uw naam",
-      "yourEmail": "Uw e-mail",
-      "writeLovelyNote": "Schrijf een mooi bericht...",
-      "postComment": "Opmerking plaatsen",
-      "anonymous": "Anoniem"
-    },
     "expiresIn_one": "Galerij verloopt over {{count}} dag",
     "expiresIn_other": "Galerij verloopt over {{count}} dagen",
     "downloading_one": "1 foto downloaden…",
@@ -938,7 +926,6 @@
     },
     "moderation": {
       "title": "Moderatie",
-      "wordFilters": "Woordfilters",
       "description": "Beheer woorden die gefilterd of geblokkeerd moeten worden in opmerkingen",
       "addFilter": "Nieuw filter toevoegen",
       "enterWord": "Voer woord in om te filteren",
@@ -2464,7 +2451,6 @@
     }
   },
   "cssTemplates": {
-    "title": "Aangepaste CSS-sjablonen",
     "template": "Sjabloon",
     "templateName": "Sjabloonnaam",
     "enableTemplate": "Dit sjabloon inschakelen",
