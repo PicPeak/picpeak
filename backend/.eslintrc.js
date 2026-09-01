@@ -17,7 +17,15 @@ module.exports = {
     'linebreak-style': ['error', 'unix'],
     'quotes': ['error', 'single'],
     'semi': ['error', 'always'],
-    'no-unused-vars': ['error', { 'argsIgnorePattern': '^_' }],
+    // varsIgnorePattern + ignoreRestSiblings cover the "omit fields via rest
+    // spread" idiom (e.g. adminEvents/helpers.js pulling password hashes out
+    // of ...rest), which is intentional and would otherwise need a disable
+    // comment at every occurrence.
+    'no-unused-vars': ['error', {
+      'argsIgnorePattern': '^_',
+      'varsIgnorePattern': '^_',
+      'ignoreRestSiblings': true
+    }],
     'no-console': ['warn', { allow: ['warn', 'error'] }]
   }
 };
