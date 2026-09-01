@@ -90,6 +90,7 @@ const { sessionTimeoutMiddleware } = require('./src/middleware/sessionTimeout');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 const { createRateLimiter, createAuthRateLimiter } = require('./src/services/rateLimitService');
 const { createApiRateLimitGate } = require('./src/middleware/apiRateLimitGate');
+const { createAuthRateLimitGate } = require('./src/middleware/authRateLimitGate');
 const { getPublicSitePayload } = require('./src/services/publicSiteService');
 const cookieParser = require('cookie-parser');
 const {
@@ -497,24 +498,19 @@ async function initializeRateLimiters() {
   generalRateLimiter = await createRateLimiter();
   authRateLimiter = await createAuthRateLimiter();
 
-  // The general limiter is NOT registered here — an app.use() at this point
-  // runs after the routers, the /api 404 handler and the error handler are
-  // already on the stack, so it can never see a request. It is reached through
-  // apiRateLimitGate below instead, which is registered ahead of the routers
-  // and reads this variable per request.
+  // Neither limiter is registered here — an app.use() at this point runs after
+  // the routers, the /api 404 handler and the error handler are already on the
+  // stack, so it can never see a request. Both are reached through their gates
+  // below, which are registered ahead of the routers and read these variables
+  // per request.
   //
-  // These authRateLimiter registrations have the same problem and are equally
-  // inert. They are left as-is deliberately: `/api/auth` is a prefix, and the
-  // limiter's 5-per-window budget applies to every route under it — including
-  // GET /api/auth/session and POST /api/auth/password-strength, which the
-  // frontend calls far more often than five times per window. Activating them
-  // as written would lock legitimate users out, so wiring per-IP auth limiting
-  // up properly is a separate change.
-  app.use('/api/auth', authRateLimiter);
-  app.use('/api/gallery/:slug/verify', authRateLimiter);
-  app.use('/api/admin/auth/login', authRateLimiter);
-  app.use('/api/setup/admin', authRateLimiter);
-  app.use('/api/setup/verify-token', authRateLimiter);
+  // The five prefix registrations of authRateLimiter that used to live here
+  // were inert for that reason, and could not simply be moved up either: the
+  // widest of them mounted on the whole /api/auth router, so the 5-per-window
+  // auth budget would have covered GET /api/auth/session and POST
+  // /api/auth/password-strength, which the frontend calls far more often than
+  // five times per window. authRateLimitGate matches exact method + path
+  // instead, and counts only failed attempts.
 }
 
 // Rate limiting for /api. Registered HERE — above the routers — because
@@ -524,6 +520,12 @@ async function initializeRateLimiters() {
 // /health and /api/health are mounted above this point and so are never
 // counted, which matters because monitors poll them every couple of seconds.
 app.use(createApiRateLimitGate(() => generalRateLimiter));
+
+// Per-IP limit for credential-verification endpoints only, on its own bucket.
+// Registered after the general gate so that an IP already over the /api budget
+// is rejected there first; see authRateLimitGate for the exact endpoint table
+// and why it must stay unmounted.
+app.use(createAuthRateLimitGate(() => authRateLimiter));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));

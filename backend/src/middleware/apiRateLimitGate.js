@@ -39,10 +39,10 @@ const EXEMPT_PREFIXES = [
 // request. Five ordinary unauthenticated calls — the branding and settings
 // fetches a login page makes before anyone types a password — would therefore
 // 429 the login itself for a whole window. Giving them a real per-IP budget
-// means giving them their own bucket, which is what the (currently unreachable)
-// dedicated authRateLimiter is for; until that is wired up they keep today's
-// behaviour, where brute force is bounded by the per-account lockout in
-// utils/authSecurity.js.
+// means giving them their own bucket, which is what authRateLimitGate now does:
+// a separate limiter instance with its own store, matching exact method + path
+// and counting only failed attempts. They stay exempt HERE so the two budgets
+// never share a counter — that sharing is the whole failure mode above.
 //
 // The pattern is deliberately identical to rateLimitService's own isAuthEndpoint
 // check, so the exempt set is exactly the set that would get the 5 budget.

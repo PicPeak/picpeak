@@ -207,13 +207,29 @@ async function createRateLimiter() {
 
 /**
  * Create auth-specific rate limiter
+ *
+ * This is a separate rateLimit() instance from createRateLimiter(), so it owns
+ * its own MemoryStore and therefore its own per-IP bucket. That separation is
+ * the point: the credential endpoints get a small budget of their own that the
+ * ordinary /api traffic a login page makes cannot exhaust.
+ *
+ * skipSuccessfulRequests means only failed attempts are counted, which is what
+ * makes a 5-per-window per-IP budget safe behind NAT — a room full of guests on
+ * one venue IP who all type the correct gallery password consume nothing.
  */
 async function createAuthRateLimiter() {
   const config = await getRateLimitSettings();
-  
+
   return rateLimit({
     windowMs: config.windowMinutes * 60 * 1000,
-    max: config.authMaxRequests,
+    // Read per request, like the general limiter, so a change to
+    // rate_limit_auth_max_requests in admin Settings takes effect within the
+    // settings cache TTL instead of needing a restart.
+    max: async () => {
+      const currentConfig = await getRateLimitSettings();
+      return currentConfig.authMaxRequests;
+    },
+    skipSuccessfulRequests: true,
     keyGenerator: (req) => req.ip,
     skip: async () => {
       const currentConfig = await getRateLimitSettings();
