@@ -94,11 +94,14 @@ function validatePassword(password, options = {}) {
   // Check minimum strength score
   if (strength.score < config.minStrengthScore) {
     errors.push('Password is too weak. Please choose a stronger password');
-  }
-  
-  // Add zxcvbn suggestions
-  if (strength.feedback.suggestions.length > 0) {
-    errors.push(...strength.feedback.suggestions);
+    // Surface zxcvbn's suggestions only alongside a real failure — they are
+    // advice, not requirements. A password that meets the configured policy
+    // must not be rejected just because zxcvbn has ideas for improving it
+    // (e.g. "Natasha2023" scores exactly minStrengthScore but always carries
+    // an "add another word" suggestion, which used to fail it).
+    if (strength.feedback.suggestions.length > 0) {
+      errors.push(...strength.feedback.suggestions);
+    }
   }
   
   return {
