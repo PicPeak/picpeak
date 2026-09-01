@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Save, Download, Plus, Trash2 } from 'lucide-react';
+import { Save, Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
@@ -107,12 +107,10 @@ export const DownloadsTab: React.FC = () => {
   return (
     <div className="space-y-6">
       <Card>
-        <div className="flex items-center gap-2 mb-1">
-          <Download className="w-5 h-5 text-neutral-500" />
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-            {t('settings.downloads.title', 'Download resolutions')}
-          </h2>
-        </div>
+        {/* No tab title here — the Settings shell renders the section
+            heading (icon + label + divider) for every tab that isn't in
+            SettingsPage's TABS_WITH_OWN_HEADER, and repeating it stacked
+            two identical H2s on top of each other (QA warning). */}
         <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-5">
           {t('settings.downloads.intro',
             'The standard size is what every gallery hands out by default. Individual galleries can override this.')}

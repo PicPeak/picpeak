@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Save, RotateCcw, Code, AlertTriangle, Check } from 'lucide-react';
+import { Save, RotateCcw, AlertTriangle, Check } from 'lucide-react';
 import { Button, Card, Loading } from '../common';
 import { cssTemplatesService, CssTemplate } from '../../services/cssTemplates.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -90,12 +90,10 @@ export const CssTemplateEditor: React.FC = () => {
   return (
     <Card>
       <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 flex items-center gap-2">
-            <Code className="w-5 h-5" />
-            {t('cssTemplates.title', 'Custom CSS Templates')}
-          </h2>
-        </div>
+        {/* No title here — this component IS the Settings → Custom CSS
+            tab, and the Settings shell already renders that section
+            heading (icon + label + divider). A second, near-identical H2
+            stacked directly under it (QA warning). */}
 
         {/* Tab Navigation */}
         <div className="flex border-b border-neutral-200 dark:border-neutral-700 mb-6">

@@ -176,10 +176,11 @@ export const WordFilterManager: React.FC = () => {
     <>
       <Card>
         <div className="p-6">
+          {/* No title here — this component IS the Settings → Moderation
+              tab, and the Settings shell already renders that section
+              heading (icon + label + divider). A second H2 stacked
+              directly under it (QA warning). */}
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-2">
-              {t('settings.moderation.wordFilters', 'Word Filters')}
-            </h2>
             <p className="text-sm text-neutral-600 dark:text-neutral-400">
               {t('settings.moderation.description', 'Manage words that should be filtered or blocked in comments')}
             </p>

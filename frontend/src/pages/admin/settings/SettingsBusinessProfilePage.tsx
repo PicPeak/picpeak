@@ -63,13 +63,15 @@ export const SettingsBusinessProfilePage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">{t('businessProfile.title', 'Business profile')}</h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            {t('businessProfile.subtitle', 'Issuer block shown on every quote and invoice PDF.')}
-          </p>
-        </div>
+      {/* No tab title here — the Settings shell renders the section
+          heading (icon + label + divider) for every tab that isn't in
+          SettingsPage's TABS_WITH_OWN_HEADER, and its label resolves to
+          the same string, so repeating it stacked two identical H2s on
+          top of each other (QA warning). The subtitle stays. */}
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          {t('businessProfile.subtitle', 'Issuer block shown on every quote and invoice PDF.')}
+        </p>
         <Button
           onClick={() => saveProfile.mutate()}
           disabled={saveProfile.isPending}

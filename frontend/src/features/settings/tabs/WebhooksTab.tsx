@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { Webhook as WebhookIcon, Trash2, Copy, AlertTriangle, Activity, CheckCircle2, XCircle } from 'lucide-react';
+import { Trash2, Copy, AlertTriangle, Activity, CheckCircle2, XCircle } from 'lucide-react';
 import { Button, Card, Input, Loading } from '../../../components/common';
 import { api } from '../../../config/api';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
@@ -124,10 +124,10 @@ export const WebhooksTab: React.FC = () => {
   return (
     <div className="space-y-6">
       <Card padding="md">
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-2 flex items-center gap-2">
-          <WebhookIcon className="w-5 h-5" />
-          {t('settings.webhooks.title', 'Webhooks')}
-        </h2>
+        {/* No tab title here — the Settings shell renders the section
+            heading (icon + label + divider) for every tab that isn't in
+            SettingsPage's TABS_WITH_OWN_HEADER, and repeating it stacked
+            two identical H2s on top of each other (QA warning). */}
         <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
           {t('settings.webhooks.subtitle', 'POST event notifications to your URL the moment something happens — gallery published, photo uploaded, event archived, etc. Signed with HMAC-SHA256 in the X-PicPeak-Signature header.')}
         </p>
