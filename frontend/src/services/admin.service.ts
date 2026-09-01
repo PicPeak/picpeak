@@ -578,7 +578,6 @@ export const adminService = {
       'customer_created_passive': `Passive customer created: ${md.email || ''}`,
       'admin_user_activated': `Admin user activated: ${md.username || ''}`,
       'admin_user_deleted': `Admin user deleted: ${md.username || ''}`,
-      'admin_password_reset': `Admin password reset: ${md.username || ''}`,
       // Misc / legacy.
       'bulk_archive_completed': `Bulk archive completed: ${md.count || 0} events archived`,
       'email_queue_flushed': 'Email queue flushed',

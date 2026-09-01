@@ -92,7 +92,6 @@ export const EventThemeSection: React.FC<EventThemeSectionProps> = ({
               setThemeChanged(true);
               toast.success(t('toast.brandingPaletteSynced', 'Palette synced from Branding.'));
             }}
-            isPreviewMode={true}
             showGalleryLayouts={true}
             hideActions={true}
             cssTemplates={cssTemplates}

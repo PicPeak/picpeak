@@ -502,9 +502,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
         promo_position: settingsData.branding_promo_position === 'below_footer' ? 'below_footer' : 'above_footer',
         // Promo alignment (#482). Defaults to 'center' to match the
         // gallery footer; see GalleryLayout.
-        promo_alignment: ['left', 'center', 'right'].includes(settingsData.branding_promo_alignment)
-          ? settingsData.branding_promo_alignment
-          : 'center',
+        promo_alignment: settingsData.branding_promo_alignment || 'center',
       });
     }
   }, [settingsData]);

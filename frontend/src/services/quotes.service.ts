@@ -382,6 +382,10 @@ export interface PublicQuoteView {
     unitPriceMinor: number;
     discountPercent: number;
     lineTotalMinor: number;
+    /** Hierarchy + details (migration 119). NULL parent = top-level item. */
+    parentLineItemId: number | null;
+    parentPosition: number | null;
+    detailsText: string | null;
   }>;
   /** Terms of Service block driven by the global `crm_quotes_tos_*`
    *  settings. When `required` is true, the public page must show a

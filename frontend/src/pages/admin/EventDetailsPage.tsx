@@ -717,7 +717,7 @@ export const EventDetailsPage: React.FC = () => {
       {showPasswordReset && (
         <PasswordResetModal
           eventName={event.event_name}
-          eventDate={event.event_date}
+          eventDate={event.event_date ?? undefined}
           eventType={event.event_type}
           onConfirm={async (sendEmail, password) => {
             const result = await eventsService.resetPassword(event.id, sendEmail, password);

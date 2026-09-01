@@ -25,8 +25,8 @@ export interface FaceBox {
  */
 export function faceCropStyle(
   cover: FaceBox | null | undefined,
-  photoWidth: number | undefined,
-  photoHeight: number | undefined,
+  photoWidth: number | null | undefined,
+  photoHeight: number | null | undefined,
   size: number,
 ): React.CSSProperties | null {
   if (!cover || !photoWidth || !photoHeight) return null;

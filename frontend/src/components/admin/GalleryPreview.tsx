@@ -10,7 +10,10 @@ interface GalleryPreviewBranding {
   logo_url?: string;
   logo_url_dark?: string;
   logo_display_mode?: 'logo_only' | 'text_only' | 'logo_and_text';
-  logo_position?: 'left' | 'center' | 'right';
+  // Mirrors BrandingSettings.logo_position. 'sidepanel' has no distinct
+  // rendering in this small preview — it falls through to the left-aligned
+  // branch below.
+  logo_position?: 'left' | 'center' | 'right' | 'sidepanel';
 }
 
 interface GalleryPreviewProps {

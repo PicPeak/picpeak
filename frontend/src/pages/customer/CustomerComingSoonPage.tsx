@@ -9,13 +9,14 @@
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import type { LucideIcon } from 'lucide-react';
 
 interface CustomerComingSoonPageProps {
   titleKey: string;
   titleFallback: string;
   bodyKey: string;
   bodyFallback: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
 }
 
 export const CustomerComingSoonPage: React.FC<CustomerComingSoonPageProps> = ({

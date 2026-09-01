@@ -27,7 +27,6 @@ import { useMutationWithToast } from '../../../hooks';
 // engine that lacks it.
 const IANA_TIMEZONES: string[] = (() => {
   try {
-    // @ts-expect-error supportedValuesOf is ES2022, not yet in all TS lib defs
     return Intl.supportedValuesOf('timeZone') as string[];
   } catch {
     return ['UTC', 'Europe/Vaduz', 'Europe/Zurich', 'Europe/Berlin', 'Europe/Vienna', 'Europe/Paris', 'Europe/London'];

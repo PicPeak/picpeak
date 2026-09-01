@@ -168,14 +168,8 @@ export const GalleryPage: React.FC = () => {
         themeToApply = settingsData.theme_config;
       }
 
-      // Inject hero photo ID into theme gallery settings
-      if (themeToApply && galleryInfo.hero_photo_id) {
-        if (themeToApply.gallerySettings) {
-          themeToApply.gallerySettings.heroImageId = galleryInfo.hero_photo_id;
-        } else {
-          themeToApply.gallerySettings = { heroImageId: galleryInfo.hero_photo_id };
-        }
-      }
+      // The hero photo ID is injected into gallerySettings by GalleryView,
+      // which reads it off the /photos response. /info doesn't carry it.
 
       // Apply theme. Force color mode is enforced inside ThemeContext.applyTheme
       // (it subscribes to public settings) so callers don't have to wrap the

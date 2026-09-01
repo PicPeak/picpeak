@@ -27,7 +27,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../common';
 import { customerAdminService } from '../../services/customerAdmin.service';
 import { eventsService } from '../../services/events.service';
-import type { Event as AdminEvent } from '../../services/events.service';
+import type { Event as AdminEvent } from '../../types';
 
 interface SelectedEvent {
   id: number;

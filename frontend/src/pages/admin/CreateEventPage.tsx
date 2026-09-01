@@ -66,11 +66,13 @@ interface FormData {
     allow_favorites: boolean;
     allow_reactions: boolean;
     allow_color_labels: boolean;
-    keybind_mode: 'colors' | 'lightroom';
+    // Optional, mirroring the shared FeedbackSettings contract — the
+    // <FeedbackSettings> editor's onChange emits that shape.
+    keybind_mode?: 'colors' | 'lightroom';
     require_name_email: boolean;
     moderate_comments: boolean;
     show_feedback_to_guests: boolean;
-    identity_mode: 'simple' | 'guest' | 'shared';
+    identity_mode?: 'simple' | 'guest' | 'shared';
     enable_rate_limiting: boolean;
     rate_limit_window_minutes?: number;
     rate_limit_max_requests?: number;

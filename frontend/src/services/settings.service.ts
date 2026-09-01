@@ -1,4 +1,5 @@
 import { api } from '../config/api';
+import type { SlideshowGlobalDefaults } from './slideshow.service';
 
 export interface BrandingSettings {
   company_name: string;
@@ -213,7 +214,7 @@ export const settingsService = {
   },
 
   // Update global Live Slideshow defaults (watermark)
-  async updateSlideshowDefaults(settings: Record<string, unknown>): Promise<void> {
+  async updateSlideshowDefaults(settings: SlideshowGlobalDefaults): Promise<void> {
     await api.put('/admin/settings/slideshow', settings);
   },
 

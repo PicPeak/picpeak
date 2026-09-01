@@ -26,7 +26,11 @@ import { useMutationWithToast } from '../../hooks';
 const ACCOUNT_TYPES: AccountType[] = ['asset', 'liability', 'equity', 'revenue', 'expense'];
 const labelCls = 'block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1';
 const selectCls = 'w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm';
-const SETTING_ACCOUNT_KEYS: (keyof LedgerSettings)[] = [
+// Narrowed to the `ledger_account_*` keys so `patch[k] = settings[k]` below
+// typechecks: they all share the value type `string | undefined`, whereas
+// `keyof LedgerSettings` also spans the Record-valued VAT maps.
+type LedgerAccountSettingKey = Extract<keyof LedgerSettings, `ledger_account_${string}`>;
+const SETTING_ACCOUNT_KEYS: LedgerAccountSettingKey[] = [
   'ledger_account_debitoren', 'ledger_account_kreditoren', 'ledger_account_bank', 'ledger_account_cash',
   'ledger_account_default_revenue', 'ledger_account_default_expense',
   'ledger_account_mileage', 'ledger_account_per_diem', 'ledger_account_rebilled_revenue',

@@ -6,11 +6,9 @@ import { useTranslation } from 'react-i18next';
 
 import { Button, Input, Card } from '../common';
 import { adminService } from '../../services/admin.service';
-import { useAdminAuth } from '../../contexts';
 
 export const MandatoryPasswordChangeModal: React.FC = () => {
   const { t } = useTranslation();
-  const { updatePasswordChanged } = useAdminAuth();
   const [formData, setFormData] = useState({
     currentPassword: '',
     newPassword: '',

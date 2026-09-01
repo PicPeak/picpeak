@@ -61,6 +61,12 @@ interface UpdateEventData {
   admin_email?: string;
   require_password?: boolean;
   password?: string;
+  // Client (photographer's customer) access to the gallery. The plaintext
+  // PIN is hashed server-side; `regenerate_client_token` mints a fresh
+  // share token. Validated in adminEvents/crud.js on the update route.
+  client_access_enabled?: boolean;
+  client_password?: string;
+  regenerate_client_token?: boolean;
   welcome_message?: string;
   color_theme?: string;
   expires_at?: string;

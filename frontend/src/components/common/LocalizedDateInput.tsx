@@ -22,6 +22,8 @@ interface LocalizedDateInputProps {
   value: string;
   onChange: (iso: string) => void;
   error?: string;
+  /** Hint rendered below the field, hidden while an error is showing. */
+  helperText?: string;
   /** Forwarded to the native picker so min/max date constraints work. */
   min?: string;
   max?: string;
@@ -33,6 +35,7 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
   value,
   onChange,
   error,
+  helperText,
   min,
   max,
   disabled,
@@ -154,7 +157,9 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
           }}
           className={clsx('input pr-10', error && 'border-red-500 focus-visible:ring-red-500')}
           aria-invalid={error ? 'true' : 'false'}
-          aria-describedby={error ? `${inputId}-error` : undefined}
+          aria-describedby={
+            error ? `${inputId}-error` : helperText ? `${inputId}-helper` : undefined
+          }
         />
         <button
           type="button"
@@ -187,6 +192,11 @@ export const LocalizedDateInput: React.FC<LocalizedDateInputProps> = ({
       {error && (
         <p id={`${inputId}-error`} className="mt-1.5 text-sm text-red-600 dark:text-red-400">
           {error}
+        </p>
+      )}
+      {helperText && !error && (
+        <p id={`${inputId}-helper`} className="mt-1.5 text-sm text-neutral-500 dark:text-neutral-400">
+          {helperText}
         </p>
       )}
     </div>

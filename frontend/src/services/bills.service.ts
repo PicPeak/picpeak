@@ -96,6 +96,9 @@ export interface InvoiceSummary {
    *  (migration 128). Carries status 'scheduled' but never auto-sends
    *  (manual) — shown with a "Draft" badge in the list. */
   isMonthlyDraft?: boolean;
+  /** Storno wiring (migration 114). On a reissued invoice, the id of the
+   *  original cancelled invoice — drives the "Reissue" badge. */
+  replacesInvoiceId?: number | null;
 }
 
 /**

@@ -74,6 +74,13 @@ function publicQuoteView(quote, lineItems, customer, profile, tosRequired, tosTe
       unitPriceMinor: li.unit_price_minor,
       discountPercent: li.discount_percent == null ? 0 : Number(li.discount_percent),
       lineTotalMinor: li.line_total_minor,
+      // Hierarchy + details (migration 119), same shape adminQuotes.js
+      // projects. Omitting them here meant the customer-facing page could
+      // never thread sub-items or show details text, even though the data
+      // is on the rows getQuoteById already returns.
+      parentLineItemId: li.parent_line_item_id || null,
+      parentPosition: li.parent_position == null ? null : Number(li.parent_position),
+      detailsText: li.details_text || null,
     })),
     recipient: customer ? {
       displayName: customer.display_name || [customer.first_name, customer.last_name].filter(Boolean).join(' '),

@@ -70,6 +70,8 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   // Workflow / automation engine — opt-in; gates the Workflows admin area
   // and the engine runtime (triggers/actions/gates).
   workflows: false,
+  // #1074 — off by default is the whole "zero behaviour change" guarantee.
+  faces: false,
 };
 
 export const FEATURE_FLAGS_QUERY_KEY = ['feature-flags'] as const;

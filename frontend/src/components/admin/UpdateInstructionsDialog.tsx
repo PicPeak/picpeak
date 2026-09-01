@@ -139,9 +139,11 @@ export const UpdateInstructionsDialog: React.FC<UpdateInstructionsDialogProps> =
           <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
               {t('admin.updates.updateDialog.title', 'Update PicPeak')}
-              {data?.targetVersion && (
+              {/* The server response is authoritative; the prop covers the
+                  window before the query resolves. */}
+              {(data?.targetVersion || targetVersion) && (
                 <span className="ml-2 text-blue-600 dark:text-blue-400">
-                  v{data.targetVersion}
+                  v{data?.targetVersion || targetVersion}
                 </span>
               )}
             </h3>

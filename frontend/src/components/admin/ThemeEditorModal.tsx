@@ -145,7 +145,6 @@ export const ThemeEditorModal: React.FC<ThemeEditorModalProps> = ({
                 onChange={handleThemeChange}
                 presetName={presetName}
                 onPresetChange={handlePresetChange}
-                isPreviewMode={true}
                 showGalleryLayouts={true}
                 hideActions={true}
                 cssTemplates={cssTemplates}

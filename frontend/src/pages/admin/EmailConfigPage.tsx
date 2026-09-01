@@ -395,7 +395,10 @@ export const EmailConfigPage: React.FC = () => {
       translations: {
         ...prev.translations,
         [editingLang]: {
-          ...prev.translations?.[editingLang],
+          // Seed the empty translation when this language has none yet,
+          // otherwise the first edit stores a partial object missing the
+          // other required fields.
+          ...(prev.translations?.[editingLang] || { subject: '', body_html: '', body_text: '' }),
           [field]: value,
         },
       },
@@ -1015,7 +1018,7 @@ export const EmailConfigPage: React.FC = () => {
                         className="inline-flex items-center gap-1.5 px-3 py-1 text-sm bg-white dark:bg-neutral-800 border border-blue-300 dark:border-blue-700 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-700 dark:text-blue-300"
                       >
                         <Copy className="w-3.5 h-3.5" />
-                        {t('email.copyFrom')} {lang.flag} {lang.name}
+                        {t('email.copyFrom')} <lang.Flag/> {lang.name}
                       </button>
                     ))}
                   </div>
