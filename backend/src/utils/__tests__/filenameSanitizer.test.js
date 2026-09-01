@@ -28,9 +28,9 @@ describe('sanitizeFilename — accented characters transliterate via NFD (#607)'
   const legacyBroken = (s) =>
     String(s).trim()
       .replace(/\s+/g, '_')
-      .replace(/[^a-zA-Z0-9_\-\.]/g, '')
-      .replace(/[_\-]{2,}/g, '_')
-      .replace(/^[_\-]+|[_\-]+$/g, '');
+      .replace(/[^a-zA-Z0-9_\-.]/g, '')
+      .replace(/[_-]{2,}/g, '_')
+      .replace(/^[_-]+|[_-]+$/g, '');
 
   it.each([
     ['Ägypten', 'Agypten'],
@@ -138,8 +138,8 @@ describe('sanitizeForContentDisposition — header-safe ASCII fallback', () => {
 describe('buildContentDisposition — RFC 6266 / RFC 5987 dual form', () => {
   it('emits both filename="..." (ASCII) and filename*=UTF-8\'\'... (unicode) for accented names', () => {
     const header = buildContentDisposition('Ägypten.jpg');
-    expect(header).toContain("filename=\"gypten.jpg\"");
-    expect(header).toContain("filename*=UTF-8''%C3%84gypten.jpg");
+    expect(header).toContain('filename="gypten.jpg"');
+    expect(header).toContain('filename*=UTF-8\'\'%C3%84gypten.jpg');
     expect(header.startsWith('attachment;')).toBe(true);
   });
 

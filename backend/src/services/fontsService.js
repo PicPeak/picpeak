@@ -166,7 +166,7 @@ async function scanRoot(rootAbs) {
     if (result.has(lc)) {
       logger.warn(
         `[fonts] Duplicate family ${family.family} within ${rootAbs}; ` +
-        `keeping the first encountered folder`
+        'keeping the first encountered folder'
       );
       continue;
     }

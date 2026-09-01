@@ -203,18 +203,18 @@ const parseSettingValue = (value, type) => {
   }
 
   switch (type) {
-    case 'boolean':
-      return parseBooleanInput(value, false);
-    case 'number':
-      return parseNumberInput(value, 0);
-    case 'json':
-      try {
-        return JSON.parse(value);
-      } catch {
-        return null;
-      }
-    default:
-      return value;
+  case 'boolean':
+    return parseBooleanInput(value, false);
+  case 'number':
+    return parseNumberInput(value, 0);
+  case 'json':
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  default:
+    return value;
   }
 };
 
@@ -230,14 +230,14 @@ const serializeSettingValue = (value, type) => {
   }
 
   switch (type) {
-    case 'boolean':
-      return String(value === true || value === 'true' || value === 1);
-    case 'number':
-      return String(value);
-    case 'json':
-      return JSON.stringify(value);
-    default:
-      return String(value);
+  case 'boolean':
+    return String(value === true || value === 'true' || value === 1);
+  case 'number':
+    return String(value);
+  case 'json':
+    return JSON.stringify(value);
+  default:
+    return String(value);
   }
 };
 

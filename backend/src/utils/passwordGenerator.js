@@ -93,7 +93,7 @@ function validatePasswordStrength(password) {
     result.score += 1;
   }
   
-  if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) {
+  if (!/[!@#$%^&*()_+\-=[\]{}|;:,.<>?]/.test(password)) {
     result.messages.push('Password must contain special characters');
   } else {
     result.score += 1;

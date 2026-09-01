@@ -40,7 +40,7 @@ function startFileWatcher() {
   }
 
   const watcher = chokidar.watch(WATCH_PATH(), {
-    ignored: /(^|[\/\\])\../, // ignore dotfiles
+    ignored: /(^|[/\\])\../, // ignore dotfiles
     persistent: true,
     awaitWriteFinish: {
       stabilityThreshold: 2000,

@@ -19,7 +19,7 @@ const { sanitizeCss } = require('../utils/cssSanitizer');
 const buildPublicSiteRows = (overrides = {}) => ([
   { setting_key: 'general_public_site_enabled', setting_value: JSON.stringify(overrides.enabled ?? true) },
   { setting_key: 'general_public_site_html', setting_value: JSON.stringify(overrides.html ?? '<h1>{{company_name}}</h1>') },
-  { setting_key: 'general_public_site_custom_css', setting_value: JSON.stringify(overrides.css ?? "body { color: red; }") }
+  { setting_key: 'general_public_site_custom_css', setting_value: JSON.stringify(overrides.css ?? 'body { color: red; }') }
 ]);
 
 const buildBrandingRows = (overrides = {}) => ([
@@ -64,7 +64,7 @@ describe('publicSiteService', () => {
 
   it('sanitizes custom CSS and removes dangerous patterns', async () => {
     const publicSiteRows = buildPublicSiteRows({
-      css: "body { color: blue; } @import url('https://malicious.example/style.css'); div { background: url(\"javascript:alert(1)\"); }"
+      css: 'body { color: blue; } @import url(\'https://malicious.example/style.css\'); div { background: url("javascript:alert(1)"); }'
     });
     const brandingRows = buildBrandingRows();
 

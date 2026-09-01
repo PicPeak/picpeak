@@ -176,8 +176,9 @@ const mapEventForApi = (event) => {
     customer_name,
     customer_email,
     customer_phone,
-    password_hash: _ph,
-    client_password_hash: _cph,
+    // Bound only to exclude the secrets from `...rest` — never read.
+    // eslint-disable-next-line no-unused-vars -- rest-sibling omission
+    password_hash: _ph, client_password_hash: _cph,
     ...rest
   } = event;
 

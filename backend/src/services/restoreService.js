@@ -771,7 +771,7 @@ class RestoreService {
    * Download backup from S3
    */
   async downloadFromS3(s3Url, manifest, options) {
-    const s3PathMatch = s3Url.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+    const s3PathMatch = s3Url.match(/^s3:\/\/([^/]+)\/(.+)$/);
     if (!s3PathMatch) {
       throw new Error('Invalid S3 URL format');
     }
@@ -930,7 +930,7 @@ class RestoreService {
   /**
    * Perform database-only restore
    */
-  async performDatabaseRestore(backupPath, manifest, options) {
+  async performDatabaseRestore(backupPath, manifest, _options) {
     this.updateProgress('Restoring database...');
 
     const dbBackupFile = manifest.database.backup_file;
@@ -1524,7 +1524,8 @@ END $$;`
     try {
       // Read backup manifest
       const manifestPath = path.join(preRestoreBackupPath, 'backup-manifest.json');
-      const backupManifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
+      // Parsed for its side effect: throws if the manifest is missing/corrupt.
+      JSON.parse(await fs.readFile(manifestPath, 'utf8'));
 
       // Restore database if backed up
       const dbBackupPath = path.join(preRestoreBackupPath, 'database.sql.gz');
@@ -1622,7 +1623,7 @@ END $$;`
    * Download file from S3
    */
   async downloadFileFromS3(s3Url, localPath, s3Config) {
-    const s3PathMatch = s3Url.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+    const s3PathMatch = s3Url.match(/^s3:\/\/([^/]+)\/(.+)$/);
     if (!s3PathMatch) {
       throw new Error('Invalid S3 URL format');
     }

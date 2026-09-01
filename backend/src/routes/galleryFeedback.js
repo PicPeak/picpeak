@@ -14,7 +14,6 @@ const {
   checkValidation,
   validateGuestRequirements
 } = require('../utils/feedbackValidation');
-const { escapeLikePattern } = require('../utils/sqlSecurity');
 
 // Get feedback settings for a gallery
 router.get('/:slug/feedback-settings',

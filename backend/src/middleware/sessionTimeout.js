@@ -135,7 +135,7 @@ async function sessionTimeoutMiddleware(req, res, next) {
     // Clean up old token if user has a new one
     // This prevents memory leaks from token renewals
     const userId = decoded.id;
-    for (const [oldToken, _] of sessions.entries()) {
+    for (const oldToken of sessions.keys()) {
       if (oldToken !== token) {
         try {
           const oldDecoded = jwt.verify(oldToken, process.env.JWT_SECRET, { algorithms: ['HS256'] });
@@ -198,7 +198,7 @@ function getActiveSessions() {
   const now = Date.now();
   let active = 0;
   
-  for (const [_, lastActivity] of sessions.entries()) {
+  for (const lastActivity of sessions.values()) {
     if (now - lastActivity <= DEFAULT_SESSION_TIMEOUT) {
       active++;
     }

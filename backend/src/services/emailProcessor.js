@@ -183,7 +183,7 @@ async function getRecipientLanguage(email, eventId = null) {
       .first();
     if (langSetting && langSetting.setting_value) {
       let lang = langSetting.setting_value;
-      try { lang = JSON.parse(lang); } catch (_) {}
+      try { lang = JSON.parse(lang); } catch (_) { /* non-fatal */ }
       if (typeof lang === 'string' && lang.trim()) return lang.trim();
     }
   } catch (error) {
@@ -789,13 +789,13 @@ async function sendTemplateEmail(to, templateKey, variables) {
         : undefined;
     const attachments = Array.isArray(variables.attachments)
       ? variables.attachments
-          .filter((a) => a && (a.contentPath || a.path || a.content))
-          .map((a) => ({
-            filename: a.filename,
-            path: a.contentPath || a.path,
-            content: a.content,
-            contentType: a.contentType,
-          }))
+        .filter((a) => a && (a.contentPath || a.path || a.content))
+        .map((a) => ({
+          filename: a.filename,
+          path: a.contentPath || a.path,
+          content: a.content,
+          contentType: a.contentType,
+        }))
       : undefined;
 
     // Send email
@@ -872,7 +872,7 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
   const ccList = Array.isArray(cc) ? cc.filter(Boolean) : (cc ? [cc] : undefined);
   const atts = Array.isArray(attachments)
     ? attachments.filter((a) => a && (a.contentPath || a.path || a.content))
-        .map((a) => ({ filename: a.filename, path: a.contentPath || a.path, content: a.content, contentType: a.contentType }))
+      .map((a) => ({ filename: a.filename, path: a.contentPath || a.path, content: a.content, contentType: a.contentType }))
     : undefined;
   const mail = {
     from: `${fromName || 'picpeak'} <${fromEmail}>`,

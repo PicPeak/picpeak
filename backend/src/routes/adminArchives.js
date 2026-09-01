@@ -6,7 +6,6 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { slugify } = require('../utils/slug');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const archiver = require('archiver');
 const StreamZip = require('node-stream-zip');
 const { requireEventOwnership } = require('../middleware/ownership');
 const { assertZipEntriesWithin } = require('../utils/safePath');

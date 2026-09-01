@@ -3,7 +3,7 @@
  * Handles renaming events including slug updates, file system changes, and database updates
  */
 
-const { db, logActivity } = require('../database/db');
+const { db } = require('../database/db');
 const fs = require('fs').promises;
 const path = require('path');
 const logger = require('../utils/logger');
@@ -228,7 +228,7 @@ class EventRenameService {
     const event = await trx('events').where({ id: eventId }).first();
 
     // Generate new share link
-    const { sharePath, shareUrl, shareLinkToStore } = await buildShareLinkVariants({
+    const { shareUrl, shareLinkToStore } = await buildShareLinkVariants({
       slug: newSlug,
       shareToken: event.share_token
     });

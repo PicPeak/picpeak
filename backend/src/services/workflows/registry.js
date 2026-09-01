@@ -28,15 +28,15 @@ registerCondition('expr', async (ctx) => {
   const { field, op = 'truthy', value } = ctx.node.config || {};
   const actual = field != null ? ctx.vars[field] : undefined;
   switch (op) {
-    case 'eq': return actual == value; // eslint-disable-line eqeqeq
-    case 'neq': return actual != value; // eslint-disable-line eqeqeq
-    case 'gt': return Number(actual) > Number(value);
-    case 'gte': return Number(actual) >= Number(value);
-    case 'lt': return Number(actual) < Number(value);
-    case 'lte': return Number(actual) <= Number(value);
-    case 'falsy': return !actual;
-    case 'truthy':
-    default: return Boolean(actual);
+  case 'eq': return actual == value; // eslint-disable-line eqeqeq
+  case 'neq': return actual != value; // eslint-disable-line eqeqeq
+  case 'gt': return Number(actual) > Number(value);
+  case 'gte': return Number(actual) >= Number(value);
+  case 'lt': return Number(actual) < Number(value);
+  case 'lte': return Number(actual) <= Number(value);
+  case 'falsy': return !actual;
+  case 'truthy':
+  default: return Boolean(actual);
   }
 });
 

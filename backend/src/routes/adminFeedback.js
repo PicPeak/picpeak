@@ -107,7 +107,7 @@ router.get('/events/:eventId/feedback',
       
       if (status === 'pending') {
         query = query.where('photo_feedback.is_approved', false)
-                     .where('photo_feedback.is_hidden', false);
+          .where('photo_feedback.is_hidden', false);
       } else if (status === 'approved') {
         query = query.where('photo_feedback.is_approved', true);
       } else if (status === 'hidden') {
@@ -131,7 +131,7 @@ router.get('/events/:eventId/feedback',
       
       if (status === 'pending') {
         countQuery = countQuery.where('photo_feedback.is_approved', false)
-                               .where('photo_feedback.is_hidden', false);
+          .where('photo_feedback.is_hidden', false);
       } else if (status === 'approved') {
         countQuery = countQuery.where('photo_feedback.is_approved', true);
       } else if (status === 'hidden') {

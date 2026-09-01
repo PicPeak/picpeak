@@ -27,7 +27,7 @@ function requireEventOwnership(req, res, next) {
       }
       next();
     })
-    .catch((err) => {
+    .catch((_err) => {
       res.status(500).json({ error: 'Failed to verify ownership' });
     });
 }

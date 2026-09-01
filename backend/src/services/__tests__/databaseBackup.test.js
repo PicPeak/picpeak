@@ -1,7 +1,6 @@
 const { DatabaseBackupService } = require('../databaseBackup');
 const { db } = require('../../database/db');
 const fs = require('fs').promises;
-const path = require('path');
 const crypto = require('crypto');
 
 // Mock dependencies
@@ -12,11 +11,9 @@ jest.mock('child_process');
 
 describe('DatabaseBackupService', () => {
   let service;
-  let mockExecAsync;
 
   beforeEach(() => {
     service = new DatabaseBackupService();
-    mockExecAsync = jest.fn();
     
     // Reset mocks
     jest.clearAllMocks();

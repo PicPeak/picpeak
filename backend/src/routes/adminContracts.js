@@ -155,22 +155,22 @@ function transformContract(c, inclusions) {
     updatedAt: c.updated_at,
     inclusions: Array.isArray(inclusions)
       ? inclusions.map((inc) => ({
-          id: inc.id,
-          blockId: inc.block_id,
-          section: inc.section,
-          position: inc.position,
-          included: inc.included === true || inc.included === 1 || inc.included === '1',
-          block: {
-            slug: inc.block_slug,
-            name: inc.block_name,
-            description: inc.block_description,
-            bodyText: inc.block_body_text,
-            bodyTextDe: inc.block_body_text_de,
-            isSystem: inc.block_is_system === true || inc.block_is_system === 1 || inc.block_is_system === '1',
-          },
-          bodyTextSnapshot: inc.body_text_snapshot,
-          bodyTextDeSnapshot: inc.body_text_de_snapshot,
-        }))
+        id: inc.id,
+        blockId: inc.block_id,
+        section: inc.section,
+        position: inc.position,
+        included: inc.included === true || inc.included === 1 || inc.included === '1',
+        block: {
+          slug: inc.block_slug,
+          name: inc.block_name,
+          description: inc.block_description,
+          bodyText: inc.block_body_text,
+          bodyTextDe: inc.block_body_text_de,
+          isSystem: inc.block_is_system === true || inc.block_is_system === 1 || inc.block_is_system === '1',
+        },
+        bodyTextSnapshot: inc.body_text_snapshot,
+        bodyTextDeSnapshot: inc.body_text_de_snapshot,
+      }))
       : undefined,
   };
 }

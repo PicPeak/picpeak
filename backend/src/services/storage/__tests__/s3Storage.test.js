@@ -51,7 +51,7 @@ describe('S3StorageAdapter', () => {
     });
     
     it('should configure for MinIO with path style', () => {
-      const minioStorage = new S3StorageAdapter({
+      new S3StorageAdapter({
         bucket: 'test-bucket',
         endpoint: 'http://localhost:9000',
         forcePathStyle: true,

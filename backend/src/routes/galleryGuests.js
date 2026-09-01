@@ -35,6 +35,7 @@ function sanitizeName(value) {
   // Strip HTML/control chars, collapse whitespace.
   const cleaned = value
     .replace(/[<>&"']/g, '')
+    // eslint-disable-next-line no-control-regex -- intentional: strips control chars from guest input
     .replace(/[\u0000-\u001F\u007F]/g, '')
     .replace(/\s+/g, ' ')
     .trim();

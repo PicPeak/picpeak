@@ -4,7 +4,6 @@ const fsSync = require('fs');
 const crypto = require('crypto');
 const childProcess = require('child_process');
 const os = require('os');
-const { promisify } = require('util');
 
 const cron = require('node-cron');
 const cronParser = require('cron-parser');
@@ -69,7 +68,6 @@ function ensureMockableExec() {
 
 ensureMockableExec();
 
-const getExecAsync = () => promisify(childProcess.exec);
 
 async function resolveConfigWithFallback() {
   let config;
@@ -763,7 +761,7 @@ async function performLocalBackup(config, files) {
 
 function validateRsyncParam(value, label) {
   if (!value || typeof value !== 'string') return null;
-  if (!/^[a-zA-Z0-9._\/@:-]+$/.test(value)) {
+  if (!/^[a-zA-Z0-9._/@:-]+$/.test(value)) {
     throw new Error(`Invalid ${label}: contains disallowed characters`);
   }
   if (value.length > 1024) {
@@ -1532,7 +1530,7 @@ async function loadManifestFromAnywhere(manifestPath, config) {
     throw new Error('S3 credentials not configured for manifest retrieval');
   }
 
-  const match = manifestPath.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+  const match = manifestPath.match(/^s3:\/\/([^/]+)\/(.+)$/);
   if (!match) {
     throw new Error('Invalid S3 manifest path');
   }
@@ -1601,7 +1599,7 @@ async function getBackupManifest(backupRunId) {
     throw new Error('S3 credentials not configured for manifest retrieval');
   }
 
-  const match = run.manifest_path.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+  const match = run.manifest_path.match(/^s3:\/\/([^/]+)\/(.+)$/);
   if (!match) {
     throw new Error('Invalid S3 manifest path');
   }
@@ -1640,7 +1638,7 @@ async function validateBackupManifest(manifestPath) {
     let manifest;
 
     if (manifestPath.startsWith('s3://')) {
-      const match = manifestPath.match(/^s3:\/\/([^\/]+)\/(.+)$/);
+      const match = manifestPath.match(/^s3:\/\/([^/]+)\/(.+)$/);
       if (!match) {
         throw new Error('Invalid S3 manifest path');
       }

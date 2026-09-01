@@ -70,7 +70,7 @@ function verifyImageToken(token) {
 router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery, async (req, res) => {
   try {
     const { photoId } = req.params;
-    const { protectionLevel = 'standard', token } = req.query;
+    const { protectionLevel = 'standard' } = req.query;
     
     // Create client fingerprint
     const clientFingerprint = secureImageService.createClientFingerprint(req);

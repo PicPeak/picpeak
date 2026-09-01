@@ -176,7 +176,7 @@ function feedbackRateLimit(actionType) {
         
         return res.status(429).json({
           error: 'Too many requests',
-          message: `Rate limit exceeded. Please try again later.`,
+          message: 'Rate limit exceeded. Please try again later.',
           retryAfter: rateLimitStatus.window
         });
       }

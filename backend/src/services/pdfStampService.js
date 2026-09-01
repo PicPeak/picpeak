@@ -23,7 +23,6 @@
  */
 
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 const PDFKit = require('pdfkit');
 const { PDFDocument } = require('pdf-lib');
@@ -84,7 +83,7 @@ function pdfkitToPdfLib(pageHeight, x, y, w, h) {
  * or the input file.
  */
 async function stampSignature({ pdfBuffer, signaturePngPath, role, caption }) {
-  const { L, FONT_BODY, FONT_BOLD, formatDate } = pdfConsts();
+  const { L, formatDate } = pdfConsts();
   if (!Buffer.isBuffer(pdfBuffer)) {
     throw new Error('stampSignature: pdfBuffer must be a Buffer');
   }
@@ -261,7 +260,7 @@ async function renderAuditCertificate({ contract, customer, admin, locale = 'de'
 
       const labelW = 200;
       const valueW = PAGE.contentWidth - labelW;
-      function row(labelKey, value) {
+      const row = (labelKey, value) => {
         if (!value) return;
         doc.font(doc._fonts.bold).fontSize(9).fillColor('#444');
         doc.text(t(locale, labelKey), PAGE.marginLeft, y, {
@@ -272,7 +271,7 @@ async function renderAuditCertificate({ contract, customer, admin, locale = 'de'
           width: valueW, align: 'left',
         });
         y = Math.max(y + 12, doc.y + 4);
-      }
+      };
 
       row('audit_contract_number', contract.contract_number);
       row('audit_issued_at', contract.sent_at

@@ -1,7 +1,6 @@
 const { db } = require('../database/db');
 const secureImageService = require('../services/secureImageService');
 const logger = require('../utils/logger');
-const { formatBoolean } = require('../utils/dbCompat');
 
 /**
  * Enhanced secure image middleware with comprehensive protection
@@ -69,7 +68,7 @@ class SecureImageMiddleware {
   /**
    * Perform comprehensive security checks
    */
-  async performSecurityChecks(req, res) {
+  async performSecurityChecks(req, _res) {
     const { clientInfo } = req;
     const { photoId } = req.params;
 
@@ -132,7 +131,6 @@ class SecureImageMiddleware {
    */
   async checkRateLimit(req) {
     const { clientInfo } = req;
-    const now = Date.now();
 
     // Get rate limit settings from database
     const settings = await this.getRateLimitSettings();

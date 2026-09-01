@@ -13,8 +13,6 @@ const { formatBoolean } = require('../utils/dbCompat');
 const packageJson = require('../../package.json');
 
 // Constants
-const CHUNK_SIZE = 1024 * 1024; // 1MB chunks for streaming
-const PROGRESS_INTERVAL = 100; // Report progress every 100 rows
 
 // Face recognition tables (#1074). Their SCHEMA is backed up, their CONTENTS
 // are not: embeddings are biometric data (GDPR Art. 9) and fully derived from
@@ -183,7 +181,7 @@ class DatabaseBackupService {
   /**
    * Create SQLite backup
    */
-  async createSQLiteBackup(outputPath, options = {}) {
+  async createSQLiteBackup(outputPath, _options = {}) {
     const dbPath = knexConfig.connection.filename;
     const tempPath = `${outputPath}.tmp`;
     
@@ -214,7 +212,7 @@ class DatabaseBackupService {
       // works out that a manual re-scan is needed. Requeue instead.
       await spawnAsync('sqlite3', [
         tempPath,
-        "UPDATE photos SET face_status = CASE WHEN face_status IS NULL THEN NULL ELSE 'pending' END, "
+        'UPDATE photos SET face_status = CASE WHEN face_status IS NULL THEN NULL ELSE \'pending\' END, '
         + 'face_count = NULL, face_started_at = NULL, face_error = NULL;',
       ]).catch(() => {});
       // FATAL, not a warning. Deleting rows leaves their pages in the file
@@ -337,7 +335,7 @@ class DatabaseBackupService {
   /**
    * Validate backup integrity
    */
-  async validateBackup(backupPath, originalChecksums) {
+  async validateBackup(backupPath, _originalChecksums) {
     const tempDbPath = `${backupPath}.validate`;
     
     try {
@@ -747,7 +745,7 @@ class DatabaseBackupService {
   /**
    * Restore from backup (with version checking)
    */
-  async restore(backupPath, options = {}) {
+  async restore(backupPath, _options = {}) {
     // This is a dangerous operation and should be used with extreme caution
     throw new Error('Restore functionality not implemented for safety. Please use restore service or restore manually.');
   }

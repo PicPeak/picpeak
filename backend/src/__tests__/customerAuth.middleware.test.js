@@ -65,7 +65,7 @@ function makeRes() {
   res.json = jest.fn().mockReturnValue(res);
   return res;
 }
-function makeReq({ token = 'tkn', cookies = {}, headers = {}, originalUrl = '/api/customer/foo', ip = '1.2.3.4' } = {}) {
+function makeReq({ cookies = {}, headers = {}, originalUrl = '/api/customer/foo', ip = '1.2.3.4' } = {}) {
   return { headers: { authorization: undefined, ...headers }, cookies, originalUrl, ip, connection: { remoteAddress: ip } };
 }
 

@@ -1172,32 +1172,32 @@ class FeedbackService {
         if (!entry.guest_email && row.guest_email) entry.guest_email = row.guest_email;
 
         switch (row.feedback_type) {
-          case 'favorite':
-            entry.is_favorited = true;
-            break;
-          case 'like':
-            entry.is_liked = true;
-            break;
-          case 'rating':
-            if (row.rating != null) entry.star_rating = row.rating;
-            break;
-          case 'comment':
-            if (row.comment_text) {
-              // Most recent comment wins. Older comments from the same guest
-              // on the same photo are dropped — the export is "current state",
-              // not the comment history.
-              entry.comment = row.comment_text;
-            }
-            break;
-          case 'reaction':
-            if (row.reaction) entry.reaction = row.reaction;
-            break;
-          case 'color_label':
-            if (row.color_label) entry.color_label = row.color_label;
-            break;
-          default:
-            // Unknown feedback type — ignore so a future type doesn't break the export.
-            break;
+        case 'favorite':
+          entry.is_favorited = true;
+          break;
+        case 'like':
+          entry.is_liked = true;
+          break;
+        case 'rating':
+          if (row.rating != null) entry.star_rating = row.rating;
+          break;
+        case 'comment':
+          if (row.comment_text) {
+            // Most recent comment wins. Older comments from the same guest
+            // on the same photo are dropped — the export is "current state",
+            // not the comment history.
+            entry.comment = row.comment_text;
+          }
+          break;
+        case 'reaction':
+          if (row.reaction) entry.reaction = row.reaction;
+          break;
+        case 'color_label':
+          if (row.color_label) entry.color_label = row.color_label;
+          break;
+        default:
+          // Unknown feedback type — ignore so a future type doesn't break the export.
+          break;
         }
         // Track the latest action timestamp across all feedback types.
         if (row.created_at && entry.latest_at && row.created_at > entry.latest_at) {

@@ -37,7 +37,6 @@ const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '.
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     logger.info('Multer destination called for file:', file.originalname);
-    const { eventId } = req.params;
     
     // We'll validate the event exists in the route handler
     // For now, just create a temp destination

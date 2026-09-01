@@ -30,7 +30,7 @@ const CONTRACT_EMAIL_TEMPLATES = {
 <p>Or open the full contract:<br>
 <span style="word-break: break-all; font-size: 13px;">{{response_url}}</span></p>
 {{#if valid_until}}<p style="font-size: 13px; color: #666;">Please sign by {{valid_until}}.</p>{{/if}}`,
-      body_text: `Contract {{contract_number}}\n\nDear {{customer_name}},\n\nPlease review and sign the contract {{contract_number}}.\n\nOpen: {{response_url}}\n\n{{#if valid_until}}Please sign by {{valid_until}}.{{/if}}`,
+      body_text: 'Contract {{contract_number}}\n\nDear {{customer_name}},\n\nPlease review and sign the contract {{contract_number}}.\n\nOpen: {{response_url}}\n\n{{#if valid_until}}Please sign by {{valid_until}}.{{/if}}',
     },
     de: {
       subject: 'Vertrag {{contract_number}} zur Unterzeichnung bereit',
@@ -44,7 +44,7 @@ const CONTRACT_EMAIL_TEMPLATES = {
 <p>Oder öffnen Sie den vollständigen Vertrag im Browser:<br>
 <span style="word-break: break-all; font-size: 13px;">{{response_url}}</span></p>
 {{#if valid_until}}<p style="font-size: 13px; color: #666;">Bitte unterzeichnen Sie bis {{valid_until}}.</p>{{/if}}`,
-      body_text: `Vertrag {{contract_number}}\n\nSehr geehrte/r {{customer_name}},\n\nbitte prüfen und unterzeichnen Sie den Vertrag {{contract_number}}.\n\nÖffnen: {{response_url}}\n\n{{#if valid_until}}Bitte unterzeichnen bis {{valid_until}}.{{/if}}`,
+      body_text: 'Vertrag {{contract_number}}\n\nSehr geehrte/r {{customer_name}},\n\nbitte prüfen und unterzeichnen Sie den Vertrag {{contract_number}}.\n\nÖffnen: {{response_url}}\n\n{{#if valid_until}}Bitte unterzeichnen bis {{valid_until}}.{{/if}}',
     },
   },
   contract_fully_signed: {
@@ -56,7 +56,7 @@ const CONTRACT_EMAIL_TEMPLATES = {
 <p>Dear {{customer_name}},</p>
 <p>Both parties have now signed contract {{contract_number}}{{#if title}} — "{{title}}"{{/if}}. Please find the fully signed PDF attached for your records.</p>
 <p style="font-size: 13px; color: #666;">This is the authoritative signed copy. Keep it alongside the related quote and invoices.</p>`,
-      body_text: `Contract {{contract_number}} is now fully signed by both parties. The signed PDF is attached for your records.`,
+      body_text: 'Contract {{contract_number}} is now fully signed by both parties. The signed PDF is attached for your records.',
     },
     de: {
       subject: 'Vertrag {{contract_number}} vollständig unterzeichnet',
@@ -64,7 +64,7 @@ const CONTRACT_EMAIL_TEMPLATES = {
 <p>Sehr geehrte/r {{customer_name}},</p>
 <p>der Vertrag {{contract_number}}{{#if title}} – „{{title}}"{{/if}} wurde nun von beiden Parteien unterzeichnet. Im Anhang finden Sie das beidseitig unterzeichnete PDF für Ihre Unterlagen.</p>
 <p style="font-size: 13px; color: #666;">Dies ist die massgebliche unterzeichnete Fassung. Bewahren Sie sie zusammen mit dem zugehörigen Angebot und den Rechnungen auf.</p>`,
-      body_text: `Vertrag {{contract_number}} ist nun beidseitig unterzeichnet. Das unterzeichnete PDF finden Sie im Anhang.`,
+      body_text: 'Vertrag {{contract_number}} ist nun beidseitig unterzeichnet. Das unterzeichnete PDF finden Sie im Anhang.',
     },
   },
   contract_signed_admin_notification: {
@@ -75,14 +75,14 @@ const CONTRACT_EMAIL_TEMPLATES = {
       body_html: `<h2>Contract signed</h2><p>{{signed_customer_name}} ({{customer_email}}) has just signed contract <strong>{{contract_number}}</strong>.</p>
 <p style="text-align: center; margin: 30px 0;"><a href="{{admin_dashboard_url}}" class="button">Open in admin</a></p>
 <p style="font-size: 13px; color: #666;">The signed PDF and signature evidence (typed name, IP, timestamp, signature image if drawn) are available on the contract detail page. To make this fully binding, counter-sign the contract or upload a wet-signed copy.</p>`,
-      body_text: `Contract {{contract_number}} signed by {{signed_customer_name}} ({{customer_email}}). Open: {{admin_dashboard_url}}`,
+      body_text: 'Contract {{contract_number}} signed by {{signed_customer_name}} ({{customer_email}}). Open: {{admin_dashboard_url}}',
     },
     de: {
       subject: 'Vertrag {{contract_number}} von {{customer_email}} unterzeichnet',
       body_html: `<h2>Vertrag unterzeichnet</h2><p>{{signed_customer_name}} ({{customer_email}}) hat soeben den Vertrag <strong>{{contract_number}}</strong> unterzeichnet.</p>
 <p style="text-align: center; margin: 30px 0;"><a href="{{admin_dashboard_url}}" class="button">Im Admin-Bereich öffnen</a></p>
 <p style="font-size: 13px; color: #666;">Das unterzeichnete PDF und die Signatur-Belege (Name, IP, Zeitstempel, Signaturbild falls gezeichnet) sind auf der Vertragsdetailseite einsehbar. Für vollständige Verbindlichkeit unterzeichnen Sie den Vertrag gegen oder laden Sie eine handunterschriebene Kopie hoch.</p>`,
-      body_text: `Vertrag {{contract_number}} von {{signed_customer_name}} ({{customer_email}}) unterzeichnet. Öffnen: {{admin_dashboard_url}}`,
+      body_text: 'Vertrag {{contract_number}} von {{signed_customer_name}} ({{customer_email}}) unterzeichnet. Öffnen: {{admin_dashboard_url}}',
     },
   },
 };

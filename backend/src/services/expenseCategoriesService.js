@@ -20,7 +20,7 @@ async function getById(id) {
   return row;
 }
 
-async function create({ name, color, displayOrder }, adminId) {
+async function create({ name, color, displayOrder }, _adminId) {
   if (!name || !String(name).trim()) {
     throw new AppError('Category name is required', 400, 'NAME_REQUIRED');
   }

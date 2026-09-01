@@ -89,6 +89,7 @@ function sanitizeComment(text) {
   text = text.replace(/[\u200B-\u200D\uFEFF]/g, '');
   
   // Remove control characters
+  // eslint-disable-next-line no-control-regex -- intentional: strips control chars from feedback text
   text = text.replace(/[\x00-\x1F\x7F]/g, '');
   
   // Limit consecutive special characters

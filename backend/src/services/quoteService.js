@@ -46,6 +46,10 @@ const { hasColumnCached } = require('../utils/schemaCache');
 const fs = require('fs');
 const path = require('path');
 
+// NOTE: this transition table is currently never consulted — quote status
+// changes are not validated against it anywhere in the codebase. Kept as the
+// documented intent; wiring it up is tracked separately.
+// eslint-disable-next-line no-unused-vars -- unwired state machine, see note above
 const VALID_QUOTE_TRANSITIONS = {
   draft: new Set(['sent', 'declined']),
   sent: new Set(['draft', 'accepted', 'declined', 'expired']),
@@ -620,7 +624,7 @@ async function createQuote(payload, adminId) {
       // Pass `trx` so the audit insert rides the transaction's connection —
       // the global db here deadlocks the single-connection SQLite pool.
       await logActivity('quote_created', { quoteId, quoteNumber, customerAccountId: payload.customerAccountId }, null, `admin:${adminId}`, trx);
-    } catch (_) {}
+    } catch (_) { /* non-fatal */ }
 
     logger.info('Quote created', { adminId, quoteId, quoteNumber });
     return quoteId;
@@ -760,7 +764,7 @@ async function updateQuote(id, payload, adminId) {
 
     try {
       await logActivity('quote_updated', { quoteId: id }, null, `admin:${adminId}`);
-    } catch (_) {}
+    } catch (_) { /* non-fatal */ }
   });
 }
 
@@ -1033,7 +1037,7 @@ async function sendQuote(id, adminId) {
     // Do NOT log the raw bearer token — it grants quote actions and the
     // activity log is readable later (GHSA-prch). The quoteId is the audit key.
     await logActivity('quote_sent', { quoteId: id }, null, `admin:${adminId}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   // Fire the quote.sent workflow trigger (best-effort; emit is fail-closed when
   // the workflows flag is off). The accepted/declined emits already exist; this
@@ -1259,7 +1263,7 @@ async function recordResponse({ token, action, ip, tosAccepted }) {
   try {
     // Raw bearer token must not reach the activity log (GHSA-prch).
     await logActivity(`quote_${newStatus}`, { quoteId: quote.id }, null, 'customer:public');
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   // Defer the workflow emit until the 15-min toggle window locks — so accepting
   // (then converting) can't strip the customer's ability to decline. The
@@ -1317,7 +1321,7 @@ async function adminAcceptQuote(id, adminId) {
 
   try {
     await logActivity('quote_accepted_by_admin', { quoteId: id }, null, `admin:${adminId}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   // ---- customer confirmation email -------------------------------
   // Renders the quote PDF + queues a "quote accepted — on your
@@ -1428,7 +1432,7 @@ async function adminDeclineQuote(id, adminId, reason = null) {
 
   try {
     await logActivity('quote_declined_by_admin', { quoteId: id, reason: cleanReason }, null, `admin:${adminId}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   // Admin decline locks the window immediately (response_locked_at = now), so
   // this emits straight away (and stamps emitted) rather than deferring.
@@ -1569,7 +1573,7 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
   try {
     await logActivity('quote_converted_invoices_only', { quoteId: quote.id, installments: result.installmentsCreated },
       null, `admin:${adminId}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   logger.info('Quote converted to invoices only (no event)', { adminId, quoteId: quote.id, installments: result.installmentsCreated });
   return result;
@@ -1750,7 +1754,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   // (prepare_event runs this unattended from the booking flow).
   try {
     await logActivity('quote_converted', { quoteId: quote.id, eventId: result.eventId }, result.eventId, `admin:${adminId}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   logger.info('Quote converted to event', { adminId, quoteId: quote.id, eventId: result.eventId });
   return result;
