@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { differenceInDays, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -249,6 +249,37 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     const interval = setInterval(() => { refetch(); }, 60_000);
     return () => { timers.forEach(clearTimeout); clearInterval(interval); };
   }, [hiddenUntilReveal, revealArmed, revealAtMs, refetch]);
+
+  // Post-upload refresh (P4-E.01). A guest upload is *queued*: the route
+  // answers 202 and the row lands as `processing_status: 'pending'`, while
+  // the photo list only returns completed rows. A single immediate refetch
+  // therefore comes back with a byte-identical payload (which the browser is
+  // answered with a 304), so the guest saw their upload silently vanish until
+  // they hard-reloaded. Poll for a short while until the queued photos finish
+  // processing instead of refetching — or reloading the page — exactly once.
+  const uploadRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopUploadRefresh = () => {
+    if (uploadRefreshTimerRef.current) {
+      clearInterval(uploadRefreshTimerRef.current);
+      uploadRefreshTimerRef.current = null;
+    }
+  };
+  useEffect(() => stopUploadRefresh, []);
+
+  const handleUploadComplete = () => {
+    setShowUploadModal(false);
+    const baseline = data?.photos?.length ?? 0;
+    const deadline = Date.now() + 60_000;
+    stopUploadRefresh();
+    const poll = async () => {
+      const result = await refetch();
+      if ((result.data?.photos?.length ?? 0) > baseline || Date.now() > deadline) {
+        stopUploadRefresh();
+      }
+    };
+    uploadRefreshTimerRef.current = setInterval(poll, 2000);
+    poll();
+  };
 
   // Get individual protection settings from event
   const disableRightClick = data?.event?.disable_right_click === true;
@@ -1356,10 +1387,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
-            onUploadComplete={() => {
-              setShowUploadModal(false);
-              window.location.reload();
-            }}
+            onUploadComplete={handleUploadComplete}
             onClose={() => setShowUploadModal(false)}
           />
         )}
@@ -1766,11 +1794,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
-            onUploadComplete={() => {
-              setShowUploadModal(false);
-              // Refetch photos after upload
-              window.location.reload(); // Simple reload for now
-            }}
+            onUploadComplete={handleUploadComplete}
             onClose={() => setShowUploadModal(false)}
           />
         )}
