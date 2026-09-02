@@ -164,6 +164,11 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   // The ref keeps it to one redemption per token: `identity` is no longer in
   // the dependency list precisely because redeeming sets it.
   const redeemedInviteRef = useRef<string | null>(null);
+  // Redemption is async, and the gallery stays interactive while it runs. A
+  // like clicked in that window would otherwise resolve against the persisted
+  // identity and be filed under the wrong guest, permanently. ensureIdentity()
+  // waits on this instead.
+  const invitePromiseRef = useRef<Promise<void> | null>(null);
   useEffect(() => {
     if (identityMode !== 'guest') return;
     const params = new URLSearchParams(window.location.search);
@@ -171,7 +176,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     if (!inviteToken || redeemedInviteRef.current === inviteToken) return;
     redeemedInviteRef.current = inviteToken;
 
-    (async () => {
+    invitePromiseRef.current = (async () => {
       try {
         const response = await guestsService.redeemInvite(slug, inviteToken);
         storeGuestIdentity(slug, response.guest, response.token);
@@ -185,6 +190,8 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
         // Silently fail invalid invites; user will fall back to normal prompt.
         // eslint-disable-next-line no-console
         console.warn('Failed to redeem invite token', error);
+      } finally {
+        invitePromiseRef.current = null;
       }
     })();
   }, [slug, identityMode]);
@@ -255,7 +262,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     setIdentity(null);
   }, [slug]);
 
-  const ensureIdentity = useCallback((): Promise<GuestIdentity> => {
+  const ensureIdentity = useCallback(async (): Promise<GuestIdentity> => {
     if (identityMode !== 'guest') {
       // In simple mode, there is no per-person identity. Return a synthetic
       // "null" identity that callers will ignore.
@@ -266,14 +273,26 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
         identifier: '',
       } as GuestIdentity);
     }
-    if (identity) return Promise.resolve(identity);
+    // An invite naming this visitor is mid-flight: wait for it rather than
+    // answering with the identity the browser happened to be holding.
+    if (invitePromiseRef.current) {
+      try {
+        await invitePromiseRef.current;
+      } catch {
+        // Redemption failed — fall through to the stored identity / prompt.
+      }
+      const redeemed = getGuestIdentity(slug);
+      if (redeemed) return redeemed;
+    }
+
+    if (identity) return identity;
 
     return new Promise((resolve, reject) => {
       pendingResolvers.current.push(resolve);
       pendingRejecters.current.push(reject);
       setPromptOpen(true);
     });
-  }, [identityMode, identity]);
+  }, [identityMode, identity, slug]);
 
   const isRequired = identityMode === 'guest' && !identity;
 
