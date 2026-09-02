@@ -28,7 +28,22 @@ const HEADING_FILES = [
   'pages/admin/settings/CrmSettingsPage.tsx',
   'pages/admin/settings/ReminderTemplatesPage.tsx',
   'pages/public/LegalPage.tsx',
+  // Follow-up (QA B14): these three were the known remaining offenders —
+  // they set `text-theme` explicitly, which beats the AdminLayout default.
+  'pages/admin/SystemHealthPage.tsx',
+  'components/admin/CrmOverviewSection.tsx',
+  'components/admin/HoursSection.tsx',
 ];
+
+// Admin-only surfaces: the themed utilities are correct on the customer
+// portal and the public token pages, but wrong here.
+const ADMIN_ONLY_FILES = [
+  'pages/admin/SystemHealthPage.tsx',
+  'components/admin/CrmOverviewSection.tsx',
+  'components/admin/HoursSection.tsx',
+];
+
+const THEMED_TEXT_CLASS = /className="[^"]*\btext-(muted-)?theme\b/;
 
 describe('branding-theme text colour leak (QA S3 / S4 / S13)', () => {
   it.each(HEADING_FILES)('every heading in %s declares an explicit text colour', (rel) => {
@@ -42,6 +57,10 @@ describe('branding-theme text colour leak (QA S3 / S4 / S13)', () => {
     }
 
     expect(offenders).toEqual([]);
+  });
+
+  it.each(ADMIN_ONLY_FILES)('%s uses no themed text utility at all', (rel) => {
+    expect(THEMED_TEXT_CLASS.test(read(rel))).toBe(false);
   });
 
   it('gives the LegalPage CMS body an explicit colour instead of the themed body colour', () => {

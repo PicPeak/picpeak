@@ -13,11 +13,12 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const fs = require('fs').promises;
 const path = require('path');
-const { escapeLikePattern } = require('../../utils/sqlSecurity');
+const { escapeLikePattern, likeWithEscape } = require('../../utils/sqlSecurity');
 const { validatePasswordInContext, getBcryptRounds } = require('../../utils/passwordValidation');
 const logger = require('../../utils/logger');
 const { sanitizeForLog, sanitizeValidationErrors } = require('../../utils/sanitizeForLog');
 const { errorResponse } = require('../../utils/routeHelpers');
+const { isUniqueViolation } = require('../../utils/dbErrors');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const { parseBooleanInput } = require('../../utils/parsers');
 const eventTypeService = require('../../services/eventTypeService');
@@ -30,6 +31,31 @@ const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/fron
 const downloadZipService = require('../../services/downloadZipService');
 const { resolveEventFeedbackDefaults, applyFeedbackDefaults, KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { validateHeroImageAnchor, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults, getBrandingDefaults, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./helpers');
+
+/**
+ * `events.slug` is UNIQUE, and both routes that mint one do a read-then-insert
+ * (`while (await db('events').where({ slug }).first())`) — a check two
+ * concurrent requests for the same name + date can both pass. The loser's
+ * INSERT then raises the unique violation, which surfaced as a raw 500 with
+ * "duplicate key value violates unique constraint events_slug_unique".
+ *
+ * Detect that one constraint specifically so the client gets an actionable
+ * 409 instead. Deliberately narrower than isUniqueViolation alone: the events
+ * table carries other unique columns (share_token), and a loose message test
+ * would misfire because knex prefixes the whole INSERT — which always mentions
+ * `slug` — to err.message.
+ */
+function isDuplicateSlugError(error) {
+  if (!isUniqueViolation(error)) return false;
+  // Postgres names the constraint; sqlite names the offending column.
+  if (error.constraint) return /slug/i.test(error.constraint);
+  return /unique constraint failed:.*\bevents\.slug\b/i.test(String(error.message || ''));
+}
+
+const DUPLICATE_SLUG_RESPONSE = {
+  error: 'An event with this name already exists. Change the event name or date and try again.',
+  code: 'EVENT_SLUG_TAKEN',
+};
 
 /**
  * Validate a gallery password the admin re-typed, against the SAME policy
@@ -810,6 +836,10 @@ module.exports = (router) => {
         created_at: new Date().toISOString()
       });
     } catch (error) {
+      if (isDuplicateSlugError(error)) {
+        logger.warn('Event creation lost the slug race', { error: error.message });
+        return res.status(409).json(DUPLICATE_SLUG_RESPONSE);
+      }
       errorResponse(res, error, 500, 'Failed to create event');
     }
   });
@@ -836,12 +866,12 @@ module.exports = (router) => {
 
       // Apply search filter
       if (search) {
-        const escapedSearch = escapeLikePattern(search);
+        const pattern = `%${escapeLikePattern(search)}%`;
         query = query.where((builder) => {
-          builder.where('event_name', 'like', `%${escapedSearch}%`)
-            .orWhere('admin_email', 'like', `%${escapedSearch}%`)
-            .orWhere('customer_email', 'like', `%${escapedSearch}%`)
-            .orWhere('slug', 'like', `%${escapedSearch}%`);
+          builder.whereRaw(likeWithEscape('event_name'), [pattern])
+            .orWhereRaw(likeWithEscape('admin_email'), [pattern])
+            .orWhereRaw(likeWithEscape('customer_email'), [pattern])
+            .orWhereRaw(likeWithEscape('slug'), [pattern]);
         });
       }
 
@@ -1470,6 +1500,10 @@ module.exports = (router) => {
         is_draft: true,
       });
     } catch (error) {
+      if (isDuplicateSlugError(error)) {
+        logger.warn('Event duplication lost the slug race', { error: error.message });
+        return res.status(409).json(DUPLICATE_SLUG_RESPONSE);
+      }
       errorResponse(res, error, 500, 'Failed to duplicate event');
     }
   });
@@ -1621,6 +1655,9 @@ module.exports = (router) => {
         // Server-consumed file paths — e.g. DELETE /:id/logo fs.unlink()s
         // hero_logo_path, so a forged value is an arbitrary-delete primitive.
         'hero_logo_path', 'hero_logo_url', 'archive_path', 'download_zip_path',
+        // Written by archiveService from the zip's real byte count; the
+        // archives list both sorts and displays it.
+        'archive_size',
         // Server-managed timestamps
         'download_zip_generated_at', 'archived_at', 'revealed_at', 'event_reminder_sent_at',
         // Lifecycle — governed by dedicated permission-gated routes

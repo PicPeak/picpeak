@@ -30,11 +30,20 @@ async function getRateLimitSettings() {
         'rate_limit_public_endpoints_only'
       ]);
 
-    // Parse settings into object
+    // Parse settings into object.
+    //
+    // maxRequests: 300 per 15-minute window, per IP, counting only requests
+    // that carry no admin/gallery token (skipAuthenticated). The general
+    // limiter was inert from the day it was written (see apiRateLimitGate),
+    // so its original 100 had never been exercised against real traffic. A
+    // gallery landing page makes a handful of unauthenticated calls before
+    // the password is typed; at 100, a venue wifi NAT reached 429 after
+    // roughly twenty guests per window. An explicit app_settings value still
+    // wins over this fallback.
     const config = {
       enabled: true,
       windowMinutes: 15,
-      maxRequests: 100,
+      maxRequests: 300,
       authMaxRequests: 5,
       skipAuthenticated: true,
       publicEndpointsOnly: false
@@ -75,7 +84,7 @@ async function getRateLimitSettings() {
     return {
       enabled: true,
       windowMinutes: 15,
-      maxRequests: 100,
+      maxRequests: 300,
       authMaxRequests: 5,
       skipAuthenticated: true,
       publicEndpointsOnly: false
@@ -138,8 +147,11 @@ function shouldSkipRateLimit(req, config) {
 
   // Check if we only rate limit public endpoints
   if (config.publicEndpointsOnly) {
-    const isPublicEndpoint = req.path.startsWith('/api/public/') || 
-                           req.path.startsWith('/api/gallery/') ||
+    // Lower-cased: Express routing is case-insensitive by default, so an
+    // upper-cased path reaches the same handler and must classify the same way.
+    const lowerPath = req.path.toLowerCase();
+    const isPublicEndpoint = lowerPath.startsWith('/api/public/') ||
+                           lowerPath.startsWith('/api/gallery/') ||
                            isAuthEndpoint;
     return !isPublicEndpoint;
   }
@@ -207,13 +219,29 @@ async function createRateLimiter() {
 
 /**
  * Create auth-specific rate limiter
+ *
+ * This is a separate rateLimit() instance from createRateLimiter(), so it owns
+ * its own MemoryStore and therefore its own per-IP bucket. That separation is
+ * the point: the credential endpoints get a small budget of their own that the
+ * ordinary /api traffic a login page makes cannot exhaust.
+ *
+ * skipSuccessfulRequests means only failed attempts are counted, which is what
+ * makes a 5-per-window per-IP budget safe behind NAT — a room full of guests on
+ * one venue IP who all type the correct gallery password consume nothing.
  */
 async function createAuthRateLimiter() {
   const config = await getRateLimitSettings();
-  
+
   return rateLimit({
     windowMs: config.windowMinutes * 60 * 1000,
-    max: config.authMaxRequests,
+    // Read per request, like the general limiter, so a change to
+    // rate_limit_auth_max_requests in admin Settings takes effect within the
+    // settings cache TTL instead of needing a restart.
+    max: async () => {
+      const currentConfig = await getRateLimitSettings();
+      return currentConfig.authMaxRequests;
+    },
+    skipSuccessfulRequests: true,
     keyGenerator: (req) => req.ip,
     skip: async () => {
       const currentConfig = await getRateLimitSettings();

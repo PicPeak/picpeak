@@ -44,6 +44,15 @@ function isIOS(): boolean {
 // the existing server-side zip flow.
 const MAX_WEB_SHARE_FILES = 25;
 
+// Counts-only snapshot returned by GET /gallery/:slug/uploads/status.
+export interface UploadProcessingStatus {
+  total: number;
+  pending: number;
+  processing: number;
+  complete: number;
+  failed: number;
+}
+
 export const galleryService = {
   // Verify share token
   async verifyToken(slug: string, token: string): Promise<{ valid: boolean }> {
@@ -87,6 +96,18 @@ export const galleryService = {
       ...data,
       event: normalizedEvent,
     };
+  },
+
+  // Processing status for the guest's own uploads (B7). A guest upload is
+  // queued — the route answers 202 and getGalleryPhotos only returns rows that
+  // finished processing — so this is what tells the gallery whether a photo
+  // that has not appeared yet is still in the worker's queue or failed
+  // outright. Scoped server-side to the gallery this token unlocked.
+  async getUploadStatus(slug: string, uploadIds: string[]): Promise<UploadProcessingStatus> {
+    const response = await api.get<UploadProcessingStatus>(`/gallery/${slug}/uploads/status`, {
+      params: { ids: uploadIds.join(',') },
+    });
+    return response.data;
   },
 
   // Save single photo. iOS routes through the Web Share API so the

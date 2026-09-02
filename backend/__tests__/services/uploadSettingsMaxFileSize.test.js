@@ -54,6 +54,34 @@ test('clamps a nonsense value to the default and caps absurd values at the ceili
   expect(await svc.getMaxFileSizeMb()).toBe(svc.MAX_ALLOWED_FILE_SIZE_MB); // ceiling
 });
 
+test('videos read their own key and default to 500MB, independent of the photo cap', async () => {
+  await setLimit(50);
+  expect(await svc.getMaxVideoSizeMb()).toBe(500);
+  expect(await svc.getMaxVideoSizeBytes()).toBe(500 * 1024 * 1024);
+
+  await db('app_settings')
+    .insert({ setting_key: 'general_max_video_size_mb', setting_value: JSON.stringify(2000), setting_type: 'general', updated_at: new Date() })
+    .onConflict('setting_key').merge({ setting_value: JSON.stringify(2000) });
+  svc.clearMaxVideoSizeCache();
+
+  expect(await svc.getMaxVideoSizeMb()).toBe(2000);
+  expect(await svc.getMaxFileSizeMb()).toBe(50); // photo cap untouched
+});
+
+test('clamps the video cap: nonsense falls back to 500, absurd hits the ceiling', async () => {
+  const setVideoLimit = async (mb) => {
+    await db('app_settings')
+      .insert({ setting_key: 'general_max_video_size_mb', setting_value: JSON.stringify(mb), setting_type: 'general', updated_at: new Date() })
+      .onConflict('setting_key').merge({ setting_value: JSON.stringify(mb) });
+    svc.clearMaxVideoSizeCache();
+  };
+
+  await setVideoLimit(0);
+  expect(await svc.getMaxVideoSizeMb()).toBe(500);
+  await setVideoLimit(99_999_999);
+  expect(await svc.getMaxVideoSizeMb()).toBe(svc.MAX_ALLOWED_FILE_SIZE_MB);
+});
+
 test('caches for the TTL — a mid-window DB change is not seen until the cache is cleared', async () => {
   await setLimit(200);
   expect(await svc.getMaxFileSizeMb()).toBe(200);

@@ -335,10 +335,12 @@ const BUILTINS = [
   },
 ];
 
-// NOTE: written at the end of seedBuiltinWorkflowsAtBoot but never read — the
-// intended "seed only once per process" guard is missing its `if (booted) return;`
-// check. Left in place so the gap stays visible rather than being silently dropped.
-// eslint-disable-next-line no-unused-vars -- write-only boot guard, see note above
+// Seed-once-per-process guard. Re-seeding is idempotent (seedOneBuiltin
+// updates in place, keyed on builtin_key, and skips admin-owned or
+// already-current rows), so the cost of a repeat call is a table scan per
+// builtin plus a graph rebuild — wasted work, not duplicate rows. Set inside
+// the try, so a seed that never got off the ground (workflows table not
+// migrated yet, DB down) leaves the flag clear and a later call can retry.
 let booted = false;
 
 function parseSeedConfig(raw) {
@@ -420,6 +422,7 @@ async function seedOneBuiltin(db, logger, def) {
 }
 
 async function seedBuiltinWorkflowsAtBoot(db, logger) {
+  if (booted) return;
   try {
     if (!(await db.schema.hasTable('workflows'))) return;
     for (const def of BUILTINS) {
@@ -435,4 +438,13 @@ async function seedBuiltinWorkflowsAtBoot(db, logger) {
   }
 }
 
-module.exports = { seedBuiltinWorkflowsAtBoot, buildDunningGraph, DUNNING_KEY, BUILTINS };
+// Test-only: reset the module-level boot flag so jest can re-exercise the
+// seeder against a fresh test DB inside a single worker. Matches
+// _backupPathsBoot / _restoreSettingsBoot.
+function _resetBootForTests() {
+  booted = false;
+}
+
+module.exports = {
+  seedBuiltinWorkflowsAtBoot, buildDunningGraph, DUNNING_KEY, BUILTINS, _resetBootForTests,
+};

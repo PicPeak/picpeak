@@ -29,25 +29,49 @@ function sanitizeDays(days) {
 }
 
 /**
- * Escape special characters in LIKE queries
+ * Escape the LIKE metacharacters in a search term so it matches itself.
+ *
+ * The result is a BOUND value — it goes into the `?` of a prepared statement,
+ * never into SQL text. That is why single quotes are left alone: doubling them
+ * is SQL string-literal syntax, and inside a bound value it is not escaping
+ * anything, it is corrupting the search term (a search for "Sarah's Birthday"
+ * would be sent as "Sarah''s Birthday" and match nothing).
+ *
+ * Only the three characters LIKE itself reads are escaped:
+ *   %  matches any sequence of characters
+ *   _  matches any single character
+ *   \  the escape character named by the ESCAPE clause
+ *
+ * Pair the result with likeWithEscape() — without an explicit ESCAPE clause
+ * the backslashes below mean different things on Postgres and SQLite.
+ *
  * @param {string} input - The search string from user input
- * @returns {string} Escaped string safe for LIKE queries
+ * @returns {string} Escaped string safe to bind into a LIKE pattern
  */
 function escapeLikePattern(input) {
   if (!input || typeof input !== 'string') {
     return '';
   }
-  
-  // Escape special LIKE pattern characters
-  // In SQL LIKE patterns:
-  // % matches any sequence of characters
-  // _ matches any single character
-  // \ is the escape character
-  return input
-    .replace(/\\/g, '\\\\') // Escape backslashes first
-    .replace(/%/g, '\\%')   // Escape percent signs
-    .replace(/_/g, '\\_')   // Escape underscores
-    .replace(/'/g, '\'\'');   // Escape single quotes for safety
+
+  return input.replace(/[\\%_]/g, '\\$&');
+}
+
+/**
+ * Build a `LIKE ? ESCAPE '\'` comparison for a column.
+ *
+ * The ESCAPE clause is load-bearing rather than decorative: Postgres treats a
+ * backslash in a LIKE pattern as an escape character by default, SQLite has no
+ * default escape character at all and would match the backslash literally. Naming
+ * it makes escapeLikePattern()'s output mean the same thing on both engines.
+ *
+ * `column` is interpolated into the SQL text, so callers must pass a literal
+ * column name — never user input. The search term stays bound.
+ *
+ * @param {string} column - Literal column name (optionally table-qualified)
+ * @returns {string} Raw SQL fragment with a single `?` binding placeholder
+ */
+function likeWithEscape(column) {
+  return `${column} LIKE ? ESCAPE '\\'`;
 }
 
 /**
@@ -78,9 +102,8 @@ function addLikeCondition(query, column, pattern) {
     return query;
   }
   
-  const escapedPattern = escapeLikePattern(pattern);
   // Knex handles parameterization of the LIKE value
-  return query.where(column, 'like', `%${escapedPattern}%`);
+  return query.whereRaw(likeWithEscape(column), [`%${escapeLikePattern(pattern)}%`]);
 }
 
 /**
@@ -110,6 +133,7 @@ function validateSortOrder(order) {
 module.exports = {
   sanitizeDays,
   escapeLikePattern,
+  likeWithEscape,
   addDateRangeCondition,
   addLikeCondition,
   validateSortColumn,

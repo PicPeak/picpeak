@@ -361,6 +361,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
           const isVideo = (photo.media_type === 'video') ||
             (photo.mime_type && photo.mime_type.startsWith('video/')) ||
             photo.type === 'video';
+          const isHidden = (photo as any).visibility === 'hidden';
           return (
             <div
               key={photo.id}
@@ -391,10 +392,19 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
               </div>
             </button>
 
-            {/* Visibility badge (#172) */}
-            {(photo as any).visibility === 'hidden' && (
-              <div className="absolute top-2 left-2 z-20">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/90 text-white text-[10px] font-medium">
+            {/* Visibility badge (#172). Same badge vocabulary as the list
+                view's row badges — icon + short label, tooltip carrying the
+                explanation. It shares the top-left corner with the category
+                badge, so that one drops a row while this is showing. */}
+            {isHidden && (
+              <div
+                className="absolute top-2 left-2 z-20"
+                data-testid={`admin-photo-hidden-badge-${photo.id}`}
+              >
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-500/90 text-white text-[10px] font-medium"
+                  title={t('admin.photos.hiddenTooltip', 'Hidden from guests — this photo is not shown in the client gallery.') as string}
+                >
                   <EyeOff className="w-3 h-3" />
                   {t('admin.photos.hidden', 'Hidden')}
                 </span>
@@ -496,7 +506,7 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
 
             {/* Category Badge - move to top-left and prevent overlap with select checkbox */}
             {photo.category_name && (
-              <div className="absolute left-2 top-2 pointer-events-none">
+              <div className={`absolute left-2 ${isHidden ? 'top-9' : 'top-2'} pointer-events-none`}>
                 <span className="px-2 py-1 text-xs font-medium bg-white/90 text-neutral-700 rounded max-w-[70%] whitespace-nowrap overflow-hidden text-ellipsis">
                   {photo.category_name}
                 </span>
@@ -700,7 +710,10 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                             </span>
                           )}
                           {isHidden && (
-                            <span className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-[10px] font-medium">
+                            <span
+                              className="flex-shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 text-[10px] font-medium"
+                              title={t('admin.photos.hiddenTooltip', 'Hidden from guests — this photo is not shown in the client gallery.') as string}
+                            >
                               <EyeOff className="w-3 h-3" />
                               {t('admin.photos.hidden', 'Hidden')}
                             </span>

@@ -68,9 +68,11 @@ export const ArchivesPage: React.FC = () => {
 
   const archives = archivesData?.archives || [];
 
-  const getTotalSize = () => {
-    return archives.reduce((sum, archive) => sum + archive.archiveSize, 0);
-  };
+  // Server-side aggregates over the whole filtered set. Summing `archives`
+  // here only ever described the 20 rows of the current page, so "Storage
+  // used" on an 802-archive install was off by roughly 40x while the footer
+  // right below it reported the real total.
+  const totals = archivesData?.totals ?? { archives: 0, photos: 0, archiveSize: 0 };
 
   // Mutations
   const restoreMutation = useMutationWithToast({
@@ -136,7 +138,7 @@ export const ArchivesPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('archives.totalArchives')}</p>
-              <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{archives.length}</p>
+              <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{totals.archives}</p>
             </div>
             <Archive className="w-8 h-8 text-accent" />
           </div>
@@ -146,7 +148,7 @@ export const ArchivesPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('archives.storageUsed')}</p>
-              <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{archiveService.formatBytes(getTotalSize())}</p>
+              <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{archiveService.formatBytes(totals.archiveSize)}</p>
             </div>
             <HardDrive className="w-8 h-8 text-blue-600" />
           </div>
@@ -157,10 +159,7 @@ export const ArchivesPage: React.FC = () => {
             <div>
               <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('archives.totalPhotos')}</p>
               <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-                {(() => {
-                  const total = archives.reduce((sum, a) => sum + (parseInt(String(a.photoCount)) || 0), 0);
-                  return total === 0 ? '0' : total.toLocaleString();
-                })()}
+                {totals.photos === 0 ? '0' : totals.photos.toLocaleString()}
               </p>
             </div>
             <FileArchive className="w-8 h-8 text-green-600" />
@@ -172,8 +171,8 @@ export const ArchivesPage: React.FC = () => {
             <div>
               <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('archives.avgArchiveSize')}</p>
               <p className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
-                {archives.length > 0
-                  ? archiveService.formatBytes(getTotalSize() / archives.length)
+                {totals.archives > 0
+                  ? archiveService.formatBytes(totals.archiveSize / totals.archives)
                   : '0 Bytes'
                 }
               </p>
@@ -340,39 +339,45 @@ export const ArchivesPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* Pagination */}
-      {archivesData?.pagination && archivesData.pagination.totalPages > 1 && (
+      {/* Pagination. The count is shown for any non-empty result — it used to
+          be inside the totalPages > 1 guard, so a search that narrowed to a
+          single page lost the "Showing X of Y" line along with the controls,
+          which is exactly when the count is worth reading. Only the page
+          controls are conditional now. */}
+      {archivesData?.pagination && archivesData.pagination.total > 0 && (
         <div className="mt-6 flex items-center justify-between">
           <div className="text-sm text-neutral-600">
-            {t('archives.showing', { 
+            {t('archives.showing', {
               from: ((currentPage - 1) * archivesData.pagination.limit) + 1,
               to: Math.min(currentPage * archivesData.pagination.limit, archivesData.pagination.total),
               total: archivesData.pagination.total
             })}
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={currentPage === 1}
-              leftIcon={<ChevronLeft className="w-4 h-4" />}
-            >
-              {t('common.previous')}
-            </Button>
-            <span className="px-3 text-sm">
-              {t('archives.page', { current: currentPage, total: archivesData.pagination.totalPages })}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(prev => Math.min(archivesData.pagination.totalPages, prev + 1))}
-              disabled={currentPage === archivesData.pagination.totalPages}
-              rightIcon={<ChevronRight className="w-4 h-4" />}
-            >
-              {t('common.next')}
-            </Button>
-          </div>
+          {archivesData.pagination.totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                leftIcon={<ChevronLeft className="w-4 h-4" />}
+              >
+                {t('common.previous')}
+              </Button>
+              <span className="px-3 text-sm">
+                {t('archives.page', { current: currentPage, total: archivesData.pagination.totalPages })}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.min(archivesData.pagination.totalPages, prev + 1))}
+                disabled={currentPage === archivesData.pagination.totalPages}
+                rightIcon={<ChevronRight className="w-4 h-4" />}
+              >
+                {t('common.next')}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 

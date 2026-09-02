@@ -283,18 +283,6 @@
     "searchMemories": "Buscar lembranças...",
     "thankYou": "Obrigado",
     "thankYouMessage": "Por fazer parte da nossa história e tornar nosso dia especial inesquecível.",
-    "feedback": {
-      "title": "Feedback",
-      "shareThoughts": "Compartilhe sua opinião sobre \"{{name}}\"",
-      "rateThisMoment": "Avalie este momento",
-      "comments": "Comentários",
-      "noComments": "Ainda sem comentários. Seja o primeiro!",
-      "yourName": "Seu nome",
-      "yourEmail": "Seu e-mail",
-      "writeLovelyNote": "Escreva uma mensagem carinhosa...",
-      "postComment": "Postar Comentário",
-      "anonymous": "Anônimo"
-    },
     "rated": "Avaliado",
     "commented": "Comentado",
     "expiresIn_many": "A galeria expira em {{count}} dias",
@@ -955,7 +943,6 @@
     },
     "moderation": {
       "title": "Moderação",
-      "wordFilters": "Filtros de Palavras",
       "description": "Gerencie palavras que devem ser filtradas ou bloqueadas nos comentários",
       "addFilter": "Adicionar Novo Filtro",
       "enterWord": "Digite a palavra para filtrar",
@@ -2489,7 +2476,6 @@
     }
   },
   "cssTemplates": {
-    "title": "Modelos CSS Personalizados",
     "template": "Modelo",
     "templateName": "Nome do Modelo",
     "enableTemplate": "Ativar este modelo",

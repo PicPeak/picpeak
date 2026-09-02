@@ -173,6 +173,20 @@ export const GeneralTab: React.FC<GeneralTabProps> = ({
             </div>
             <div>
               <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                {t('settings.general.maxVideoSize', 'Max Video Size (MB)')}
+              </label>
+              <Input
+                type="number"
+                value={generalSettings.max_video_size_mb}
+                onChange={(e) => setGeneralSettings(prev => ({ ...prev, max_video_size_mb: parseInt(e.target.value) || 500 }))}
+                min="1"
+              />
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                {t('settings.general.maxVideoSizeHelp', 'Separate per-file limit for video uploads, so photos can keep a smaller limit.')}
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
                 {t('settings.general.maxFilesPerUpload')}
               </label>
               <Input

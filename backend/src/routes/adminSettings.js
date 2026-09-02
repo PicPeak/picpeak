@@ -28,7 +28,7 @@ const { errorResponse } = require('../utils/routeHelpers');
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const logger = require('../utils/logger');
 const router = express.Router();
-const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileSizeCache, MAX_ALLOWED_FILE_SIZE_MB } = require('../services/uploadSettings');
+const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileSizeCache, clearMaxVideoSizeCache, MAX_ALLOWED_FILE_SIZE_MB } = require('../services/uploadSettings');
 const watermarkService = require('../services/watermarkService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
 
@@ -1459,6 +1459,23 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       settings.general_max_file_size_mb = normalizedValue;
     }
 
+    // Per-file size limit for videos (MB). Same bounds and same reasoning as
+    // the photo cap above — videos just get their own value so a 50MB photo
+    // limit doesn't also block every clip.
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_max_video_size_mb')) {
+      uploadLimitTouched = true;
+      const rawValue = Number(settings.general_max_video_size_mb);
+      const normalizedValue = Number.isFinite(rawValue) ? Math.floor(rawValue) : NaN;
+
+      if (!Number.isInteger(normalizedValue) || normalizedValue < 1 || normalizedValue > MAX_ALLOWED_FILE_SIZE_MB) {
+        return res.status(400).json({
+          error: `general_max_video_size_mb must be an integer between 1 and ${MAX_ALLOWED_FILE_SIZE_MB}`
+        });
+      }
+
+      settings.general_max_video_size_mb = normalizedValue;
+    }
+
     if (publicSiteKeysTouched) {
       if (Object.prototype.hasOwnProperty.call(settings, 'general_public_site_custom_css')) {
         settings.general_public_site_custom_css = sanitizeCss(settings.general_public_site_custom_css || '');
@@ -1516,6 +1533,7 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
     if (uploadLimitTouched) {
       clearMaxFilesPerUploadCache();
       clearMaxFileSizeCache();
+      clearMaxVideoSizeCache();
     }
     if (Object.prototype.hasOwnProperty.call(settings, 'general_short_gallery_urls')) {
       clearShareLinkSettingsCache();

@@ -12,12 +12,19 @@ const {
   getUseOriginalFilenames,
   pickRawDownloadName,
 } = require('../services/downloadFilenameService');
-const { escapeLikePattern } = require('../utils/sqlSecurity');
+const { escapeLikePattern, likeWithEscape } = require('../utils/sqlSecurity');
 const { COLOR_LABELS, dominantColorLabel, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const feedbackService = require('../services/feedbackService');
 const photoAdminMarksService = require('../services/photoAdminMarksService');
 const { validateUploadedFiles } = require('../middleware/uploadValidation');
-const { getMaxFilesPerUpload, getAllowedMimeTypes, getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB } = require('../services/uploadSettings');
+const {
+  getMaxFilesPerUpload,
+  getAllowedMimeTypes,
+  getMaxFileSizeBytes,
+  getMaxVideoSizeBytes,
+  DEFAULT_MAX_FILE_SIZE_MB,
+  DEFAULT_MAX_VIDEO_SIZE_MB
+} = require('../services/uploadSettings');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
@@ -32,24 +39,46 @@ const router = express.Router();
 // Get storage path from environment or default
 const getStoragePath = () => process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
 
+// Resolve a numeric category id within the scope of one event: it must belong
+// to that event or be a global category (#500 / #525 — the same contract the
+// public v1 upload route enforces). Returns undefined for an out-of-scope id,
+// which every caller turns into a 400 rather than silently filing the photo
+// under another event's category.
+const findScopedCategory = (eventId, categoryId) => db('photo_categories')
+  .where({ id: categoryId })
+  .andWhere(function () {
+    this.where({ event_id: eventId }).orWhere('is_global', true);
+  })
+  .first();
+
+const outOfScopeCategoryError = (categoryId) => ({
+  error: `Unknown or out-of-scope category_id ${categoryId}`
+});
+
 // Configure multer for file uploads
 // IMPORTANT: Using synchronous functions to prevent file corruption
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     logger.info('Multer destination called for file:', file.originalname);
-    
+
     // We'll validate the event exists in the route handler
-    // For now, just create a temp destination
-    const tempPath = path.join(getStoragePath(), 'temp', `upload_${Date.now()}_${Math.random().toString(36).substring(7)}`);
-    
-    // Create directory synchronously
-    require('fs').mkdirSync(tempPath, { recursive: true });
-    logger.info('Temp destination path:', tempPath);
-    
-    // Store temp path for cleanup
-    req.tempUploadPath = tempPath;
-    
-    cb(null, tempPath);
+    // For now, just create a temp destination.
+    // One directory per REQUEST, not per file: this callback runs for every
+    // file and used to overwrite req.tempUploadPath each time, so cleanup
+    // only ever removed the last file's directory and a multi-file upload
+    // left the rest behind. Temp filenames are already collision-proof.
+    if (!req.tempUploadPath) {
+      const tempPath = path.join(getStoragePath(), 'temp', `upload_${Date.now()}_${Math.random().toString(36).substring(7)}`);
+
+      // Create directory synchronously
+      require('fs').mkdirSync(tempPath, { recursive: true });
+      logger.info('Temp destination path:', tempPath);
+
+      // Store temp path for cleanup
+      req.tempUploadPath = tempPath;
+    }
+
+    cb(null, req.tempUploadPath);
   },
   filename: (req, file, cb) => {
     logger.info('Multer filename called for file:', file.originalname);
@@ -108,14 +137,50 @@ const resolveAllowedTypes = async (req, res, next) => {
 // Dynamic content validator middleware that reads allowed types from req
 const validateUploadContent = async (req, res, next) => {
   const allowedTypes = req.allowedMimeTypes || ['image/jpeg', 'image/png', 'image/webp'];
+  const photoCapBytes = req.maxFileSizeBytes || DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024;
+  const videoCapBytes = req.maxVideoSizeBytes || DEFAULT_MAX_VIDEO_SIZE_MB * 1024 * 1024;
+  const capFor = (file) => (isVideoMimeType(file.mimetype) ? videoCapBytes : photoCapBytes);
+
+  // Photos and videos have separate caps (general_max_file_size_mb /
+  // general_max_video_size_mb), but multer's limit is global — it streamed
+  // against the larger of the two because it can't branch on MIME type. So
+  // the per-kind decision has to happen here, where the type is known,
+  // otherwise a 50MB photo cap would be silently raised to the video cap.
+  const oversized = (req.files || []).find((file) => file.size > capFor(file));
+  if (oversized) {
+    const capMb = Math.floor(capFor(oversized) / (1024 * 1024));
+    return res.status(400).json({ error: `File too large. Maximum size is ${capMb} MB per file.` });
+  }
+
   const validator = createFileUploadValidator({
     allowedTypes,
-    // Same per-request cap multer streamed against, so the two layers can't
-    // disagree; this one names the offending file in the 400.
-    maxFileSize: req.maxFileSizeBytes || DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024,
+    // Same per-request caps as above, so the two layers can't disagree.
+    maxFileSize: photoCapBytes,
+    maxVideoFileSize: videoCapBytes,
     validateContent: true
   });
   return validator(req, res, next);
+};
+
+// Remove the multer temp directory on every exit path — success, validation
+// 4xx, multer error, server 5xx or a client disconnect. Registered BEFORE
+// multer runs (the closure reads req.tempUploadPath lazily) because a
+// rejected upload never reaches the final handler, where this used to live:
+// every rejection leaked its temp directory and the file inside it.
+const registerTempUploadCleanup = (req, res, next) => {
+  let cleanupDone = false;
+  const cleanupTempDir = async () => {
+    if (cleanupDone || !req.tempUploadPath) return;
+    cleanupDone = true;
+    try {
+      await fs.rm(req.tempUploadPath, { recursive: true, force: true });
+    } catch (e) {
+      logger.error('Failed to clean up temp upload directory:', e);
+    }
+  };
+  res.on('finish', cleanupTempDir);
+  res.on('close', cleanupTempDir);
+  next();
 };
 
 // Request timeout middleware for uploads
@@ -140,19 +205,25 @@ const uploadTimeout = (timeout = 300000) => { // 5 minutes default
 
 // Upload photos for an event
 // Max file count and max file size are configurable via general settings
-router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, uploadTimeout(600000), resolveAllowedTypes, async (req, res, next) => { // 10 minute timeout
+router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), requireEventOwnership, uploadTimeout(600000), resolveAllowedTypes, registerTempUploadCleanup, async (req, res, next) => { // 10 minute timeout
   let maxFilesPerUpload;
   let maxFileSizeBytes;
+  let maxVideoSizeBytes;
   try {
     maxFilesPerUpload = await getMaxFilesPerUpload();
     maxFileSizeBytes = await getMaxFileSizeBytes();
+    maxVideoSizeBytes = await getMaxVideoSizeBytes();
   } catch (error) {
     return errorResponse(res, error, 500, 'Unable to determine upload limits');
   }
   req.maxFileSizeBytes = maxFileSizeBytes;
-  const maxFileSizeMb = Math.floor(maxFileSizeBytes / (1024 * 1024));
+  req.maxVideoSizeBytes = maxVideoSizeBytes;
+  // multer's limit is global, so it has to be the larger of the two caps;
+  // validateUploadContent then holds each file to the cap for its own kind.
+  const multerLimitBytes = Math.max(maxFileSizeBytes, maxVideoSizeBytes);
+  const maxFileSizeMb = Math.floor(multerLimitBytes / (1024 * 1024));
 
-  createUpload(maxFileSizeBytes).array('photos', maxFilesPerUpload)(req, res, (err) => {
+  createUpload(multerLimitBytes).array('photos', maxFilesPerUpload)(req, res, (err) => {
     if (err) {
       logger.error('Multer error:', err);
       if (err instanceof multer.MulterError) {
@@ -169,24 +240,9 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     next();
   });
 }, validateUploadContent, validateUploadedFiles, async (req, res) => {
-  // Single cleanup site for the multer temp directory — runs on every
-  // exit path (success, validation 4xx, server 5xx, multer error). The
-  // previous code had three inline cleanup blocks for individual early
-  // returns and missed the success path entirely, leaving an empty
-  // per-request directory behind on every successful upload (#357 review).
-  let tempCleanupDone = false;
-  const cleanupTempDir = async () => {
-    if (tempCleanupDone || !req.tempUploadPath) return;
-    tempCleanupDone = true;
-    try {
-      await fs.rm(req.tempUploadPath, { recursive: true, force: true });
-    } catch (e) {
-      logger.error('Failed to clean up temp upload directory:', e);
-    }
-  };
-  res.on('finish', cleanupTempDir);
-  res.on('close', cleanupTempDir);
-
+  // Temp-directory cleanup is registered by registerTempUploadCleanup above,
+  // before multer runs, so it also covers the exit paths that never reach
+  // this handler (multer errors and validation 4xx).
   try {
     const { eventId } = req.params;
     const { category_id, replace_by_name, match_mode } = req.body;
@@ -259,16 +315,9 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
     // belong to a different event. The v1 route rejects out-of-scope ids
     // with 400; mirror that here so admin and v1 stay consistent.
     if (parsedCategoryId && !isNaN(parsedCategoryId)) {
-      const category = await db('photo_categories')
-        .where({ id: parsedCategoryId })
-        .andWhere(function () {
-          this.where({ event_id: event.id }).orWhere('is_global', true);
-        })
-        .first();
+      const category = await findScopedCategory(event.id, parsedCategoryId);
       if (!category) {
-        return res.status(400).json({
-          error: `Unknown or out-of-scope category_id ${parsedCategoryId}`
-        });
+        return res.status(400).json(outOfScopeCategoryError(parsedCategoryId));
       }
       categoryName = category.slug || category.name.toLowerCase().replace(/\s+/g, '_');
       // Use category slug for type determination
@@ -858,6 +907,13 @@ router.patch('/:eventId/photos/:photoId', adminAuth, requirePermission('photos.e
       // NaN (unparseable input) already fell through to null and still does.
       const numericCategoryId = parseInt(category_id, 10);
       if (numericCategoryId > 0) {
+        // Same scope check the upload route runs: without it any positive id
+        // was accepted, so a photo could be moved into another event's
+        // category (the grid then never shows it under any filter).
+        const category = await findScopedCategory(parseInt(eventId, 10), numericCategoryId);
+        if (!category) {
+          return res.status(400).json(outOfScopeCategoryError(numericCategoryId));
+        }
         updateData.category_id = numericCategoryId;
       } else {
         updateData.category_id = null;
@@ -1043,6 +1099,11 @@ router.post('/:eventId/photos/bulk-update', adminAuth, requirePermission('photos
         // (0/negative mean "no category" — see the PATCH route above)
         const numericCategoryId = parseInt(updates.category_id, 10);
         if (numericCategoryId > 0) {
+          // Scope check, as on the PATCH and upload routes above.
+          const category = await findScopedCategory(parseInt(eventId, 10), numericCategoryId);
+          if (!category) {
+            return res.status(400).json(outOfScopeCategoryError(numericCategoryId));
+          }
           updateData.category_id = numericCategoryId;
         } else {
           updateData.category_id = null;
@@ -1165,10 +1226,17 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
       query = query.where({ 'photos.type': type });
     }
 
-    // Search by filename
+    // Search by filename. original_filename is included because that is the
+    // name printed on every card ("Original: …") — matching only the stored
+    // renamed filename returned 0 results for a substring the admin can read
+    // on screen. Grouped, because the feedback AND/OR conditions are appended
+    // right below and a bare orWhere would leak across them.
     if (search) {
-      const escapedSearch = escapeLikePattern(search);
-      query = query.where('photos.filename', 'like', `%${escapedSearch}%`);
+      const pattern = `%${escapeLikePattern(search)}%`;
+      query = query.where((qb) => {
+        qb.whereRaw(likeWithEscape('photos.filename'), [pattern])
+          .orWhereRaw(likeWithEscape('photos.original_filename'), [pattern]);
+      });
     }
 
     // Feedback filters (has likes / favorites / comments / min rating) with AND/OR logic
@@ -1303,6 +1371,13 @@ router.get('/:eventId/photos', adminAuth, requirePermission('photos.view'), requ
         // Always expose a thumbnail URL; backend will generate on demand if missing
         thumbnail_url: `/admin/photos/${eventId}/thumbnail/${photo.id}`,
         type: photo.type,
+        // Guest visibility (#172). This explicit mapper never included it,
+        // so the admin grid's "Hidden" badge could never render and a photo
+        // hidden from clients looked identical to a visible one (QA warning).
+        visibility: photo.visibility === 'hidden' ? 'hidden' : 'visible',
+        // Same omission: the grid's "Processing…" and "Failed"/Retry
+        // placeholders read this, so neither could ever render either.
+        processing_status: photo.processing_status || 'complete',
         category_id: photo.category_id || photo.type,
         category_name: photo.pc_name || (photo.type === 'individual' ? 'Individual Photos' : 'Collages'),
         category_slug: photo.pc_slug || photo.type,

@@ -30,6 +30,14 @@ const { verifyGalleryAccess, denySlideshowToken, isAdminPreview } = require('../
 // fall back to the draft/password gate and 404 the derivative.
 const withPreview = (req, url) => (req.isAdminPreview ? `${url}${url.includes('?') ? '&' : '?'}admin_preview=1` : url);
 const { resolveGuest } = require('../middleware/guestAuth');
+// Private, per-guest JSON on this router carries no explicit Cache-Control, so
+// browsers fall back to heuristic freshness and may serve a stale body from
+// disk for a session-scoped surface. `noStoreCache` is mounted per route rather
+// than on the whole router on purpose: the image/thumbnail/hero/preview and
+// css-template routes below set their own long-lived caching headers and MUST
+// keep them — re-fetching every derivative on every scroll is the reason those
+// headers exist.
+const { noStoreCache } = require('../middleware/noStoreCache');
 const { generateGuestIdentifier } = require('../middleware/feedbackRateLimit');
 const { COLOR_LABELS, SHARED_COLOR_LABEL_IDENTITY } = require('../constants/colorLabels');
 const secureImageService = require('../services/secureImageService');
@@ -235,8 +243,9 @@ router.get('/resolve/:identifier', handleAsync(async (req, res) => {
   });
 }));
 
-// Verify share token
-router.get('/:slug/verify-token/:token', handleAsync(async (req, res) => {
+// Verify share token. no-store: this is an authorization decision — a cached
+// `{ valid: true }` would keep answering for a token the admin has rotated.
+router.get('/:slug/verify-token/:token', noStoreCache, handleAsync(async (req, res) => {
   const { slug, token } = req.params;
 
   const event = await db('events')
@@ -607,7 +616,9 @@ async function slideshowQrDataUrl(event, req) {
 // JWT scoped to `accessLevel:'slideshow'` (treated as a guest by the photo /
 // image endpoints → visible photos only, no client-only/hidden). The page
 // stores this token and the existing axios interceptor injects it.
-router.get('/:slug/show/:token/session', handleAsync(async (req, res) => {
+// no-store: this response *is* a credential (it mints a gallery JWT and sets
+// the per-slug auth cookie), so it must never be retained anywhere.
+router.get('/:slug/show/:token/session', noStoreCache, handleAsync(async (req, res) => {
   const { slug, token } = req.params;
   const event = await resolveSlideshow(slug, token);
   if (!event) {
@@ -649,7 +660,7 @@ router.get('/:slug/show/:token/session', handleAsync(async (req, res) => {
 // current settings + the visible photo count. The page diffs photo_count to
 // decide when to refetch the full list, and re-reads settings so admin changes
 // take effect live. A dead/disabled link 404s here → the projector stops.
-router.get('/:slug/show/:token/state', handleAsync(async (req, res) => {
+router.get('/:slug/show/:token/state', noStoreCache, handleAsync(async (req, res) => {
   const { slug, token } = req.params;
   const event = await resolveSlideshow(slug, token);
   if (!event) {
@@ -665,8 +676,16 @@ router.get('/:slug/show/:token/state', handleAsync(async (req, res) => {
   });
 }));
 
-// Get all photos
-router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) => {
+// Get all photos.
+//
+// no-store (B6): the payload is private and per-guest — it carries the
+// viewer's own likes/favorites/ratings and, for a client token, photos hidden
+// from plain guests. With no Cache-Control at all a browser applies heuristic
+// freshness and may reuse a body it stored on disk, on a shared device, for a
+// gallery whose password has since been rotated. Express still computes its
+// weak ETag, so a caller that does revalidate (React Query's own in-memory
+// cache is unaffected either way) still gets a correct 304.
+router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, noStoreCache, async (req, res) => {
   try {
     // Get filter and sort parameters from query
     // `guest_id` is deliberately NOT read from the query string: the viewer's
@@ -1423,7 +1442,9 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, async (req, res) 
  * Counts and cover faces are computed against the caller's own visibility
  * scope inside facePeopleService; nothing here reads face_count_total.
  */
-router.get('/:slug/people', verifyGalleryAccess, resolveGuest, async (req, res) => {
+// no-store for the same reason as /photos: the people list and its scan
+// progress are scoped to what THIS viewer may see.
+router.get('/:slug/people', verifyGalleryAccess, resolveGuest, noStoreCache, async (req, res) => {
   try {
     const isClient = req.accessLevel === 'client';
     const { isEnabledForEvent, areFacesVisibleToGuests, getThresholds } =
@@ -2333,7 +2354,9 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
 
 // Poll. The token is unguessable, but it is never sufficient on its own —
 // verifyGalleryAccess still runs and the job must belong to THIS event.
-router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, async (req, res) => {
+// no-store: a cached 'preparing' would strand the caller in a poll that can
+// never observe the job finishing.
+router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToken, blockHiddenGallery, noStoreCache, async (req, res) => {
   try {
     const job = await downloadJobService.getStatus(req.params.token);
     if (!job || job.event_id !== req.event.id) {
@@ -3043,8 +3066,9 @@ router.get('/:slug/preview/:photoId',
 // (#655) from the guest payload, so the gallery could never render the
 // favorite/like limits or their counters (#1030).
 
-// Get photo stats
-router.get('/:slug/stats', verifyGalleryAccess, blockHiddenGallery, async (req, res) => {
+// Get photo stats. no-store: view/download/visitor counters are private
+// gallery analytics and change on every request.
+router.get('/:slug/stats', verifyGalleryAccess, blockHiddenGallery, noStoreCache, async (req, res) => {
   try {
     const totalPhotos = await db('photos')
       .where('event_id', req.event.id)
@@ -3208,6 +3232,70 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, async (
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to upload photos');
+  }
+});
+
+// A guest upload_id is `crypto.randomBytes(16).toString('hex')`
+// (photoProcessor.js). The pattern is deliberately a little wider than that so
+// an id-format change does not silently 400, but narrow enough that the value
+// can only ever be an opaque token.
+const UPLOAD_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
+// The guest UI uploads one file per request, so a batch of N files yields N
+// upload ids. Batching them into a single poll keeps the request rate flat
+// regardless of batch size; the cap bounds the IN-list.
+const MAX_UPLOAD_STATUS_IDS = 50;
+
+/**
+ * GET /:slug/uploads/status?ids=<upload_id>[,<upload_id>…]
+ *
+ * Guest-facing processing status for the guest's own uploads (B7).
+ *
+ * The upload route answers 202 and queues the files, and /photos only returns
+ * rows that reached `processing_status: 'complete'`. Without this the gallery
+ * had to poll /photos blind, could not say "processing…", and could not tell a
+ * slow worker from a photo that failed outright — the guest just watched their
+ * upload not appear.
+ *
+ * Authorization: `verifyGalleryAccess` already resolved `req.event` from the
+ * caller's gallery token, and the query is filtered on `event_id = req.event.id`
+ * as well as the ids. An id belonging to another gallery therefore matches no
+ * row rather than being reported as forbidden — no cross-event read, and no
+ * existence oracle either. Slideshow tokens are denied because a kiosk never
+ * uploads.
+ *
+ * The response is counts only. The guest already knows which files they sent;
+ * anything more (filenames, `processing_error` strings, which can carry
+ * internal paths) would be leaking beyond "how far along is my upload".
+ */
+router.get('/:slug/uploads/status', verifyGalleryAccess, denySlideshowToken, noStoreCache, async (req, res) => {
+  try {
+    const ids = String(req.query.ids || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+
+    if (ids.length === 0 || ids.length > MAX_UPLOAD_STATUS_IDS || !ids.every((id) => UPLOAD_ID_PATTERN.test(id))) {
+      return res.status(400).json({ error: 'Invalid upload ids' });
+    }
+
+    const rows = await db('photos')
+      .where('event_id', req.event.id)
+      .whereIn('upload_id', ids)
+      .select('processing_status');
+
+    const summary = { total: rows.length, pending: 0, processing: 0, complete: 0, failed: 0 };
+    for (const row of rows) {
+      // NULL is a pre-async-migration row, treated as complete exactly as the
+      // /photos filter treats it.
+      const status = row.processing_status || 'complete';
+      if (Object.prototype.hasOwnProperty.call(summary, status) && status !== 'total') {
+        summary[status] += 1;
+      }
+    }
+
+    res.json(summary);
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to read upload status');
   }
 });
 

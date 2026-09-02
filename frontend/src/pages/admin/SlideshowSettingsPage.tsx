@@ -12,14 +12,14 @@ export const SlideshowSettingsPage: React.FC = () => {
   const { t } = useTranslation();
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-          {t('settings.slideshow.title', 'Slideshow')}
-        </h2>
-        <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
-          {t('settings.slideshow.subtitle', 'Global defaults for the Live Slideshow. Events and event types can override these.')}
-        </p>
-      </div>
+      {/* No tab title here — the Settings shell renders the section
+          heading (icon + label + divider) for every tab that isn't in
+          SettingsPage's TABS_WITH_OWN_HEADER, and it reads from the same
+          `settings.slideshow.title` key, so repeating it stacked two
+          identical H2s on top of each other (QA warning). */}
+      <p className="text-sm text-neutral-600 dark:text-neutral-400">
+        {t('settings.slideshow.subtitle', 'Global defaults for the Live Slideshow. Events and event types can override these.')}
+      </p>
       <SlideshowGlobalDefaultsCard />
     </div>
   );

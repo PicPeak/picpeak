@@ -552,7 +552,7 @@ export const EventsListPage: React.FC = () => {
                         {event.event_type}
                       </td>
                       <td className="px-6 py-4 text-sm text-neutral-700 dark:text-neutral-300">
-                        {event.event_date ? format(parseISO(event.event_date), 'MMM d, yyyy') : 'N/A'}
+                        {event.event_date ? format(parseISO(event.event_date)) : 'N/A'}
                       </td>
                       <td className="px-6 py-4 text-sm text-right tabular-nums text-neutral-700 dark:text-neutral-300">
                         {event.photo_count ?? 0}
@@ -563,7 +563,7 @@ export const EventsListPage: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-sm text-neutral-700 dark:text-neutral-300">
-                        {event.expires_at ? format(parseISO(event.expires_at), 'MMM d, yyyy') : 'N/A'}
+                        {event.expires_at ? format(parseISO(event.expires_at)) : 'N/A'}
                       </td>
                       <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1">

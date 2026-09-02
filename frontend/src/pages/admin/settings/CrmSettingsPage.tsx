@@ -171,13 +171,15 @@ export const CrmSettingsPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">{t('crmSettings.title', 'CRM settings')}</h2>
-          <p className="text-sm text-neutral-600 dark:text-neutral-400">
-            {t('crmSettings.subtitle', 'Fine-tune quote and invoice behaviour.')}
-          </p>
-        </div>
+      {/* No tab title here — the Settings shell renders the section
+          heading (icon + label + divider) for every tab that isn't in
+          SettingsPage's TABS_WITH_OWN_HEADER, so a page title repeated
+          the nav label the admin just clicked (QA warning). The subtitle
+          stays. */}
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          {t('crmSettings.subtitle', 'Fine-tune quote and invoice behaviour.')}
+        </p>
         <Button onClick={() => saveAll.mutate()} disabled={saveAll.isPending || !anySection}>
           <SaveIcon className="w-4 h-4 mr-1" />{t('common.save', 'Save')}
         </Button>

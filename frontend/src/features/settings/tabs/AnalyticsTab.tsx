@@ -1,5 +1,5 @@
 import React from 'react';
-import { Save, Globe, Key, Activity, AlertCircle, Code } from 'lucide-react';
+import { Save, Globe, Key, Activity, AlertCircle, Code, ShieldCheck } from 'lucide-react';
 import { Button, Card, Input } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
 import type { AnalyticsSettings, TrackerProvider } from '../hooks/useSettingsState';
@@ -16,10 +16,38 @@ interface AnalyticsTabProps {
 const PROVIDER_OPTIONS: TrackerProvider[] = ['none', 'umami', 'rybbit', 'custom'];
 
 /**
- * The shipped CSP `script-src` is a static allowlist that no configured
- * tracker domain is ever added to, so a self-hosted Umami/Rybbit instance is
- * blocked by the browser with nothing but a console error to show for it.
- * Shown for every provider that loads a script from another origin.
+ * Umami and Rybbit are loaded through PicPeak's own origin (the backend
+ * proxies `/api/analytics/tracker/*` to the URL configured above), so the
+ * shipped `script-src 'self'` / `connect-src 'self'` CSP already covers both
+ * the script and its beacon and nothing has to be allowlisted by hand.
+ */
+const ProxiedNotice: React.FC = () => {
+  const { t } = useTranslation();
+
+  return (
+    <div className="p-4 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg">
+      <div className="flex items-start gap-3">
+        <ShieldCheck className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+        <div className="text-sm text-blue-800 dark:text-blue-200">
+          <p className="font-medium mb-1">
+            {t('settings.analytics.proxiedNotice', 'Served from your own domain')}
+          </p>
+          <p>
+            {t(
+              'settings.analytics.proxiedNoticeText',
+              'PicPeak loads the tracker script and forwards its events through its own domain, so no Content-Security-Policy or reverse-proxy change is needed — and ad blockers see first-party requests. Your tracker still gets each visitor\'s IP and user agent (forwarded as X-Forwarded-For), so device and location reporting keeps working. The URL must be reachable from the PicPeak server and resolve to a public address.',
+            )}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Custom mode is the one provider that still loads from a third-party origin:
+ * the pasted snippet is rendered verbatim into <head>, so PicPeak has nothing
+ * to proxy and the static CSP applies to it unchanged.
  */
 const CspWarning: React.FC = () => {
   const { t } = useTranslation();
@@ -34,8 +62,12 @@ const CspWarning: React.FC = () => {
           </p>
           <p>
             {t(
-              'settings.analytics.customCspWarningText',
-              'PicPeak ships with a strict CSP (`script-src \'self\'`). If your tracker loads from another domain, add that domain to your reverse-proxy or nginx CSP config — otherwise the browser silently blocks the script.',
+              // Deliberately a NEW key: the old `customCspWarningText` value is
+              // still in en/de and describes the pre-proxy world ("your tracker
+              // loads from another domain", script-src only), which is now only
+              // true for Custom mode and is missing connect-src.
+              'settings.analytics.customOnlyCspWarningText',
+              'PicPeak ships with a strict CSP (`script-src \'self\'; connect-src \'self\'`). Unlike the Umami and Rybbit options above, a pasted snippet is not proxied — add your tracker\'s domain to BOTH `script-src` (to load the script) and `connect-src` (for the events it sends) in your reverse-proxy or nginx CSP config, otherwise the browser silently blocks it.',
             )}
           </p>
         </div>
@@ -158,7 +190,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               </p>
             </div>
 
-            <CspWarning />
+            <ProxiedNotice />
           </div>
         )}
 
@@ -223,7 +255,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
               </p>
             </div>
 
-            <CspWarning />
+            <ProxiedNotice />
           </div>
         )}
 

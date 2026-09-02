@@ -119,17 +119,17 @@ export const WhatsAppTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-neutral-900 dark:text-neutral-100">
-          {t('settings.whatsapp.title', 'WhatsApp')}
-        </h2>
-        <p className="text-neutral-600 dark:text-neutral-400 mt-1">
-          {t(
-            'settings.whatsapp.subtitle',
-            'Configure Meta Business credentials to deliver the gallery-ready notification via WhatsApp alongside email.',
-          )}
-        </p>
-      </div>
+      {/* No tab title here — the Settings shell renders the section
+          heading (icon + label + divider) for every tab that isn't in
+          SettingsPage's TABS_WITH_OWN_HEADER, and it reads from the same
+          `settings.whatsapp.title` key, so repeating it stacked two
+          identical H2s on top of each other (QA warning). */}
+      <p className="text-neutral-600 dark:text-neutral-400">
+        {t(
+          'settings.whatsapp.subtitle',
+          'Configure Meta Business credentials to deliver the gallery-ready notification via WhatsApp alongside email.',
+        )}
+      </p>
 
       <Card>
         <CardContent className="p-5 space-y-4">

@@ -34,6 +34,15 @@ async function makeWorkflow({ nodes, edges, trigger = 'test.event', enabled = tr
   return workflowId;
 }
 
+// seedBuiltinWorkflowsAtBoot carries a once-per-process guard; these tests
+// deliberately re-run it (idempotency, version bumps) inside one worker, so
+// clear the flag each time.
+async function seedBuiltins(logger) {
+  const mod = require('../../src/services/_workflowSeedBoot');
+  mod._resetBootForTests();
+  return mod.seedBuiltinWorkflowsAtBoot(db, logger);
+}
+
 beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
   // Engine requires the singleton db — require AFTER bootCrmDb wired the test path.
@@ -240,9 +249,9 @@ describe('workflow engine', () => {
   });
 
   test('seeds the invoice-dunning built-in as the delegation graph (disabled for first beta)', async () => {
-    const { seedBuiltinWorkflowsAtBoot, DUNNING_KEY } = require('../../src/services/_workflowSeedBoot');
+    const { DUNNING_KEY } = require('../../src/services/_workflowSeedBoot');
     const noopLogger = { info() {}, warn() {} };
-    await seedBuiltinWorkflowsAtBoot(db, noopLogger);
+    await seedBuiltins(noopLogger);
 
     const wf = await db('workflows').where({ builtin_key: DUNNING_KEY }).first();
     expect(wf).toBeTruthy();
@@ -256,13 +265,13 @@ describe('workflow engine', () => {
     expect(nodes.some((n) => JSON.parse(n.config || '{}').action === 'queue_payment_check')).toBe(true);
     expect(nodes.some((n) => JSON.parse(n.config || '{}').action === 'escalate_to_collections')).toBe(true);
 
-    await seedBuiltinWorkflowsAtBoot(db, noopLogger); // idempotent at current seed version
+    await seedBuiltins(noopLogger); // idempotent at current seed version
     const all = await db('workflows').where({ builtin_key: DUNNING_KEY });
     expect(all.length).toBe(1);
   });
 
   test('re-seeds a stale built-in on version bump, but never an admin-owned one', async () => {
-    const { seedBuiltinWorkflowsAtBoot, DUNNING_KEY } = require('../../src/services/_workflowSeedBoot');
+    const { DUNNING_KEY } = require('../../src/services/_workflowSeedBoot');
     const noopLogger = { info() {}, warn() {} };
 
     // Simulate an older, never-touched seed (v1, with a legacy gate node).
@@ -270,7 +279,7 @@ describe('workflow engine', () => {
     await db('workflows').where({ id: wf.id }).update({ enabled: true, admin_toggled_at: null, trigger_config: JSON.stringify({ seedVersion: 1 }) });
     await db('workflow_nodes').insert({ workflow_id: wf.id, version: wf.version, node_key: 'legacyGate', type: 'gate', config: '{}', pos_x: 0, pos_y: 0 });
 
-    await seedBuiltinWorkflowsAtBoot(db, noopLogger);
+    await seedBuiltins(noopLogger);
     const reseeded = await db('workflows').where({ id: wf.id }).first();
     expect(reseeded.version).toBe(wf.version + 1); // bumped
     expect(JSON.parse(reseeded.trigger_config).seedVersion).toBe(7);
@@ -281,15 +290,14 @@ describe('workflow engine', () => {
     // Admin-owned (admin_toggled_at set) + stale → must NOT be touched.
     await db('workflows').where({ id: wf.id }).update({ enabled: true, admin_toggled_at: new Date().toISOString(), trigger_config: JSON.stringify({ seedVersion: 1 }) });
     const before = await db('workflows').where({ id: wf.id }).first();
-    await seedBuiltinWorkflowsAtBoot(db, noopLogger);
+    await seedBuiltins(noopLogger);
     const after = await db('workflows').where({ id: wf.id }).first();
     expect(after.version).toBe(before.version); // unchanged
     expect(!!after.enabled).toBe(true); // admin's choice preserved
   });
 
   test('seeds the gallery, pre-event + booking built-ins (all disabled for first beta)', async () => {
-    const { seedBuiltinWorkflowsAtBoot } = require('../../src/services/_workflowSeedBoot');
-    await seedBuiltinWorkflowsAtBoot(db, { info() {}, warn() {} });
+    await seedBuiltins({ info() {}, warn() {} });
 
     // First beta: cutover flows ship DISABLED (legacy paths run until enabled);
     // they delegate to the proven send functions once turned on.
@@ -484,8 +492,7 @@ describe('workflow engine', () => {
   });
 
   test('isBuiltinFlowActive reflects the built-in ENABLED state (enabled-based mutex)', async () => {
-    const { seedBuiltinWorkflowsAtBoot } = require('../../src/services/_workflowSeedBoot');
-    await seedBuiltinWorkflowsAtBoot(db, { info() {}, warn() {} });
+    await seedBuiltins({ info() {}, warn() {} });
     // All built-ins ship disabled → inactive until the admin enables one.
     expect(await engine.isBuiltinFlowActive('gallery_expiring')).toBe(false);
     expect(await engine.isBuiltinFlowActive('does_not_exist')).toBe(false);
@@ -496,8 +503,7 @@ describe('workflow engine', () => {
   });
 
   test('legacy event-reminder pass stands down ONLY when the pre_event_email flow is enabled', async () => {
-    const { seedBuiltinWorkflowsAtBoot } = require('../../src/services/_workflowSeedBoot');
-    await seedBuiltinWorkflowsAtBoot(db, { info() {}, warn() {} }); // pre_event_email seeded DISABLED
+    await seedBuiltins({ info() {}, warn() {} }); // pre_event_email seeded DISABLED
     // crm_event_reminders_enabled must be on to reach the mutex guard.
     await db('app_settings')
       .insert({ setting_key: 'crm_event_reminders_enabled', setting_value: JSON.stringify(true), setting_type: 'boolean' })
@@ -657,5 +663,23 @@ describe('workflow engine', () => {
     expect(steps.find((s) => s.node_key === 'w').status).toBe('skipped'); // wait passed through
     const emailStep = steps.find((s) => s.node_key === 'a');
     expect(JSON.parse(emailStep.result).dryRun).toBe(true); // send_email mocked, no real mail
+  });
+
+  test('the once-per-process guard short-circuits a second boot seed', async () => {
+    const { seedBuiltinWorkflowsAtBoot, DUNNING_KEY } = require('../../src/services/_workflowSeedBoot');
+    await seedBuiltins({ info() {}, warn() {} });
+
+    // Make the row look stale + never-touched, so an UNGUARDED call would
+    // re-seed it (that's exactly what the version-bump test above asserts).
+    const before = await db('workflows').where({ builtin_key: DUNNING_KEY }).first();
+    await db('workflows').where({ id: before.id })
+      .update({ admin_toggled_at: null, trigger_config: JSON.stringify({ seedVersion: 1 }) });
+
+    // No _resetBootForTests() — `booted` is still set from seedBuiltins above.
+    await seedBuiltinWorkflowsAtBoot(db, { info() {}, warn() {} });
+
+    const after = await db('workflows').where({ id: before.id }).first();
+    expect(after.version).toBe(before.version); // no re-seed happened
+    expect(JSON.parse(after.trigger_config).seedVersion).toBe(1);
   });
 });

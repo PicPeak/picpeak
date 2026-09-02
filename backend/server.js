@@ -89,6 +89,8 @@ const { maintenanceMiddleware } = require('./src/middleware/maintenance');
 const { sessionTimeoutMiddleware } = require('./src/middleware/sessionTimeout');
 const { errorHandler, notFoundHandler } = require('./src/middleware/errorHandler');
 const { createRateLimiter, createAuthRateLimiter } = require('./src/services/rateLimitService');
+const { createApiRateLimitGate } = require('./src/middleware/apiRateLimitGate');
+const { createAuthRateLimitGate } = require('./src/middleware/authRateLimitGate');
 const { getPublicSitePayload } = require('./src/services/publicSiteService');
 const cookieParser = require('cookie-parser');
 const {
@@ -257,6 +259,46 @@ const corsOptions = {
 app.use('/api', cors(corsOptions));
 // Handle preflight explicitly for API paths
 app.options('/api/*', cors(corsOptions));
+
+// Same-origin proxy for the configured analytics tracker. Mounted HERE, ahead
+// of the body parsers, so the tracker's beacon payload reaches the proxy as a
+// raw buffer (express.json would consume it, and the CSRF Content-Type gate
+// below would 415 a navigator.sendBeacon `text/plain` POST). It carries no
+// PicPeak state and reads no PicPeak credentials — see the route file for the
+// SSRF/path-allowlist model.
+app.use('/api/analytics/tracker', require('./src/routes/analyticsTrackerProxy'));
+
+// Health check endpoint. `pid` + `uptime` let monitors (and the local E2E
+// watchdog) detect a silent process restart between two checks.
+//
+// Served at BOTH paths: /health is the canonical one, /api/health exists
+// because probes reasonably assume the API lives under /api and otherwise
+// produce a "route not found" warning on every poll. Same handler, same body,
+// same (public) exposure — the alias adds no information.
+//
+// Mounted HERE, ahead of the API middleware chain, so a probe running every
+// couple of seconds does not pay for — or pollute — the body parsers, the
+// request logger, the maintenance gate (/health is on its skip list anyway)
+// or the rate limiter's per-IP budget.
+app.get(['/health', '/api/health'], async (req, res) => {
+  try {
+    await db.raw('SELECT 1');
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      pid: process.pid,
+      uptime: process.uptime()
+    });
+  } catch (error) {
+    logger.error('Health check failed:', error);
+    res.status(503).json({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      pid: process.pid,
+      uptime: process.uptime()
+    });
+  }
+});
 
 // Initialize rate limiters (they will be created dynamically)
 let generalRateLimiter;
@@ -455,17 +497,36 @@ async function handlePublicSiteRequest(req, res, next) {
 async function initializeRateLimiters() {
   generalRateLimiter = await createRateLimiter();
   authRateLimiter = await createAuthRateLimiter();
-  
-  // Apply rate limiting
-  app.use('/api/', generalRateLimiter);
-  app.use('/api/auth', authRateLimiter);
-  app.use('/api/gallery/:slug/verify', authRateLimiter);
-  app.use('/api/admin/auth/login', authRateLimiter);
-  app.use('/api/setup/admin', authRateLimiter);
-  app.use('/api/setup/verify-token', authRateLimiter);
+
+  // Neither limiter is registered here — an app.use() at this point runs after
+  // the routers, the /api 404 handler and the error handler are already on the
+  // stack, so it can never see a request. Both are reached through their gates
+  // below, which are registered ahead of the routers and read these variables
+  // per request.
+  //
+  // The five prefix registrations of authRateLimiter that used to live here
+  // were inert for that reason, and could not simply be moved up either: the
+  // widest of them mounted on the whole /api/auth router, so the 5-per-window
+  // auth budget would have covered GET /api/auth/session and POST
+  // /api/auth/password-strength, which the frontend calls far more often than
+  // five times per window. authRateLimitGate matches exact method + path
+  // instead, and counts only failed attempts.
 }
 
-// Note: Rate limiters will be initialized after database connection
+// Rate limiting for /api. Registered HERE — above the routers — because
+// Express dispatches in registration order; see apiRateLimitGate for the full
+// story. The gate is a no-op until initializeRateLimiters() resolves, and it
+// must stay unmounted (no path argument) so req.path keeps its /api prefix.
+// /health and /api/health are mounted above this point and so are never
+// counted, which matters because monitors poll them every couple of seconds.
+app.use(createApiRateLimitGate(() => generalRateLimiter));
+
+// Per-IP limit for credential-verification endpoints only, on its own bucket.
+// Registered after the general gate so that an IP already over the /api budget
+// is rejected there first; see authRateLimitGate for the exact endpoint table
+// and why it must stay unmounted.
+app.use(createAuthRateLimitGate(() => authRateLimiter));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -732,28 +793,6 @@ app.get(
     return res.redirect(302, '/favicon-32x32.png');
   }
 );
-
-// Health check endpoint. `pid` + `uptime` let monitors (and the local E2E
-// watchdog) detect a silent process restart between two checks.
-app.get('/health', async (req, res) => {
-  try {
-    await db.raw('SELECT 1');
-    res.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      pid: process.pid,
-      uptime: process.uptime()
-    });
-  } catch (error) {
-    logger.error('Health check failed:', error);
-    res.status(503).json({
-      status: 'error',
-      timestamp: new Date().toISOString(),
-      pid: process.pid,
-      uptime: process.uptime()
-    });
-  }
-});
 
 // Routes
 app.use('/api/setup', setupRoutes); // public first-run bootstrap (self-closes after setup)

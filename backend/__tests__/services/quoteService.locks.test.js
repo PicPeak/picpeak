@@ -177,3 +177,59 @@ describe('quoteService.adminAcceptQuote', () => {
     }
   });
 });
+
+/**
+ * VALID_QUOTE_TRANSITIONS was a complete state machine that nothing consulted,
+ * so `quotes.status` writes were unvalidated. It is now asserted at every
+ * status-change site — and reconciled against them, since the original table
+ * was missing several transitions the service legitimately performs
+ * (draft→accepted, expired→accepted/declined/sent, declined→sent, and the
+ * same-status re-affirm inside the response window). The
+ * "accepts draft / sent / expired" case above is the valid-transition
+ * coverage for the admin-accept path; these pin the rest.
+ */
+describe('quoteService — quote status transition backstop', () => {
+  beforeEach(() => resetChains());
+
+  const respond = (quote, action = 'accept') => {
+    pickChainFor('quote_action_tokens')._firstValue = { id: 7, quote_id: quote.id, expires_at: null };
+    pickChainFor('quotes')._firstValue = quote;
+    return quoteService.recordResponse({ token: 'tok', action, ip: '127.0.0.1' });
+  };
+
+  it('allows sent → accepted', async () => {
+    const result = await respond({ id: 1, status: 'sent' });
+    expect(result.status).toBe('accepted');
+  });
+
+  it('allows the accepted → accepted re-affirm inside the toggle window', async () => {
+    const now = Date.now();
+    const result = await respond({
+      id: 1,
+      status: 'accepted',
+      responded_at: new Date(now - 60_000).toISOString(),
+      response_locked_at: new Date(now + 10 * 60_000).toISOString(),
+    });
+    expect(result.status).toBe('accepted');
+  });
+
+  it('refuses to respond to a converted quote', async () => {
+    await expect(respond({ id: 1, status: 'converted' }))
+      .rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it('409s (not a silent overwrite) on a status the machine does not know', async () => {
+    // A legacy / corrupt row. adminAcceptQuote's own guard only excludes
+    // accepted / declined / converted, so 'cancelled' sailed straight through
+    // and got overwritten with 'accepted'.
+    pickChainFor('quotes')._firstValue = { id: 1, status: 'cancelled', customer_account_id: 5 };
+    await expect(quoteService.adminAcceptQuote(1, 42))
+      .rejects.toMatchObject({ statusCode: 409, code: 'QUOTE_INVALID_TRANSITION' });
+  });
+
+  it('409s the same way on the admin decline path', async () => {
+    pickChainFor('quotes')._firstValue = { id: 1, status: 'cancelled' };
+    await expect(quoteService.adminDeclineQuote(1, 42))
+      .rejects.toMatchObject({ statusCode: 409, code: 'QUOTE_INVALID_TRANSITION' });
+  });
+});

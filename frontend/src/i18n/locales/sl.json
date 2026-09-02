@@ -280,18 +280,6 @@
     "searchMemories": "Iskanje spominov...",
     "thankYou": "Hvala",
     "thankYouMessage": "Ker ste bili del naše zgodbe in naš poseben dan naredili nepozaben.",
-    "feedback": {
-      "title": "Povratne informacije",
-      "shareThoughts": "Delite svoje mnenje o »{{name}}«",
-      "rateThisMoment": "Ocenite ta trenutek",
-      "comments": "Komentarji",
-      "noComments": "Komentarjev še ni. Bodite prvi!",
-      "yourName": "Vaše ime",
-      "yourEmail": "Vaša e-pošta",
-      "writeLovelyNote": "Napišite prijazno sporočilo...",
-      "postComment": "Objavi komentar",
-      "anonymous": "Anonimno"
-    },
     "rated": "Ocenjeno",
     "commented": "Komentirano",
     "expiresIn_one": "Galerija poteče čez {{count}} dan",
@@ -942,7 +930,6 @@
     },
     "moderation": {
       "title": "Moderiranje",
-      "wordFilters": "Filtri besed",
       "description": "Upravljajte besede, ki naj se v komentarjih filtrirajo ali blokirajo",
       "addFilter": "Dodaj nov filter",
       "enterWord": "Vnesite besedo za filtriranje",
@@ -2484,7 +2471,6 @@
     }
   },
   "cssTemplates": {
-    "title": "CSS predloge po meri",
     "template": "Predloga",
     "templateName": "Ime predloge",
     "enableTemplate": "Omogoči to predlogo",

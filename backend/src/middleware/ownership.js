@@ -1,4 +1,5 @@
 const { db } = require('../database/db');
+const logger = require('../utils/logger');
 
 /**
  * Middleware to enforce event ownership for non-super_admin users.
@@ -27,7 +28,10 @@ function requireEventOwnership(req, res, next) {
       }
       next();
     })
-    .catch((_err) => {
+    .catch((err) => {
+      logger.error('Event ownership check failed', {
+        eventId, adminId: req.admin.id, error: err.message, stack: err.stack,
+      });
       res.status(500).json({ error: 'Failed to verify ownership' });
     });
 }
@@ -152,7 +156,12 @@ function requireProjectOwnership(req, res, next) {
       if (!row) return res.status(404).json({ error: 'Project not found' });
       next();
     })
-    .catch(() => res.status(500).json({ error: 'Failed to verify project ownership' }));
+    .catch((err) => {
+      logger.error('Project ownership check failed', {
+        projectId, adminId: req.admin?.id, error: err.message, stack: err.stack,
+      });
+      res.status(500).json({ error: 'Failed to verify project ownership' });
+    });
 }
 
 module.exports = {

@@ -248,11 +248,15 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
 
   return (
     <Card padding="lg">
-      <h2 className="text-lg font-semibold text-theme mb-1 flex items-center gap-2">
+      {/* Explicit neutral colours (not `text-theme` / `text-muted-theme`):
+          those resolve to the gallery branding theme's --color-text, which
+          is applied globally on <html> and renders near-white inside the
+          light admin chrome (QA S13). */}
+      <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1 flex items-center gap-2">
         <Clock className="w-5 h-5" />
         {t('customers.hours.section', 'Hours')}
       </h2>
-      <p className="text-xs text-muted-theme mb-4">
+      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-4">
         {isMonthly
           ? t('customers.hours.monthlyHint',
             'Entries auto-append to the current monthly draft. Edit / delete remains possible until the scheduler arms the draft for send.')
@@ -268,7 +272,7 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
           is configured anywhere along the chain. */}
       {!compact && (
         <div className="mb-4">
-          <label className="block text-sm font-medium text-theme mb-1">
+          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
             {t('customers.field.hourlyRate', 'Default hourly rate')}
           </label>
           {onHourlyRateChange ? (
@@ -283,7 +287,7 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
                 className="w-40 input"
                 placeholder="150.00"
               />
-              <p className="text-xs text-muted-theme mt-1">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                 {t('customers.field.hourlyRateHint',
                   'Major units (e.g. 150.00 for {{currency}} 150). Leave blank to require a per-entry override on every block.',
                   { currency: profileDefaultCurrency })}
@@ -315,11 +319,11 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
               </div>
             </div>
           ) : (
-            <p className="text-sm text-theme">
+            <p className="text-sm text-neutral-900 dark:text-neutral-100">
               <span className="tabular-nums font-medium">
                 {profileDefaultCurrency} {((effectiveDefaultRateMinor as number) / 100).toFixed(2)}
               </span>
-              <span className="text-xs text-muted-theme ml-2">
+              <span className="text-xs text-neutral-500 dark:text-neutral-400 ml-2">
                 {customerHourlyRateMinor != null
                   ? t('customers.hours.rateSource.customer', 'from this customer')
                   : t('customers.hours.rateSource.installDefault', 'install-wide default')}
@@ -333,28 +337,28 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
           lives on the standalone /admin/clients/hours surface. */}
       {!compact && (
       <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4 mb-4">
-        <h3 className="text-sm font-semibold mb-3">{t('customers.hours.form.title', 'Log new entry')}</h3>
+        <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3">{t('customers.hours.form.title', 'Log new entry')}</h3>
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           <div>
-            <label className="block text-xs text-muted-theme mb-1">
+            <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">
               {t('customers.hours.form.date', 'Date')}
             </label>
             <LocalizedDateInput value={entryDate} onChange={setEntryDate} />
           </div>
           <div>
-            <label className="block text-xs text-muted-theme mb-1">
+            <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">
               {t('customers.hours.form.start', 'Start')}
             </label>
             <TimeField value={startTime} onChange={setStartTime} />
           </div>
           <div>
-            <label className="block text-xs text-muted-theme mb-1">
+            <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">
               {t('customers.hours.form.end', 'End')}
             </label>
             <TimeField value={endTime} onChange={setEndTime} />
           </div>
           <div>
-            <label className="block text-xs text-muted-theme mb-1">
+            <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">
               {t('customers.hours.form.duration', 'Duration')}
             </label>
             <input
@@ -375,7 +379,7 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
               className="input w-full" />
           </div>
           <div>
-            <label className="block text-xs text-muted-theme mb-1">
+            <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">
               {t('customers.hours.form.rateOverride', 'Rate override')}
             </label>
             <input
@@ -390,7 +394,7 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
           </div>
         </div>
         <div className="mt-3">
-          <label className="block text-xs text-muted-theme mb-1">
+          <label className="block text-xs text-neutral-500 dark:text-neutral-400 mb-1">
             {t('customers.hours.form.note', 'Note / description')}
           </label>
           <textarea rows={2} value={description}
@@ -460,16 +464,16 @@ export const HoursSection: React.FC<HoursSectionProps> = ({
 
       {/* Entry list table. */}
       {isLoading ? (
-        <p className="text-sm text-muted-theme">{t('common.loading', 'Loading…')}</p>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">{t('common.loading', 'Loading…')}</p>
       ) : entries.length === 0 ? (
-        <p className="text-sm text-muted-theme">
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">
           {t('customers.hours.empty', 'No entries logged yet.')}
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-xs uppercase text-muted-theme">
+              <tr className="text-left text-xs uppercase text-neutral-500 dark:text-neutral-400">
                 <th className="py-2 pr-3">{t('customers.hours.col.date', 'Date')}</th>
                 <th className="py-2 pr-3">{t('customers.hours.col.range', 'Time')}</th>
                 <th className="py-2 pr-3 text-right">{t('customers.hours.col.hours', 'Hours')}</th>

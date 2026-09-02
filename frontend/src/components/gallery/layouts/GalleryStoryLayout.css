@@ -99,18 +99,21 @@
   }
 }
 
+/* 13rem collapsed so the placeholder still fits in the longest locale —
+   "Rechercher des souvenirs..." (fr) measures ~11rem at 0.875rem, and the
+   old 8rem clipped even the German string. */
 .story-nav-search input {
   background: transparent;
   border: none;
   outline: none;
   font-size: 0.875rem;
-  width: 8rem;
+  width: 13rem;
   color: var(--story-foreground);
   transition: width 0.2s ease;
 }
 
 .story-nav-search input:focus {
-  width: 12rem;
+  width: 17rem;
 }
 
 .story-nav-search input::placeholder {
@@ -437,226 +440,6 @@
   }
 }
 
-/* Feedback Sheet */
-.story-feedback-sheet {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  max-width: 28rem;
-  background-color: rgba(13, 13, 13, 0.95);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-left: 1px solid rgba(255, 255, 255, 0.1);
-  z-index: 60;
-  transform: translateX(100%);
-  transition: transform 0.3s ease;
-  padding: 1.5rem;
-  overflow-y: auto;
-}
-
-.story-feedback-sheet.open {
-  transform: translateX(0);
-}
-
-.story-feedback-sheet-header {
-  margin-bottom: 1.5rem;
-}
-
-.story-feedback-sheet-title {
-  font-size: 1.5rem;
-  margin-bottom: 0.25rem;
-}
-
-.story-feedback-sheet-description {
-  color: var(--story-muted-foreground);
-  font-size: 0.875rem;
-}
-
-.story-feedback-rating {
-  margin-bottom: 2rem;
-}
-
-.story-feedback-rating-label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--story-muted-foreground);
-  margin-bottom: 0.5rem;
-}
-
-.story-feedback-rating-stars {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.story-feedback-rating-star {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  transition: transform 0.2s ease;
-}
-
-.story-feedback-rating-star:hover {
-  transform: scale(1.1);
-}
-
-.story-feedback-rating-star.active svg {
-  fill: var(--story-primary);
-  color: var(--story-primary);
-}
-
-.story-feedback-rating-star svg {
-  color: var(--story-muted-foreground);
-  transition: color 0.2s ease;
-}
-
-.story-feedback-rating-star:hover svg {
-  color: rgba(201, 169, 97, 0.5);
-}
-
-.story-feedback-comments {
-  max-height: 40vh;
-  overflow-y: auto;
-  padding-right: 0.5rem;
-  margin-bottom: 2rem;
-}
-
-.story-feedback-comments-label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--story-muted-foreground);
-  margin-bottom: 1rem;
-}
-
-.story-feedback-comment {
-  display: flex;
-  gap: 0.75rem;
-  font-size: 0.875rem;
-  margin-bottom: 1rem;
-}
-
-.story-feedback-comment-avatar {
-  width: 2rem;
-  height: 2rem;
-  border-radius: 9999px;
-  background-color: var(--story-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 500;
-  flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.story-feedback-comment-content {
-  flex: 1;
-}
-
-.story-feedback-comment-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 0.25rem;
-}
-
-.story-feedback-comment-author {
-  font-weight: 500;
-}
-
-.story-feedback-comment-date {
-  font-size: 0.625rem;
-  color: var(--story-muted-foreground);
-}
-
-.story-feedback-comment-text {
-  color: var(--story-muted-foreground);
-  line-height: 1.5;
-}
-
-.story-feedback-empty {
-  font-size: 0.875rem;
-  color: rgba(163, 163, 163, 0.5);
-  font-style: italic;
-}
-
-.story-feedback-form {
-  padding-top: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.story-feedback-textarea {
-  width: 100%;
-  min-height: 100px;
-  padding: 0.75rem;
-  background-color: rgba(26, 26, 26, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 0.25rem;
-  color: var(--story-foreground);
-  font-size: 0.875rem;
-  resize: none;
-  margin-bottom: 0.75rem;
-}
-
-.story-feedback-textarea:focus {
-  outline: none;
-  border-color: rgba(201, 169, 97, 0.3);
-}
-
-.story-feedback-textarea::placeholder {
-  color: var(--story-muted-foreground);
-}
-
-.story-feedback-submit {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  background-color: var(--story-primary);
-  color: var(--story-primary-foreground);
-  border: none;
-  border-radius: 0.125rem;
-  font-weight: 500;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  transition: background-color 0.2s ease;
-}
-
-.story-feedback-submit:hover {
-  background-color: white;
-}
-
-.story-feedback-submit:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.story-feedback-close {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  padding: 0.5rem;
-  background: none;
-  border: none;
-  color: var(--story-muted-foreground);
-  cursor: pointer;
-  transition: color 0.2s ease;
-}
-
-.story-feedback-close:hover {
-  color: var(--story-foreground);
-}
-
 /* Scroll to Top */
 .story-scroll-to-top {
   position: fixed;
@@ -716,28 +499,4 @@
 
 .story-footer-btn:hover {
   background-color: white;
-}
-
-/* Backdrop Overlay */
-.story-backdrop {
-  position: fixed;
-  inset: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  z-index: 55;
-}
-
-/* Animation */
-@keyframes storyFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.story-animate-fade-in {
-  animation: storyFadeIn 0.8s ease-out forwards;
 }

@@ -320,11 +320,16 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
             <select
               value={editForm.source_mode}
               onChange={(e) => {
-                const mode = e.target.value as 'managed' | 'reference';
+                // Named `sourceMode`, not `mode`: the i18n extractor's TS
+                // resolver matches locals by name across the whole file, so a
+                // local called `mode` here leaked 'managed' | 'reference' into
+                // the promo/info banner mode_ templates further down and had it
+                // emit four phantom keys that the code can never request.
+                const sourceMode = e.target.value as 'managed' | 'reference';
                 setEditForm(prev => ({
                   ...prev,
-                  source_mode: mode,
-                  external_path: mode === 'reference'
+                  source_mode: sourceMode,
+                  external_path: sourceMode === 'reference'
                     ? (prev.external_path || event.external_path || '')
                     : ''
                 }));
@@ -365,6 +370,11 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
                 value={editForm.photo_cap}
                 onChange={(e) => setEditForm(prev => ({ ...prev, photo_cap: parseInt(e.target.value) || 0 }))}
                 min={0}
+                // events.photo_cap is a signed 32-bit int (migration 074).
+                // Without an explicit max, input[type=number] reports
+                // aria-valuemax="0", and an out-of-range value only fails at
+                // INSERT.
+                max={2147483647}
                 className="w-24 px-3 py-2 border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-accent-dark"
               />
               <span className="text-xs text-neutral-500 dark:text-neutral-400">

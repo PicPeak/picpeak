@@ -10,7 +10,24 @@
 //   Custom  → render admin-pasted HTML (sanitised server-side) into <head>;
 //             no runtime API hook — `track()` becomes a no-op.
 
+import { getApiBaseUrl } from '../utils/url';
+
 export type TrackerProvider = 'none' | 'umami' | 'rybbit' | 'custom';
+
+// Umami and Rybbit scripts are loaded from PicPeak's OWN origin and proxied to
+// the configured tracker by `backend/src/routes/analyticsTrackerProxy.js`.
+// Loading them from the tracker's domain directly was always blocked by the
+// shipped CSP (`script-src 'self' …`, and `connect-src 'self' …` for the
+// beacon), which cannot be made dynamic in the Docker deployment — nginx
+// serves index.html off disk and strips the backend's CSP header. Proxying
+// removes the need for a CSP change entirely, and is what both vendors
+// document for first-party tracking.
+//
+// Both scripts derive their collect endpoint from their own `src`:
+//   Umami  — `<script-dir>/api/send` (also honours data-host-url, set below)
+//   Rybbit — `src.split('/script.js')[0]` + `/track`
+// so the single prefix below is all the backend has to expose.
+const trackerProxyBase = (): string => `${getApiBaseUrl().replace(/\/+$/, '')}/analytics/tracker`;
 
 interface BaseInitConfig {
   provider: TrackerProvider;
@@ -83,10 +100,16 @@ class AnalyticsService {
         return;
       }
       this.websiteId = config.websiteId;
+      const proxyBase = trackerProxyBase();
       const script = document.createElement('script');
       script.async = true;
       script.defer = true;
-      script.src = `${config.hostUrl.replace(/\/+$/, '')}/script.js`;
+      script.src = `${proxyBase}/script.js`;
+      // Pin the collect host explicitly rather than relying on the tracker's
+      // src-directory fallback: an Umami built with COLLECT_API_HOST set would
+      // otherwise post straight to the tracker's domain and be blocked by
+      // `connect-src 'self'`.
+      script.setAttribute('data-host-url', proxyBase);
       script.setAttribute('data-website-id', config.websiteId);
       // Auto-track OFF by default (GHSA-7m6c): Umami's auto page-view capture
       // reads window.location verbatim, so a gallery URL /gallery/:slug/:token
@@ -106,7 +129,10 @@ class AnalyticsService {
       const script = document.createElement('script');
       script.async = true;
       script.defer = true;
-      script.src = `${config.hostUrl.replace(/\/+$/, '')}/api/script.js`;
+      // `/script.js` (not the upstream's `/api/script.js`): Rybbit's script
+      // computes its analytics host as `src.split('/script.js')[0]`, so the
+      // proxy prefix has to be the part before that literal segment.
+      script.src = `${trackerProxyBase()}/script.js`;
       script.setAttribute('data-site-id', config.websiteId);
       // GHSA-7m6c: Rybbit auto-tracks page views (initial load + SPA route
       // changes) reading window.location, so a gallery URL would ship the raw

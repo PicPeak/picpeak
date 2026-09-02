@@ -35,7 +35,8 @@ import type { FilterType, FeedbackFilterType } from './GalleryFilter';
 import { analyticsService } from '../../services/analytics.service';
 import { useDevToolsProtection } from '../../hooks/useDevToolsProtection';
 import { api } from '../../config/api';
-import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ChevronLeft } from 'lucide-react';
+import { Upload, Menu, Eye, EyeOff, Shield, X, Download, ChevronLeft, Loader2 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { galleryService } from '../../services/gallery.service';
 import { feedbackService, type ColorLabel } from '../../services/feedback.service';
 import { useWatermarkSettings } from '../../hooks/useWatermarkSettings';
@@ -255,9 +256,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // the photo list only returns completed rows. A single immediate refetch
   // therefore comes back with a byte-identical payload (which the browser is
   // answered with a 304), so the guest saw their upload silently vanish until
-  // they hard-reloaded. Poll for a short while until the queued photos finish
-  // processing instead of refetching — or reloading the page — exactly once.
+  // they hard-reloaded.
+  //
+  // The first fix polled the photo list blind against a count baseline, which
+  // cannot tell a slow worker from a photo that failed processing — it just
+  // stopped after 60s with nothing on screen either way. Poll the upload
+  // group's real processing status instead (B7): it drives the "processing…"
+  // notice, refetches the grid as photos land rather than only at the end, and
+  // reports a failure instead of a silence.
   const uploadRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [uploadProcessing, setUploadProcessing] = useState<{ complete: number; total: number } | null>(null);
   const stopUploadRefresh = () => {
     if (uploadRefreshTimerRef.current) {
       clearInterval(uploadRefreshTimerRef.current);
@@ -266,24 +274,86 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   };
   useEffect(() => stopUploadRefresh, []);
 
-  const handleUploadComplete = (queuedCount = 1) => {
+  const handleUploadComplete = (uploadIds: string[] = []) => {
     setShowUploadModal(false);
-    const baseline = data?.photos?.length ?? 0;
-    // Each file is processed independently, so stopping at the FIRST new photo
-    // leaves the rest of a multi-file upload hidden until a manual refresh —
-    // the very symptom this polling exists to prevent. Wait for all of them.
-    const target = baseline + Math.max(1, queuedCount);
-    const deadline = Date.now() + 60_000;
     stopUploadRefresh();
+
+    // Nothing to follow (no id came back, e.g. every file failed on the wire).
+    // Refetch once rather than polling something unknowable.
+    if (uploadIds.length === 0) {
+      void refetch();
+      return;
+    }
+
+    setUploadProcessing({ complete: 0, total: uploadIds.length });
+    const deadline = Date.now() + 120_000;
+    let lastComplete = 0;
+    let inFlight = false;
+
+    const finish = async (announce?: () => void) => {
+      stopUploadRefresh();
+      setUploadProcessing(null);
+      await refetch();
+      announce?.();
+    };
+
     const poll = async () => {
-      const result = await refetch();
-      if ((result.data?.photos?.length ?? 0) >= target || Date.now() > deadline) {
-        stopUploadRefresh();
+      // The interval keeps firing while a slow request is open; without this
+      // the requests stack up for the whole deadline.
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const status = await galleryService.getUploadStatus(slug, uploadIds);
+        setUploadProcessing({
+          complete: status.complete + status.failed,
+          total: status.total || uploadIds.length,
+        });
+
+        // Refetch as each photo lands, not only once the batch settles, so a
+        // large upload fills the grid progressively.
+        if (status.complete > lastComplete) {
+          lastComplete = status.complete;
+          void refetch();
+        }
+
+        if (status.pending === 0 && status.processing === 0) {
+          await finish(() => {
+            if (status.failed > 0) {
+              toast.error(t('upload.processingFailed', { count: status.failed }));
+            }
+          });
+        } else if (Date.now() > deadline) {
+          // Bounded. The worker is genuinely still running, so say that rather
+          // than leaving the guest with a grid that quietly never updated.
+          await finish(() => toast.info(t('upload.processingStillRunning')));
+        }
+      } catch {
+        // The status signal is a convenience — the photos are stored either
+        // way — so a failing status call degrades to the plain refetch.
+        await finish();
+      } finally {
+        inFlight = false;
       }
     };
+
     uploadRefreshTimerRef.current = setInterval(poll, 2000);
-    poll();
+    void poll();
   };
+
+  // The two layout branches below that render the photo grid have no shared
+  // wrapper, so the notice is shared as a value rather than as markup.
+  const uploadProcessingNotice = uploadProcessing ? (
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-full bg-neutral-900/90 px-4 py-2 text-sm text-white shadow-lg">
+      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+      <span>
+        {t('upload.processing')}{' '}
+        {t('upload.processingProgress', {
+          complete: uploadProcessing.complete,
+          total: uploadProcessing.total,
+        })}
+      </span>
+    </div>
+  ) : null;
 
   // Get individual protection settings from event
   const disableRightClick = data?.event?.disable_right_click === true;
@@ -1393,6 +1463,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onClose={() => setShowUploadModal(false)}
           />
         )}
+        {uploadProcessingNotice}
 
         {/* Download size picker (#858) — "download all", or a selection. */}
         {(showResolutionPicker || resolutionPickerIds) && (
@@ -1800,6 +1871,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onClose={() => setShowUploadModal(false)}
           />
         )}
+        {uploadProcessingNotice}
 
         {/* Download size picker (#858) — "download all", or a selection. */}
         {(showResolutionPicker || resolutionPickerIds) && (

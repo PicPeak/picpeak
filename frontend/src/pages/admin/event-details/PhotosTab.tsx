@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
-import { Upload, X } from 'lucide-react';
+import { AlertCircle, Upload, X } from 'lucide-react';
 import type { Event } from '../../../types';
 import { Button, Card, Loading } from '../../../components/common';
 import { AdminPhotoGrid, AdminPhotoViewer, PhotoFilters, PhotoUploadModal, PhotoFilterPanel, PhotoExportMenu } from '../../../components/admin';
@@ -16,6 +16,7 @@ interface PhotosTabProps {
   id: string | undefined;
   photos: AdminPhoto[];
   photosLoading: boolean;
+  photosError: boolean;
   refetchPhotos: () => void;
   categories: Array<{ id: number; name: string; slug: string; is_folder?: boolean }>;
   photoFilters: PhotoFilterParams;
@@ -31,6 +32,7 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
   id,
   photos,
   photosLoading,
+  photosError,
   refetchPhotos,
   categories,
   photoFilters,
@@ -58,9 +60,13 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
         onClose={() => setShowPhotoUpload(false)}
         eventId={parseInt(id!)}
         onUploadComplete={() => {
+          // Refresh-only. PhotoUpload fires this as bytes land AND again when
+          // processing finishes — including runs where every file was rejected
+          // — so a success toast here claimed "Upload completed successfully"
+          // over the top of the rejection warning (QA P4-B.05 / 7.05). The
+          // outcome toast belongs to PhotoUpload, which knows the counts.
           queryClient.invalidateQueries({ queryKey: ['admin-event', id] });
           queryClient.invalidateQueries({ queryKey: ['admin-event-photos', id] });
-          toast.success(t('toast.uploadSuccess'));
           refetchPhotos();
         }}
       />
@@ -130,6 +136,21 @@ export const PhotosTab: React.FC<PhotosTabProps> = ({
         <div className="flex items-center justify-center py-12">
           <Loading size="lg" text={t('events.loadingPhotos')} />
         </div>
+      ) : photosError ? (
+        // Without this branch a failed fetch (offline, 5xx) fell through to the
+        // grid's "no media uploaded yet" empty state, which reads as "your
+        // photos are gone" rather than "we couldn't load them" (QA follow-up).
+        <Card padding="lg">
+          <div className="flex items-start gap-3 text-amber-700 dark:text-amber-400">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">{t('gallery.failedToLoad')}</p>
+              <Button variant="outline" size="sm" onClick={() => refetchPhotos()} className="mt-3">
+                {t('common.retry')}
+              </Button>
+            </div>
+          </div>
+        </Card>
       ) : (
         <AdminPhotoGrid
           photos={photos}
