@@ -5,7 +5,7 @@ import {
   inferGallerySlugFromLocation,
   resolveSlugFromRequestUrl,
 } from '../utils/galleryAuthStorage';
-import { getGuestToken } from '../utils/guestIdentityStorage';
+import { clearGuestIdentity, getGuestToken } from '../utils/guestIdentityStorage';
 import { getApiBaseUrl } from '../utils/url';
 
 // Maintenance mode callback
@@ -181,6 +181,16 @@ api.interceptors.response.use(
           if (!isImageRequest && galleryMatch && galleryMatch[1]) {
             const gallerySlug = galleryMatch[1];
             sessionStorage.removeItem(`gallery_event_${gallerySlug}`);
+            // A guest identity the server no longer accepts must not stay on
+            // the device. The JWT can be perfectly valid and unexpired while
+            // its row has been soft-deleted or merged away by an admin, so no
+            // client-side expiry check catches it. This was self-limiting when
+            // identity died with the tab; now it would persist for the full
+            // 30-day TTL, silently failing every like while the footer still
+            // shows the guest's name (#1265).
+            if (error.response?.data?.code === 'GUEST_IDENTITY_REQUIRED') {
+              clearGuestIdentity(gallerySlug);
+            }
           }
           // Don't redirect - let the component handle the auth state
         } else if (galleryMatch) {

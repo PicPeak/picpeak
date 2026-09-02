@@ -614,6 +614,7 @@
     "footer": {
       "forgetMeConfirm": "Your name and selections will be removed from this gallery.",
       "forgetMe": "Forget me ({{name}})",
+      "notYou": "Not you?",
       "socials": "Social media"
     },
     "photosCount_one": "{{count}} photo",

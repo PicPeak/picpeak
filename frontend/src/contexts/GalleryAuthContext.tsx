@@ -11,6 +11,7 @@ import {
   setActiveGallerySlug,
   storeGalleryToken,
 } from '../utils/galleryAuthStorage';
+import { clearGuestIdentity } from '../utils/guestIdentityStorage';
 import type { GalleryAccessLevel } from '../types';
 
 interface GalleryEvent {
@@ -350,6 +351,12 @@ export const GalleryAuthProvider: React.FC<GalleryAuthProviderProps> = ({ childr
       sessionStorage.removeItem(`gallery_event_${currentSlug}`);
       sessionStorage.removeItem(`gallery_access_level_${currentSlug}`);
       clearGalleryToken(currentSlug);
+      // Logout is the "I am leaving this device" signal. Now that the guest
+      // identity outlives the tab (#1265), leaving it behind would greet the
+      // next person who enters the shared gallery password by this guest's
+      // name — with "forget me", which erases THIS guest's selections
+      // server-side, one click away. Local only; the server row is untouched.
+      clearGuestIdentity(currentSlug);
     }
     authService.galleryLogout(currentSlug || undefined);
     setIsAuthenticated(false);
