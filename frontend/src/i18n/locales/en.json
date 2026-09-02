@@ -108,6 +108,26 @@
         "queued": "Queued",
         "actions": "Actions"
       }
+    },
+    "waitingEmails": {
+      "title": "Waiting to send",
+      "empty": "Nothing waiting — the queue is being worked.",
+      "description": "Queued more than 10 minutes ago, due now, and still unsent. These have not failed — nothing has tried to send them.",
+      "neverAttempted": "never attempted",
+      "attempted": "{{count}} attempt(s), last error: {{error}}",
+      "unknownError": "unknown",
+      "col": {
+        "attempts": "Attempts"
+      }
+    },
+    "processor": {
+      "title": "Email queue processor",
+      "running": "Running.",
+      "stopped": "Not running on this instance. Queued emails are written to the database but nothing is sending them.",
+      "degraded": "Running, but the last pass could not send: {{error}}",
+      "lastRun": "Last pass {{when}}",
+      "neverRan": "Has not run since this instance started.",
+      "lastResult": "{{sent}} sent, {{failed}} failed"
     }
   },
   "common": {
@@ -820,6 +840,7 @@
     "resetGalleryPassword": "Reset Gallery Password",
     "resendCreationEmail": "Resend Creation Email",
     "creationEmailResent": "Creation email has been queued for sending",
+    "emailQueuedHint": "The queue processor sends it — check System health if it does not arrive.",
     "failedToResendEmail": "Failed to resend creation email",
     "photoStatistics": "Photo Statistics",
     "totalPhotos": "Total Photos",

@@ -23,6 +23,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { verifyDocumentArtefacts } = require('../services/backupIntegrityService');
 const { getCoverageReport } = require('../services/backupCoverageService');
+const { getQueueProcessorStatus } = require('../services/emailProcessor');
 const { db } = require('../database/db');
 
 const router = express.Router();
@@ -86,6 +87,24 @@ router.get(
 );
 
 /**
+ * How long an email may sit due-but-unsent before it counts as waiting rather
+ * than merely in flight. The processor wakes every 60s and takes 10 rows a
+ * pass, so a genuine backlog of ~6000 clears inside this window — anything
+ * still here has not been worked.
+ */
+const WAITING_EMAIL_GRACE_MS = 10 * 60 * 1000;
+
+const mapEmailRow = (r) => ({
+  id: r.id,
+  recipientEmail: r.recipient_email,
+  emailType: r.email_type,
+  status: r.status,
+  retryCount: r.retry_count,
+  errorMessage: r.error_message,
+  createdAt: r.created_at,
+});
+
+/**
  * GET /api/admin/system-health/failures
  *
  * Surfaces background failures that would otherwise go unnoticed. v1
@@ -94,6 +113,14 @@ router.get(
  * (status='pending' AND retry_count >= 3 — the processor only picks up
  * retry_count < 3). Trigger: a 14h window where 'quote_sent' template
  * errors left invoices unsent with no admin-visible signal.
+ *
+ * #1262 added the other half. A queue nobody is working produces no failures
+ * at all: the rows sit at status='pending' with retry_count 0, matching
+ * neither branch above, and the page reported "all clear" while not one email
+ * had gone out. That happens whenever the processor never started, or every
+ * pass returns early because the transport will not initialise. So the
+ * response also carries emails that are DUE and still unsent
+ * (`waitingEmails`), plus what the processor itself last did (`processor`).
  */
 router.get(
   '/failures',
@@ -110,17 +137,31 @@ router.get(
       .limit(200)
       .select('id', 'recipient_email', 'email_type', 'status', 'retry_count', 'error_message', 'created_at');
 
+    // Deliberately mirrors the processor's own pickup predicate — pending,
+    // under the retry cap, and past any scheduled_at — so a row listed here is
+    // one it should already have taken. Rows over the cap are the `stuckEmails`
+    // set above and must not be counted twice.
+    const now = new Date();
+    const dueBefore = new Date(now.getTime() - WAITING_EMAIL_GRACE_MS);
+    const waitingEmails = await db('email_queue')
+      .where('status', 'pending')
+      .where('retry_count', '<', 3)
+      .where('created_at', '<=', dueBefore.toISOString())
+      .andWhere(function () {
+        this.whereNull('scheduled_at').orWhere('scheduled_at', '<=', now.toISOString());
+      })
+      .orderBy('created_at', 'asc')
+      .limit(200)
+      .select('id', 'recipient_email', 'email_type', 'status', 'retry_count', 'error_message', 'created_at');
+
     return successResponse(res, {
-      stuckEmails: stuckEmails.map((r) => ({
-        id: r.id,
-        recipientEmail: r.recipient_email,
-        emailType: r.email_type,
-        status: r.status,
-        retryCount: r.retry_count,
-        errorMessage: r.error_message,
-        createdAt: r.created_at,
-      })),
-      counts: { stuckEmails: stuckEmails.length },
+      stuckEmails: stuckEmails.map(mapEmailRow),
+      waitingEmails: waitingEmails.map(mapEmailRow),
+      processor: getQueueProcessorStatus(),
+      counts: {
+        stuckEmails: stuckEmails.length,
+        waitingEmails: waitingEmails.length,
+      },
     });
   }),
 );

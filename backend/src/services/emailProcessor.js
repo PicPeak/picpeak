@@ -922,9 +922,32 @@ async function renderQueuedEmail(templateKey, variables = {}, to = '') {
 //                   because ignoreSchedule also bypasses that cap.
 //
 // Returns { processed, sent, failed }.
+// What the last pass actually did, so System Health can say whether the queue
+// is being worked at all (#1262). "Queued" is not "delivered", and the two
+// ways a queue silently stops -- the processor never started, or every pass
+// returns early because the transport will not initialise -- both leave rows
+// at status='pending' with retry_count 0, which no failure query matches.
+const processorStatus = {
+  started: false,
+  lastRunAt: null,
+  lastResult: null,
+  lastError: null,
+};
+
+function getQueueProcessorStatus() {
+  return {
+    started: processorStatus.started,
+    lastRunAt: processorStatus.lastRunAt,
+    lastResult: processorStatus.lastResult,
+    lastError: processorStatus.lastError,
+  };
+}
+
 async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = null } = {}) {
   logger.info('Email queue processor: Checking for pending emails...');
   const result = { processed: 0, sent: 0, failed: 0 };
+  processorStatus.lastRunAt = new Date().toISOString();
+  processorStatus.lastError = null;
 
   try {
     // Try to initialize transporter if it's null (in case it failed at startup).
@@ -937,6 +960,10 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
       transporter = await initializeTransporter();
       if (!transporter) {
         logger.warn('Email transporter could not be initialized, skipping queue processing');
+        // #1262 — the row stays pending with retry_count 0, so nothing in the
+        // queue itself records that this pass did nothing. Say so here.
+        processorStatus.lastError = 'Email transporter could not be initialised — check the SMTP settings';
+        processorStatus.lastResult = result;
         return result;
       }
     }
@@ -969,6 +996,8 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         .limit(limit);
     } catch (dbError) {
       logger.error('Failed to query email queue:', dbError);
+      processorStatus.lastError = dbError.message;
+      processorStatus.lastResult = result;
       return result;
     }
 
@@ -1043,8 +1072,10 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
     }
   } catch (error) {
     logger.error('Error processing email queue:', error);
+    processorStatus.lastError = error.message;
   }
 
+  processorStatus.lastResult = result;
   return result;
 }
 
@@ -1203,6 +1234,7 @@ function startEmailQueueProcessor() {
       });
     }, 60000);
     
+    processorStatus.started = true;
     logger.info('Email queue processor started successfully');
   } else {
     logger.info('Email queue processor: Already running');
@@ -1213,6 +1245,7 @@ function stopEmailQueueProcessor() {
   if (emailQueueInterval) {
     clearInterval(emailQueueInterval);
     emailQueueInterval = null;
+    processorStatus.started = false;
     logger.info('Email queue processor stopped');
   }
 }
@@ -1231,6 +1264,7 @@ module.exports = {
   sendRawEmail,
   renderQueuedEmail,
   processEmailQueue,
+  getQueueProcessorStatus,
   queueEmail,
   stopEmailQueueProcessor,
   testEmailConnection,

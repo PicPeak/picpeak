@@ -316,11 +316,13 @@ export const EventDetailsPage: React.FC = () => {
     mutationFn: (password?: string) =>
       eventsService.sendGalleryEmail(parseInt(id!), password ? { password } : undefined),
     onSuccess: (result) => {
+      // #1262 — queueing is not delivery, and a queue nobody is working
+      // reports no failure at all. Point at where the queue is visible.
       toast.success(
-        t('events.sendGalleryEmail.success', {
+        `${t('events.sendGalleryEmail.success', {
           recipient: result.recipient,
           defaultValue: 'Gallery email queued to {{recipient}}.',
-        }),
+        })} ${t('events.emailQueuedHint', 'The queue processor sends it — check System health if it does not arrive.')}`,
       );
       setShowSendEmailDialog(false);
     },
