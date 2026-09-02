@@ -84,6 +84,7 @@ const getStorage = (): Storage | null => {
 /** Test seam — storage availability is resolved once per page load. */
 export function __resetStorageResolutionForTests(): void {
   resolvedStorage = undefined;
+  promotionFailed.clear();
 }
 
 /**
@@ -115,87 +116,167 @@ function isExpired(token: string): boolean {
 }
 
 /**
- * Move a pre-#1265 identity out of sessionStorage on first read.
- *
- * Without this, everyone with a gallery open at upgrade time is treated as a
- * new guest the moment they reload — which is the exact duplicate-row bug this
- * change exists to stop, fired once per in-flight guest.
+ * The secondary store: sessionStorage, whenever it is distinct from the store
+ * reads are resolved against. Two things can live there — a pre-#1265
+ * identity the previous build wrote, and the quota fallback below.
  */
-function migrateFromSessionStorage(slug: string): void {
-  if (!isBrowser) return;
-  const target = getStorage();
-  if (!target || target === window.sessionStorage) return;
-  let legacy: Storage;
+function secondaryStore(primary: Storage): Storage | null {
+  if (!isBrowser) return null;
   try {
-    legacy = window.sessionStorage;
+    const candidate = window.sessionStorage;
+    return candidate && candidate !== primary ? candidate : null;
   } catch {
-    return;
+    return null;
   }
+}
+
+/**
+ * Write the pair to one store, PROFILE FIRST. A store that is nearly full can
+ * accept the first write and reject the second, and "token stored, profile
+ * missing" is the one partial state that produces the duplicate-row bug this
+ * file exists to stop: the interceptor sends x-guest-token while the provider
+ * sees no identity, prompts, and registers a second guest. A profile without
+ * a token is inert. Anything half-written is removed again before reporting
+ * failure, so a store either holds the whole pair or none of it.
+ */
+function writePair(target: Storage, slug: string, identityRaw: string, token: string): boolean {
   const tokenKey = `${TOKEN_KEY_PREFIX}${slug}`;
   const identityKey = `${IDENTITY_KEY_PREFIX}${slug}`;
   try {
-    const legacyToken = legacy.getItem(tokenKey);
-    // Only migrate when the new store has nothing — a fresh registration in
-    // this tab must always win over a stale copy left in sessionStorage.
-    if (legacyToken && !target.getItem(tokenKey)) {
-      target.setItem(tokenKey, legacyToken);
-      const legacyIdentity = legacy.getItem(identityKey);
-      if (legacyIdentity) target.setItem(identityKey, legacyIdentity);
-    }
-    legacy.removeItem(tokenKey);
-    legacy.removeItem(identityKey);
+    target.setItem(identityKey, identityRaw);
+    target.setItem(tokenKey, token);
+    return true;
   } catch {
-    // Best-effort: a failed migration just means the guest re-registers.
+    try {
+      target.removeItem(tokenKey);
+      target.removeItem(identityKey);
+    } catch {
+      // Nothing more to do.
+    }
+    return false;
   }
+}
+
+// Slugs whose pair could not be promoted into the primary store on this page
+// load. getGuestToken() runs on every API request; once the primary store has
+// refused the write there is no point retrying it per request.
+const promotionFailed = new Set<string>();
+
+/**
+ * Read the pair, looking in the primary store first and the secondary one
+ * second. Finding it in the secondary store covers two cases that used to be
+ * one-way migrations and are now read-through:
+ *
+ *   - a pre-#1265 identity the previous build left in sessionStorage. Without
+ *     this everyone with a gallery open at upgrade time is treated as a new
+ *     guest on reload — the exact duplicate-row bug, fired once per guest;
+ *   - the quota fallback in storeGuestIdentity(). That used to repoint reads
+ *     at sessionStorage through module state, which a reload discards: the
+ *     next page load probed localStorage, passed, and read nothing while the
+ *     identity sat unreadable one store over. Reads now find it wherever it
+ *     demonstrably fits.
+ *
+ * A pair found in the secondary store is promoted into the primary one when
+ * that store will take it (MOVED, not copied — a stale copy would otherwise
+ * be migrated straight back after "forget me"), and left where it is when it
+ * will not. A pair already in the primary store always wins over the
+ * secondary copy: a fresh registration in this tab beats a stale leftover.
+ */
+function readPair(slug: string): { token: string | null; identityRaw: string | null } {
+  const primary = getStorage();
+  if (!primary) return { token: null, identityRaw: null };
+  const tokenKey = `${TOKEN_KEY_PREFIX}${slug}`;
+  const identityKey = `${IDENTITY_KEY_PREFIX}${slug}`;
+
+  let token: string | null = null;
+  let identityRaw: string | null = null;
+  try {
+    token = primary.getItem(tokenKey);
+    identityRaw = primary.getItem(identityKey);
+  } catch {
+    return { token: null, identityRaw: null };
+  }
+
+  const secondary = secondaryStore(primary);
+  if (!secondary) return { token, identityRaw };
+
+  let secondaryToken: string | null = null;
+  let secondaryIdentity: string | null = null;
+  try {
+    secondaryToken = secondary.getItem(tokenKey);
+    secondaryIdentity = secondary.getItem(identityKey);
+  } catch {
+    return { token, identityRaw };
+  }
+
+  if (token) {
+    // Primary wins. Drop the leftover so it can never be promoted later.
+    if (secondaryToken || secondaryIdentity) {
+      try {
+        secondary.removeItem(tokenKey);
+        secondary.removeItem(identityKey);
+      } catch {
+        // Best-effort.
+      }
+    }
+    return { token, identityRaw };
+  }
+
+  if (!secondaryToken) return { token: null, identityRaw };
+
+  if (!promotionFailed.has(slug) && secondaryIdentity && writePair(primary, slug, secondaryIdentity, secondaryToken)) {
+    try {
+      secondary.removeItem(tokenKey);
+      secondary.removeItem(identityKey);
+    } catch {
+      // The copy stays behind; the primary now wins on every later read.
+    }
+  } else if (secondaryIdentity) {
+    promotionFailed.add(slug);
+  }
+  return { token: secondaryToken, identityRaw: secondaryIdentity };
 }
 
 export function storeGuestIdentity(slug: string, identity: GuestIdentity, token: string): void {
   const storage = getStorage();
   if (!storage || !slug) return;
-  const write = (target: Storage): boolean => {
-    try {
-      target.setItem(`${TOKEN_KEY_PREFIX}${slug}`, token);
-      target.setItem(`${IDENTITY_KEY_PREFIX}${slug}`, JSON.stringify(identity));
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const identityRaw = JSON.stringify(identity);
 
-  if (write(storage)) return;
+  if (writePair(storage, slug, identityRaw, token)) {
+    // A fresh registration supersedes anything the secondary store holds.
+    const secondary = secondaryStore(storage);
+    if (secondary) {
+      try {
+        secondary.removeItem(`${TOKEN_KEY_PREFIX}${slug}`);
+        secondary.removeItem(`${IDENTITY_KEY_PREFIX}${slug}`);
+      } catch {
+        // Best-effort.
+      }
+    }
+    return;
+  }
 
   // The probe in getStorage() only proves a one-byte write fits; a JWT plus a
   // profile is far larger, so a nearly-full store can pass the probe and still
   // reject the real write. Retry in sessionStorage rather than leaving the
   // context believing it is signed in with nothing persisted — that state
   // 401s immediately and re-registers (another duplicate row) on reload.
-  if (isBrowser) {
-    try {
-      if (window.sessionStorage && window.sessionStorage !== storage) {
-        if (write(window.sessionStorage)) {
-          // Repoint reads at the store that actually accepted the write.
-          // Without this the identity is written to sessionStorage while
-          // getGuestToken() keeps reading localStorage, so x-guest-token is
-          // never sent and the identity is lost on reload — the fallback
-          // would look like it worked while achieving nothing.
-          resolvedStorage = window.sessionStorage;
-        }
-      }
-    } catch {
-      // No store will take it. The identity lasts as long as this page does,
-      // which is strictly better than rejecting a registration the server has
-      // already completed.
-    }
+  // readPair() looks there on every read, including after a reload, so no
+  // module state has to remember which store took the write.
+  const secondary = secondaryStore(storage);
+  if (secondary) {
+    promotionFailed.add(slug);
+    writePair(secondary, slug, identityRaw, token);
   }
+  // Otherwise no store will take it. The identity lasts as long as this page
+  // does, which is strictly better than rejecting a registration the server
+  // has already completed.
 }
 
 export function getGuestToken(slug?: string | null): string | null {
-  const storage = getStorage();
-  if (!storage) return null;
   const resolvedSlug = slug || extractSlugFromLocation();
   if (!resolvedSlug) return null;
-  migrateFromSessionStorage(resolvedSlug);
-  const token = storage.getItem(`${TOKEN_KEY_PREFIX}${resolvedSlug}`);
+  const { token } = readPair(resolvedSlug);
   if (token && isExpired(token)) {
     clearGuestIdentity(resolvedSlug);
     return null;
@@ -204,18 +285,18 @@ export function getGuestToken(slug?: string | null): string | null {
 }
 
 export function getGuestIdentity(slug?: string | null): GuestIdentity | null {
-  const storage = getStorage();
-  if (!storage) return null;
   const resolvedSlug = slug || extractSlugFromLocation();
   if (!resolvedSlug) return null;
-  migrateFromSessionStorage(resolvedSlug);
-  // An identity whose token has expired must not be presented as signed in —
-  // clearGuestIdentity() has already run inside getGuestToken() in that case.
-  if (!getGuestToken(resolvedSlug)) return null;
-  const raw = storage.getItem(`${IDENTITY_KEY_PREFIX}${resolvedSlug}`);
-  if (!raw) return null;
+  const { token, identityRaw } = readPair(resolvedSlug);
+  // An identity whose token has expired must not be presented as signed in.
+  if (!token) return null;
+  if (isExpired(token)) {
+    clearGuestIdentity(resolvedSlug);
+    return null;
+  }
+  if (!identityRaw) return null;
   try {
-    return JSON.parse(raw) as GuestIdentity;
+    return JSON.parse(identityRaw) as GuestIdentity;
   } catch {
     return null;
   }
@@ -223,6 +304,7 @@ export function getGuestIdentity(slug?: string | null): GuestIdentity | null {
 
 export function clearGuestIdentity(slug: string): void {
   if (!slug) return;
+  promotionFailed.delete(slug);
   // Clear BOTH stores: a copy left behind in sessionStorage would be migrated
   // straight back on the next read, silently undoing "forget me".
   const stores: Storage[] = [];

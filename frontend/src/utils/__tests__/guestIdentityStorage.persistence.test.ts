@@ -171,6 +171,112 @@ describe('guest identity persistence (#1265)', () => {
     __resetStorageResolutionForTests();
   });
 
+  describe('the sessionStorage fallback has to be readable after a reload', () => {
+    // Making a store that accepts the one-byte probe and nothing else, exactly
+    // like a nearly-full localStorage.
+    const installProbeOnlyLocalStorage = () => {
+      const real = window.localStorage;
+      const probeOnly = {
+        getItem: real.getItem.bind(real),
+        removeItem: real.removeItem.bind(real),
+        key: real.key.bind(real),
+        get length() { return real.length; },
+        clear: real.clear.bind(real),
+        setItem: (k: string, _v: string) => {
+          if (k === '__picpeak_probe__') return;
+          throw new DOMException('QuotaExceededError');
+        },
+      } as unknown as Storage;
+      Object.defineProperty(window, 'localStorage', { value: probeOnly, configurable: true });
+      __resetStorageResolutionForTests();
+      return () => {
+        Object.defineProperty(window, 'localStorage', { value: real, configurable: true });
+        __resetStorageResolutionForTests();
+      };
+    };
+
+    it('still finds the identity on the next page load', () => {
+      const restore = installProbeOnlyLocalStorage();
+      storeGuestIdentity(SLUG, IDENTITY as never, TOKEN);
+
+      // A reload discards module state: storage is re-resolved, localStorage
+      // passes the probe again, and the identity is sitting in sessionStorage.
+      __resetStorageResolutionForTests();
+
+      expect(getGuestToken(SLUG)).toBe(TOKEN);
+      expect(getGuestIdentity(SLUG)).toMatchObject({ id: 42 });
+      restore();
+    });
+
+    it('does not keep retrying the refused promotion on every read', () => {
+      const restore = installProbeOnlyLocalStorage();
+      storeGuestIdentity(SLUG, IDENTITY as never, TOKEN);
+      __resetStorageResolutionForTests();
+
+      // First read: tries localStorage, is refused, remembers that.
+      getGuestToken(SLUG);
+      let writes = 0;
+      const store = window.localStorage;
+      const original = store.setItem;
+      store.setItem = ((k: string, v: string) => { writes++; return original.call(store, k, v); }) as never;
+      getGuestToken(SLUG);
+      getGuestIdentity(SLUG);
+      expect(writes).toBe(0);
+      restore();
+    });
+  });
+
+  describe('a store never holds a token without its profile', () => {
+    // localStorage that takes the token key and refuses the profile key —
+    // the partial acceptance a nearly-full store can produce. A token without
+    // a profile means x-guest-token is sent while the provider prompts to
+    // register: the second gallery_guests row, with two live tokens.
+    const installTokenOnlyLocalStorage = () => {
+      const real = window.localStorage;
+      const tokenOnly = {
+        getItem: real.getItem.bind(real),
+        removeItem: real.removeItem.bind(real),
+        key: real.key.bind(real),
+        get length() { return real.length; },
+        clear: real.clear.bind(real),
+        setItem: (k: string, v: string) => {
+          if (k.startsWith('guest_identity_')) throw new DOMException('QuotaExceededError');
+          real.setItem(k, v);
+        },
+      } as unknown as Storage;
+      Object.defineProperty(window, 'localStorage', { value: tokenOnly, configurable: true });
+      __resetStorageResolutionForTests();
+      return () => {
+        Object.defineProperty(window, 'localStorage', { value: real, configurable: true });
+        __resetStorageResolutionForTests();
+      };
+    };
+
+    it('on registration, falls back as a pair and leaves no token behind', () => {
+      const restore = installTokenOnlyLocalStorage();
+      storeGuestIdentity(SLUG, IDENTITY as never, TOKEN);
+
+      expect(window.localStorage.getItem(`guest_token_${SLUG}`)).toBeNull();
+      expect(window.sessionStorage.getItem(`guest_token_${SLUG}`)).toBe(TOKEN);
+      expect(getGuestToken(SLUG)).toBe(TOKEN);
+      expect(getGuestIdentity(SLUG)).toMatchObject({ id: 42 });
+      restore();
+    });
+
+    it('on migration, leaves the legacy pair intact rather than moving half of it', () => {
+      const restore = installTokenOnlyLocalStorage();
+      window.sessionStorage.setItem(`guest_token_${SLUG}`, TOKEN);
+      window.sessionStorage.setItem(`guest_identity_${SLUG}`, JSON.stringify(IDENTITY));
+
+      expect(getGuestToken(SLUG)).toBe(TOKEN);
+      expect(getGuestIdentity(SLUG)).toMatchObject({ id: 42 });
+      // Nothing half-moved: the token did not land in localStorage on its own.
+      expect(window.localStorage.getItem(`guest_token_${SLUG}`)).toBeNull();
+      expect(window.sessionStorage.getItem(`guest_token_${SLUG}`)).toBe(TOKEN);
+      restore();
+    });
+  });
+
   it('clears both stores, so a cleared identity cannot be migrated back', () => {
     // A guest who registered before the upgrade and again after it has a copy
     // in each store; "forget me" has to remove both.
