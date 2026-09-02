@@ -122,7 +122,7 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
         isGallery: true,
         protectFromDownload: !allowDownloads,
       }}
-      overlayBaseClassName="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
+      overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
       allowDownloads={allowDownloads}
       feedbackEnabled={feedbackEnabled}
       feedbackOptions={feedbackOptions}
@@ -378,7 +378,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 isGallery: true,
                 protectFromDownload: !allowDownloads,
               }}
-              overlayBaseClassName="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
+              overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
               actionVariant="dark"
               allowDownloads={allowDownloads}
               beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
@@ -436,7 +436,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 isGallery: true,
                 protectFromDownload: !allowDownloads,
               }}
-              overlayBaseClassName="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
+              overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
               actionVariant="dark"
               allowDownloads={allowDownloads}
               beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}
@@ -503,7 +503,7 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 isGallery: true,
                 protectFromDownload: !allowDownloads,
               }}
-              overlayBaseClassName="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2"
+              overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 flex items-center justify-center gap-2"
               actionVariant="dark"
               allowDownloads={allowDownloads}
               beforeOverlay={feedbackEnabled ? <FeedbackCountIndicators photo={photo} /> : undefined}

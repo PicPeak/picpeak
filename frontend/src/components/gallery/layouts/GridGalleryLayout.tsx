@@ -86,7 +86,6 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
       lazy
       fadeInWhenVisible={animationType === 'fade'}
       skeletonClassName="skeleton aspect-square w-full rounded-lg"
-      touchAware
       imageProps={{
         src: photo.thumbnail_url || photo.url,
         alt: photo.filename,
