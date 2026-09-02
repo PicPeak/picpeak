@@ -30,11 +30,20 @@ async function getRateLimitSettings() {
         'rate_limit_public_endpoints_only'
       ]);
 
-    // Parse settings into object
+    // Parse settings into object.
+    //
+    // maxRequests: 300 per 15-minute window, per IP, counting only requests
+    // that carry no admin/gallery token (skipAuthenticated). The general
+    // limiter was inert from the day it was written (see apiRateLimitGate),
+    // so its original 100 had never been exercised against real traffic. A
+    // gallery landing page makes a handful of unauthenticated calls before
+    // the password is typed; at 100, a venue wifi NAT reached 429 after
+    // roughly twenty guests per window. An explicit app_settings value still
+    // wins over this fallback.
     const config = {
       enabled: true,
       windowMinutes: 15,
-      maxRequests: 100,
+      maxRequests: 300,
       authMaxRequests: 5,
       skipAuthenticated: true,
       publicEndpointsOnly: false
@@ -75,7 +84,7 @@ async function getRateLimitSettings() {
     return {
       enabled: true,
       windowMinutes: 15,
-      maxRequests: 100,
+      maxRequests: 300,
       authMaxRequests: 5,
       skipAuthenticated: true,
       publicEndpointsOnly: false
