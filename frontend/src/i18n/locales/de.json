@@ -4874,10 +4874,13 @@
       "saveAsPassive": "Als passiven Kunden speichern",
       "saveAndInvite": "Speichern & Portal-Einladung senden",
       "savedPassiveToast": "Passiver Kunde erstellt.",
-      "savedActiveToast": "Kunde erstellt und Portal-Einladung gesendet.",
-      "inviteFailedToast": "Kunde gespeichert (passiv). Einladungs-E-Mail fehlgeschlagen — bitte aus dem Kundendetail erneut versuchen.",
+      "savedActiveToast": "Kunde angelegt und Portal-Einladung eingereiht. Der Versand läuft über die E-Mail-Warteschlange — prüfen Sie den Systemzustand, falls sie nicht ankommt.",
+      "inviteFailedToast": "Kunde als PASSIV gespeichert — es ging keine Einladung raus. Wiederholen Sie „Portal-Einladung senden“ auf der Kundendetailseite.",
       "emailRequired": "Eine gültige E-Mail-Adresse ist erforderlich.",
-      "nameRequired": "Geben Sie mindestens einen Firmennamen oder einen Ansprechpartner an."
+      "nameRequired": "Geben Sie mindestens einen Firmennamen oder einen Ansprechpartner an.",
+      "inviteAlreadyPendingToast": "Kunde gespeichert. Für diese Adresse ist bereits eine Einladung offen — stornieren Sie sie im Tab „Einladungen“, bevor Sie eine neue senden.",
+      "inviteAlreadyActiveToast": "Kunde gespeichert. Diese Adresse hat bereits Portalzugang, eine Einladung war nicht nötig.",
+      "inviteUnconfirmedToast": "Kunde gespeichert, aber die Einladung ist unbestätigt — prüfen Sie den Tab „Einladungen“, bevor Sie erneut senden."
     },
     "passive": {
       "badge": "Passiv — nur Admin",
@@ -5071,6 +5074,10 @@
       "addedN_other": "{{count}} hinzugefügt",
       "removedN_one": "{{count}} entfernt",
       "removedN_other": "{{count}} entfernt"
+    },
+    "invitePending": {
+      "badge": "Einladung offen",
+      "hint": "Für diese Adresse ist ein Einladungslink offen und noch nicht angenommen. Das ist kein Beleg dafür, dass die E-Mail angekommen ist — prüfen Sie den Systemzustand, falls der Kunde nichts erhalten hat."
     }
   },
   "clients": {

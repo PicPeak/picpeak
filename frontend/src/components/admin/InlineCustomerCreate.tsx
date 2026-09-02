@@ -16,6 +16,11 @@
  * stays saved (passive) and a warning toast asks the admin to retry
  * from the customer detail page.
  *
+ * #1261 — the toasts here say what actually happened rather than what was
+ * intended. Two calls means three outcomes, and the middle one used to be
+ * indistinguishable from success: the invitation email is only QUEUED, so
+ * "invitation sent" was a claim this code cannot make.
+ *
  * Field set mirrors the customer detail page so admins see the same
  * shape regardless of where they're editing.
  */
@@ -182,10 +187,41 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
         try {
           await customerAdminService.sendInvite(customer.id);
           toast.success(t('customers.create.savedActiveToast',
-            'Customer created and portal invitation sent.'));
+            'Customer created and portal invitation queued. It is sent by the email queue — check System health if it does not arrive.'));
         } catch (err: any) {
-          toast.warn(t('customers.create.inviteFailedToast',
-            'Customer saved (passive). Invitation email failed — retry from the customer detail page.'));
+          // Four different things reach this branch and they need four
+          // different answers. Only ONE of them means "nothing happened, go
+          // ahead and retry" — every other message that says so sends the
+          // admin into a retry that then 409s.
+          const status = err?.response?.status;
+          const code = err?.response?.data?.code;
+
+          if (code === 'CUSTOMER_ALREADY_ACTIVE') {
+            // This address already has portal access — either the route's own
+            // check, or an invitation accepted between it and the service's
+            // recheck. Nothing to cancel, nothing to resend.
+            toast.info(t('customers.create.inviteAlreadyActiveToast',
+              'Customer saved. This address already has portal access, so no invitation was needed.'));
+          } else if (status === 409) {
+            // An invitation for this address is already open and the RE-invite
+            // was refused. The customer IS invited.
+            toast.warn(t('customers.create.inviteAlreadyPendingToast',
+              'Customer saved. An invitation for this address is already open — cancel it on the Invitations tab before sending a new one.'));
+          } else if (!err?.response || status >= 500) {
+            // No response (dropped connection, timeout) or a server error.
+            // Neither says the invitation was not created: createInvitation
+            // inserts the customer_invitations row and only then queues the
+            // email, without a transaction, so a 500 out of the queueing step
+            // leaves an open invitation behind. Asserting a clean failure here
+            // sends the admin into a retry that 409s and still queues nothing.
+            toast.warn(t('customers.create.inviteUnconfirmedToast',
+              'Customer saved, but the invitation could not be confirmed — check the Invitations tab before sending another.'));
+          } else {
+            // A 4xx that is not a conflict: validation, permissions, no such
+            // customer. The request was rejected before anything was written.
+            toast.warn(t('customers.create.inviteFailedToast',
+              'Customer saved as PASSIVE — no invitation went out. Retry "Send portal invitation" from the customer detail page.'));
+          }
           // eslint-disable-next-line no-console
           console.warn('sendInvite failed', err);
         }
