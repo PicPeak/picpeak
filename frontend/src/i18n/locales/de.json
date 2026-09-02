@@ -4854,7 +4854,7 @@
       "nameRequired": "Geben Sie mindestens einen Firmennamen oder einen Ansprechpartner an.",
       "inviteAlreadyPendingToast": "Kunde gespeichert. Für diese Adresse ist bereits eine Einladung offen — stornieren Sie sie im Tab „Einladungen“, bevor Sie eine neue senden.",
       "inviteAlreadyActiveToast": "Kunde gespeichert. Diese Adresse hat bereits Portalzugang, eine Einladung war nicht nötig.",
-      "inviteUnconfirmedToast": "Kunde gespeichert, aber die Einladung ist unbestätigt — der Server hat nicht geantwortet. Prüfen Sie den Tab „Einladungen“, bevor Sie erneut senden."
+      "inviteUnconfirmedToast": "Kunde gespeichert, aber die Einladung ist unbestätigt — prüfen Sie den Tab „Einladungen“, bevor Sie erneut senden."
     },
     "passive": {
       "badge": "Passiv — nur Admin",

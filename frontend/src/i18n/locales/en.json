@@ -4854,7 +4854,7 @@
       "nameRequired": "Enter at least a company name or a contact name.",
       "inviteAlreadyPendingToast": "Customer saved. An invitation for this address is already open — cancel it on the Invitations tab before sending a new one.",
       "inviteAlreadyActiveToast": "Customer saved. This address already has portal access, so no invitation was needed.",
-      "inviteUnconfirmedToast": "Customer saved, but the invitation could not be confirmed — the server did not answer. Check the Invitations tab before sending another."
+      "inviteUnconfirmedToast": "Customer saved, but the invitation could not be confirmed — check the Invitations tab before sending another."
     },
     "passive": {
       "badge": "Passive — admin only",

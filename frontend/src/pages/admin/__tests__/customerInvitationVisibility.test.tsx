@@ -165,9 +165,12 @@ describe('InlineCustomerCreate — what the toast may claim (#1261)', () => {
     expect(message).not.toMatch(/invitation sent/i);
   });
 
-  it('says the customer is PASSIVE when the invitation call failed', async () => {
+  it('says the customer is PASSIVE when the invitation was cleanly rejected', async () => {
+    // A 400 is the shape where "no invitation went out, retry" is true: the
+    // request never got as far as writing anything. Round 2 moved 5xx out of
+    // this branch, because a 500 can leave an invitation row behind.
     createDirect.mockResolvedValue({ id: 6, email: 'new@example.com' });
-    sendInvite.mockRejectedValue({ response: { status: 500 } });
+    sendInvite.mockRejectedValue({ response: { status: 400, data: {} } });
 
     renderWith(<InlineCustomerCreate mode="invite" onCreated={() => {}} onCancel={() => {}} />);
     await fill();
@@ -210,6 +213,57 @@ describe('InlineCustomerCreate — what the toast may claim (#1261)', () => {
     const message = String(toastInfo.mock.calls[0][0]);
     expect(message).toMatch(/already has portal access/i);
     expect(message).not.toMatch(/Invitations tab/i);
+    expect(toastWarn).not.toHaveBeenCalled();
+  });
+
+  it('stays indeterminate on a 5xx — the invitation row may already exist', async () => {
+    // Codex review round 2. createInvitation inserts customer_invitations and
+    // only then queues the email, with no transaction around the pair, so a
+    // 500 out of the queueing step leaves an open invitation behind. Telling
+    // the admin to retry sends them into a 409 that still queues nothing.
+    createDirect.mockResolvedValue({ id: 11, email: 'new@example.com' });
+    sendInvite.mockRejectedValue({ response: { status: 500, data: {} } });
+
+    renderWith(<InlineCustomerCreate mode="invite" onCreated={() => {}} onCancel={() => {}} />);
+    await fill();
+    await userEvent.click(screen.getByRole('button', { name: /Save & send portal invitation/i }));
+
+    await waitFor(() => expect(toastWarn).toHaveBeenCalled());
+    const message = String(toastWarn.mock.calls[0][0]);
+    expect(message).toMatch(/could not be confirmed/i);
+    expect(message).not.toMatch(/PASSIVE/);
+  });
+
+  it('still calls a plain 4xx a clean failure, where retrying is right', async () => {
+    // The one case where "nothing happened, go ahead and retry" is true: the
+    // request was rejected before anything was written.
+    createDirect.mockResolvedValue({ id: 12, email: 'new@example.com' });
+    sendInvite.mockRejectedValue({ response: { status: 403, data: {} } });
+
+    renderWith(<InlineCustomerCreate mode="invite" onCreated={() => {}} onCancel={() => {}} />);
+    await fill();
+    await userEvent.click(screen.getByRole('button', { name: /Save & send portal invitation/i }));
+
+    await waitFor(() => expect(toastWarn).toHaveBeenCalled());
+    expect(String(toastWarn.mock.calls[0][0])).toMatch(/PASSIVE/);
+  });
+
+  it('reads the service-level already-active 409, not just the route-level one', async () => {
+    // Codex review round 2. createInvitation's own recheck throws
+    // ConflictError, which used to serialise as code CONFLICT — indistinguishable
+    // from the pending-invitation conflict, so the admin was told to cancel an
+    // invitation that acceptance had already closed. The service now labels it.
+    createDirect.mockResolvedValue({ id: 13, email: 'new@example.com' });
+    sendInvite.mockRejectedValue({
+      response: { status: 409, data: { code: 'CUSTOMER_ALREADY_ACTIVE', error: 'A customer account with this email already exists' } },
+    });
+
+    renderWith(<InlineCustomerCreate mode="invite" onCreated={() => {}} onCancel={() => {}} />);
+    await fill();
+    await userEvent.click(screen.getByRole('button', { name: /Save & send portal invitation/i }));
+
+    await waitFor(() => expect(toastInfo).toHaveBeenCalled());
+    expect(String(toastInfo.mock.calls[0][0])).toMatch(/already has portal access/i);
     expect(toastWarn).not.toHaveBeenCalled();
   });
 

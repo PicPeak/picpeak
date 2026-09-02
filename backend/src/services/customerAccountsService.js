@@ -126,7 +126,16 @@ async function createInvitation({ email, invitedById, prefill }) {
     .first();
   if (existingCustomer && existingCustomer.password_hash) {
     // Already-active customer with this email — duplicate, reject.
-    throw new ConflictError('A customer account with this email already exists', 'email');
+    //
+    // Carries the same code the send-invite route uses for its own
+    // already-active check (#1261). Both conflicts are 409 and both can mean
+    // "this address already has portal access" — the route reads the customer
+    // before this recheck runs, so an invitation accepted in between lands
+    // here instead — and a caller that cannot tell the two apart ends up
+    // telling the admin to cancel an invitation acceptance already closed.
+    const err = new ConflictError('A customer account with this email already exists', 'email');
+    err.code = 'CUSTOMER_ALREADY_ACTIVE';
+    throw err;
   }
   // If the existing customer is PASSIVE (password_hash IS NULL), this
   // is the "promote to active" path: the admin clicked "Send portal
@@ -139,7 +148,9 @@ async function createInvitation({ email, invitedById, prefill }) {
     .where('expires_at', '>', new Date())
     .first();
   if (pendingInvite) {
-    throw new ConflictError('A pending invitation already exists for this email', 'email');
+    const err = new ConflictError('A pending invitation already exists for this email', 'email');
+    err.code = 'INVITATION_ALREADY_PENDING';
+    throw err;
   }
 
   // 64-char hex = 32 bytes = 256 bits of entropy. Same as admin invites.
