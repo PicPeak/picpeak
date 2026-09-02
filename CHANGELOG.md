@@ -5,6 +5,75 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.122.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.2-beta.0...v3.122.3-beta.0) (2026-09-02)
+
+
+### Bug Fixes
+
+* **accounting:** allow creating a customer from the picker ([be39929](https://github.com/PicPeak/picpeak/commit/be399294767d8cf029dff3664bdc120180c8be82))
+* **accounting:** let "bill to a customer" work with the portal off ([3790156](https://github.com/PicPeak/picpeak/commit/3790156fc9d613b2f1769f7ffd1181fb4db694b1))
+* **admin:** interpolate activity and notification message values ([78b1ddd](https://github.com/PicPeak/picpeak/commit/78b1ddd0db08d32ff3cc671c9b818d8a94138234))
+* **admin:** portal the update-available modal to document.body ([ac50f0b](https://github.com/PicPeak/picpeak/commit/ac50f0b48bf206be6eb1de3c0dabe3756fd5974a))
+* **analytics:** serve self-hosted trackers same-origin so CSP stops blocking ([3468550](https://github.com/PicPeak/picpeak/commit/34685505bea01fb26dc90ab0f655ffa5e36957b2))
+* **analytics:** warn about the CSP allowlist on every tracker provider ([3489610](https://github.com/PicPeak/picpeak/commit/3489610cb8d9334198daffd9bf86ae488061f4b8))
+* **archives:** run search, filter and sort server-side ([fc7cb22](https://github.com/PicPeak/picpeak/commit/fc7cb226f42efe054ebc9c8b4596d292e9f940c9))
+* **archives:** sort and total on real archive sizes, escape LIKE wildcards ([da6e34d](https://github.com/PicPeak/picpeak/commit/da6e34d6a3d6fa8a05efc9bec5ba7f3652b5d00a))
+* **calendar:** don't put a fixed reference date in the month header ([76a1453](https://github.com/PicPeak/picpeak/commit/76a1453fa73a8200c81cd9fcf33eb46881d39464))
+* **categories:** validate category name length instead of 500ing ([5fa04e6](https://github.com/PicPeak/picpeak/commit/5fa04e647e0810c86c3a3b2ecba5f53a3859e8d8))
+* close the remaining 2026-09-01 QA items, warnings and follow-on defects ([cad699a](https://github.com/PicPeak/picpeak/commit/cad699a5bed24b67425bdd4ef84fbb694feae029))
+* **contracts:** add tooltips to the ellipsized block-library names ([d16137b](https://github.com/PicPeak/picpeak/commit/d16137bb2ad11eda2384a531ae8ee47668ebc05c))
+* **contracts:** widen the block-library list column ([bd44708](https://github.com/PicPeak/picpeak/commit/bd44708a036a7cf9863e9931764db45aa0931acd))
+* **email:** derive preview sample data from each template's variables ([1be2740](https://github.com/PicPeak/picpeak/commit/1be27404fae5974a765cf28ea98a34a5e4f8b8e6))
+* **email:** give every template a real display name in the config UI ([355fe4f](https://github.com/PicPeak/picpeak/commit/355fe4ff43900763b0e07a9fecc0d8ef3a33c8c0))
+* **email:** give gallery_created a real German translation ([73b08a7](https://github.com/PicPeak/picpeak/commit/73b08a7b5cd3fc87f2590b4ea0714dbbb5c672e0))
+* **email:** repair and seed the gallery lifecycle templates ([41e1de7](https://github.com/PicPeak/picpeak/commit/41e1de78186eda12f8f53f4d3454a6d3b7b110b0))
+* **events:** add archive_size to the immutable column deny-set ([57dd084](https://github.com/PicPeak/picpeak/commit/57dd084763e33bf45f29eb1cc8fcd365f54c5bd1))
+* **events:** guard create-event submit against re-entrant submissions ([c19e944](https://github.com/PicPeak/picpeak/commit/c19e944b995dfb6c54c0cb5da5772700000613d8))
+* **events:** honour ?tab=, show a load error, and stop lying about uploads ([504a8b6](https://github.com/PicPeak/picpeak/commit/504a8b6faeab7293ff7e171d23a0d00735c42fc9))
+* **events:** rename a shadowing local and bound the photo-cap input ([758dc00](https://github.com/PicPeak/picpeak/commit/758dc005df69d15c85eaf0f7a293d82390400765))
+* **events:** render a not-found state instead of hanging on a 404 ([c2428aa](https://github.com/PicPeak/picpeak/commit/c2428aa23a77c7f4910f39066ebe69c12dac6125))
+* **events:** return 409 instead of 500 when a slug is taken ([afc5779](https://github.com/PicPeak/picpeak/commit/afc5779ce74944fa84e275c4676860f1ef5163bf))
+* **feedback:** align word-filter severity vocabulary with the admin UI ([6f7aa59](https://github.com/PicPeak/picpeak/commit/6f7aa59fadc8ffaef8c9e1188c5b9e0a9e110229))
+* **feedback:** make the "block" severity tier actually reject ([814f205](https://github.com/PicPeak/picpeak/commit/814f205da0784c3eef1fe909b734cfb193707d38))
+* **gallery:** no-store private JSON, and give guest uploads a real status ([a28f96b](https://github.com/PicPeak/picpeak/commit/a28f96b3047f44b81d1fd59f2849e490584546cf))
+* **gallery:** restore the download CTA under headerStyle "none" ([4c6ca49](https://github.com/PicPeak/picpeak/commit/4c6ca49b1739946bb61f31b8b81aad66585d825e))
+* **gallery:** show a guest's own upload without a hard reload ([18715b5](https://github.com/PicPeak/picpeak/commit/18715b5efd879b7b8f697c749c4d44a908f7f8d8))
+* **gallery:** stop browser zoom tripping the devtools viewport heuristic ([72894e2](https://github.com/PicPeak/picpeak/commit/72894e22c2dd0ab610613b95947a252e9e786640))
+* **gallery:** stop devtools protection from breaking the whole page ([9d4bd7a](https://github.com/PicPeak/picpeak/commit/9d4bd7ab30a6dbfc3815a6d027a44618665f50f7))
+* **i18n:** make i18n:ci pass by fixing the extractor config ([5dbb435](https://github.com/PicPeak/picpeak/commit/5dbb43549c26c5c26bb0029c6a57084eed4ae675))
+* **middleware:** log ownership lookup failures; drop dead auth surface ([42ba835](https://github.com/PicPeak/picpeak/commit/42ba8351c102fdae6b5e0f6112b5cd45b42ccca1))
+* **migrations:** judge each German field on its own in migration 195 ([4515632](https://github.com/PicPeak/picpeak/commit/4515632300c6d30658f228653f21f2f59da8face))
+* per-field template guard, LIKE escaping, wait for all uploads ([da8fcc8](https://github.com/PicPeak/picpeak/commit/da8fcc82ef901aec17e05333546fd93d61a1b246))
+* **photos:** emit visibility and processing_status from the list mapper ([fe5ac91](https://github.com/PicPeak/picpeak/commit/fe5ac9162dcd9747afe85c155eb84fbd2d8a3eb5))
+* **photos:** treat category_id 0 as uncategorized instead of storing it ([3f6c81a](https://github.com/PicPeak/picpeak/commit/3f6c81a8460145562931a0bc3248b84e62a40bae))
+* **quotes:** enforce the status state machine, and correct the table ([103863c](https://github.com/PicPeak/picpeak/commit/103863cbabe2bc45fdf44b369a1e2f85c4e2e763))
+* resolve the 2026-09-01 QA run findings ([#1](https://github.com/PicPeak/picpeak/issues/1)-[#21](https://github.com/PicPeak/picpeak/issues/21)) and repo-health debt ([9b63399](https://github.com/PicPeak/picpeak/commit/9b63399c48514ca321c4f8eef7255b52c0237c91))
+* **search:** match the original filename, and honour the date-format setting ([15fdd70](https://github.com/PicPeak/picpeak/commit/15fdd70a0865c085edd472349351861dcff66bed))
+* **search:** stop escapeLikePattern corrupting bound search values ([a89057d](https://github.com/PicPeak/picpeak/commit/a89057df1df1eb0ccc8727a86c86d9081a50c6b9))
+* **security:** actually apply the general API rate limiter ([b0f33c1](https://github.com/PicPeak/picpeak/commit/b0f33c1744a7ab6af115203a52ee68d88a309a3c))
+* **security:** apply per-IP rate limiting to credential endpoints ([50e8ed6](https://github.com/PicPeak/picpeak/commit/50e8ed6e58e4e365af2cba874895e01030e0070c))
+* **security:** close the case-sensitivity bypass in the API rate limiter ([a929aff](https://github.com/PicPeak/picpeak/commit/a929affd7e737fd3d89591f2fb3fe21116479329))
+* **security:** raise the general limiter's fallback budget to 300 ([19e125d](https://github.com/PicPeak/picpeak/commit/19e125d814b157d9fbafa3a56cc13982b47f9366))
+* **security:** rate-limit the password-change endpoints per IP too ([5a0c9f5](https://github.com/PicPeak/picpeak/commit/5a0c9f53b046cd4e93f951fac9e3a9b9603de7e8))
+* **settings:** clear the accounting flag when its parent is turned off ([3e16b81](https://github.com/PicPeak/picpeak/commit/3e16b81be801513704f07592a67e959f30a8ee0a))
+* **settings:** derive the sidebar preview from the real sidebar declaration ([c6cb018](https://github.com/PicPeak/picpeak/commit/c6cb01865e05786f7e218b78423a38000b69eb78))
+* **settings:** don't crash on a fresh load before permissions resolve ([673f055](https://github.com/PicPeak/picpeak/commit/673f05556d0f33e59a325714e5a2679a3c4356b6))
+* **settings:** remove the duplicated section heading on 11 tabs ([3acb452](https://github.com/PicPeak/picpeak/commit/3acb45209069ab8366d97d7ea3db796ce4cad33a))
+* **types:** resolve the TypeScript build:check backlog ([6e5755d](https://github.com/PicPeak/picpeak/commit/6e5755de02bc6ee5561e1bde4cc3ff6210b81233))
+* **ui:** drop themed text colours from the last three admin surfaces ([22cada9](https://github.com/PicPeak/picpeak/commit/22cada90820af9f9f68d280f7d05bee11de2c21f))
+* **ui:** stop branding-theme text colour rendering headings invisible ([da9ceb1](https://github.com/PicPeak/picpeak/commit/da9ceb14caca562a45c5c7bc56e07a11c6327d1c))
+* **upload:** enforce the chunked-upload cap on bytes received, not declared ([77b11ab](https://github.com/PicPeak/picpeak/commit/77b11ab874b6bdaae005e9699f45d1f24226cb6b))
+* **upload:** enforce the configured per-file size limit on admin uploads ([e18ab0d](https://github.com/PicPeak/picpeak/commit/e18ab0d84270fcc7903e3cc92db14a8ed2532ee7))
+* **upload:** scope category ids, stop temp-file leaks, split the video cap ([7c9baff](https://github.com/PicPeak/picpeak/commit/7c9baff7517caa8f298fe33c1c35131d00a2ab9f))
+* **users:** give the cancel-invitation dialog a distinct confirm label ([31ffbc8](https://github.com/PicPeak/picpeak/commit/31ffbc8ae40f3b913649ac11a1f5f5b1a14a130f))
+* **webhooks:** write delivery timestamps as ISO strings ([c5c5a6b](https://github.com/PicPeak/picpeak/commit/c5c5a6b0c87ad7a3797e7f8ab695c5f64abfacf8))
+* **workflows:** restore the once-per-process seed guard ([a7d45dd](https://github.com/PicPeak/picpeak/commit/a7d45ddd0d59e5ef08a8de023900a89d58ed5df8))
+
+
+### Documentation
+
+* **analytics:** state the tracker proxy's trust model ([23a433f](https://github.com/PicPeak/picpeak/commit/23a433f4110d887f3306b89e1e81abe42fbe8f2b))
+
 ## [3.122.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.1-beta.0...v3.122.2-beta.0) (2026-09-01)
 
 
