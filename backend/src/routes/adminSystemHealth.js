@@ -23,9 +23,8 @@ const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { verifyDocumentArtefacts } = require('../services/backupIntegrityService');
 const { getCoverageReport } = require('../services/backupCoverageService');
-const { getQueueProcessorStatus, processEmailQueue } = require('../services/emailProcessor');
+const { getQueueProcessorStatus } = require('../services/emailProcessor');
 const { toMillis } = require('../utils/queueTimestamps');
-const logger = require('../utils/logger');
 const { db } = require('../database/db');
 
 const router = express.Router();
@@ -181,10 +180,19 @@ router.get(
       // An unreadable created_at cannot be judged overdue; leave it alone
       // rather than reporting every such row as waiting.
       if (createdAt === null) return false;
-      return createdAt <= dueBefore;
+      // The grace window runs from the moment the row became DUE, not from
+      // when it was queued. An invoice created three days ago and scheduled
+      // until a minute ago has had one minute of the processor's attention,
+      // not three days of it — measuring from created_at would report every
+      // split-payment and business-hours mail as unworked the instant it came
+      // due, which is most of what this panel would then be showing.
+      const dueSince = scheduledAt === null ? createdAt : Math.max(createdAt, scheduledAt);
+      return dueSince <= dueBefore;
     };
 
     const waitingEmails = [];
+    let scanTruncated = false;
+    let scanned = 0;
     for (let offset = 0; offset < WAITING_SCAN_MAX; offset += WAITING_PAGE_SIZE) {
       // eslint-disable-next-line no-await-in-loop
       const page = await db('email_queue')
@@ -196,11 +204,17 @@ router.get(
         .select('id', 'recipient_email', 'email_type', 'status', 'retry_count',
           'error_message', 'created_at', 'scheduled_at');
       if (page.length === 0) break;
+      scanned += page.length;
       for (const row of page) {
         if (isWaiting(row)) waitingEmails.push(row);
         if (waitingEmails.length >= WAITING_REPORT_LIMIT) break;
       }
       if (waitingEmails.length >= WAITING_REPORT_LIMIT || page.length < WAITING_PAGE_SIZE) break;
+      // Ran out of budget with rows still unread. A queue this size whose head
+      // is all future-scheduled could be hiding a due row past the cap, so the
+      // empty result below is "not found yet", not "none" — and the UI must
+      // not turn it into an all-clear.
+      if (offset + WAITING_PAGE_SIZE >= WAITING_SCAN_MAX) scanTruncated = true;
     }
 
     return successResponse(res, {
@@ -210,26 +224,29 @@ router.get(
       counts: {
         stuckEmails: stuckEmails.length,
         waitingEmails: waitingEmails.length,
+        pendingScanned: scanned,
       },
+      // True when the pending queue was larger than this endpoint will read.
+      scanTruncated,
     });
   }),
 );
 
 /**
- * POST /failures/email/:id/retry — re-queue an email and flush it now.
+ * POST /failures/email/:id/retry — re-queue a stuck email (status back to
+ * pending, retry_count reset, error cleared, scheduled_at cleared so the
+ * 60s processor picks it up on its next pass).
  *
- * The reset alone (pending, retries cleared, schedule cleared) is what a
- * FAILED row needs, but it is a no-op for a waiting row: those are already
- * pending at retry_count 0 with a null or past-due schedule, so the row came
- * back unchanged while the toast said it had been re-queued. Since the
- * commonest reason a row is waiting is that nothing is working the queue,
- * telling it to wait for the next pass is the one thing that will not help.
+ * Deliberately does NOT send the mail itself. An earlier revision flushed the
+ * row here via processEmailQueue({ onlyId }), which reads better but races:
+ * nothing claims a row before the transport is invoked, so a flush overlapping
+ * the scheduled pass has both of them sending the same email. Saving 60
+ * seconds is not worth a duplicate landing in a customer's inbox.
  *
- * So the reset is followed by a targeted flush — the same single-row path the
- * project cockpit uses (projectService.js). `ignoreSchedule` bypasses the
- * retry cap and the schedule, which is the point of an admin forcing a send.
- * The send is best-effort: a failure is already recorded on the row itself by
- * processEmailQueue, and the refreshed list will show it.
+ * That is also why waiting rows carry no actions at all — they are already
+ * pending with retries and schedule clear, so this endpoint would rewrite them
+ * to the state they are in and change nothing. What a waiting row needs is the
+ * processor fixed, which the panel above it says.
  */
 router.post(
   '/failures/email/:id/retry',
@@ -244,14 +261,7 @@ router.post(
       scheduled_at: null,
     });
     if (!updated) return res.status(404).json({ error: 'Email not found' });
-
-    let sent = 0;
-    try {
-      ({ sent } = await processEmailQueue({ ignoreSchedule: true, onlyId: id }));
-    } catch (err) {
-      logger.warn(`System health: flush of email ${id} failed: ${err.message}`);
-    }
-    return successResponse(res, { retried: true, sent: sent > 0 });
+    return successResponse(res, { retried: true });
   }),
 );
 

@@ -120,7 +120,8 @@
       "col": {
         "attempts": "Versuche"
       },
-      "emptyButUnworked": "Noch ist nichts überfällig, es sendet aber auch nichts — siehe Prozessor oben. Alles ab jetzt Eingereihte bleibt hier liegen."
+      "emptyButUnworked": "Noch ist nichts überfällig, es sendet aber auch nichts — siehe Prozessor oben. Alles ab jetzt Eingereihte bleibt hier liegen.",
+      "truncated": "Die Warteschlange ist zu groß, um sie vollständig zu prüfen — in den gelesenen Zeilen war nichts überfällig, das ist aber keine Entwarnung."
     },
     "processor": {
       "title": "E-Mail-Warteschlangen-Prozessor",

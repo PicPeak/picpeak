@@ -31,7 +31,10 @@ export interface SystemHealthFailures {
   /** Due, under the retry cap, and still unsent — nobody picked them up. */
   waitingEmails: StuckEmail[];
   processor: EmailProcessorStatus;
-  counts: { stuckEmails: number; waitingEmails: number };
+  /** The pending queue was larger than the endpoint reads — an empty
+   *  `waitingEmails` then means "nothing found yet", not "nothing". */
+  scanTruncated?: boolean;
+  counts: { stuckEmails: number; waitingEmails: number; pendingScanned?: number };
 }
 
 export const systemHealthService = {

@@ -120,7 +120,8 @@
       "col": {
         "attempts": "Attempts"
       },
-      "emptyButUnworked": "Nothing is overdue yet, but nothing is sending either — see the processor above. Anything queued from now on will sit here."
+      "emptyButUnworked": "Nothing is overdue yet, but nothing is sending either — see the processor above. Anything queued from now on will sit here.",
+      "truncated": "The pending queue is too large to check in full — nothing overdue was found in the rows read, but this is not an all-clear."
     },
     "processor": {
       "title": "Email queue processor",

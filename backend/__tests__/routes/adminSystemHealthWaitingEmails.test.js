@@ -61,15 +61,29 @@ const ahead = (ms) => new Date(Date.now() + ms).toISOString();
 describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
   let db; let cleanup; let app; let token;
 
-  const queue = (row) => db('email_queue').insert({
-    recipient_email: 'someone@example.com',
-    email_type: 'gallery_created',
-    email_data: '{}',
-    status: 'pending',
-    retry_count: 0,
-    created_at: ago(60 * MINUTE),
-    ...row,
-  });
+  /**
+   * `scheduled_at` defaults to the same moment as `created_at` unless the
+   * caller says otherwise, because that is what the database does: BOTH
+   * columns default to CURRENT_TIMESTAMP, and queueEmail only sets
+   * scheduled_at explicitly for a deferred send (split-payment invoices, the
+   * business-hours floor). Back-dating created_at alone would produce a row
+   * that never exists in production — old, but scheduled for the moment the
+   * fixture ran — and the grace window is measured from whichever of the two
+   * made the row due.
+   */
+  const queue = (row = {}) => {
+    const createdAt = 'created_at' in row ? row.created_at : ago(60 * MINUTE);
+    return db('email_queue').insert({
+      recipient_email: 'someone@example.com',
+      email_type: 'gallery_created',
+      email_data: '{}',
+      status: 'pending',
+      retry_count: 0,
+      scheduled_at: createdAt,
+      ...row,
+      created_at: createdAt,
+    });
+  };
 
   const failures = async () => {
     const res = await request(app)
@@ -230,6 +244,26 @@ describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
   // answer, and process.env.TZ does not reliably re-bind mid-process. Those
   // tests force the zone in a child process, so they fail on any host.
 
+  it('measures the grace window from when the row became due', async () => {
+    // Codex review round 3. A split-payment invoice created three days ago and
+    // scheduled until a minute ago has had one minute of the processor's
+    // attention, not three days of it. Measuring from created_at alone
+    // reported every scheduled mail as unworked the instant it came due.
+    await queue({
+      email_type: 'invoice_due',
+      created_at: ago(3 * 24 * 60 * MINUTE),
+      scheduled_at: ago(1 * MINUTE),
+    });
+
+    const body = await failures();
+    expect(body.waitingEmails).toEqual([]);
+
+    // Once the grace window has passed since it came due, it counts.
+    await db('email_queue').update({ scheduled_at: ago(30 * MINUTE) });
+    const later = await failures();
+    expect(typesOf(later.waitingEmails)).toEqual(['invoice_due']);
+  });
+
   it('finds a due row behind a page full of future-scheduled ones', async () => {
     // Codex review round 2. The candidates used to be cut off with a single
     // LIMIT before the time filter ran, so a queue holding a page of
@@ -254,6 +288,16 @@ describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
 
     const body = await failures();
     expect(typesOf(body.waitingEmails)).toEqual(['gallery_created']);
+  });
+
+  it('flags a truncated scan, so an empty result cannot read as all-clear', async () => {
+    // Codex review round 3. The scan is bounded, so on a queue larger than the
+    // budget an overdue row can sit past the last page read. Reporting zero
+    // waiting there is "not found yet", not "none", and the UI keys its green
+    // check off this flag.
+    const body = await failures();
+    expect(body.scanTruncated).toBe(false);
+    expect(body.counts.pendingScanned).toBe(0);
   });
 
   it('reports what the queue processor last did', async () => {
@@ -288,12 +332,12 @@ describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
     }
   });
 
-  it('actually flushes the row on retry instead of leaving it as it was', async () => {
-    // Codex review round 1. The retry endpoint only wrote pending /
-    // retry_count 0 / no schedule — which is exactly what a WAITING row
-    // already is, so nothing happened while the toast said "re-queued". And
-    // the usual reason a row is waiting is that nothing is working the queue,
-    // so "wait for the next pass" is the one answer that cannot help.
+  it('does not send from the retry endpoint, which would race the processor', async () => {
+    // Codex review round 1 asked for either a send-now action on waiting rows
+    // or no Retry on them at all. Round 3 showed why the first is the wrong
+    // half: nothing claims a row before the transport is invoked, so a flush
+    // overlapping the scheduled pass has both of them sending the same email.
+    // Retry stays a reset, and waiting rows carry no action at all.
     const transport = stubWebhookTransport();
 
     try {
@@ -305,14 +349,10 @@ describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
         .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(200);
 
-      // A send was ATTEMPTED, which the old endpoint never did. It fails here
-      // (the transport is stubbed to reject) and that failure is recorded on
-      // the row, which is itself the proof the row was worked rather than
-      // merely rewritten to the state it was already in.
-      expect(transport.send).toHaveBeenCalledTimes(1);
+      expect(transport.send).not.toHaveBeenCalled();
       const after = await db('email_queue').where({ id }).first();
-      expect(after.retry_count).toBe(1);
-      expect(after.error_message).toBeTruthy();
+      expect(after.status).toBe('pending');
+      expect(after.retry_count).toBe(0);
     } finally {
       transport.restore();
     }

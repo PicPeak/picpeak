@@ -44,6 +44,10 @@ export const SystemHealthPage: React.FC = () => {
   const stuckEmails = data?.stuckEmails ?? [];
   const waitingEmails = data?.waitingEmails ?? [];
   const processor = data?.processor;
+  // The endpoint stops reading after a bounded number of pending rows. Past
+  // that, an empty waiting list means "nothing found yet", not "nothing" — so
+  // it must not turn into a green check.
+  const scanTruncated = data?.scanTruncated ?? false;
 
   // The processor is only "fine" when it has been started AND its last pass
   // didn't bail. A started-but-erroring processor is the case that used to
@@ -56,7 +60,14 @@ export const SystemHealthPage: React.FC = () => {
         ? 'degraded'
         : 'ok';
 
-  const emailTable = (rows: StuckEmail[], showError: boolean) => (
+  /**
+   * `actions` is off for waiting rows, and deliberately so. Retry would
+   * rewrite a row that is already pending / retry_count 0 / unscheduled to the
+   * state it is in, and Dismiss would permanently delete an email that has not
+   * failed and will still go out once the processor recovers — a click on a
+   * health warning silently cancelling a customer's mail.
+   */
+  const emailTable = (rows: StuckEmail[], showError: boolean, actions = true) => (
     <div className="rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -70,7 +81,9 @@ export const SystemHealthPage: React.FC = () => {
                   : t('systemHealth.waitingEmails.col.attempts', 'Attempts')}
               </th>
               <th className="px-3 py-2 text-left">{t('systemHealth.stuckEmails.col.queued', 'Queued')}</th>
-              <th className="px-3 py-2 text-right">{t('systemHealth.stuckEmails.col.actions', 'Actions')}</th>
+              {actions && (
+                <th className="px-3 py-2 text-right">{t('systemHealth.stuckEmails.col.actions', 'Actions')}</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -95,22 +108,24 @@ export const SystemHealthPage: React.FC = () => {
                   )}
                 </td>
                 <td className="px-3 py-2 whitespace-nowrap">{m.createdAt ? fmtDateTime(m.createdAt) : '—'}</td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button variant="outline" size="sm"
-                      isLoading={retryMutation.isPending && retryMutation.variables === m.id}
-                      onClick={() => retryMutation.mutate(m.id)}
-                      leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>
-                      {t('systemHealth.retry', 'Retry')}
-                    </Button>
-                    <button type="button"
-                      aria-label={t('systemHealth.dismiss', 'Dismiss') as string}
-                      onClick={() => dismissMutation.mutate(m.id)}
-                      className="p-1.5 text-neutral-400 hover:text-red-600">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
+                {actions && (
+                  <td className="px-3 py-2">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button variant="outline" size="sm"
+                        isLoading={retryMutation.isPending && retryMutation.variables === m.id}
+                        onClick={() => retryMutation.mutate(m.id)}
+                        leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>
+                        {t('systemHealth.retry', 'Retry')}
+                      </Button>
+                      <button type="button"
+                        aria-label={t('systemHealth.dismiss', 'Dismiss') as string}
+                        onClick={() => dismissMutation.mutate(m.id)}
+                        className="p-1.5 text-neutral-400 hover:text-red-600">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -190,7 +205,7 @@ export const SystemHealthPage: React.FC = () => {
           // queue. A processor that stopped a minute ago has no waiting rows
           // yet either — the grace window has not elapsed — and a green check
           // there is the same false all-clear this page exists to remove.
-          processorState === 'ok' ? (
+          processorState === 'ok' && !scanTruncated ? (
             <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 py-6">
               <CheckCircle className="w-5 h-5" />
               {t('systemHealth.waitingEmails.empty', 'Nothing waiting — the queue is being worked.')}
@@ -198,8 +213,11 @@ export const SystemHealthPage: React.FC = () => {
           ) : (
             <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 py-6">
               <AlertCircle className="w-5 h-5" />
-              {t('systemHealth.waitingEmails.emptyButUnworked',
-                'Nothing is overdue yet, but nothing is sending either — see the processor above. Anything queued from now on will sit here.')}
+              {scanTruncated
+                ? t('systemHealth.waitingEmails.truncated',
+                  'The pending queue is too large to check in full — nothing overdue was found in the rows read, but this is not an all-clear.')
+                : t('systemHealth.waitingEmails.emptyButUnworked',
+                  'Nothing is overdue yet, but nothing is sending either — see the processor above. Anything queued from now on will sit here.')}
             </div>
           )
         ) : (
@@ -208,7 +226,7 @@ export const SystemHealthPage: React.FC = () => {
               {t('systemHealth.waitingEmails.description',
                 'Queued more than 10 minutes ago, due now, and still unsent. These have not failed — nothing has tried to send them.')}
             </p>
-            {emailTable(waitingEmails, false)}
+            {emailTable(waitingEmails, false, false)}
           </>
         )}
       </Card>
@@ -231,7 +249,7 @@ export const SystemHealthPage: React.FC = () => {
                 allowed when the whole queue is clear. With mail waiting or a
                 processor that is not working, this section is still empty but
                 the system is not fine. */}
-            {waitingEmails.length === 0 && processorState === 'ok'
+            {waitingEmails.length === 0 && processorState === 'ok' && !scanTruncated
               ? t('systemHealth.stuckEmails.empty', 'No stuck or failed emails — all clear.')
               : t('systemHealth.stuckEmails.emptyNotAllClear', 'Nothing has failed — but see above.')}
           </div>
