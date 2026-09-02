@@ -24,6 +24,7 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const { verifyDocumentArtefacts } = require('../services/backupIntegrityService');
 const { getCoverageReport } = require('../services/backupCoverageService');
 const { getQueueProcessorStatus, processEmailQueue } = require('../services/emailProcessor');
+const { toMillis } = require('../utils/queueTimestamps');
 const logger = require('../utils/logger');
 const { db } = require('../database/db');
 
@@ -96,41 +97,28 @@ router.get(
 const WAITING_EMAIL_GRACE_MS = 10 * 60 * 1000;
 
 /**
- * A timestamp column as milliseconds, whatever the engine handed back.
+ * Why the two time comparisons happen in JS (toMillis) and not in the WHERE
+ * clause: SQLite orders INTEGER before TEXT regardless of value, so comparing
+ * the ms-number this column really holds against a bound ISO string is true
+ * for EVERY row -- a mail queued one second ago reads as ten minutes overdue,
+ * and a scheduled_at years in the future reads as already due. Binding a Date
+ * instead is no fix either, since knex hands sqlite3 a Date the same way and
+ * jest's sandbox Dates stringify to "[object Object]" (see CLAUDE.md).
  *
- * The three shapes are all real. Postgres returns a Date. SQLite stores what
- * `queueEmail` writes -- a JS Date, which the native binding turns into a
- * ms-number -- and hands back that number. Test fixtures and older rows carry
- * ISO strings.
+ * The time filtering happens in JS, so the candidate rows have to be paged
+ * rather than cut off with a single LIMIT: a queue holding a thousand
+ * future-scheduled rows (split-payment invoices) would otherwise fill one page
+ * with rows that all get filtered out and hide the due row behind them,
+ * reporting an empty waiting list. Paging also removes the dependency on
+ * ORDER BY created_at being meaningful, which it is not on SQLite when numeric
+ * and text timestamps are mixed.
  *
- * This has to happen in JS rather than in the WHERE clause. SQLite orders
- * INTEGER before TEXT regardless of value, so comparing a ms-number column
- * against a bound ISO string is true for EVERY row: a mail queued one second
- * ago reads as ten minutes overdue, and a scheduled_at years in the future
- * reads as already due. Binding a Date instead is no fix either, since knex
- * hands sqlite3 a Date the same way and jest's sandbox Dates stringify to
- * "[object Object]" (see CLAUDE.md).
+ * WAITING_SCAN_MAX bounds the work: past it the response is explicitly a
+ * sample, which the 200-row cap already made it.
  */
-function toMillis(value) {
-  if (value == null) return null;
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === 'number') return value;
-  const text = String(value).trim();
-  if (text === '') return null;
-  // A numeric string is epoch ms; anything else goes through Date.parse.
-  const numeric = Number(text);
-  if (Number.isFinite(numeric)) return numeric;
-  const parsed = Date.parse(text);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
-/**
- * How many pending rows to pull before filtering by time in JS. Everything
- * overdue sorts first, so the cap only bites on a queue with more than this
- * many pending rows -- at which point the 200-row response was already a
- * sample rather than a census.
- */
-const WAITING_SCAN_LIMIT = 1000;
+const WAITING_PAGE_SIZE = 500;
+const WAITING_SCAN_MAX = 10000;
+const WAITING_REPORT_LIMIT = 200;
 
 const mapEmailRow = (r) => ({
   id: r.id,
@@ -181,18 +169,10 @@ router.get(
     // set above and must not be counted twice.
     //
     // Only the engine-safe half of that predicate runs in SQL; the two time
-    // comparisons are done in JS, for the reason on toMillis above.
+    // comparisons are done in JS — see utils/queueTimestamps.
     const now = Date.now();
     const dueBefore = now - WAITING_EMAIL_GRACE_MS;
-    const pendingRows = await db('email_queue')
-      .where('status', 'pending')
-      .where('retry_count', '<', 3)
-      .orderBy('created_at', 'asc')
-      .limit(WAITING_SCAN_LIMIT)
-      .select('id', 'recipient_email', 'email_type', 'status', 'retry_count',
-        'error_message', 'created_at', 'scheduled_at');
-
-    const waitingEmails = pendingRows.filter((r) => {
+    const isWaiting = (r) => {
       const scheduledAt = toMillis(r.scheduled_at);
       // Parked for later on purpose — split-payment invoices, the
       // business-hours floor. Not being sent yet is the point of those.
@@ -202,7 +182,26 @@ router.get(
       // rather than reporting every such row as waiting.
       if (createdAt === null) return false;
       return createdAt <= dueBefore;
-    }).slice(0, 200);
+    };
+
+    const waitingEmails = [];
+    for (let offset = 0; offset < WAITING_SCAN_MAX; offset += WAITING_PAGE_SIZE) {
+      // eslint-disable-next-line no-await-in-loop
+      const page = await db('email_queue')
+        .where('status', 'pending')
+        .where('retry_count', '<', 3)
+        .orderBy('id', 'asc')
+        .offset(offset)
+        .limit(WAITING_PAGE_SIZE)
+        .select('id', 'recipient_email', 'email_type', 'status', 'retry_count',
+          'error_message', 'created_at', 'scheduled_at');
+      if (page.length === 0) break;
+      for (const row of page) {
+        if (isWaiting(row)) waitingEmails.push(row);
+        if (waitingEmails.length >= WAITING_REPORT_LIMIT) break;
+      }
+      if (waitingEmails.length >= WAITING_REPORT_LIMIT || page.length < WAITING_PAGE_SIZE) break;
+    }
 
     return successResponse(res, {
       stuckEmails: stuckEmails.map(mapEmailRow),

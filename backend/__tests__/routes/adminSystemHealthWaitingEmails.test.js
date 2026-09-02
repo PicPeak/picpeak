@@ -222,6 +222,40 @@ describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
     });
   });
 
+  // --- Codex review round 2 -------------------------------------------------
+  //
+  // The zone-less CURRENT_TIMESTAMP shape is covered in
+  // __tests__/utils/queueTimestamps.test.js instead of here: this suite runs
+  // in UTC, where reading such a value as local and as UTC give the same
+  // answer, and process.env.TZ does not reliably re-bind mid-process. Those
+  // tests force the zone in a child process, so they fail on any host.
+
+  it('finds a due row behind a page full of future-scheduled ones', async () => {
+    // Codex review round 2. The candidates used to be cut off with a single
+    // LIMIT before the time filter ran, so a queue holding a page of
+    // split-payment invoices scheduled for later hid the due row behind them
+    // and reported an empty waiting list — the false all-clear, again.
+    // Over the 1000-row cut-off the first attempt used, so the due row really
+    // does sit behind a full page rather than merely late in one.
+    const rows = [];
+    for (let i = 0; i < 1200; i += 1) {
+      rows.push({
+        recipient_email: `bulk${i}@example.com`,
+        email_type: 'invoice_due',
+        email_data: '{}',
+        status: 'pending',
+        retry_count: 0,
+        created_at: ago(90 * MINUTE),
+        scheduled_at: ahead(30 * 24 * 60 * MINUTE),
+      });
+    }
+    await db.batchInsert('email_queue', rows, 100);
+    await queue({ email_type: 'gallery_created', created_at: ago(52 * MINUTE) });
+
+    const body = await failures();
+    expect(typesOf(body.waitingEmails)).toEqual(['gallery_created']);
+  });
+
   it('reports what the queue processor last did', async () => {
     const body = await failures();
     // Never started in this process — which is the condition that makes a
