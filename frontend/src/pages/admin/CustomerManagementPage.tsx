@@ -19,7 +19,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
-  UserPlus, UserCog, Trash2, Search, X, AlertTriangle, CheckCircle2, Clock,
+  UserPlus, UserCog, Trash2, Search, X, AlertTriangle, CheckCircle2, Clock, MailCheck,
 } from 'lucide-react';
 import { InlineCustomerCreate } from '../../components/admin/InlineCustomerCreate';
 import { useMutationWithToast } from '../../hooks';
@@ -88,6 +88,18 @@ export const CustomerManagementPage: React.FC = () => {
       || (c.companyName || '').toLowerCase().includes(term)
     );
   }, [customers, debouncedTerm]);
+
+  // #1261 — the "Invite customer" flow is createDirect-then-sendInvite, so a
+  // customer whose second call never landed is left looking identical to one
+  // the admin deliberately created as passive. Both showed only
+  // "Passive — admin only", and there was nothing on this row to tell them
+  // apart. Cross-reference the invitations we already fetch (the endpoint
+  // returns unaccepted, unexpired ones) so an invited customer says so.
+  const pendingInviteByEmail = useMemo(() => {
+    const map = new Map<string, CustomerInvitationSummary>();
+    for (const i of invitations || []) map.set(i.email.trim().toLowerCase(), i);
+    return map;
+  }, [invitations]);
 
   const filteredInvitations = useMemo(() => {
     const list = invitations || [];
@@ -239,11 +251,23 @@ export const CustomerManagementPage: React.FC = () => {
                               status badge sits on its own line so a
                               passive deactivated customer can still
                               show both states clearly. */}
-                          {c.isPassive && (
-                            <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
-                              {t('customers.passive.badge', 'Passive — admin only')}
-                            </span>
-                          )}
+                          {c.isPassive && (() => {
+                            const invite = pendingInviteByEmail.get(c.email.trim().toLowerCase());
+                            return invite ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300"
+                                title={t('customers.invitePending.hint',
+                                  'Invitation sent, not accepted yet. The customer stays passive until they set a password.') as string}
+                              >
+                                <MailCheck className="w-3 h-3" />
+                                {t('customers.invitePending.badge', 'Invitation pending')}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+                                {t('customers.passive.badge', 'Passive — admin only')}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </td>
                       <td className="px-3 py-3 text-right">

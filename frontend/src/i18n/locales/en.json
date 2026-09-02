@@ -4848,10 +4848,11 @@
       "saveAsPassive": "Save as passive customer",
       "saveAndInvite": "Save & send portal invitation",
       "savedPassiveToast": "Passive customer created.",
-      "savedActiveToast": "Customer created and portal invitation sent.",
-      "inviteFailedToast": "Customer saved (passive). Invitation email failed — retry from the customer detail page.",
+      "savedActiveToast": "Customer created and portal invitation queued. It is sent by the email queue — check System health if it does not arrive.",
+      "inviteFailedToast": "Customer saved as PASSIVE — no invitation went out. Retry \"Send portal invitation\" from the customer detail page.",
       "emailRequired": "A valid email is required.",
-      "nameRequired": "Enter at least a company name or a contact name."
+      "nameRequired": "Enter at least a company name or a contact name.",
+      "inviteAlreadyPendingToast": "Customer saved. An invitation for this address is already open — cancel it on the Invitations tab before sending a new one."
     },
     "passive": {
       "badge": "Passive — admin only",
@@ -5045,6 +5046,10 @@
       "addedN_other": "{{count}} added",
       "removedN_one": "{{count}} removed",
       "removedN_other": "{{count}} removed"
+    },
+    "invitePending": {
+      "badge": "Invitation pending",
+      "hint": "Invitation sent, not accepted yet. The customer stays passive until they set a password."
     }
   },
   "clients": {

@@ -16,6 +16,11 @@
  * stays saved (passive) and a warning toast asks the admin to retry
  * from the customer detail page.
  *
+ * #1261 — the toasts here say what actually happened rather than what was
+ * intended. Two calls means three outcomes, and the middle one used to be
+ * indistinguishable from success: the invitation email is only QUEUED, so
+ * "invitation sent" was a claim this code cannot make.
+ *
  * Field set mirrors the customer detail page so admins see the same
  * shape regardless of where they're editing.
  */
@@ -182,10 +187,17 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
         try {
           await customerAdminService.sendInvite(customer.id);
           toast.success(t('customers.create.savedActiveToast',
-            'Customer created and portal invitation sent.'));
+            'Customer created and portal invitation queued. It is sent by the email queue — check System health if it does not arrive.'));
         } catch (err: any) {
-          toast.warn(t('customers.create.inviteFailedToast',
-            'Customer saved (passive). Invitation email failed — retry from the customer detail page.'));
+          // A 409 means an invitation for this address is already open, which
+          // is a different thing from the email failing: the customer is
+          // invited, and re-inviting is what was refused.
+          const alreadyInvited = err?.response?.status === 409;
+          toast.warn(alreadyInvited
+            ? t('customers.create.inviteAlreadyPendingToast',
+              'Customer saved. An invitation for this address is already open — cancel it on the Invitations tab before sending a new one.')
+            : t('customers.create.inviteFailedToast',
+              'Customer saved as PASSIVE — no invitation went out. Retry "Send portal invitation" from the customer detail page.'));
           // eslint-disable-next-line no-console
           console.warn('sendInvite failed', err);
         }
