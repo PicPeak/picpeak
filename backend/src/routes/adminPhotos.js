@@ -1623,7 +1623,10 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
       fileSize,
       mimeType,
       eventId: parseInt(eventId),
-      totalChunks
+      totalChunks,
+      // The declared fileSize check above is client-controlled; the service
+      // enforces this cap on the bytes it actually receives and merges.
+      maxFileSizeBytes: maxSize
     });
 
     res.json(result);
@@ -1648,6 +1651,9 @@ router.post('/:eventId/chunked-upload/:uploadId/chunk/:chunkIndex', adminAuth, r
 
     res.json(result);
   } catch (error) {
+    if (error.statusCode === 413 || error.statusCode === 400) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
     logger.error('Error uploading chunk:', error);
     res.status(500).json({ error: error.message || 'Failed to upload chunk' });
   }
@@ -1690,6 +1696,9 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       photos: uploadedPhotos
     });
   } catch (error) {
+    if (error.statusCode === 413) {
+      return res.status(413).json({ error: error.message });
+    }
     logger.error('Error completing chunked upload:', error);
     res.status(500).json({ error: error.message || 'Failed to complete upload' });
   }

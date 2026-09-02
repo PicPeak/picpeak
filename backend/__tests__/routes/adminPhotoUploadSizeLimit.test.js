@@ -11,6 +11,8 @@
  *  - a file over the configured cap is rejected with a 400 naming the limit
  *  - the chunked-upload init route honours the same cap (it would otherwise
  *    be a trivial bypass of the multipart route's cap)
+ *  - the chunk route enforces the cap on the bytes actually received, so a
+ *    client can't declare `fileSize: 1` at init and stream past the limit
  *  - a file under the cap still gets past the size gate
  *  - the limit is read per request, so an admin raising it takes effect
  */
@@ -124,6 +126,20 @@ describe('admin upload per-file size limit (general_max_file_size_mb)', () => {
     await setLimitMb(1);
     const res = await postChunkedInit(200 * 1024 * 1024);
     expect(res.status).toBe(400);
+    expect(res.body.error).toBe('File too large. Maximum size is 1 MB per file.');
+  });
+
+  it('rejects chunk bytes over the limit regardless of the declared fileSize', async () => {
+    await setLimitMb(1);
+    const initRes = await postChunkedInit(1);
+    expect(initRes.status).toBe(200);
+
+    const res = await request(app)
+      .post(`/api/admin/photos/${eventId}/chunked-upload/${initRes.body.uploadId}/chunk/0`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Content-Type', 'application/octet-stream')
+      .send(Buffer.alloc(2 * 1024 * 1024, 0x41));
+    expect(res.status).toBe(413);
     expect(res.body.error).toBe('File too large. Maximum size is 1 MB per file.');
   });
 
