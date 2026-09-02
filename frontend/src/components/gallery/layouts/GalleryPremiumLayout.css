@@ -339,24 +339,28 @@
   pointer-events: auto;
 }
 
-/* Touch devices never get :hover, so the two controls above would be
+/* A finger never produces :hover, so the two controls above would be
    permanently unreachable rather than merely accidental. Show them outright
-   and give them a finger-sized target (#1263). */
-@media (hover: none) and (pointer: coarse) {
-  .gallery-premium-checkbox,
-  .gallery-premium-like-btn {
-    opacity: 1;
-    pointer-events: auto;
-  }
+   and give them a finger-sized target (#1263).
 
-  .gallery-premium-checkbox {
-    height: 2.25rem;
-    width: 2.25rem;
-  }
+   Keyed off the input in use, not a media query (#1275). `(hover: none) and
+   (pointer: coarse)` describes the device's PRIMARY pointer, so on a
+   touchscreen laptop it stayed false and a finger could never reach these,
+   while on an iPad with a trackpad it stayed true and they were stuck on
+   permanently. The attribute is set by the layout from useInputMode. */
+[data-input-mode='touch'] .gallery-premium-checkbox,
+[data-input-mode='touch'] .gallery-premium-like-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
 
-  .gallery-premium-like-btn {
-    padding: 0.75rem;
-  }
+[data-input-mode='touch'] .gallery-premium-checkbox {
+  height: 2.25rem;
+  width: 2.25rem;
+}
+
+[data-input-mode='touch'] .gallery-premium-like-btn {
+  padding: 0.75rem;
 }
 
 .gallery-premium-like-btn:hover {

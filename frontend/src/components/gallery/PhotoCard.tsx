@@ -7,32 +7,8 @@ import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { feedbackService } from '../../services/feedback.service';
 import { ColorLabelBadge } from './ColorLabelBadge';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
+import { useInputMode } from '../../hooks/useInputMode';
 import type { Photo } from '../../types';
-
-const COARSE_POINTER_QUERY = '(hover: none) and (pointer: coarse)';
-
-/**
- * Does this device lack hover? Read synchronously at first render rather than
- * in an effect: every layout runs this now (#1263), and a mount-time state
- * change here would land an extra render between the tile measurement in
- * useLayoutEffect and the image mount it gates, remounting each card once.
- *
- * matchMedia is authoritative wherever it exists, because it describes the
- * PRIMARY pointer. `ontouchstart` and `maxTouchPoints` only say a touchscreen
- * is present somewhere, which is equally true of a touchscreen laptop being
- * driven by its mouse -- OR-ing them in would classify that as touch-only and
- * turn every ordinary click into a two-step reveal. They stand in only where
- * matchMedia is absent (old embedded webviews, some test environments).
- */
-function detectCoarsePointer(): boolean {
-  if (typeof window === 'undefined') return false;
-  if (typeof window.matchMedia === 'function') {
-    return window.matchMedia(COARSE_POINTER_QUERY).matches;
-  }
-  const hasNavigator = typeof navigator !== 'undefined';
-  return ('ontouchstart' in window)
-    || (hasNavigator && navigator.maxTouchPoints > 0);
-}
 
 export interface PhotoCardFeedbackOptions {
   allowLikes?: boolean;
@@ -133,7 +109,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
 }) => {
   const guestIdentity = useGuestIdentityOptional();
   const [overlayVisible, setOverlayVisible] = useState(false);
-  const [isTouchDevice, setIsTouchDevice] = useState(detectCoarsePointer);
+  // #1275 — the input in use right now, not what the device is capable of.
+  // On a hybrid the two disagree, and acting on the device's primary pointer
+  // handles one of its two inputs as if it were the other.
+  const isTouchDevice = useInputMode() === 'touch';
   const overlayTimeoutRef = useRef<number | null>(null);
 
   // Self-managed identity modal state (identityMode === 'self')
@@ -142,31 +121,6 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const [selfIdentity, setSelfIdentity] = useState<{ name: string; email: string } | null>(null);
 
   const savedIdentityValue = identityMode === 'self' ? selfIdentity : savedIdentity;
-
-  // Keep the initial reading in step when the pointer changes under us —
-  // a tablet docked to a mouse, a browser window moved to another screen.
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-
-    const mediaQuery = window.matchMedia(COARSE_POINTER_QUERY);
-    const listener = (event: MediaQueryListEvent) => {
-      setIsTouchDevice(event.matches);
-    };
-
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener('change', listener);
-    } else if (mediaQuery.addListener) {
-      mediaQuery.addListener(listener);
-    }
-
-    return () => {
-      if (mediaQuery.removeEventListener) {
-        mediaQuery.removeEventListener('change', listener);
-      } else if (mediaQuery.removeListener) {
-        mediaQuery.removeListener(listener);
-      }
-    };
-  }, []);
 
   const hideOverlay = useCallback(() => {
     if (overlayTimeoutRef.current !== null && typeof window !== 'undefined') {
@@ -247,13 +201,12 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // opening the photo. Every visibility toggle below therefore moves
   // pointer-events with it, in both the tap-to-reveal and the hover branch.
   //
-  // The hover variants are emitted for pointer devices only, rather than being
-  // gated behind `md:`. Width is the wrong proxy for hover: a mouse user with
-  // a window under 768px got no overlay at all, and in Masonry, Mosaic and
-  // Timeline -- whose `group-hover:` used to be unprefixed -- that made
-  // download and like unreachable at any narrow width. Withholding the classes
-  // on touch is what the breakpoint was really for, since :hover latches on a
-  // touchscreen once a tile has been tapped.
+  // The hover variants are emitted while a mouse is in use, and withheld while
+  // a finger is. Not behind `md:`: width is the wrong proxy for hover, and a
+  // mouse user with a window under 768px got no overlay at all. Not behind the
+  // device's primary pointer either (#1275) — on a hybrid that answers for the
+  // wrong input. Withholding them on touch is what the breakpoint was really
+  // for, since :hover latches on a touchscreen once a tile has been tapped.
   const revealed = (visible: boolean) => {
     const base = visible
       ? 'opacity-100 pointer-events-auto'

@@ -24,6 +24,7 @@ import { thumbnailUrlForTile } from '../imageTiers';
 import { feedbackService } from '../../../services/feedback.service';
 import { PhotoReactions } from '../PhotoReactions';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
+import { useInputMode } from '../../../hooks/useInputMode';
 import { FeedbackIdentityModal } from '../FeedbackIdentityModal';
 import { galleryService } from '../../../services/gallery.service';
 import { analyticsService } from '../../../services/analytics.service';
@@ -251,6 +252,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
     counts: Record<string, number>;
   } | null>(null);
   const guestIdentity = useGuestIdentityOptional();
+  const inputMode = useInputMode();
   const [showIdentityModal, setShowIdentityModal] = useState(false);
   const [pendingLikePhotoId, setPendingLikePhotoId] = useState<number | null>(null);
 
@@ -492,7 +494,10 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   }
 
   return (
-    <div className="gallery-premium-layout">
+    // #1275 — the stylesheet keys its touch rules off this rather than a
+    // primary-pointer media query, so the checkbox and like button follow the
+    // input actually in use on a device that has both.
+    <div className="gallery-premium-layout" data-input-mode={inputMode}>
       {/* Hero Section */}
       <div className="gallery-premium-hero">
         <div
