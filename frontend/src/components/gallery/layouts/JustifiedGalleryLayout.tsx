@@ -127,7 +127,6 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
       inViewRootMargin="100px"
       fadeInWhenVisible={animationType === 'fade'}
       skeletonClassName="skeleton w-full h-full rounded-lg"
-      touchAware
       imageProps={{
         src: photo.thumbnail_url || photo.url,
         alt: photo.filename,

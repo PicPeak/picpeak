@@ -311,8 +311,11 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
             </div>
           )}
           
-          {/* Overlay on hover/tap - Always visible on mobile for better UX */}
-          <div className="absolute inset-0 bg-black/40 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2">
+          {/* Overlay on hover/tap - Always visible on mobile for better UX.
+              #1263: `md:opacity-0` hides the pixels but not the hit area, so
+              on a narrow pointer-device window the buttons stayed tappable
+              while invisible. pointer-events tracks opacity. */}
+          <div className="absolute inset-0 bg-black/40 opacity-100 pointer-events-auto md:opacity-0 md:pointer-events-none md:group-hover:opacity-100 md:group-hover:pointer-events-auto transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2">
             {!isSelectionMode && (
               <>
                 <button
@@ -328,7 +331,12 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
                 {allowDownloads && (
                   <button
                     className="p-2 sm:p-2 bg-white/90 rounded-full hover:bg-white transition-colors"
-                    onClick={onDownload}
+                    // #1263 — without stopPropagation the tap also reached the
+                    // tile's own onClick, so downloading opened the lightbox too.
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDownload(e);
+                    }}
                     aria-label="Download photo"
                   >
                     <Download className="w-5 h-5 text-theme" />

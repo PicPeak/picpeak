@@ -9,6 +9,31 @@ import { ColorLabelBadge } from './ColorLabelBadge';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
 import type { Photo } from '../../types';
 
+const COARSE_POINTER_QUERY = '(hover: none) and (pointer: coarse)';
+
+/**
+ * Does this device lack hover? Read synchronously at first render rather than
+ * in an effect: every layout runs this now (#1263), and a mount-time state
+ * change here would land an extra render between the tile measurement in
+ * useLayoutEffect and the image mount it gates, remounting each card once.
+ *
+ * matchMedia is authoritative wherever it exists, because it describes the
+ * PRIMARY pointer. `ontouchstart` and `maxTouchPoints` only say a touchscreen
+ * is present somewhere, which is equally true of a touchscreen laptop being
+ * driven by its mouse -- OR-ing them in would classify that as touch-only and
+ * turn every ordinary click into a two-step reveal. They stand in only where
+ * matchMedia is absent (old embedded webviews, some test environments).
+ */
+function detectCoarsePointer(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (typeof window.matchMedia === 'function') {
+    return window.matchMedia(COARSE_POINTER_QUERY).matches;
+  }
+  const hasNavigator = typeof navigator !== 'undefined';
+  return ('ontouchstart' in window)
+    || (hasNavigator && navigator.maxTouchPoints > 0);
+}
+
 export interface PhotoCardFeedbackOptions {
   allowLikes?: boolean;
   allowFavorites?: boolean;
@@ -37,9 +62,11 @@ export interface PhotoCardProps {
   skeletonClassName?: string;
   /** Keep container at opacity 0 until in view (only meaningful with `lazy`). */
   fadeInWhenVisible?: boolean;
-  /** Tap-to-reveal overlay state machine for touch devices (Grid/Justified). */
-  touchAware?: boolean;
-  /** Static overlay classes; `touchAware` appends computed visibility classes. */
+  /**
+   * Static overlay classes — positioning, backdrop, spacing. Visibility and
+   * hit-testing are owned by this component for every layout (#1263), so a
+   * layout must NOT pass its own `opacity-*` / `group-hover:*` here.
+   */
   overlayBaseClassName: string;
   /** 'light' = white/90 buttons with dark icons; 'dark' = white/20 buttons with white icons. */
   actionVariant?: 'light' | 'dark';
@@ -84,7 +111,6 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   inViewRootMargin,
   skeletonClassName = 'skeleton w-full h-full rounded-lg',
   fadeInWhenVisible = false,
-  touchAware = false,
   overlayBaseClassName,
   actionVariant = 'light',
   allowDownloads = true,
@@ -107,7 +133,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
 }) => {
   const guestIdentity = useGuestIdentityOptional();
   const [overlayVisible, setOverlayVisible] = useState(false);
-  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(detectCoarsePointer);
   const overlayTimeoutRef = useRef<number | null>(null);
 
   // Self-managed identity modal state (identityMode === 'self')
@@ -117,22 +143,12 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
 
   const savedIdentityValue = identityMode === 'self' ? selfIdentity : savedIdentity;
 
-  // Detect touch device (touch-aware overlay only)
+  // Keep the initial reading in step when the pointer changes under us —
+  // a tablet docked to a mouse, a browser window moved to another screen.
   useEffect(() => {
-    if (!touchAware || typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
 
-    const mediaQuery = window.matchMedia('(hover: none) and (pointer: coarse)');
-    const updateTouchState = () => {
-      const hasNavigator = typeof navigator !== 'undefined';
-      setIsTouchDevice(
-        mediaQuery.matches ||
-        ('ontouchstart' in window) ||
-        (hasNavigator && navigator.maxTouchPoints > 0)
-      );
-    };
-
-    updateTouchState();
-
+    const mediaQuery = window.matchMedia(COARSE_POINTER_QUERY);
     const listener = (event: MediaQueryListEvent) => {
       setIsTouchDevice(event.matches);
     };
@@ -150,7 +166,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
         mediaQuery.removeListener(listener);
       }
     };
-  }, [touchAware]);
+  }, []);
 
   const hideOverlay = useCallback(() => {
     if (overlayTimeoutRef.current !== null && typeof window !== 'undefined') {
@@ -225,23 +241,33 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
 
   const showFeedbackActions = feedbackEnabled && Boolean(feedbackOptions);
 
-  const overlayVisibilityClass = overlayVisible
-    ? 'opacity-100 md:opacity-100'
-    : 'opacity-0 md:opacity-0';
+  // #1263 - opacity hides pixels, not hit-testing. An `opacity-0` control is
+  // still tappable, and on a touchscreen (no hover) it is invisible for good,
+  // so a tap in the middle of a tile silently downloaded or liked instead of
+  // opening the photo. Every visibility toggle below therefore moves
+  // pointer-events with it, in both the tap-to-reveal and the hover branch.
+  //
+  // The hover variants are emitted for pointer devices only, rather than being
+  // gated behind `md:`. Width is the wrong proxy for hover: a mouse user with
+  // a window under 768px got no overlay at all, and in Masonry, Mosaic and
+  // Timeline -- whose `group-hover:` used to be unprefixed -- that made
+  // download and like unreachable at any narrow width. Withholding the classes
+  // on touch is what the breakpoint was really for, since :hover latches on a
+  // touchscreen once a tile has been tapped.
+  const revealed = (visible: boolean) => {
+    const base = visible
+      ? 'opacity-100 pointer-events-auto'
+      : 'opacity-0 pointer-events-none';
+    return isTouchDevice
+      ? base
+      : `${base} group-hover:opacity-100 group-hover:pointer-events-auto`;
+  };
 
-  const overlayClassName = touchAware
-    ? `${overlayBaseClassName} ${overlayVisibilityClass} md:group-hover:opacity-100`
-    : overlayBaseClassName;
+  const overlayClassName = `${overlayBaseClassName} ${revealed(overlayVisible)}`;
 
-  const checkboxVisibilityClass = touchAware
-    ? `${
-        isSelected || isSelectionMode || overlayVisible
-          ? 'opacity-100 md:opacity-100'
-          : 'opacity-0 md:opacity-0'
-      } md:group-hover:opacity-100`
-    : isSelected
-      ? 'opacity-100'
-      : 'opacity-0 group-hover:opacity-100';
+  const checkboxVisibilityClass = revealed(
+    isSelected || isSelectionMode || overlayVisible,
+  );
 
   const buttonType = actionVariant === 'dark' ? ('button' as const) : undefined;
   const actionButtonClass =
@@ -251,11 +277,6 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const actionIconClass = actionVariant === 'dark' ? 'w-5 h-5 text-white' : 'w-5 h-5 text-neutral-800';
 
   const handlePhotoClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!touchAware) {
-      onClick(e);
-      return;
-    }
-
     if (isTouchDevice && !overlayVisible && !isSelectionMode) {
       e.preventDefault();
       e.stopPropagation();

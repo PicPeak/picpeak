@@ -292,11 +292,16 @@
   transition: all 0.2s ease;
   cursor: pointer;
   opacity: 0;
+  /* #1263 - opacity 0 still hit-tests. On a touchscreen there is no hover to
+     reveal this, so the top-left corner of every tile silently toggled
+     selection. Hit-testing tracks visibility. */
+  pointer-events: none;
 }
 
 .gallery-premium-photo-card:hover .gallery-premium-checkbox,
 .gallery-premium-checkbox.visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .gallery-premium-checkbox:hover {
@@ -323,11 +328,35 @@
   cursor: pointer;
   transition: all 0.2s ease;
   opacity: 0;
+  /* #1263 - same as the checkbox: invisible must also mean untappable, or the
+     top-right corner of every tile likes the photo instead of opening it. */
+  pointer-events: none;
 }
 
 .gallery-premium-photo-card:hover .gallery-premium-like-btn,
 .gallery-premium-like-btn.liked {
   opacity: 1;
+  pointer-events: auto;
+}
+
+/* Touch devices never get :hover, so the two controls above would be
+   permanently unreachable rather than merely accidental. Show them outright
+   and give them a finger-sized target (#1263). */
+@media (hover: none) and (pointer: coarse) {
+  .gallery-premium-checkbox,
+  .gallery-premium-like-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .gallery-premium-checkbox {
+    height: 2.25rem;
+    width: 2.25rem;
+  }
+
+  .gallery-premium-like-btn {
+    padding: 0.75rem;
+  }
 }
 
 .gallery-premium-like-btn:hover {

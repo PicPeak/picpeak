@@ -85,7 +85,7 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
           isGallery: true,
           protectFromDownload: !allowDownloads,
         }}
-        overlayBaseClassName="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2"
+        overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 flex items-center justify-center gap-2"
         allowDownloads={allowDownloads}
         feedbackEnabled={feedbackEnabled}
         feedbackOptions={feedbackOptions}
