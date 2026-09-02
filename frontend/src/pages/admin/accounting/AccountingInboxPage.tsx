@@ -295,7 +295,11 @@ const TriageModal: React.FC<{ doc: InboundDocument; categories: ExpenseCategory[
             {BOOKING_DISPOSITIONS.includes(disposition) && (
               <div className="space-y-3 rounded-lg border border-neutral-200 dark:border-neutral-700 p-3">
                 <div><label className={labelCls}>{t('accounting.inbox.field.customer', 'Client')} {disposition === 'rebill' ? '*' : ''}</label>
-                  <CustomerAccountPicker value={customer.slice(0, 1)} onChange={(next) => setCustomer(next.slice(-1))} />
+                  {/* portalAssignment={false} — same reason as the expenses
+                      ledger: this is an `incomingInvoices` flow, not a
+                      customer-portal one, and the rebill disposition's
+                      required field would otherwise render label-only. */}
+                  <CustomerAccountPicker portalAssignment={false} value={customer.slice(0, 1)} onChange={(next) => setCustomer(next.slice(-1))} />
                   {disposition === 'durchlaufend' && <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('accounting.inbox.field.passthroughCustomerHint', 'Optional — attach a client to re-bill this passthrough; leave empty to only book it to the event.')}</p>}
                 </div>
                 {/* Markup is a re-bill concept only. A pass-through is invoiced

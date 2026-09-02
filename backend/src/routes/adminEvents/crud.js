@@ -318,8 +318,6 @@ module.exports = (router) => {
         css_template_id = null,
         // Hero logo settings
         hero_logo_visible = true,
-        hero_logo_size = 'medium',
-        hero_logo_position = 'top',
         // Header style settings
         header_style = 'standard',
         hero_divider_style = 'wave',

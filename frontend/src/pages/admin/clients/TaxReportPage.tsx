@@ -36,15 +36,6 @@ const LEDGER_FORMATS: ExportFormat[] = ['generic', 'banana', 'banana_ie', 'bexio
 
 type PeriodPreset = 'thisYear' | 'lastYear' | 'thisQuarter' | 'lastQuarter' | 'custom';
 
-function isoDate(d: Date): string {
-  // YYYY-MM-DD in local time. Tax reports are user-facing — a Swiss
-  // admin asking for "this quarter" means their local Q, not UTC.
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
 function periodForPreset(preset: PeriodPreset, today = new Date()): { from: string; to: string } {
   const y = today.getFullYear();
   if (preset === 'thisYear') return { from: `${y}-01-01`, to: `${y}-12-31` };

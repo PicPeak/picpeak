@@ -1,3 +1,4 @@
+import type { AxiosResponse } from 'axios';
 import { api } from '../config/api';
 import type {
   GalleryInfo, GalleryData, GalleryStats, ResolvedGalleryIdentifier,
@@ -148,7 +149,7 @@ export const galleryService = {
     slug: string,
     photoId: number,
   ): Promise<{ blob: Blob; serverFilename: string | null }> {
-    const readResponse = (response: { data: Blob; headers: Record<string, string> }) => {
+    const readResponse = (response: AxiosResponse<Blob>) => {
       const headerName =
         response.headers['content-disposition'] || response.headers['Content-Disposition'];
       return {
@@ -158,7 +159,7 @@ export const galleryService = {
     };
 
     try {
-      const response = await api.get(`/gallery/${slug}/download/${photoId}`, {
+      const response = await api.get<Blob>(`/gallery/${slug}/download/${photoId}`, {
         responseType: 'blob',
       });
       return readResponse(response);
@@ -167,7 +168,7 @@ export const galleryService = {
       // the original is missing and only a derivative remains). The
       // view endpoint doesn't emit a download-oriented Content-Disposition,
       // so serverFilename will be null and the caller's name wins.
-      const response = await api.get(`/gallery/${slug}/photo/${photoId}`, {
+      const response = await api.get<Blob>(`/gallery/${slug}/photo/${photoId}`, {
         responseType: 'blob',
       });
       return readResponse(response);

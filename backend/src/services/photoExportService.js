@@ -12,7 +12,6 @@ const feedbackService = require('./feedbackService');
 const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
 const { db } = require('../database/db');
 const path = require('path');
-const fs = require('fs').promises;
 
 /**
  * The name the camera gave the file, or null when nothing was recorded (#1229).
@@ -128,16 +127,16 @@ class PhotoExportService {
     }
 
     switch (format) {
-      case 'txt':
-        return this.exportAsTxt(photos, options);
-      case 'csv':
-        return this.exportAsCsv(photos, options);
-      case 'xmp':
-        return this.exportAsXmpZip(photos, options);
-      case 'json':
-        return this.exportAsJson(photos, eventId, options);
-      default:
-        throw new Error(`Unknown export format: ${format}`);
+    case 'txt':
+      return this.exportAsTxt(photos, options);
+    case 'csv':
+      return this.exportAsCsv(photos, options);
+    case 'xmp':
+      return this.exportAsXmpZip(photos, options);
+    case 'json':
+      return this.exportAsJson(photos, eventId, options);
+    default:
+      throw new Error(`Unknown export format: ${format}`);
     }
   }
 
@@ -168,14 +167,14 @@ class PhotoExportService {
 
     let content;
     switch (separator) {
-      case 'comma':
-        content = filenames.join(',');
-        break;
-      case 'semicolon':
-        content = filenames.join(';');
-        break;
-      default:
-        content = filenames.join('\n');
+    case 'comma':
+      content = filenames.join(',');
+      break;
+    case 'semicolon':
+      content = filenames.join(';');
+      break;
+    default:
+      content = filenames.join('\n');
     }
 
     return {
@@ -289,7 +288,7 @@ class PhotoExportService {
   /**
    * Export as JSON metadata
    */
-  async exportAsJson(photos, eventId, options = {}) {
+  async exportAsJson(photos, eventId, _options = {}) {
     // Get event info
     const event = await db('events')
       .where('id', eventId)

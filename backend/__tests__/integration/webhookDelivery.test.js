@@ -146,8 +146,8 @@ describe('webhook delivery worker (#327)', () => {
         payload: JSON.stringify({ id: 'd1', type: 'event.published', data: {} }),
         attempt_count: 4,
         status: 'pending',
-        next_retry_at: new Date(),
-        created_at: new Date(),
+        next_retry_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
       });
       await __test.tick();
 
@@ -190,8 +190,8 @@ describe('webhook delivery worker (#327)', () => {
         payload: JSON.stringify({ id: 'd1', type: 'event.published', data: {} }),
         attempt_count: 0,
         status: 'pending',
-        next_retry_at: new Date(),
-        created_at: new Date(),
+        next_retry_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
       });
       await __test.tick();
 
@@ -214,8 +214,8 @@ describe('webhook delivery worker (#327)', () => {
         payload: JSON.stringify({ id: 'd1', type: 'event.published', data: {} }),
         attempt_count: 0,
         status: 'pending',
-        next_retry_at: new Date(),
-        created_at: new Date(),
+        next_retry_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
       });
       await __test.tick();
 

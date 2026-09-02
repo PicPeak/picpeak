@@ -21,7 +21,7 @@ try {
   }
 } catch (e) {
   // Non-fatal: log and continue; SQLite will fail later if still missing
-  try { logger.warn('SQLite directory ensure failed', { error: e.message }); } catch (_) {}
+  try { logger.warn('SQLite directory ensure failed', { error: e.message }); } catch (_) { /* non-fatal */ }
 }
 
 // Create database connection with built-in retry logic.
@@ -205,28 +205,28 @@ async function initializeDatabase() {
           )
         `);
         
-        const pragmaRows = await db.raw("PRAGMA table_info('events')");
+        const pragmaRows = await db.raw('PRAGMA table_info(\'events\')');
         const existingColumns = pragmaRows.map(row => row.name);
         const selectColumns = existingColumns.map((col) => {
           switch (col) {
-            case 'allow_user_uploads':
-              return "COALESCE(allow_user_uploads, 0) as allow_user_uploads";
-            case 'upload_category_id':
-              return "upload_category_id";
-            case 'allow_downloads':
-              return "COALESCE(allow_downloads, 1) as allow_downloads";
-            case 'disable_right_click':
-              return "COALESCE(disable_right_click, 0) as disable_right_click";
-            case 'watermark_downloads':
-              return "COALESCE(watermark_downloads, 0) as watermark_downloads";
-            case 'watermark_text':
-              return 'watermark_text';
-            case 'hero_photo_id':
-              return 'hero_photo_id';
-            case 'require_password':
-              return 'COALESCE(require_password, 1) as require_password';
-            default:
-              return col;
+          case 'allow_user_uploads':
+            return 'COALESCE(allow_user_uploads, 0) as allow_user_uploads';
+          case 'upload_category_id':
+            return 'upload_category_id';
+          case 'allow_downloads':
+            return 'COALESCE(allow_downloads, 1) as allow_downloads';
+          case 'disable_right_click':
+            return 'COALESCE(disable_right_click, 0) as disable_right_click';
+          case 'watermark_downloads':
+            return 'COALESCE(watermark_downloads, 0) as watermark_downloads';
+          case 'watermark_text':
+            return 'watermark_text';
+          case 'hero_photo_id':
+            return 'hero_photo_id';
+          case 'require_password':
+            return 'COALESCE(require_password, 1) as require_password';
+          default:
+            return col;
           }
         });
 

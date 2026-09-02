@@ -76,7 +76,7 @@ async function runScheduledTasks() {
           await logActivity('monthly_bill_skipped_empty',
             { invoiceId: draft.id, customerId: draft.customer_account_id },
             null, 'scheduler');
-        } catch (_) {}
+        } catch (_) { /* non-fatal */ }
         continue;
       }
       // Arm for the flush pass: clear the draft flag, set the send
@@ -95,7 +95,7 @@ async function runScheduledTasks() {
           { invoiceId: draft.id, customerId: draft.customer_account_id,
             periodEnd: draft.monthly_period_end },
           null, 'scheduler');
-      } catch (_) {}
+      } catch (_) { /* non-fatal */ }
     } catch (err) {
       logger.error('Monthly bill issuance failed', { invoiceId: draft.id, err: err.message });
     }

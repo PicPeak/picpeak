@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { Search, Heart, Menu, LogOut } from 'lucide-react';
+import { Search, Heart, LogOut } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';

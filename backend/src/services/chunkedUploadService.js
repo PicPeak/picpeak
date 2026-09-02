@@ -16,6 +16,27 @@ const CHUNK_SIZE = 10 * 1024 * 1024;
 // Upload expiration: 24 hours
 const UPLOAD_EXPIRATION_MS = 24 * 60 * 60 * 1000;
 
+function totalReceivedBytes(uploadMeta) {
+  let total = 0;
+  for (const size of uploadMeta.chunkSizes.values()) total += size;
+  return total;
+}
+
+// Tagged errors so the routes can answer 413/400 instead of a blanket 500.
+function fileTooLargeError(maxFileSizeBytes) {
+  const err = new Error(`File too large. Maximum size is ${Math.floor(maxFileSizeBytes / (1024 * 1024))} MB per file.`);
+  err.code = 'FILE_TOO_LARGE';
+  err.statusCode = 413;
+  return err;
+}
+
+function invalidChunkError(message) {
+  const err = new Error(message);
+  err.code = 'INVALID_CHUNK';
+  err.statusCode = 400;
+  return err;
+}
+
 /**
  * Initialize a new chunked upload
  * @param {Object} options - Upload options
@@ -27,7 +48,8 @@ async function initializeUpload(options) {
     fileSize,
     mimeType,
     eventId,
-    totalChunks
+    totalChunks,
+    maxFileSizeBytes
   } = options;
 
   // Strip any directory components from the client-supplied filename. It is
@@ -50,6 +72,13 @@ async function initializeUpload(options) {
   // Calculate expected chunks
   const expectedChunks = totalChunks || Math.ceil(fileSize / CHUNK_SIZE);
 
+  // The per-file cap is enforced on the BYTES ACTUALLY RECEIVED, not on the
+  // client-declared fileSize the init route checks: a client can declare
+  // `fileSize: 1` and then stream whatever it likes through the chunk route.
+  // Missing/invalid cap means "no cap" (callers outside the admin routes).
+  const cap = Number(maxFileSizeBytes);
+  const sizeCap = Number.isFinite(cap) && cap > 0 ? cap : Infinity;
+
   // Store upload metadata
   const uploadMeta = {
     uploadId,
@@ -59,6 +88,9 @@ async function initializeUpload(options) {
     eventId,
     expectedChunks,
     receivedChunks: new Set(),
+    // Bytes per chunk index, so a re-sent chunk replaces rather than adds.
+    chunkSizes: new Map(),
+    maxFileSizeBytes: sizeCap,
     uploadDir,
     createdAt: Date.now(),
     expiresAt: Date.now() + UPLOAD_EXPIRATION_MS,
@@ -107,12 +139,28 @@ async function uploadChunk(uploadId, chunkIndex, chunkData) {
     throw new Error('Upload expired');
   }
 
+  // Only the announced chunk indices are valid — anything else would merge
+  // into nothing (a gap) or let more chunks in than the declared file has.
+  if (!Number.isInteger(chunkIndex) || chunkIndex < 0 || chunkIndex >= uploadMeta.expectedChunks) {
+    throw invalidChunkError(`Invalid chunk index ${chunkIndex}: expected 0-${uploadMeta.expectedChunks - 1}`);
+  }
+
+  // Enforce the per-file cap on the running byte total. The upload is
+  // aborted, not just rejected: the chunks on disk are already over the
+  // limit and the client can't complete the file any more.
+  const receivedBytes = totalReceivedBytes(uploadMeta) - (uploadMeta.chunkSizes.get(chunkIndex) || 0) + chunkData.length;
+  if (receivedBytes > uploadMeta.maxFileSizeBytes) {
+    await abortUpload(uploadId);
+    throw fileTooLargeError(uploadMeta.maxFileSizeBytes);
+  }
+
   // Write chunk to disk
   const chunkPath = path.join(uploadMeta.uploadDir, `chunk_${String(chunkIndex).padStart(6, '0')}`);
   await fs.writeFile(chunkPath, chunkData);
 
   // Mark chunk as received
   uploadMeta.receivedChunks.add(chunkIndex);
+  uploadMeta.chunkSizes.set(chunkIndex, chunkData.length);
 
   const progress = (uploadMeta.receivedChunks.size / uploadMeta.expectedChunks) * 100;
 
@@ -182,6 +230,15 @@ async function completeUpload(uploadId) {
         expected: uploadMeta.fileSize,
         actual: stats.size
       });
+    }
+
+    // Backstop for the per-chunk running total above: the merged file is
+    // the number that matters, so it is the number that is checked last.
+    if (stats.size > uploadMeta.maxFileSizeBytes) {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      await fs.rm(uploadMeta.uploadDir, { recursive: true, force: true }).catch(() => {});
+      activeUploads.delete(uploadId);
+      throw fileTooLargeError(uploadMeta.maxFileSizeBytes);
     }
 
     // Clean up chunks

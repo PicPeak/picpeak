@@ -70,6 +70,8 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   // Workflow / automation engine — opt-in; gates the Workflows admin area
   // and the engine runtime (triggers/actions/gates).
   workflows: false,
+  // #1074 — off by default is the whole "zero behaviour change" guarantee.
+  faces: false,
 };
 
 export const FEATURE_FLAGS_QUERY_KEY = ['feature-flags'] as const;
@@ -195,7 +197,19 @@ export const FeatureFlagsProvider: React.FC<ProviderProps> = ({ children }) => {
 
   const setFlag = useCallback((key: FeatureKey, value: boolean) => {
     if (key === 'galleries') return; // locked
-    setStaged((prev) => applyDependencyRules({ ...prev, [key]: value }));
+    setStaged((prev) => {
+      const next = { ...prev, [key]: value };
+      // Reverse the bills→accounting force-enable. applyDependencyRules is a
+      // pure invariant over one state — it can't tell "Accounting is on
+      // because the admin wants it" from "…because Invoices forced it on", so
+      // turning Invoices off used to leave the Accounting master (and its
+      // sidebar entry) silently on and freshly unlocked (QA S9). The
+      // reversal has to live here, at the toggle, where the transition is
+      // known; the admin sees the switch flip in the same staged state and
+      // can turn Accounting back on before saving if they want it standalone.
+      if (key === 'bills' && !value && prev.bills) next.accounting = false;
+      return applyDependencyRules(next);
+    });
   }, []);
 
   const reset = useCallback(() => {

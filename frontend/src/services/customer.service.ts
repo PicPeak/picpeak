@@ -97,12 +97,12 @@ export const customerService = {
   // ---- auth ----
   async login(email: string, password: string, recaptchaToken?: string | null): Promise<{
     customer: CustomerProfile;
-    features: { calendar: boolean; quotes: boolean; bills: boolean };
+    features: { calendar: boolean; quotes: boolean; bills: boolean; contracts: boolean };
     branding: { showLogo: boolean; showCompanyName: boolean };
   }> {
     const response = await api.post<{
       customer: CustomerProfile;
-      features?: { calendar: boolean; quotes: boolean; bills: boolean };
+      features?: { calendar: boolean; quotes: boolean; bills: boolean; contracts: boolean };
       branding?: { showLogo: boolean; showCompanyName: boolean };
     }>(
       '/customer/auth/login',
@@ -112,7 +112,7 @@ export const customerService = {
     // upgraded yet — defaults match CustomerAuthContext's DEFAULT_*.
     return {
       customer: response.data.customer,
-      features: response.data.features || { calendar: false, quotes: false, bills: false },
+      features: response.data.features || { calendar: false, quotes: false, bills: false, contracts: false },
       branding: response.data.branding || { showLogo: true, showCompanyName: true },
     };
   },
@@ -145,18 +145,18 @@ export const customerService = {
    */
   async session(): Promise<{
     customer: CustomerProfile;
-    features: { calendar: boolean; quotes: boolean; bills: boolean };
+    features: { calendar: boolean; quotes: boolean; bills: boolean; contracts: boolean };
     branding: { showLogo: boolean; showCompanyName: boolean };
   } | null> {
     try {
       const response = await api.get<{
         customer: CustomerProfile;
-        features?: { calendar: boolean; quotes: boolean; bills: boolean };
+        features?: { calendar: boolean; quotes: boolean; bills: boolean; contracts: boolean };
         branding?: { showLogo: boolean; showCompanyName: boolean };
       }>('/customer/auth/session');
       return {
         customer: response.data.customer,
-        features: response.data.features || { calendar: false, quotes: false, bills: false },
+        features: response.data.features || { calendar: false, quotes: false, bills: false, contracts: false },
         branding: response.data.branding || { showLogo: true, showCompanyName: true },
       };
     } catch (error: any) {

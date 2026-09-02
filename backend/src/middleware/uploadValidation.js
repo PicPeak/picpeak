@@ -46,8 +46,8 @@ async function validateUploadedFile(filePath) {
           failOn: 'none',
           limitInputPixels: 268402689
         })
-        .resize(10, 10) // Try to resize to very small size
-        .toBuffer();
+          .resize(10, 10) // Try to resize to very small size
+          .toBuffer();
       } catch (decodeError) {
         throw new Error(`Image decode failed - file may be corrupted: ${decodeError.message}`);
       }

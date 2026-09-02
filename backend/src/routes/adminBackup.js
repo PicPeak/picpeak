@@ -346,7 +346,7 @@ router.post('/test-connection', adminAuth, requirePermission('backup.create'), a
     const { destination_type, ...config } = req.body;
     
     switch (destination_type) {
-    case 'local':
+    case 'local': {
       // Test local path access
       const fs = require('fs').promises;
       try {
@@ -360,8 +360,9 @@ router.post('/test-connection', adminAuth, requirePermission('backup.create'), a
         res.json({ success: false, message: 'Cannot write to local path. Check server logs for details.' });
       }
       break;
-        
-    case 'rsync':
+    }
+
+    case 'rsync': {
       // Test rsync connection using spawn with argument arrays to prevent command injection
       const { spawn } = require('child_process');
 
@@ -425,7 +426,7 @@ router.post('/test-connection', adminAuth, requirePermission('backup.create'), a
       sshArgs.push('echo', 'Connection successful');
 
       try {
-        const result = await new Promise((resolve, reject) => {
+        await new Promise((resolve, reject) => {
           const sshProcess = spawn('ssh', sshArgs, {
             timeout: 15000,
             stdio: ['ignore', 'pipe', 'pipe']
@@ -459,7 +460,8 @@ router.post('/test-connection', adminAuth, requirePermission('backup.create'), a
         res.json({ success: false, message: 'Rsync connection failed. Check server logs for details.' });
       }
       break;
-        
+    }
+
     case 's3':
       // Test S3 connection (would need AWS SDK)
       res.json({ success: false, message: 'S3 testing not implemented yet' });
@@ -829,7 +831,7 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
     
     // Handle different backup types
     switch (config.backup_destination_type) {
-    case 'local':
+    case 'local': {
       // Stream local backup as zip
       const backupPath = path.join(config.backup_destination_path, `backup-${backupRun.id}`);
       const archive = archiver('zip', { zlib: { level: 9 } });
@@ -847,8 +849,9 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
         
       await archive.finalize();
       break;
-        
-    case 's3':
+    }
+
+    case 's3': {
       // For S3, provide pre-signed URLs or stream files
       const s3Adapter = new S3StorageAdapter({
         endpoint: config.backup_s3_endpoint,
@@ -882,7 +885,8 @@ router.get('/download/:backupId', adminAuth, requirePermission('backup.view'), a
         message: 'Use the provided URLs to download individual files'
       });
       break;
-        
+    }
+
     case 'rsync':
       return res.status(400).json({ error: 'Direct download not available for rsync backups' });
         
@@ -909,7 +913,7 @@ router.get('/checksums', adminAuth, requirePermission('backup.view'), async (req
     }
     
     // Calculate checksums for files
-    async function calculateDirChecksums(dirPath, relative = '') {
+    const calculateDirChecksums = async (dirPath, relative = '') => {
       try {
         const entries = await fs.readdir(dirPath, { withFileTypes: true });
         
@@ -940,7 +944,7 @@ router.get('/checksums', adminAuth, requirePermission('backup.view'), async (req
       } catch (error) {
         logger.error(`Failed to calculate checksums for ${dirPath}:`, error);
       }
-    }
+    };
     
     await calculateDirChecksums(basePath);
     
@@ -978,7 +982,7 @@ router.post('/estimate', adminAuth, requirePermission('backup.view'), async (req
     const breakdown = {};
     
     // Estimate size for each directory
-    async function estimateDir(dirPath, category) {
+    const estimateDir = async (dirPath, category) => {
       let dirSize = 0;
       let dirCount = 0;
       
@@ -1005,7 +1009,7 @@ router.post('/estimate', adminAuth, requirePermission('backup.view'), async (req
       }
       
       return { size: dirSize, count: dirCount };
-    }
+    };
     
     // Estimate each category
     const categories = [

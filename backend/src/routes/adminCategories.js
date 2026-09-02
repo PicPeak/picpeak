@@ -40,7 +40,11 @@ router.get('/event/:eventId', adminAuth, requirePermission('settings.view'), req
 
 // Create a new category
 router.post('/', adminAuth, requirePermission('settings.edit'), [
-  body('name').notEmpty().withMessage('Category name is required'),
+  // photo_categories.name is varchar(100) — without the length check Postgres
+  // raises "value too long" and the catch below turns it into a raw 500 with
+  // no usable message for the form.
+  body('name').notEmpty().withMessage('Category name is required')
+    .isLength({ max: 100 }).withMessage('Category name must be at most 100 characters'),
   body('slug').optional(),
   body('is_global').optional().isBoolean(),
   body('event_id').optional().isInt(),
@@ -127,7 +131,8 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
 
 // Update a category
 router.put('/:id', adminAuth, requirePermission('settings.edit'), [
-  body('name').notEmpty().withMessage('Category name is required'),
+  body('name').notEmpty().withMessage('Category name is required')
+    .isLength({ max: 100 }).withMessage('Category name must be at most 100 characters'),
   body('hero_photo_id').optional({ nullable: true }).custom((value) => {
     if (value === null || value === undefined) return true;
     return Number.isInteger(Number(value));

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
@@ -422,7 +423,7 @@ const MessageList: React.FC<{
   search: string;
   selection: Selection;
   onSelect: (s: Selection) => void;
-  t: (k: string, d?: string) => string;
+  t: TFunction;
 }> = ({ folder, queue, received, loading, search, selection, onSelect, t }) => {
   if (folder.src === 'empty') {
     return (
@@ -515,7 +516,7 @@ const ReadingPane: React.FC<{
   onCompose: (init: ComposerInit, title?: string) => void;
   onOpenDoc: (docType: DocType, senderEmail: string) => void;
   onItemAction: (action: 'archive' | 'delete' | 'restore') => void;
-  t: (k: string, d?: string) => string;
+  t: TFunction;
 }> = ({ selection, account, identities, flags, folderState, onViewDoc, onOpenAccounting, onCompose, onOpenDoc, onItemAction, t }) => {
   const detailQuery = useQuery({
     queryKey: ['messages', 'queue', selection?.kind === 'queue' ? selection.id : null],
@@ -584,7 +585,7 @@ const ReadingPane: React.FC<{
   );
 };
 
-const QueueDetail: React.FC<{ d: import('../../../services/email.service').EmailQueueDetail; fromAddr?: string | null; t: (k: string, d?: string) => string }> = ({ d, fromAddr, t }) => (
+const QueueDetail: React.FC<{ d: import('../../../services/email.service').EmailQueueDetail; fromAddr?: string | null; t: TFunction }> = ({ d, fromAddr, t }) => (
   <>
     <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100" style={{ textWrap: 'balance' } as React.CSSProperties}>
       {friendlyType(d.emailType)}
@@ -636,7 +637,7 @@ const ReceivedDetail: React.FC<{
   mailboxAddr?: string | null;
   onViewDoc: (id: number) => void;
   onOpenAccounting: () => void;
-  t: (k: string, d?: string) => string;
+  t: TFunction;
 }> = ({ item, mailboxAddr, onViewDoc, onOpenAccounting, t }) => {
   const detail = useQuery({
     queryKey: ['messages', 'received', 'item', item.id],
@@ -703,7 +704,7 @@ const Toolbar: React.FC<{
   onReply?: () => void;
   onDoc?: (docType: DocType) => void;
   onItemAction: (action: 'archive' | 'delete' | 'restore') => void;
-  t: (k: string, d?: string) => string;
+  t: TFunction;
 }> = ({ isAcct, flags, folderState, onReply, onDoc, onItemAction, t }) => {
   const Tb: React.FC<{ icon: LucideIcon; label: string; accent?: boolean; onClick?: () => void }> = ({ icon: Icon, label, accent, onClick }) => {
     const enabled = !!onClick;
@@ -753,7 +754,7 @@ const Toolbar: React.FC<{
 };
 
 // ─────────────────────────────────────────────────────────────── pdf modal ──
-const PdfModal: React.FC<{ docId: number; onClose: () => void; t: (k: string, d?: string) => string }> = ({ docId, onClose, t }) => {
+const PdfModal: React.FC<{ docId: number; onClose: () => void; t: TFunction }> = ({ docId, onClose, t }) => {
   const [page, setPage] = useState(1);
   const [url, setUrl] = useState<string | null>(null);
   const [err, setErr] = useState(false);

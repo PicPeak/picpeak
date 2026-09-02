@@ -11,14 +11,47 @@ jest.mock('../../src/services/emailProcessor');
 jest.mock('node-cron');
 jest.mock('../../src/services/backupManifest');
 jest.mock('../../src/services/storage/s3Storage');
+// runBackup lazily requires this from inside the run — resolve+register it
+// here so the require doesn't hit the (mock-fs'd) filesystem mid-backup.
+jest.mock('../../src/services/databaseBackup', () => ({
+  databaseBackupService: {
+    backup: jest.fn()
+  }
+}));
+// Same deal for the rsync path's lazy requires.
+jest.mock('../../src/utils/safeExec', () => ({
+  spawnAsync: jest.fn(),
+  spawnToFile: jest.fn(),
+  spawnFromFile: jest.fn()
+}));
+jest.mock('../../src/utils/networkValidation', () => ({
+  isHostAllowed: jest.fn().mockResolvedValue(true)
+}));
 
 const backupService = require('../../src/services/backupService');
+const { databaseBackupService } = require('../../src/services/databaseBackup');
+const { spawnAsync } = require('../../src/utils/safeExec');
+const { isHostAllowed } = require('../../src/utils/networkValidation');
 const { db } = require('../../src/database/db');
 const logger = require('../../src/utils/logger');
 const { queueEmail } = require('../../src/services/emailProcessor');
 const cron = require('node-cron');
 const backupManifest = require('../../src/services/backupManifest');
 const S3StorageAdapter = require('../../src/services/storage/s3Storage');
+
+// `runBackup` opens the run row with `db('backup_runs').insert(...).returning('id')`,
+// so the insert mock has to be awaitable AND carry a `.returning()`.
+const insertResult = (value) => {
+  const thenable = Promise.resolve(value);
+  thenable.returning = jest.fn().mockResolvedValue(value);
+  return thenable;
+};
+
+// Every runBackup goes through ensureDatabaseDumpForBackup, which stats the
+// DB dump on disk and refuses to continue without it — seed it into every
+// mock-fs tree.
+const DB_DUMP_PATH = '/backup/db-dump.sql';
+const mockStorage = (tree) => mockFs({ [DB_DUMP_PATH]: Buffer.from('database dump'), ...tree });
 
 describe('Enhanced Backup Service Tests', () => {
   let mockDb;
@@ -36,7 +69,7 @@ describe('Enhanced Backup Service Tests', () => {
       orderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       first: jest.fn(),
-      insert: jest.fn(),
+      insert: jest.fn(() => insertResult([1])),
       update: jest.fn(),
       delete: jest.fn()
     };
@@ -75,6 +108,19 @@ describe('Enhanced Backup Service Tests', () => {
     logger.error = jest.fn();
     logger.warn = jest.fn();
     logger.debug = jest.fn();
+
+    // The inline DB dump and its on-disk verification run on every backup and
+    // throw when no dump is available — give both a passing default so each
+    // test can focus on the destination path it actually covers.
+    databaseBackupService.backup.mockResolvedValue({ path: DB_DUMP_PATH, size: 13 });
+    isHostAllowed.mockResolvedValue(true);
+    jest.spyOn(backupService, 'getDatabaseBackupInfo').mockResolvedValue({
+      type: 'sqlite',
+      backupFile: DB_DUMP_PATH,
+      size: 13,
+      checksum: 'abc123',
+      hasChanged: false
+    });
   });
 
   afterEach(() => {
@@ -132,7 +178,7 @@ describe('Enhanced Backup Service Tests', () => {
   describe('S3 Backup Functionality', () => {
     beforeEach(() => {
       // Mock file system
-      mockFs({
+      mockStorage({
         '/storage/events/active/event1': {
           'photo1.jpg': Buffer.from('photo1 content'),
           'photo2.jpg': Buffer.from('photo2 content')
@@ -165,12 +211,12 @@ describe('Enhanced Backup Service Tests', () => {
       mockDb.select.mockResolvedValue([]);
       mockDb.where.mockReturnThis();
       mockDb.first.mockResolvedValue(null);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
       jest.spyOn(backupService, 'getDatabaseBackupInfo').mockResolvedValue({
         type: 'sqlite',
-        backupFile: null,
+        backupFile: DB_DUMP_PATH,
         hasChanged: true
       });
       
@@ -202,7 +248,7 @@ describe('Enhanced Backup Service Tests', () => {
       };
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       mockDb.first.mockResolvedValue(null);
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
@@ -240,7 +286,7 @@ describe('Enhanced Backup Service Tests', () => {
       });
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
       
@@ -265,7 +311,7 @@ describe('Enhanced Backup Service Tests', () => {
       };
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
       jest.spyOn(backupService, 'getDatabaseBackupInfo').mockResolvedValue({
@@ -277,7 +323,7 @@ describe('Enhanced Backup Service Tests', () => {
       });
       
       // Mock database backup file
-      mockFs({
+      mockStorage({
         '/storage/events/active': {},
         '/backup/db-backup.sql': Buffer.from('database backup content')
       });
@@ -301,7 +347,7 @@ describe('Enhanced Backup Service Tests', () => {
       };
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
       
@@ -326,12 +372,12 @@ describe('Enhanced Backup Service Tests', () => {
       };
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       mockDb.first.mockResolvedValue(null);
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
       
-      mockFs({
+      mockStorage({
         '/storage/events/active/event1': {
           'photo1.jpg': Buffer.from('photo1 content')
         },
@@ -365,7 +411,7 @@ describe('Enhanced Backup Service Tests', () => {
       };
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([2]);
+      mockDb.insert.mockReturnValue(insertResult([2]));
       mockDb.first.mockImplementation(() => Promise.resolve(lastBackup));
       mockDb.orderBy.mockReturnThis();
       mockDb.where.mockReturnThis();
@@ -373,7 +419,7 @@ describe('Enhanced Backup Service Tests', () => {
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
       
-      mockFs({
+      mockStorage({
         '/storage/events/active': {},
         '/backup': {}
       });
@@ -395,7 +441,7 @@ describe('Enhanced Backup Service Tests', () => {
       };
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       mockDb.first.mockResolvedValue(null);
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
@@ -406,7 +452,7 @@ describe('Enhanced Backup Service Tests', () => {
       };
       backupManifest.generateManifest.mockResolvedValue(manifest);
       
-      mockFs({
+      mockStorage({
         '/storage/events/active': {},
         '/storage/temp': {}
       });
@@ -431,12 +477,12 @@ describe('Enhanced Backup Service Tests', () => {
       };
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       mockDb.first.mockResolvedValue(null);
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
       
-      mockFs({
+      mockStorage({
         '/storage/events/active/event1': {
           'photo1.jpg': Buffer.from('photo1 content')
         },
@@ -461,28 +507,27 @@ describe('Enhanced Backup Service Tests', () => {
       };
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       mockDb.first.mockResolvedValue(null);
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
-      
-      // Mock exec for rsync
-      const { exec } = require('child_process');
-      const mockExec = jest.fn((cmd, callback) => {
-        callback(null, { stdout: 'Number of files transferred: 1\nTotal file size: 1024 bytes' });
+
+      // rsync is spawned argv-style (no shell) — assert that shape, not the
+      // legacy `exec('rsync ...')` string.
+      spawnAsync.mockResolvedValue({
+        stdout: 'Number of files transferred: 1\nTotal file size: 1024 bytes'
       });
-      exec.mockImplementation(mockExec);
-      
-      mockFs({
+
+      mockStorage({
         '/storage/events/active': {}
       });
-      
+
       await backupService.runBackup();
-      
-      expect(mockExec).toHaveBeenCalledWith(
-        expect.stringContaining('rsync'),
-        expect.any(Function)
-      );
+
+      expect(spawnAsync).toHaveBeenCalledWith('rsync', expect.any(Array));
+      const [, rsyncArgs] = spawnAsync.mock.calls[0];
+      expect(rsyncArgs).toContain('-avz');
+      expect(rsyncArgs[rsyncArgs.length - 1]).toBe('backup@backup.example.com:/remote/backup');
     });
   });
 
@@ -497,7 +542,7 @@ describe('Enhanced Backup Service Tests', () => {
       };
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       mockDb.first.mockResolvedValue(null);
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
@@ -514,7 +559,7 @@ describe('Enhanced Backup Service Tests', () => {
         return originalCreateReadStream(path);
       });
       
-      mockFs({
+      mockStorage({
         '/storage/events/active': {
           'error.jpg': Buffer.from('content'),
           'good.jpg': Buffer.from('content')
@@ -546,7 +591,7 @@ describe('Enhanced Backup Service Tests', () => {
       ];
       
       mockDb.select.mockResolvedValue([]);
-      mockDb.insert.mockResolvedValue([1]);
+      mockDb.insert.mockReturnValue(insertResult([1]));
       mockDb.where.mockReturnThis();
       
       jest.spyOn(backupService, 'getBackupConfig')
@@ -555,7 +600,13 @@ describe('Enhanced Backup Service Tests', () => {
       
       // Force an error
       jest.spyOn(backupService, 'getFilesToBackup').mockRejectedValue(new Error('Storage error'));
-      
+
+      // The DB-dump verification runs first and would throw its own error —
+      // give it a tree so 'Storage error' is what actually surfaces.
+      mockStorage({
+        '/storage/events/active': {}
+      });
+
       // Mock admin users query
       db.mockImplementation((table) => {
         if (table === 'admin_users') {
@@ -588,7 +639,7 @@ describe('Enhanced Backup Service Tests', () => {
       
       jest.spyOn(backupService, 'getBackupConfig').mockResolvedValue(config);
       
-      mockFs({
+      mockStorage({
         '/storage/events/active': {},
         '/backup': {}
       });
@@ -675,20 +726,32 @@ describe('Enhanced Backup Service Tests', () => {
       ];
       
       mockDb.limit.mockResolvedValue(recentRuns);
-      
+      // getBackupStatus also reads the backup config to compute the next run;
+      // an unscheduled/disabled backup legitimately yields null (#871).
+      mockDb.select.mockResolvedValue([
+        { setting_key: 'backup_enabled', setting_value: 'true' },
+        { setting_key: 'backup_schedule', setting_value: '"daily"' }
+      ]);
+
       backupManifest.validateManifest.mockImplementation(() => true);
-      
+
       const status = await backupService.getBackupStatus();
-      
+
+      // Runs are returned with a `created_at` alias for the frontend.
+      const run = { ...recentRuns[0], created_at: recentRuns[0].started_at };
+
       expect(status).toEqual({
         isRunning: false,
         isHealthy: true,
-        lastRun: expect.objectContaining({
-          ...recentRuns[0],
-          manifestValid: true
-        }),
-        recentRuns: recentRuns,
-        nextScheduledRun: expect.any(String)
+        lastRun: { ...run, manifestValid: true },
+        lastBackup: { ...run, manifestValid: true },
+        lastSuccessfulBackup: run,
+        zombieRuns: [],
+        recentRuns: [run],
+        recentBackups: [run],
+        totalBackups: 1,
+        nextScheduledRun: expect.any(String),
+        nextBackup: expect.any(String)
       });
     });
 

@@ -23,10 +23,8 @@
  * — same legal-record discipline as line items today.
  */
 const { db, logActivity } = require('../database/db');
-const { formatBoolean } = require('../utils/dbCompat');
 const { AppError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
-const logger = require('../utils/logger');
 const invoiceService = require('./invoiceService');
 
 // ---------------------------------------------------------------------
@@ -287,7 +285,7 @@ async function createEntry(customerId, payload, adminId) {
     logInfo = { type: 'hour_entry_logged', meta: { entryId, customerId: customer.id } };
     return { id: entryId, status: 'unbilled' };
   });
-  if (logInfo) { try { await logActivity(logInfo.type, logInfo.meta, null, `admin:${adminId}`); } catch (_) {} }
+  if (logInfo) { try { await logActivity(logInfo.type, logInfo.meta, null, `admin:${adminId}`); } catch (_) { /* non-fatal */ } }
   return result;
 }
 
@@ -385,7 +383,7 @@ async function updateEntry(entryId, payload, adminId) {
     logInfo = { type: 'hour_entry_updated', meta: { entryId, customerId: entry.customer_account_id } };
     return { id: entryId };
   });
-  if (logInfo) { try { await logActivity(logInfo.type, logInfo.meta, null, `admin:${adminId}`); } catch (_) {} }
+  if (logInfo) { try { await logActivity(logInfo.type, logInfo.meta, null, `admin:${adminId}`); } catch (_) { /* non-fatal */ } }
   return result;
 }
 
@@ -436,7 +434,7 @@ async function deleteEntry(entryId, adminId) {
     logInfo = { type: 'hour_entry_deleted', meta: { entryId, customerId: entry.customer_account_id, hadInvoice: !!entry.invoice_id } };
     return { deleted: true };
   });
-  if (logInfo) { try { await logActivity(logInfo.type, logInfo.meta, null, `admin:${adminId}`); } catch (_) {} }
+  if (logInfo) { try { await logActivity(logInfo.type, logInfo.meta, null, `admin:${adminId}`); } catch (_) { /* non-fatal */ } }
   return result;
 }
 
@@ -521,7 +519,7 @@ async function billUnbilledEntries(customerId, adminId) {
     logInfo = { type: 'hour_entries_billed', meta: { customerId: customer.id, invoiceId, entryCount: unbilled.length } };
     return { invoiceId, entriesBilled: unbilled.length };
   });
-  if (logInfo) { try { await logActivity(logInfo.type, logInfo.meta, null, `admin:${adminId}`); } catch (_) {} }
+  if (logInfo) { try { await logActivity(logInfo.type, logInfo.meta, null, `admin:${adminId}`); } catch (_) { /* non-fatal */ } }
   return result;
 }
 

@@ -41,7 +41,7 @@ The image protection system provides multiple layers of security to prevent unau
 
 ### useDevToolsProtection Hook
 
-Detects when developer tools are opened using multiple methods:
+Detects when developer tools are opened, passively:
 
 ```typescript
 import { useDevToolsProtection } from '../hooks/useDevToolsProtection';
@@ -56,12 +56,14 @@ const { isDetected, reset } = useDevToolsProtection({
 ```
 
 **Detection Methods:**
-- Timing-based detection (console.log performance)
-- Window size monitoring
-- Console usage tracking
-- Debugger statement timing
-- Element inspection detection
-- Function toString override
+- Window size monitoring (docked DevTools panel)
+- DevTools shortcut keys (F12, Ctrl+Shift+I/J/C, Ctrl+U)
+
+Detection is deliberately passive: `debugger` traps, console overrides and
+`console.clear()` probes were removed because they freeze/spam the page for
+every visitor who has DevTools open, breaking navigation, buttons and forms —
+far beyond the image protection this is meant to be. Undocked DevTools is not
+detected. This is a deterrent, not a security boundary.
 
 ### Enhanced useImageProtection Hook
 

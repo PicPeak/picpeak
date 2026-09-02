@@ -79,37 +79,37 @@ async function loadSecurityConfigFromSettings() {
     const value = parseStoredValue(row.setting_value);
 
     switch (row.setting_key) {
-      case 'security_max_login_attempts': {
-        config.maxAttempts = normalizePositiveInteger(
-          'security_max_login_attempts',
-          value,
-          DEFAULT_SECURITY_CONFIG.maxAttempts,
-          { min: 1, max: 50 }
-        );
-        break;
-      }
-      case 'security_lockout_duration_minutes': {
-        const minutes = normalizePositiveInteger(
-          'security_lockout_duration_minutes',
-          value,
-          DEFAULT_SECURITY_CONFIG.lockoutDurationMs / (60 * 1000),
-          { min: 1, max: 24 * 60 }
-        );
-        config.lockoutDurationMs = minutes * 60 * 1000;
-        break;
-      }
-      case 'security_attempt_window_minutes': {
-        const minutes = normalizePositiveInteger(
-          'security_attempt_window_minutes',
-          value,
-          DEFAULT_SECURITY_CONFIG.attemptWindowMs / (60 * 1000),
-          { min: 1, max: 24 * 60 }
-        );
-        config.attemptWindowMs = minutes * 60 * 1000;
-        break;
-      }
-      default:
-        break;
+    case 'security_max_login_attempts': {
+      config.maxAttempts = normalizePositiveInteger(
+        'security_max_login_attempts',
+        value,
+        DEFAULT_SECURITY_CONFIG.maxAttempts,
+        { min: 1, max: 50 }
+      );
+      break;
+    }
+    case 'security_lockout_duration_minutes': {
+      const minutes = normalizePositiveInteger(
+        'security_lockout_duration_minutes',
+        value,
+        DEFAULT_SECURITY_CONFIG.lockoutDurationMs / (60 * 1000),
+        { min: 1, max: 24 * 60 }
+      );
+      config.lockoutDurationMs = minutes * 60 * 1000;
+      break;
+    }
+    case 'security_attempt_window_minutes': {
+      const minutes = normalizePositiveInteger(
+        'security_attempt_window_minutes',
+        value,
+        DEFAULT_SECURITY_CONFIG.attemptWindowMs / (60 * 1000),
+        { min: 1, max: 24 * 60 }
+      );
+      config.attemptWindowMs = minutes * 60 * 1000;
+      break;
+    }
+    default:
+      break;
     }
   });
 

@@ -159,7 +159,7 @@ async function sendInvoice(id, adminId, options = {}) {
     attachments: invoiceAttachments,
   });
 
-  try { await logActivity('invoice_sent', { invoiceId: id }, invoice.event_id || null, `admin:${adminId}`); } catch (_) {}
+  try { await logActivity('invoice_sent', { invoiceId: id }, invoice.event_id || null, `admin:${adminId}`); } catch (_) { /* non-fatal */ }
 
   // Fire the workflow engine's invoice.sent trigger (after the row is updated +
   // the email queued). Idempotent per invoice id; no-op when the workflows flag
@@ -180,7 +180,7 @@ async function sendInvoice(id, adminId, options = {}) {
         currency: invoice.currency,
       },
     });
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   return { sent: true, pdfPath };
 }
@@ -355,7 +355,7 @@ async function createStorno(originalId, adminId, trx = db) {
     await logActivity('invoice_cancelled_via_storno',
       { invoiceId: originalId, stornoId, stornoNumber },
       original.event_id || null, `admin:${adminId}`, trx);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   return stornoId;
 }
@@ -430,7 +430,7 @@ async function sendStorno(stornoId, adminId) {
     await logActivity('storno_sent',
       { stornoId, stornoNumber: storno.invoice_number, originalInvoiceId: storno.cancels_invoice_id || null },
       storno.event_id || null, `admin:${adminId || 'system'}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   return { status: 'sent', stornoId };
 }
@@ -558,7 +558,7 @@ async function reissueInvoice(id, adminId) {
       await logActivity('invoice_reissued',
         { originalInvoiceId: id, newInvoiceId: newId, stornoId },
         original.event_id || null, `admin:${adminId}`, trx);
-    } catch (_) {}
+    } catch (_) { /* non-fatal */ }
 
     return { id: newId, replaces: id, stornoId };
   });
@@ -592,7 +592,7 @@ async function releaseForDelivery(id, adminId) {
   });
   try {
     await logActivity('invoice_released_for_delivery', { invoiceId: id }, invoice.event_id || null, `admin:${adminId}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
   // Fire immediately rather than waiting for the next scheduler
   // tick — admin clicked the button because they want it out now.
   return await sendInvoice(id, adminId);
@@ -646,7 +646,7 @@ async function cancelInvoice(id, adminId) {
       await logActivity('invoice_cancelled',
         { invoiceId: id, viaStorno: false },
         invoice.event_id || null, `admin:${adminId}`);
-    } catch (_) {}
+    } catch (_) { /* non-fatal */ }
     return { cancelled: true, stornoId: null };
   }
 
@@ -690,7 +690,7 @@ async function triggerMonthlyBillNow(customerId, adminId) {
     await logActivity('monthly_bill_triggered_manually',
       { invoiceId: draft.id, customerId, periodEnd: draft.monthly_period_end },
       null, `admin:${adminId}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   // Inline send so admin gets immediate feedback (PDF stored, status
   // flipped to 'sent', email queued). A failure here doesn't roll

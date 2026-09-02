@@ -104,17 +104,17 @@ router.get('/dashboard', adminAuth, requirePermission(['settings.view', 'image_s
     
     let timeFilter;
     switch (timeframe) {
-      case '1h':
-        timeFilter = new Date(Date.now() - 3600000);
-        break;
-      case '24h':
-        timeFilter = new Date(Date.now() - 86400000);
-        break;
-      case '7d':
-        timeFilter = new Date(Date.now() - 604800000);
-        break;
-      default:
-        timeFilter = new Date(Date.now() - 86400000);
+    case '1h':
+      timeFilter = new Date(Date.now() - 3600000);
+      break;
+    case '24h':
+      timeFilter = new Date(Date.now() - 86400000);
+      break;
+    case '7d':
+      timeFilter = new Date(Date.now() - 604800000);
+      break;
+    default:
+      timeFilter = new Date(Date.now() - 86400000);
     }
 
     // Get image access statistics
@@ -214,17 +214,17 @@ router.get('/logs', adminAuth, requirePermission(['settings.view', 'image_securi
 
     let timeFilter;
     switch (timeframe) {
-      case '1h':
-        timeFilter = new Date(Date.now() - 3600000);
-        break;
-      case '24h':
-        timeFilter = new Date(Date.now() - 86400000);
-        break;
-      case '7d':
-        timeFilter = new Date(Date.now() - 604800000);
-        break;
-      default:
-        timeFilter = new Date(Date.now() - 86400000);
+    case '1h':
+      timeFilter = new Date(Date.now() - 3600000);
+      break;
+    case '24h':
+      timeFilter = new Date(Date.now() - 86400000);
+      break;
+    case '7d':
+      timeFilter = new Date(Date.now() - 604800000);
+      break;
+    default:
+      timeFilter = new Date(Date.now() - 86400000);
     }
 
     let query = db('security_logs')
@@ -374,17 +374,17 @@ router.delete('/logs/cleanup', adminAuth, requirePermission('image_security.mana
     
     let cutoffDate;
     switch (olderThan) {
-      case '7d':
-        cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-        break;
-      case '30d':
-        cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        break;
-      case '90d':
-        cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-        break;
-      default:
-        cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    case '7d':
+      cutoffDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case '30d':
+      cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      break;
+    case '90d':
+      cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      break;
+    default:
+      cutoffDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     }
 
     // Delete old security logs
@@ -431,17 +431,17 @@ router.get('/export', adminAuth, requirePermission(['settings.view', 'image_secu
     
     let timeFilter;
     switch (timeframe) {
-      case '24h':
-        timeFilter = new Date(Date.now() - 86400000);
-        break;
-      case '7d':
-        timeFilter = new Date(Date.now() - 604800000);
-        break;
-      case '30d':
-        timeFilter = new Date(Date.now() - 2592000000);
-        break;
-      default:
-        timeFilter = new Date(Date.now() - 604800000);
+    case '24h':
+      timeFilter = new Date(Date.now() - 86400000);
+      break;
+    case '7d':
+      timeFilter = new Date(Date.now() - 604800000);
+      break;
+    case '30d':
+      timeFilter = new Date(Date.now() - 2592000000);
+      break;
+    default:
+      timeFilter = new Date(Date.now() - 604800000);
     }
 
     // Get security logs

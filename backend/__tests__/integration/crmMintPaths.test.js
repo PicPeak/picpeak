@@ -148,10 +148,15 @@ async function seedCustomerSignedContract() {
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
   // Business-doc PDFs (quotes/invoices/contracts) persist under
-  // `process.cwd()/storage/business-docs/...` — chdir into the temp dir
-  // so every test artifact lands isolated and gets cleaned up.
+  // `getStoragePath()/business-docs/...`, and safePath also allows a
+  // `process.cwd()/storage/business-docs/...` root — chdir into the temp
+  // dir so every test artifact lands isolated and gets cleaned up.
   process.chdir(tmpDir);
-  storageRoot = path.join(fs.realpathSync(tmpDir), 'storage', 'business-docs');
+  // Mirror what the services store: the raw STORAGE_PATH bootCrmDb
+  // exported, NOT a symlink-resolved variant. On macOS os.tmpdir() is
+  // /var/... while realpath is /private/var/..., so canonicalizing here
+  // would make every stored path fail the prefix check.
+  storageRoot = path.join(process.env.STORAGE_PATH, 'business-docs');
 
   // Fail-fast on the pre-existing logActivity-inside-transaction
   // deadlock: createContract and createStorno call logActivity() from

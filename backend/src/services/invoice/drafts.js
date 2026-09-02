@@ -221,7 +221,7 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
     await logActivity('monthly_billing_items_queued',
       { invoiceId: draft.id, customerId: customer.id, itemsAdded: newItems.length },
       null, `admin:${adminId}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   return draft.id;
 }

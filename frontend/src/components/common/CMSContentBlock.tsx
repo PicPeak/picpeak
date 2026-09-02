@@ -83,7 +83,18 @@ export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback
 
       <main className="flex-1 flex items-start justify-center px-4">
         <div className="max-w-2xl w-full">
-          <Card padding="lg">
+          {/*
+           * The card surface has to follow the theme too: `.card` hardcodes
+           * bg-white, so a dark-toned branding theme paired with the themed
+           * text below rendered near-white text on a white card (QA S3/S4).
+           */}
+          <Card
+            padding="lg"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              borderColor: 'var(--color-surface-border)',
+            }}
+          >
             {/*
              * Heading + body now read from theme tokens so dark themes
              * (and force-dark mode) render correctly without dark: variants

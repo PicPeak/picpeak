@@ -63,7 +63,7 @@ export interface FormatMoneyOptions {
   fractionDigits?: number;
 }
 
-function buildFormatter(currency: string, opts?: FormatMoneyOptions): Intl.NumberFormat {
+function buildFormatter(currency: string | null | undefined, opts?: FormatMoneyOptions): Intl.NumberFormat {
   const locale = opts?.locale || languageToLocale(i18next.language);
   const numFormatOpts: Intl.NumberFormatOptions = {
     style: 'currency',
@@ -81,10 +81,13 @@ function buildFormatter(currency: string, opts?: FormatMoneyOptions): Intl.Numbe
  * currency string. Pass `*_amount_minor` columns through
  * {@link formatMoneyMinor} instead — passing minor units here yields
  * a 100× over-display.
+ *
+ * `currency` accepts null/undefined — several API rows carry a nullable
+ * currency column — and falls back to CHF, same as buildFormatter.
  */
 export function formatMoney(
   amount: number,
-  currency: string,
+  currency: string | null | undefined,
   opts?: FormatMoneyOptions,
 ): string {
   const safe = Number.isFinite(amount) ? amount : 0;

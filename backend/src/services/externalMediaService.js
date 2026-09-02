@@ -61,27 +61,23 @@ async function list(relativePath = '') {
   const targetDir = safePathJoin(root, relativePath || '.');
 
   const entries = [];
-  try {
-    const dirents = await fs.readdir(targetDir, { withFileTypes: true });
-    for (const d of dirents) {
-      // Skip hidden files and directories
-      if (d.name.startsWith('.')) continue;
-      const full = path.join(targetDir, d.name);
-      const stat = await fs.stat(full).catch(() => null);
-      if (!stat) continue;
+  // Errors propagate to the caller to handle (e.g. invalid path).
+  const dirents = await fs.readdir(targetDir, { withFileTypes: true });
+  for (const d of dirents) {
+    // Skip hidden files and directories
+    if (d.name.startsWith('.')) continue;
+    const full = path.join(targetDir, d.name);
+    const stat = await fs.stat(full).catch(() => null);
+    if (!stat) continue;
 
-      if (d.isDirectory()) {
-        entries.push({ name: d.name, type: 'dir' });
-      } else if (d.isFile()) {
-        const ext = path.extname(d.name).toLowerCase();
-        if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
-          entries.push({ name: d.name, type: 'file', size: stat.size, mtime: stat.mtime });
-        }
+    if (d.isDirectory()) {
+      entries.push({ name: d.name, type: 'dir' });
+    } else if (d.isFile()) {
+      const ext = path.extname(d.name).toLowerCase();
+      if (['.jpg', '.jpeg', '.png', '.webp'].includes(ext)) {
+        entries.push({ name: d.name, type: 'file', size: stat.size, mtime: stat.mtime });
       }
     }
-  } catch (e) {
-    // Propagate errors for caller to handle (e.g., invalid path)
-    throw e;
   }
 
   const rootResolved = path.resolve(root);

@@ -27,13 +27,13 @@ function sanitizeFilename(str, maxLength = 50) {
   sanitized = sanitized.replace(/\s+/g, '_');
 
   // Remove special characters except hyphens, underscores, and dots
-  sanitized = sanitized.replace(/[^a-zA-Z0-9_\-\.]/g, '');
+  sanitized = sanitized.replace(/[^a-zA-Z0-9_\-.]/g, '');
   
   // Remove multiple consecutive underscores or hyphens
-  sanitized = sanitized.replace(/[_\-]{2,}/g, '_');
+  sanitized = sanitized.replace(/[_-]{2,}/g, '_');
   
   // Remove leading/trailing underscores or hyphens
-  sanitized = sanitized.replace(/^[_\-]+|[_\-]+$/g, '');
+  sanitized = sanitized.replace(/^[_-]+|[_-]+$/g, '');
   
   // Limit length
   if (sanitized.length > maxLength) {

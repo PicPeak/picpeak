@@ -159,7 +159,7 @@ export const ImageSecurityTab: React.FC = () => {
                 onChange={(e) => handleChange('default_image_quality', parseInt(e.target.value) || 85)}
                 className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">1-100, higher = better quality</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('settings.imageSecurity.imageQualityHelp', '1-100, higher = better quality')}</p>
             </div>
 
             <div>
@@ -174,7 +174,7 @@ export const ImageSecurityTab: React.FC = () => {
                 onChange={(e) => handleChange('default_fragmentation_level', parseInt(e.target.value) || 3)}
                 className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">1-10, higher = more protection</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('settings.imageSecurity.fragmentationLevelHelp', '1-10, higher = more protection')}</p>
             </div>
           </div>
 
@@ -282,7 +282,7 @@ export const ImageSecurityTab: React.FC = () => {
                 onChange={(e) => handleChange('suspicious_activity_threshold', parseInt(e.target.value) || 10)}
                 className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Violations before flagging as suspicious</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('settings.imageSecurity.suspiciousActivityThresholdHelp', 'Violations before flagging as suspicious')}</p>
             </div>
 
             <div>
@@ -297,7 +297,7 @@ export const ImageSecurityTab: React.FC = () => {
                 onChange={(e) => handleChange('auto_block_threshold', parseInt(e.target.value) || 50)}
                 className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Violations before auto-blocking IP</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('settings.imageSecurity.autoBlockThresholdHelp', 'Violations before auto-blocking IP')}</p>
             </div>
           </div>
 

@@ -108,6 +108,8 @@ export interface GalleryInfo {
   requires_password?: boolean;
   color_theme?: string;
   default_photo_sort?: string;
+  allow_downloads?: boolean;
+  allow_user_uploads?: boolean;
   // Resolved server-side (#894): false only when the admin hid the logo
   // on this gallery's password page.
   login_logo_visible?: boolean;
@@ -278,6 +280,8 @@ export interface GalleryData {
     upload_category_id?: number | null;
     hero_photo_id?: number | null;
     allow_downloads?: boolean;
+    /** True when a pre-built download zip is on disk, so "download all" can skip the build. */
+    download_zip_ready?: boolean;
     disable_right_click?: boolean;
     watermark_downloads?: boolean;
     watermark_text?: string;
@@ -355,8 +359,8 @@ export interface AdminUser {
   isActive?: boolean;
   lastLogin?: string | null;
   lastLoginIp?: string | null;
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
   createdByUsername?: string;
 }
 

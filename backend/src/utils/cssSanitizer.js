@@ -58,6 +58,7 @@ function sanitizeCss(css) {
     sanitized = sanitized.replace(pattern, '');
   });
 
+  // eslint-disable-next-line no-control-regex -- intentional: strips control chars from untrusted CSS
   sanitized = sanitized.replace(/[\u0000-\u001F\u007F]/g, '');
 
   const MAX_LENGTH = 100 * 1024;
@@ -112,6 +113,7 @@ function sanitizeCSS(cssContent) {
   sanitized = sanitized.replace(/<!--[\s\S]*?-->/g, '');
 
   // Remove control characters
+  // eslint-disable-next-line no-control-regex -- intentional: strips control chars from untrusted CSS
   sanitized = sanitized.replace(/[\u0000-\u001F\u007F]/g, '');
 
   // Remove any remaining script-like content

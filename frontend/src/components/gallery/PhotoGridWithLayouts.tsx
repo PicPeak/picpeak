@@ -57,6 +57,7 @@ interface PhotoGridWithLayoutsProps {
     allowFavorites?: boolean;
     allowRatings?: boolean;
     allowComments?: boolean;
+    allowReactions?: boolean;
     requireNameEmail?: boolean;
   };
   onFeedbackChange?: () => void;

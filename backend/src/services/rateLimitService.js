@@ -96,7 +96,7 @@ function clearSettingsCache() {
  */
 function isAuthenticated(req) {
   try {
-    const slugMatch = req.path.match(/\/api\/(?:gallery|secure-images)\/([^\/]+)/);
+    const slugMatch = req.path.match(/\/api\/(?:gallery|secure-images)\/([^/]+)/);
     const slug = slugMatch ? slugMatch[1] : req.requestedSlug;
     const token = getAdminTokenFromRequest(req) || getGalleryTokenFromRequest(req, slug);
     const decoded = jwt.verify(token, process.env.JWT_SECRET);

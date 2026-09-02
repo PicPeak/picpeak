@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
-import { Loading } from '../../components/common';
+import { Button, Card, Loading } from '../../components/common';
 import { PasswordResetModal, PublishGalleryDialog, SendGalleryEmailDialog, DuplicateEventDialog, EventRenameDialog, AdminGuestsList } from '../../components/admin';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
@@ -101,7 +101,7 @@ export const EventDetailsPage: React.FC = () => {
   });
 
   // Fetch event details
-  const { data: event, isLoading: eventLoading, refetch: refetchEvent } = useQuery({
+  const { data: event, isLoading: eventLoading, isError: eventError, refetch: refetchEvent } = useQuery({
     queryKey: ['admin-event', id],
     queryFn: () => eventsService.getEvent(parseInt(id!)),
     enabled: !!id,
@@ -324,11 +324,24 @@ export const EventDetailsPage: React.FC = () => {
     },
   });
 
-  if (eventLoading || !event) {
+  if (eventLoading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loading size="lg" text={t('events.loadingEventDetails')} />
       </div>
+    );
+  }
+
+  // A 404 (or any settled failure) leaves `event` undefined forever — without
+  // this branch the spinner above never resolved (QA 7.02).
+  if (eventError || !event) {
+    return (
+      <Card padding="lg">
+        <p className="text-neutral-900 dark:text-neutral-100">{t('events.notFound', 'Event not found')}</p>
+        <Button variant="outline" className="mt-4" onClick={() => navigate('/admin/events')}>
+          {t('events.backToEvents')}
+        </Button>
+      </Card>
     );
   }
 
@@ -704,7 +717,7 @@ export const EventDetailsPage: React.FC = () => {
       {showPasswordReset && (
         <PasswordResetModal
           eventName={event.event_name}
-          eventDate={event.event_date}
+          eventDate={event.event_date ?? undefined}
           eventType={event.event_type}
           onConfirm={async (sendEmail, password) => {
             const result = await eventsService.resetPassword(event.id, sendEmail, password);

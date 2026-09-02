@@ -1,8 +1,6 @@
 const crypto = require('crypto');
 const sharp = require('sharp');
 const { db } = require('../database/db');
-const watermarkService = require('./watermarkService');
-const path = require('path');
 const fs = require('fs').promises;
 const logger = require('../utils/logger');
 

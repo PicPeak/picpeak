@@ -40,6 +40,15 @@ describe('Admin photos in reference mode', () => {
       }
     }));
 
+    // The routes gained requirePermission() after this fixture was written.
+    // It resolves the caller's role through admin_users/roles, which this
+    // minimal schema does not create, so every request died in the RBAC
+    // lookup before reaching the handler. RBAC is not what this suite is
+    // about — stub it out the same way adminAuth already is.
+    jest.doMock('../../src/middleware/permissions', () => ({
+      requirePermission: () => (_req, _res, next) => next()
+    }));
+
     jest.doMock('../../src/services/imageProcessor', () => ({
       generateThumbnail: jest.fn().mockResolvedValue('thumbnails/mock-thumb.jpg'),
       ensureThumbnail: jest.fn()
@@ -98,8 +107,21 @@ describe('Admin photos in reference mode', () => {
       table.string('type').notNullable();
       table.integer('size_bytes');
       table.integer('category_id');
-      table.string('source_origin');
+      // Mirrors migration 041: the upload route never writes this column, it
+      // relies on the NOT NULL DEFAULT 'managed' to mark managed originals.
+      table.string('source_origin').notNullable().defaultTo('managed');
       table.string('external_relpath');
+      // Columns the upload insert writes (migrations 048, 062, 071, 085, 193)
+      // and the PATCH handler writes (migration 178). Without them the insert
+      // and the update both fail on "no such column".
+      table.string('original_filename', 512);
+      table.string('source_filename', 255);
+      table.datetime('captured_at').nullable();
+      table.string('media_type').defaultTo('image');
+      table.string('mime_type');
+      table.string('processing_status', 16).notNullable().defaultTo('complete');
+      table.string('upload_id', 64).nullable();
+      table.boolean('auto_categorized');
       table.datetime('uploaded_at').defaultTo(db.fn.now());
       table.float('average_rating').defaultTo(0);
       table.integer('like_count').defaultTo(0);
@@ -153,7 +175,10 @@ describe('Admin photos in reference mode', () => {
       .field('category_id', String(categoryId))
       .attach('photos', Buffer.from('fake image data'), 'photo.jpg');
 
-    expect(uploadResponse.status).toBe(200);
+    // 202 Accepted since the upload route went async (851744c3): the files are
+    // stored and a pending row is inserted, thumbnails/EXIF follow in the
+    // background worker. This assertion still said 200 from before that.
+    expect(uploadResponse.status).toBe(202);
     expect(uploadResponse.body).toHaveProperty('photos');
     expect(Array.isArray(uploadResponse.body.photos)).toBe(true);
 
@@ -203,5 +228,24 @@ describe('Admin photos in reference mode', () => {
 
     const updated = await db('photos').where({ id: photo.id }).first();
     expect(updated.category_id).toBeNull();
+
+    // A real id still round-trips — the '0' guard must not swallow it.
+    await request(app)
+      .patch(`/api/admin/events/1/photos/${photo.id}`)
+      .send({ category_id: String(categoryId) })
+      .expect(200);
+    expect((await db('photos').where({ id: photo.id }).first()).category_id).toBe(categoryId);
+
+    // Numeric 0 and unparseable input clear the category too, rather than
+    // writing a category id that can never exist.
+    for (const value of [0, 'not-a-category']) {
+      await request(app)
+        .patch(`/api/admin/events/1/photos/${photo.id}`)
+        .send({ category_id: value })
+        .expect(200);
+      expect((await db('photos').where({ id: photo.id }).first()).category_id).toBeNull();
+
+      await db('photos').where({ id: photo.id }).update({ category_id: categoryId });
+    }
   });
 });

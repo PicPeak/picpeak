@@ -250,7 +250,11 @@ export const ReminderTemplatesPage: React.FC = () => {
         <Link to="/admin/settings/crm" className="p-2 -ml-2 rounded hover:bg-neutral-100 dark:hover:bg-neutral-700">
           <ArrowLeft className="w-4 h-4" />
         </Link>
-        <h1 className="text-2xl font-bold text-theme">
+        {/* Explicit neutral colours (not `text-theme` / `text-muted-theme`):
+            those resolve to the gallery branding theme's --color-text, which
+            is applied globally on <html> and renders near-white inside the
+            light admin chrome (QA S13). */}
+        <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">
           {t('reminderTemplates.title', 'Pre-event reminder emails')}
         </h1>
       </div>
@@ -263,7 +267,7 @@ export const ReminderTemplatesPage: React.FC = () => {
             <WorkflowIcon className="w-4 h-4 mt-0.5 shrink-0" />
             <div>
               <p className="font-medium">{t('reminderTemplates.scheduleMoved.title', 'The reminder schedule is now in Workflows')}</p>
-              <p className="mt-1 text-muted-theme">
+              <p className="mt-1 text-neutral-600 dark:text-neutral-400">
                 {t('reminderTemplates.scheduleMoved.body', 'Whether pre-event reminders are sent, and how many days before the event, is configured in the “Pre-event reminder” workflow. This page edits the email templates; per-event overrides stay on each event’s detail page.')}{' '}
                 <Link to="/admin/workflows" className="underline font-medium">{t('reminderTemplates.scheduleMoved.link', 'Open Workflows')}</Link>
               </p>
@@ -271,20 +275,20 @@ export const ReminderTemplatesPage: React.FC = () => {
           </div>
         ) : (
           <>
-            <h3 className="font-semibold text-sm mb-2">
+            <h3 className="font-semibold text-sm text-neutral-900 dark:text-neutral-100 mb-2">
               {t('reminderTemplates.globalSection', 'Global behaviour')}
             </h3>
-            <p className="text-xs text-muted-theme mb-3">
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
               {t('reminderTemplates.globalHelp',
                 'Off by default — turn on to start sending pre-event reminders. The offset below is the default; each event can override on its detail page.')}
             </p>
             <div className="flex items-center gap-6 flex-wrap">
-              <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+              <label className="inline-flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200 cursor-pointer">
                 <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
                 {t('reminderTemplates.enableLabel', 'Send pre-event reminder emails')}
               </label>
               <div className="flex items-center gap-2">
-                <label htmlFor="reminder-days-before" className="text-sm">
+                <label htmlFor="reminder-days-before" className="text-sm text-neutral-700 dark:text-neutral-300">
                   {t('reminderTemplates.daysBeforeLabel', 'Days before the event')}
                 </label>
                 <Input id="reminder-days-before" type="number" min={0} max={365}
@@ -452,7 +456,7 @@ export const ReminderTemplatesPage: React.FC = () => {
                     />
                   </div>
 
-                  <p className="text-xs text-muted-theme">
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
                     {t('reminderTemplates.variablesHint',
                       'Available variables: {{customer_name}}, {{event_name}}, {{event_date}}, {{event_type}}, {{days_before}}, {{business_name}} — substituted when the email is rendered.')}
                   </p>

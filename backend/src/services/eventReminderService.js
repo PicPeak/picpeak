@@ -63,8 +63,6 @@ const { ensureEventReminderTemplatesSeeded } = require('./eventReminderTemplates
 
 const DEFAULT_DAYS_BEFORE = 2;
 const DEFAULT_TEMPLATE_GROUP = 'event_reminder';
-const TEMPLATE_KEY_DEFAULT = 'event_reminder_default';
-const TEMPLATE_KEY_PREFIX = 'event_reminder_';
 
 // One-shot guard: the "schema not migrated" warn would otherwise fire
 // once per cron tick (≈ hourly) on installs that haven't applied

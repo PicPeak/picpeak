@@ -93,6 +93,14 @@ jest.mock('multer', () => {
   return factory;
 });
 
+// The upload middleware resolves the per-file size cap from app_settings on
+// every request (general_max_file_size_mb). That read would consume one of
+// this suite's sequenced db chains and shift every later assertion, so stub it.
+jest.mock('../../../services/uploadSettings', () => ({
+  getMaxFileSizeBytes: jest.fn().mockResolvedValue(50 * 1024 * 1024),
+  DEFAULT_MAX_FILE_SIZE_MB: 50,
+}));
+
 // Stub sharp so the happy-path test doesn't actually decode an image
 // (the temp file is a 0-byte placeholder — see the beforeAll below).
 jest.mock('sharp', () => jest.fn(() => ({

@@ -5,13 +5,12 @@
  */
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Eye, Send, Copy, ArrowRightCircle, Edit2, Receipt, CheckCircle2, ScrollText, XCircle } from 'lucide-react';
 import { Button, Card, Loading } from '../../../components/common';
 import { DocumentLineageCard } from '../../../components/admin/DocumentLineageCard';
 import { quotesService } from '../../../services/quotes.service';
-import { billsService } from '../../../services/bills.service';
 import { formatMoney } from '../../../components/admin/LineItemsTable';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
@@ -34,7 +33,6 @@ export const QuoteDetailPage: React.FC = () => {
     enabled: !!id,
   });
 
-  // Reciprocal lookup — pulls every invoice whose source_quote_id
   if (isLoading || !data) return <Loading />;
   const q = data.quote;
 

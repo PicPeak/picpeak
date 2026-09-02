@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Key, Mail, Lock, Eye, EyeOff, AlertCircle, ArrowLeft, ArrowRight, Copy, Check, ExternalLink, Bug, Lightbulb, Star, Coffee } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useTranslation } from 'react-i18next';
 
@@ -27,7 +28,7 @@ const SETUP_DOCS_URL =
 const COMMUNITY_LINKS: {
   key: string;
   href: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
 }[] = [
   { key: 'bug', href: 'https://github.com/PicPeak/picpeak/issues/new?template=bug_report.md', icon: Bug },
   { key: 'feature', href: 'https://github.com/PicPeak/picpeak/issues/new?template=feature_request.md', icon: Lightbulb },

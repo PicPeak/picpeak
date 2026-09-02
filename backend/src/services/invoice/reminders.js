@@ -117,7 +117,7 @@ async function applyReminder(invoice, lineItems, level, adminId) {
         currency: invoice.currency,
       },
     });
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   // Render the MAHNUNG (reminder letter). The original invoice PDF is left
   // UNTOUCHED (immutable). The Mahnung reuses the invoice layout via a
@@ -180,7 +180,7 @@ async function applyReminder(invoice, lineItems, level, adminId) {
   try {
     await logActivity('invoice_reminder_sent', { invoiceId: invoice.id, level, lateFeeMinor: lateFeeGross },
       invoice.event_id || null, `admin:${adminId || 'system'}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   return { level, lateFeeMinor: lateFeeGross };
 }

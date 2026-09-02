@@ -32,7 +32,9 @@ export const PreviewPage: React.FC = () => {
   const [brandingSettings, setBrandingSettings] = useState<any>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<'date' | 'name' | 'size' | 'rating'>('date');
+  // Mirrors PhotoFilterBar's sort union. 'capture_date' falls through to the
+  // upload-date branch below — the mock photos carry no EXIF capture date.
+  const [sortBy, setSortBy] = useState<'date' | 'name' | 'size' | 'rating' | 'capture_date'>('date');
 
   const mockPhotos = useMemo(() => generateMockPhotos(12), []);
   const mockEvent = {

@@ -24,7 +24,8 @@ function secureStatic(basePath, options = {}) {
     
     try {
       // Validate the full path is within the base directory
-      const fullPath = safePathJoin(normalizedBase, requestedPath);
+      // Validates the path stays inside the base dir; throws on traversal.
+      safePathJoin(normalizedBase, requestedPath);
       
       // If validation passes, use express.static
       const staticMiddleware = express.static(normalizedBase, {

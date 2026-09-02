@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import type { TFunction } from 'i18next';
 import { useMutation } from '@tanstack/react-query';
 import DOMPurify from 'dompurify';
 import { X, Send as SendIcon } from 'lucide-react';
@@ -28,7 +29,7 @@ export const MessageComposer: React.FC<{
   accountKey?: string;
   onClose: () => void;
   onSent: () => void;
-  t: (k: string, d?: string) => string;
+  t: TFunction;
 }> = ({ init, title, accountKey, onClose, onSent, t }) => {
   const [to, setTo] = useState(init.to);
   const [cc, setCc] = useState(init.cc || '');

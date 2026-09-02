@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import type { TFunction } from 'i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { X, Plus, FileText } from 'lucide-react';
@@ -26,22 +27,22 @@ const CONFIG: Record<DocType, { label: string; newRoute: string; hasExisting: bo
 
 interface DocRow { id: number; number: string; status: string }
 
-type SelCustomer = { id: number; email: string; label: string };
+type SelCustomer = { id: number; email: string; label: string; isPassive: boolean };
 
 export const DocumentActionModal: React.FC<{
   docType: DocType;
   senderEmail: string;
   onCompose: (init: { to: string; subject: string; html: string }) => void;
   onClose: () => void;
-  t: (k: string, d?: string) => string;
+  t: TFunction;
 }> = ({ docType, senderEmail, onCompose, onClose, t }) => {
   const navigate = useNavigate();
   const cfg = CONFIG[docType];
   const [customer, setCustomer] = useState<SelCustomer | null>(null);
   const [resolving, setResolving] = useState(true);
 
-  const pick = (c: { id: number; email: string; displayName?: string | null; companyName?: string | null }) =>
-    setCustomer({ id: c.id, email: c.email, label: c.companyName || c.displayName || c.email });
+  const pick = (c: { id: number; email: string; displayName?: string | null; companyName?: string | null; isPassive?: boolean }) =>
+    setCustomer({ id: c.id, email: c.email, label: c.companyName || c.displayName || c.email, isPassive: Boolean(c.isPassive) });
 
   // Resolve the customer from the message's sender address (first match).
   useEffect(() => {
@@ -116,6 +117,7 @@ export const DocumentActionModal: React.FC<{
             <CustomerPicker
               value={customer?.id ?? null}
               label={customer?.label || ''}
+              isPassive={customer?.isPassive ?? false}
               onSelect={pick}
               onCreate={pick}
               onClear={() => setCustomer(null)}
@@ -131,7 +133,7 @@ export const DocumentActionModal: React.FC<{
           {customer && (
             <>
               <Button variant="primary" onClick={createNew} leftIcon={<Plus className="w-4 h-4" />} className="w-full justify-center">
-                {t('messages.createNewDoc', 'Create new {{label}}', { label: t(`messages.doc.${docType}`, cfg.label) } as any)}
+                {t('messages.createNewDoc', 'Create new {{label}}', { label: t(`messages.doc.${docType}`, cfg.label) })}
               </Button>
 
               {cfg.hasExisting && (

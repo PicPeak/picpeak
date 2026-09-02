@@ -139,7 +139,7 @@ export const ProjectsListPage: React.FC = () => {
                     <td className="px-4 py-2 text-right tabular-nums font-medium text-neutral-900 dark:text-neutral-100">{formatValuation(p)}</td>
                     <td className="px-4 py-2">
                       <span className="inline-block rounded-full px-2 py-0.5 text-xs bg-neutral-100 dark:bg-neutral-700 text-neutral-700 dark:text-neutral-200">
-                        {p.status}
+                        {t(`projects.status.${p.status}`, p.status)}
                       </span>
                     </td>
                     <td className="px-4 py-2 text-neutral-500 dark:text-neutral-400">{p.updatedAt ? format(p.updatedAt) : '—'}</td>

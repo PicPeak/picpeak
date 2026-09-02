@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { api } from '../config/api';
 
 export type InboundStatus = 'unsorted' | 'categorized' | 'declined' | 'duplicate';
@@ -282,7 +283,7 @@ const SEED_CATEGORY_KEYS: Record<string, string> = {
   'Weiterbildung': 'training',
   'Sonstiges': 'other',
 };
-export function categoryLabel(cat: ExpenseCategory, t: (k: string, d?: string) => string): string {
+export function categoryLabel(cat: ExpenseCategory, t: TFunction): string {
   if (cat?.is_seed && SEED_CATEGORY_KEYS[cat.name]) return t(`accounting.category.${SEED_CATEGORY_KEYS[cat.name]}`, cat.name);
   return cat?.name ?? '';
 }

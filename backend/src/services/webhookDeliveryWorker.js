@@ -51,7 +51,7 @@ async function fetchPending(limit) {
   const excludeIds = Array.from(inFlight);
   let q = db('webhook_deliveries')
     .where('status', 'pending')
-    .where('next_retry_at', '<=', new Date())
+    .where('next_retry_at', '<=', new Date().toISOString())
     .orderBy('next_retry_at', 'asc')
     .limit(limit);
   if (excludeIds.length > 0) {
@@ -71,7 +71,7 @@ async function deliverOne(row) {
       .update({
         status: 'failed',
         last_error: 'webhook subscription no longer exists',
-        completed_at: new Date(),
+        completed_at: new Date().toISOString(),
         attempt_count: row.attempt_count + 1,
       });
     return;
@@ -85,7 +85,7 @@ async function deliverOne(row) {
       .update({
         status: 'failed',
         last_error: 'webhook is disabled',
-        completed_at: new Date(),
+        completed_at: new Date().toISOString(),
         attempt_count: row.attempt_count + 1,
       });
     return;
@@ -172,10 +172,10 @@ async function deliverOne(row) {
         response_body: truncate(stringifyBody(response.data), RESPONSE_TRUNCATE_BYTES),
         latency_ms: latency,
         attempt_count: newAttempt,
-        completed_at: new Date(),
+        completed_at: new Date().toISOString(),
         next_retry_at: null,
       });
-    await db('webhooks').where({ id: webhook.id }).update({ last_success_at: new Date() });
+    await db('webhooks').where({ id: webhook.id }).update({ last_success_at: new Date().toISOString() });
     return;
   }
 
@@ -194,10 +194,10 @@ async function deliverOne(row) {
         last_error: errorMsg,
         latency_ms: latency,
         attempt_count: newAttempt,
-        completed_at: new Date(),
+        completed_at: new Date().toISOString(),
         next_retry_at: null,
       });
-    await db('webhooks').where({ id: webhook.id }).update({ last_failure_at: new Date() });
+    await db('webhooks').where({ id: webhook.id }).update({ last_failure_at: new Date().toISOString() });
     return;
   }
 
@@ -211,9 +211,9 @@ async function deliverOne(row) {
       last_error: errorMsg,
       latency_ms: latency,
       attempt_count: newAttempt,
-      next_retry_at: new Date(Date.now() + backoff),
+      next_retry_at: new Date(Date.now() + backoff).toISOString(),
     });
-  await db('webhooks').where({ id: webhook.id }).update({ last_failure_at: new Date() });
+  await db('webhooks').where({ id: webhook.id }).update({ last_failure_at: new Date().toISOString() });
 }
 
 async function markFailedFinal(row, reason) {
@@ -223,10 +223,10 @@ async function markFailedFinal(row, reason) {
       status: 'failed',
       last_error: reason,
       attempt_count: row.attempt_count + 1,
-      completed_at: new Date(),
+      completed_at: new Date().toISOString(),
       next_retry_at: null,
     });
-  await db('webhooks').where({ id: row.webhook_id }).update({ last_failure_at: new Date() });
+  await db('webhooks').where({ id: row.webhook_id }).update({ last_failure_at: new Date().toISOString() });
 }
 
 // Schedule the normal retry/backoff for a transient failure that must not
@@ -242,7 +242,7 @@ async function scheduleTransientRetry(row, webhook, errorMsg) {
         status: 'failed',
         last_error: errorMsg,
         attempt_count: newAttempt,
-        completed_at: new Date(),
+        completed_at: new Date().toISOString(),
         next_retry_at: null,
       });
   } else {
@@ -253,10 +253,10 @@ async function scheduleTransientRetry(row, webhook, errorMsg) {
         status: 'pending',
         last_error: errorMsg,
         attempt_count: newAttempt,
-        next_retry_at: new Date(Date.now() + backoff),
+        next_retry_at: new Date(Date.now() + backoff).toISOString(),
       });
   }
-  await db('webhooks').where({ id: webhook.id }).update({ last_failure_at: new Date() });
+  await db('webhooks').where({ id: webhook.id }).update({ last_failure_at: new Date().toISOString() });
 }
 
 function stringifyBody(data) {

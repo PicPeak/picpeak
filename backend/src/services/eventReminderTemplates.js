@@ -37,8 +37,8 @@ const VARIABLES = [
 
 // Tiny HTML signature line shared across templates so the maintainer
 // only has to brand once. Variables substitute at render time.
-const SIGNATURE_EN = `<p style="margin-top: 24px;">See you soon,<br>{{business_name}}</p>`;
-const SIGNATURE_DE = `<p style="margin-top: 24px;">Bis bald,<br>{{business_name}}</p>`;
+const SIGNATURE_EN = '<p style="margin-top: 24px;">See you soon,<br>{{business_name}}</p>';
+const SIGNATURE_DE = '<p style="margin-top: 24px;">Bis bald,<br>{{business_name}}</p>';
 
 const EVENT_REMINDER_TEMPLATES = {
   event_reminder_default: {
@@ -54,7 +54,7 @@ const EVENT_REMINDER_TEMPLATES = {
 </ul>
 <p>If anything has changed since we last spoke, just hit reply.</p>
 ${SIGNATURE_EN}`,
-      body_text: `Hi {{customer_name}},\n\nJust a quick reminder that {{event_name}} is coming up on {{event_date}} — about {{days_before}} day(s) from now.\n\nA few things that help us hit the ground running on the day:\n- Confirm the exact start time and address.\n- Let us know if there is anything we should keep an eye on (VIPs, surprise moments, restricted areas).\n- Indoor venues: a small corner for equipment setup is a huge help.\n\nIf anything has changed since we last spoke, just hit reply.\n\nSee you soon,\n{{business_name}}`,
+      body_text: 'Hi {{customer_name}},\n\nJust a quick reminder that {{event_name}} is coming up on {{event_date}} — about {{days_before}} day(s) from now.\n\nA few things that help us hit the ground running on the day:\n- Confirm the exact start time and address.\n- Let us know if there is anything we should keep an eye on (VIPs, surprise moments, restricted areas).\n- Indoor venues: a small corner for equipment setup is a huge help.\n\nIf anything has changed since we last spoke, just hit reply.\n\nSee you soon,\n{{business_name}}',
     },
     de: {
       subject: 'Erinnerung: {{event_name}} in {{days_before}} Tag(en)',
@@ -68,7 +68,7 @@ ${SIGNATURE_EN}`,
 </ul>
 <p>Hat sich seit unserem letzten Austausch etwas geändert? Einfach kurz auf diese Mail antworten.</p>
 ${SIGNATURE_DE}`,
-      body_text: `Hallo {{customer_name}},\n\nkurze Erinnerung: {{event_name}} findet am {{event_date}} statt — in etwa {{days_before}} Tag(en).\n\nDamit wir am Tag selbst sofort loslegen können, helfen uns folgende Punkte sehr:\n- Genaue Startzeit und Adresse bestätigen.\n- Kurz Bescheid geben, falls etwas besonders zu beachten ist (VIPs, Überraschungsmomente, abgesperrte Bereiche).\n- Bei Innen-Locations: eine kleine Ecke für den Equipment-Aufbau ist Gold wert.\n\nHat sich seit unserem letzten Austausch etwas geändert? Einfach kurz auf diese Mail antworten.\n\nBis bald,\n{{business_name}}`,
+      body_text: 'Hallo {{customer_name}},\n\nkurze Erinnerung: {{event_name}} findet am {{event_date}} statt — in etwa {{days_before}} Tag(en).\n\nDamit wir am Tag selbst sofort loslegen können, helfen uns folgende Punkte sehr:\n- Genaue Startzeit und Adresse bestätigen.\n- Kurz Bescheid geben, falls etwas besonders zu beachten ist (VIPs, Überraschungsmomente, abgesperrte Bereiche).\n- Bei Innen-Locations: eine kleine Ecke für den Equipment-Aufbau ist Gold wert.\n\nHat sich seit unserem letzten Austausch etwas geändert? Einfach kurz auf diese Mail antworten.\n\nBis bald,\n{{business_name}}',
     },
   },
 
@@ -87,7 +87,7 @@ ${SIGNATURE_DE}`,
 </ul>
 <p>If anything has shifted since we last spoke — even small things — just hit reply.</p>
 ${SIGNATURE_EN}`,
-      body_text: `Dear {{customer_name}},\n\nYour wedding day is almost here — {{event_date}}, in about {{days_before}} day(s). We are very much looking forward to it.\n\nA short pre-day checklist so the photo coverage flows smoothly:\n- Timeline: a rough hour-by-hour run-of-day helps us anticipate every moment.\n- Family shots: a short list of must-have group photos (with names) keeps the formals quick.\n- Getting-ready space: a room with natural light makes a real difference.\n- Surprises: let us know so we are in the right place — and won't spoil them.\n- Logistics: ceremony start time, venue address, parking notes, coordinator contact.\n\nIf anything has shifted since we last spoke, just hit reply.\n\nSee you soon,\n{{business_name}}`,
+      body_text: 'Dear {{customer_name}},\n\nYour wedding day is almost here — {{event_date}}, in about {{days_before}} day(s). We are very much looking forward to it.\n\nA short pre-day checklist so the photo coverage flows smoothly:\n- Timeline: a rough hour-by-hour run-of-day helps us anticipate every moment.\n- Family shots: a short list of must-have group photos (with names) keeps the formals quick.\n- Getting-ready space: a room with natural light makes a real difference.\n- Surprises: let us know so we are in the right place — and won\'t spoil them.\n- Logistics: ceremony start time, venue address, parking notes, coordinator contact.\n\nIf anything has shifted since we last spoke, just hit reply.\n\nSee you soon,\n{{business_name}}',
     },
     de: {
       subject: 'Eure Hochzeit am {{event_date}} — letzte Details',
@@ -103,7 +103,7 @@ ${SIGNATURE_EN}`,
 </ul>
 <p>Hat sich seit unserem letzten Gespräch etwas verschoben — auch Kleinigkeiten? Einfach kurz antworten.</p>
 ${SIGNATURE_DE}`,
-      body_text: `Liebe/r {{customer_name}},\n\neuer grosser Tag steht fast vor der Tür — {{event_date}}, in etwa {{days_before}} Tag(en). Wir freuen uns sehr darauf.\n\nEine kurze Checkliste vor dem Tag:\n- Ablauf: ein grober Stunden-Ablauf hilft uns enorm.\n- Familienbilder: kurze Liste der Wunsch-Gruppenbilder (mit Namen).\n- Getting-Ready-Raum: ein Zimmer mit Tageslicht macht einen riesigen Unterschied.\n- Überraschungen: kurz Bescheid geben, damit wir zur richtigen Zeit am richtigen Ort sind.\n- Logistik: Beginn der Trauung, Adresse, Parkhinweise, Telefonnummer der Tages-Koordination.\n\nHat sich etwas verschoben? Einfach kurz antworten.\n\nBis bald,\n{{business_name}}`,
+      body_text: 'Liebe/r {{customer_name}},\n\neuer grosser Tag steht fast vor der Tür — {{event_date}}, in etwa {{days_before}} Tag(en). Wir freuen uns sehr darauf.\n\nEine kurze Checkliste vor dem Tag:\n- Ablauf: ein grober Stunden-Ablauf hilft uns enorm.\n- Familienbilder: kurze Liste der Wunsch-Gruppenbilder (mit Namen).\n- Getting-Ready-Raum: ein Zimmer mit Tageslicht macht einen riesigen Unterschied.\n- Überraschungen: kurz Bescheid geben, damit wir zur richtigen Zeit am richtigen Ort sind.\n- Logistik: Beginn der Trauung, Adresse, Parkhinweise, Telefonnummer der Tages-Koordination.\n\nHat sich etwas verschoben? Einfach kurz antworten.\n\nBis bald,\n{{business_name}}',
     },
   },
 
@@ -120,7 +120,7 @@ ${SIGNATURE_DE}`,
 </ul>
 <p>Looking forward to celebrating — let us know if anything has changed.</p>
 ${SIGNATURE_EN}`,
-      body_text: `Hi {{customer_name}},\n\n{{event_name}} is coming up on {{event_date}} — about {{days_before}} day(s) away. Quick check-in:\n- Headcount: roughly how many guests?\n- Schedule: when is the cake/song moment?\n- Theme or dress code, if any.\n- Surprises we should keep quiet about?\n\nLooking forward to celebrating — let us know if anything has changed.\n\nSee you soon,\n{{business_name}}`,
+      body_text: 'Hi {{customer_name}},\n\n{{event_name}} is coming up on {{event_date}} — about {{days_before}} day(s) away. Quick check-in:\n- Headcount: roughly how many guests?\n- Schedule: when is the cake/song moment?\n- Theme or dress code, if any.\n- Surprises we should keep quiet about?\n\nLooking forward to celebrating — let us know if anything has changed.\n\nSee you soon,\n{{business_name}}',
     },
     de: {
       subject: '{{event_name}} am {{event_date}} — kurze Rückfrage',
@@ -134,7 +134,7 @@ ${SIGNATURE_EN}`,
 </ul>
 <p>Wir freuen uns auf das Fest — kurz Bescheid geben, falls sich etwas geändert hat.</p>
 ${SIGNATURE_DE}`,
-      body_text: `Hallo {{customer_name}},\n\n{{event_name}} steht am {{event_date}} an — in etwa {{days_before}} Tag(en). Kurze Rückfrage:\n- Personenzahl: wie viele Gäste werden in etwa kommen?\n- Ablauf: wann ist der Torten-/Ständchen-Moment?\n- Motto oder Dresscode, falls vorhanden.\n- Überraschungen, über die wir nicht reden sollten?\n\nKurz Bescheid geben, falls sich etwas geändert hat.\n\nBis bald,\n{{business_name}}`,
+      body_text: 'Hallo {{customer_name}},\n\n{{event_name}} steht am {{event_date}} an — in etwa {{days_before}} Tag(en). Kurze Rückfrage:\n- Personenzahl: wie viele Gäste werden in etwa kommen?\n- Ablauf: wann ist der Torten-/Ständchen-Moment?\n- Motto oder Dresscode, falls vorhanden.\n- Überraschungen, über die wir nicht reden sollten?\n\nKurz Bescheid geben, falls sich etwas geändert hat.\n\nBis bald,\n{{business_name}}',
     },
   },
 
@@ -153,7 +153,7 @@ ${SIGNATURE_DE}`,
 </ul>
 <p>Happy to jump on a 10-min call beforehand if it is easier than email.</p>
 ${SIGNATURE_EN}`,
-      body_text: `Dear {{customer_name}},\n\n{{event_name}} is on {{event_date}} — about {{days_before}} day(s) away. To make sure the coverage matches your goals, a few items to confirm:\n- Shot brief: internal comms, press kit, social, website?\n- Agenda / run-of-show: speakers, awards, panels, Q&A.\n- VIPs & brand: names to prioritise, plus logo/colour direction.\n- Access: entrance, loading dock, on-site contact. Photo ID needed?\n- Confidentiality: any no-photo sessions?\n- Delivery: rough turnaround (24h press selects, full gallery later)?\n\nHappy to jump on a 10-min call beforehand if it is easier than email.\n\nSee you soon,\n{{business_name}}`,
+      body_text: 'Dear {{customer_name}},\n\n{{event_name}} is on {{event_date}} — about {{days_before}} day(s) away. To make sure the coverage matches your goals, a few items to confirm:\n- Shot brief: internal comms, press kit, social, website?\n- Agenda / run-of-show: speakers, awards, panels, Q&A.\n- VIPs & brand: names to prioritise, plus logo/colour direction.\n- Access: entrance, loading dock, on-site contact. Photo ID needed?\n- Confidentiality: any no-photo sessions?\n- Delivery: rough turnaround (24h press selects, full gallery later)?\n\nHappy to jump on a 10-min call beforehand if it is easier than email.\n\nSee you soon,\n{{business_name}}',
     },
     de: {
       subject: 'Vorbereitung Bildbegleitung: {{event_name}} am {{event_date}}',
@@ -169,7 +169,7 @@ ${SIGNATURE_EN}`,
 </ul>
 <p>Falls eine kurze 10-Min-Abstimmung einfacher ist als E-Mail, gerne jederzeit melden.</p>
 ${SIGNATURE_DE}`,
-      body_text: `Sehr geehrte/r {{customer_name}},\n\n{{event_name}} findet am {{event_date}} statt — in etwa {{days_before}} Tag(en). Damit die Bildstrecke euren Zielen entspricht, kurz folgende Punkte abstimmen:\n- Briefing: interne Kommunikation, Pressekit, Social, Website?\n- Agenda / Ablauf: Speaker, Awards, Panels, Q&A.\n- VIPs & Brand: zu priorisierende Personen, Logo-/Farbvorgaben.\n- Zugang: Eingang, Anlieferung, Ansprechperson am Morgen. Lichtbildausweis nötig?\n- Vertraulichkeit: rein interne Sessions / kein Foto?\n- Lieferung: Turnaround-Zeit (24h Press-Selects, vollständige Galerie später)?\n\nFalls eine 10-Min-Abstimmung einfacher ist, gerne melden.\n\nBis bald,\n{{business_name}}`,
+      body_text: 'Sehr geehrte/r {{customer_name}},\n\n{{event_name}} findet am {{event_date}} statt — in etwa {{days_before}} Tag(en). Damit die Bildstrecke euren Zielen entspricht, kurz folgende Punkte abstimmen:\n- Briefing: interne Kommunikation, Pressekit, Social, Website?\n- Agenda / Ablauf: Speaker, Awards, Panels, Q&A.\n- VIPs & Brand: zu priorisierende Personen, Logo-/Farbvorgaben.\n- Zugang: Eingang, Anlieferung, Ansprechperson am Morgen. Lichtbildausweis nötig?\n- Vertraulichkeit: rein interne Sessions / kein Foto?\n- Lieferung: Turnaround-Zeit (24h Press-Selects, vollständige Galerie später)?\n\nFalls eine 10-Min-Abstimmung einfacher ist, gerne melden.\n\nBis bald,\n{{business_name}}',
     },
   },
 
@@ -186,7 +186,7 @@ ${SIGNATURE_DE}`,
 </ul>
 <p>If anything has changed since we last spoke, hit reply.</p>
 ${SIGNATURE_EN}`,
-      body_text: `Hi {{customer_name}},\n\n{{event_name}} is on {{event_date}} — about {{days_before}} day(s) away. A short prep note:\n- Start time & address: please confirm both.\n- Run-of-day: a rough timeline of the key moments.\n- Setup space: a small corner for gear if indoors.\n- Anything specific: people to prioritise, things to avoid, dress code, surprises.\n\nIf anything has changed, just hit reply.\n\nSee you soon,\n{{business_name}}`,
+      body_text: 'Hi {{customer_name}},\n\n{{event_name}} is on {{event_date}} — about {{days_before}} day(s) away. A short prep note:\n- Start time & address: please confirm both.\n- Run-of-day: a rough timeline of the key moments.\n- Setup space: a small corner for gear if indoors.\n- Anything specific: people to prioritise, things to avoid, dress code, surprises.\n\nIf anything has changed, just hit reply.\n\nSee you soon,\n{{business_name}}',
     },
     de: {
       subject: '{{event_name}} am {{event_date}} — Vorbereitungs-Hinweise',
@@ -200,7 +200,7 @@ ${SIGNATURE_EN}`,
 </ul>
 <p>Hat sich seit dem letzten Austausch etwas geändert? Einfach kurz antworten.</p>
 ${SIGNATURE_DE}`,
-      body_text: `Hallo {{customer_name}},\n\n{{event_name}} findet am {{event_date}} statt — in etwa {{days_before}} Tag(en). Kurz zur Vorbereitung:\n- Startzeit & Adresse: bitte beides kurz bestätigen.\n- Ablauf: ein grober Zeitplan der Schlüsselmomente.\n- Aufbauplatz: bei Innen-Locations eine kleine Ecke fürs Equipment.\n- Besonderheiten: Personen im Fokus, Dinge zu vermeiden, Dresscode, Überraschungen.\n\nKurz antworten, falls sich etwas geändert hat.\n\nBis bald,\n{{business_name}}`,
+      body_text: 'Hallo {{customer_name}},\n\n{{event_name}} findet am {{event_date}} statt — in etwa {{days_before}} Tag(en). Kurz zur Vorbereitung:\n- Startzeit & Adresse: bitte beides kurz bestätigen.\n- Ablauf: ein grober Zeitplan der Schlüsselmomente.\n- Aufbauplatz: bei Innen-Locations eine kleine Ecke fürs Equipment.\n- Besonderheiten: Personen im Fokus, Dinge zu vermeiden, Dresscode, Überraschungen.\n\nKurz antworten, falls sich etwas geändert hat.\n\nBis bald,\n{{business_name}}',
     },
   },
 };

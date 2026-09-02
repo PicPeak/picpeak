@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Archive, 
   Download, 
@@ -18,7 +18,7 @@ import { toast } from 'react-toastify';
 import { Button, Input, Card, Loading } from '../../components/common';
 import { PermissionGate } from '../../components/admin/PermissionGate';
 import { useQuery } from '@tanstack/react-query';
-import { archiveService } from '../../services/archive.service';
+import { archiveService, type ArchiveSortBy } from '../../services/archive.service';
 import { useTranslation } from 'react-i18next';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../hooks';
@@ -28,10 +28,22 @@ export const ArchivesPage: React.FC = () => {
   const { t } = useTranslation();
   const { formatTime: fmtTime } = useLocalizedDate();
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'date' | 'size' | 'name'>('date');
+  const [sortBy, setSortBy] = useState<ArchiveSortBy>('date');
   const [currentPage, setCurrentPage] = useState(1);
   // const navigate = useNavigate();
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
+
+  // Reset to page 1 whenever the query changes so users don't get stuck on a
+  // page index that no longer exists in the new result set.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, filterType, sortBy]);
 
   // Helper function to safely format dates
   const formatDate = (dateString: string | null | undefined, formatStr: string): string => {
@@ -44,36 +56,17 @@ export const ArchivesPage: React.FC = () => {
     }
   };
 
-  // Fetch archives from API
+  // Fetch archives from API. Search, type filter and sort are all applied
+  // server-side against the whole archive table — doing them in the client
+  // silently scoped them to the 20 rows of the current page while the
+  // pagination footer kept reporting the unfiltered total.
   const { data: archivesData, isLoading } = useQuery({
-    queryKey: ['admin-archives', currentPage],
-    queryFn: () => archiveService.getArchives(currentPage, 20),
+    queryKey: ['admin-archives', currentPage, debouncedSearchTerm, filterType, sortBy],
+    queryFn: () => archiveService.getArchives(currentPage, 20, debouncedSearchTerm || undefined, filterType, sortBy),
+    placeholderData: (prev) => prev,
   });
 
   const archives = archivesData?.archives || [];
-
-  const filteredArchives = archives.filter(archive => {
-    if (filterType !== 'all' && archive.eventType !== filterType) {
-      return false;
-    }
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      return archive.eventName.toLowerCase().includes(term);
-    }
-    return true;
-  }).sort((a, b) => {
-    switch (sortBy) {
-      case 'name':
-        return a.eventName.localeCompare(b.eventName);
-      case 'size':
-        return b.archiveSize - a.archiveSize;
-      case 'date':
-      default:
-        const dateA = a.archivedAt ? new Date(a.archivedAt).getTime() : 0;
-        const dateB = b.archivedAt ? new Date(b.archivedAt).getTime() : 0;
-        return dateB - dateA;
-    }
-  });
 
   const getTotalSize = () => {
     return archives.reduce((sum, archive) => sum + archive.archiveSize, 0);
@@ -257,14 +250,14 @@ export const ArchivesPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-neutral-800 divide-y divide-neutral-200 dark:divide-neutral-700">
-              {filteredArchives.length === 0 ? (
+              {archives.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-neutral-500 dark:text-neutral-400">
                     {t('archives.noArchivesFound')}
                   </td>
                 </tr>
               ) : (
-                filteredArchives.map((archive) => (
+                archives.map((archive) => (
                   <tr key={archive.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-700/50">
                     <td className="px-6 py-4">
                       <div>

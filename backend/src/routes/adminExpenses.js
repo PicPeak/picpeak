@@ -130,7 +130,7 @@ router.get('/inbound/:id/file', requireIncoming, requirePermission('accounting.v
     res.setHeader('Content-Type', row.mime_type || 'application/octet-stream');
     res.setHeader('Content-Disposition', isPdf ? 'attachment' : 'inline');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (!isPdf) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
+    if (!isPdf) res.setHeader('Content-Security-Policy', 'default-src \'none\'; img-src \'self\' data:; style-src \'unsafe-inline\'');
     createReadStream(safe).pipe(res);
   }));
 
@@ -149,7 +149,7 @@ router.get('/inbound/:id/page/:n', requireIncoming, requirePermission('accountin
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Content-Disposition', 'inline');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
+    res.setHeader('Content-Security-Policy', 'default-src \'none\'; img-src \'self\' data:; style-src \'unsafe-inline\'');
     createReadStream(safePng).pipe(res);
   }));
 
@@ -217,7 +217,7 @@ router.get('/:id/proof', requireExpenses, requirePermission('accounting.view'),
     res.setHeader('Content-Type', isPdf ? 'application/pdf' : 'application/octet-stream');
     res.setHeader('Content-Disposition', isPdf ? 'attachment' : 'inline');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (!isPdf) res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
+    if (!isPdf) res.setHeader('Content-Security-Policy', 'default-src \'none\'; img-src \'self\' data:; style-src \'unsafe-inline\'');
     createReadStream(safe).pipe(res);
   }));
 

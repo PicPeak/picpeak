@@ -15,7 +15,6 @@ const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
-const { db } = require('../database/db');
 const ledgerService = require('../services/ledgerService');
 
 const router = express.Router();

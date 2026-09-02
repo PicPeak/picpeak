@@ -64,7 +64,10 @@ interface NavItem {
 // Feature-gated (only render when the corresponding feature flag is on):
 //   Analytics → flags.analytics
 //   Users     → flags.userManagement
-const navigation: NavItem[] = [
+// Exported so Settings → Features can render its "Sidebar preview" against
+// the same declaration the real sidebar uses (it used to keep a second,
+// hand-maintained array that only knew about 2 of the feature gates).
+export const adminNavigation: NavItem[] = [
   { nameKey: 'navigation.dashboard', href: '/admin/dashboard', icon: LayoutDashboard, permission: false },
   { nameKey: 'navigation.events',    href: '/admin/events',    icon: Calendar,        permission: 'events.view' },
   { nameKey: 'navigation.archives',  href: '/admin/archives',  icon: Archive,         permission: 'archives.view' },
@@ -156,7 +159,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
   const showLogoBrand = logoInSidebar && !!sidebarBrandImageUrl;
   const brandAlt = publicSettings?.branding_company_name?.trim() || t('admin.title');
 
-  const filteredNavigation = navigation.filter((item) => {
+  const filteredNavigation = adminNavigation.filter((item) => {
     if (item.permission && !hasPermission(item.permission as string)) return false;
     if (item.featureFlag && !flags[item.featureFlag]) return false;
     // featureFlagsAny: entry is hidden when none of the listed

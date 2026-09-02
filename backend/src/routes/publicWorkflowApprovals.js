@@ -16,32 +16,32 @@ const router = express.Router();
 const { actByToken, peekApproval } = require('../services/workflows');
 
 function page(title, body) {
-  return `<!doctype html><html><head><meta charset="utf-8">`
-    + `<meta name="viewport" content="width=device-width, initial-scale=1">`
+  return '<!doctype html><html><head><meta charset="utf-8">'
+    + '<meta name="viewport" content="width=device-width, initial-scale=1">'
     + `<title>${title}</title></head>`
-    + `<body style="font-family:system-ui,sans-serif;max-width:480px;margin:64px auto;padding:0 20px;text-align:center;color:#1f2937">`
+    + '<body style="font-family:system-ui,sans-serif;max-width:480px;margin:64px auto;padding:0 20px;text-align:center;color:#1f2937">'
     + `<h2 style="font-weight:600">${title}</h2><p style="color:#4b5563;line-height:1.6">${body}</p></body></html>`;
 }
 
 // Escape any prompt text we echo into the interstitial HTML.
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' }[c]
   ));
 }
 
 function decisionPage(token, emphasis, prompt) {
   const btn = (href, label, primary) => `<form method="POST" action="${href}" style="display:inline">`
-    + `<button type="submit" style="cursor:pointer;margin:6px;padding:12px 20px;border-radius:8px;border:1px solid #d1d5db;`
+    + '<button type="submit" style="cursor:pointer;margin:6px;padding:12px 20px;border-radius:8px;border:1px solid #d1d5db;'
     + `font-size:15px;font-weight:600;${primary
       ? 'background:#1d9e75;color:#fff;border-color:#1d9e75'
       : 'background:#fff;color:#374151'}">${label}</button></form>`;
   const body = (prompt ? `<span style="display:block;margin-bottom:16px">${esc(prompt)}</span>` : '')
-    + `<div>`
-    + btn(`confirm`, 'Confirm payment received', emphasis === 'confirm')
-    + btn(`deny`, 'No payment received', emphasis === 'deny')
-    + `</div>`
-    + `<p style="color:#9ca3af;font-size:13px;margin-top:20px">Choosing is a single, final action.</p>`;
+    + '<div>'
+    + btn('confirm', 'Confirm payment received', emphasis === 'confirm')
+    + btn('deny', 'No payment received', emphasis === 'deny')
+    + '</div>'
+    + '<p style="color:#9ca3af;font-size:13px;margin-top:20px">Choosing is a single, final action.</p>';
   return page('Confirm your response', body);
 }
 

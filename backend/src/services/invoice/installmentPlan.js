@@ -347,7 +347,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
       await logActivity('invoice_scheduled', {
         invoiceId: newId, invoiceNumber, eventId: sample.event_id, source: 'plan_reshape',
       }, sample.event_id, `admin:${adminId}`);
-    } catch (_) {}
+    } catch (_) { /* non-fatal */ }
 
     created.push(newId);
   }
@@ -365,7 +365,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
       dealUuid, newCount,
       kept: kept.length, created: created.length, deleted: deleted.length,
     }, sample.event_id, `admin:${adminId}`);
-  } catch (_) {}
+  } catch (_) { /* non-fatal */ }
 
   return {
     invoiceIds: [...kept, ...created],

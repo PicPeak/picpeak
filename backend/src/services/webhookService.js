@@ -190,8 +190,8 @@ async function fire(eventType, data) {
         payload: JSON.stringify(envelope),
         attempt_count: 0,
         status: 'pending',
-        next_retry_at: now,
-        created_at: now,
+        next_retry_at: now.toISOString(),
+        created_at: now.toISOString(),
       });
     }
 
@@ -232,8 +232,8 @@ async function enqueueForWebhook(webhookId, eventType, data) {
       payload: JSON.stringify(envelope),
       attempt_count: 0,
       status: 'pending',
-      next_retry_at: now,
-      created_at: now,
+      next_retry_at: now.toISOString(),
+      created_at: now.toISOString(),
     });
     return { enqueued: true, webhookId: w.id, deliveryId: deliveryUuid };
   } catch (err) {

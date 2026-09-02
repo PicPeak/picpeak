@@ -72,11 +72,11 @@ function matchFilter(filter, payload) {
   // Strict equality: a filter {value: 0} must NOT match false/''/null (loose ==
   // conflated them). Authors must therefore match the payload's actual type.
   switch (op) {
-    case 'neq': return actual !== value;
-    case 'truthy': return Boolean(actual);
-    case 'falsy': return !actual;
-    case 'eq':
-    default: return actual === value;
+  case 'neq': return actual !== value;
+  case 'truthy': return Boolean(actual);
+  case 'falsy': return !actual;
+  case 'eq':
+  default: return actual === value;
   }
 }
 
@@ -125,84 +125,84 @@ async function advanceRun(runId) {
 
     try {
       switch (node.type) {
-        case 'trigger': {
+      case 'trigger': {
+        const e = outEdge(edges, currentKey, null);
+        nextKey = e ? e.to_node : null;
+        await recordStep(runId, node, 'done', null);
+        break;
+      }
+      case 'condition':
+      case 'branch': {
+        const cond = registry.getCondition(node.config?.condition || 'expr');
+        const result = cond ? await cond(ctx) : false;
+        const handle = result ? (node.config?.trueHandle || 'yes') : (node.config?.falseHandle || 'no');
+        const e = outEdge(edges, currentKey, handle) || outEdge(edges, currentKey, result ? 'true' : 'false');
+        nextKey = e ? e.to_node : null;
+        await recordStep(runId, node, 'done', { result, handle });
+        break;
+      }
+      case 'loop': {
+        const counterKey = `__loop_${node.node_key}`;
+        const count = (Number(context.vars[counterKey]) || 0) + 1;
+        context.vars[counterKey] = count;
+        const max = Number(node.config?.maxIterations ?? node.config?.max ?? 3);
+        const handle = count > max ? (node.config?.exitHandle || 'exit') : (node.config?.loopHandle || 'loop');
+        const e = outEdge(edges, currentKey, handle);
+        nextKey = e ? e.to_node : null;
+        await recordStep(runId, node, 'done', { count, max, handle });
+        break;
+      }
+      case 'wait': {
+        // Dry-run (test-fire): don't park — pass straight through so the whole
+        // flow runs in one shot, recording what it WOULD have waited for.
+        if (context.vars.__dryRun) {
           const e = outEdge(edges, currentKey, null);
           nextKey = e ? e.to_node : null;
-          await recordStep(runId, node, 'done', null);
+          await recordStep(runId, node, 'skipped', { dryRun: true, wouldWaitUntil: computeWakeAt(node.config, context.vars) });
           break;
         }
-        case 'condition':
-        case 'branch': {
-          const cond = registry.getCondition(node.config?.condition || 'expr');
-          const result = cond ? await cond(ctx) : false;
-          const handle = result ? (node.config?.trueHandle || 'yes') : (node.config?.falseHandle || 'no');
-          const e = outEdge(edges, currentKey, handle) || outEdge(edges, currentKey, result ? 'true' : 'false');
+        const wakeAt = computeWakeAt(node.config, context.vars);
+        await db('workflow_runs').where({ id: runId })
+          .update({ status: 'waiting', wake_at: wakeAt, current_node: currentKey, context: JSON.stringify(context) });
+        await recordStep(runId, node, 'waiting', { wake_at: wakeAt });
+        return; // paused — scheduler resumes when wake_at passes
+      }
+      case 'gate': {
+        // Dry-run (test-fire): auto-take the 'confirm' path so the escalation
+        // is exercised end-to-end, without creating an approval / emailing.
+        if (context.vars.__dryRun) {
+          const e = outEdge(edges, currentKey, 'confirm') || outEdge(edges, currentKey, null);
           nextKey = e ? e.to_node : null;
-          await recordStep(runId, node, 'done', { result, handle });
+          await recordStep(runId, node, 'skipped', { dryRun: true, gateAutoConfirm: true });
           break;
         }
-        case 'loop': {
-          const counterKey = `__loop_${node.node_key}`;
-          const count = (Number(context.vars[counterKey]) || 0) + 1;
-          context.vars[counterKey] = count;
-          const max = Number(node.config?.maxIterations ?? node.config?.max ?? 3);
-          const handle = count > max ? (node.config?.exitHandle || 'exit') : (node.config?.loopHandle || 'loop');
-          const e = outEdge(edges, currentKey, handle);
-          nextKey = e ? e.to_node : null;
-          await recordStep(runId, node, 'done', { count, max, handle });
-          break;
+        await db('workflow_runs').where({ id: runId })
+          .update({ status: 'waiting', wake_at: gateTimeout(node.config), current_node: currentKey, context: JSON.stringify(context) });
+        await recordStep(runId, node, 'waiting', { gate: true });
+        // Optional setup hook (create approval + send admin email) — registered
+        // by the approval phase. Engine still pauses cleanly without it.
+        const setup = registry.getAction('gate_setup');
+        if (setup) {
+          try { await setup(ctx); } catch (e) { logger.error('[workflow] gate setup failed', { runId, error: e.message }); }
         }
-        case 'wait': {
-          // Dry-run (test-fire): don't park — pass straight through so the whole
-          // flow runs in one shot, recording what it WOULD have waited for.
-          if (context.vars.__dryRun) {
-            const e = outEdge(edges, currentKey, null);
-            nextKey = e ? e.to_node : null;
-            await recordStep(runId, node, 'skipped', { dryRun: true, wouldWaitUntil: computeWakeAt(node.config, context.vars) });
-            break;
-          }
-          const wakeAt = computeWakeAt(node.config, context.vars);
-          await db('workflow_runs').where({ id: runId })
-            .update({ status: 'waiting', wake_at: wakeAt, current_node: currentKey, context: JSON.stringify(context) });
-          await recordStep(runId, node, 'waiting', { wake_at: wakeAt });
-          return; // paused — scheduler resumes when wake_at passes
-        }
-        case 'gate': {
-          // Dry-run (test-fire): auto-take the 'confirm' path so the escalation
-          // is exercised end-to-end, without creating an approval / emailing.
-          if (context.vars.__dryRun) {
-            const e = outEdge(edges, currentKey, 'confirm') || outEdge(edges, currentKey, null);
-            nextKey = e ? e.to_node : null;
-            await recordStep(runId, node, 'skipped', { dryRun: true, gateAutoConfirm: true });
-            break;
-          }
-          await db('workflow_runs').where({ id: runId })
-            .update({ status: 'waiting', wake_at: gateTimeout(node.config), current_node: currentKey, context: JSON.stringify(context) });
-          await recordStep(runId, node, 'waiting', { gate: true });
-          // Optional setup hook (create approval + send admin email) — registered
-          // by the approval phase. Engine still pauses cleanly without it.
-          const setup = registry.getAction('gate_setup');
-          if (setup) {
-            try { await setup(ctx); } catch (e) { logger.error('[workflow] gate setup failed', { runId, error: e.message }); }
-          }
-          return; // paused — an approval (email or inbox) resumes via resumeRun
-        }
-        case 'action':
-        case 'webhook': {
-          const actionKey = node.config?.action || (node.type === 'webhook' ? 'webhook' : 'noop');
-          const action = registry.getAction(actionKey);
-          const result = action ? (await action(ctx)) || {} : { skipped: true, reason: `unknown action ${actionKey}` };
-          if (result.set && typeof result.set === 'object') Object.assign(context.vars, result.set);
-          const e = outEdge(edges, currentKey, null);
-          nextKey = e ? e.to_node : null;
-          await recordStep(runId, node, result.skipped ? 'skipped' : 'done', result);
-          break;
-        }
-        default: {
-          await recordStep(runId, node, 'skipped', { reason: `unknown node type ${node.type}` });
-          const e = outEdge(edges, currentKey, null);
-          nextKey = e ? e.to_node : null;
-        }
+        return; // paused — an approval (email or inbox) resumes via resumeRun
+      }
+      case 'action':
+      case 'webhook': {
+        const actionKey = node.config?.action || (node.type === 'webhook' ? 'webhook' : 'noop');
+        const action = registry.getAction(actionKey);
+        const result = action ? (await action(ctx)) || {} : { skipped: true, reason: `unknown action ${actionKey}` };
+        if (result.set && typeof result.set === 'object') Object.assign(context.vars, result.set);
+        const e = outEdge(edges, currentKey, null);
+        nextKey = e ? e.to_node : null;
+        await recordStep(runId, node, result.skipped ? 'skipped' : 'done', result);
+        break;
+      }
+      default: {
+        await recordStep(runId, node, 'skipped', { reason: `unknown node type ${node.type}` });
+        const e = outEdge(edges, currentKey, null);
+        nextKey = e ? e.to_node : null;
+      }
       }
     } catch (err) {
       await recordStep(runId, node, 'failed', null, err.message);

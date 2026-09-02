@@ -261,7 +261,7 @@ const PRESERVED_AUTH_FIELDS = [
 async function jsonColumnsFor(trx, table) {
   if (!isPostgres()) return new Set();
   const res = await trx.raw(
-    "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ? AND data_type IN ('json', 'jsonb')",
+    'SELECT column_name FROM information_schema.columns WHERE table_schema = \'public\' AND table_name = ? AND data_type IN (\'json\', \'jsonb\')',
     [table]
   );
   return new Set(res.rows.map((r) => r.column_name));
@@ -337,7 +337,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
   await db.transaction(async (trx) => {
     if (isPostgres()) {
       try {
-        await trx.raw("SET session_replication_role = 'replica'");
+        await trx.raw('SET session_replication_role = \'replica\'');
       } catch (_) {
         // session_replication_role requires a Postgres SUPERUSER. The bundled
         // postgres image's role is one; managed Postgres (RDS / Cloud SQL / …)
@@ -420,7 +420,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
     }
 
     // Reset the pg session flag BEFORE the connection returns to the pool.
-    if (isPostgres()) await trx.raw("SET session_replication_role = 'origin'");
+    if (isPostgres()) await trx.raw('SET session_replication_role = \'origin\'');
   });
 }
 

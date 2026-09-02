@@ -415,9 +415,31 @@ export interface FilteredPhotosResponse {
   summary: FilterSummary;
 }
 
+/**
+ * Wire shape of the export `filter` block. The export endpoint feeds it
+ * straight into the backend's PhotoFilterBuilder, which reads snake_case
+ * keys — so this is deliberately NOT FeedbackFilters (camelCase, used by
+ * the in-app filter UI). Callers convert between the two.
+ */
+export interface ExportFilter {
+  min_rating?: number | null;
+  max_rating?: number | null;
+  has_likes?: boolean;
+  min_likes?: number;
+  has_favorites?: boolean;
+  min_favorites?: number;
+  has_comments?: boolean;
+  color_labels?: string[];
+  my_color_labels?: string[];
+  category_id?: number;
+  logic?: 'AND' | 'OR';
+  sort?: 'rating' | 'likes' | 'favorites' | 'date' | 'filename';
+  order?: 'asc' | 'desc';
+}
+
 export interface ExportOptions {
   photo_ids?: number[];
-  filter?: FeedbackFilters;
+  filter?: ExportFilter;
   format: 'txt' | 'csv' | 'xmp' | 'json';
   options?: {
     filename_format?: 'original' | 'picpeak';
@@ -427,6 +449,8 @@ export interface ExportOptions {
     include_label?: boolean;
     include_description?: boolean;
     include_keywords?: boolean;
+    /** Whose marks the export reads: the guests' ('client') or the admin's own ('mine'). */
+    mark_source?: 'client' | 'mine';
   };
 }
 

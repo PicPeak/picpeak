@@ -1,5 +1,5 @@
 const express = require('express');
-const { db, withRetry } = require('../database/db');
+const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const fs = require('fs').promises;

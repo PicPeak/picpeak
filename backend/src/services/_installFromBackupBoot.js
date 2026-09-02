@@ -167,6 +167,7 @@ async function tryInstallFromBackup(db, logger) {
   // console.log as well so the docker-logs surface tells the story
   // without needing to exec into the container.
   const announce = (msg) => {
+    // eslint-disable-next-line no-console -- deliberate: mirrors boot progress to docker logs
     try { console.log(`[install-from-backup] ${msg}`); } catch (_) { /* defensive */ }
   };
 

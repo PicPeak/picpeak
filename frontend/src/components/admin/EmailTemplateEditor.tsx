@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { useEditor, EditorContent, type Editor } from '@tiptap/react';
+import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import HardBreak from '@tiptap/extension-hard-break';

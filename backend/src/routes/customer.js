@@ -16,7 +16,6 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, param, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
-const { formatBoolean } = require('../utils/dbCompat');
 const { getBcryptRounds } = require('../utils/passwordValidation');
 const logger = require('../utils/logger');
 const { errorResponse } = require('../utils/routeHelpers');

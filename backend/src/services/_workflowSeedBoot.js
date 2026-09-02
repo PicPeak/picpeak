@@ -335,6 +335,10 @@ const BUILTINS = [
   },
 ];
 
+// NOTE: written at the end of seedBuiltinWorkflowsAtBoot but never read — the
+// intended "seed only once per process" guard is missing its `if (booted) return;`
+// check. Left in place so the gap stays visible rather than being silently dropped.
+// eslint-disable-next-line no-unused-vars -- write-only boot guard, see note above
 let booted = false;
 
 function parseSeedConfig(raw) {

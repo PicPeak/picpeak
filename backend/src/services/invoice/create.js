@@ -306,7 +306,7 @@ async function createInvoice(payload, adminId, trx = db) {
     await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', invoiceId, items);
   }
 
-  try { await logActivity('invoice_created', { invoiceId, invoiceNumber }, payload.eventId || null, `admin:${adminId}`, trx); } catch (_) {}
+  try { await logActivity('invoice_created', { invoiceId, invoiceNumber }, payload.eventId || null, `admin:${adminId}`, trx); } catch (_) { /* non-fatal */ }
   return { invoiceIds: [invoiceId] };
 }
 
@@ -568,7 +568,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       // pool (this runs unattended from the booking flow's prepare_invoice).
       await logActivity('invoice_scheduled', { invoiceId, invoiceNumber, eventId, quoteId, scheduledSendAt },
         eventId, `admin:${adminId}`, trx);
-    } catch (_) {}
+    } catch (_) { /* non-fatal */ }
     invoiceIds.push(invoiceId);
   }
   return { invoiceIds };

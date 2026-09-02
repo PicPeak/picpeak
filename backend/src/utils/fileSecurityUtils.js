@@ -37,8 +37,9 @@ function safePathJoin(basePath, userPath) {
 function isPathSafe(filePath) {
   // Check for common path traversal patterns
   const dangerousPatterns = [
-    /\.\.[\/\\]/,  // ../ or ..\
+    /\.\.[/\\]/,  // ../ or ..\
     /^[A-Za-z]:/,  // Windows drive letters
+    // eslint-disable-next-line no-control-regex -- intentional: detects control chars in paths
     /[\x00-\x1f]/  // Control characters
   ];
   

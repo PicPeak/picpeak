@@ -645,7 +645,14 @@ class FeedbackService {
         guest_id: guest_id || null,
         ip_address,
         user_agent,
-        is_approved: feedback_type !== 'comment' || !feedbackData.moderate_comments,
+        // The submit route can force a comment into moderation (a
+        // `moderate`/`high` word-filter hit) on an event whose
+        // moderate_comments is off — this line used to ignore that entirely,
+        // so those hits published straight away. A caller-supplied `false` is
+        // honoured; nothing a caller passes can RELAX the event's setting.
+        is_approved: feedbackData.is_approved === false
+          ? false
+          : (feedback_type !== 'comment' || !feedbackData.moderate_comments),
         created_at: new Date(),
         updated_at: new Date()
       }).returning('id');
@@ -1172,32 +1179,32 @@ class FeedbackService {
         if (!entry.guest_email && row.guest_email) entry.guest_email = row.guest_email;
 
         switch (row.feedback_type) {
-          case 'favorite':
-            entry.is_favorited = true;
-            break;
-          case 'like':
-            entry.is_liked = true;
-            break;
-          case 'rating':
-            if (row.rating != null) entry.star_rating = row.rating;
-            break;
-          case 'comment':
-            if (row.comment_text) {
-              // Most recent comment wins. Older comments from the same guest
-              // on the same photo are dropped — the export is "current state",
-              // not the comment history.
-              entry.comment = row.comment_text;
-            }
-            break;
-          case 'reaction':
-            if (row.reaction) entry.reaction = row.reaction;
-            break;
-          case 'color_label':
-            if (row.color_label) entry.color_label = row.color_label;
-            break;
-          default:
-            // Unknown feedback type — ignore so a future type doesn't break the export.
-            break;
+        case 'favorite':
+          entry.is_favorited = true;
+          break;
+        case 'like':
+          entry.is_liked = true;
+          break;
+        case 'rating':
+          if (row.rating != null) entry.star_rating = row.rating;
+          break;
+        case 'comment':
+          if (row.comment_text) {
+            // Most recent comment wins. Older comments from the same guest
+            // on the same photo are dropped — the export is "current state",
+            // not the comment history.
+            entry.comment = row.comment_text;
+          }
+          break;
+        case 'reaction':
+          if (row.reaction) entry.reaction = row.reaction;
+          break;
+        case 'color_label':
+          if (row.color_label) entry.color_label = row.color_label;
+          break;
+        default:
+          // Unknown feedback type — ignore so a future type doesn't break the export.
+          break;
         }
         // Track the latest action timestamp across all feedback types.
         if (row.created_at && entry.latest_at && row.created_at > entry.latest_at) {

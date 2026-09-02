@@ -309,7 +309,17 @@ export const BlockLibraryPage: React.FC = () => {
                             } ${!b.isActive ? 'opacity-50' : ''}`}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <p className="font-medium text-neutral-900 dark:text-neutral-100 truncate">
+                              {/* `title` is the only way to read a long block
+                                  name here — the column is narrow enough that
+                                  CSS truncation can cut names to a few
+                                  characters ("Vertr…"), which made the list
+                                  unscannable without clicking each block (QA
+                                  S13). `min-w-0` lets the name shrink instead
+                                  of pushing the badges out of the row. */}
+                              <p
+                                className="font-medium text-neutral-900 dark:text-neutral-100 truncate min-w-0"
+                                title={b.name}
+                              >
                                 {b.name}
                               </p>
                               <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -327,7 +337,10 @@ export const BlockLibraryPage: React.FC = () => {
                               </div>
                             </div>
                             {b.description && (
-                              <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1 truncate">
+                              <p
+                                className="text-sm text-neutral-500 dark:text-neutral-400 mt-1 truncate"
+                                title={b.description}
+                              >
                                 {b.description}
                               </p>
                             )}

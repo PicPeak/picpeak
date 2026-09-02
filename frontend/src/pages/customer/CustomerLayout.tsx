@@ -29,6 +29,7 @@ import {
   User as UserIcon,
   X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 import { useCustomerAuth } from '../../contexts/CustomerAuthContext';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
@@ -37,7 +38,7 @@ interface NavItem {
   to: string;
   labelKey: string;
   fallback: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   /**
    * Optional gate — entry only renders when the matching feature is
    * effective for this customer (i.e. global toggle ON and per-customer
@@ -65,12 +66,13 @@ export const CustomerLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const companyName = settingsData?.branding_company_name?.trim() || 'PicPeak';
-  // Theme-aware logo: the customer surface follows branding_force_color_mode
-  // ('auto' → OS preference). Symmetric fallback so a single uploaded logo
-  // serves both modes.
+  // Theme-aware logo: the customer surface follows branding_force_color_mode.
+  // Only 'dark' and 'light' are persisted; null/absent means "follow the OS
+  // preference" — same resolution order as usePublicDarkMode. Symmetric
+  // fallback so a single uploaded logo serves both modes.
   const forceMode = settingsData?.branding_force_color_mode;
   const customerIsDark = forceMode === 'dark'
-    || (forceMode === 'auto' && typeof window !== 'undefined'
+    || (forceMode !== 'light' && typeof window !== 'undefined'
         && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
   const lightLogo = settingsData?.branding_logo_url?.trim();
   const darkLogo = settingsData?.branding_logo_url_dark?.trim();

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, useSearchParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { AlertCircle, Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -12,7 +12,6 @@ import { buildResourceUrl } from '../utils/url';
 
 export const ClientAccessPage: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { isAuthenticated, isClient, clientLogin, isLoading: authLoading } = useGalleryAuth();
   const { t } = useTranslation();
@@ -88,7 +87,7 @@ export const ClientAccessPage: React.FC = () => {
             <div className="p-8 text-center">
               <img
                 src={buildResourceUrl(brandLogo)}
-                alt={settingsData.branding_company_name || 'Company Logo'}
+                alt={settingsData?.branding_company_name || 'Company Logo'}
                 className="h-16 w-auto object-contain mx-auto"
               />
             </div>
@@ -115,7 +114,7 @@ export const ClientAccessPage: React.FC = () => {
           <div className="p-8 text-center">
             <img
               src={buildResourceUrl(brandLogo)}
-              alt={settingsData.branding_company_name || 'Company Logo'}
+              alt={settingsData?.branding_company_name || 'Company Logo'}
               className="h-16 w-auto object-contain mx-auto"
             />
           </div>
