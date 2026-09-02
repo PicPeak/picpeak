@@ -183,6 +183,35 @@ describe('migration 194 — German gallery_created translation (QA J.04)', () =>
     expect((await rowFor(id, 'de')).body_html).toContain('Galerie erfolgreich erstellt');
   });
 
+  it('keeps a subject the admin translated while repairing the still-English body', async () => {
+    // Each field is judged on its own. Gating on body_html alone would have
+    // thrown this subject away — and down() is a no-op, so for good.
+    const adminSubject = 'Ihre Galerie steht bereit';
+    const id = await seedFreshInstall({ deSubject: adminSubject });
+
+    await migration.up(knex);
+
+    const de = await rowFor(id, 'de');
+    expect(de.subject).toBe(adminSubject);
+    expect(de.body_html).toContain('Galerie erfolgreich erstellt');
+    expect(de.body_text).toContain('Passwort');
+    const master = await knex('email_templates').where({ id }).first();
+    expect(master.subject_de).toBe(adminSubject);
+    expect(master.body_html_de).toContain('Galerie erfolgreich erstellt');
+  });
+
+  it('keeps an admin-translated body while repairing a still-English subject', async () => {
+    const adminHtml = '<p>Hallo {{host_name}}, „{{event_name}}“ ist online: {{gallery_link}} / {{gallery_password}} bis {{expiry_date}} ({{event_date}})</p>';
+    const id = await seedFreshInstall({ deHtml: adminHtml });
+
+    await migration.up(knex);
+
+    const de = await rowFor(id, 'de');
+    expect(de.body_html).toBe(adminHtml);
+    expect(de.subject).toBe('Ihre Fotogalerie ist bereit!');
+    expect((await knex('email_templates').where({ id }).first()).body_html_de).toBe(adminHtml);
+  });
+
   it('is idempotent', async () => {
     const id = await seedFreshInstall();
 
