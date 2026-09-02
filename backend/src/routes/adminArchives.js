@@ -25,9 +25,19 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
     // Search and type filtering run in SQL so both the returned rows and
     // the total count cover the whole archive table, not just the page the
     // client happens to be on. Values are bound, never interpolated.
+    // % and _ are wildcards to LIKE but literal characters to the client-side
+    // `includes()` this replaced, so searching for "100%" would otherwise match
+    // every archive and report a nonsense total. The ESCAPE clause is
+    // load-bearing rather than decorative: SQLite has no default LIKE escape
+    // character, so without it the escaped pattern matches literal backslashes
+    // there while working on Postgres.
+    const escapeLike = (value) => value.replace(/[\\%_]/g, '\\$&');
     const applyFilters = (query) => {
       if (search) {
-        query.whereRaw('LOWER(events.event_name) LIKE ?', [`%${search.toLowerCase()}%`]);
+        query.whereRaw(
+          'LOWER(events.event_name) LIKE ? ESCAPE \'\\\'',
+          [`%${escapeLike(search.toLowerCase())}%`]
+        );
       }
       if (type && type !== 'all') {
         query.where('events.event_type', type);

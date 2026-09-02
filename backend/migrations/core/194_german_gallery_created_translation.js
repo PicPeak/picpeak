@@ -79,30 +79,44 @@ exports.up = async function(knex) {
         created_at: now,
         updated_at: now,
       });
-    } else if (isUntranslated(deRow.body_html, englishHtml)) {
-      await knex('email_template_translations')
-        .where({ id: deRow.id })
-        .update({
-          subject: SUBJECT_DE,
-          body_html: HTML_DE,
-          body_text: TEXT_DE,
-          updated_at: now,
-        });
+    } else {
+      // Each field is judged on its own. Gating all three on body_html would
+      // overwrite a subject the admin had already translated whenever the HTML
+      // still matched English — and down() is a deliberate no-op, so that loss
+      // would be unrecoverable.
+      const englishSubject = (enRow && enRow.subject) || master.subject_en || master.subject || '';
+      const englishText = (enRow && enRow.body_text) || master.body_text_en || master.body_text || '';
+      const patch = {};
+      if (isUntranslated(deRow.subject, englishSubject)) patch.subject = SUBJECT_DE;
+      if (isUntranslated(deRow.body_html, englishHtml)) patch.body_html = HTML_DE;
+      if (isUntranslated(deRow.body_text, englishText)) patch.body_text = TEXT_DE;
+
+      if (Object.keys(patch).length > 0) {
+        patch.updated_at = now;
+        await knex('email_template_translations').where({ id: deRow.id }).update(patch);
+      }
     }
   }
 
   // Legacy per-language columns on the master row — still the fallback path in
   // emailProcessor.processTemplate when the translations table is unavailable.
   const cols = await knex('email_templates').columnInfo();
-  if (cols.body_html_de && isUntranslated(master.body_html_de, master.body_html_en)) {
-    await knex('email_templates')
-      .where({ id: master.id })
-      .update({
-        subject_de: SUBJECT_DE,
-        body_html_de: HTML_DE,
-        body_text_de: TEXT_DE,
-        updated_at: now,
-      });
+  if (cols.body_html_de) {
+    // Same per-field rule as the translations table above.
+    const legacyPatch = {};
+    if (cols.subject_de && isUntranslated(master.subject_de, master.subject_en)) {
+      legacyPatch.subject_de = SUBJECT_DE;
+    }
+    if (isUntranslated(master.body_html_de, master.body_html_en)) {
+      legacyPatch.body_html_de = HTML_DE;
+    }
+    if (cols.body_text_de && isUntranslated(master.body_text_de, master.body_text_en)) {
+      legacyPatch.body_text_de = TEXT_DE;
+    }
+    if (Object.keys(legacyPatch).length > 0) {
+      legacyPatch.updated_at = now;
+      await knex('email_templates').where({ id: master.id }).update(legacyPatch);
+    }
   }
 };
 

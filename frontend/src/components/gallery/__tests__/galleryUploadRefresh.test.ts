@@ -36,7 +36,13 @@ describe('post-upload photo refresh', () => {
     expect(handler).toMatch(/setInterval\(poll/);
     // Bounded: stop once the new photos land, and stop regardless after the
     // deadline so a failed background job can't leave a poll running forever.
-    expect(handler).toContain('> baseline');
+    //
+    // Waits for ALL queued files, not just the first. Each is processed
+    // independently, so a `> baseline` comparison stops at photo 1 of N and
+    // leaves the rest hidden until a manual refresh — the exact symptom this
+    // polling exists to prevent.
+    expect(handler).toContain('baseline + Math.max(1, queuedCount)');
+    expect(handler).toContain('>= target');
     expect(handler).toContain('Date.now() > deadline');
   });
 

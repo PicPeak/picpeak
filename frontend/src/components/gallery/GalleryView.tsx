@@ -266,14 +266,18 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   };
   useEffect(() => stopUploadRefresh, []);
 
-  const handleUploadComplete = () => {
+  const handleUploadComplete = (queuedCount = 1) => {
     setShowUploadModal(false);
     const baseline = data?.photos?.length ?? 0;
+    // Each file is processed independently, so stopping at the FIRST new photo
+    // leaves the rest of a multi-file upload hidden until a manual refresh —
+    // the very symptom this polling exists to prevent. Wait for all of them.
+    const target = baseline + Math.max(1, queuedCount);
     const deadline = Date.now() + 60_000;
     stopUploadRefresh();
     const poll = async () => {
       const result = await refetch();
-      if ((result.data?.photos?.length ?? 0) > baseline || Date.now() > deadline) {
+      if ((result.data?.photos?.length ?? 0) >= target || Date.now() > deadline) {
         stopUploadRefresh();
       }
     };

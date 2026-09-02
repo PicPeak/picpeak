@@ -10,7 +10,8 @@ import { extensionsToMimeTypes, buildUploadAcceptString, extensionsToLabel } fro
 interface UserPhotoUploadProps {
   eventId: number;
   categoryId: number | null | undefined;
-  onUploadComplete: () => void;
+  /** Receives how many files the server accepted, so the caller can wait for all of them. */
+  onUploadComplete: (queuedCount: number) => void;
   onClose: () => void;
 }
 
@@ -189,7 +190,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
 
     if (successCount > 0) {
       toast.success(t('toast.uploadSuccess') + ` (${successCount} ${t('common.photos')})`);
-      onUploadComplete();
+      onUploadComplete(successCount);
     }
     
     if (failedCount > 0) {
