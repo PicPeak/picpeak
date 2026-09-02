@@ -189,15 +189,34 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
           toast.success(t('customers.create.savedActiveToast',
             'Customer created and portal invitation queued. It is sent by the email queue — check System health if it does not arrive.'));
         } catch (err: any) {
-          // A 409 means an invitation for this address is already open, which
-          // is a different thing from the email failing: the customer is
-          // invited, and re-inviting is what was refused.
-          const alreadyInvited = err?.response?.status === 409;
-          toast.warn(alreadyInvited
-            ? t('customers.create.inviteAlreadyPendingToast',
-              'Customer saved. An invitation for this address is already open — cancel it on the Invitations tab before sending a new one.')
-            : t('customers.create.inviteFailedToast',
+          // Three different things reach this branch and they need three
+          // different answers. Only one of them means "no invitation exists".
+          const status = err?.response?.status;
+          const code = err?.response?.data?.code;
+
+          if (status === 409 && code === 'CUSTOMER_ALREADY_ACTIVE') {
+            // An open invitation for this address was accepted between
+            // createDirect and sendInvite. The customer has portal access
+            // already, so there is nothing to cancel and nothing to resend.
+            toast.info(t('customers.create.inviteAlreadyActiveToast',
+              'Customer saved. This address already has portal access, so no invitation was needed.'));
+          } else if (status === 409) {
+            // An invitation for this address is already open and the RE-invite
+            // was refused. The customer IS invited; telling them to retry
+            // would send them the wrong way.
+            toast.warn(t('customers.create.inviteAlreadyPendingToast',
+              'Customer saved. An invitation for this address is already open — cancel it on the Invitations tab before sending a new one.'));
+          } else if (!err?.response) {
+            // No response at all: a dropped connection or a timeout. The
+            // request may well have succeeded server-side, so claiming it
+            // failed sends the admin into a retry that then 409s. Say what is
+            // actually known and point at where the answer is.
+            toast.warn(t('customers.create.inviteUnconfirmedToast',
+              'Customer saved, but the invitation could not be confirmed — the server did not answer. Check the Invitations tab before sending another.'));
+          } else {
+            toast.warn(t('customers.create.inviteFailedToast',
               'Customer saved as PASSIVE — no invitation went out. Retry "Send portal invitation" from the customer detail page.'));
+          }
           // eslint-disable-next-line no-console
           console.warn('sendInvite failed', err);
         }

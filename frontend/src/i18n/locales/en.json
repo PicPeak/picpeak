@@ -4852,7 +4852,9 @@
       "inviteFailedToast": "Customer saved as PASSIVE — no invitation went out. Retry \"Send portal invitation\" from the customer detail page.",
       "emailRequired": "A valid email is required.",
       "nameRequired": "Enter at least a company name or a contact name.",
-      "inviteAlreadyPendingToast": "Customer saved. An invitation for this address is already open — cancel it on the Invitations tab before sending a new one."
+      "inviteAlreadyPendingToast": "Customer saved. An invitation for this address is already open — cancel it on the Invitations tab before sending a new one.",
+      "inviteAlreadyActiveToast": "Customer saved. This address already has portal access, so no invitation was needed.",
+      "inviteUnconfirmedToast": "Customer saved, but the invitation could not be confirmed — the server did not answer. Check the Invitations tab before sending another."
     },
     "passive": {
       "badge": "Passive — admin only",
@@ -5049,7 +5051,7 @@
     },
     "invitePending": {
       "badge": "Invitation pending",
-      "hint": "Invitation sent, not accepted yet. The customer stays passive until they set a password."
+      "hint": "An invitation link for this address is open and has not been accepted. That is not proof the email reached them — check System health if they say it never arrived."
     }
   },
   "clients": {

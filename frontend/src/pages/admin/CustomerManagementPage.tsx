@@ -256,8 +256,13 @@ export const CustomerManagementPage: React.FC = () => {
                             return invite ? (
                               <span
                                 className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300"
+                                // Deliberately describes the invitation ROW, not a
+                                // delivery. createInvitation inserts the row and then
+                                // queues the email without a transaction, so an open
+                                // invitation does not prove an email_queue row exists,
+                                // let alone that anything was delivered.
                                 title={t('customers.invitePending.hint',
-                                  'Invitation sent, not accepted yet. The customer stays passive until they set a password.') as string}
+                                  'An invitation link for this address is open and has not been accepted. That is not proof the email reached them — check System health if they say it never arrived.') as string}
                               >
                                 <MailCheck className="w-3 h-3" />
                                 {t('customers.invitePending.badge', 'Invitation pending')}

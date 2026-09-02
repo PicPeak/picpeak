@@ -29,6 +29,7 @@ vi.mock('react-toastify', () => ({
 import { toast } from 'react-toastify';
 const toastSuccess = toast.success as ReturnType<typeof vi.fn>;
 const toastWarn = toast.warn as ReturnType<typeof vi.fn>;
+const toastInfo = toast.info as ReturnType<typeof vi.fn>;
 
 vi.mock('../../../contexts/PermissionsContext', () => ({
   usePermissions: () => ({
@@ -189,5 +190,58 @@ describe('InlineCustomerCreate — what the toast may claim (#1261)', () => {
     const message = String(toastWarn.mock.calls[0][0]);
     expect(message).toMatch(/already open/i);
     expect(message).not.toMatch(/PASSIVE/);
+  });
+
+  it('separates CUSTOMER_ALREADY_ACTIVE from a pending-invitation 409', async () => {
+    // Codex review round 1. Both conflicts are 409. This one means an open
+    // invitation was accepted between createDirect and sendInvite, so there is
+    // no invitation row to cancel — sending the admin to the Invitations tab
+    // points them at something that does not exist.
+    createDirect.mockResolvedValue({ id: 8, email: 'new@example.com' });
+    sendInvite.mockRejectedValue({
+      response: { status: 409, data: { code: 'CUSTOMER_ALREADY_ACTIVE' } },
+    });
+
+    renderWith(<InlineCustomerCreate mode="invite" onCreated={() => {}} onCancel={() => {}} />);
+    await fill();
+    await userEvent.click(screen.getByRole('button', { name: /Save & send portal invitation/i }));
+
+    await waitFor(() => expect(toastInfo).toHaveBeenCalled());
+    const message = String(toastInfo.mock.calls[0][0]);
+    expect(message).toMatch(/already has portal access/i);
+    expect(message).not.toMatch(/Invitations tab/i);
+    expect(toastWarn).not.toHaveBeenCalled();
+  });
+
+  it('stays indeterminate when the server never answered', async () => {
+    // Codex review round 1. A dropped connection or timeout rejects with no
+    // `response`, but the request may have succeeded server-side. Declaring
+    // "no invitation went out" sends the admin into a retry that then 409s.
+    createDirect.mockResolvedValue({ id: 9, email: 'new@example.com' });
+    sendInvite.mockRejectedValue(new Error('Network Error'));
+
+    renderWith(<InlineCustomerCreate mode="invite" onCreated={() => {}} onCancel={() => {}} />);
+    await fill();
+    await userEvent.click(screen.getByRole('button', { name: /Save & send portal invitation/i }));
+
+    await waitFor(() => expect(toastWarn).toHaveBeenCalled());
+    const message = String(toastWarn.mock.calls[0][0]);
+    expect(message).toMatch(/could not be confirmed/i);
+    expect(message).not.toMatch(/PASSIVE/);
+  });
+
+  it('does not claim the invitation email was delivered', async () => {
+    // createInvitation inserts the customer_invitations row and only then
+    // queues the email, without a transaction — so an open invitation is not
+    // evidence that an email_queue row exists, let alone that it was sent.
+    list.mockResolvedValue([customer(10, 'invited@example.com')]);
+    listInvitations.mockResolvedValue([invitation(20, 'invited@example.com')]);
+
+    renderWith(<CustomerManagementPage />);
+
+    const badge = await screen.findByText('Invitation pending');
+    const tooltip = badge.getAttribute('title') || badge.closest('[title]')?.getAttribute('title') || '';
+    expect(tooltip).not.toMatch(/invitation sent/i);
+    expect(tooltip).toMatch(/not proof/i);
   });
 });

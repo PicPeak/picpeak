@@ -4852,7 +4852,9 @@
       "inviteFailedToast": "Kunde als PASSIV gespeichert — es ging keine Einladung raus. Wiederholen Sie „Portal-Einladung senden“ auf der Kundendetailseite.",
       "emailRequired": "Eine gültige E-Mail-Adresse ist erforderlich.",
       "nameRequired": "Geben Sie mindestens einen Firmennamen oder einen Ansprechpartner an.",
-      "inviteAlreadyPendingToast": "Kunde gespeichert. Für diese Adresse ist bereits eine Einladung offen — stornieren Sie sie im Tab „Einladungen“, bevor Sie eine neue senden."
+      "inviteAlreadyPendingToast": "Kunde gespeichert. Für diese Adresse ist bereits eine Einladung offen — stornieren Sie sie im Tab „Einladungen“, bevor Sie eine neue senden.",
+      "inviteAlreadyActiveToast": "Kunde gespeichert. Diese Adresse hat bereits Portalzugang, eine Einladung war nicht nötig.",
+      "inviteUnconfirmedToast": "Kunde gespeichert, aber die Einladung ist unbestätigt — der Server hat nicht geantwortet. Prüfen Sie den Tab „Einladungen“, bevor Sie erneut senden."
     },
     "passive": {
       "badge": "Passiv — nur Admin",
@@ -5049,7 +5051,7 @@
     },
     "invitePending": {
       "badge": "Einladung offen",
-      "hint": "Einladung verschickt, noch nicht angenommen. Der Kunde bleibt passiv, bis er ein Passwort gesetzt hat."
+      "hint": "Für diese Adresse ist ein Einladungslink offen und noch nicht angenommen. Das ist kein Beleg dafür, dass die E-Mail angekommen ist — prüfen Sie den Systemzustand, falls der Kunde nichts erhalten hat."
     }
   },
   "clients": {
