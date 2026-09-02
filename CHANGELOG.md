@@ -5,6 +5,25 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.122.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.4-beta.0...v3.122.5-beta.0) (2026-09-02)
+
+
+### Bug Fixes
+
+* **crm:** label the two invitation conflicts and stop guessing after a 5xx ([bc90b4d](https://github.com/PicPeak/picpeak/commit/bc90b4db6209954ba354faf4dd1c76c1bcd6478d))
+* **crm:** stop the invitation UI claiming more than it can know ([6bb12c6](https://github.com/PicPeak/picpeak/commit/6bb12c6612ae104c2480515d16feccc77145b47c))
+* **crm:** tell the admin whether a customer's invitation actually went out ([1b8e5f8](https://github.com/PicPeak/picpeak/commit/1b8e5f83d780c9e6753b45e269207ddb6f0ed98e))
+* **crm:** tell the admin whether a customer's invitation actually went out ([#1261](https://github.com/PicPeak/picpeak/issues/1261)) ([b9c29fc](https://github.com/PicPeak/picpeak/commit/b9c29fcf9bf67d559f85c3ad5f3b595fb87a722f))
+* **email:** compare queue timestamps in JS, and make retry actually send ([89db469](https://github.com/PicPeak/picpeak/commit/89db469f061fcbe5bdd101587f17fff32826c699))
+* **email:** make waiting rows read-only, and time the grace from when due ([4deac22](https://github.com/PicPeak/picpeak/commit/4deac229aca1738d61163a63c3ec1353144971b3))
+* **email:** read naive SQLite timestamps as UTC, and page the candidates ([98aa06a](https://github.com/PicPeak/picpeak/commit/98aa06aeff18e23e655b14f671fe53441033fe14))
+* **email:** show a queue nobody is working instead of reporting all-clear ([73d8675](https://github.com/PicPeak/picpeak/commit/73d867521aff9536e95b334192ebf8d131ddc72c))
+* **email:** show a queue nobody is working instead of reporting all-clear ([#1262](https://github.com/PicPeak/picpeak/issues/1262)) ([ec1df70](https://github.com/PicPeak/picpeak/commit/ec1df704b4c5dc0c32b733c4b861da3465600dc5))
+* **email:** wire the settings status card, and cap-aware truncation ([2d403f7](https://github.com/PicPeak/picpeak/commit/2d403f7fb2b1fed9030375d691a055e3a9d42391))
+* **gallery:** decide the overlay by pointer capability, not viewport width ([d027488](https://github.com/PicPeak/picpeak/commit/d0274886e6e8e7d61f4a237f583eab2cde5cdac6))
+* **gallery:** stop invisible overlay controls swallowing mobile taps ([c0d3479](https://github.com/PicPeak/picpeak/commit/c0d34796cdb1b541d501734afd929fa7089832e3))
+* **gallery:** stop invisible overlay controls swallowing mobile taps ([#1263](https://github.com/PicPeak/picpeak/issues/1263)) ([db197e7](https://github.com/PicPeak/picpeak/commit/db197e76855cd9d8e418af6e2e8d8d2cbabe6c02))
+
 ## [3.122.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.3-beta.0...v3.122.4-beta.0) (2026-09-02)
 
 
