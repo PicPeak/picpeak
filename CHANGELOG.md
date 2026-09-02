@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.122.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.3-beta.0...v3.122.4-beta.0) (2026-09-02)
+
+
+### Bug Fixes
+
+* **guests:** keep guest identity across a tab close ([#1265](https://github.com/PicPeak/picpeak/issues/1265)) ([f722bda](https://github.com/PicPeak/picpeak/commit/f722bdaf4be54f3e07f6f5e41ae0efce22d854a6))
+
 ## [3.122.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.2-beta.0...v3.122.3-beta.0) (2026-09-02)
 
 
