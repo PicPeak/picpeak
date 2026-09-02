@@ -107,7 +107,30 @@
         "error": "Error",
         "queued": "Queued",
         "actions": "Actions"
-      }
+      },
+      "emptyNotAllClear": "Nothing has failed — but see above."
+    },
+    "waitingEmails": {
+      "title": "Waiting to send",
+      "empty": "Nothing waiting — the queue is being worked.",
+      "description": "Queued more than 10 minutes ago, due now, and still unsent. These have not failed — nothing has tried to send them.",
+      "neverAttempted": "never attempted",
+      "attempted": "{{count}} attempt(s), last error: {{error}}",
+      "unknownError": "unknown",
+      "col": {
+        "attempts": "Attempts"
+      },
+      "emptyButUnworked": "Nothing is overdue yet, but nothing is sending either — see the processor above. Anything queued from now on will sit here.",
+      "truncated": "The pending queue is too large to check in full — nothing overdue was found in the rows read, but this is not an all-clear."
+    },
+    "processor": {
+      "title": "Email queue processor",
+      "running": "Running.",
+      "stopped": "Not running on this instance. Queued emails are written to the database but nothing is sending them.",
+      "degraded": "Running, but the last pass could not send: {{error}}",
+      "lastRun": "Last pass {{when}}",
+      "neverRan": "Has not run since this instance started.",
+      "lastResult": "{{sent}} sent, {{failed}} failed"
     }
   },
   "common": {
@@ -820,6 +843,7 @@
     "resetGalleryPassword": "Reset Gallery Password",
     "resendCreationEmail": "Resend Creation Email",
     "creationEmailResent": "Creation email has been queued for sending",
+    "emailQueuedHint": "The queue processor sends it — check System health if it does not arrive.",
     "failedToResendEmail": "Failed to resend creation email",
     "photoStatistics": "Photo Statistics",
     "totalPhotos": "Total Photos",
@@ -1307,7 +1331,9 @@
       "pending": "Pending",
       "sent": "Sent",
       "failed": "Failed",
-      "lastUpdate": "Last update"
+      "lastUpdate": "Last update",
+      "emailProcessorStopped": "Not running — queued emails are written but nothing sends them.",
+      "emailProcessorDegraded": "Running, but the last pass could not send: {{error}}"
     },
     "photoDimensions": {
       "title": "Photo Dimensions",

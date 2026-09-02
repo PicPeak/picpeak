@@ -1,6 +1,10 @@
 /**
  * Admin → System health. Surfaces background failures (v1: stuck/failed
  * outbound emails) so they don't sit unnoticed, with retry/dismiss.
+ *
+ * #1262 added `waitingEmails` and `processor`: a queue nobody is working
+ * produces no failures at all, so "no failures" was not the same claim as
+ * "everything went out".
  */
 import { api } from '../config/api';
 
@@ -14,9 +18,23 @@ export interface StuckEmail {
   createdAt: string;
 }
 
+/** What the queue processor last did — the difference between "idle" and "dead". */
+export interface EmailProcessorStatus {
+  started: boolean;
+  lastRunAt: string | null;
+  lastResult: { processed: number; sent: number; failed: number } | null;
+  lastError: string | null;
+}
+
 export interface SystemHealthFailures {
   stuckEmails: StuckEmail[];
-  counts: { stuckEmails: number };
+  /** Due, under the retry cap, and still unsent — nobody picked them up. */
+  waitingEmails: StuckEmail[];
+  processor: EmailProcessorStatus;
+  /** The pending queue was larger than the endpoint reads — an empty
+   *  `waitingEmails` then means "nothing found yet", not "nothing". */
+  scanTruncated?: boolean;
+  counts: { stuckEmails: number; waitingEmails: number; pendingScanned?: number };
 }
 
 export const systemHealthService = {

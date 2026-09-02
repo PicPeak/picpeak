@@ -9,6 +9,7 @@ const { formatBoolean } = require('../utils/dbCompat');
 const logger = require('../utils/logger');
 const { resolveSqlitePath } = require('../utils/databaseEngine');
 const { checkForUpdates, getCurrentChannel, getCurrentVersion, getReleasesSince, compareVersions } = require('../services/updateCheckService');
+const { getQueueProcessorStatus } = require('../services/emailProcessor');
 const { getAppSetting, upsertAppSetting } = require('../utils/appSettings');
 const { parseWhatsNew } = require('../utils/whatsNew');
 const { detectEnvironment, generateUpdateInstructions } = require('../services/environmentService');
@@ -346,7 +347,17 @@ router.get('/status', adminAuth, requirePermission(['settings.view', 'system.vie
       services: {
         fileWatcher: { status: 'active' }, // These would ideally check actual service status
         expirationChecker: { status: 'active' },
-        emailProcessor: { status: 'active' }
+        // #1262 — this used to be hardcoded 'active', which reported a healthy
+        // worker on a deployment whose queue had never been touched. Report
+        // what the processor itself recorded instead.
+        emailProcessor: (() => {
+          const p = getQueueProcessorStatus();
+          return {
+            status: p.started && !p.lastError ? 'active' : (p.started ? 'degraded' : 'stopped'),
+            lastRunAt: p.lastRunAt,
+            lastError: p.lastError,
+          };
+        })()
       },
       timestamp: new Date()
     };

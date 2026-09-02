@@ -107,7 +107,30 @@
         "error": "Fehler",
         "queued": "Eingereiht",
         "actions": "Aktionen"
-      }
+      },
+      "emptyNotAllClear": "Nichts ist fehlgeschlagen — beachten Sie aber die Hinweise oben."
+    },
+    "waitingEmails": {
+      "title": "Wartet auf Versand",
+      "empty": "Nichts in Wartestellung — die Warteschlange wird abgearbeitet.",
+      "description": "Vor über 10 Minuten eingereiht, jetzt fällig und weiterhin nicht versendet. Diese E-Mails sind nicht fehlgeschlagen — es hat niemand versucht, sie zu senden.",
+      "neverAttempted": "kein Versuch",
+      "attempted": "{{count}} Versuch(e), letzter Fehler: {{error}}",
+      "unknownError": "unbekannt",
+      "col": {
+        "attempts": "Versuche"
+      },
+      "emptyButUnworked": "Noch ist nichts überfällig, es sendet aber auch nichts — siehe Prozessor oben. Alles ab jetzt Eingereihte bleibt hier liegen.",
+      "truncated": "Die Warteschlange ist zu groß, um sie vollständig zu prüfen — in den gelesenen Zeilen war nichts überfällig, das ist aber keine Entwarnung."
+    },
+    "processor": {
+      "title": "E-Mail-Warteschlangen-Prozessor",
+      "running": "Läuft.",
+      "stopped": "Läuft auf dieser Instanz nicht. Eingereihte E-Mails werden in die Datenbank geschrieben, aber niemand versendet sie.",
+      "degraded": "Läuft, aber der letzte Durchlauf konnte nicht senden: {{error}}",
+      "lastRun": "Letzter Durchlauf {{when}}",
+      "neverRan": "Seit dem Start dieser Instanz nicht gelaufen.",
+      "lastResult": "{{sent}} gesendet, {{failed}} fehlgeschlagen"
     }
   },
   "common": {
@@ -1324,6 +1347,7 @@
     "resetGalleryPassword": "Galerie-Passwort zurücksetzen",
     "resendCreationEmail": "Erstellungs-E-Mail erneut senden",
     "creationEmailResent": "Die Erstellungs-E-Mail wurde zur Warteschlange hinzugefügt",
+    "emailQueuedHint": "Der Warteschlangen-Prozessor versendet sie — prüfen Sie den Systemzustand, falls sie nicht ankommt.",
     "failedToResendEmail": "Fehler beim erneuten Senden der Erstellungs-E-Mail",
     "photoStatistics": "Fotostatistiken",
     "managePhotos": "Fotos verwalten",
@@ -1944,7 +1968,9 @@
       "pending": "Ausstehend",
       "sent": "Gesendet",
       "failed": "Fehlgeschlagen",
-      "lastUpdate": "Letzte Aktualisierung"
+      "lastUpdate": "Letzte Aktualisierung",
+      "emailProcessorStopped": "Läuft nicht — eingereihte E-Mails werden geschrieben, aber niemand versendet sie.",
+      "emailProcessorDegraded": "Läuft, aber der letzte Durchlauf konnte nicht senden: {{error}}"
     },
     "photoDimensions": {
       "title": "Foto-Abmessungen",
