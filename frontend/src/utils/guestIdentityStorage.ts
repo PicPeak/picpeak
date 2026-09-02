@@ -30,21 +30,86 @@ const IDENTITY_KEY_PREFIX = 'guest_identity_';
 
 const isBrowser = typeof window !== 'undefined';
 
+/**
+ * A store is only usable if it can be WRITTEN, not merely read.
+ *
+ * Guarding the property access alone is not enough: there are browsers and
+ * states (quota exhausted, Safari private mode historically) where
+ * `window.localStorage` resolves fine but `setItem` throws. That would sail
+ * past a read-only guard, and then storeGuestIdentity() would throw *after*
+ * the server had already created the guest — the registration would report
+ * failure, the visitor would try again, and the retry would insert the second
+ * gallery_guests row this whole change exists to prevent.
+ */
+function isUsable(storage: Storage): boolean {
+  const probe = '__picpeak_probe__';
+  try {
+    storage.setItem(probe, '1');
+    storage.removeItem(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Resolved once. getGuestToken() runs on every API request through the axios
+// interceptor, and probing a write each time would be wasteful.
+let resolvedStorage: Storage | null | undefined;
+
 const getStorage = (): Storage | null => {
   if (!isBrowser) return null;
-  try {
-    return window.localStorage;
-  } catch {
-    // Safari in private mode, or storage blocked by policy. Fall back to
-    // sessionStorage rather than dropping identity entirely — that is the old
-    // behaviour, which is degraded but still works within a single tab.
+  if (resolvedStorage !== undefined) return resolvedStorage;
+
+  for (const pick of [() => window.localStorage, () => window.sessionStorage]) {
+    let candidate: Storage;
     try {
-      return window.sessionStorage;
+      candidate = pick();
     } catch {
-      return null;
+      continue;
+    }
+    if (candidate && isUsable(candidate)) {
+      resolvedStorage = candidate;
+      return resolvedStorage;
     }
   }
+  // sessionStorage is the degraded fallback: identity lasts one tab, which is
+  // the pre-#1265 behaviour rather than no identity at all.
+  resolvedStorage = null;
+  return resolvedStorage;
 };
+
+/** Test seam — storage availability is resolved once per page load. */
+export function __resetStorageResolutionForTests(): void {
+  resolvedStorage = undefined;
+}
+
+/**
+ * Treat a token past its `exp` as absent.
+ *
+ * GUEST_TOKEN_TTL is 30 days, and until now sessionStorage almost never
+ * survived long enough to reach it. Persisting the token makes "stored but
+ * expired" a reachable state, and nothing clears it: the 401 handler in
+ * config/api.ts only drops `gallery_event_<slug>`. Without this the visitor is
+ * shown as signed in while every like silently 401s, and ensureIdentity()
+ * short-circuits so they are never offered recovery.
+ *
+ * The signature is not verified here — that is the server's job. This only
+ * reads the expiry so the client stops presenting an identity the backend has
+ * already stopped honouring. A token we cannot parse is left alone rather than
+ * discarded, so the server stays the authority on anything ambiguous.
+ */
+function isExpired(token: string): boolean {
+  const payload = token.split('.')[1];
+  if (!payload) return false;
+  try {
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const claims = JSON.parse(atob(base64)) as { exp?: number };
+    if (typeof claims.exp !== 'number') return false;
+    return claims.exp * 1000 <= Date.now();
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Move a pre-#1265 identity out of sessionStorage on first read.
@@ -84,8 +149,15 @@ function migrateFromSessionStorage(slug: string): void {
 export function storeGuestIdentity(slug: string, identity: GuestIdentity, token: string): void {
   const storage = getStorage();
   if (!storage || !slug) return;
-  storage.setItem(`${TOKEN_KEY_PREFIX}${slug}`, token);
-  storage.setItem(`${IDENTITY_KEY_PREFIX}${slug}`, JSON.stringify(identity));
+  try {
+    storage.setItem(`${TOKEN_KEY_PREFIX}${slug}`, token);
+    storage.setItem(`${IDENTITY_KEY_PREFIX}${slug}`, JSON.stringify(identity));
+  } catch {
+    // Never let a storage failure reject registration: the guest row already
+    // exists server-side by this point, so throwing here would show the
+    // visitor an error and make them register again, creating a duplicate.
+    // Losing persistence degrades them to a per-session identity instead.
+  }
 }
 
 export function getGuestToken(slug?: string | null): string | null {
@@ -94,7 +166,12 @@ export function getGuestToken(slug?: string | null): string | null {
   const resolvedSlug = slug || extractSlugFromLocation();
   if (!resolvedSlug) return null;
   migrateFromSessionStorage(resolvedSlug);
-  return storage.getItem(`${TOKEN_KEY_PREFIX}${resolvedSlug}`);
+  const token = storage.getItem(`${TOKEN_KEY_PREFIX}${resolvedSlug}`);
+  if (token && isExpired(token)) {
+    clearGuestIdentity(resolvedSlug);
+    return null;
+  }
+  return token;
 }
 
 export function getGuestIdentity(slug?: string | null): GuestIdentity | null {
@@ -103,6 +180,9 @@ export function getGuestIdentity(slug?: string | null): GuestIdentity | null {
   const resolvedSlug = slug || extractSlugFromLocation();
   if (!resolvedSlug) return null;
   migrateFromSessionStorage(resolvedSlug);
+  // An identity whose token has expired must not be presented as signed in —
+  // clearGuestIdentity() has already run inside getGuestToken() in that case.
+  if (!getGuestToken(resolvedSlug)) return null;
   const raw = storage.getItem(`${IDENTITY_KEY_PREFIX}${resolvedSlug}`);
   if (!raw) return null;
   try {

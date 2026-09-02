@@ -67,6 +67,27 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     setIdentity(getGuestIdentity(slug));
   }, [slug]);
 
+  // Keep tabs in step. The identity now lives in localStorage, which is shared
+  // across tabs — where sessionStorage gave each tab its own copy. So "Not
+  // you?" or a fresh registration in one tab silently changes the token the
+  // axios interceptor sends from every other tab, while those tabs still show
+  // the old name. Their likes would then be recorded against the new guest:
+  // the same misattribution this change set out to stop.
+  //
+  // `storage` fires only in the OTHER tabs, which is exactly the audience that
+  // needs to catch up. A null key means the whole store was cleared.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key && event.key !== `guest_token_${slug}` && event.key !== `guest_identity_${slug}`) {
+        return;
+      }
+      setIdentity(getGuestIdentity(slug));
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [slug]);
+
   // When an invite token is present on the URL (?invite=xxx), redeem it once
   // on mount. The server returns a guest token we can persist.
   useEffect(() => {
