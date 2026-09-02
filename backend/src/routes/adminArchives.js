@@ -9,6 +9,7 @@ const { requirePermission } = require('../middleware/permissions');
 const StreamZip = require('node-stream-zip');
 const { requireEventOwnership } = require('../middleware/ownership');
 const { assertZipEntriesWithin } = require('../utils/safePath');
+const { escapeLikePattern, likeWithEscape } = require('../utils/sqlSecurity');
 const logger = require('../utils/logger');
 const { sanitizeForZipEntry } = require('../utils/filenameSanitizer');
 const { getPagination } = require('../utils/routeHelpers');
@@ -22,26 +23,18 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
     const type = typeof req.query.type === 'string' ? req.query.type.trim() : '';
     const sortBy = ['date', 'name', 'size'].includes(req.query.sortBy) ? req.query.sortBy : 'date';
 
-    // A literal % or _ typed into the search box has to match itself rather
-    // than act as a wildcard. Escape the escape character first, then the two
-    // wildcards. utils/sqlSecurity.js's escapeLikePattern() is not usable
-    // here: it also doubles single quotes, which corrupts a BOUND value —
-    // "Sarah's Birthday" would be searched for as "Sarah''s Birthday".
-    const escapeLike = (value) => value.replace(/[\\%_]/g, '\\$&');
-
     // Search and type filtering run in SQL so both the returned rows and
     // the total count cover the whole archive table, not just the page the
-    // client happens to be on. Values are bound, never interpolated.
+    // client happens to be on. Values are bound, never interpolated. A
+    // literal % or _ typed into the search box has to match itself rather
+    // than act as a wildcard: escapeLikePattern() backslash-escapes them and
+    // likeWithEscape() names that backslash in an explicit ESCAPE clause,
+    // which matters because SQLite has no default escape character.
     const applyFilters = (query) => {
       if (search) {
-        // The ESCAPE clause is explicit because the two engines disagree
-        // without it: Postgres treats a backslash in a LIKE pattern as an
-        // escape by default, SQLite has no default escape character at all and
-        // would match the backslash literally. Naming it makes the escaping
-        // above mean the same thing on both.
         query.whereRaw(
-          'LOWER(events.event_name) LIKE ? ESCAPE \'\\\'',
-          [`%${escapeLike(search.toLowerCase())}%`]
+          likeWithEscape('LOWER(events.event_name)'),
+          [`%${escapeLikePattern(search.toLowerCase())}%`]
         );
       }
       if (type && type !== 'all') {
