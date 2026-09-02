@@ -28,6 +28,9 @@ import type { GuestIdentity } from '../services/guests.service';
 const TOKEN_KEY_PREFIX = 'guest_token_';
 const IDENTITY_KEY_PREFIX = 'guest_identity_';
 
+/** Same-tab counterpart to the native cross-tab `storage` event. */
+export const GUEST_IDENTITY_CLEARED_EVENT = 'picpeak:guest-identity-cleared';
+
 const isBrowser = typeof window !== 'undefined';
 
 /**
@@ -169,7 +172,14 @@ export function storeGuestIdentity(slug: string, identity: GuestIdentity, token:
   if (isBrowser) {
     try {
       if (window.sessionStorage && window.sessionStorage !== storage) {
-        write(window.sessionStorage);
+        if (write(window.sessionStorage)) {
+          // Repoint reads at the store that actually accepted the write.
+          // Without this the identity is written to sessionStorage while
+          // getGuestToken() keeps reading localStorage, so x-guest-token is
+          // never sent and the identity is lost on reload — the fallback
+          // would look like it worked while achieving nothing.
+          resolvedStorage = window.sessionStorage;
+        }
       }
     } catch {
       // No store will take it. The identity lasts as long as this page does,
@@ -233,6 +243,18 @@ export function clearGuestIdentity(slug: string): void {
       storage.removeItem(`${IDENTITY_KEY_PREFIX}${slug}`);
     } catch {
       // Best-effort.
+    }
+  }
+
+  // `storage` events fire only in OTHER documents, so a clear triggered inside
+  // this tab (the axios interceptor dropping a server-rejected identity) would
+  // leave the provider still showing the guest and ensureIdentity() still
+  // handing it out. Announce it locally too.
+  if (isBrowser) {
+    try {
+      window.dispatchEvent(new CustomEvent(GUEST_IDENTITY_CLEARED_EVENT, { detail: { slug } }));
+    } catch {
+      // CustomEvent unavailable — the provider simply refreshes on next mount.
     }
   }
 }

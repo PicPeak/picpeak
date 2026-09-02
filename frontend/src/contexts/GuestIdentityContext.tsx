@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { useQueryClient } from '@tanstack/react-query';
 import { guestsService, GuestIdentity } from '../services/guests.service';
 import {
+  GUEST_IDENTITY_CLEARED_EVENT,
   clearGuestIdentity,
   getGuestIdentity,
   storeGuestIdentity,
@@ -80,14 +81,43 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   // needs to catch up. A null key means the whole store was cleared.
   useEffect(() => {
     if (typeof window === 'undefined') return;
+
+    const adopt = () => {
+      const next = getGuestIdentity(slug);
+      setIdentity(next);
+      if (next) {
+        // A caller may be parked on the prompt waiting for ensureIdentity().
+        // Another tab just answered the question, so complete them exactly as
+        // register() does — otherwise the action hangs forever and submitting
+        // the still-open prompt registers a second guest.
+        setPromptOpen(false);
+        setRecoveryOpen(false);
+        pendingResolvers.current.forEach((r) => r(next));
+        pendingResolvers.current = [];
+        pendingRejecters.current = [];
+      }
+    };
+
     const onStorage = (event: StorageEvent) => {
       if (event.key && event.key !== `guest_token_${slug}` && event.key !== `guest_identity_${slug}`) {
         return;
       }
-      setIdentity(getGuestIdentity(slug));
+      adopt();
     };
+    // Fires in THIS tab, where `storage` does not — e.g. the axios interceptor
+    // dropping an identity the server has rejected.
+    const onLocalClear = (event: Event) => {
+      const detail = (event as CustomEvent<{ slug?: string }>).detail;
+      if (detail?.slug && detail.slug !== slug) return;
+      adopt();
+    };
+
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    window.addEventListener(GUEST_IDENTITY_CLEARED_EVENT, onLocalClear);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(GUEST_IDENTITY_CLEARED_EVENT, onLocalClear);
+    };
   }, [slug]);
 
   // Guest-scoped caches are keyed by slug and photo id, never by guest id, so
@@ -96,14 +126,29 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   // token. Reachable three ways now: another tab signing in or out, "Not
   // you?", and a ?invite= redemption over an existing identity.
   const previousIdentityId = useRef<number | null>(identity?.id ?? null);
+  // Invalidating queries is not enough on its own: six gallery layouts seed
+  // their liked-photo set behind a `likedSeededRef` that is deliberately
+  // mount-only ("so refetches don't clobber in-session optimistic toggles"),
+  // and PhotoLightbox holds its own copy. A refetch therefore leaves the
+  // previous guest's hearts on screen. Bumping this generation re-keys the
+  // subtree so every such consumer is rebuilt.
+  const [identityGeneration, setIdentityGeneration] = useState(0);
   useEffect(() => {
     const currentId = identity?.id ?? null;
-    if (previousIdentityId.current === currentId) return;
+    const previousId = previousIdentityId.current;
+    if (previousId === currentId) return;
     previousIdentityId.current = currentId;
+
     queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
     queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
     // Every mounted photo, regardless of id.
     queryClient.invalidateQueries({ queryKey: ['photo-feedback', slug] });
+
+    // Only on a SWITCH away from an established identity — signing in for the
+    // first time (null -> A) must not remount, or registering from the prompt
+    // would tear down the gallery under the very click that triggered it and
+    // drop the pending action.
+    if (previousId !== null) setIdentityGeneration((g) => g + 1);
   }, [identity, slug, queryClient]);
 
   // When an invite token is present on the URL (?invite=xxx), redeem it once
@@ -271,7 +316,13 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     ]
   );
 
-  return <GuestIdentityContext.Provider value={value}>{children}</GuestIdentityContext.Provider>;
+  return (
+    <GuestIdentityContext.Provider value={value}>
+      {/* Re-keyed on an identity switch so consumers holding local feedback
+          state are rebuilt rather than showing the previous guest's. */}
+      <React.Fragment key={identityGeneration}>{children}</React.Fragment>
+    </GuestIdentityContext.Provider>
+  );
 };
 
 export function useGuestIdentity(): GuestIdentityContextValue {
