@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { guestsService, GuestIdentity } from '../services/guests.service';
 import {
   clearGuestIdentity,
@@ -54,6 +55,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
   identityMode,
   children,
 }) => {
+  const queryClient = useQueryClient();
   const [identity, setIdentity] = useState<GuestIdentity | null>(() => getGuestIdentity(slug));
   const [promptOpen, setPromptOpen] = useState(false);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
@@ -88,13 +90,41 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
     return () => window.removeEventListener('storage', onStorage);
   }, [slug]);
 
+  // Guest-scoped caches are keyed by slug and photo id, never by guest id, so
+  // they survive an identity change and would keep showing the previous
+  // guest's likes, favourites and ratings while requests already carry the new
+  // token. Reachable three ways now: another tab signing in or out, "Not
+  // you?", and a ?invite= redemption over an existing identity.
+  const previousIdentityId = useRef<number | null>(identity?.id ?? null);
+  useEffect(() => {
+    const currentId = identity?.id ?? null;
+    if (previousIdentityId.current === currentId) return;
+    previousIdentityId.current = currentId;
+    queryClient.invalidateQueries({ queryKey: ['my-feedback', slug] });
+    queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
+    // Every mounted photo, regardless of id.
+    queryClient.invalidateQueries({ queryKey: ['photo-feedback', slug] });
+  }, [identity, slug, queryClient]);
+
   // When an invite token is present on the URL (?invite=xxx), redeem it once
   // on mount. The server returns a guest token we can persist.
+  //
+  // Deliberately NOT skipped when an identity already exists. It used to be,
+  // which was harmless while identity died with the tab — but now that it
+  // persists, opening guest B's invite link on a browser where guest A once
+  // visited would restore A, skip the redemption entirely, and file B's likes
+  // under A. An explicit invite is the strongest statement of who the visitor
+  // is, so it wins over whatever the browser happens to be holding.
+  //
+  // The ref keeps it to one redemption per token: `identity` is no longer in
+  // the dependency list precisely because redeeming sets it.
+  const redeemedInviteRef = useRef<string | null>(null);
   useEffect(() => {
-    if (identityMode !== 'guest' || identity) return;
+    if (identityMode !== 'guest') return;
     const params = new URLSearchParams(window.location.search);
     const inviteToken = params.get('invite');
-    if (!inviteToken) return;
+    if (!inviteToken || redeemedInviteRef.current === inviteToken) return;
+    redeemedInviteRef.current = inviteToken;
 
     (async () => {
       try {
@@ -112,7 +142,7 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
         console.warn('Failed to redeem invite token', error);
       }
     })();
-  }, [slug, identityMode, identity]);
+  }, [slug, identityMode]);
 
   const openPrompt = useCallback(() => setPromptOpen(true), []);
   const closePrompt = useCallback(() => {

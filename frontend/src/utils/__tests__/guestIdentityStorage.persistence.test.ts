@@ -144,6 +144,33 @@ describe('guest identity persistence (#1265)', () => {
     __resetStorageResolutionForTests();
   });
 
+  it('falls back to sessionStorage when the probe fits but the real write does not', () => {
+    // The probe writes one byte; a JWT plus a profile is far larger, so a
+    // nearly-full store passes the probe and still rejects the real write.
+    // Without the retry the context believes it is signed in with nothing
+    // persisted — which 401s at once and re-registers on reload.
+    const real = window.localStorage;
+    const probeOnly = {
+      getItem: real.getItem.bind(real),
+      removeItem: real.removeItem.bind(real),
+      key: real.key.bind(real),
+      get length() { return real.length; },
+      clear: real.clear.bind(real),
+      setItem: (k: string, _v: string) => {
+        if (k === '__picpeak_probe__') return;      // probe fits
+        throw new DOMException('QuotaExceededError'); // the real payload does not
+      },
+    } as unknown as Storage;
+    Object.defineProperty(window, 'localStorage', { value: probeOnly, configurable: true });
+    __resetStorageResolutionForTests();
+
+    expect(() => storeGuestIdentity(SLUG, IDENTITY as never, TOKEN)).not.toThrow();
+    expect(window.sessionStorage.getItem(`guest_token_${SLUG}`)).toBe(TOKEN);
+
+    Object.defineProperty(window, 'localStorage', { value: real, configurable: true });
+    __resetStorageResolutionForTests();
+  });
+
   it('clears both stores, so a cleared identity cannot be migrated back', () => {
     // A guest who registered before the upgrade and again after it has a copy
     // in each store; "forget me" has to remove both.

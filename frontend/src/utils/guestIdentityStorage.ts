@@ -149,14 +149,33 @@ function migrateFromSessionStorage(slug: string): void {
 export function storeGuestIdentity(slug: string, identity: GuestIdentity, token: string): void {
   const storage = getStorage();
   if (!storage || !slug) return;
-  try {
-    storage.setItem(`${TOKEN_KEY_PREFIX}${slug}`, token);
-    storage.setItem(`${IDENTITY_KEY_PREFIX}${slug}`, JSON.stringify(identity));
-  } catch {
-    // Never let a storage failure reject registration: the guest row already
-    // exists server-side by this point, so throwing here would show the
-    // visitor an error and make them register again, creating a duplicate.
-    // Losing persistence degrades them to a per-session identity instead.
+  const write = (target: Storage): boolean => {
+    try {
+      target.setItem(`${TOKEN_KEY_PREFIX}${slug}`, token);
+      target.setItem(`${IDENTITY_KEY_PREFIX}${slug}`, JSON.stringify(identity));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (write(storage)) return;
+
+  // The probe in getStorage() only proves a one-byte write fits; a JWT plus a
+  // profile is far larger, so a nearly-full store can pass the probe and still
+  // reject the real write. Retry in sessionStorage rather than leaving the
+  // context believing it is signed in with nothing persisted — that state
+  // 401s immediately and re-registers (another duplicate row) on reload.
+  if (isBrowser) {
+    try {
+      if (window.sessionStorage && window.sessionStorage !== storage) {
+        write(window.sessionStorage);
+      }
+    } catch {
+      // No store will take it. The identity lasts as long as this page does,
+      // which is strictly better than rejecting a registration the server has
+      // already completed.
+    }
   }
 }
 
