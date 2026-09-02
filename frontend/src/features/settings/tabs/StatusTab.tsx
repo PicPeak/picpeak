@@ -10,6 +10,7 @@ import {
   Ruler,
   CalendarClock,
   RotateCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button, Card, Input } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
@@ -585,12 +586,30 @@ export const StatusTab: React.FC<StatusTabProps> = ({
                 </div>
                 <p className="text-xs text-neutral-600 dark:text-neutral-400">{t('settings.systemStatus.expirationCheckerDesc')}</p>
               </div>
+              {/* #1262 — this card used to render a green check unconditionally,
+                  against an API field that was itself the literal 'active'. Both
+                  ends now tell the truth: a stopped or bailing processor is the
+                  reason queued mail never arrives, and this is one of the two
+                  places an admin looks to find that out. */}
               <div className="bg-neutral-50 dark:bg-neutral-800 rounded-lg p-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-sm font-medium text-neutral-700 dark:text-neutral-300">{t('settings.systemStatus.emailProcessor')}</p>
-                  <CheckCircle className="w-5 h-5 text-green-600" />
+                  {systemStatus?.services?.emailProcessor?.status === 'active' ? (
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                  ) : (
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                  )}
                 </div>
-                <p className="text-xs text-neutral-600 dark:text-neutral-400">{t('settings.systemStatus.emailProcessorDesc')}</p>
+                <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                  {systemStatus?.services?.emailProcessor?.status === 'stopped'
+                    ? t('settings.systemStatus.emailProcessorStopped',
+                      'Not running — queued emails are written but nothing sends them.')
+                    : systemStatus?.services?.emailProcessor?.status === 'degraded'
+                      ? t('settings.systemStatus.emailProcessorDegraded',
+                        'Running, but the last pass could not send: {{error}}',
+                        { error: systemStatus?.services?.emailProcessor?.lastError })
+                      : t('settings.systemStatus.emailProcessorDesc')}
+                </p>
               </div>
             </div>
 

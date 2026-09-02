@@ -1968,7 +1968,9 @@
       "pending": "Ausstehend",
       "sent": "Gesendet",
       "failed": "Fehlgeschlagen",
-      "lastUpdate": "Letzte Aktualisierung"
+      "lastUpdate": "Letzte Aktualisierung",
+      "emailProcessorStopped": "Läuft nicht — eingereihte E-Mails werden geschrieben, aber niemand versendet sie.",
+      "emailProcessorDegraded": "Läuft, aber der letzte Durchlauf konnte nicht senden: {{error}}"
     },
     "photoDimensions": {
       "title": "Foto-Abmessungen",

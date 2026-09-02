@@ -89,9 +89,14 @@ router.get(
 
 /**
  * How long an email may sit due-but-unsent before it counts as waiting rather
- * than merely in flight. The processor wakes every 60s and takes 10 rows a
- * pass, so a genuine backlog of ~6000 clears inside this window — anything
- * still here has not been worked.
+ * than merely in flight.
+ *
+ * The processor wakes every 60s and takes 10 rows a pass, so it clears on the
+ * order of 100 rows inside this window — not thousands. A burst larger than
+ * that will therefore show up here for a while even though nothing is wrong,
+ * which is why the processor's own state is reported above this list rather
+ * than inferred from it: "running, last pass sent 10" next to a backlog reads
+ * very differently from "not running" next to the same backlog.
  */
 const WAITING_EMAIL_GRACE_MS = 10 * 60 * 1000;
 
@@ -204,12 +209,21 @@ router.get(
         .select('id', 'recipient_email', 'email_type', 'status', 'retry_count',
           'error_message', 'created_at', 'scheduled_at');
       if (page.length === 0) break;
-      scanned += page.length;
+      let examined = 0;
       for (const row of page) {
+        examined += 1;
         if (isWaiting(row)) waitingEmails.push(row);
         if (waitingEmails.length >= WAITING_REPORT_LIMIT) break;
       }
-      if (waitingEmails.length >= WAITING_REPORT_LIMIT || page.length < WAITING_PAGE_SIZE) break;
+      scanned += examined;
+      if (waitingEmails.length >= WAITING_REPORT_LIMIT) {
+        // Stopped because the response is full, not because the queue is. Any
+        // row left unexamined -- in this page or in pages after it -- may also
+        // be waiting, so the count is a floor and the report is partial.
+        scanTruncated = examined < page.length || page.length === WAITING_PAGE_SIZE;
+        break;
+      }
+      if (page.length < WAITING_PAGE_SIZE) break;
       // Ran out of budget with rows still unread. A queue this size whose head
       // is all future-scheduled could be hiding a due row past the cap, so the
       // empty result below is "not found yet", not "none" — and the UI must
@@ -247,6 +261,17 @@ router.get(
  * pending with retries and schedule clear, so this endpoint would rewrite them
  * to the state they are in and change nothing. What a waiting row needs is the
  * processor fixed, which the panel above it says.
+ *
+ * KNOWN, deliberate: clearing scheduled_at leaves created_at at the original
+ * enqueue time, so a retried old row shows up in the waiting list right away
+ * looking overdue, until the processor sends it on its next tick. Restarting
+ * that clock needs a timestamp written here, and there is no shape that works:
+ * a Date matches how queueEmail writes the column and how processEmailQueue
+ * compares it, but jest's sandbox Dates store as "[object Object]" (CLAUDE.md)
+ * so it cannot be tested; an ISO string tests fine but stores as TEXT, and
+ * SQLite then orders it above the numeric bound in the processor's own pickup
+ * query, leaving the row unsendable. A requeued_at column would settle it.
+ * Cosmetic either way, and not worth risking a stuck row for.
  */
 router.post(
   '/failures/email/:id/retry',

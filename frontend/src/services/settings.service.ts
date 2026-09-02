@@ -164,7 +164,9 @@ export interface SystemStatus {
   services: {
     fileWatcher: { status: string };
     expirationChecker: { status: string };
-    emailProcessor: { status: string };
+    // 'active' | 'degraded' | 'stopped' (#1262). Was a hardcoded 'active'
+    // until the processor started reporting what it actually did.
+    emailProcessor: { status: string; lastRunAt?: string | null; lastError?: string | null };
   };
   timestamp: string;
 }

@@ -300,6 +300,29 @@ describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
     expect(body.counts.pendingScanned).toBe(0);
   });
 
+  it('calls a report capped at the row limit truncated, not complete', async () => {
+    // Codex review round 4. The loop broke on the report cap before the
+    // truncation flag could be set, so 201+ overdue rows came back as exactly
+    // 200 with scanTruncated false — a partial report presented as the whole.
+    const rows = [];
+    for (let i = 0; i < 260; i += 1) {
+      rows.push({
+        recipient_email: `overdue${i}@example.com`,
+        email_type: 'gallery_created',
+        email_data: '{}',
+        status: 'pending',
+        retry_count: 0,
+        created_at: ago(90 * MINUTE),
+        scheduled_at: ago(90 * MINUTE),
+      });
+    }
+    await db.batchInsert('email_queue', rows, 100);
+
+    const body = await failures();
+    expect(body.counts.waitingEmails).toBe(200);
+    expect(body.scanTruncated).toBe(true);
+  });
+
   it('reports what the queue processor last did', async () => {
     const body = await failures();
     // Never started in this process — which is the condition that makes a

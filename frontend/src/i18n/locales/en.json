@@ -1331,7 +1331,9 @@
       "pending": "Pending",
       "sent": "Sent",
       "failed": "Failed",
-      "lastUpdate": "Last update"
+      "lastUpdate": "Last update",
+      "emailProcessorStopped": "Not running — queued emails are written but nothing sends them.",
+      "emailProcessorDegraded": "Running, but the last pass could not send: {{error}}"
     },
     "photoDimensions": {
       "title": "Photo Dimensions",
