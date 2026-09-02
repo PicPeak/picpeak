@@ -187,7 +187,27 @@ export const GuestIdentityProvider: React.FC<GuestIdentityProviderProps> = ({
         const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '') + window.location.hash;
         window.history.replaceState({}, '', newUrl);
       } catch (error) {
-        // Silently fail invalid invites; user will fall back to normal prompt.
+        // A spent (409) or revoked (410) invite is the normal way a guest comes
+        // back through their own emailed link, and the identity this device
+        // holds is then theirs — keep it. But the same link opened on a shared
+        // device that holds SOMEONE ELSE's identity must not quietly act as
+        // that someone: the server names the invite's guest on those two
+        // responses precisely so the two cases can be told apart. On a
+        // mismatch the stored identity is dropped, so the visitor is asked
+        // who they are instead of having their likes filed under the previous
+        // person. A response without guest_id (older backend) keeps today's
+        // behaviour.
+        const status = (error as { response?: { status?: number; data?: { guest_id?: unknown } } })
+          .response;
+        const invitedGuestId = status?.data?.guest_id;
+        if ((status?.status === 409 || status?.status === 410) && typeof invitedGuestId === 'number') {
+          const stored = getGuestIdentity(slug);
+          if (stored && stored.id !== invitedGuestId) {
+            clearGuestIdentity(slug);
+            setIdentity(null);
+          }
+        }
+        // Otherwise fail silently; the visitor falls back to the normal prompt.
         // eslint-disable-next-line no-console
         console.warn('Failed to redeem invite token', error);
       } finally {

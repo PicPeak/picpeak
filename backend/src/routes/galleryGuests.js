@@ -350,8 +350,12 @@ router.post('/:slug/guest/redeem', verifyGalleryAccess, async (req, res) => {
         .where({ token: inviteToken, event_id: event.id })
         .first();
       if (!invite) return { error: 'not_found' };
-      if (invite.revoked_at) return { error: 'revoked' };
-      if (invite.redeemed_at) return { error: 'already_redeemed' };
+      // Spent and revoked invites name their guest, so the client can tell
+      // "this guest came back through their own link" (keep the identity the
+      // device holds) from "someone else's link on a device that holds
+      // another guest's identity" (drop it) — see GuestIdentityContext.
+      if (invite.revoked_at) return { error: 'revoked', guestId: invite.guest_id };
+      if (invite.redeemed_at) return { error: 'already_redeemed', guestId: invite.guest_id };
 
       const guest = await trx('gallery_guests')
         .where({ id: invite.guest_id, is_deleted: false })
@@ -380,7 +384,9 @@ router.post('/:slug/guest/redeem', verifyGalleryAccess, async (req, res) => {
         already_redeemed: 409,
         guest_missing: 404,
       };
-      return res.status(statusMap[result.error] || 400).json({ error: result.error });
+      const body = { error: result.error };
+      if (result.guestId != null) body.guest_id = Number(result.guestId);
+      return res.status(statusMap[result.error] || 400).json(body);
     }
 
     const token = signGuestToken({
