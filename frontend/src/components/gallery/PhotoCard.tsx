@@ -17,16 +17,21 @@ const COARSE_POINTER_QUERY = '(hover: none) and (pointer: coarse)';
  * change here would land an extra render between the tile measurement in
  * useLayoutEffect and the image mount it gates, remounting each card once.
  *
- * matchMedia is missing in some test environments and old embedded webviews,
- * so the other two signals stand in for it.
+ * matchMedia is authoritative wherever it exists, because it describes the
+ * PRIMARY pointer. `ontouchstart` and `maxTouchPoints` only say a touchscreen
+ * is present somewhere, which is equally true of a touchscreen laptop being
+ * driven by its mouse -- OR-ing them in would classify that as touch-only and
+ * turn every ordinary click into a two-step reveal. They stand in only where
+ * matchMedia is absent (old embedded webviews, some test environments).
  */
 function detectCoarsePointer(): boolean {
   if (typeof window === 'undefined') return false;
+  if (typeof window.matchMedia === 'function') {
+    return window.matchMedia(COARSE_POINTER_QUERY).matches;
+  }
   const hasNavigator = typeof navigator !== 'undefined';
-  const fallback = ('ontouchstart' in window)
+  return ('ontouchstart' in window)
     || (hasNavigator && navigator.maxTouchPoints > 0);
-  if (typeof window.matchMedia !== 'function') return fallback;
-  return window.matchMedia(COARSE_POINTER_QUERY).matches || fallback;
 }
 
 export interface PhotoCardFeedbackOptions {
@@ -241,11 +246,22 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   // so a tap in the middle of a tile silently downloaded or liked instead of
   // opening the photo. Every visibility toggle below therefore moves
   // pointer-events with it, in both the tap-to-reveal and the hover branch.
-  const revealed = (visible: boolean) =>
-    (visible
-      ? 'opacity-100 md:opacity-100 pointer-events-auto md:pointer-events-auto'
-      : 'opacity-0 md:opacity-0 pointer-events-none md:pointer-events-none')
-    + ' md:group-hover:opacity-100 md:group-hover:pointer-events-auto';
+  //
+  // The hover variants are emitted for pointer devices only, rather than being
+  // gated behind `md:`. Width is the wrong proxy for hover: a mouse user with
+  // a window under 768px got no overlay at all, and in Masonry, Mosaic and
+  // Timeline -- whose `group-hover:` used to be unprefixed -- that made
+  // download and like unreachable at any narrow width. Withholding the classes
+  // on touch is what the breakpoint was really for, since :hover latches on a
+  // touchscreen once a tile has been tapped.
+  const revealed = (visible: boolean) => {
+    const base = visible
+      ? 'opacity-100 pointer-events-auto'
+      : 'opacity-0 pointer-events-none';
+    return isTouchDevice
+      ? base
+      : `${base} group-hover:opacity-100 group-hover:pointer-events-auto`;
+  };
 
   const overlayClassName = `${overlayBaseClassName} ${revealed(overlayVisible)}`;
 

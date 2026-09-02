@@ -168,6 +168,46 @@ describe('PhotoCard overlay hit-testing (#1263)', () => {
 
     fireEvent.click(container.querySelector('.tile')!);
     expect(onClick).toHaveBeenCalledTimes(1);
-    expect(tokens(overlayOf(container))).toContain('md:group-hover:pointer-events-auto');
+    expect(tokens(overlayOf(container))).toContain('group-hover:pointer-events-auto');
+  });
+
+  it('reaches the hover overlay below the md breakpoint', () => {
+    // Codex review round 1. The hover variants used to be `md:group-hover:*`,
+    // so a mouse user with a window under 768px saw no overlay at all — and in
+    // Masonry, Mosaic and Timeline, whose `group-hover:` was unprefixed before
+    // this branch, that made download and like unreachable. Viewport width is
+    // not what decides whether a device can hover.
+    stubTouchDevice(false);
+    const { container } = renderCard();
+    const overlay = tokens(overlayOf(container));
+
+    expect(overlay).toContain('group-hover:opacity-100');
+    expect(overlay).toContain('group-hover:pointer-events-auto');
+    expect(overlay.some((c) => c.startsWith('md:'))).toBe(false);
+  });
+
+  it('withholds the hover variants on touch, where :hover latches after a tap', () => {
+    // The reason the breakpoint was there in the first place. Emitting
+    // `group-hover:` on a touchscreen leaves the overlay stuck open on the
+    // last tile tapped.
+    const { container } = renderCard();
+    expect(tokens(overlayOf(container)).some((c) => c.startsWith('group-hover:'))).toBe(false);
+  });
+
+  it('treats a touchscreen laptop driven by a mouse as a pointer device', () => {
+    // Codex review round 1. matchMedia describes the PRIMARY pointer;
+    // maxTouchPoints only says a touchscreen exists. OR-ing them classified a
+    // hybrid device as touch-only, so an ordinary click merely revealed the
+    // overlay and opening a photo took two clicks — a regression for the three
+    // layouts that had no tap-to-reveal step before.
+    stubTouchDevice(false);
+    Object.defineProperty(navigator, 'maxTouchPoints', { configurable: true, value: 10 });
+    (window as any).ontouchstart = null;
+
+    const onClick = vi.fn();
+    const { container } = renderCard({ onClick });
+
+    fireEvent.click(container.querySelector('.tile')!);
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });
