@@ -58,6 +58,13 @@ const CREDENTIAL_ENDPOINTS = [
   // Customer portal password, and the reset that replaces it.
   { method: 'POST', path: /^\/api\/customer\/auth\/login\/?$/i },
   { method: 'POST', path: /^\/api\/customer\/auth\/password-reset\/?$/i },
+  // Password changes verify the CURRENT password first, so they are a
+  // credential check too — one an attacker holding a hijacked session can
+  // drive, and one the general limiter never sees because the session's own
+  // JWT skips it as authenticated. Only failed attempts count here, so the
+  // one legitimate change a user makes costs nothing.
+  { method: 'POST', path: /^\/api\/auth\/admin\/change-password\/?$/i },
+  { method: 'POST', path: /^\/api\/customer\/profile\/password\/?$/i },
 ];
 
 /**

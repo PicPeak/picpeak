@@ -64,6 +64,9 @@ function mountRoutes(app) {
   app.post('/api/setup/admin', (req, res) => fail(res));
   app.post('/api/customer/auth/login', (req, res) => fail(res));
   app.post('/api/customer/auth/password-reset', (req, res) => fail(res));
+  // Password changes verify the current password before replacing it.
+  app.post('/api/auth/admin/change-password', (req, res) => fail(res));
+  app.post('/api/customer/profile/password', (req, res) => fail(res));
 
   // Benign endpoints living under the very same prefixes the old registrations
   // covered. Every one of these is called more than five times per window by a
@@ -72,8 +75,8 @@ function mountRoutes(app) {
   app.post('/api/auth/password-strength', (req, res) => res.json({ score: 3 }));
   app.post('/api/auth/logout', (req, res) => res.json({ ok: true }));
   app.post('/api/auth/gallery/logout', (req, res) => res.json({ ok: true }));
-  app.post('/api/auth/admin/change-password', (req, res) => res.json({ ok: true }));
   app.get('/api/auth/admin/sso/callback', (req, res) => res.json({ ok: true }));
+  app.get('/api/customer/profile', (req, res) => res.json({ ok: true }));
   app.get('/api/setup/status', (req, res) => res.json({ needsSetup: false }));
   app.get('/api/customer/auth/session', (req, res) => res.json({ ok: true }));
   app.get('/api/gallery/:slug/verify-token/:token', (req, res) => res.json({ valid: true }));
@@ -121,7 +124,9 @@ describe('authRateLimitGate — credential endpoints are limited', () => {
     ['/api/setup/verify-token'],
     ['/api/setup/admin'],
     ['/api/customer/auth/login'],
-    ['/api/customer/auth/password-reset']
+    ['/api/customer/auth/password-reset'],
+    ['/api/auth/admin/change-password'],
+    ['/api/customer/profile/password']
   ])('429s %s once the budget is spent', async (endpoint) => {
     const app = await buildApp();
     for (let i = 0; i < 5; i++) {
@@ -195,8 +200,8 @@ describe('authRateLimitGate — benign endpoints are never limited', () => {
     ['POST', '/api/auth/password-strength'],
     ['POST', '/api/auth/logout'],
     ['POST', '/api/auth/gallery/logout'],
-    ['POST', '/api/auth/admin/change-password'],
     ['GET', '/api/auth/admin/sso/callback'],
+    ['GET', '/api/customer/profile'],
     ['GET', '/api/setup/status'],
     ['GET', '/api/customer/auth/session'],
     ['GET', '/api/gallery/some-slug/verify-token/abc']
