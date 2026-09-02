@@ -27,11 +27,12 @@
  *
  * This migration therefore does two things, both conservative:
  *
- *   - REPAIR: rewrite a German row (and the legacy `_de` columns) only while
- *     it is still byte-identical to the English one, or empty. That is
- *     precisely the broken state. A legacy install whose German came from
- *     migration 026, or any install where an admin edited the template, is
- *     left untouched.
+ *   - REPAIR: rewrite a German field (and the legacy `_de` columns) only
+ *     while it is still byte-identical to the English one, or empty. That is
+ *     precisely the broken state. Each of subject / body_html / body_text is
+ *     judged on its own, so a legacy install whose German came from migration
+ *     026, or any install where an admin edited even one field, keeps what it
+ *     has.
  *   - SEED: insert `gallery_expired` / `archive_complete` with EN + DE only
  *     when the master row is missing entirely. Never overwrites an existing
  *     row.
@@ -163,7 +164,9 @@ async function repairGerman(knex, templateKey, german, now) {
       .where({ template_id: master.id, language: 'de' })
       .first();
 
+    const englishSubject = (enRow && enRow.subject) || master.subject_en || master.subject || '';
     const englishHtml = (enRow && enRow.body_html) || master.body_html_en || master.body_html || '';
+    const englishText = (enRow && enRow.body_text) || master.body_text_en || master.body_text || '';
 
     if (!deRow) {
       await knex('email_template_translations').insert({
@@ -175,30 +178,41 @@ async function repairGerman(knex, templateKey, german, now) {
         created_at: now,
         updated_at: now,
       });
-    } else if (isUntranslated(deRow.body_html, englishHtml)) {
-      await knex('email_template_translations')
-        .where({ id: deRow.id })
-        .update({
-          subject: german.subject,
-          body_html: german.body_html,
-          body_text: german.body_text,
-          updated_at: now,
-        });
+    } else {
+      // Each field is judged on its own, as in migration 194. Gating all three
+      // on body_html would overwrite a subject the admin had already translated
+      // whenever the HTML still matched English — and down() is a deliberate
+      // no-op, so that loss would be unrecoverable.
+      const patch = {};
+      if (isUntranslated(deRow.subject, englishSubject)) patch.subject = german.subject;
+      if (isUntranslated(deRow.body_html, englishHtml)) patch.body_html = german.body_html;
+      if (isUntranslated(deRow.body_text, englishText)) patch.body_text = german.body_text;
+      if (Object.keys(patch).length > 0) {
+        patch.updated_at = now;
+        await knex('email_template_translations').where({ id: deRow.id }).update(patch);
+      }
     }
   }
 
   // Legacy per-language columns on the master row — still the fallback path in
   // emailProcessor.processTemplate when the translations table is unavailable.
   const cols = await knex('email_templates').columnInfo();
-  if (cols.body_html_de && isUntranslated(master.body_html_de, master.body_html_en)) {
-    await knex('email_templates')
-      .where({ id: master.id })
-      .update({
-        subject_de: german.subject,
-        body_html_de: german.body_html,
-        body_text_de: german.body_text,
-        updated_at: now,
-      });
+  if (cols.body_html_de) {
+    // Same per-field rule as the translations table above.
+    const legacyPatch = {};
+    if (cols.subject_de && isUntranslated(master.subject_de, master.subject_en)) {
+      legacyPatch.subject_de = german.subject;
+    }
+    if (isUntranslated(master.body_html_de, master.body_html_en)) {
+      legacyPatch.body_html_de = german.body_html;
+    }
+    if (cols.body_text_de && isUntranslated(master.body_text_de, master.body_text_en)) {
+      legacyPatch.body_text_de = german.body_text;
+    }
+    if (Object.keys(legacyPatch).length > 0) {
+      legacyPatch.updated_at = now;
+      await knex('email_templates').where({ id: master.id }).update(legacyPatch);
+    }
   }
   return true;
 }

@@ -203,6 +203,35 @@ describe('migration 195 — German + seeding for the remaining gallery-lifecycle
 
       expect((await rowFor(id, 'de')).body_html).toContain('Galerie läuft bald ab');
     });
+
+    it('keeps a subject the admin translated while repairing the still-English body', async () => {
+      // Each field is judged on its own. Gating on body_html alone would have
+      // thrown this subject away — and down() is a no-op, so for good.
+      const adminSubject = 'Nur noch kurz: Ihre Galerie läuft ab';
+      const id = await seedFreshInstall({ deSubject: adminSubject });
+
+      await migration.up(knex);
+
+      const de = await rowFor(id, 'de');
+      expect(de.subject).toBe(adminSubject);
+      expect(de.body_html).toContain('Galerie läuft bald ab');
+      expect(de.body_text).toContain('Tagen ab');
+      const master = await masterFor('expiration_warning');
+      expect(master.subject_de).toBe(adminSubject);
+      expect(master.body_html_de).toContain('Galerie läuft bald ab');
+    });
+
+    it('keeps an admin-translated body while repairing a still-English subject', async () => {
+      const adminHtml = '<p>Hallo {{host_name}}, in {{days_remaining}} Tagen ist Schluss: {{gallery_link}} ({{event_name}})</p>';
+      const id = await seedFreshInstall({ deHtml: adminHtml });
+
+      await migration.up(knex);
+
+      const de = await rowFor(id, 'de');
+      expect(de.body_html).toBe(adminHtml);
+      expect(de.subject).toBe('Ihre Fotogalerie läuft bald ab');
+      expect((await masterFor('expiration_warning')).body_html_de).toBe(adminHtml);
+    });
   });
 
   describe.each([
