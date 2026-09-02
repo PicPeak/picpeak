@@ -61,9 +61,30 @@ export const useDevToolsProtection = (options: UseDevToolsProtectionOptions) => 
     const threshold = detectionSensitivity === 'high' ? 160 :
                       detectionSensitivity === 'low' ? 260 : 200;
 
+    // The outer/inner gap is measured RELATIVE to a baseline taken when the
+    // hook mounts, not as an absolute number. innerHeight is in page CSS px
+    // (it shrinks under browser zoom) while outerHeight is not, so at 150-200%
+    // zoom the absolute gap on a normal window is 400-500px — an
+    // accessibility zoom looked exactly like a docked panel and, at
+    // protectionLevel "maximum", bounced the guest off the gallery on load.
+    // A zoom step changes devicePixelRatio; docking DevTools does not. So the
+    // baseline is re-taken whenever the ratio changes, and only a gap that
+    // grows past the threshold at a constant ratio counts as DevTools.
+    const measure = () => ({
+      dpr: window.devicePixelRatio || 1,
+      height: window.outerHeight - window.innerHeight,
+      width: window.outerWidth - window.innerWidth,
+    });
+    let baseline = measure();
+
     const detectByWindowSize = () => {
-      if (window.outerHeight - window.innerHeight > threshold ||
-          window.outerWidth - window.innerWidth > threshold) {
+      const now = measure();
+      if (now.dpr !== baseline.dpr) {
+        baseline = now;
+        return;
+      }
+      if (now.height - baseline.height > threshold ||
+          now.width - baseline.width > threshold) {
         handleDevToolsDetected();
       }
     };
@@ -97,10 +118,11 @@ export const useDevToolsProtection = (options: UseDevToolsProtectionOptions) => 
 
     document.addEventListener('contextmenu', handleImageContextMenu);
     document.addEventListener('keydown', handleKeyDown, true);
-    // Docking/undocking DevTools resizes the viewport; the initial call covers
-    // the case where it was already open when the gallery loaded.
+    // Docking/undocking DevTools resizes the viewport. There is deliberately
+    // no check at mount: a panel that was already open when the gallery
+    // loaded is indistinguishable from a zoomed window at that point, and
+    // the shortcut-key deterrent above still applies.
     window.addEventListener('resize', detectByWindowSize);
-    detectByWindowSize();
 
     return () => {
       document.removeEventListener('contextmenu', handleImageContextMenu);

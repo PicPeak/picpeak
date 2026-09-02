@@ -147,6 +147,66 @@ describe('useDevToolsProtection', () => {
     expect(onDevToolsDetected).toHaveBeenCalledTimes(1);
   });
 
+  describe('viewport heuristic', () => {
+    const setWindowMetrics = (metrics: {
+      innerHeight: number; outerHeight: number; innerWidth: number; outerWidth: number; dpr: number;
+    }) => {
+      for (const [key, value] of Object.entries({
+        innerHeight: metrics.innerHeight,
+        outerHeight: metrics.outerHeight,
+        innerWidth: metrics.innerWidth,
+        outerWidth: metrics.outerWidth,
+        devicePixelRatio: metrics.dpr,
+      })) {
+        Object.defineProperty(window, key, { configurable: true, writable: true, value });
+      }
+    };
+
+    it('does not fire on mount for a window that is merely zoomed', () => {
+      // 200% zoom on a 1000px-tall window: innerHeight halves, outerHeight
+      // does not, so the absolute gap is ~580px — far past every threshold.
+      setWindowMetrics({ innerHeight: 500, outerHeight: 1080, innerWidth: 900, outerWidth: 1000, dpr: 2 });
+      const onDevToolsDetected = vi.fn();
+      renderHook(() => useDevToolsProtection({ enabled: true, onDevToolsDetected, detectionSensitivity: 'high' }));
+      window.dispatchEvent(new Event('resize'));
+
+      expect(onDevToolsDetected).not.toHaveBeenCalled();
+    });
+
+    it('does not fire when the gap grows because the guest zoomed in', () => {
+      setWindowMetrics({ innerHeight: 900, outerHeight: 1000, innerWidth: 1000, outerWidth: 1000, dpr: 1 });
+      const onDevToolsDetected = vi.fn();
+      renderHook(() => useDevToolsProtection({ enabled: true, onDevToolsDetected, detectionSensitivity: 'high' }));
+
+      setWindowMetrics({ innerHeight: 450, outerHeight: 1000, innerWidth: 500, outerWidth: 1000, dpr: 2 });
+      window.dispatchEvent(new Event('resize'));
+
+      expect(onDevToolsDetected).not.toHaveBeenCalled();
+    });
+
+    it('fires when the gap grows at a constant pixel ratio (a docked panel)', () => {
+      setWindowMetrics({ innerHeight: 900, outerHeight: 1000, innerWidth: 1000, outerWidth: 1000, dpr: 1 });
+      const onDevToolsDetected = vi.fn();
+      renderHook(() => useDevToolsProtection({ enabled: true, onDevToolsDetected, detectionSensitivity: 'medium' }));
+
+      setWindowMetrics({ innerHeight: 600, outerHeight: 1000, innerWidth: 1000, outerWidth: 1000, dpr: 1 });
+      window.dispatchEvent(new Event('resize'));
+
+      expect(onDevToolsDetected).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a plain window resize, where outer and inner move together', () => {
+      setWindowMetrics({ innerHeight: 900, outerHeight: 1000, innerWidth: 1000, outerWidth: 1000, dpr: 1 });
+      const onDevToolsDetected = vi.fn();
+      renderHook(() => useDevToolsProtection({ enabled: true, onDevToolsDetected, detectionSensitivity: 'high' }));
+
+      setWindowMetrics({ innerHeight: 500, outerHeight: 600, innerWidth: 700, outerWidth: 700, dpr: 1 });
+      window.dispatchEvent(new Event('resize'));
+
+      expect(onDevToolsDetected).not.toHaveBeenCalled();
+    });
+  });
+
   it('lets ordinary keystrokes through', () => {
     renderHook(() => useDevToolsProtection({ enabled: true }));
 
