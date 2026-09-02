@@ -186,10 +186,22 @@ export const SystemHealthPage: React.FC = () => {
         </div>
 
         {isLoading ? <Loading /> : waitingEmails.length === 0 ? (
-          <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 py-6">
-            <CheckCircle className="w-5 h-5" />
-            {t('systemHealth.waitingEmails.empty', 'Nothing waiting — the queue is being worked.')}
-          </div>
+          // "Nothing waiting" is only reassuring when something is working the
+          // queue. A processor that stopped a minute ago has no waiting rows
+          // yet either — the grace window has not elapsed — and a green check
+          // there is the same false all-clear this page exists to remove.
+          processorState === 'ok' ? (
+            <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 py-6">
+              <CheckCircle className="w-5 h-5" />
+              {t('systemHealth.waitingEmails.empty', 'Nothing waiting — the queue is being worked.')}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 py-6">
+              <AlertCircle className="w-5 h-5" />
+              {t('systemHealth.waitingEmails.emptyButUnworked',
+                'Nothing is overdue yet, but nothing is sending either — see the processor above. Anything queued from now on will sit here.')}
+            </div>
+          )
         ) : (
           <>
             <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
@@ -215,7 +227,13 @@ export const SystemHealthPage: React.FC = () => {
         {isLoading ? <Loading /> : stuckEmails.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 py-6">
             <CheckCircle className="w-5 h-5" />
-            {t('systemHealth.stuckEmails.empty', 'No stuck or failed emails — all clear.')}
+            {/* "all clear" is a claim about the whole queue, so it is only
+                allowed when the whole queue is clear. With mail waiting or a
+                processor that is not working, this section is still empty but
+                the system is not fine. */}
+            {waitingEmails.length === 0 && processorState === 'ok'
+              ? t('systemHealth.stuckEmails.empty', 'No stuck or failed emails — all clear.')
+              : t('systemHealth.stuckEmails.emptyNotAllClear', 'Nothing has failed — but see above.')}
           </div>
         ) : emailTable(stuckEmails, true)}
       </Card>

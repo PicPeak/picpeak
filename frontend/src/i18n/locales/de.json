@@ -107,7 +107,8 @@
         "error": "Fehler",
         "queued": "Eingereiht",
         "actions": "Aktionen"
-      }
+      },
+      "emptyNotAllClear": "Nichts ist fehlgeschlagen — beachten Sie aber die Hinweise oben."
     },
     "waitingEmails": {
       "title": "Wartet auf Versand",
@@ -118,7 +119,8 @@
       "unknownError": "unbekannt",
       "col": {
         "attempts": "Versuche"
-      }
+      },
+      "emptyButUnworked": "Noch ist nichts überfällig, es sendet aber auch nichts — siehe Prozessor oben. Alles ab jetzt Eingereihte bleibt hier liegen."
     },
     "processor": {
       "title": "E-Mail-Warteschlangen-Prozessor",

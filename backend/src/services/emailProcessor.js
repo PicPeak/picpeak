@@ -1003,6 +1003,11 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
 
     if (pendingEmails.length === 0) {
       logger.info('Email queue processor: No pending emails found');
+      // Record the empty pass too. Without this an idle pass advances
+      // lastRunAt and clears lastError but leaves the PREVIOUS pass's
+      // sent/failed totals in place, so System Health attributes them to a run
+      // that sent nothing.
+      processorStatus.lastResult = result;
       return result;
     }
 

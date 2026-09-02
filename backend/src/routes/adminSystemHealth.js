@@ -23,7 +23,8 @@ const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { verifyDocumentArtefacts } = require('../services/backupIntegrityService');
 const { getCoverageReport } = require('../services/backupCoverageService');
-const { getQueueProcessorStatus } = require('../services/emailProcessor');
+const { getQueueProcessorStatus, processEmailQueue } = require('../services/emailProcessor');
+const logger = require('../utils/logger');
 const { db } = require('../database/db');
 
 const router = express.Router();
@@ -94,6 +95,43 @@ router.get(
  */
 const WAITING_EMAIL_GRACE_MS = 10 * 60 * 1000;
 
+/**
+ * A timestamp column as milliseconds, whatever the engine handed back.
+ *
+ * The three shapes are all real. Postgres returns a Date. SQLite stores what
+ * `queueEmail` writes -- a JS Date, which the native binding turns into a
+ * ms-number -- and hands back that number. Test fixtures and older rows carry
+ * ISO strings.
+ *
+ * This has to happen in JS rather than in the WHERE clause. SQLite orders
+ * INTEGER before TEXT regardless of value, so comparing a ms-number column
+ * against a bound ISO string is true for EVERY row: a mail queued one second
+ * ago reads as ten minutes overdue, and a scheduled_at years in the future
+ * reads as already due. Binding a Date instead is no fix either, since knex
+ * hands sqlite3 a Date the same way and jest's sandbox Dates stringify to
+ * "[object Object]" (see CLAUDE.md).
+ */
+function toMillis(value) {
+  if (value == null) return null;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'number') return value;
+  const text = String(value).trim();
+  if (text === '') return null;
+  // A numeric string is epoch ms; anything else goes through Date.parse.
+  const numeric = Number(text);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = Date.parse(text);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * How many pending rows to pull before filtering by time in JS. Everything
+ * overdue sorts first, so the cap only bites on a queue with more than this
+ * many pending rows -- at which point the 200-row response was already a
+ * sample rather than a census.
+ */
+const WAITING_SCAN_LIMIT = 1000;
+
 const mapEmailRow = (r) => ({
   id: r.id,
   recipientEmail: r.recipient_email,
@@ -141,18 +179,30 @@ router.get(
     // under the retry cap, and past any scheduled_at — so a row listed here is
     // one it should already have taken. Rows over the cap are the `stuckEmails`
     // set above and must not be counted twice.
-    const now = new Date();
-    const dueBefore = new Date(now.getTime() - WAITING_EMAIL_GRACE_MS);
-    const waitingEmails = await db('email_queue')
+    //
+    // Only the engine-safe half of that predicate runs in SQL; the two time
+    // comparisons are done in JS, for the reason on toMillis above.
+    const now = Date.now();
+    const dueBefore = now - WAITING_EMAIL_GRACE_MS;
+    const pendingRows = await db('email_queue')
       .where('status', 'pending')
       .where('retry_count', '<', 3)
-      .where('created_at', '<=', dueBefore.toISOString())
-      .andWhere(function () {
-        this.whereNull('scheduled_at').orWhere('scheduled_at', '<=', now.toISOString());
-      })
       .orderBy('created_at', 'asc')
-      .limit(200)
-      .select('id', 'recipient_email', 'email_type', 'status', 'retry_count', 'error_message', 'created_at');
+      .limit(WAITING_SCAN_LIMIT)
+      .select('id', 'recipient_email', 'email_type', 'status', 'retry_count',
+        'error_message', 'created_at', 'scheduled_at');
+
+    const waitingEmails = pendingRows.filter((r) => {
+      const scheduledAt = toMillis(r.scheduled_at);
+      // Parked for later on purpose — split-payment invoices, the
+      // business-hours floor. Not being sent yet is the point of those.
+      if (scheduledAt !== null && scheduledAt > now) return false;
+      const createdAt = toMillis(r.created_at);
+      // An unreadable created_at cannot be judged overdue; leave it alone
+      // rather than reporting every such row as waiting.
+      if (createdAt === null) return false;
+      return createdAt <= dueBefore;
+    }).slice(0, 200);
 
     return successResponse(res, {
       stuckEmails: stuckEmails.map(mapEmailRow),
@@ -167,9 +217,20 @@ router.get(
 );
 
 /**
- * POST /failures/email/:id/retry — re-queue a stuck email (status back to
- * pending, retry_count reset, error cleared, scheduled_at cleared so the
- * 60s processor picks it up on its next pass).
+ * POST /failures/email/:id/retry — re-queue an email and flush it now.
+ *
+ * The reset alone (pending, retries cleared, schedule cleared) is what a
+ * FAILED row needs, but it is a no-op for a waiting row: those are already
+ * pending at retry_count 0 with a null or past-due schedule, so the row came
+ * back unchanged while the toast said it had been re-queued. Since the
+ * commonest reason a row is waiting is that nothing is working the queue,
+ * telling it to wait for the next pass is the one thing that will not help.
+ *
+ * So the reset is followed by a targeted flush — the same single-row path the
+ * project cockpit uses (projectService.js). `ignoreSchedule` bypasses the
+ * retry cap and the schedule, which is the point of an admin forcing a send.
+ * The send is best-effort: a failure is already recorded on the row itself by
+ * processEmailQueue, and the refreshed list will show it.
  */
 router.post(
   '/failures/email/:id/retry',
@@ -184,7 +245,14 @@ router.post(
       scheduled_at: null,
     });
     if (!updated) return res.status(404).json({ error: 'Email not found' });
-    return successResponse(res, { retried: true });
+
+    let sent = 0;
+    try {
+      ({ sent } = await processEmailQueue({ ignoreSchedule: true, onlyId: id }));
+    } catch (err) {
+      logger.warn(`System health: flush of email ${id} failed: ${err.message}`);
+    }
+    return successResponse(res, { retried: true, sent: sent > 0 });
   }),
 );
 

@@ -25,6 +25,35 @@ const jwt = require('jsonwebtoken');
 
 const { bootCrmDb, seedMinimal, buildRouteApp } = require('../integration/helpers/crmDb');
 
+/**
+ * Stand up a transport without touching a socket.
+ *
+ * processEmailQueue bails before it reads a single row when there is no
+ * transport, so the two tests below cannot otherwise reach the code they are
+ * about. Spying on the webhook transport is the cheapest way in — and it must
+ * be a spy rather than a dead URL, because real connection attempts leave open
+ * handles that destabilise unrelated suites in the same worker.
+ *
+ * `send` rejects: a failed delivery is a delivery ATTEMPT, which is exactly
+ * what these two need to observe.
+ */
+function stubWebhookTransport() {
+  const transport = require('../../src/services/emailWebhookTransport');
+  const savedFrom = process.env.EMAIL_FROM;
+  process.env.EMAIL_FROM = 'noreply@example.com';
+  const enabled = jest.spyOn(transport, 'isEnabled').mockReturnValue(true);
+  const send = jest.spyOn(transport, 'send').mockRejectedValue(new Error('transport down'));
+  return {
+    send,
+    restore() {
+      enabled.mockRestore();
+      send.mockRestore();
+      if (savedFrom === undefined) delete process.env.EMAIL_FROM;
+      else process.env.EMAIL_FROM = savedFrom;
+    },
+  };
+}
+
 const MINUTE = 60 * 1000;
 const ago = (ms) => new Date(Date.now() - ms).toISOString();
 const ahead = (ms) => new Date(Date.now() + ms).toISOString();
@@ -133,6 +162,66 @@ describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
     expect(body.stuckEmails).toEqual([]);
   });
 
+  // --- cross-engine timestamps (Codex review round 1) -----------------------
+  //
+  // Every test above stores ISO strings, which is what CLAUDE.md prescribes
+  // for jest + SQLite. Production SQLite does not: queueEmail writes a JS Date
+  // and the native binding stores it as a ms-NUMBER. SQLite orders INTEGER
+  // before TEXT whatever the values are, so the original WHERE clause -- a
+  // ms-number column compared against a bound ISO string -- was true for every
+  // row. Fresh mail read as ten minutes overdue and future schedules read as
+  // due, on every SQLite deployment.
+  describe('rows stored as epoch ms, the SQLite production shape', () => {
+    const ms = (offset) => Date.now() + offset;
+
+    it('does not report a mail queued seconds ago as waiting', async () => {
+      await queue({ email_type: 'gallery_created', created_at: ms(-30 * 1000) });
+
+      const body = await failures();
+      expect(body.waitingEmails).toEqual([]);
+      expect(body.counts.waitingEmails).toBe(0);
+    });
+
+    it('still reports a genuinely overdue one', async () => {
+      await queue({ email_type: 'gallery_created', created_at: ms(-52 * MINUTE) });
+
+      const body = await failures();
+      expect(typesOf(body.waitingEmails)).toEqual(['gallery_created']);
+    });
+
+    it('leaves a future numeric scheduled_at alone', async () => {
+      await queue({
+        email_type: 'invoice_due',
+        created_at: ms(-52 * MINUTE),
+        scheduled_at: ms(3 * 24 * 60 * MINUTE),
+      });
+
+      const body = await failures();
+      expect(body.waitingEmails).toEqual([]);
+    });
+
+    it('reports a past-due numeric scheduled_at', async () => {
+      await queue({
+        email_type: 'invoice_due',
+        created_at: ms(-52 * MINUTE),
+        scheduled_at: ms(-30 * MINUTE),
+      });
+
+      const body = await failures();
+      expect(typesOf(body.waitingEmails)).toEqual(['invoice_due']);
+    });
+
+    it('mixes both storage shapes in one queue without confusing them', async () => {
+      await queue({ email_type: 'gallery_created', created_at: ms(-52 * MINUTE) });
+      await queue({ email_type: 'quote_sent', created_at: ago(52 * MINUTE) });
+      await queue({ email_type: 'invoice_due', created_at: ms(-30 * 1000) });
+      await queue({ email_type: 'customer_invitation', created_at: ago(30 * 1000) });
+
+      const body = await failures();
+      expect(typesOf(body.waitingEmails)).toEqual(['gallery_created', 'quote_sent']);
+    });
+  });
+
   it('reports what the queue processor last did', async () => {
     const body = await failures();
     // Never started in this process — which is the condition that makes a
@@ -140,6 +229,59 @@ describe('GET /admin/system-health/failures — waiting emails (#1262)', () => {
     expect(body.processor).toEqual(expect.objectContaining({ started: false }));
     expect(body.processor).toHaveProperty('lastRunAt');
     expect(body.processor).toHaveProperty('lastError');
+  });
+
+  it('does not attribute a previous pass\'s totals to an idle one', async () => {
+    // Codex review round 1. The no-pending early return skipped the lastResult
+    // assignment, so after one pass that sent or failed something, every idle
+    // pass afterwards advanced lastRunAt while still reporting the old totals.
+    const { processEmailQueue, getQueueProcessorStatus } = require('../../src/services/emailProcessor');
+    const transport = stubWebhookTransport();
+
+    try {
+      await queue({ email_type: 'gallery_created' });
+      await processEmailQueue();
+      const worked = getQueueProcessorStatus().lastResult;
+      expect(worked.processed).toBe(1);
+      expect(worked.sent + worked.failed).toBe(1);
+
+      await db('email_queue').del();
+      await processEmailQueue();
+
+      expect(getQueueProcessorStatus().lastResult).toEqual({ processed: 0, sent: 0, failed: 0 });
+    } finally {
+      transport.restore();
+    }
+  });
+
+  it('actually flushes the row on retry instead of leaving it as it was', async () => {
+    // Codex review round 1. The retry endpoint only wrote pending /
+    // retry_count 0 / no schedule — which is exactly what a WAITING row
+    // already is, so nothing happened while the toast said "re-queued". And
+    // the usual reason a row is waiting is that nothing is working the queue,
+    // so "wait for the next pass" is the one answer that cannot help.
+    const transport = stubWebhookTransport();
+
+    try {
+      await queue({ email_type: 'gallery_created' });
+      const { id } = await db('email_queue').first('id');
+
+      const res = await request(app)
+        .post(`/admin/system-health/failures/email/${id}/retry`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+
+      // A send was ATTEMPTED, which the old endpoint never did. It fails here
+      // (the transport is stubbed to reject) and that failure is recorded on
+      // the row, which is itself the proof the row was worked rather than
+      // merely rewritten to the state it was already in.
+      expect(transport.send).toHaveBeenCalledTimes(1);
+      const after = await db('email_queue').where({ id }).first();
+      expect(after.retry_count).toBe(1);
+      expect(after.error_message).toBeTruthy();
+    } finally {
+      transport.restore();
+    }
   });
 
   it('surfaces the transport failure that makes every pass a no-op', async () => {
