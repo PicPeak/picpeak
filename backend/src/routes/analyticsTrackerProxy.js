@@ -41,6 +41,17 @@
  *     arbitrary client headers);
  *   - a sanitised response Content-Type plus `nosniff`, so a tracker host
  *     cannot serve HTML/SVG through PicPeak's origin and get it rendered.
+ *
+ * The threat model is a TRUSTED admin and a possibly hostile tracker host or
+ * visitor — not a hostile admin. Two consequences worth knowing:
+ *   - the host check is resolve-then-fetch: the hostname is vetted when the
+ *     config is (re)loaded and `fetch` resolves it again, so a host whose DNS
+ *     is flipped between the two (rebinding) could reach an internal address
+ *     for up to CONFIG_TTL_MS. Only the admin can set that hostname, and the
+ *     request is still confined to the allowlisted paths with no PicPeak
+ *     credentials attached. Same posture as the S3/MinIO client.
+ *   - the check runs in production only, so a development install can point
+ *     at a tracker on localhost.
  */
 
 const express = require('express');
