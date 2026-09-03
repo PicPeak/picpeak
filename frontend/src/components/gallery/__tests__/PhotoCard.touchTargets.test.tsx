@@ -14,9 +14,10 @@
  */
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 
 import { PhotoCard } from '../PhotoCard';
+import { __inputModeTesting } from '../../../hooks/useInputMode';
 import type { Photo } from '../../../types';
 
 vi.mock('../../common', () => ({
@@ -65,6 +66,24 @@ function stubTouchDevice(isTouch: boolean) {
   // signal — remove it so the pointer-device case is actually exercised.
   if (isTouch) (window as any).ontouchstart = null;
   else delete (window as any).ontouchstart;
+  // The input mode is a module-level store now (#1275), so it has to re-read
+  // the stubbed device rather than keep what it decided on first import.
+  __inputModeTesting.reset();
+}
+
+/**
+ * Dispatch a real pointer event, the way a finger or a mouse announces itself.
+ *
+ * Wrapped in act() because the store notifies outside React's own event
+ * system: without it the re-render has not landed by the time the following
+ * click is dispatched, which is precisely the ordering the fix depends on.
+ */
+function pointer(type: 'pointerdown' | 'pointermove', pointerType: string) {
+  act(() => {
+    const event = new Event(type, { bubbles: true }) as any;
+    event.pointerType = pointerType;
+    window.dispatchEvent(event);
+  });
 }
 
 /** Class tokens, so `md:group-hover:pointer-events-auto` isn't mistaken for the bare one. */
@@ -192,6 +211,71 @@ describe('PhotoCard overlay hit-testing (#1263)', () => {
     // last tile tapped.
     const { container } = renderCard();
     expect(tokens(overlayOf(container)).some((c) => c.startsWith('group-hover:'))).toBe(false);
+  });
+
+  it('switches to tap-to-reveal when a finger arrives on a mouse-primary device', () => {
+    // #1275. A touchscreen laptop reports a fine primary pointer, so before
+    // this the finger was handled as a click: the photo opened with no reveal
+    // step and the tile's own actions needed a hover a finger cannot produce.
+    stubTouchDevice(false);
+    const onClick = vi.fn();
+    const { container } = renderCard({ onClick });
+    const tile = () => container.querySelector('.tile')!;
+
+    // Mouse first — one click opens, as it should on this device.
+    fireEvent.click(tile());
+    expect(onClick).toHaveBeenCalledTimes(1);
+
+    // Now a finger. The tap announces itself before the click lands.
+    pointer('pointerdown', 'touch');
+    fireEvent.click(tile());
+    expect(onClick).toHaveBeenCalledTimes(1); // revealed, did not open
+    expect(tokens(overlayOf(container))).toContain('pointer-events-auto');
+  });
+
+  it('switches back to one-click open when the mouse returns', () => {
+    // The other direction, on the same device in the same session: an iPad
+    // with a trackpad reports a coarse primary pointer, so a mouse click was
+    // being handled as a tap and opening a photo took two of them.
+    stubTouchDevice(true);
+    const onClick = vi.fn();
+    const { container } = renderCard({ onClick });
+    const tile = () => container.querySelector('.tile')!;
+
+    // Finger: reveal, then open.
+    pointer('pointerdown', 'touch');
+    fireEvent.click(tile());
+    expect(onClick).not.toHaveBeenCalled();
+
+    // A mouse approaching is enough — the mode must be right BEFORE the click.
+    pointer('pointermove', 'mouse');
+    fireEvent.click(tile());
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(tokens(overlayOf(container))).toContain('group-hover:opacity-100');
+  });
+
+  it('keeps hidden controls inert in every mode', () => {
+    // The #1263 guarantee has to survive the mode switching: whichever input
+    // is in use, a control that cannot be seen cannot be hit.
+    stubTouchDevice(false);
+    const { container } = renderCard();
+    expect(tokens(overlayOf(container))).toContain('pointer-events-none');
+
+    pointer('pointerdown', 'touch');
+    expect(tokens(overlayOf(container))).toContain('pointer-events-none');
+
+    pointer('pointermove', 'mouse');
+    expect(tokens(overlayOf(container))).toContain('pointer-events-none');
+  });
+
+  it('treats a pen like a finger, since it taps rather than hovers', () => {
+    stubTouchDevice(false);
+    const onClick = vi.fn();
+    const { container } = renderCard({ onClick });
+
+    pointer('pointerdown', 'pen');
+    fireEvent.click(container.querySelector('.tile')!);
+    expect(onClick).not.toHaveBeenCalled();
   });
 
   it('treats a touchscreen laptop driven by a mouse as a pointer device', () => {
