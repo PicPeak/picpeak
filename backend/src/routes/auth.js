@@ -33,6 +33,7 @@ const { getClientIp } = require('../utils/requestIp');
 const { sanitizePasswordInput } = require('../utils/passwordInput');
 const {
   validatePasswordInContext,
+  MAX_PASSWORD_LENGTH,
   getBcryptRounds,
   logPasswordValidationFailure
 } = require('../utils/passwordValidation');
@@ -952,8 +953,16 @@ router.post('/admin/change-password', [
 });
 
 // Password strength check endpoint (for real-time validation)
+//
+// Unauthenticated, and it feeds the request body straight into zxcvbn, whose
+// matching is superlinear and synchronous. Without the length bound a single
+// request stops the event loop for the whole process -- ~5s at 1,000
+// characters and unbounded past that. validatePassword() enforces the same cap
+// for every caller; this one keeps the oversized body from being accepted at
+// the edge at all.
 router.post('/password-strength', [
-  body('password').notEmpty(),
+  body('password').isString().isLength({ min: 1, max: MAX_PASSWORD_LENGTH })
+    .withMessage(`Password must be 1-${MAX_PASSWORD_LENGTH} characters`),
   body('context').isIn(['admin', 'gallery']).optional()
 ], async (req, res) => {
   try {
