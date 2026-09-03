@@ -1684,7 +1684,7 @@
       "maxUploadBatchSize": "Max. Upload-Paketgröße (MB)",
       "maxUploadBatchSizeHelp": "Maximale Größe pro Upload-Anfrage. Reduzieren Sie diesen Wert bei Nutzung eines Reverse-Proxys mit Größenbeschränkung (z.B. Cloudflare: 100MB).",
       "allowedFileTypes": "Erlaubte Dateitypen",
-      "allowedFileTypesHelp": "Kommagetrennte Liste von Dateierweiterungen",
+      "allowedFileTypesHelp": "Kommagetrennte Liste von Dateierweiterungen, z. B. jpg,jpeg,png,webp. Gilt für alle Upload-Wege, auch Gast-Uploads und die Chunked-API für große Dateien. Videos sind standardmäßig aus: mp4, mov oder webm hinzufügen, um sie zuzulassen.",
       "featureToggles": "Funktionsschalter",
       "enableAnalytics": "Analytics-Tracking aktivieren",
       "enableRegistration": "Selbstregistrierung für Admins erlauben",

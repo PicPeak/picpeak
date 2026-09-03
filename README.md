@@ -144,6 +144,7 @@ Full documentation lives at **[docs.picpeak.app](https://docs.picpeak.app)** —
 | 💾 Backup & Restore | [docs.picpeak.app/guides/backup-restore](https://docs.picpeak.app/guides/backup-restore) |
 | 🔌 API reference | [docs.picpeak.app/api](https://docs.picpeak.app/api) |
 | 🪝 Webhooks | [docs.picpeak.app/features/webhooks](https://docs.picpeak.app/features/webhooks) |
+| 📤 Upload file types & chunked uploads | [docs/upload-file-types.md](docs/upload-file-types.md) |
 | 💾 Storage backends (local / S3) | [docs.picpeak.app/features/storage-backends](https://docs.picpeak.app/features/storage-backends) |
 | 💻 System requirements & tuning | [docs.picpeak.app/deployment/system-requirements](https://docs.picpeak.app/deployment/system-requirements) |
 | 🧾 CRM & Accounting | [docs.picpeak.app/features/crm](https://docs.picpeak.app/features/crm) · [disclaimers](https://docs.picpeak.app/features/crm/disclaimers) |
