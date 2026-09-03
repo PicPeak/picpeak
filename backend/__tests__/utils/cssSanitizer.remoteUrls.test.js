@@ -80,6 +80,31 @@ describe('stripDisallowedUrls', () => {
     expect(sanitized).toContain('data:image/png');
   });
 
+  // Codex review: `)` is ordinary content inside a QUOTED url(), so a pattern
+  // that stops at the first `)` failed to match at all — reporting the token
+  // as clean and storing it verbatim. A working bypass of the block.
+  it.each([
+    ['double-quoted', '.a{background:url("https://evil.example/pixel).gif")}'],
+    ['single-quoted', ".a{background:url('https://evil.example/pixel).gif')}"],
+    ['several parens', '.a{background:url("https://evil.example/a)b)c.gif")}'],
+  ])('removes a %s remote url() containing a closing paren', (_label, css) => {
+    const { sanitized, blocked } = stripDisallowedUrls(css);
+    expect(blocked).toBe(1);
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('keeps a QUOTED data: image, parens and all', () => {
+    const css = '.a{background:url("data:image/png;base64,AAAA")}';
+    expect(stripDisallowedUrls(css).sanitized).toBe(css);
+  });
+
+  it('does not swallow an unquoted url() that never closes', () => {
+    // Malformed input must not eat the rest of the stylesheet.
+    const css = '.a{background:url(https://evil.example/p.gif}.b{color:red}';
+    const { sanitized } = stripDisallowedUrls(css);
+    expect(sanitized).toContain('color:red');
+  });
+
   it('is idempotent', () => {
     const once = stripDisallowedUrls('.a{background:url(https://x/p.gif)}').sanitized;
     expect(stripDisallowedUrls(once).sanitized).toBe(once);

@@ -29,9 +29,20 @@ const FORBIDDEN_PATTERNS = [
   /on\w+\s*=/gi, // onclick=, onload=, etc.
 ];
 
-// Any `url(...)` token, quoted or unquoted. A URL containing a literal ")"
-// is not matched — it would have to be escaped to be valid CSS anyway.
-const URL_TOKEN_PATTERN = /url\s*\(\s*(['"]?)([^)'"]*)\1\s*\)/gi;
+// Any `url(...)` token. The three CSS forms are matched SEPARATELY, because
+// they terminate differently:
+//
+//   url("…")  /  url('…')   the quote closes the value, so ")" inside it is
+//                           ordinary content and must not end the match
+//   url(…)                  unquoted, where ")" DOES terminate and quotes,
+//                           whitespace and parens are not legal unescaped
+//
+// Treating all three as "anything up to the first )" is what let
+// `url("https://evil.example/pixel).gif")` through untouched: the pattern
+// failed to match at all, so the token was reported as clean and stored
+// verbatim. A URL with a ")" in its path is perfectly serveable, so that was
+// a working bypass of the block this file exists to apply.
+const URL_TOKEN_PATTERN = /url\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"\s]*))\s*\)/gi;
 
 // The only target a url() may name: an inline raster data: image. Anything
 // else is a request to a third party from someone else's browser.
@@ -99,7 +110,10 @@ function stripDisallowedUrls(css) {
   let blocked = 0;
   const sanitized = String(css == null ? '' : css).replace(
     URL_TOKEN_PATTERN,
-    (match, _quote, target) => {
+    (match, doubleQuoted, singleQuoted, unquoted) => {
+      // Exactly one of the three alternatives participated. `??` rather than
+      // `||` so an empty `url("")` is still treated as a captured value.
+      const target = doubleQuoted ?? singleQuoted ?? unquoted ?? '';
       if (ALLOWED_URL_TARGET.test(String(target).trim())) return match;
       blocked += 1;
       return 'none';
