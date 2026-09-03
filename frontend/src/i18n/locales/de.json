@@ -3429,7 +3429,15 @@
       "whatsapp_config_updated": "WhatsApp-Konfiguration aktualisiert",
       "feature_flags_summary_one": "{{count}} Funktion aktualisiert: {{summary}}",
       "feature_flags_summary_other": "{{count}} Funktionen aktualisiert: {{summary}}",
-      "feature_flags_updated": "Funktionseinstellungen aktualisiert"
+      "feature_flags_updated": "Funktionseinstellungen aktualisiert",
+      "newsletter_created": "Newsletter-Kampagne erstellt",
+      "newsletter_updated": "Newsletter-Kampagne aktualisiert",
+      "newsletter_test_sent": "Newsletter-Test-E-Mail gesendet",
+      "newsletter_queued": "Newsletter an {{recipients}} Empfänger eingereiht",
+      "newsletter_cancelled": "Newsletter-Kampagne abgebrochen",
+      "newsletter_completed": "Newsletter abgeschlossen — {{sent}} gesendet, {{failed}} fehlgeschlagen",
+      "newsletter_deleted": "Newsletter-Kampagne gelöscht",
+      "customer_marketing_opt_out": "Newsletter-Einwilligung des Kunden geändert"
     },
     "people": {
       "title": "Personen in dieser Galerie",

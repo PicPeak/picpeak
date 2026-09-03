@@ -2961,7 +2961,15 @@
       "whatsapp_config_updated": "WhatsApp configuration updated",
       "feature_flags_summary_one": "{{count}} features updated: {{summary}}",
       "feature_flags_summary_other": "{{count}} features updated: {{summary}}",
-      "feature_flags_updated": "Feature settings updated"
+      "feature_flags_updated": "Feature settings updated",
+      "newsletter_created": "Newsletter campaign created",
+      "newsletter_updated": "Newsletter campaign updated",
+      "newsletter_test_sent": "Newsletter test email sent",
+      "newsletter_queued": "Newsletter queued to {{recipients}} recipients",
+      "newsletter_cancelled": "Newsletter campaign cancelled",
+      "newsletter_completed": "Newsletter finished — {{sent}} sent, {{failed}} failed",
+      "newsletter_deleted": "Newsletter campaign deleted",
+      "customer_marketing_opt_out": "Customer newsletter consent changed"
     },
     "people": {
       "title": "People in this gallery",
