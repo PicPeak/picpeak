@@ -716,10 +716,15 @@ app.get(
         // whereas Firefox/Chrome do — so a 302 worked everywhere except
         // Safari. sendFile sets the right content-type from the extension.
         const rel = String(url).replace(/^\/+/, '').replace(/^uploads\//, '');
+        // Containment is the two public asset trees, not the whole uploads/
+        // root: that root also holds signed contracts and client transfer
+        // files, and the favicon URL is an admin-writable setting, so the
+        // wider check let `/uploads/contracts/signed/<file>` be served here
+        // unauthenticated with a day of cache.
         const uploadsRoot = path.resolve(path.join(storagePath, 'uploads'));
         const resolved = path.resolve(path.join(uploadsRoot, rel));
-        // Path containment — never serve outside the uploads dir.
-        if (resolved.startsWith(uploadsRoot + path.sep) && fs.existsSync(resolved)) {
+        const servableRoots = ['favicons', 'logos'].map((d) => path.join(uploadsRoot, d) + path.sep);
+        if (servableRoots.some((root) => resolved.startsWith(root)) && fs.existsSync(resolved)) {
           // This route streams the file directly, bypassing the secureStatic
           // middleware — so re-apply its SVG hardening here. An admin-uploaded
           // SVG favicon could contain <script>; served at the top-level
