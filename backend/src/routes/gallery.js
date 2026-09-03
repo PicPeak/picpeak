@@ -10,6 +10,7 @@ const { parseBooleanInput } = require('../utils/parsers');
 const { getAppSetting } = require('../utils/appSettings');
 const archiver = require('archiver');
 const path = require('path');
+const { resolvePhotoContentType } = require('../utils/photoContentType');
 const router = express.Router();
 
 // #756: a NULL per-event hero_logo_visible means "inherit the global
@@ -1041,7 +1042,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     if (req.method === 'HEAD') {
       const headUseOriginal = await getUseOriginalFilenames();
       const headHeaders = {
-        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Content-Type': resolvePhotoContentType(photo),
         'Content-Disposition': buildContentDisposition(pickRawDownloadName(photo, headUseOriginal)),
         'Accept-Ranges': 'bytes',
       };
@@ -1162,7 +1163,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       }
 
       res.set({
-        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Content-Type': resolvePhotoContentType(photo),
         'Content-Disposition': contentDisposition,
         'Content-Length': watermarkedBuffer.length
       });
@@ -1195,7 +1196,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
 
       const lastModified = stat.mtime ? new Date(stat.mtime).toUTCString() : null;
       const headers = {
-        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Content-Type': resolvePhotoContentType(photo),
         'Content-Disposition': contentDisposition,
         'Accept-Ranges': 'bytes',
       };
@@ -1278,7 +1279,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     // their bytes on download. Set the header explicitly and stream the
     // file with res.sendFile-equivalent semantics.
     res.set({
-      'Content-Type': photo.mime_type || 'image/jpeg',
+      'Content-Type': resolvePhotoContentType(photo),
       'Content-Disposition': contentDisposition,
     });
     res.sendFile(filePath, (downloadError) => {
@@ -1823,7 +1824,7 @@ router.get('/:slug/photo/:photoId',
             'Content-Range': `bytes ${start}-${end}/${fileSize}`,
             'Accept-Ranges': 'bytes',
             'Content-Length': chunksize,
-            'Content-Type': photo.mime_type || 'video/mp4',
+            'Content-Type': resolvePhotoContentType(photo),
             'Cache-Control': 'private, max-age=1800',
             'X-Protection-Level': 'basic'
           });
@@ -1835,7 +1836,7 @@ router.get('/:slug/photo/:photoId',
         } else {
           res.writeHead(200, {
             'Content-Length': fileSize,
-            'Content-Type': photo.mime_type || 'video/mp4',
+            'Content-Type': resolvePhotoContentType(photo),
             'Accept-Ranges': 'bytes',
             'Cache-Control': 'private, max-age=1800',
             'X-Protection-Level': 'basic'
@@ -1870,7 +1871,7 @@ router.get('/:slug/photo/:photoId',
               const wmStat = await storage.stat(photo.watermark_path);
               if (wmStat) {
                 res.set({
-                  'Content-Type': photo.mime_type || 'image/jpeg',
+                  'Content-Type': resolvePhotoContentType(photo),
                   'Content-Length': wmStat.size,
                   'Cache-Control': 'private, max-age=1800',
                   'ETag': etag,
@@ -1883,7 +1884,7 @@ router.get('/:slug/photo/:photoId',
               const watermarkFilePath = path.join(getStoragePath(), photo.watermark_path);
               if (fs.existsSync(watermarkFilePath)) {
                 res.set({
-                  'Content-Type': photo.mime_type || 'image/jpeg',
+                  'Content-Type': resolvePhotoContentType(photo),
                   'Cache-Control': 'private, max-age=1800',
                   'ETag': etag,
                   'X-Protection-Level': 'basic'
@@ -1909,7 +1910,7 @@ router.get('/:slug/photo/:photoId',
           .catch(err => logger.warn(`Background watermark generation failed for photo ${photo.id}:`, err.message));
 
         res.set({
-          'Content-Type': photo.mime_type || 'image/jpeg',
+          'Content-Type': resolvePhotoContentType(photo),
           'Cache-Control': 'private, max-age=1800',
           'ETag': etag,
           'X-Protection-Level': 'basic'
@@ -1924,7 +1925,7 @@ router.get('/:slug/photo/:photoId',
         });
         if (useStorageBackend) {
           res.set('Content-Length', stat.size);
-          if (photo.mime_type) res.set('Content-Type', photo.mime_type);
+          res.set('Content-Type', resolvePhotoContentType(photo));
           const stream = await storage.get(storageKey);
           pipeStreamToResponse(stream, res, { context: `photo ${photo.id}` });
         } else {
