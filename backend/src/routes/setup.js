@@ -7,6 +7,8 @@
 // rate-limited at the mount point in server.js (authRateLimiter).
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const { safeValidationErrors } = require('../utils/routeHelpers');
+const { MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
 const setupService = require('../services/setupService');
 const { getClientIp } = require('../utils/requestIp');
 const { setAdminAuthCookie } = require('../utils/tokenUtils');
@@ -32,7 +34,7 @@ router.post('/verify-token', [
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    return res.status(400).json({ errors: safeValidationErrors(errors) });
   }
   try {
     const valid = await setupService.verifySetupToken(req.body.token);
@@ -52,11 +54,11 @@ router.post('/verify-token', [
 router.post('/admin', [
   body('token').notEmpty().withMessage('Setup token is required'),
   body('email').isEmail().withMessage('A valid email is required'),
-  body('password').notEmpty().withMessage('Password is required'),
+  body('password').isString().notEmpty().isLength({ max: MAX_PASSWORD_LENGTH }).withMessage('Password is required'),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    return res.status(400).json({ errors: safeValidationErrors(errors) });
   }
   try {
     const { token, email, password } = req.body;

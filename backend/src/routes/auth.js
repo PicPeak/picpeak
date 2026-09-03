@@ -3,15 +3,6 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 
-/**
- * express-validator's errors.array() carries `value` -- the submitted input --
- * so returning it verbatim reflects the caller's password back in the 400 body.
- * Five routes in this file validate a password field, and the strength endpoint
- * is unauthenticated behind a 50mb JSON limit, which also made the rejection
- * itself an allocation amplifier. Everything except `value` is kept, so the
- * response shape both frontend consumers rely on (`msg`, `path`) is unchanged.
- */
-const safeValidationErrors = (errors) => errors.array().map(({ value, ...rest }) => rest);
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { verifyRecaptcha } = require('../services/recaptcha');
@@ -26,8 +17,11 @@ const {
 const { endSession } = require('../middleware/sessionTimeout');
 const { revokeToken } = require('../utils/tokenRevocation');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
+// Well-formed bcrypt hash that matches nothing; compared against when there is
+// no account so the unknown-user path costs the same as a wrong password.
+const DUMMY_BCRYPT_HASH = '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234';
 const logger = require('../utils/logger');
-const { errorResponse } = require('../utils/routeHelpers');
+const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const {
   setAdminAuthCookie,
   clearAdminAuthCookie,
@@ -123,8 +117,10 @@ async function completeAdminLogin(req, res, admin, ipAddress, userAgent, lockout
 
 // Admin login with enhanced security
 router.post('/admin/login', [
-  body('username').notEmpty().trim(),
-  body('password').notEmpty(),
+  // Length caps: an unbounded username reached the lockout lookup, bcrypt,
+  // the failed-attempt log line and login_attempts.identifier as sent.
+  body('username').isString().trim().notEmpty().isLength({ max: 255 }),
+  body('password').isString().notEmpty().isLength({ max: MAX_PASSWORD_LENGTH }),
   // Optional and boolean-coerced: an absent or malformed value means "no",
   // so a client that never sends it keeps the 24h session it always had.
   body('remember_me').optional().isBoolean().toBoolean()
@@ -190,7 +186,13 @@ router.post('/admin/login', [
     // (#798) never authenticate locally — their random hash is unusable by
     // design, and the explicit check keeps that true even if a hash ever
     // gets set through some other path.
-    if (!admin || admin.auth_provider === 'oidc' || !await bcrypt.compare(password, admin.password_hash)) {
+    // Always run one bcrypt compare so an unknown username costs the same
+    // ~100ms as a wrong password; short-circuiting here was a timing oracle
+    // for username enumeration despite the generic message.
+    const passwordMatches = (admin && admin.auth_provider !== 'oidc')
+      ? await bcrypt.compare(password, admin.password_hash)
+      : await bcrypt.compare(password, DUMMY_BCRYPT_HASH).then(() => false);
+    if (!passwordMatches) {
       await trackFailedAttempt(username, ipAddress, userAgent);
       return res.status(401).json({ error: getGenericAuthError() });
     }
@@ -402,8 +404,8 @@ router.post('/logout', async (req, res) => {
 
 // Gallery password verification with enhanced security
 router.post('/gallery/verify', [
-  body('slug').notEmpty().trim(),
-  body('password').optional().isString()
+  body('slug').isString().trim().notEmpty().isLength({ max: 255 }),
+  body('password').optional().isString().isLength({ max: MAX_PASSWORD_LENGTH })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -420,7 +422,7 @@ router.post('/gallery/verify', [
 
     if (!event) {
       // Perform a dummy bcrypt compare to prevent timing-based slug enumeration
-      await bcrypt.compare(password || '', '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234');
+      await bcrypt.compare(password || '', DUMMY_BCRYPT_HASH);
       await trackFailedAttempt(`gallery:${slug}`, ipAddress, userAgent);
       return res.status(401).json({ error: 'Invalid gallery or password' });
     }

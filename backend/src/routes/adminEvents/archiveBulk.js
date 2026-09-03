@@ -9,7 +9,7 @@ const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { archiveEvent } = require('../../services/archiveService');
 const logger = require('../../utils/logger');
-const { errorResponse } = require('../../utils/routeHelpers');
+const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
 const { requireEventOwnership, filterOwnedEventIds } = require('../../middleware/ownership');
 const { deleteEventCascade } = require('./helpers');
 
@@ -70,7 +70,7 @@ module.exports = (router) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
 
       const { eventIds } = req.body;
@@ -160,7 +160,7 @@ module.exports = (router) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
 
       const { eventIds } = req.body;

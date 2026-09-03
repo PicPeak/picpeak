@@ -1,5 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const { safeValidationErrors } = require('../utils/routeHelpers');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { parseBooleanInput } = require('../utils/parsers');
@@ -53,7 +54,7 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
     
     const { name, slug, is_global = true, event_id = null, is_folder = false } = req.body;
@@ -143,7 +144,7 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { id } = req.params;
@@ -222,7 +223,7 @@ router.put('/:id/hero', adminAuth, requirePermission('settings.edit'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { id } = req.params;
@@ -312,7 +313,7 @@ router.post('/reorder', adminAuth, requirePermission('settings.edit'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const eventId = parseInt(req.body.event_id, 10);
@@ -394,7 +395,7 @@ router.post('/reorder-global', adminAuth, requirePermission('settings.edit'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const orderedIds = req.body.orderedIds.map((id) => parseInt(id, 10));

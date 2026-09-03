@@ -5,7 +5,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { body, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
-const { getPagination } = require('../utils/routeHelpers');
+const { getPagination, safeValidationErrors } = require('../utils/routeHelpers');
 const { db } = require('../database/db');
 const path = require('path');
 const fs = require('fs').promises;
@@ -86,7 +86,7 @@ router.post('/validate', requirePermission('backup.restore'), [
   if (!errors.isEmpty()) {
     return res.status(400).json({
       success: false,
-      errors: errors.array()
+      errors: safeValidationErrors(errors)
     });
   }
 
@@ -158,7 +158,7 @@ router.post('/start', requirePermission('backup.restore'), [
   if (!errors.isEmpty()) {
     return res.status(400).json({
       success: false,
-      errors: errors.array()
+      errors: safeValidationErrors(errors)
     });
   }
 
@@ -690,7 +690,7 @@ router.put('/settings', requirePermission('backup.restore'), [
   if (!errors.isEmpty()) {
     return res.status(400).json({
       success: false,
-      errors: errors.array()
+      errors: safeValidationErrors(errors)
     });
   }
 

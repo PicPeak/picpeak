@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const multer = require('multer');
 const { body, validationResult } = require('express-validator');
+const { safeValidationErrors } = require('../utils/routeHelpers');
 const { db, logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -80,7 +81,7 @@ router.put('/pages/:slug', adminAuth, requirePermission('cms.edit'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { slug } = req.params;
