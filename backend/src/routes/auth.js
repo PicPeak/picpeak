@@ -2,6 +2,16 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
+
+/**
+ * express-validator's errors.array() carries `value` -- the submitted input --
+ * so returning it verbatim reflects the caller's password back in the 400 body.
+ * Five routes in this file validate a password field, and the strength endpoint
+ * is unauthenticated behind a 50mb JSON limit, which also made the rejection
+ * itself an allocation amplifier. Everything except `value` is kept, so the
+ * response shape both frontend consumers rely on (`msg`, `path`) is unchanged.
+ */
+const safeValidationErrors = (errors) => errors.array().map(({ value, ...rest }) => rest);
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { verifyRecaptcha } = require('../services/recaptcha');
@@ -87,7 +97,7 @@ router.post('/admin/login', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
     
     const { username, password, recaptchaToken } = req.body;
@@ -175,7 +185,7 @@ router.post('/admin/login/mfa', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { mfaToken, code } = req.body;
@@ -316,7 +326,7 @@ router.post('/gallery/verify', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
     
     const { slug, password, recaptchaToken } = req.body;
@@ -427,7 +437,7 @@ router.post('/gallery/:slug/client-login', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { slug } = req.params;
@@ -503,7 +513,7 @@ router.post('/gallery/share-login', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { slug, token } = req.body;
@@ -761,7 +771,7 @@ router.post('/admin/change-password', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { currentPassword, newPassword } = req.body;
@@ -850,7 +860,7 @@ router.post('/password-strength', [
     // decorative. The cap in validatePassword() is still the real control.
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { password, context = 'gallery' } = req.body;
