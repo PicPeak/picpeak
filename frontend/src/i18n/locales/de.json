@@ -4805,7 +4805,10 @@
     "field": {
       "featureHoursLogging": "Stundenerfassung",
       "hourlyRate": "Standard-Stundensatz",
-      "hourlyRateHint": "Haupteinheiten (z. B. 150.00 für {{currency}} 150). Leer lassen, um pro Eintrag einen Satz zu verlangen."
+      "hourlyRateHint": "Haupteinheiten (z. B. 150.00 für {{currency}} 150). Leer lassen, um pro Eintrag einen Satz zu verlangen.",
+      "marketingOptOut": "Vom Newsletter abgemeldet",
+      "marketingOptOutHelp": "Wenn aktiv, wird dieser Kunde von jeder Newsletter-Kampagne übersprungen. E-Mails zu Galerien, Offerten und Rechnungen sind nicht betroffen.",
+      "marketingOptOutSince": "Seit {{date}}"
     },
     "hours": {
       "section": "Stunden",
@@ -5010,7 +5013,8 @@
       "noBills": "Noch keine Rechnungen für diesen Kunden.",
       "rebillsSection": "Weiterverrechnungen & Durchlaufposten",
       "noRebills": "Noch keine weiterverrechneten oder durchlaufenden Lieferantenrechnungen für diesen Kunden.",
-      "companyName": "Firmenname"
+      "companyName": "Firmenname",
+      "marketingSection": "Newsletter-Einwilligung"
     },
     "billing": {
       "section": "Abrechnungsrhythmus",
@@ -5100,7 +5104,8 @@
       "calendar": "Kalender",
       "bills": "Rechnungen",
       "taxReport": "Steuer",
-      "development": "Entwicklung"
+      "development": "Entwicklung",
+      "newsletters": "Newsletter"
     }
   },
   "accounting": {
@@ -6871,5 +6876,92 @@
       "admin": "Admin",
       "super_admin": "Super-Admin"
     }
+  },
+  "newsletters": {
+    "title": "Newsletter",
+    "subtitle": "Senden Sie eine Kampagne an Ihre Kundenkonten. Abgemeldete Kunden werden automatisch übersprungen, und jede Sendung enthält einen Abmeldelink.",
+    "new": "Neue Kampagne",
+    "untitled": "Unbenannte Kampagne",
+    "untitledSubject": "Newsletter",
+    "empty": "Noch keine Kampagnen.",
+    "allStatuses": "Alle Status",
+    "filterByStatus": "Nach Status filtern",
+    "backToList": "Alle Kampagnen",
+    "recipientsTitle": "Empfänger",
+    "notEditable": "Diese Kampagne wurde bereits eingereiht und kann nicht mehr bearbeitet werden.",
+    "viewCampaign": "Kampagne ansehen",
+    "status": {
+      "draft": "Entwurf",
+      "queued": "Eingereiht",
+      "sending": "Wird gesendet",
+      "sent": "Gesendet",
+      "cancelled": "Abgebrochen",
+      "failed": "Fehlgeschlagen"
+    },
+    "recipientStatus": {
+      "queued": "Eingereiht",
+      "sent": "Gesendet",
+      "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen",
+      "skipped_opt_out": "Übersprungen (abgemeldet)"
+    },
+    "col": {
+      "name": "Name",
+      "status": "Status",
+      "recipients": "Empfänger",
+      "sent": "Gesendet",
+      "failed": "Fehlgeschlagen",
+      "created": "Erstellt"
+    },
+    "section": {
+      "content": "Inhalt",
+      "recipients": "Empfänger",
+      "preview": "Vorschau & Senden"
+    },
+    "field": {
+      "name": "Kampagnenname (intern)",
+      "subject": "Betreff",
+      "body": "Inhalt",
+      "rate": "Senderate (E-Mails pro Minute)",
+      "testTo": "Test senden an"
+    },
+    "mode": {
+      "allActive": "Alle aktiven Kunden",
+      "manual": "Kunden auswählen"
+    },
+    "showCss": "Eigenes CSS (optional)",
+    "hideCss": "Eigenes CSS ausblenden",
+    "cssHelp": "Viele E-Mail-Programme entfernen einen <style>-Block — halten Sie wichtige Gestaltung in Inline-Attributen. Externe Bilder und @import werden entfernt.",
+    "rateHelp": "Sendungen werden gestreckt, damit Ihr Mailanbieter nicht drosselt. Prüfen Sie das Stundenlimit Ihres Anbieters, bevor Sie diesen Wert erhöhen.",
+    "recipientCount": "{{count}} Empfänger",
+    "skippedOptOut": "{{count}} übersprungen (abgemeldet)",
+    "saveToRefresh": "Speichern, um diese Zahl zu aktualisieren.",
+    "refreshPreview": "Vorschau aktualisieren",
+    "previewTitle": "Newsletter-Vorschau",
+    "sendTest": "Test",
+    "queueButton": "Kampagne einreihen",
+    "queueBlocked": "Betreff, Inhalt und mindestens ein Empfänger werden zum Senden benötigt.",
+    "queueTitle": "Diese Kampagne senden?",
+    "queueBody": "Damit werden {{count}} Kunden mit {{rate}} pro Minute angeschrieben (rund {{minutes}} Min.). Sobald der Versand läuft, lässt sich das nicht rückgängig machen.",
+    "queueConfirm": "An {{count}} Kunden senden",
+    "cancel": "Kampagne abbrechen",
+    "cancelTitle": "Diese Kampagne abbrechen?",
+    "cancelBody": "Noch nicht versendete E-Mails werden verworfen. Bereits versendete E-Mails lassen sich nicht zurückholen.",
+    "cancelled": "{{count}} ausstehende E-Mails abgebrochen.",
+    "sendingAt": "Versand mit {{rate}} E-Mails pro Minute.",
+    "deleteTitle": "Kampagne löschen?",
+    "deleteBody": "\"{{name}}\" wird gelöscht. Das lässt sich nicht rückgängig machen.",
+    "deleteAria": "{{name}} löschen",
+    "saved": "Kampagne gespeichert.",
+    "queued": "Kampagne eingereiht.",
+    "deleted": "Kampagne gelöscht.",
+    "testSent": "Test-E-Mail an {{to}} gesendet.",
+    "createFailed": "Kampagne konnte nicht erstellt werden.",
+    "saveFailed": "Kampagne konnte nicht gespeichert werden.",
+    "deleteFailed": "Kampagne konnte nicht gelöscht werden.",
+    "previewFailed": "Vorschau konnte nicht erzeugt werden.",
+    "testFailed": "Test-E-Mail konnte nicht gesendet werden.",
+    "queueFailed": "Kampagne konnte nicht eingereiht werden.",
+    "cancelFailed": "Kampagne konnte nicht abgebrochen werden."
   }
 }

@@ -597,6 +597,10 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     // in its own branch below so null survives (formatBoolean would coerce
     // it to false and silently lose the "inherit" state).
     'rebill_attach_proof',
+    // Newsletter consent (migration 199, #1264). Admin-settable so a
+    // customer who unsubscribes by phone can be honoured without waiting
+    // for them to click a link. Transactional mail ignores it entirely.
+    'marketing_opt_out',
   ];
   for (const f of fields) {
     if (updates[f] !== undefined) {
@@ -613,6 +617,11 @@ async function updateCustomer(id, updates, updatedByAdminId) {
         || f === 'skonto_disabled'
       ) {
         allowed[f] = formatBoolean(updates[f]);
+      } else if (f === 'marketing_opt_out') {
+        // Stamp the timestamp alongside the flag so the consent record
+        // carries a when, not just a whether.
+        allowed[f] = formatBoolean(updates[f]);
+        allowed.marketing_opt_out_at = updates[f] ? new Date().toISOString() : null;
       } else if (f === 'rebill_attach_proof') {
         // Tri-state override. null/'' → NULL (inherit global default);
         // otherwise a real boolean (coerced for SQLite).

@@ -14,7 +14,7 @@
 import React from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Briefcase, UserCog, FileText, Receipt, Wrench, Clock, ScrollText, Calendar, FolderKanban } from 'lucide-react';
+import { Briefcase, UserCog, FileText, Receipt, Wrench, Clock, ScrollText, Calendar, FolderKanban, Megaphone } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
 
@@ -92,6 +92,13 @@ export const ClientsLayout: React.FC = () => {
     // longer a CRM sub-feature). See AccountingLayout.
     // Future sub-features:
     //   { key: 'messaging', ... featureFlag: 'messaging' }
+    {
+      key: 'newsletters',
+      to: '/admin/clients/newsletters',
+      label: t('clients.subnav.newsletters', 'Newsletters'),
+      icon: Megaphone,
+      featureFlag: 'newsletters',
+    },
     {
       key: 'development',
       to: '/admin/clients/development',

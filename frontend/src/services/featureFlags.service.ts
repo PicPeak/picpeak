@@ -85,7 +85,11 @@ export type FeatureKey =
   // sidecar. Face embeddings are biometric data (GDPR Art. 9); turning this
   // on is only the first of two deliberate actions, since detection is still
   // enabled per event.
-  | 'faces';
+  | 'faces'
+  // Newsletter campaigns (migration 199, #1264). Child of `clients` —
+  // mass marketing mail to customer accounts, with per-customer opt-out
+  // and an unsubscribe link on every send. Strictly opt-in.
+  | 'newsletters';
 
 export type FeatureFlags = Record<FeatureKey, boolean>;
 

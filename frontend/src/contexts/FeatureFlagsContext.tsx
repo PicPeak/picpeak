@@ -72,6 +72,10 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   workflows: false,
   // #1074 — off by default is the whole "zero behaviour change" guarantee.
   faces: false,
+  // Newsletter campaigns (migration 199, #1264). Off by default — an
+  // install that never turns this on never gains a nav entry or a way to
+  // mass-mail its customers.
+  newsletters: false,
 };
 
 export const FEATURE_FLAGS_QUERY_KEY = ['feature-flags'] as const;
