@@ -349,24 +349,35 @@ function generateSecurePassword(options = {}) {
   if (charset.length === 0) {
     throw new Error('At least one character type must be included');
   }
-  
-  // Generate password
+
+  // A requested length the validator will always reject makes the retry below
+  // unwinnable, so say so instead of spinning. MAX_PASSWORD_LENGTH is the cap
+  // validatePassword() applies; anything above it fails every candidate.
+  if (config.length > MAX_PASSWORD_LENGTH) {
+    throw new Error(`length must be at most ${MAX_PASSWORD_LENGTH}`);
+  }
+
   const crypto = require('crypto');
-  let password = '';
-  
-  for (let i = 0; i < config.length; i++) {
-    const randomIndex = crypto.randomInt(charset.length);
-    password += charset[randomIndex];
+
+  // Bounded retry rather than unbounded recursion. Every candidate failing is
+  // possible for reasons other than bad luck -- a charset that cannot satisfy
+  // the configured policy (numbers excluded while requireNumbers is on, say)
+  // -- and the previous `return generateSecurePassword(options)` turned that
+  // into a stack overflow rather than an error anyone could act on.
+  const MAX_ATTEMPTS = 100;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    let password = '';
+    for (let i = 0; i < config.length; i++) {
+      const randomIndex = crypto.randomInt(charset.length);
+      password += charset[randomIndex];
+    }
+    if (validatePassword(password).valid) return password;
   }
-  
-  // Ensure password meets requirements
-  const validation = validatePassword(password);
-  if (!validation.valid) {
-    // Recursively generate until we get a valid password
-    return generateSecurePassword(options);
-  }
-  
-  return password;
+
+  throw new Error(
+    'Could not generate a password satisfying the configured policy — '
+    + 'check that the selected character types can meet it',
+  );
 }
 
 /**

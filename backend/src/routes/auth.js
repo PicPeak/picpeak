@@ -966,6 +966,14 @@ router.post('/password-strength', [
   body('context').isIn(['admin', 'gallery']).optional()
 ], async (req, res) => {
   try {
+    // The validators above only RECORD errors; without this the oversized body
+    // reached zxcvbn anyway and the endpoint answered 200, so the edge cap was
+    // decorative. The cap in validatePassword() is still the real control.
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
     const { password, context = 'gallery' } = req.body;
 
     // Get user data if available (for context-aware validation)
@@ -975,7 +983,9 @@ router.post('/password-strength', [
       userData.email = req.admin.email;
     }
 
-    const validation = validatePasswordInContext(password, context, userData);
+    // validatePasswordInContext is async; unawaited this resolved to a Promise
+    // and every field below came back undefined.
+    const validation = await validatePasswordInContext(password, context, userData);
 
     res.json({
       valid: validation.valid,

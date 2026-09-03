@@ -40,6 +40,20 @@ describe('password validation length cap (zxcvbn DoS)', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('does not spin when a caller asks for a length the cap forbids', async () => {
+    // Codex review. generateSecurePassword retried by recursing on any invalid
+    // candidate, so the new cap made every candidate invalid for length > 128
+    // and turned the call into unbounded recursion. It now refuses up front,
+    // and the retry loop is bounded.
+    const { generateSecurePassword } = require('../../src/utils/passwordValidation');
+
+    expect(generateSecurePassword({ length: 16 })).toHaveLength(16);
+    expect(generateSecurePassword({ length: MAX_PASSWORD_LENGTH }))
+      .toHaveLength(MAX_PASSWORD_LENGTH);
+    expect(() => generateSecurePassword({ length: MAX_PASSWORD_LENGTH + 1 }))
+      .toThrow(/at most 128/);
+  });
+
   it('applies the cap through the context wrapper too', async () => {
     const { validatePasswordInContext } = require('../../src/utils/passwordValidation');
     const huge = 'aA1!'.repeat(MAX_PASSWORD_LENGTH);
