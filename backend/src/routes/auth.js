@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
+
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { verifyRecaptcha } = require('../services/recaptcha');
@@ -16,8 +17,11 @@ const {
 const { endSession } = require('../middleware/sessionTimeout');
 const { revokeToken } = require('../utils/tokenRevocation');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
+// Well-formed bcrypt hash that matches nothing; compared against when there is
+// no account so the unknown-user path costs the same as a wrong password.
+const DUMMY_BCRYPT_HASH = '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234';
 const logger = require('../utils/logger');
-const { errorResponse } = require('../utils/routeHelpers');
+const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const {
   setAdminAuthCookie,
   clearAdminAuthCookie,
@@ -33,6 +37,7 @@ const { getClientIp } = require('../utils/requestIp');
 const { sanitizePasswordInput } = require('../utils/passwordInput');
 const {
   validatePasswordInContext,
+  MAX_PASSWORD_LENGTH,
   getBcryptRounds,
   logPasswordValidationFailure
 } = require('../utils/passwordValidation');
@@ -112,8 +117,10 @@ async function completeAdminLogin(req, res, admin, ipAddress, userAgent, lockout
 
 // Admin login with enhanced security
 router.post('/admin/login', [
-  body('username').notEmpty().trim(),
-  body('password').notEmpty(),
+  // Length caps: an unbounded username reached the lockout lookup, bcrypt,
+  // the failed-attempt log line and login_attempts.identifier as sent.
+  body('username').isString().trim().notEmpty().isLength({ max: 255 }),
+  body('password').isString().notEmpty().isLength({ max: MAX_PASSWORD_LENGTH }),
   // Optional and boolean-coerced: an absent or malformed value means "no",
   // so a client that never sends it keeps the 24h session it always had.
   body('remember_me').optional().isBoolean().toBoolean()
@@ -121,7 +128,7 @@ router.post('/admin/login', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
     
     const { username, password, recaptchaToken } = req.body;
@@ -179,7 +186,13 @@ router.post('/admin/login', [
     // (#798) never authenticate locally — their random hash is unusable by
     // design, and the explicit check keeps that true even if a hash ever
     // gets set through some other path.
-    if (!admin || admin.auth_provider === 'oidc' || !await bcrypt.compare(password, admin.password_hash)) {
+    // Always run one bcrypt compare so an unknown username costs the same
+    // ~100ms as a wrong password; short-circuiting here was a timing oracle
+    // for username enumeration despite the generic message.
+    const passwordMatches = (admin && admin.auth_provider !== 'oidc')
+      ? await bcrypt.compare(password, admin.password_hash)
+      : await bcrypt.compare(password, DUMMY_BCRYPT_HASH).then(() => false);
+    if (!passwordMatches) {
       await trackFailedAttempt(username, ipAddress, userAgent);
       return res.status(401).json({ error: getGenericAuthError() });
     }
@@ -228,7 +241,7 @@ router.post('/admin/login/mfa', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { mfaToken, code } = req.body;
@@ -391,13 +404,13 @@ router.post('/logout', async (req, res) => {
 
 // Gallery password verification with enhanced security
 router.post('/gallery/verify', [
-  body('slug').notEmpty().trim(),
-  body('password').optional().isString()
+  body('slug').isString().trim().notEmpty().isLength({ max: 255 }),
+  body('password').optional().isString().isLength({ max: MAX_PASSWORD_LENGTH })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
     
     const { slug, password, recaptchaToken } = req.body;
@@ -409,7 +422,7 @@ router.post('/gallery/verify', [
 
     if (!event) {
       // Perform a dummy bcrypt compare to prevent timing-based slug enumeration
-      await bcrypt.compare(password || '', '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234');
+      await bcrypt.compare(password || '', DUMMY_BCRYPT_HASH);
       await trackFailedAttempt(`gallery:${slug}`, ipAddress, userAgent);
       return res.status(401).json({ error: 'Invalid gallery or password' });
     }
@@ -520,7 +533,7 @@ router.post('/gallery/:slug/client-login', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { slug } = req.params;
@@ -596,7 +609,7 @@ router.post('/gallery/share-login', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { slug, token } = req.body;
@@ -881,7 +894,7 @@ router.post('/admin/change-password', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { currentPassword, newPassword } = req.body;
@@ -952,11 +965,27 @@ router.post('/admin/change-password', [
 });
 
 // Password strength check endpoint (for real-time validation)
+//
+// Unauthenticated, and it feeds the request body straight into zxcvbn, whose
+// matching is superlinear and synchronous. Without the length bound a single
+// request stops the event loop for the whole process -- ~5s at 1,000
+// characters and unbounded past that. validatePassword() enforces the same cap
+// for every caller; this one keeps the oversized body from being accepted at
+// the edge at all.
 router.post('/password-strength', [
-  body('password').notEmpty(),
+  body('password').isString().isLength({ min: 1, max: MAX_PASSWORD_LENGTH })
+    .withMessage(`Password must be 1-${MAX_PASSWORD_LENGTH} characters`),
   body('context').isIn(['admin', 'gallery']).optional()
 ], async (req, res) => {
   try {
+    // The validators above only RECORD errors; without this the oversized body
+    // reached zxcvbn anyway and the endpoint answered 200, so the edge cap was
+    // decorative. The cap in validatePassword() is still the real control.
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
+    }
+
     const { password, context = 'gallery' } = req.body;
 
     // Get user data if available (for context-aware validation)
@@ -966,7 +995,9 @@ router.post('/password-strength', [
       userData.email = req.admin.email;
     }
 
-    const validation = validatePasswordInContext(password, context, userData);
+    // validatePasswordInContext is async; unawaited this resolved to a Promise
+    // and every field below came back undefined.
+    const validation = await validatePasswordInContext(password, context, userData);
 
     res.json({
       valid: validation.valid,

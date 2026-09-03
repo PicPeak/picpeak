@@ -23,8 +23,10 @@ const {
   getMaxFileSizeBytes,
   getMaxVideoSizeBytes,
   DEFAULT_MAX_FILE_SIZE_MB,
-  DEFAULT_MAX_VIDEO_SIZE_MB
+  DEFAULT_MAX_VIDEO_SIZE_MB,
+  EXTENSION_TO_MIME
 } = require('../services/uploadSettings');
+const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { processUploadedPhotos } = require('../services/photoProcessor');
 const chunkedUpload = require('../services/chunkedUploadService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
@@ -1165,7 +1167,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
         return res.status(404).json({ error: 'Photo file not found' });
       }
       res.set({
-        'Content-Type': photo.mime_type || 'application/octet-stream',
+        'Content-Type': resolvePhotoContentType(photo),
         'Content-Length': stat.size,
         'Content-Disposition': contentDisposition,
       });
@@ -1182,7 +1184,7 @@ router.get('/:eventId/photos/:photoId/download', adminAuth, requirePermission('p
       return res.status(404).json({ error: 'Photo file not found' });
     }
     res.set({
-      'Content-Type': photo.mime_type || 'application/octet-stream',
+      'Content-Type': resolvePhotoContentType(photo),
       'Content-Disposition': contentDisposition,
     });
     res.sendFile(filePath);
@@ -1441,64 +1443,9 @@ router.get('/:eventId/photo/:photoId', adminAuth, requirePermission('photos.view
     const event = await db('events').where('id', eventId).first();
     const storageKey = resolvePhotoStorageKey(event, photo);
 
-    // Content-Type resolution (#908 + external review). Invariant: the
-    // header is ALWAYS image/* or video/*.
-    //  - photos.mime_type is never echoed verbatim unless it is a video/
-    //    type: the chunked-upload path stores the client-sent MIME
-    //    unvalidated, so a stored text/html served inline under the app
-    //    origin would be a same-origin XSS gift.
-    //  - Images ignore the stored value entirely — migration 039
-    //    backfilled image/jpeg onto every legacy row (PNGs included), so
-    //    the extension is the more trustworthy signal; normalized via the
-    //    shared map (image/jpg → image/jpeg), jpeg fallback when unknown.
-    //  - Videos prefer a stored video/ type, then the extension map
-    //    (.mov → video/quicktime, .webm → video/webm, …), then video/mp4.
-    //    The old ext-derived image/<ext> (image/mp4) is what made the
-    //    admin player's blob unplayable (#908).
-    const { EXTENSION_TO_MIME } = require('../services/uploadSettings');
-    const ext = path.extname(photo.filename).slice(1).toLowerCase();
-    // Own-property lookup (review): a client-controlled filename ending in
-    // .constructor / .__proto__ / .toString would otherwise return an
-    // inherited Object.prototype member, and the extMime.startsWith below
-    // would throw — a permanent 500 for that photo instead of the fallback.
-    const extMime = Object.prototype.hasOwnProperty.call(EXTENSION_TO_MIME, ext)
-      ? EXTENSION_TO_MIME[ext]
-      : null;
-    // Full-token validation, not just a prefix check: the stored value is
-    // client-controlled, and header-invalid characters (video/mp4\r\nX: y)
-    // would make setHeader throw — a permanent 500 for that photo. Bare
-    // 'video/' is equally invalid; both fall back to the extension map.
-    const storedVideoMime = photo.mime_type && /^video\/[\w.+-]+$/.test(photo.mime_type)
-      ? photo.mime_type
-      : null;
-    // Honor a stored image MIME for any header-safe RASTER type (#908
-    // review): the S3 auto-importer accepts arbitrary image/* from
-    // mime-types and stores it (avif/bmp/tiff/heic/apng/ico/jxl/…), and a
-    // hand-listed allowlist kept missing formats. Allow image/<token> but
-    // NEVER the scriptable svg / *+xml family (image/svg+xml executes
-    // inline). The strict token + anchors also block header injection
-    // (image/x\r\nY:). Migration 039's blanket image/jpeg backfill on
-    // legacy rows is why the mapped extension still wins ahead of this.
-    const storedImageMime =
-      photo.mime_type &&
-      /^image\/[\w.+-]+$/.test(photo.mime_type) &&
-      !/^image\/svg|xml/i.test(photo.mime_type)
-        ? photo.mime_type
-        : null;
-    const isVideo = photo.media_type === 'video' ||
-      Boolean(storedVideoMime) ||
-      Boolean(extMime && extMime.startsWith('video/'));
-    // Never interpolate the raw extension on the image side: it would
-    // synthesize image/svg+xml (scriptable inline) or header-invalid values
-    // from client-controlled chunked-upload filenames. Precedence is
-    // mapped-extension (also corrects the 039 legacy-jpeg backfill on PNGs)
-    // -> safe stored raster MIME (auto-imported avif/bmp/tiff) -> image/jpeg.
-    // A stored type outside the allowlist degrades to image/jpeg; browsers
-    // sniff image bytes in <img>/blob contexts, so a mislabel is harmless
-    // where an injected type is not.
-    const contentType = isVideo
-      ? storedVideoMime || (extMime && extMime.startsWith('video/') ? extMime : null) || 'video/mp4'
-      : (extMime && extMime.startsWith('image/') ? extMime : null) || storedImageMime || 'image/jpeg';
+    // Content-Type resolution (#908 + external review) lives in
+    // utils/photoContentType so the gallery routes apply the same rule.
+    const contentType = resolvePhotoContentType(photo);
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
@@ -1666,7 +1613,7 @@ router.get('/:eventId/debug', adminAuth, requirePermission('photos.view'), requi
 router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photos.upload'), requireEventOwnership, async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { filename, fileSize, mimeType, totalChunks } = req.body;
+    const { filename, fileSize, totalChunks } = req.body;
 
     // Validate event exists
     const event = await db('events').where({ id: eventId }).first();
@@ -1675,9 +1622,10 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
     }
 
     // Validate required fields
-    if (!filename || !fileSize || !mimeType) {
-      return res.status(400).json({ error: 'Missing required fields: filename, fileSize, mimeType' });
+    if (!filename || !fileSize) {
+      return res.status(400).json({ error: 'Missing required fields: filename, fileSize' });
     }
+
 
     // Validate file size against the configured per-file cap. Hardcoding 10GB
     // here let the chunked path sidestep general_max_file_size_mb entirely.
@@ -1691,6 +1639,21 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
       return res.status(400).json({
         error: `File too large. Maximum size is ${Math.floor(maxSize / (1024 * 1024))} MB per file.`
       });
+    }
+
+    // The client-declared mimeType is not trusted. It used to be stored on
+    // the photo row verbatim and echoed as Content-Type by the gallery
+    // routes, so a JPEG/HTML polyglot declared as text/html rendered inline
+    // on the app origin. The MIME is derived from the extension instead,
+    // and the extension has to be on the admin's allow-list, which is what
+    // the multipart path enforces through its multer fileFilter.
+    const ext = path.extname(String(filename)).slice(1).toLowerCase();
+    const mimeType = Object.prototype.hasOwnProperty.call(EXTENSION_TO_MIME, ext)
+      ? EXTENSION_TO_MIME[ext]
+      : null;
+    const allowedMimeTypes = await getAllowedMimeTypes();
+    if (!mimeType || !allowedMimeTypes.includes(mimeType)) {
+      return res.status(400).json({ error: 'File type not allowed' });
     }
 
     const result = await chunkedUpload.initializeUpload({

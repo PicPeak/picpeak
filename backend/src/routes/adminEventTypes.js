@@ -7,6 +7,7 @@
 
 const express = require('express');
 const { body, param, validationResult } = require('express-validator');
+const { safeValidationErrors } = require('../utils/routeHelpers');
 const { logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -57,7 +58,7 @@ router.get('/:id', adminAuth, requirePermission(['settings.view', 'event_types.v
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { id } = req.params;
@@ -94,7 +95,7 @@ router.post('/', adminAuth, requirePermission('event_types.manage'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const {
@@ -156,7 +157,7 @@ router.put('/:id', adminAuth, requirePermission('event_types.manage'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { id } = req.params;
@@ -196,7 +197,7 @@ router.delete('/:id', adminAuth, requirePermission('event_types.manage'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { id } = req.params;
@@ -235,7 +236,7 @@ router.post('/reorder', adminAuth, requirePermission('event_types.manage'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { orderedIds } = req.body;

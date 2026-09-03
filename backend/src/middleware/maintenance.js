@@ -129,8 +129,12 @@ async function maintenanceMiddleware(req, res, next) {
     '/apple-touch-icon.png',
     '/apple-touch-icon-precomposed.png'
   ];
-  const isBackendRendered = BACKEND_RENDERED_EXACT.includes(req.path)
-    || BACKEND_RENDERED_PREFIXES.some((prefix) => req.path.startsWith(prefix));
+  // Express routes case-insensitively, so `/API/gallery/...` still reaches the
+  // API router; classify on the lowercased path or that spelling is treated
+  // as the SPA shell and walks straight past the gate.
+  const requestPath = String(req.path || '').toLowerCase();
+  const isBackendRendered = BACKEND_RENDERED_EXACT.includes(requestPath)
+    || BACKEND_RENDERED_PREFIXES.some((prefix) => requestPath.startsWith(prefix));
   const isSpaShell = req.method === 'GET' && !isBackendRendered;
   
   // Allow admin routes if admin is authenticated

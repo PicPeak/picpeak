@@ -5,6 +5,7 @@
 
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const { safeValidationErrors } = require('../utils/routeHelpers');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
@@ -29,7 +30,7 @@ router.post('/:eventId/rename', adminAuth, requirePermission('events.edit'), req
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
+      return res.status(400).json({ success: false, errors: safeValidationErrors(errors) });
     }
 
     const { eventId } = req.params;
@@ -70,7 +71,7 @@ router.post('/:eventId/validate-rename', adminAuth, requirePermission('events.ed
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ valid: false, errors: errors.array() });
+      return res.status(400).json({ valid: false, errors: safeValidationErrors(errors) });
     }
 
     const { eventId } = req.params;

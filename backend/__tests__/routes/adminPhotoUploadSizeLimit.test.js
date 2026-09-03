@@ -63,10 +63,10 @@ describe('admin upload per-file size limit (general_max_file_size_mb)', () => {
     .set('Authorization', `Bearer ${adminToken}`)
     .attach('photos', Buffer.alloc(bytes, 0x41), { filename, contentType: 'image/jpeg' });
 
-  const postChunkedInit = (fileSize) => request(app)
+  const postChunkedInit = (fileSize, filename = 'clip.mp4') => request(app)
     .post(`/api/admin/photos/${eventId}/chunked-upload/init`)
     .set('Authorization', `Bearer ${adminToken}`)
-    .send({ filename: 'clip.mp4', fileSize, mimeType: 'video/mp4', totalChunks: 1 });
+    .send({ filename, fileSize, mimeType: 'video/mp4', totalChunks: 1 });
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
@@ -108,6 +108,20 @@ describe('admin upload per-file size limit (general_max_file_size_mb)', () => {
 
     uploadSettings = require('../../src/services/uploadSettings');
 
+    // chunked-upload/init now enforces the admin allow-list on the filename
+    // extension (the declared mimeType is ignored), exactly like the
+    // multipart path; the default list is images only, so admit mp4 here.
+    await db('app_settings')
+      .insert({
+        setting_key: 'general_allowed_file_types',
+        setting_value: JSON.stringify('jpg,jpeg,png,webp,mp4'),
+        setting_type: 'general',
+        updated_at: new Date().toISOString(),
+      })
+      .onConflict('setting_key')
+      .merge({ setting_value: JSON.stringify('jpg,jpeg,png,webp,mp4') });
+    uploadSettings.clearAllowedTypesCache();
+
     app = express();
     app.use(express.json());
     app.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
@@ -127,6 +141,13 @@ describe('admin upload per-file size limit (general_max_file_size_mb)', () => {
     const res = await postChunkedInit(200 * 1024 * 1024);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('File too large. Maximum size is 1 MB per file.');
+  });
+
+  it('rejects a chunked upload whose extension is not on the allow-list, whatever MIME it declares', async () => {
+    await setLimitMb(50);
+    const res = await postChunkedInit(1024, 'page.html');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('File type not allowed');
   });
 
   it('rejects chunk bytes over the limit regardless of the declared fileSize', async () => {

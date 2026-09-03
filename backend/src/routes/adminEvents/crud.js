@@ -17,7 +17,7 @@ const { escapeLikePattern, likeWithEscape } = require('../../utils/sqlSecurity')
 const { validatePasswordInContext, getBcryptRounds } = require('../../utils/passwordValidation');
 const logger = require('../../utils/logger');
 const { sanitizeForLog, sanitizeValidationErrors } = require('../../utils/sanitizeForLog');
-const { errorResponse } = require('../../utils/routeHelpers');
+const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
 const { isUniqueViolation } = require('../../utils/dbErrors');
 const { buildShareLinkVariants } = require('../../services/shareLinkService');
 const { parseBooleanInput } = require('../../utils/parsers');
@@ -287,7 +287,7 @@ module.exports = (router) => {
         // errors.array() embeds the SUBMITTED value per field — including a
         // rejected plaintext password (GHSA-r794).
         logger.error('Validation errors:', sanitizeValidationErrors(errors.array()));
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
 
       // Get field requirements from settings
@@ -1053,7 +1053,7 @@ module.exports = (router) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
 
       const { id } = req.params;
@@ -1169,7 +1169,7 @@ module.exports = (router) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
 
       const { id } = req.params;
@@ -1307,7 +1307,7 @@ module.exports = (router) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
 
       const { id } = req.params;
@@ -1624,7 +1624,7 @@ module.exports = (router) => {
       if (!errors.isEmpty()) {
         // Redact credentials — an invalid update still logs the whole body (GHSA-pgmp).
         logger.debug('Update event validation errors', { errors: sanitizeValidationErrors(errors.array()), body: sanitizeForLog(req.body) });
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
 
       const { id } = req.params;
@@ -2150,7 +2150,7 @@ module.exports = (router) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
 
       const { id } = req.params;

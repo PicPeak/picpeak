@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const sharp = require('sharp');
 const { body, query, validationResult } = require('express-validator');
+const { safeValidationErrors } = require('../../utils/routeHelpers');
 const { db, logActivity } = require('../../database/db');
 const { apiTokenAuth, requireApiScope } = require('../../middleware/apiTokenAuth');
 const { requireEventOwnership, scopeEventsQuery } = require('../../middleware/ownership');
@@ -185,7 +186,7 @@ router.post(
   async (req, res) => {
     try {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
       const {
         event_name, event_type, event_date,
         customer_name = null, customer_email = null, customer_phone = null,
@@ -1008,7 +1009,7 @@ router.get(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ errors: safeValidationErrors(errors) });
       }
 
       const eventId = parseInt(req.params.id, 10);

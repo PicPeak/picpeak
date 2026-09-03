@@ -7,6 +7,21 @@ const zxcvbn = require('zxcvbn');
 const logger = require('./logger');
 
 // Configuration
+// zxcvbn's matching is superlinear in the input length and runs synchronously
+// on the event loop, so an unbounded password is a denial-of-service primitive
+// rather than a slow request. The reachable caller is
+// POST /api/auth/password-strength, which is unauthenticated and sits behind
+// express.json({ limit: '50mb' }) -- one request stops the whole process.
+//
+// Measured on this codebase (ms of blocked event loop per call):
+//   64 -> 12    128 -> 41    192 -> 105    256 -> 218
+//   384 -> 632  512 -> 1367  1000 -> 5097  5000 -> did not return in 2 min
+//
+// 128 keeps the worst case at the cost of an ordinary request while staying
+// far above any real password: bcrypt consumes only the first 72 bytes, so
+// anything longer already adds no entropy to the stored hash.
+const MAX_PASSWORD_LENGTH = 128;
+
 const PASSWORD_CONFIG = {
   minLength: 8, // Reduced from 12 to 8 for better usability
   requireUppercase: true,
@@ -34,6 +49,18 @@ const COMMON_PASSWORDS = [
 function validatePassword(password, options = {}) {
   const config = { ...PASSWORD_CONFIG, ...options };
   const errors = [];
+
+  // Bail before any superlinear work touches the string. This is the guard for
+  // every caller, including ones added later -- the per-route length validator
+  // is defence in depth, not the control.
+  if (typeof password === 'string' && password.length > MAX_PASSWORD_LENGTH) {
+    return {
+      valid: false,
+      errors: [`Password must be at most ${MAX_PASSWORD_LENGTH} characters`],
+      score: 0,
+      feedback: {},
+    };
+  }
   
   // Check if password exists
   if (!password || typeof password !== 'string') {
@@ -322,24 +349,35 @@ function generateSecurePassword(options = {}) {
   if (charset.length === 0) {
     throw new Error('At least one character type must be included');
   }
-  
-  // Generate password
+
+  // A requested length the validator will always reject makes the retry below
+  // unwinnable, so say so instead of spinning. MAX_PASSWORD_LENGTH is the cap
+  // validatePassword() applies; anything above it fails every candidate.
+  if (config.length > MAX_PASSWORD_LENGTH) {
+    throw new Error(`length must be at most ${MAX_PASSWORD_LENGTH}`);
+  }
+
   const crypto = require('crypto');
-  let password = '';
-  
-  for (let i = 0; i < config.length; i++) {
-    const randomIndex = crypto.randomInt(charset.length);
-    password += charset[randomIndex];
+
+  // Bounded retry rather than unbounded recursion. Every candidate failing is
+  // possible for reasons other than bad luck -- a charset that cannot satisfy
+  // the configured policy (numbers excluded while requireNumbers is on, say)
+  // -- and the previous `return generateSecurePassword(options)` turned that
+  // into a stack overflow rather than an error anyone could act on.
+  const MAX_ATTEMPTS = 100;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    let password = '';
+    for (let i = 0; i < config.length; i++) {
+      const randomIndex = crypto.randomInt(charset.length);
+      password += charset[randomIndex];
+    }
+    if (validatePassword(password).valid) return password;
   }
-  
-  // Ensure password meets requirements
-  const validation = validatePassword(password);
-  if (!validation.valid) {
-    // Recursively generate until we get a valid password
-    return generateSecurePassword(options);
-  }
-  
-  return password;
+
+  throw new Error(
+    'Could not generate a password satisfying the configured policy — '
+    + 'check that the selected character types can meet it',
+  );
 }
 
 /**
@@ -366,6 +404,7 @@ function logPasswordValidationFailure(context, errors, metadata = {}) {
 }
 
 module.exports = {
+  MAX_PASSWORD_LENGTH,
   validatePassword,
   validatePasswordInContext,
   generateSecurePassword,

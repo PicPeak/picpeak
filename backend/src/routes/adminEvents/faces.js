@@ -13,7 +13,7 @@ const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { requireFeatureFlag } = require('../../middleware/requireFeatureFlag');
 const { requireEventOwnership } = require('../../middleware/ownership');
-const { errorResponse } = require('../../utils/routeHelpers');
+const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
 const { parseBooleanInput } = require('../../utils/parsers');
 const logger = require('../../utils/logger');
 
@@ -133,7 +133,7 @@ module.exports = (router) => {
     ],
     async (req, res) => {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
 
       try {
         const event = await loadOwnedEvent(req);
@@ -236,7 +236,7 @@ module.exports = (router) => {
     [body('person_a_id').isInt(), body('person_b_id').isInt()],
     async (req, res) => {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
 
       try {
         const event = await loadOwnedEvent(req);
@@ -278,7 +278,7 @@ module.exports = (router) => {
     ],
     async (req, res) => {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
 
       try {
         const event = await loadOwnedEvent(req);
@@ -326,7 +326,7 @@ module.exports = (router) => {
     [body('source_ids').isArray({ min: 1 }), body('target_id').isInt()],
     async (req, res) => {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
 
       try {
         const event = await loadOwnedEvent(req);
@@ -356,7 +356,7 @@ module.exports = (router) => {
     [body('face_ids').isArray({ min: 1 })],
     async (req, res) => {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
 
       try {
         const event = await loadOwnedEvent(req);
@@ -471,7 +471,7 @@ module.exports = (router) => {
     [body('enabled').isBoolean()],
     async (req, res) => {
       const errors = validationResult(req);
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
 
       try {
         const enabled = parseBooleanInput(req.body.enabled, false);

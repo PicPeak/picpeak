@@ -3,6 +3,8 @@ const { db, withRetry } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getGalleryTokenFromRequest } = require('../utils/tokenUtils');
 const logger = require('../utils/logger');
+const { isTokenRevoked } = require('../utils/tokenRevocation');
+const { isTokenBeforeCutoff } = require('../utils/sessionCutoff');
 
 /**
  * True when a logged-in admin is explicitly previewing this gallery (#868).
@@ -24,8 +26,8 @@ const logger = require('../utils/logger');
  * Fails closed on any verification error. Replaces the old `?preview=<raw-JWT>`
  * scheme, which leaked a 24h admin token into the address bar.
  */
-function isAdminPreview(req) {
-  if (req.query?.admin_preview !== '1') return false;
+function decodeAdminPreview(req) {
+  if (req.query?.admin_preview !== '1') return null;
   // Cookie first, then a Bearer — but only an admin-typed token satisfies it.
   const candidates = [];
   if (req.cookies?.admin_token) candidates.push(req.cookies.admin_token);
@@ -34,10 +36,46 @@ function isAdminPreview(req) {
   for (const token of candidates) {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET, { issuer: 'picpeak-auth' });
-      if (decoded.type === 'admin') return true;
+      if (decoded.type === 'admin') return decoded;
     } catch { /* try the next candidate */ }
   }
-  return false;
+  return null;
+}
+
+function isAdminPreview(req) {
+  return decodeAdminPreview(req) !== null;
+}
+
+/**
+ * The full session check behind the preview bypass. A verified signature is
+ * not a live session: adminAuth also rejects revoked tokens, tokens issued
+ * before the restore cutoff, deactivated admins and tokens minted before the
+ * admin's last password change. Without those a logged-out or deactivated
+ * admin token kept unlocking every draft and password gallery until `exp`
+ * (30 days with remember-me). Sets req.isAdminPreview on success so the
+ * downstream reveal-mode and logging checks read one verified flag.
+ */
+async function verifyAdminPreview(req) {
+  if (req.isAdminPreview === true) return true;
+  const decoded = decodeAdminPreview(req);
+  if (!decoded) return false;
+  try {
+    if (await isTokenRevoked(decoded) || await isTokenBeforeCutoff(decoded)) return false;
+    const admin = await withRetry(async () => db('admin_users')
+      .where({ id: decoded.id, is_active: formatBoolean(true) })
+      .select('id', 'password_changed_at')
+      .first());
+    if (!admin) return false;
+    if (admin.password_changed_at) {
+      const changedSeconds = Math.floor(new Date(admin.password_changed_at).getTime() / 1000);
+      if (decoded.iat < changedSeconds) return false;
+    }
+  } catch (err) {
+    logger.warn('Admin preview session check failed', { error: err.message });
+    return false;
+  }
+  req.isAdminPreview = true;
+  return true;
 }
 
 // Middleware to verify gallery access
@@ -51,7 +89,7 @@ async function verifyGalleryAccess(req, res, next) {
     // below. Per-request bypass — draft + password relaxed, NO gallery JWT
     // minted (a lingering guest cookie would muddy the coexisting-cookies case).
     // req.isAdminPreview flags downstream logging to keep it out of guest stats.
-    if (isAdminPreview(req)) {
+    if (await verifyAdminPreview(req)) {
       if (!requestedSlug) {
         return res.status(401).json({ error: 'No token provided' });
       }
@@ -247,5 +285,6 @@ function denySlideshowToken(req, res, next) {
 module.exports = {
   verifyGalleryAccess,
   denySlideshowToken,
-  isAdminPreview
+  isAdminPreview,
+  verifyAdminPreview
 };

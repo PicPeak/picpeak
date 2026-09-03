@@ -169,8 +169,19 @@ async function formatEventDate(value) {
   }
 }
 
+// Draft, archived and deactivated galleries are refused by /info; the OG
+// preview must not leak their name, date and welcome message to crawlers.
+function isPubliclyVisible(event) {
+  if (!event) return false;
+  const truthy = (v) => v === true || v === 1 || v === '1' || v === 'true';
+  if (truthy(event.is_draft) || truthy(event.is_archived)) return false;
+  if (event.is_active === false || event.is_active === 0 || event.is_active === '0') return false;
+  return true;
+}
+
 async function buildOgMetadata(slug, requestPath) {
-  const event = await resolveSlug(slug);
+  const resolved = await resolveSlug(slug);
+  const event = isPubliclyVisible(resolved) ? resolved : null;
   const branding = await fetchBranding();
   const base = await frontendBase();
   const siteName = branding.companyName || 'PicPeak';

@@ -1,4 +1,5 @@
 const { body, param, validationResult } = require('express-validator');
+const { safeValidationErrors } = require('./routeHelpers');
 const validator = require('validator');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('./emailNormalization');
 const { REACTION_EMOJIS } = require('../constants/reactions');
@@ -254,7 +255,7 @@ const checkValidation = (req, res, next) => {
   if (!errors.isEmpty()) {
     return res.status(400).json({
       error: 'Validation failed',
-      errors: errors.array()
+      errors: safeValidationErrors(errors)
     });
   }
   next();

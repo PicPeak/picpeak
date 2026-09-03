@@ -218,29 +218,16 @@ app.use((req, res, next) => {
 });
 
 // CORS configuration (apply only to API routes)
+const { isAllowedOrigin, multipartOriginAllowed } = require('./src/utils/requestOrigin');
+
 const corsOptions = {
   origin: function (origin, callback) {
     // getFrontendBaseUrlSync() resolves FRONTEND_URL, else the configured
     // general_site_url (#705) — without it, an install that leaves the
     // environment untouched and answers the setup wizard instead would have
     // its own public origin missing from the allowlist.
-    const allowedOrigins = [
-      getFrontendBaseUrlSync() || 'http://localhost:3005',
-      process.env.ADMIN_URL || 'http://localhost:3005'
-    ];
-
-    // In development, also allow localhost origins
-    if (process.env.NODE_ENV === 'development') {
-      allowedOrigins.push(
-        'http://localhost:5173', // Vite dev server
-        'http://localhost:3002', // Backend server
-        'http://localhost:3001', // For API testing
-        'http://localhost:3000'  // Direct backend access
-      );
-    }
-
     // Allow requests with no origin (like curl) and allow-listed origins
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    if (!origin || isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
       // Do not error globally; just omit CORS headers on disallowed origins
@@ -527,8 +514,14 @@ app.use(createApiRateLimitGate(() => generalRateLimiter));
 // and why it must stay unmounted.
 app.use(createAuthRateLimitGate(() => authRateLimiter));
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Body limits. 50mb is only needed by the authenticated admin and API-token
+// surfaces (restore manifests, CMS and email templates, bulk operations);
+// applied globally it let any unauthenticated caller hand JSON.parse a 50mb
+// body and block the event loop. express.json skips a request whose body
+// is already parsed, so the scoped parser must run first.
+app.use(['/api/admin', '/api/v1'], express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // CSRF protection: require JSON Content-Type on mutating API requests
 // This blocks cross-origin form submissions which cannot set Content-Type: application/json
@@ -539,6 +532,14 @@ app.use('/api', (req, res, next) => {
     // Allow empty-body requests (e.g. logout), multipart for uploads, and JSON for API calls
     if (contentLength > 0 && !contentType.includes('application/json') && !contentType.includes('multipart/form-data')) {
       return res.status(415).json({ error: 'Unsupported Content-Type. Use application/json or multipart/form-data.' });
+    }
+    // multipart is exactly what a cross-site <form> can send without a
+    // preflight, and in a split-origin deployment (SameSite=None) the admin
+    // cookie rides along to the upload routes. Browsers label such a
+    // submission Sec-Fetch-Site: cross-site (and always send Origin on a
+    // cross-origin POST); non-browser clients send neither header and pass.
+    if (contentType.includes('multipart/form-data') && !multipartOriginAllowed(req)) {
+      return res.status(403).json({ error: 'Cross-site multipart request rejected' });
     }
   }
   next();
@@ -596,14 +597,35 @@ const secureStatic = require('./src/middleware/secureStatic');
 const storagePath = process.env.STORAGE_PATH || path.join(__dirname, '../storage');
 process.env.EXTERNAL_MEDIA_ROOT = process.env.EXTERNAL_MEDIA_ROOT || '/external-media';
 
-// Static file serving for photos (protected)
-app.use('/photos', require('./src/middleware/photoAuth'), setCorsHeaders, secureStatic(path.join(storagePath, 'events/active')));
+// The /photos and /thumbnails static mounts are gone.
+//
+// They served the raw originals tree and the thumbnail tree behind photoAuth
+// alone, which authorises on a slug match. A static file server cannot apply
+// the rules the gallery API applies per photo, so everything the API decides
+// was simply absent here: allow_downloads, per-category allow_downloads,
+// watermarking, the resolution cap, reveal-mode windows, visibility='hidden',
+// download logging, and the customer-assignment re-check that lets an admin
+// revoke access immediately. The filenames needed to exercise it are handed to
+// every guest in the photos listing.
+//
+// Nothing builds these URLs: no reference in frontend/src, none in the email
+// templates, and the only backend mentions are the /api/admin/photos/... API
+// routes and a maintenance-mode prefix list. nginx still proxies /photos and
+// /thumbnails; those locations now 404, which is the intended outcome.
+//
+// Serving these safely would mean reimplementing per-photo authorisation and
+// image processing inside a static handler -- i.e. the gallery API, which
+// already exists at /api/gallery/:slug/photo/:id and /thumbnail/:id.
 
-// Static file serving for thumbnails (protected)
-app.use('/thumbnails', require('./src/middleware/photoAuth'), setCorsHeaders, secureStatic(path.join(storagePath, 'thumbnails')));
-
-// Static file serving for uploads (public - logos, favicons)
-app.use('/uploads', setCorsHeaders, secureStatic(path.join(storagePath, 'uploads')));
+// Static file serving for uploads.
+//
+// Narrowed to the two public asset trees. The mount used to expose the whole
+// uploads/ root with no auth middleware at all, and that root also holds
+// signed contract PDFs (uploads/contracts/signed) and client transfer files
+// (uploads/transfers/<id>) -- both reachable by anyone who learned or guessed
+// a filename. Those are served by their own authorised routes.
+app.use('/uploads/logos', setCorsHeaders, secureStatic(path.join(storagePath, 'uploads/logos')));
+app.use('/uploads/favicons', setCorsHeaders, secureStatic(path.join(storagePath, 'uploads/favicons')));
 
 // Static file serving for self-hosted webfonts (public — gallery visitors
 // load these via @font-face). Replaces the previous Google Fonts CDN
@@ -770,10 +792,15 @@ app.get(
         // whereas Firefox/Chrome do — so a 302 worked everywhere except
         // Safari. sendFile sets the right content-type from the extension.
         const rel = String(url).replace(/^\/+/, '').replace(/^uploads\//, '');
+        // Containment is the two public asset trees, not the whole uploads/
+        // root: that root also holds signed contracts and client transfer
+        // files, and the favicon URL is an admin-writable setting, so the
+        // wider check let `/uploads/contracts/signed/<file>` be served here
+        // unauthenticated with a day of cache.
         const uploadsRoot = path.resolve(path.join(storagePath, 'uploads'));
         const resolved = path.resolve(path.join(uploadsRoot, rel));
-        // Path containment — never serve outside the uploads dir.
-        if (resolved.startsWith(uploadsRoot + path.sep) && fs.existsSync(resolved)) {
+        const servableRoots = ['favicons', 'logos'].map((d) => path.join(uploadsRoot, d) + path.sep);
+        if (servableRoots.some((root) => resolved.startsWith(root)) && fs.existsSync(resolved)) {
           // This route streams the file directly, bypassing the secureStatic
           // middleware — so re-apply its SVG hardening here. An admin-uploaded
           // SVG favicon could contain <script>; served at the top-level

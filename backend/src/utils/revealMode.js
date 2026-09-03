@@ -48,10 +48,11 @@ function isGalleryHidden(event, now = new Date()) {
 function bypassesReveal(req) {
   if (req.accessLevel === 'slideshow' || req.accessLevel === 'client') return true;
   if (req.viaCustomer) return true;
-  // Lazy require avoids a cycle: middleware/gallery requires nothing from
-  // here, but keeping the import local makes that permanent.
-  const { isAdminPreview } = require('../middleware/gallery');
-  return Boolean(isAdminPreview(req));
+  // req.isAdminPreview is set by verifyAdminPreview() only after the full
+  // session check (revocation, deactivation, password change). Re-decoding
+  // the token here would re-grant the bypass to a session that check just
+  // rejected.
+  return req.isAdminPreview === true;
 }
 
 /** Route guard result: is THIS request blocked by reveal mode? */

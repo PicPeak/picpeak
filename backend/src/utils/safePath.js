@@ -171,8 +171,50 @@ function assertZipEntriesWithin(entries, extractRoot) {
   }
 }
 
+/**
+ * Resolve a stored `/uploads/<kind>/<file>` URL to the file it names inside
+ * that upload directory, or null when the value is not one of ours.
+ *
+ * Only the basename is trusted: the URL comes from an admin-writable
+ * setting, and `path.join(storage, url)` after a `startsWith('/uploads/…')`
+ * check still collapses `..` segments, so it could name any file the process
+ * can delete. Restricting to a flat leaf inside the fixed directory is the
+ * whole control -- the upload routes only ever write flat filenames there.
+ *
+ * @param {string} url          stored value, e.g. "/uploads/logos/logo-1.png"
+ * @param {string} kind         "logos" | "favicons"
+ * @param {string} storageRoot  the root the writer used (callers differ)
+ */
+function uploadedAssetPath(url, kind, storageRoot) {
+  if (!url || typeof url !== 'string') return null;
+  const prefix = `/uploads/${kind}/`;
+  if (!url.startsWith(prefix)) return null;
+  const leaf = url.slice(prefix.length);
+  if (!leaf || leaf === '.' || leaf === '..' || path.basename(leaf) !== leaf) return null;
+  return path.join(storageRoot, 'uploads', kind, leaf);
+}
+
+/**
+ * Resolve business_profile.logo_path to the file the PDF-logo upload route
+ * wrote, or null. logo_path is a free-text field on the profile PUT (an
+ * admin may point it at a file managed elsewhere), so it must never be
+ * unlinked as given: a `/pdf-logo-\d+\./` marker test plus path.join let
+ * `pdf-logo-1./../../../<anything>` -- or any absolute path containing the
+ * marker -- delete arbitrary files. Only a flat `pdf-logo-<n>.<ext>` leaf
+ * inside uploads/logos is ever named.
+ */
+function uploadedPdfLogoPath(logoPath, storageRoot) {
+  if (!logoPath || typeof logoPath !== 'string') return null;
+  const normalized = logoPath.replace(/^\/+/, '');
+  const match = /^uploads\/logos\/(pdf-logo-\d+\.[A-Za-z0-9]+)$/.exec(normalized);
+  if (!match) return null;
+  return path.join(storageRoot, 'uploads', 'logos', match[1]);
+}
+
 module.exports = {
   assertPathInside,
   assertContractPdfPath,
   assertZipEntriesWithin,
+  uploadedAssetPath,
+  uploadedPdfLogoPath,
 };

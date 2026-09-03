@@ -1182,7 +1182,7 @@
       "maxUploadBatchSize": "Max Upload Batch Size (MB)",
       "maxUploadBatchSizeHelp": "Maximum size per upload request. Lower this if behind a reverse proxy with request size limits (e.g. Cloudflare: 100MB).",
       "allowedFileTypes": "Allowed File Types",
-      "allowedFileTypesHelp": "Comma-separated list of file extensions",
+      "allowedFileTypesHelp": "Comma-separated list of file extensions, e.g. jpg,jpeg,png,webp. Applies to every upload path, including guest uploads and the chunked (large-file) API. Videos are off by default: add mp4, mov or webm to accept them.",
       "featureToggles": "Feature Toggles",
       "enableAnalytics": "Enable analytics tracking",
       "enableRegistration": "Allow self-registration for admins",
