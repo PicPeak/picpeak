@@ -108,3 +108,45 @@
   content: "\200B"; /* Zero-width space */
   display: inline;
 }
+/* ---------------------------------------------------------------------------
+ * Theme-owned prose colours (#1288 review follow-up)
+ *
+ * Enabling @tailwindcss/typography gave `.prose` its own fixed palette:
+ * `--tw-prose-headings` and `--tw-prose-bold` default to near-black, and the
+ * generated `.prose :where(h1)…` rules set `color` on the ELEMENT, which beats
+ * the container's inherited colour.
+ *
+ * That is wrong on every gallery surface. A dark gallery preset (darkModern
+ * and friends) writes a near-white `--color-text` on :root but deliberately
+ * does NOT add a `.dark` class, so `dark:prose-invert` never engages — and the
+ * promo block, the info banner and public CMS pages would have rendered
+ * near-black headings on a dark background. Readable before this plugin
+ * existed, unreadable after: exactly the regression the plugin was meant to
+ * avoid.
+ *
+ * Keyed on `.text-theme`, which is the app's existing marker for "the active
+ * theme owns the text colour here". Admin surfaces (the CMS and email
+ * editors, the update modal) do not carry it and keep the stock palette,
+ * which is what they want — they sit on fixed neutral chrome and already
+ * handle dark mode through the real `.dark` class.
+ * ------------------------------------------------------------------------ */
+.prose.text-theme {
+  --tw-prose-body: var(--color-text);
+  --tw-prose-headings: var(--color-text);
+  --tw-prose-lead: var(--color-text);
+  --tw-prose-bold: var(--color-text);
+  --tw-prose-quotes: var(--color-text);
+  --tw-prose-captions: var(--color-muted-text, var(--color-text));
+  --tw-prose-code: var(--color-text);
+  /* Markers and rules are decoration, not text — muted so a bullet list does
+     not read as heavier than the copy beside it. */
+  --tw-prose-bullets: var(--color-muted-text, currentColor);
+  --tw-prose-counters: var(--color-muted-text, currentColor);
+  --tw-prose-hr: var(--color-surface-border, currentColor);
+  --tw-prose-quote-borders: var(--color-surface-border, currentColor);
+  --tw-prose-th-borders: var(--color-surface-border, currentColor);
+  --tw-prose-td-borders: var(--color-surface-border, currentColor);
+  /* The gallery surfaces pass `prose-a:text-accent` explicitly; this keeps a
+     consumer that forgets it from falling back to Tailwind's blue. */
+  --tw-prose-links: var(--color-accent, var(--color-text));
+}
