@@ -17,6 +17,7 @@ const jwt = require('jsonwebtoken');
 const { body, param, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { getBcryptRounds, MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
+const { assertContractPdfPath } = require('../utils/safePath');
 const logger = require('../utils/logger');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const { getClientIp } = require('../utils/requestIp');
@@ -705,9 +706,13 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
       res.set('Content-Disposition', `inline; filename="${contract.contract_number}.pdf"`);
       return res.send(buf);
     }
+    // Same containment the admin and public contract routes apply: the DB
+    // path is written by the service layer today, but a bad row must not
+    // turn this into an arbitrary-file read.
+    const safePath = assertContractPdfPath(filePath);
     res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', `inline; filename="${path.basename(filePath)}"`);
-    fs.createReadStream(filePath).pipe(res);
+    res.set('Content-Disposition', `inline; filename="${path.basename(safePath)}"`);
+    fs.createReadStream(safePath).pipe(res);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to render contract PDF');
   }
