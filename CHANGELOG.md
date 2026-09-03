@@ -5,6 +5,29 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.122.7-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.6-beta.0...v3.122.7-beta.0) (2026-09-03)
+
+
+### Bug Fixes
+
+* **security:** batch 1 — zxcvbn DoS, revocation forgery, unlink traversals, stored Content-Type, edge middleware ([ea394b5](https://github.com/PicPeak/picpeak/commit/ea394b5ee5f7a5bca953198dd9681f767d4fe43c))
+* **security:** bound password input before zxcvbn, and drop the legacy media mounts ([14cd5ea](https://github.com/PicPeak/picpeak/commit/14cd5eacb32ea5526e5226aa998b8a9478768fea))
+* **security:** chunked-upload init checks the size cap before the type allow-list ([0ac006b](https://github.com/PicPeak/picpeak/commit/0ac006bb95562398df1add4ffd85736f6599deaa))
+* **security:** close four middleware gaps around the API edge ([839bf4e](https://github.com/PicPeak/picpeak/commit/839bf4e46440a938d749dc0ec48841a9c4891475))
+* **security:** contain logo, favicon and PDF-logo unlinks to their upload directories ([3e46530](https://github.com/PicPeak/picpeak/commit/3e465300721895e34ebd676b4d65d58f7dced257))
+* **security:** enforce the strength-endpoint validators, and stop the generator spinning ([054cd6f](https://github.com/PicPeak/picpeak/commit/054cd6f82f08a1997ef68da56e07e04369a68f1b))
+* **security:** harden four smaller gallery and contract paths, drop the unmounted photo auth middleware ([835312e](https://github.com/PicPeak/picpeak/commit/835312e8e630da69c5a5b43f00f61ed496c113f7))
+* **security:** never serve a photo under its stored MIME, and stop trusting the chunked-upload type ([063977d](https://github.com/PicPeak/picpeak/commit/063977d97d264e1788643980291330dceaefca31))
+* **security:** stop reflecting submitted passwords in validation errors ([903e471](https://github.com/PicPeak/picpeak/commit/903e4717530e09e1421bb1a43e2e2d53e248ffae))
+* **security:** stop reflecting submitted values in validation errors everywhere, cap credential lengths, close the login timing oracle ([40a8a98](https://github.com/PicPeak/picpeak/commit/40a8a9882ab959680d3bd3906f158d92a8fc7104))
+* **security:** verify the signature before writing a token to the revocation list ([0ca0e4a](https://github.com/PicPeak/picpeak/commit/0ca0e4a9226f9a55a165ebc236c8d6d319de585f))
+
+
+### Documentation
+
+* document the upload allow-list and the chunked-upload type rule ([f3b062a](https://github.com/PicPeak/picpeak/commit/f3b062a3a7000a5c794edd8bc6cfe4a02a456027))
+* move the upload file-types page to the docs repository ([659aa77](https://github.com/PicPeak/picpeak/commit/659aa77a9e26f2c1a04c3d985898cdb099d69a2c))
+
 ## [3.122.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.5-beta.0...v3.122.6-beta.0) (2026-09-03)
 
 
