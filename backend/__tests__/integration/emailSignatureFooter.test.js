@@ -16,11 +16,12 @@ describe('wrapEmailHtml — business-profile signature footer', () => {
   let db;
   let cleanup;
   let wrapEmailHtml;
+  let renderEmailSignatureText;
   let businessProfileService;
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
-    ({ wrapEmailHtml } = require('../../src/services/emailProcessor'));
+    ({ wrapEmailHtml, renderEmailSignatureText } = require('../../src/services/emailProcessor'));
     businessProfileService = require('../../src/services/businessProfileService');
   }, 120000);
 
@@ -205,6 +206,58 @@ describe('wrapEmailHtml — business-profile signature footer', () => {
 
     // The signature <div> is the only element carrying this margin.
     expect(html).not.toContain('<div style="margin:15px 0 5px;');
+  });
+
+  // Codex review: sendTemplateEmail uses a template's own body_text when it
+  // has one — every seeded template does — so the text/plain alternative is
+  // NOT derived from the wrapped HTML and carried no signature at all.
+  describe('plain-text alternative', () => {
+    it('renders the signature as plain text', async () => {
+      await enable();
+      const signature = await businessProfileService.getEmailSignature();
+
+      const text = renderEmailSignatureText(signature, { brandingCompanyName: 'PicPeak', language: 'en' });
+
+      expect(text).toContain('Bahnhofstrasse 1');
+      expect(text).toContain('hello@example.com');
+      expect(text).toContain('VAT ID: CHE-123.456.789');
+      expect(text).toContain('Handelsregister Vaduz');
+      // A separator, the text equivalent of the footer's top border.
+      expect(text).toMatch(/^\n\n--\n/);
+    });
+
+    it('carries no HTML markup or entities', async () => {
+      await enable();
+      const signature = await businessProfileService.getEmailSignature();
+
+      const text = renderEmailSignatureText(signature, { brandingCompanyName: 'PicPeak', language: 'en' });
+
+      expect(text).not.toContain('<');
+      expect(text).not.toContain('&middot;');
+      expect(text).not.toContain('&amp;');
+    });
+
+    it('is empty when the signature is disabled', () => {
+      expect(renderEmailSignatureText(null, {})).toBe('');
+    });
+
+    it('uses the German VAT label for a German mail', async () => {
+      await enable();
+      const signature = await businessProfileService.getEmailSignature();
+
+      expect(renderEmailSignatureText(signature, { language: 'de' })).toContain('USt-IdNr.');
+      expect(renderEmailSignatureText(signature, { language: 'en' })).toContain('VAT ID');
+    });
+
+    it('does not repeat the branding company name', async () => {
+      await enable();
+      const signature = await businessProfileService.getEmailSignature();
+
+      const text = renderEmailSignatureText(signature, {
+        brandingCompanyName: 'Müller Fotografie GmbH', language: 'en',
+      });
+      expect(text).not.toContain('Müller Fotografie GmbH');
+    });
   });
 
   it('leaves the plain-text part free of signature markup', async () => {

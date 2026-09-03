@@ -130,6 +130,28 @@ function normaliseCountryCode(cc) {
   return String(cc).trim().toUpperCase().slice(0, 2);
 }
 
+/**
+ * Coerce an API boolean, honouring the string forms express-validator's
+ * `isBoolean()` accepts.
+ *
+ * `Boolean('false')` and `Boolean('0')` are both TRUE, so a URL-encoded or
+ * form-encoded client sending `emailSignatureEnabled=false` passed validation
+ * and then stored the toggle as ENABLED — the one value it was trying to
+ * clear. JSON clients were unaffected, which is why it was easy to miss.
+ *
+ * Applied to every boolean in this file, not just the new one: the PDF
+ * visibility toggles, the scheduled-email floor and the bank-account default
+ * flag all shared the coercion and therefore the bug.
+ */
+function toBoolean(value) {
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === 'false' || v === '0') return false;
+    if (v === 'true' || v === '1') return true;
+  }
+  return Boolean(value);
+}
+
 function sanitiseProfilePayload(payload) {
   const updates = pickFields(payload, ALLOWED_PROFILE_FIELDS);
 
@@ -160,7 +182,7 @@ function sanitiseProfilePayload(payload) {
     'pdf_quote_show_net_days', 'pdf_quote_show_skonto',
   ]) {
     if (updates[field] !== undefined) {
-      updates[field] = formatBoolean(Boolean(updates[field]));
+      updates[field] = formatBoolean(toBoolean(updates[field]));
     }
   }
   // Folding-mark enum — whitelisted set. Garbage values fall back to
@@ -201,12 +223,12 @@ function sanitiseProfilePayload(payload) {
     }
   }
   if (updates.scheduled_email_floor_enabled !== undefined) {
-    updates.scheduled_email_floor_enabled = formatBoolean(Boolean(updates.scheduled_email_floor_enabled));
+    updates.scheduled_email_floor_enabled = formatBoolean(toBoolean(updates.scheduled_email_floor_enabled));
   }
   // Migration 198 — email footer signature master switch. Same
   // explicit-undefined shape as the PDF toggles so `false` persists.
   if (updates.email_signature_enabled !== undefined) {
-    updates.email_signature_enabled = formatBoolean(Boolean(updates.email_signature_enabled));
+    updates.email_signature_enabled = formatBoolean(toBoolean(updates.email_signature_enabled));
   }
 
   return updates;
@@ -225,7 +247,7 @@ function sanitiseBankPayload(payload) {
     updates.currency = normaliseCurrency(updates.currency);
   }
   if (updates.is_default !== undefined) {
-    updates.is_default = formatBoolean(Boolean(updates.is_default));
+    updates.is_default = formatBoolean(toBoolean(updates.is_default));
   }
   for (const field of ['label', 'account_holder']) {
     if (typeof updates[field] === 'string') {
