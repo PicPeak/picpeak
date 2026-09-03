@@ -1,4 +1,5 @@
 const express = require('express');
+const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { db } = require('../database/db');
 const { verifyGalleryAccess, denySlideshowToken } = require('../middleware/gallery');
 const { blockHiddenGallery, bypassesReveal, isGalleryHidden } = require('../utils/revealMode');
@@ -246,7 +247,7 @@ router.get('/:slug/secure/:photoId/:token',
 
       // Set content type and security headers
       res.set({
-        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Content-Type': resolvePhotoContentType(photo),
         'Content-Length': processedImage.length,
         'X-Protection-Level': protectionSettings.protectionLevel,
         'X-Remaining-Uses': tokenValidation.remaining
@@ -436,7 +437,7 @@ router.get('/:slug/secure-download/:photoId/:token',
       const downloadName = pickRawDownloadName(photo, useOriginal);
 
       res.set({
-        'Content-Type': photo.mime_type || 'image/jpeg',
+        'Content-Type': resolvePhotoContentType(photo),
         'Content-Disposition': buildContentDisposition(downloadName),
         'Content-Length': fileBuffer.length,
         'X-Download-Protected': 'true'

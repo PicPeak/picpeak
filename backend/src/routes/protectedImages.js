@@ -1,4 +1,5 @@
 const express = require('express');
+const { resolvePhotoContentType } = require('../utils/photoContentType');
 const { db } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { verifyGalleryAccess } = require('../middleware/gallery');
@@ -170,7 +171,7 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     
     // Set security headers
     res.set({
-      'Content-Type': photo.mime_type || 'image/jpeg',
+      'Content-Type': resolvePhotoContentType(photo),
       'Content-Length': finalImage.length,
       'Cache-Control': 'private, no-cache, no-store, must-revalidate',
       'Pragma': 'no-cache',
@@ -351,7 +352,7 @@ router.get('/:slug/photo/:photoId/signed/:token', async (req, res) => {
     
     // Set appropriate headers
     res.set({
-      'Content-Type': photo.mime_type || 'image/jpeg',
+      'Content-Type': resolvePhotoContentType(photo),
       'Content-Length': imageBuffer.length,
       'Cache-Control': 'private, max-age=3600',
       'X-Content-Type-Options': 'nosniff'
