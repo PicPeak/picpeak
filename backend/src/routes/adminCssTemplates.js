@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { body, param, validationResult } = require('express-validator');
+const { safeValidationErrors } = require('../utils/routeHelpers');
 const { db, withRetry } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -58,7 +59,7 @@ router.get('/:slotNumber', adminAuth, requirePermission('branding.view'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { slotNumber } = req.params;
@@ -92,7 +93,7 @@ router.put('/:slotNumber', adminAuth, requirePermission('branding.edit'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { slotNumber } = req.params;
@@ -166,7 +167,7 @@ router.post('/:slotNumber/reset', adminAuth, requirePermission('branding.edit'),
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     await withRetry(() =>

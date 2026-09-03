@@ -8,7 +8,7 @@ const { formatBoolean } = require('../../utils/dbCompat');
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const crypto = require('crypto');
-const { errorResponse } = require('../../utils/routeHelpers');
+const { errorResponse, safeValidationErrors } = require('../../utils/routeHelpers');
 const { parseBooleanInput } = require('../../utils/parsers');
 const { requireEventOwnership } = require('../../middleware/ownership');
 const { requireFeatureFlag } = require('../../middleware/requireFeatureFlag');
@@ -110,7 +110,7 @@ module.exports = (router) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ error: 'Invalid slideshow settings', details: errors.array() });
+        return res.status(400).json({ error: 'Invalid slideshow settings', details: safeValidationErrors(errors) });
       }
 
       const event = await loadOwnedEvent(req);

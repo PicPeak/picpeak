@@ -17,9 +17,10 @@ const jwt = require('jsonwebtoken');
 const { body, param, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
-const { getBcryptRounds } = require('../utils/passwordValidation');
+const { getBcryptRounds, MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
+const { assertContractPdfPath } = require('../utils/safePath');
 const logger = require('../utils/logger');
-const { errorResponse } = require('../utils/routeHelpers');
+const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const { getClientIp } = require('../utils/requestIp');
 const { customerAuth } = require('../middleware/customerAuth');
 const { setGalleryAuthCookies } = require('../utils/tokenUtils');
@@ -147,7 +148,7 @@ router.get('/events/:slug/access-token', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { slug } = req.params;
@@ -284,7 +285,7 @@ router.put('/profile', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     // Normalise incoming values: trim strings, drop empty → null so the DB
@@ -329,14 +330,14 @@ router.put('/profile', [
  */
 router.post('/profile/password', [
   customerAuth,
-  body('currentPassword').isString().isLength({ min: 1 }),
-  body('newPassword').isString().isLength({ min: 8 })
+  body('currentPassword').isString().isLength({ min: 1, max: MAX_PASSWORD_LENGTH }),
+  body('newPassword').isString().isLength({ min: 8, max: MAX_PASSWORD_LENGTH })
     .withMessage('Password must be at least 8 characters'),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { currentPassword, newPassword } = req.body;
@@ -706,9 +707,13 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
       res.set('Content-Disposition', `inline; filename="${contract.contract_number}.pdf"`);
       return res.send(buf);
     }
+    // Same containment the admin and public contract routes apply: the DB
+    // path is written by the service layer today, but a bad row must not
+    // turn this into an arbitrary-file read.
+    const safePath = assertContractPdfPath(filePath);
     res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', `inline; filename="${path.basename(filePath)}"`);
-    fs.createReadStream(filePath).pipe(res);
+    res.set('Content-Disposition', `inline; filename="${path.basename(safePath)}"`);
+    fs.createReadStream(safePath).pipe(res);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to render contract PDF');
   }

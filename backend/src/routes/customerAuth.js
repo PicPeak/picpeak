@@ -16,6 +16,9 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { body, param, validationResult } = require('express-validator');
+const { safeValidationErrors } = require('../utils/routeHelpers');
+const { MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
+const DUMMY_BCRYPT_HASH = '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234';
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { verifyRecaptcha } = require('../services/recaptcha');
@@ -65,12 +68,12 @@ const TOKEN_TTL_SECONDS = 24 * 60 * 60; // mirrors admin tokens
 //     gallery JWTs (instant per-gallery revocation).
 router.post('/login', [
   body('email').isEmail().normalizeEmail(IDENTITY_PRESERVING_NORMALIZE_EMAIL).withMessage('Valid email is required'),
-  body('password').isString().notEmpty(),
+  body('password').isString().notEmpty().isLength({ max: MAX_PASSWORD_LENGTH }),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const { email, password, recaptchaToken } = req.body;
@@ -99,7 +102,12 @@ router.post('/login', [
 
     const customer = await db('customer_accounts').where('email', email).first();
     // Generic error to prevent user enumeration — same wording as admin login.
-    if (!customer || !customer.password_hash || !await bcrypt.compare(password, customer.password_hash)) {
+    // One bcrypt compare on every path so an unknown email is not a timing
+    // oracle (the dummy hash matches nothing).
+    const passwordMatches = customer && customer.password_hash
+      ? await bcrypt.compare(password, customer.password_hash)
+      : await bcrypt.compare(password, DUMMY_BCRYPT_HASH).then(() => false);
+    if (!passwordMatches) {
       await trackFailedAttempt(lockoutKey, ipAddress, userAgent);
       return res.status(401).json({ error: getGenericAuthError() });
     }
@@ -273,7 +281,7 @@ router.post('/accept-invite', [
   // Length floor enforced again here for an early reject; the full
   // policy (uppercase + digit) is checked below so we can surface a
   // specific message rather than a generic validator error.
-  body('password').isString().isLength({ min: 8 })
+  body('password').isString().isLength({ min: 8, max: MAX_PASSWORD_LENGTH })
     .withMessage('Password must be at least 8 characters'),
   // Optional structured profile from the accept-invite form. Mirrors
   // the admin prefill shape — anything the customer types here wins
@@ -296,7 +304,7 @@ router.post('/accept-invite', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
     const { token, name, password, profile } = req.body;
 
@@ -355,11 +363,11 @@ router.get('/password-reset/:token', [
  */
 router.post('/password-reset', [
   body('token').isLength({ min: 64, max: 64 }).matches(/^[a-f0-9]+$/i),
-  body('password').isString().isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('password').isString().isLength({ min: 8, max: MAX_PASSWORD_LENGTH }).withMessage('Password must be at least 8 characters'),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
     const policyError = validateCustomerPassword(req.body.password);
     if (policyError) {
       return res.status(400).json({

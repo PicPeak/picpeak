@@ -22,6 +22,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { getStoragePath } = require('../config/storage');
+const { uploadedPdfLogoPath } = require('../utils/safePath');
 const businessProfileService = require('../services/businessProfileService');
 const { db } = require('../database/db');
 const { validateIban } = require('../utils/iban');
@@ -358,12 +359,8 @@ router.post(
     // a path managed by a different system.
     try {
       const previous = await db('business_profile').where({ id: 1 }).first();
-      const prev = previous?.logo_path;
-      if (prev && typeof prev === 'string' && /pdf-logo-\d+\./.test(prev)) {
-        const stripped = prev.replace(/^\/+/, '');
-        const prevDisk = path.isAbsolute(prev)
-          ? prev
-          : path.join(getStoragePath(), stripped);
+      const prevDisk = uploadedPdfLogoPath(previous?.logo_path, getStoragePath());
+      if (prevDisk) {
         try { await fs.unlink(prevDisk); } catch (_) { /* ignore */ }
       }
     } catch (_) { /* ignore */ }
@@ -383,12 +380,8 @@ router.delete(
   requirePermission('settings.edit'),
   handleAsync(async (req, res) => {
     const existing = await db('business_profile').where({ id: 1 }).first();
-    const prev = existing?.logo_path;
-    if (prev && typeof prev === 'string' && /pdf-logo-\d+\./.test(prev)) {
-      const stripped = prev.replace(/^\/+/, '');
-      const prevDisk = path.isAbsolute(prev)
-        ? prev
-        : path.join(getStoragePath(), stripped);
+    const prevDisk = uploadedPdfLogoPath(existing?.logo_path, getStoragePath());
+    if (prevDisk) {
       try { await fs.unlink(prevDisk); } catch (_) { /* ignore */ }
     }
     await businessProfileService.updateProfile(

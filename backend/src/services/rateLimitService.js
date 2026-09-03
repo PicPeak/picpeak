@@ -106,8 +106,13 @@ function isAuthenticated(req) {
       return false;
     }
 
-    // Valid token found - check type
-    req.tokenType = decoded.type; // 'admin' or 'gallery'
+    // Only an admin session earns the skip. A gallery token is minted for
+    // free on password-less galleries and slideshow links, so treating it as
+    // "authenticated" handed anyone an unlimited budget on every /api route.
+    if (decoded.type !== 'admin') {
+      return false;
+    }
+    req.tokenType = decoded.type;
     req.tokenPayload = decoded;
     
     return true;
