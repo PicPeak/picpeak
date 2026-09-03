@@ -29,8 +29,13 @@ const FORBIDDEN_PATTERNS = [
   /on\w+\s*=/gi, // onclick=, onload=, etc.
 ];
 
-// Pattern for external URLs (block external, allow only safe raster data: images)
-const EXTERNAL_URL_PATTERN = /url\s*\(\s*["']?(?!data:image\/(?:jpeg|jpg|png|gif|webp))/gi;
+// Any `url(...)` token, quoted or unquoted. A URL containing a literal ")"
+// is not matched — it would have to be escaped to be valid CSS anyway.
+const URL_TOKEN_PATTERN = /url\s*\(\s*(['"]?)([^)'"]*)\1\s*\)/gi;
+
+// The only target a url() may name: an inline raster data: image. Anything
+// else is a request to a third party from someone else's browser.
+const ALLOWED_URL_TARGET = /^data:image\/(?:jpeg|jpg|png|gif|webp)/i;
 
 // Maximum CSS size in bytes (100KB)
 const MAX_CSS_SIZE = 100 * 1024;
@@ -70,6 +75,40 @@ function sanitizeCss(css) {
 }
 
 /**
+ * Replace every `url(...)` that does not name an inline data: image with the
+ * inert keyword `none`.
+ *
+ * This REPLACES an earlier implementation that prefixed the offending token
+ * with a `/* BLOCKED URL *\/` comment and left the URL in place. CSS comments
+ * are discarded during tokenization, so the declaration a browser actually
+ * parsed still carried the live URL — the "block" was inert, while the
+ * warning returned to the caller said it had worked:
+ *
+ *   before: '.a{background:url(https://x/p.gif)}'
+ *        →  '.a{background:/* BLOCKED URL *\/ url(https://x/p.gif)}'
+ *        →  parsed as '.a{background: url(https://x/p.gif)}'
+ *
+ * `none` is used rather than deleting the declaration because it is valid in
+ * the shorthand positions these appear in (`background: #fff none no-repeat`)
+ * and leaves the rest of the rule intact.
+ *
+ * @param {string} css
+ * @returns {{ sanitized: string, blocked: number }}
+ */
+function stripDisallowedUrls(css) {
+  let blocked = 0;
+  const sanitized = String(css == null ? '' : css).replace(
+    URL_TOKEN_PATTERN,
+    (match, _quote, target) => {
+      if (ALLOWED_URL_TARGET.test(String(target).trim())) return match;
+      blocked += 1;
+      return 'none';
+    }
+  );
+  return { sanitized, blocked };
+}
+
+/**
  * Enhanced CSS sanitization with warnings
  * @param {string} cssContent - Raw CSS content
  * @returns {Object} - { sanitized: string, warnings: string[] }
@@ -101,12 +140,14 @@ function sanitizeCSS(cssContent) {
     }
   }
 
-  // Block external URLs (only allow data: URIs for images)
-  EXTERNAL_URL_PATTERN.lastIndex = 0;
-  if (EXTERNAL_URL_PATTERN.test(sanitized)) {
-    warnings.push('Blocked external URL references. Only data: URIs are allowed for images.');
-    EXTERNAL_URL_PATTERN.lastIndex = 0;
-    sanitized = sanitized.replace(EXTERNAL_URL_PATTERN, '/* BLOCKED URL */ url(');
+  // Block external URLs (only inline data: images are allowed).
+  const urlPass = stripDisallowedUrls(sanitized);
+  if (urlPass.blocked > 0) {
+    warnings.push(
+      `Blocked ${urlPass.blocked} external URL reference${urlPass.blocked === 1 ? '' : 's'}. `
+      + 'Only data: URIs are allowed for images.'
+    );
+    sanitized = urlPass.sanitized;
   }
 
   // Remove HTML comments that might be used for injection
@@ -168,6 +209,7 @@ function scopeToGalleryPage(cssContent) {
 module.exports = {
   sanitizeCss,
   sanitizeCSS,
+  stripDisallowedUrls,
   validateCSS,
   scopeToGalleryPage,
   MAX_CSS_SIZE

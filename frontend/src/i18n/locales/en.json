@@ -2961,7 +2961,8 @@
       "whatsapp_config_updated": "WhatsApp configuration updated",
       "feature_flags_summary_one": "{{count}} features updated: {{summary}}",
       "feature_flags_summary_other": "{{count}} features updated: {{summary}}",
-      "feature_flags_updated": "Feature settings updated"
+      "feature_flags_updated": "Feature settings updated",
+      "css_template_remote_urls_removed": "Remote URLs removed from {{count}} CSS template(s) — see the release notes"
     },
     "people": {
       "title": "People in this gallery",
