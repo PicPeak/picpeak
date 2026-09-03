@@ -5,6 +5,27 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.46.9](https://github.com/PicPeak/picpeak/compare/v3.46.8...v3.46.9) (2026-09-03)
+
+
+### Bug Fixes
+
+* **security:** batch 1 (stable) — zxcvbn DoS, revocation forgery, unlink traversals, stored Content-Type, edge middleware ([3f90221](https://github.com/PicPeak/picpeak/commit/3f90221f40b604dd5cebc016aad9478e84035b97))
+* **security:** bound password input before zxcvbn, and drop the legacy media mounts ([ed08ff8](https://github.com/PicPeak/picpeak/commit/ed08ff84ff014226f1e17cc17167f80afa366f7c))
+* **security:** close three middleware gaps around the API edge ([b136906](https://github.com/PicPeak/picpeak/commit/b1369068ae1327fc29e8aa671029548e2e93d827))
+* **security:** contain logo, favicon and PDF-logo unlinks to their upload directories ([882101b](https://github.com/PicPeak/picpeak/commit/882101b58670e99ac3aea560b83fc4123fe4b359))
+* **security:** enforce the strength-endpoint validators, and stop the generator spinning ([706d402](https://github.com/PicPeak/picpeak/commit/706d402c1e979d8419396c451487fb9be756a449))
+* **security:** harden four smaller gallery and contract paths, drop the unmounted photo auth middleware ([d81cade](https://github.com/PicPeak/picpeak/commit/d81cade7cc9a39179b05ace5ae47b13bbe1d8196))
+* **security:** never serve a photo under its stored MIME, and stop trusting the chunked-upload type ([a8d57f0](https://github.com/PicPeak/picpeak/commit/a8d57f0d696b9e0e92d6ae91beff9f3ad0fa1695))
+* **security:** stop reflecting submitted passwords in validation errors ([6481708](https://github.com/PicPeak/picpeak/commit/6481708def49bc9cdf424752a633e320813cf280))
+* **security:** stop reflecting submitted values in validation errors everywhere, cap credential lengths, close the login timing oracle ([406c638](https://github.com/PicPeak/picpeak/commit/406c6384513da2d7582dc223d799fba7cad56745))
+* **security:** verify the signature before writing a token to the revocation list ([c6d4016](https://github.com/PicPeak/picpeak/commit/c6d401685f4eb4d9fd5fb70636962d73fc631cde))
+
+
+### Documentation
+
+* say the upload allow-list covers every path, video extensions must be added ([c89ce8e](https://github.com/PicPeak/picpeak/commit/c89ce8e1721adfd67598cf35ae307e97ed185827))
+
 ## [3.46.8](https://github.com/PicPeak/picpeak/compare/v3.46.7...v3.46.8) (2026-09-01)
 
 
