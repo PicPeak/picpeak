@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { buildResourceUrl } from '../../utils/url';
+import { withImageFetchSlot } from '../../utils/imageFetchQueue';
 import {
   getActiveGallerySlug,
   getGalleryToken,
@@ -108,6 +109,10 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   useEffect(() => {
     let aborted = false;
     const objectUrls: string[] = [];
+    // #1287 — the previous cleanup only set a flag. The request itself kept
+    // running, holding a connection slot for a tile that is no longer on
+    // screen, which on a several-hundred-photo gallery is most of them.
+    const controller = new AbortController();
 
     // Determine which token to use based on context
     if (!src) {
@@ -159,10 +164,14 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         }
       }
 
-      const response = await fetch(fullImageUrl, {
+      // Queued (#1287). Without a cap, a 546-photo grid hands the browser
+      // several hundred simultaneous fetches and some never come back —
+      // pending forever, so nothing is logged and nothing is "failed".
+      const response = await withImageFetchSlot(() => fetch(fullImageUrl, {
         credentials: 'include',
         headers: Object.keys(headers).length ? headers : undefined,
-      });
+        signal: controller.signal,
+      }));
 
       if (!response.ok) {
         throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
@@ -170,6 +179,12 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
 
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);
+      // The effect may have been torn down while this was in flight. Revoke
+      // immediately rather than pushing onto an array nobody will read again.
+      if (aborted) {
+        URL.revokeObjectURL(objectUrl);
+        throw new Error('aborted');
+      }
       objectUrls.push(objectUrl);
       return objectUrl;
     };
@@ -182,6 +197,10 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
           setError(false);
         }
       } catch (err) {
+        // Torn down mid-flight (#1287): the abort is expected, not a failure.
+        // Returning here also stops the fallback below from firing a second
+        // request against an already-aborted signal.
+        if (aborted) return;
         setIsLoading(false);
         if (fallbackSrc && fallbackSrc !== src) {
           try {
@@ -211,6 +230,9 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     // Cleanup function
     return () => {
       aborted = true;
+      // Free the connection slot rather than leaving the request to run for
+      // a tile that is gone (#1287).
+      controller.abort();
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
