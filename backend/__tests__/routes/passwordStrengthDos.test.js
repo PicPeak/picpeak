@@ -54,6 +54,21 @@ describe('password validation length cap (zxcvbn DoS)', () => {
       .toThrow(/at most 128/);
   });
 
+  it('does not echo the rejected password back in the error body', async () => {
+    // Codex review round 2. express-validator's errors.array() carries the
+    // submitted `value`, so the 400 for an oversized password returned the
+    // password itself -- reflecting a credential, and re-allocating up to the
+    // 50mb body limit on an unauthenticated endpoint, which partly undid the
+    // DoS fix this branch exists for.
+    const src = require('fs').readFileSync(
+      require('path').join(__dirname, '../../src/routes/auth.js'), 'utf8');
+
+    // No route may hand errors.array() straight to the response.
+    expect(src).not.toMatch(/errors:\s*errors\.array\(\)/);
+    // ...and the helper that replaces it must drop `value`.
+    expect(src).toMatch(/safeValidationErrors\s*=\s*\(errors\)\s*=>\s*errors\.array\(\)\.map\(\(\{ value, \.\.\.rest \}\)/);
+  });
+
   it('applies the cap through the context wrapper too', async () => {
     const { validatePasswordInContext } = require('../../src/utils/passwordValidation');
     const huge = 'aA1!'.repeat(MAX_PASSWORD_LENGTH);
