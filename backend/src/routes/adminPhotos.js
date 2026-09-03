@@ -1626,20 +1626,6 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
       return res.status(400).json({ error: 'Missing required fields: filename, fileSize' });
     }
 
-    // The client-declared mimeType is not trusted. It used to be stored on
-    // the photo row verbatim and echoed as Content-Type by the gallery
-    // routes, so a JPEG/HTML polyglot declared as text/html rendered inline
-    // on the app origin. The MIME is derived from the extension instead,
-    // and the extension has to be on the admin's allow-list, which is what
-    // the multipart path enforces through its multer fileFilter.
-    const ext = path.extname(String(filename)).slice(1).toLowerCase();
-    const mimeType = Object.prototype.hasOwnProperty.call(EXTENSION_TO_MIME, ext)
-      ? EXTENSION_TO_MIME[ext]
-      : null;
-    const allowedMimeTypes = await getAllowedMimeTypes();
-    if (!mimeType || !allowedMimeTypes.includes(mimeType)) {
-      return res.status(400).json({ error: 'File type not allowed' });
-    }
 
     // Validate file size against the configured per-file cap. Hardcoding 10GB
     // here let the chunked path sidestep general_max_file_size_mb entirely.
@@ -1653,6 +1639,21 @@ router.post('/:eventId/chunked-upload/init', adminAuth, requirePermission('photo
       return res.status(400).json({
         error: `File too large. Maximum size is ${Math.floor(maxSize / (1024 * 1024))} MB per file.`
       });
+    }
+
+    // The client-declared mimeType is not trusted. It used to be stored on
+    // the photo row verbatim and echoed as Content-Type by the gallery
+    // routes, so a JPEG/HTML polyglot declared as text/html rendered inline
+    // on the app origin. The MIME is derived from the extension instead,
+    // and the extension has to be on the admin's allow-list, which is what
+    // the multipart path enforces through its multer fileFilter.
+    const ext = path.extname(String(filename)).slice(1).toLowerCase();
+    const mimeType = Object.prototype.hasOwnProperty.call(EXTENSION_TO_MIME, ext)
+      ? EXTENSION_TO_MIME[ext]
+      : null;
+    const allowedMimeTypes = await getAllowedMimeTypes();
+    if (!mimeType || !allowedMimeTypes.includes(mimeType)) {
+      return res.status(400).json({ error: 'File type not allowed' });
     }
 
     const result = await chunkedUpload.initializeUpload({
