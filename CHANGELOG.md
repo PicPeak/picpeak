@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.122.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.5-beta.0...v3.122.6-beta.0) (2026-09-03)
+
+
+### Bug Fixes
+
+* **gallery:** follow the input in use, not the device's primary pointer ([#1275](https://github.com/PicPeak/picpeak/issues/1275)) ([a87e688](https://github.com/PicPeak/picpeak/commit/a87e6884846d8bebcf9261c4aa32a0ee1ef8fabc))
+
 ## [3.122.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.4-beta.0...v3.122.5-beta.0) (2026-09-02)
 
 
