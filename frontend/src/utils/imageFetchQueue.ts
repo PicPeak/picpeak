@@ -50,7 +50,13 @@ function pump() {
 export function withImageFetchSlot<T>(task: () => Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const run = () => {
-      task()
+      // Promise.resolve().then(task) rather than task() directly: a task that
+      // throws SYNCHRONOUSLY would otherwise never reach the `.finally`, and
+      // `active` would stay incremented. Repeat that and the pool is
+      // permanently exhausted — the precise failure this queue exists to
+      // prevent, reintroduced by its own release path.
+      Promise.resolve()
+        .then(task)
         .then(resolve, reject)
         .finally(() => {
           active -= 1;

@@ -167,17 +167,25 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       // Queued (#1287). Without a cap, a 546-photo grid hands the browser
       // several hundred simultaneous fetches and some never come back —
       // pending forever, so nothing is logged and nothing is "failed".
-      const response = await withImageFetchSlot(() => fetch(fullImageUrl, {
-        credentials: 'include',
-        headers: Object.keys(headers).length ? headers : undefined,
-        signal: controller.signal,
-      }));
+      //
+      // The BODY read has to happen inside the slot. `fetch` resolves as soon
+      // as the headers arrive, so releasing there would free the slot while
+      // the image bytes are still streaming on that connection — the cap
+      // would bound header round-trips and nothing else, which is not the
+      // workload that stalls a large gallery.
+      const blob = await withImageFetchSlot(async () => {
+        const response = await fetch(fullImageUrl, {
+          credentials: 'include',
+          headers: Object.keys(headers).length ? headers : undefined,
+          signal: controller.signal,
+        });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
-      }
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+        }
 
-      const blob = await response.blob();
+        return await response.blob();
+      });
       const objectUrl = URL.createObjectURL(blob);
       // The effect may have been torn down while this was in flight. Revoke
       // immediately rather than pushing onto an array nobody will read again.
