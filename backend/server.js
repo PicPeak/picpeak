@@ -218,29 +218,16 @@ app.use((req, res, next) => {
 });
 
 // CORS configuration (apply only to API routes)
+const { isAllowedOrigin, multipartOriginAllowed } = require('./src/utils/requestOrigin');
+
 const corsOptions = {
   origin: function (origin, callback) {
     // getFrontendBaseUrlSync() resolves FRONTEND_URL, else the configured
     // general_site_url (#705) — without it, an install that leaves the
     // environment untouched and answers the setup wizard instead would have
     // its own public origin missing from the allowlist.
-    const allowedOrigins = [
-      getFrontendBaseUrlSync() || 'http://localhost:3005',
-      process.env.ADMIN_URL || 'http://localhost:3005'
-    ];
-
-    // In development, also allow localhost origins
-    if (process.env.NODE_ENV === 'development') {
-      allowedOrigins.push(
-        'http://localhost:5173', // Vite dev server
-        'http://localhost:3002', // Backend server
-        'http://localhost:3001', // For API testing
-        'http://localhost:3000'  // Direct backend access
-      );
-    }
-
     // Allow requests with no origin (like curl) and allow-listed origins
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    if (!origin || isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
       // Do not error globally; just omit CORS headers on disallowed origins
@@ -527,8 +514,14 @@ app.use(createApiRateLimitGate(() => generalRateLimiter));
 // and why it must stay unmounted.
 app.use(createAuthRateLimitGate(() => authRateLimiter));
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Body limits. 50mb is only needed by the authenticated admin and API-token
+// surfaces (restore manifests, CMS and email templates, bulk operations);
+// applied globally it let any unauthenticated caller hand JSON.parse a 50mb
+// body and block the event loop. express.json skips a request whose body
+// is already parsed, so the scoped parser must run first.
+app.use(['/api/admin', '/api/v1'], express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // CSRF protection: require JSON Content-Type on mutating API requests
 // This blocks cross-origin form submissions which cannot set Content-Type: application/json
@@ -539,6 +532,14 @@ app.use('/api', (req, res, next) => {
     // Allow empty-body requests (e.g. logout), multipart for uploads, and JSON for API calls
     if (contentLength > 0 && !contentType.includes('application/json') && !contentType.includes('multipart/form-data')) {
       return res.status(415).json({ error: 'Unsupported Content-Type. Use application/json or multipart/form-data.' });
+    }
+    // multipart is exactly what a cross-site <form> can send without a
+    // preflight, and in a split-origin deployment (SameSite=None) the admin
+    // cookie rides along to the upload routes. Browsers label such a
+    // submission Sec-Fetch-Site: cross-site (and always send Origin on a
+    // cross-origin POST); non-browser clients send neither header and pass.
+    if (contentType.includes('multipart/form-data') && !multipartOriginAllowed(req)) {
+      return res.status(403).json({ error: 'Cross-site multipart request rejected' });
     }
   }
   next();

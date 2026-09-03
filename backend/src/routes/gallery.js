@@ -25,7 +25,7 @@ function resolveHeroLogoVisible(perEvent, globalDefault) {
 }
 const watermarkService = require('../services/watermarkService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
-const { verifyGalleryAccess, denySlideshowToken, isAdminPreview } = require('../middleware/gallery');
+const { verifyGalleryAccess, denySlideshowToken, verifyAdminPreview } = require('../middleware/gallery');
 // Preserve the admin-preview flag across internal photo redirects (#981 review).
 // The redirected request carries no gallery JWT, so without the flag it would
 // fall back to the draft/password gate and 404 the derivative.
@@ -335,7 +335,7 @@ router.get('/:slug/info', async (req, res) => {
 
     // Admin preview (#868) bypasses both the draft gate and — below — the
     // password gate. Computed once and reused.
-    const adminPreview = isAdminPreview(req);
+    const adminPreview = await verifyAdminPreview(req);
     // Check if event is a draft (allow admin preview)
     if (event.is_draft && !adminPreview) {
       return res.status(404).json({ error: 'Gallery is not yet published' });
