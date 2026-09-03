@@ -1,6 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const { uploadedAssetPath } = require('../utils/safePath');
 const fs = require('fs').promises;
 const { body, validationResult } = require('express-validator');
 const validator = require('validator');
@@ -1044,10 +1045,13 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
           currentFaviconUrl = currentFaviconSetting.setting_value;
         }
         
-        if (currentFaviconUrl && typeof currentFaviconUrl === 'string' && currentFaviconUrl.startsWith('/uploads/favicons/')) {
-          // Delete the file from filesystem
-          const relativePath = currentFaviconUrl.replace(/^\//, '');
-          const faviconPath = path.join(getStoragePath(), relativePath);
+        // Containment: the stored URL is admin-writable, so only the leaf
+        // name is used and it is joined onto the fixed favicon directory. A
+        // prefix test alone let `/uploads/favicons/../../<anything>` pass
+        // and path.join collapse it -- an arbitrary-file delete for any
+        // holder of settings.edit.
+        const faviconPath = uploadedAssetPath(currentFaviconUrl, 'favicons', getStoragePath());
+        if (faviconPath) {
           try {
             await fs.unlink(faviconPath);
             logger.info('Deleted favicon file:', faviconPath);
@@ -1075,10 +1079,9 @@ router.put('/branding', adminAuth, requirePermission('settings.edit'), async (re
           currentLogoUrl = currentLogoSetting.setting_value;
         }
         
-        if (currentLogoUrl && typeof currentLogoUrl === 'string' && currentLogoUrl.startsWith('/uploads/logos/')) {
-          // Delete the file from filesystem
-          const relativePath = currentLogoUrl.replace(/^\//, '');
-          const logoPath = path.join(getStoragePath(), relativePath);
+        // Same containment as the favicon branch above.
+        const logoPath = uploadedAssetPath(currentLogoUrl, 'logos', getStoragePath());
+        if (logoPath) {
           try {
             await fs.unlink(logoPath);
             logger.info('Deleted logo file:', logoPath);
