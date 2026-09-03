@@ -8,7 +8,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Star, Pencil, Save, Clock, Copy } from 'lucide-react';
+import { Plus, Trash2, Star, Pencil, Save, Clock, Copy, Mail } from 'lucide-react';
 import {
   businessProfileService,
   type BusinessProfile,
@@ -305,6 +305,58 @@ export const SettingsBusinessProfilePage: React.FC = () => {
         </div>
       </Card>
 
+      {/* Global email footer signature (migration 198, issue #1264).
+          Rendered by wrapEmailHtml only, so flipping this toggle changes
+          the footer of EVERY outgoing mail — transactional, preview, test
+          and manual — without any per-template edit. Every value except
+          the legal line below comes from the fields already on this page. */}
+      <Card>
+        <div className="flex items-center gap-2 mb-1">
+          <Mail className="w-5 h-5 text-neutral-500" />
+          <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">
+            {t('businessProfile.emailSignature.title', 'Email signature')}
+          </h3>
+        </div>
+        <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">
+          {t('businessProfile.emailSignature.subtitle',
+            'Append your company details to the footer of every email this installation sends. Built from the address and contact fields above — nothing is duplicated.')}
+        </p>
+
+        <PdfToggleRow
+          label={t('businessProfile.emailSignature.toggle', 'Show signature in email footers') as string}
+          description={t('businessProfile.emailSignature.toggleHelp',
+            'When off, emails keep the plain logo + company name footer. Applies to every email, including test sends and previews.') as string}
+          enabled={profile.emailSignatureEnabled}
+          onChange={(v) => setProfile({ ...profile, emailSignatureEnabled: v })}
+        />
+
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+            {t('businessProfile.emailSignature.extra', 'Legal line (optional)')}
+          </label>
+          <textarea
+            rows={3}
+            maxLength={500}
+            value={profile.emailSignatureExtra}
+            onChange={(e) => setProfile({ ...profile, emailSignatureExtra: e.target.value })}
+            placeholder={t('businessProfile.emailSignature.extraPlaceholder',
+              'Handelsregister Vaduz FL-0002.123.456-7') as string}
+            className="w-full rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-900 dark:text-neutral-100"
+          />
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
+            {t('businessProfile.emailSignature.extraHelp',
+              'Registration number, disclaimer or any line with no field of its own. Plain text, up to 500 characters.')}
+          </p>
+        </div>
+
+        <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">
+          <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400 mb-2 uppercase tracking-wide">
+            {t('businessProfile.emailSignature.previewTitle', 'Footer preview')}
+          </p>
+          <EmailSignaturePreview profile={profile} />
+        </div>
+      </Card>
+
       {/* Disclaimer banner for QR-bill / IBAN data. picpeak renders
           what the operator types — it cannot validate IBAN/BIC, QR-IID
           or scan-compatibility with any specific bank's e-banking app.
@@ -360,6 +412,64 @@ const PdfToggleRow: React.FC<PdfToggleRowProps> = ({ label, description, enabled
     </button>
   </label>
 );
+
+/**
+ * Read-only render of the email footer signature (migration 198).
+ *
+ * Deliberately mirrors `renderEmailSignature` in the backend's
+ * emailProcessor: same field order, same middle-dot separators, same
+ * omit-when-empty rule. It is a preview, not a second renderer — the mail
+ * itself is always built server-side.
+ */
+const EmailSignaturePreview: React.FC<{ profile: BusinessProfile }> = ({ profile }) => {
+  const { t, i18n } = useTranslation();
+
+  if (!profile.emailSignatureEnabled) {
+    return (
+      <p className="text-sm text-neutral-500 dark:text-neutral-400 italic">
+        {t('businessProfile.emailSignature.previewOff', 'Signature is off — emails show the logo and company name only.')}
+      </p>
+    );
+  }
+
+  // "LI-9494 Schaan / Liechtenstein" — the same shape the PDF issuer
+  // block uses, assembled identically on the backend.
+  const cc = profile.countryCode ? profile.countryCode.toUpperCase() : '';
+  const pc = profile.postalCode || '';
+  const left = [cc && pc ? `${cc}-${pc}` : (pc || cc), profile.city || ''].filter(Boolean).join(' ');
+  const cityCountry = [left, profile.countryName || ''].filter(Boolean).join(' / ');
+
+  const addressLines = [profile.addressLine1, profile.addressLine2, cityCountry]
+    .map((l) => (l || '').trim())
+    .filter(Boolean);
+  const contacts = [profile.phone, profile.mobile, profile.email, profile.website]
+    .map((c) => (c || '').trim())
+    .filter(Boolean);
+  const vatLabel = i18n.language?.startsWith('de') ? 'USt-IdNr.' : 'VAT ID';
+
+  const isEmpty = !profile.companyName && !addressLines.length && !contacts.length
+    && !profile.vatId && !profile.emailSignatureExtra;
+  if (isEmpty) {
+    return (
+      <p className="text-sm text-amber-700 dark:text-amber-400">
+        {t('businessProfile.emailSignature.previewEmpty',
+          'Signature is on but every field above is blank — nothing will be added to the footer.')}
+      </p>
+    );
+  }
+
+  return (
+    <div data-testid="email-signature-preview" className="rounded-md bg-neutral-50 dark:bg-neutral-800/60 p-3 text-center text-xs text-neutral-600 dark:text-neutral-400 space-y-1">
+      {profile.companyName && <p>{profile.companyName}</p>}
+      {addressLines.length > 0 && <p>{addressLines.join(' \u00b7 ')}</p>}
+      {contacts.length > 0 && <p>{contacts.join(' \u00b7 ')}</p>}
+      {profile.vatId && <p>{vatLabel}: {profile.vatId}</p>}
+      {profile.emailSignatureExtra && (
+        <p className="text-[11px] whitespace-pre-line">{profile.emailSignatureExtra}</p>
+      )}
+    </div>
+  );
+};
 
 /**
  * Per-weekday business-hours editor (migration 114). Google-style: each

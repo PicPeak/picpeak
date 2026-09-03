@@ -179,6 +179,12 @@ function transformProfile(p) {
       : (p.scheduled_email_floor_enabled === true
         || p.scheduled_email_floor_enabled === 1
         || p.scheduled_email_floor_enabled === '1'),
+    // Migration 198 — global email footer signature. Defaults FALSE so an
+    // upgraded install's footer stays byte-identical until an admin opts in.
+    emailSignatureEnabled: p.email_signature_enabled === true
+      || p.email_signature_enabled === 1
+      || p.email_signature_enabled === '1',
+    emailSignatureExtra: p.email_signature_extra || '',
     createdAt: p.created_at,
     updatedAt: p.updated_at,
   };
@@ -456,6 +462,11 @@ router.put(
     }),
     // Migration 114 — scheduled-email floor master switch.
     body('scheduledEmailFloorEnabled').optional().isBoolean(),
+    // Migration 198 — global email footer signature. Boolean uses the
+    // explicit-undefined form so `false` reaches the service and the
+    // toggle can actually be switched off.
+    body('emailSignatureEnabled').optional().isBoolean(),
+    body('emailSignatureExtra').optional({ values: 'falsy' }).isString().isLength({ max: 500 }),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
@@ -497,6 +508,9 @@ router.put(
       // Migration 114 — business hours + scheduled-email floor switch.
       businessHours: 'business_hours',
       scheduledEmailFloorEnabled: 'scheduled_email_floor_enabled',
+      // Migration 198 — global email footer signature.
+      emailSignatureEnabled: 'email_signature_enabled',
+      emailSignatureExtra: 'email_signature_extra',
     };
     for (const [api, db] of Object.entries(map)) {
       if (Object.prototype.hasOwnProperty.call(req.body, api)) {

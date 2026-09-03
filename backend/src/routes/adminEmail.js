@@ -10,6 +10,7 @@ const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const messagingGate = requireFeatureFlag('messaging');
 const { wrapEmailHtml, processEmailQueue, resolveFromIdentity } = require('../services/emailProcessor');
 const emailWebhookTransport = require('../services/emailWebhookTransport');
+const businessProfileService = require('../services/businessProfileService');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const logger = require('../utils/logger');
 const router = express.Router();
@@ -1234,7 +1235,11 @@ router.post('/templates/:key/preview', adminAuth, requirePermission('email.view'
       subject,
       body_html: wrappedHtml,
       body_text: textContent,
-      language
+      language,
+      // Migration 198 — the wrapper above already rendered the global
+      // signature into body_html when it's on. This flag just lets the
+      // preview UI say so, and point at Business profile when it's off.
+      signature: (await businessProfileService.getEmailSignature()) !== null
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to preview email template');

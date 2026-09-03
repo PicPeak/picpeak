@@ -94,6 +94,16 @@ export interface BusinessProfile {
    *  (migration 114). Defaults true. When off, scheduled emails send at
    *  their requested instant regardless of `businessHours`. */
   scheduledEmailFloorEnabled: boolean;
+  /** Global email footer signature master switch (migration 198). When
+   *  on, `wrapEmailHtml` appends the issuer block below — address,
+   *  contacts, VAT id and `emailSignatureExtra` — to the footer of EVERY
+   *  outgoing mail: transactional, preview, test and manual alike.
+   *  Defaults false so an upgraded install's footer is unchanged. */
+  emailSignatureEnabled: boolean;
+  /** Free-text legal line under the signature (Handelsregister /
+   *  registration number / disclaimer). Plain text, max 500 chars —
+   *  rendered escaped with newlines turned into <br>. Migration 198. */
+  emailSignatureExtra: string;
   createdAt: string;
   updatedAt: string;
 }

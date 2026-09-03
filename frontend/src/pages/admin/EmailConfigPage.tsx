@@ -23,10 +23,12 @@ import { ReceivedEmailsPanel } from '../../components/admin/ReceivedEmailsPanel'
 import { IncomingMailConfigCard } from '../../components/admin/IncomingMailConfigCard';
 import { CustomerMailboxCard } from '../../components/admin/CustomerMailboxCard';
 import { Palette, RefreshCw, Info } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useModal, useMutationWithToast } from '../../hooks';
 import { emailService, type EmailConfig, type EmailTemplate, type EmailTemplateTranslation } from '../../services/email.service';
 import { settingsService } from '../../services/settings.service';
+import { businessProfileService } from '../../services/businessProfile.service';
 import { useTranslation } from 'react-i18next';
 import { SUPPORTED_LANGUAGES } from "../../components/common/LanguageSelector.tsx";
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
@@ -209,6 +211,15 @@ export const EmailConfigPage: React.FC = () => {
     from_name: 'Photo Sharing',
     tls_reject_unauthorized: true
   });
+
+  // Migration 198 — whether the global footer signature is on. Read-only
+  // here; the toggle itself lives on Settings → Business profile.
+  const { data: businessProfile } = useQuery({
+    queryKey: ['business-profile'],
+    queryFn: () => businessProfileService.get(),
+    enabled: activeTab === 'smtp',
+  });
+  const signatureEnabled = businessProfile?.profile?.emailSignatureEnabled ?? false;
 
   // Fetch SMTP config
   const { isLoading: configLoading } = useQuery({
@@ -536,6 +547,22 @@ export const EmailConfigPage: React.FC = () => {
       {/* SMTP Settings Tab */}
       {activeTab === 'smtp' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* The footer signature (migration 198) is applied by the email
+              wrapper to every send from this page, but it's configured on
+              the Business profile — point at it from where the mail is set
+              up rather than making the operator hunt for it. */}
+          <div className="lg:col-span-2 flex items-start gap-2 rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 p-3 text-sm text-neutral-600 dark:text-neutral-400">
+            <Info className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>
+              {signatureEnabled
+                ? t('email.signatureOn', 'Footer signature is on — your business address is appended to every outgoing email.')
+                : t('email.signatureOff', 'Footer signature is off — emails show the logo and company name only.')}
+              {' '}
+              <Link to="/admin/settings?tab=businessProfile" className="underline hover:no-underline" style={{ color: 'var(--color-accent)' }}>
+                {t('email.signatureEdit', 'Edit in Business profile')}
+              </Link>
+            </span>
+          </div>
           <Card padding="md">
             <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('email.smtpConfiguration')}</h2>
 

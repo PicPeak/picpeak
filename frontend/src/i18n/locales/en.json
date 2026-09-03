@@ -3368,7 +3368,10 @@
       "requiredFields": "Host, port and username are required.",
       "testOk": "Connected to {{folder}} — {{messages}} messages, {{unseen}} unread.",
       "testFailed": "Connection failed."
-    }
+    },
+    "signatureOn": "Footer signature is on — your business address is appended to every outgoing email.",
+    "signatureOff": "Footer signature is off — emails show the logo and company name only.",
+    "signatureEdit": "Edit in Business profile"
   },
   "cms": {
     "title": "CMS Pages",
@@ -6112,7 +6115,19 @@
     "logoUploadedToast": "PDF logo uploaded.",
     "logoConfirmClear": "Remove the PDF logo? The renderer will fall back to the Branding logo if one is set.",
     "logoClearedToast": "PDF logo removed.",
-    "bankUpdatedToast": "Bank account updated."
+    "bankUpdatedToast": "Bank account updated.",
+    "emailSignature": {
+      "title": "Email signature",
+      "subtitle": "Append your company details to the footer of every email this installation sends. Built from the address and contact fields above — nothing is duplicated.",
+      "toggle": "Show signature in email footers",
+      "toggleHelp": "When off, emails keep the plain logo + company name footer. Applies to every email, including test sends and previews.",
+      "extra": "Legal line (optional)",
+      "extraPlaceholder": "Handelsregister Vaduz FL-0002.123.456-7",
+      "extraHelp": "Registration number, disclaimer or any line with no field of its own. Plain text, up to 500 characters.",
+      "previewTitle": "Footer preview",
+      "previewOff": "Signature is off — emails show the logo and company name only.",
+      "previewEmpty": "Signature is on but every field above is blank — nothing will be added to the footer."
+    }
   },
   "crmSettings": {
     "savedToast": "CRM settings saved.",
