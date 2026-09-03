@@ -3,6 +3,7 @@
  * Provides ability to invalidate tokens before expiration
  */
 
+const jwt = require('jsonwebtoken');
 const { db } = require('../database/db');
 const logger = require('./logger');
 
@@ -28,14 +29,22 @@ function buildTokenId(payload) {
 
 async function revokeToken(token, reason, metadata = {}) {
   try {
-    // Extract token info without full verification (it might be compromised)
-    const parts = token.split('.');
-    if (parts.length !== 3) {
-      throw new Error('Invalid token format');
+    // The signature MUST be verified before anything is written. The
+    // revocation key is `${id}-${iat}-${type}` (buildTokenId), and the
+    // logout endpoints are unauthenticated, so a raw base64 decode let
+    // anyone forge a three-part string naming another user's id, type and
+    // login second and insert a row that isTokenRevoked() then matched for
+    // that user's real session -- a remote forced logout of any admin,
+    // customer or gallery session, plus never-swept rows when `exp` was set
+    // far in the future. Expiry is ignored on purpose: revoking an already
+    // expired token is harmless and keeps logout idempotent.
+    const payload = jwt.verify(token, process.env.JWT_SECRET, {
+      algorithms: ['HS256'],
+      ignoreExpiration: true,
+    });
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Invalid token payload');
     }
-
-    // Decode payload
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
 
     // user_id is integer-typed in revoked_tokens; for non-admin tokens
     // we may not have an integer (customer) or any id at all (gallery
