@@ -47,6 +47,17 @@ vi.mock('../../../../components/common', async () => {
   return { ...actual, useConfirm: () => confirmSpy };
 });
 
+// The list gates New/Delete on `newsletters.send` (#1264 review), so the page
+// now consults PermissionsContext. Default to a full-permission admin; the
+// view-only case gets its own describe below.
+let grantedPermissions = ['newsletters.view', 'newsletters.send'];
+vi.mock('../../../../contexts/PermissionsContext', () => ({
+  usePermissions: () => ({
+    hasPermission: (p: string) => grantedPermissions.includes(p),
+    isLoading: false,
+  }),
+}));
+
 const makeCampaign = (over: Partial<Campaign>): Campaign => ({
   id: 1, name: 'Spring', subject: 'Spring offers', bodyHtml: '<p>x</p>', bodyCss: '',
   language: 'en', status: 'draft', recipientMode: 'all_active', customerIds: [],
@@ -82,6 +93,7 @@ function renderList() {
 describe('newsletter list', () => {
   beforeEach(() => {
     listFixture = [];
+    grantedPermissions = ['newsletters.view', 'newsletters.send'];
     confirmSpy.mockClear();
     listSpy.mockClear();
     removeSpy.mockClear();
@@ -162,5 +174,31 @@ describe('newsletter list', () => {
     );
 
     expect(listSpy).toHaveBeenLastCalledWith('sent');
+  });
+
+  describe('a role with newsletters.view but not newsletters.send', () => {
+    // The backend supports this split deliberately. Showing write controls to
+    // such a role only produces a 403 after the click (#1264 review).
+    beforeEach(() => { grantedPermissions = ['newsletters.view']; });
+
+    it('hides the New campaign button', async () => {
+      listFixture = [makeCampaign({})];
+      renderList();
+      await screen.findByText('Spring');
+      expect(screen.queryByRole('button', { name: /New campaign/i })).not.toBeInTheDocument();
+    });
+
+    it('hides the delete control on a draft', async () => {
+      listFixture = [makeCampaign({ status: 'draft' })];
+      renderList();
+      await screen.findByText('Spring');
+      expect(screen.queryByRole('button', { name: /Delete Spring/i })).not.toBeInTheDocument();
+    });
+
+    it('still shows the campaigns themselves', async () => {
+      listFixture = [makeCampaign({ recipientCount: 5, sentCount: 5 })];
+      renderList();
+      expect(await screen.findByText('Spring')).toBeInTheDocument();
+    });
   });
 });

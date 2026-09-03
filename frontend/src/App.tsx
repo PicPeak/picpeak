@@ -277,7 +277,12 @@ function App() {
                           independently. */}
                       <Route element={<RequireFeature flag="clients" />}>
                         <Route path="clients" element={<ClientsLayout />}>
-                          <Route element={<RequireFeature flag="customerPortal" />}>
+                          {/* Newsletters also lives here: the customer detail
+                              page hosts the newsletter consent control, so a
+                              newsletter-only install (portal off) must still
+                              be able to open a customer to record a phone
+                              opt-out (#1264). */}
+                          <Route element={<RequireFeature anyOf={['customerPortal', 'newsletters']} />}>
                             <Route path="accounts" element={<CustomerManagementPage />} />
                             <Route path="accounts/:id" element={<CustomerDetailPage />} />
                           </Route>

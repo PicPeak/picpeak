@@ -121,6 +121,23 @@ describe('newsletter campaigns', () => {
       expect(skippedOptOut).toBe(1);
     });
 
+    it('skips every row sharing an opted-out address', async () => {
+      // #1285 review: unsubscribing flips only the row whose token was in the
+      // mail. Filtering row-by-row skipped that one and still delivered to
+      // the same inbox through the duplicate — so the link appeared to do
+      // nothing.
+      await seedCustomer({ email: 'shared@example.com', marketing_opt_out: 1 });
+      await seedCustomer({ email: 'SHARED@example.com', marketing_opt_out: 0 });
+      await seedCustomer({ email: 'other@example.com' });
+      const campaign = await seedCampaign();
+
+      const { recipients, skippedOptOut } = await newsletterService.resolveRecipients(campaign);
+
+      expect(recipients.map((r) => r.email)).toEqual(['other@example.com']);
+      // Counted once for the address, not once per row.
+      expect(skippedOptOut).toBe(1);
+    });
+
     it('returns nobody for a manual campaign with no ids', async () => {
       await seedCustomer();
       const campaign = await seedCampaign({ recipientMode: 'manual', customerIds: [] });
@@ -292,6 +309,33 @@ describe('newsletter campaigns', () => {
       expect(minutes).toEqual([0, 0, 1, 1, 2]);
     });
 
+    it('writes queue timestamps in the engine shape the processor compares', async () => {
+      // #1285 review: storing ISO TEXT in a column the processor compares
+      // against a Date-bound value meant SQLite never matched the row — every
+      // INTEGER sorts below every TEXT — so campaigns silently sent nothing
+      // on SQLite installs.
+      //
+      // The due-predicate itself CANNOT be exercised here: under jest a
+      // sandbox-created Date binds as a string (the landmine documented in
+      // CLAUDE.md), so `INTEGER <= TEXT` is trivially true and every row
+      // reads as due whatever the fix does. So assert the stored SHAPE
+      // against the production shape utils/queueTimestamps documents for
+      // this engine instead.
+      await seedCustomer({ email: 'a@example.com' });
+      const campaign = await seedCampaign();
+      await newsletterService.queueCampaign(campaign.id, adminId);
+
+      const [row] = await db('email_queue').where({ campaign_id: campaign.id });
+
+      // SQLite: epoch ms, exactly what queueEmail's Date becomes through the
+      // native binding. Never an ISO string, which is what regressed.
+      expect(typeof row.scheduled_at).toBe('number');
+      expect(typeof row.created_at).toBe('number');
+      expect(Number.isFinite(row.scheduled_at)).toBe(true);
+      // Still a sane instant, not a truncated or NaN value.
+      expect(Math.abs(row.scheduled_at - Date.now())).toBeLessThan(120000);
+    });
+
     it('clamps an absurd send rate', async () => {
       await seedCustomer();
       const campaign = await seedCampaign({ sendRatePerMinute: 100000 });
@@ -380,6 +424,35 @@ describe('newsletter campaigns', () => {
       expect(remaining).toHaveLength(1);
       expect(remaining[0].status).toBe('sent');
       expect((await newsletterService.getCampaign(campaign.id)).status).toBe('cancelled');
+    });
+
+    it('refuses to delete a cancelled campaign that already reached someone', async () => {
+      // The recipient rows cascade, and they are the only durable record of
+      // who received the mail once queue rows are pruned (#1285 review).
+      await seedCustomer({ email: 'a@example.com' });
+      await seedCustomer({ email: 'b@example.com' });
+      const campaign = await seedCampaign();
+      await newsletterService.queueCampaign(campaign.id, adminId);
+      const rows = await db('email_queue').where({ campaign_id: campaign.id }).orderBy('id');
+      await db('email_queue').where({ id: rows[0].id })
+        .update({ status: 'sent', sent_at: new Date().toISOString() });
+      await db('email_campaign_recipients')
+        .where({ campaign_id: campaign.id, email_queue_id: rows[0].id })
+        .update({ status: 'sent' });
+      await newsletterService.cancel(campaign.id, adminId);
+
+      await expect(newsletterService.deleteCampaign(campaign.id, adminId))
+        .rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    it('still deletes a cancelled campaign that reached nobody', async () => {
+      await seedCustomer({ email: 'a@example.com' });
+      const campaign = await seedCampaign();
+      await newsletterService.queueCampaign(campaign.id, adminId);
+      await newsletterService.cancel(campaign.id, adminId);
+
+      await expect(newsletterService.deleteCampaign(campaign.id, adminId))
+        .resolves.toEqual({ deleted: true });
     });
 
     it('refuses to cancel a draft', async () => {
@@ -498,6 +571,26 @@ describe('newsletter campaigns', () => {
       row = await db('customer_accounts').where({ id: customer.id }).first();
       expect(row.marketing_opt_out).toBeFalsy();
       expect(row.marketing_opt_out_at).toBeNull();
+    });
+
+    it('ignores a repeated opt-out and preserves the original timestamp', async () => {
+      // #1285 review: link scanners, prefetchers and refreshes all re-hit an
+      // unsubscribe URL. Rewriting the timestamp each time buries the moment
+      // consent was actually withdrawn, and files a duplicate activity row.
+      const customer = await seedCustomer();
+      await newsletterService.setMarketingOptOut(customer.id, true, 'link');
+      const first = await db('customer_accounts').where({ id: customer.id }).first();
+
+      const second = await newsletterService.setMarketingOptOut(customer.id, true, 'link');
+
+      expect(second).toBe(false);
+      const after = await db('customer_accounts').where({ id: customer.id }).first();
+      expect(after.marketing_opt_out_at).toBe(first.marketing_opt_out_at);
+
+      const logs = (await db('activity_logs')
+        .where({ activity_type: 'customer_marketing_opt_out' }))
+        .filter((row) => JSON.parse(row.metadata).customerId === customer.id);
+      expect(logs).toHaveLength(1);
     });
 
     it('reports no-op for an unknown customer', async () => {

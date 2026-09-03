@@ -16,6 +16,7 @@ import { ArrowLeft, Ban } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 import { Button, Card, Loading, useConfirm } from '../../../components/common';
+import { usePermissions } from '../../../contexts/PermissionsContext';
 import {
   newslettersService, type RecipientStatus,
 } from '../../../services/newsletters.service';
@@ -36,6 +37,10 @@ export const NewsletterDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
+  // Cancel stops a live send, so it is a `send` action. Progress and the
+  // recipient table stay visible to a view-only role (#1264 review).
+  const { hasPermission } = usePermissions();
+  const canSend = hasPermission('newsletters.send');
   const [statusFilter, setStatusFilter] = useState<RecipientStatus | ''>('');
   const [page, setPage] = useState(1);
 
@@ -96,7 +101,7 @@ export const NewsletterDetailPage: React.FC = () => {
           <ArrowLeft className="w-4 h-4" />
           {t('newsletters.backToList', 'All campaigns')}
         </button>
-        {inFlight && (
+        {inFlight && canSend && (
           <Button variant="outline" onClick={cancelCampaign} leftIcon={<Ban className="w-4 h-4" />}>
             {t('newsletters.cancel', 'Cancel campaign')}
           </Button>

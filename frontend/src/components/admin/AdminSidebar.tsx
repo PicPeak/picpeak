@@ -108,6 +108,9 @@ export const adminNavigation: NavItem[] = [
     featureFlagsAny: [
       'customerPortal', 'crmDevelopment', 'quotes', 'bills',
       'hoursLogging', 'contracts', 'calendar', 'projects',
+      // #1264 — newsletters is a Clients child and must light up the entry,
+      // or a newsletter-only install has no way into the section.
+      'newsletters',
     ],
   },
   // Accounting section (migration 122) — inbound supplier invoices,

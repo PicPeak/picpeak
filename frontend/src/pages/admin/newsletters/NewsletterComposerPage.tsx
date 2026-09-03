@@ -90,13 +90,19 @@ export const NewsletterComposerPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['newsletter', campaignId] });
       queryClient.invalidateQueries({ queryKey: ['newsletters'] });
       refetchRecipients();
-      toast.success(t('newsletters.saved', 'Campaign saved.'));
     },
-    onError: () => toast.error(t('newsletters.saveFailed', 'Could not save the campaign.')),
   });
+
+  // Every server-side action below renders or sends the STORED campaign, but
+  // the editor's state lives in `draft` until Save runs. Previewing, testing
+  // or queueing straight after an edit therefore acted on the previous
+  // version — the operator would proof one body and mail another. Persist
+  // first, always, so what is checked is what goes out.
+  const persistDraft = () => save.mutateAsync();
 
   const loadPreview = async () => {
     try {
+      await persistDraft();
       const res = await newslettersService.preview(campaignId, {});
       setPreviewHtml(res.html);
     } catch {
@@ -106,6 +112,7 @@ export const NewsletterComposerPage: React.FC = () => {
 
   const sendTest = async () => {
     try {
+      await persistDraft();
       await newslettersService.sendTest(campaignId, testEmail);
       toast.success(t('newsletters.testSent', 'Test email sent to {{to}}.', { to: testEmail }));
     } catch {
@@ -114,6 +121,16 @@ export const NewsletterComposerPage: React.FC = () => {
   };
 
   const queueCampaign = async () => {
+    // Save BEFORE resolving the count and confirming: the dialog must quote
+    // the recipient rule that is about to be used, not the one from before
+    // the operator's last edit.
+    try {
+      await persistDraft();
+      await refetchRecipients();
+    } catch {
+      toast.error(t('newsletters.saveFailed', 'Could not save the campaign.'));
+      return;
+    }
     const count = resolution?.recipientCount ?? 0;
     const ok = await confirm({
       title: t('newsletters.queueTitle', 'Send this campaign?') as string,
@@ -181,7 +198,14 @@ export const NewsletterComposerPage: React.FC = () => {
           {t('newsletters.backToList', 'All campaigns')}
         </button>
         <Button
-          onClick={() => save.mutate()}
+          onClick={async () => {
+            try {
+              await persistDraft();
+              toast.success(t('newsletters.saved', 'Campaign saved.'));
+            } catch {
+              toast.error(t('newsletters.saveFailed', 'Could not save the campaign.'));
+            }
+          }}
           isLoading={save.isPending}
           leftIcon={<Save className="w-4 h-4" />}
         >

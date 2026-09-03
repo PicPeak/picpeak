@@ -25,7 +25,7 @@ const sanitizeHtml = require('sanitize-html');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
-const { formatBoolean } = require('../utils/dbCompat');
+const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
 const { sanitizeCSS } = require('../utils/cssSanitizer');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
@@ -39,12 +39,21 @@ const MAX_SUBJECT_LENGTH = 255;
 const VALID_STATUSES = ['draft', 'queued', 'sending', 'sent', 'cancelled', 'failed'];
 const VALID_RECIPIENT_MODES = ['all_active', 'manual'];
 
-// Rate bounds. 20/min is deliberately conservative — SES allows 14/s but many
-// shared hosts cap at 100/hour, and the cost of being slow is a campaign that
-// takes an extra hour, while the cost of being fast is a blocked SMTP account.
+// Rate bounds.
+//
+// The ceiling is not a policy choice — it is what the queue can actually do.
+// `startEmailQueueProcessor` runs `processEmailQueue()` once every 60 s with
+// its default `limit = 10`, GLOBALLY across all email types. A campaign
+// staggered at 20/min therefore drained at 10/min, and the "about N minutes"
+// the composer showed was wrong by up to 12x at the old 120 ceiling.
+//
+// Clamping to the real throughput makes the number honest. The control still
+// earns its place below the ceiling: a shared host capped at 100 mails/hour
+// needs ~1/min, which is the case this exists to serve.
 const MIN_RATE_PER_MINUTE = 1;
-const MAX_RATE_PER_MINUTE = 120;
-const DEFAULT_RATE_PER_MINUTE = 20;
+const QUEUE_ROWS_PER_MINUTE = 10; // processEmailQueue: limit 10, every 60 s
+const MAX_RATE_PER_MINUTE = QUEUE_ROWS_PER_MINUTE;
+const DEFAULT_RATE_PER_MINUTE = QUEUE_ROWS_PER_MINUTE;
 
 // ---------------------------------------------------------------------------
 // Sanitizers
@@ -335,10 +344,25 @@ async function resolveRecipients(campaign, conn = db) {
   let skippedOptOut = 0;
   let skippedNoEmail = 0;
 
+  // Opt-out is decided per ADDRESS, not per row. Two active customer rows can
+  // share an inbox, and unsubscribing only flips the row whose token was in
+  // the mail — so filtering row-by-row would skip that one and still deliver
+  // to the same person through the other. Clicking unsubscribe would appear
+  // to do nothing.
+  const optedOutAddresses = new Set(
+    all.filter(isOptedOut)
+      .map((row) => (row.email || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+
   for (const row of all) {
-    if (isOptedOut(row)) { skippedOptOut += 1; continue; }
     const email = (row.email || '').trim().toLowerCase();
     if (!email) { skippedNoEmail += 1; continue; }
+    if (optedOutAddresses.has(email)) {
+      // Count the address once, however many rows carry it.
+      if (!seen.has(email)) { skippedOptOut += 1; seen.add(email); }
+      continue;
+    }
     // Two customer rows can legitimately share a billing address; the same
     // person must still receive the newsletter once.
     if (seen.has(email)) continue;
@@ -367,6 +391,28 @@ function parseRecipientIds(campaign) {
   const ids = Array.isArray(parsed) ? parsed : parsed?.customerIds;
   if (!Array.isArray(ids)) return [];
   return [...new Set(ids.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+}
+
+/**
+ * A timestamp in the shape `email_queue` comparisons actually use.
+ *
+ * `processEmailQueue` selects with `scheduled_at <= now`, binding a JS Date.
+ * On Postgres that is a timestamp comparison. On SQLite the native binding
+ * turns a Date into EPOCH MS — which is what `queueEmail` has always written
+ * and what utils/queueTimestamps.toMillis documents reading back.
+ *
+ * Writing an ISO STRING instead put TEXT in a column the processor compares
+ * against an INTEGER, and SQLite orders every INTEGER below every TEXT — so
+ * `'2026-09-04T…' <= 1757000000000` is false and a campaign row never came
+ * due. The whole feature silently sent nothing on SQLite installs, with the
+ * rows sitting in the queue looking perfectly correct.
+ *
+ * A raw number (rather than a Date) on SQLite also sidesteps the jest/sqlite3
+ * binding landmine documented in CLAUDE.md, where a sandbox-created Date is
+ * stored as the literal string "[object Object]".
+ */
+function queueTimestamp(ms) {
+  return isPostgreSQL() ? new Date(ms) : ms;
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +457,7 @@ async function queueCampaign(campaignId, adminId) {
       // Stagger: recipient N goes out in minute floor(N / rate). Everything
       // in the first minute is due immediately, so a small campaign behaves
       // exactly like any other queued mail.
-      const scheduledAt = new Date(now + Math.floor(i / rate) * 60 * 1000).toISOString();
+      const scheduledMs = now + Math.floor(i / rate) * 60 * 1000;
 
       const inserted = await trx('email_queue').insert({
         recipient_email: customer.email,
@@ -420,8 +466,10 @@ async function queueCampaign(campaignId, adminId) {
         status: 'pending',
         origin: 'campaign',
         campaign_id: campaign.id,
-        created_at: queuedAt,
-        scheduled_at: scheduledAt,
+        // Engine-shaped, not ISO — see queueTimestamp. These two columns are
+        // the ones processEmailQueue filters and orders on.
+        created_at: queueTimestamp(now),
+        scheduled_at: queueTimestamp(scheduledMs),
       }).returning('id');
       const queueId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
@@ -557,7 +605,10 @@ async function recomputeCounts(campaignId) {
   if (stillQueued > 0) {
     // First result in: the campaign is visibly working.
     if (campaign.status === 'queued') update.status = 'sending';
-  } else if (['queued', 'sending'].includes(campaign.status)) {
+  } else if (['queued', 'sending', 'failed'].includes(campaign.status)) {
+    // `failed` is included so a System Health retry that finally succeeds can
+    // move the campaign back to `sent`. Without it a campaign stayed marked
+    // failed even once every recipient had been delivered.
     // Everything resolved. `failed` only when NOTHING got through — a
     // campaign that reached 1 990 of 2 000 people is a sent campaign with
     // ten failures, and calling it "failed" would misdirect the operator.
@@ -616,11 +667,22 @@ async function markSkippedOptOut(queueRow) {
  * @returns {boolean} whether a row was actually updated
  */
 async function setMarketingOptOut(customerId, optOut, source, actor = null) {
-  const updated = await db('customer_accounts').where({ id: customerId }).update({
+  const current = await db('customer_accounts')
+    .where({ id: customerId })
+    .first('marketing_opt_out');
+  if (!current) return false;
+
+  // Only a real transition counts. An unsubscribe link is followed by mail
+  // scanners, by prefetchers and by the customer refreshing the page — each
+  // of which would otherwise overwrite `marketing_opt_out_at` with a later
+  // time and file another activity row, burying the moment consent was
+  // actually withdrawn under its own confirmations.
+  if (isOptedOut(current) === Boolean(optOut)) return false;
+
+  await db('customer_accounts').where({ id: customerId }).update({
     marketing_opt_out: formatBoolean(Boolean(optOut)),
     marketing_opt_out_at: optOut ? new Date().toISOString() : null,
   });
-  if (!updated) return false;
 
   await logActivity('customer_marketing_opt_out', {
     customerId, optOut: Boolean(optOut), source,
@@ -733,6 +795,19 @@ async function deleteCampaign(id, adminId) {
   const campaign = await getCampaign(id);
   if (!['draft', 'cancelled'].includes(campaign.status)) {
     throw new AppError(`A ${campaign.status} campaign cannot be deleted`, 409);
+  }
+  // A cancelled campaign may still have reached people before it was stopped.
+  // email_campaign_recipients cascades on delete, so removing the campaign
+  // would erase the only durable record of who received it — the record that
+  // outlives queue pruning and answers "did this person get that mail?".
+  const [{ delivered }] = await db('email_campaign_recipients')
+    .where({ campaign_id: id, status: 'sent' })
+    .count({ delivered: '*' });
+  if (Number(delivered) > 0) {
+    throw new AppError(
+      `This campaign already reached ${delivered} recipient(s) and cannot be deleted`,
+      409
+    );
   }
   // Recipient rows cascade; queue rows for a cancelled campaign were already
   // deleted by cancel(), and sent ones are history that stays in the queue.

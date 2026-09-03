@@ -13,6 +13,7 @@ import { Plus, Megaphone, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 import { Button, Card, Loading, useConfirm } from '../../../components/common';
+import { usePermissions } from '../../../contexts/PermissionsContext';
 import {
   newslettersService, type Campaign, type CampaignStatus,
 } from '../../../services/newsletters.service';
@@ -43,6 +44,11 @@ export const NewsletterListPage: React.FC = () => {
   const navigate = useNavigate();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
+  // The backend deliberately splits view from send, so a role can read
+  // campaigns without being able to mail anyone. Showing New/Delete to such a
+  // role only produces a 403 after the click (#1264 review).
+  const { hasPermission } = usePermissions();
+  const canSend = hasPermission('newsletters.send');
   const [statusFilter, setStatusFilter] = useState<CampaignStatus | ''>('');
 
   const { data: campaigns, isLoading } = useQuery({
@@ -93,9 +99,11 @@ export const NewsletterListPage: React.FC = () => {
               'Send a campaign to your customer accounts. Everyone who has opted out is skipped automatically, and every send carries an unsubscribe link.')}
           </p>
         </div>
-        <Button onClick={createDraft} leftIcon={<Plus className="w-4 h-4" />}>
-          {t('newsletters.new', 'New campaign')}
-        </Button>
+        {canSend && (
+          <Button onClick={createDraft} leftIcon={<Plus className="w-4 h-4" />}>
+            {t('newsletters.new', 'New campaign')}
+          </Button>
+        )}
       </div>
 
       <div className="mb-4">
@@ -160,7 +168,7 @@ export const NewsletterListPage: React.FC = () => {
                     <td className="px-4 py-3 text-right">
                       {/* Only a draft or a cancelled campaign can be deleted —
                           a sent one is a delivery record. */}
-                      {(c.status === 'draft' || c.status === 'cancelled') && (
+                      {canSend && (c.status === 'draft' || c.status === 'cancelled') && (
                         <button
                           type="button"
                           onClick={() => remove(c)}

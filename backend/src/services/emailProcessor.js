@@ -1176,6 +1176,18 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         let sendResult;
         if (email.email_type === 'newsletter' && email.campaign_id) {
           const newsletterService = require('./newsletterService');
+          // The batch above was materialised before this loop started. A
+          // cancel that lands in between deletes the pending rows, but this
+          // worker still holds them in memory — so without re-reading, up to
+          // a full batch goes out after the UI says the campaign is
+          // cancelled. Re-check the row still exists and is still pending.
+          const stillPending = await db('email_queue')
+            .where({ id: email.id, status: 'pending' })
+            .first('id');
+          if (!stillPending) {
+            logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
+            continue;
+          }
           if (await newsletterService.shouldSkipForOptOut(emailData.customerId)) {
             await newsletterService.markSkippedOptOut(email);
             logger.info(`Email ${email.id} skipped — recipient opted out after queueing`);

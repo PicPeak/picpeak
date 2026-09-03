@@ -25,6 +25,7 @@ import {
   MonitorPlay,
   Send,
   Workflow,
+  Megaphone,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -381,6 +382,22 @@ export const FeaturesTab: React.FC = () => {
             sidebarLabel={t('settings.features.bills.sidebar', 'Invoices')}
             enabled={staged.bills}
             onToggle={(next) => setFlag('bills', next)}
+          />
+
+          {/* Newsletter campaigns (#1264). Clients child. Mass marketing mail
+              to customer accounts, so the copy leads with consent. */}
+          <FeatureCard
+            icon={Megaphone}
+            title={t('settings.features.newsletters.title', 'Newsletters')}
+            description={t(
+              'settings.features.newsletters.description',
+              'Send a marketing campaign to your customer accounts. Compose the body with the rich-text editor, preview it, send yourself a test, then queue it — sends are spread over time so your mail provider does not rate-limit you. Every customer can be opted out individually, opted-out customers are skipped automatically, and every campaign carries an unsubscribe link. Emails about galleries, quotes and invoices are never affected.',
+            )}
+            status="new"
+            statusLabel={statusLabel('new')}
+            sidebarLabel={t('settings.features.newsletters.sidebar', 'Newsletters')}
+            enabled={staged.newsletters}
+            onToggle={(next) => setFlag('newsletters', next)}
           />
 
           <FeatureCard
