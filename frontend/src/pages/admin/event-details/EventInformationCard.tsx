@@ -527,7 +527,7 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
                     <p className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400 mb-2">
                       {t('events.promoBanner.preview', 'Preview')}
                     </p>
-                    <MarkdownContent source={editForm.promo_markdown} className="prose prose-sm max-w-none text-sm text-neutral-800 dark:text-neutral-200 prose-a:text-primary-600 dark:prose-a:text-primary-400" />
+                    <MarkdownContent source={editForm.promo_markdown} className="prose prose-sm dark:prose-invert max-w-none text-sm text-neutral-800 dark:text-neutral-200 prose-a:text-primary-600 dark:prose-a:text-primary-400" />
                   </div>
                 )}
               </div>
@@ -575,7 +575,7 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
                     <p className="text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400 mb-2">
                       {t('events.infoBanner.preview', 'Preview')}
                     </p>
-                    <MarkdownContent source={editForm.info_markdown} className="prose prose-sm max-w-none text-sm text-neutral-800 dark:text-neutral-200 prose-a:text-primary-600 dark:prose-a:text-primary-400" />
+                    <MarkdownContent source={editForm.info_markdown} className="prose prose-sm dark:prose-invert max-w-none text-sm text-neutral-800 dark:text-neutral-200 prose-a:text-primary-600 dark:prose-a:text-primary-400" />
                   </div>
                 )}
               </div>

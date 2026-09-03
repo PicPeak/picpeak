@@ -562,7 +562,7 @@ export const BrandingPage: React.FC = () => {
                       will see (#482). */}
                   <MarkdownContent
                     source={brandingSettings.promo_markdown}
-                    className={`text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm prose-a:text-primary-600 dark:prose-a:text-primary-400 ${
+                    className={`text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert prose-a:text-primary-600 dark:prose-a:text-primary-400 ${
                       brandingSettings.promo_alignment === 'left' ? 'text-left'
                         : brandingSettings.promo_alignment === 'right' ? 'text-right'
                         : 'text-center'
@@ -610,7 +610,7 @@ export const BrandingPage: React.FC = () => {
                       classes — so the admin sees what guests will see. */}
                   <MarkdownContent
                     source={brandingSettings.info_markdown}
-                    className="text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm prose-a:text-primary-600 dark:prose-a:text-primary-400 text-center"
+                    className="text-sm text-neutral-800 dark:text-neutral-200 prose prose-sm dark:prose-invert prose-a:text-primary-600 dark:prose-a:text-primary-400 text-center"
                   />
                 </div>
               )}

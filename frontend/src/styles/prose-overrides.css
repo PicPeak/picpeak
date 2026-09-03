@@ -34,6 +34,16 @@
  */
 .prose pre {
   background-color: var(--color-elevated, #f5f5f5);
+  /*
+   * The typography plugin sets an explicit `color: var(--tw-prose-pre-code)`
+   * on <pre> — #e5e7eb, chosen for ITS dark default background. This rule
+   * replaces that background with the light `--color-elevated`, which left
+   * near-white text on a near-white block everywhere a code sample appears.
+   * Inheriting instead restores the pre-plugin behaviour and stays correct in
+   * every context: themed prose inherits --color-text, admin prose inherits
+   * the (possibly inverted) prose body colour.
+   */
+  color: inherit;
   border: 1px solid var(--color-surface-border, #e5e5e5);
   border-radius: 0.375rem;
   padding: 1rem;
