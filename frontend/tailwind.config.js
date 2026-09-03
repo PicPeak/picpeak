@@ -104,6 +104,18 @@ export default {
     ...Array.from({ length: 12 }, (_, i) => `lg:grid-cols-${i + 1}`),
     ...Array.from({ length: 12 }, (_, i) => `xl:grid-cols-${i + 1}`),
   ],
-  plugins: [],
+  plugins: [
+    // Tailwind's Preflight resets h1-h6 to inherit their size and weight, and
+    // strips list-style and padding from ul/ol. Ten places in this app render
+    // rich text inside a `prose` container and rely on this plugin to put that
+    // typography back — the CMS editor and its preview, the public CMS page,
+    // release notes, and the gallery welcome message among them.
+    //
+    // Without it every `prose*` class is a no-op, so applying a heading or a
+    // list in the CMS editor changed the document and changed NOTHING on
+    // screen: the toolbar button lit up (the editor state was correct) while
+    // the text stayed visually a paragraph. That is issue #1288.
+    require('@tailwindcss/typography'),
+  ],
 }
 
