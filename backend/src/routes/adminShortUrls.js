@@ -11,6 +11,7 @@
  */
 const express = require('express');
 const { body, param, validationResult } = require('express-validator');
+const { safeValidationErrors } = require('../utils/routeHelpers');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
@@ -32,7 +33,7 @@ router.get(
   requireEventOwnership,
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
     try {
       const rows = await galleryShortUrlService.listForEvent(parseInt(req.params.eventId, 10));
       res.json({ shortUrls: rows });
@@ -56,7 +57,7 @@ router.post(
   requireEventOwnership,
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
     try {
       const row = await galleryShortUrlService.createShortUrl({
         eventId: parseInt(req.params.eventId, 10),
@@ -96,7 +97,7 @@ router.delete(
   param('id').isInt({ min: 1 }),
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
     try {
       const ok = await galleryShortUrlService.softDelete(
         parseInt(req.params.id, 10),

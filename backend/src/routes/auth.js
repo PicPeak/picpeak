@@ -26,6 +26,9 @@ const {
 const { endSession } = require('../middleware/sessionTimeout');
 const { revokeToken } = require('../utils/tokenRevocation');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
+// Well-formed bcrypt hash that matches nothing; compared against when there is
+// no account so the unknown-user path costs the same as a wrong password.
+const DUMMY_BCRYPT_HASH = '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234';
 const logger = require('../utils/logger');
 const { errorResponse } = require('../utils/routeHelpers');
 const {
@@ -91,8 +94,10 @@ async function completeAdminLogin(req, res, admin, ipAddress, userAgent, lockout
 
 // Admin login with enhanced security
 router.post('/admin/login', [
-  body('username').notEmpty().trim(),
-  body('password').notEmpty()
+  // Length caps: an unbounded username reached the lockout lookup, bcrypt,
+  // the failed-attempt log line and login_attempts.identifier as sent.
+  body('username').isString().trim().notEmpty().isLength({ max: 255 }),
+  body('password').isString().notEmpty().isLength({ max: MAX_PASSWORD_LENGTH })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -141,7 +146,13 @@ router.post('/admin/login', [
       .first();
 
     // Use generic error to prevent user enumeration
-    if (!admin || !await bcrypt.compare(password, admin.password_hash)) {
+    // Always run one bcrypt compare so an unknown username costs the same
+    // ~100ms as a wrong password; short-circuiting here was a timing oracle
+    // for username enumeration despite the generic message.
+    const passwordMatches = admin
+      ? await bcrypt.compare(password, admin.password_hash)
+      : await bcrypt.compare(password, DUMMY_BCRYPT_HASH).then(() => false);
+    if (!passwordMatches) {
       await trackFailedAttempt(username, ipAddress, userAgent);
       return res.status(401).json({ error: getGenericAuthError() });
     }
@@ -320,8 +331,8 @@ router.post('/logout', async (req, res) => {
 
 // Gallery password verification with enhanced security
 router.post('/gallery/verify', [
-  body('slug').notEmpty().trim(),
-  body('password').optional().isString()
+  body('slug').isString().trim().notEmpty().isLength({ max: 255 }),
+  body('password').optional().isString().isLength({ max: MAX_PASSWORD_LENGTH })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -338,7 +349,7 @@ router.post('/gallery/verify', [
 
     if (!event) {
       // Perform a dummy bcrypt compare to prevent timing-based slug enumeration
-      await bcrypt.compare(password || '', '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234');
+      await bcrypt.compare(password || '', DUMMY_BCRYPT_HASH);
       await trackFailedAttempt(`gallery:${slug}`, ipAddress, userAgent);
       return res.status(401).json({ error: 'Invalid gallery or password' });
     }
@@ -432,7 +443,7 @@ router.post('/gallery/verify', [
 
 // Client access login (PIN-based)
 router.post('/gallery/:slug/client-login', [
-  body('password').notEmpty().isString()
+  body('password').notEmpty().isString().isLength({ max: MAX_PASSWORD_LENGTH })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);

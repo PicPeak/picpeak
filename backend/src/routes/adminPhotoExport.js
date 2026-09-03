@@ -11,7 +11,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
 const { PhotoFilterBuilder } = require('../utils/photoFilterBuilder');
-const { getPagination } = require('../utils/routeHelpers');
+const { getPagination, safeValidationErrors } = require('../utils/routeHelpers');
 const { PhotoExportService } = require('../services/photoExportService');
 const logger = require('../utils/logger');
 
@@ -39,7 +39,7 @@ router.get('/:eventId/filtered', adminAuth, requirePermission('photos.view'), re
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const eventId = parseInt(req.params.eventId);
@@ -166,7 +166,7 @@ router.post('/:eventId/export', adminAuth, requirePermission('photos.download'),
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const eventId = parseInt(req.params.eventId);

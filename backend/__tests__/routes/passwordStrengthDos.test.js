@@ -65,8 +65,10 @@ describe('password validation length cap (zxcvbn DoS)', () => {
 
     // No route may hand errors.array() straight to the response.
     expect(src).not.toMatch(/errors:\s*errors\.array\(\)/);
-    // ...and the helper that replaces it must drop `value`.
-    expect(src).toMatch(/safeValidationErrors\s*=\s*\(errors\)\s*=>\s*errors\.array\(\)\.map\(\(\{ value, \.\.\.rest \}\)/);
+    // ...and the shared helper that replaces it must drop `value`.
+    const helper = require('fs').readFileSync(
+      require('path').join(__dirname, '../../src/utils/routeHelpers.js'), 'utf8');
+    expect(helper).toMatch(/safeValidationErrors\s*=\s*\(errors\)\s*=>\s*errors\.array\(\)\.map\(\(\{ value, \.\.\.rest \}\)/);
   });
 
   it('applies the cap through the context wrapper too', async () => {

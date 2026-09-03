@@ -42,6 +42,15 @@ const handleAsync = (fn) => {
  *   // ... rest of handler
  * }));
  */
+
+/**
+ * express-validator's errors.array() carries `value` -- the submitted input.
+ * Returning it verbatim reflects whatever the caller sent (a rejected
+ * password, a 2mb string) back in the 400 body. Everything except `value` is
+ * kept, so consumers that read `msg` / `path` see no change.
+ */
+const safeValidationErrors = (errors) => errors.array().map(({ value, ...rest }) => rest);
+
 const validateRequest = (req) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -174,6 +183,7 @@ const paginatedResponse = (data, total, page, limit) => {
 module.exports = {
   handleAsync,
   validateRequest,
+  safeValidationErrors,
   successResponse,
   errorResponse,
   withValidation,

@@ -23,7 +23,7 @@ const { sanitizeCss } = require('../utils/cssSanitizer');
 const { upsertAppSetting } = require('../utils/appSettings');
 const { clearShareLinkSettingsCache } = require('../services/shareLinkService');
 const { resetSecurityConfigCache } = require('../utils/authSecurity');
-const { errorResponse } = require('../utils/routeHelpers');
+const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const logger = require('../utils/logger');
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const router = express.Router();
@@ -1477,7 +1477,7 @@ router.put('/security/rate-limit', adminAuth, requirePermission('settings.edit')
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const {

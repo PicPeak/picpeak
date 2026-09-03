@@ -9,7 +9,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const messagingGate = requireFeatureFlag('messaging');
 const { wrapEmailHtml, processEmailQueue } = require('../services/emailProcessor');
-const { errorResponse } = require('../utils/routeHelpers');
+const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const logger = require('../utils/logger');
 const router = express.Router();
 
@@ -52,7 +52,7 @@ router.post('/config', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const {
@@ -152,7 +152,7 @@ router.post('/incoming-config', [
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    if (!errors.isEmpty()) return res.status(400).json({ errors: safeValidationErrors(errors) });
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass, imap_folder } = req.body;
     const { isHostAllowed } = require('../utils/networkValidation');
     if (!(await isHostAllowed(imap_host))) {
@@ -635,7 +635,7 @@ router.get('/queue', adminAuth, requirePermission('email.view'), [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ errors: safeValidationErrors(errors) });
     }
 
     const page = req.query.page ? parseInt(req.query.page, 10) : 1;
