@@ -121,76 +121,139 @@ function sanitizeCss(css) {
  * @returns {{ sanitized: string, blocked: number }}
  */
 function stripDisallowedUrls(css) {
-  // Escapes decoded first, so the scan sees what a browser would parse.
-  const input = decodeCssEscapes(css == null ? '' : String(css));
+  const input = css == null ? '' : String(css);
   let out = '';
   let blocked = 0;
   let i = 0;
 
   while (i < input.length) {
-    const ch = input[i];
+    // --- CSS comment ---------------------------------------------------
+    // Its own lexical state. A comment containing an unmatched apostrophe
+    // (`/* don't */`) otherwise put the scanner into string mode and let it
+    // copy the rest of the stylesheet — including a live url() — unscanned,
+    // while a browser ignores the comment entirely and makes the request.
+    if (input[i] === '/' && input[i + 1] === '*') {
+      const close = input.indexOf('*/', i + 2);
+      const stop = close === -1 ? input.length : close + 2;
+      out += input.slice(i, stop);
+      i = stop;
+      continue;
+    }
 
-    // Inside a string, copy verbatim through the closing quote. `content:`
-    // values and font names live here and are not resource requests — a raw
-    // replace corrupted `content: "url(https://docs.example)"` into "none",
-    // a visible change to a page that never made a request.
-    if (ch === '"' || ch === '\'') {
-      const quote = ch;
+    // --- string ----------------------------------------------------------
+    // Escape-aware: `\"` inside a double-quoted string does NOT close it.
+    // Decoding escapes up front (an earlier attempt) turned that into a real
+    // quote, desynchronised the scanner, and hid the url() that followed.
+    if (input[i] === '"' || input[i] === '\'') {
+      const quote = input[i];
       let j = i + 1;
-      while (j < input.length && input[j] !== quote) {
-        j += input[j] === '\\' ? 2 : 1;
+      while (j < input.length) {
+        if (input[j] === '\\') { j += 2; continue; }
+        if (input[j] === quote) { j += 1; break; }
+        j += 1;
       }
-      out += input.slice(i, Math.min(j + 1, input.length));
-      i = j + 1;
+      out += input.slice(i, Math.min(j, input.length));
+      i = Math.min(j, input.length);
       continue;
     }
 
-    // A url( token, outside any string.
-    if ((ch === 'u' || ch === 'U') && /^url\s*\(/i.test(input.slice(i, i + 8))) {
-      const open = input.indexOf('(', i);
-      let j = open + 1;
-      let target = '';
+    // --- url( token --------------------------------------------------------
+    const ident = readIdentifier(input, i);
+    if (ident.end > i && decodeCssEscapes(ident.raw).toLowerCase() === 'url') {
+      let j = ident.end;
       while (j < input.length && /\s/.test(input[j])) j += 1;
-
-      if (input[j] === '"' || input[j] === '\'') {
-        // Quoted: the quote closes the value, so ")" inside it is content.
-        const quote = input[j];
-        j += 1;
-        while (j < input.length && input[j] !== quote) {
-          target += input[j];
-          j += 1;
+      if (input[j] === '(') {
+        const token = readUrlToken(input, j);
+        if (token) {
+          // The target is decoded only to DECIDE; the original bytes are what
+          // gets emitted when it is allowed, so nothing else in the
+          // stylesheet is rewritten.
+          const target = decodeCssEscapes(token.target).trim();
+          if (ALLOWED_URL_TARGET.test(target)) {
+            out += input.slice(i, token.end);
+          } else {
+            blocked += 1;
+            out += 'none';
+          }
+          i = token.end;
+          continue;
         }
-        j += 1;
-      } else {
-        while (j < input.length && input[j] !== ')') {
-          target += input[j];
-          j += 1;
-        }
       }
-      while (j < input.length && input[j] !== ')') j += 1;
-
-      if (j >= input.length) {
-        // Unterminated url( — malformed. Copy the remainder verbatim rather
-        // than swallowing the rest of the stylesheet.
-        out += input.slice(i);
-        break;
-      }
-
-      if (ALLOWED_URL_TARGET.test(target.trim())) {
-        out += input.slice(i, j + 1);
-      } else {
-        blocked += 1;
-        out += 'none';
-      }
-      i = j + 1;
+      // Not actually a url() call — emit the identifier and carry on.
+      out += input.slice(i, ident.end);
+      i = ident.end;
       continue;
     }
 
-    out += ch;
+    out += input[i];
     i += 1;
   }
 
   return { sanitized: out, blocked };
+}
+
+/** A CSS escape sequence at `start`, or null. */
+function matchEscape(input, start) {
+  if (input[start] !== '\\') return null;
+  const rest = input.slice(start, start + 8);
+  const m = /^\\(?:[0-9a-fA-F]{1,6}[ \t\n\f]?|[^0-9a-fA-F])/.exec(rest);
+  return m ? m[0] : null;
+}
+
+/**
+ * Read a CSS identifier, escapes included, WITHOUT decoding it.
+ *
+ * `u\72l` is a legal spelling of `url`, so the identifier has to be decoded
+ * to be recognised — but only for the comparison. Returning the raw text
+ * means an identifier that is not a url() (`.w-1\/2`, a perfectly ordinary
+ * escaped Tailwind selector) is emitted byte-identical rather than silently
+ * rewritten to `.w-1/2`, which is a different selector.
+ */
+function readIdentifier(input, start) {
+  let j = start;
+  let raw = '';
+  while (j < input.length) {
+    const escape = matchEscape(input, j);
+    if (escape) { raw += escape; j += escape.length; continue; }
+    if (/[A-Za-z0-9_-]/.test(input[j])) { raw += input[j]; j += 1; continue; }
+    break;
+  }
+  return { raw, end: j };
+}
+
+/**
+ * Read a `url( … )` token starting at the opening paren.
+ * @returns {{ target: string, end: number }|null} null when unterminated.
+ */
+function readUrlToken(input, openParen) {
+  let j = openParen + 1;
+  let target = '';
+  while (j < input.length && /\s/.test(input[j])) j += 1;
+
+  if (input[j] === '"' || input[j] === '\'') {
+    // Quoted: the quote closes the value, so ")" inside it is content.
+    const quote = input[j];
+    j += 1;
+    while (j < input.length && input[j] !== quote) {
+      if (input[j] === '\\') { target += input.slice(j, j + 2); j += 2; continue; }
+      target += input[j];
+      j += 1;
+    }
+    if (j >= input.length) return null;
+    j += 1;
+  } else {
+    while (j < input.length && input[j] !== ')') {
+      if (input[j] === '\\') { target += input.slice(j, j + 2); j += 2; continue; }
+      target += input[j];
+      j += 1;
+    }
+  }
+
+  while (j < input.length && /\s/.test(input[j])) j += 1;
+  // Unterminated url( — malformed. Leave it alone rather than swallowing the
+  // remainder of the stylesheet.
+  if (input[j] !== ')') return null;
+  return { target, end: j + 1 };
 }
 
 /**

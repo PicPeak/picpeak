@@ -129,6 +129,59 @@ describe('stripDisallowedUrls', () => {
     expect(asParsed(sanitized)).not.toContain('evil.example');
   });
 
+  // Round-3 review: all three came from decoding escapes globally before
+  // scanning, which destroyed the difference between an escaped quote and a
+  // real one — and rewrote clean escapes that were never URLs.
+  it('does not let an escaped quote desynchronise the scan', () => {
+    // `\\"` inside a double-quoted string does NOT close it. Treating it as a
+    // delimiter put the scanner a quote out of phase and let the url() that
+    // followed through untouched.
+    const css = '.a{content:"foo\\"";background:url(https://evil.example/x)}';
+    const { sanitized, blocked } = stripDisallowedUrls(css);
+    expect(blocked).toBe(1);
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('does not treat a quote inside a CSS comment as a string', () => {
+    // A browser ignores the comment and makes the request; the scanner used
+    // to enter string mode on the apostrophe and copy the rest unscanned.
+    const css = "/* don't */ .a{background:url(https://evil.example/x)}";
+    const { sanitized, blocked } = stripDisallowedUrls(css);
+    expect(blocked).toBe(1);
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('leaves an escaped selector byte-identical', () => {
+    // `.w-1\\/2` is an ordinary escaped Tailwind class. Global decoding
+    // rewrote it to `.w-1/2` — a DIFFERENT selector — and migration 200 then
+    // committed that irreversibly, since its down() is a no-op.
+    const css = '.w-1\\/2{color:red}';
+    const { sanitized, blocked } = stripDisallowedUrls(css);
+    expect(blocked).toBe(0);
+    expect(sanitized).toBe(css);
+  });
+
+  it('returns clean input unchanged, whatever escapes it carries', () => {
+    // The migration only writes when the bytes differ, so "unchanged" is
+    // what keeps a clean row out of the repair path entirely.
+    for (const css of [
+      '.a{color:red}',
+      '/* a comment */ .b{color:blue}',
+      '.c\\:hover{color:green}',
+      '.d::after{content:"\\201C"}',
+      '.e{background:url(data:image/png;base64,AAAA)}',
+    ]) {
+      const { sanitized, blocked } = stripDisallowedUrls(css);
+      expect(blocked).toBe(0);
+      expect(sanitized).toBe(css);
+    }
+  });
+
+  it('keeps a comment that merely mentions a url', () => {
+    const css = '/* see url(https://docs.example) for details */ .a{color:red}';
+    expect(stripDisallowedUrls(css).sanitized).toBe(css);
+  });
+
   it('is idempotent', () => {
     const once = stripDisallowedUrls('.a{background:url(https://x/p.gif)}').sanitized;
     expect(stripDisallowedUrls(once).sanitized).toBe(once);
