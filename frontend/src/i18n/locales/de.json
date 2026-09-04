@@ -3127,7 +3127,8 @@
       "bulkDeleteCompleted_one": "Massen-Löschung abgeschlossen: {{count}} Event entfernt",
       "bulkDeleteCompleted_other": "Massen-Löschung abgeschlossen: {{count}} Events entfernt",
       "bulkArchiveCompleted_one": "Massen-Archivierung abgeschlossen: {{count}} Event archiviert",
-      "bulkArchiveCompleted_other": "Massen-Archivierung abgeschlossen: {{count}} Events archiviert"
+      "bulkArchiveCompleted_other": "Massen-Archivierung abgeschlossen: {{count}} Events archiviert",
+      "cssTemplateRemoteUrlsRemoved": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -3429,7 +3430,8 @@
       "whatsapp_config_updated": "WhatsApp-Konfiguration aktualisiert",
       "feature_flags_summary_one": "{{count}} Funktion aktualisiert: {{summary}}",
       "feature_flags_summary_other": "{{count}} Funktionen aktualisiert: {{summary}}",
-      "feature_flags_updated": "Funktionseinstellungen aktualisiert"
+      "feature_flags_updated": "Funktionseinstellungen aktualisiert",
+      "css_template_remote_urls_removed": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes"
     },
     "people": {
       "title": "Personen in dieser Galerie",
