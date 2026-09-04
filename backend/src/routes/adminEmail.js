@@ -8,7 +8,7 @@ const { requirePermission } = require('../middleware/permissions');
 // /email mount — the pre-existing config/queue/received endpoints stay ungated).
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const messagingGate = requireFeatureFlag('messaging');
-const { wrapEmailHtml, processEmailQueue, resolveFromIdentity, buildSignatureTextFor } = require('../services/emailProcessor');
+const { wrapEmailHtml, processEmailQueue, resolveFromIdentity, buildSignatureTextFor, htmlToText } = require('../services/emailProcessor');
 const emailWebhookTransport = require('../services/emailWebhookTransport');
 const businessProfileService = require('../services/businessProfileService');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
@@ -1240,7 +1240,14 @@ router.post('/templates/:key/preview', adminAuth, requirePermission('email.view'
       body_html: wrappedHtml,
       // The Text tab has to show what a text-only client will receive, which
       // includes the signature the HTML tab already displays (#1264 review).
-      body_text: textContent + await buildSignatureTextFor(language),
+      //
+      // The `|| htmlToText(...)` half mirrors sendTemplateEmail: a
+      // translation may legitimately have HTML and an EMPTY body_text, and
+      // the real send derives the text part from the HTML in that case.
+      // Concatenating the signature onto '' produced a non-empty string, so
+      // the Text tab rendered a footer with no message above it.
+      body_text: (textContent || htmlToText(wrappedHtml))
+        + await buildSignatureTextFor(language),
       language,
       // Migration 198 — the wrapper above already rendered the global
       // signature into body_html when it's on. This flag just lets the

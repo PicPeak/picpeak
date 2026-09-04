@@ -3369,7 +3369,7 @@
       "testOk": "Connected to {{folder}} — {{messages}} messages, {{unseen}} unread.",
       "testFailed": "Connection failed."
     },
-    "signatureOn": "Footer signature is on — your business address is appended to every outgoing email.",
+    "signatureOn": "Footer signature is on — your business address is appended to automatic emails. Replies you write in Messages are sent as typed.",
     "signatureOff": "Footer signature is off — emails show the logo and company name only.",
     "signatureEdit": "Edit in Business profile"
   },

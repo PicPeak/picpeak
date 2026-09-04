@@ -220,12 +220,17 @@ export const EmailConfigPage: React.FC = () => {
   // 403, and reporting that as "signature is off" would be stating something
   // false about a mail they are about to send — so an unreadable profile
   // renders nothing at all rather than a guess (#1264 review).
-  const { data: businessProfile, isError: signatureUnknown } = useQuery({
+  const { data: businessProfile, isError, isPending } = useQuery({
     queryKey: ['business-profile'],
     queryFn: () => businessProfileService.get(),
     enabled: activeTab === 'smtp',
     retry: false,
   });
+  // Pending counts as unknown too. The other queries on this tab are often
+  // cached and paint first, so `?? false` announced "signature is off" for
+  // as long as this request was in flight — a wrong statement about a mail
+  // the admin is about to send, not merely a slow one.
+  const signatureUnknown = isError || isPending || !businessProfile;
   const signatureEnabled = businessProfile?.profile?.emailSignatureEnabled ?? false;
 
   // Fetch SMTP config
@@ -563,7 +568,7 @@ export const EmailConfigPage: React.FC = () => {
             <Info className="w-4 h-4 mt-0.5 shrink-0" />
             <span>
               {signatureEnabled
-                ? t('email.signatureOn', 'Footer signature is on — your business address is appended to every outgoing email.')
+                ? t('email.signatureOn', 'Footer signature is on — your business address is appended to automatic emails. Replies you write in Messages are sent as typed.')
                 : t('email.signatureOff', 'Footer signature is off — emails show the logo and company name only.')}
               {' '}
               <Link to="/admin/settings?tab=businessProfile" className="underline hover:no-underline" style={{ color: 'var(--color-accent)' }}>

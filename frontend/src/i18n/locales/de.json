@@ -3856,7 +3856,7 @@
       "testOk": "Verbunden mit {{folder}} — {{messages}} Nachrichten, {{unseen}} ungelesen.",
       "testFailed": "Verbindung fehlgeschlagen."
     },
-    "signatureOn": "Fusszeilen-Signatur ist an — Ihre Geschäftsadresse wird an jede ausgehende E-Mail angehängt.",
+    "signatureOn": "Fusszeilen-Signatur ist an — Ihre Geschäftsadresse wird an automatische E-Mails angehängt. Antworten, die Sie unter Nachrichten schreiben, werden unverändert gesendet.",
     "signatureOff": "Fusszeilen-Signatur ist aus — E-Mails zeigen nur Logo und Firmenname.",
     "signatureEdit": "Im Geschäftsprofil bearbeiten"
   },
