@@ -105,6 +105,30 @@ describe('stripDisallowedUrls', () => {
     expect(sanitized).toContain('color:red');
   });
 
+  // Round-2 review: three more ways a regex could not see CSS structure.
+  it('blocks a url() hidden behind a CSS escape', () => {
+    // `\\72` is a legal way to write `r`, so this IS url(...) to a browser.
+    const { sanitized, blocked } = stripDisallowedUrls('.a{background:u\\72l(https://evil.example/p.gif)}');
+    expect(blocked).toBe(1);
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('leaves url()-looking text inside a CSS string alone', () => {
+    // `content:` is inert display text, not a resource request. Rewriting it
+    // is a visible change to a page that never fetched anything.
+    const css = '.a::after{content:"url(https://docs.example)"}';
+    const { sanitized, blocked } = stripDisallowedUrls(css);
+    expect(blocked).toBe(0);
+    expect(sanitized).toBe(css);
+  });
+
+  it('does not treat a ) inside a quoted string as the end of a token', () => {
+    const css = '.a::after{content:"a) b"}.c{background:url(https://evil.example/x.gif)}';
+    const { sanitized } = stripDisallowedUrls(css);
+    expect(sanitized).toContain('content:"a) b"');
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
   it('is idempotent', () => {
     const once = stripDisallowedUrls('.a{background:url(https://x/p.gif)}').sanitized;
     expect(stripDisallowedUrls(once).sanitized).toBe(once);
@@ -135,6 +159,13 @@ describe('sanitizeCSS', () => {
   it('does not warn about URLs when there are none', () => {
     const { warnings } = sanitizeCSS('.a{color:red}');
     expect(warnings.filter((w) => /external URL/.test(w))).toHaveLength(0);
+  });
+
+  it('blocks a url() that only becomes one after HTML comments are removed', () => {
+    // The comment strip JOINS the remaining characters into a live url(...).
+    // A scan that ran before it saw no token and called the input clean.
+    const { sanitized } = sanitizeCSS('.a{background:u<!--x-->rl(https://evil.example/p.gif)}');
+    expect(asParsed(sanitized)).not.toContain('evil.example');
   });
 
   it('still blocks the other forbidden patterns', () => {

@@ -29,20 +29,34 @@ const FORBIDDEN_PATTERNS = [
   /on\w+\s*=/gi, // onclick=, onload=, etc.
 ];
 
-// Any `url(...)` token. The three CSS forms are matched SEPARATELY, because
-// they terminate differently:
-//
-//   url("…")  /  url('…')   the quote closes the value, so ")" inside it is
-//                           ordinary content and must not end the match
-//   url(…)                  unquoted, where ")" DOES terminate and quotes,
-//                           whitespace and parens are not legal unescaped
-//
-// Treating all three as "anything up to the first )" is what let
-// `url("https://evil.example/pixel).gif")` through untouched: the pattern
-// failed to match at all, so the token was reported as clean and stored
-// verbatim. A URL with a ")" in its path is perfectly serveable, so that was
-// a working bypass of the block this file exists to apply.
-const URL_TOKEN_PATTERN = /url\s*\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"\s]*))\s*\)/gi;
+/**
+ * Decode CSS escape sequences.
+ *
+ * `\72` is a legal way to write `r`, so `u\72l(https://evil.example/x.gif)`
+ * IS a url() to a browser while matching no literal pattern for "url(".
+ * Decoding first means the scanner below sees what the browser will see. The
+ * decoded form is what gets stored, which is safe: the same stylesheet,
+ * spelled unambiguously.
+ *
+ * Per CSS syntax: a backslash plus 1-6 hex digits and one optional trailing
+ * whitespace, or a backslash plus any other single character.
+ */
+function decodeCssEscapes(css) {
+  return String(css).replace(
+    /\\([0-9a-fA-F]{1,6})[ \t\n\f]?|\\([^0-9a-fA-F])/g,
+    (match, hex, literal) => {
+      if (hex) {
+        const code = parseInt(hex, 16);
+        // Null, out-of-range and surrogate escapes are invalid; leave them
+        // exactly as written rather than throwing.
+        if (!Number.isFinite(code) || code === 0 || code > 0x10FFFF
+          || (code >= 0xD800 && code <= 0xDFFF)) return match;
+        return String.fromCodePoint(code);
+      }
+      return literal;
+    }
+  );
+}
 
 // The only target a url() may name: an inline raster data: image. Anything
 // else is a request to a third party from someone else's browser.
@@ -107,19 +121,76 @@ function sanitizeCss(css) {
  * @returns {{ sanitized: string, blocked: number }}
  */
 function stripDisallowedUrls(css) {
+  // Escapes decoded first, so the scan sees what a browser would parse.
+  const input = decodeCssEscapes(css == null ? '' : String(css));
+  let out = '';
   let blocked = 0;
-  const sanitized = String(css == null ? '' : css).replace(
-    URL_TOKEN_PATTERN,
-    (match, doubleQuoted, singleQuoted, unquoted) => {
-      // Exactly one of the three alternatives participated. `??` rather than
-      // `||` so an empty `url("")` is still treated as a captured value.
-      const target = doubleQuoted ?? singleQuoted ?? unquoted ?? '';
-      if (ALLOWED_URL_TARGET.test(String(target).trim())) return match;
-      blocked += 1;
-      return 'none';
+  let i = 0;
+
+  while (i < input.length) {
+    const ch = input[i];
+
+    // Inside a string, copy verbatim through the closing quote. `content:`
+    // values and font names live here and are not resource requests — a raw
+    // replace corrupted `content: "url(https://docs.example)"` into "none",
+    // a visible change to a page that never made a request.
+    if (ch === '"' || ch === '\'') {
+      const quote = ch;
+      let j = i + 1;
+      while (j < input.length && input[j] !== quote) {
+        j += input[j] === '\\' ? 2 : 1;
+      }
+      out += input.slice(i, Math.min(j + 1, input.length));
+      i = j + 1;
+      continue;
     }
-  );
-  return { sanitized, blocked };
+
+    // A url( token, outside any string.
+    if ((ch === 'u' || ch === 'U') && /^url\s*\(/i.test(input.slice(i, i + 8))) {
+      const open = input.indexOf('(', i);
+      let j = open + 1;
+      let target = '';
+      while (j < input.length && /\s/.test(input[j])) j += 1;
+
+      if (input[j] === '"' || input[j] === '\'') {
+        // Quoted: the quote closes the value, so ")" inside it is content.
+        const quote = input[j];
+        j += 1;
+        while (j < input.length && input[j] !== quote) {
+          target += input[j];
+          j += 1;
+        }
+        j += 1;
+      } else {
+        while (j < input.length && input[j] !== ')') {
+          target += input[j];
+          j += 1;
+        }
+      }
+      while (j < input.length && input[j] !== ')') j += 1;
+
+      if (j >= input.length) {
+        // Unterminated url( — malformed. Copy the remainder verbatim rather
+        // than swallowing the rest of the stylesheet.
+        out += input.slice(i);
+        break;
+      }
+
+      if (ALLOWED_URL_TARGET.test(target.trim())) {
+        out += input.slice(i, j + 1);
+      } else {
+        blocked += 1;
+        out += 'none';
+      }
+      i = j + 1;
+      continue;
+    }
+
+    out += ch;
+    i += 1;
+  }
+
+  return { sanitized: out, blocked };
 }
 
 /**
@@ -154,7 +225,15 @@ function sanitizeCSS(cssContent) {
     }
   }
 
-  // Block external URLs (only inline data: images are allowed).
+  // Remove HTML comments that might be used for injection
+  sanitized = sanitized.replace(/<!--[\s\S]*?-->/g, '');
+
+  // URLs are scanned AFTER the comment strip, not before. Removing
+  // `<!--x-->` from `u<!--x-->rl(https://evil.example/p.gif)` JOINS the
+  // remaining characters into a live `url(...)` — so a scan that ran first
+  // saw no token, reported the input clean, and the transformation below it
+  // then produced exactly the request the scan was there to prevent. Any
+  // pass that can join tokens has to happen before validation, not after.
   const urlPass = stripDisallowedUrls(sanitized);
   if (urlPass.blocked > 0) {
     warnings.push(
@@ -163,9 +242,6 @@ function sanitizeCSS(cssContent) {
     );
     sanitized = urlPass.sanitized;
   }
-
-  // Remove HTML comments that might be used for injection
-  sanitized = sanitized.replace(/<!--[\s\S]*?-->/g, '');
 
   // Remove control characters
   // eslint-disable-next-line no-control-regex -- intentional: strips control chars from untrusted CSS
