@@ -107,7 +107,7 @@ export const CMSContentBlock: React.FC<CMSContentBlockProps> = ({ slug, fallback
               {page.title}
             </h1>
             <div
-              className="prose prose-neutral dark:prose-invert max-w-none"
+              className="prose prose-neutral dark:prose-invert max-w-none text-theme"
               style={{ color: 'var(--color-text)' }}
               dangerouslySetInnerHTML={{
                 __html: DOMPurify.sanitize(page.content, {

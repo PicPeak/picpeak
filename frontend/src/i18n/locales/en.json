@@ -2657,7 +2657,8 @@
       "bulkDeleteCompleted_one": "Bulk delete completed: {{count}} event removed",
       "bulkDeleteCompleted_other": "Bulk delete completed: {{count}} events removed",
       "bulkArchiveCompleted_one": "Bulk archive completed: {{count}} event archived",
-      "bulkArchiveCompleted_other": "Bulk archive completed: {{count}} events archived"
+      "bulkArchiveCompleted_other": "Bulk archive completed: {{count}} events archived",
+      "cssTemplateRemoteUrlsRemoved": "Remote URLs removed from {{count}} CSS template(s) — see the release notes"
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
@@ -2969,7 +2970,8 @@
       "newsletter_cancelled": "Newsletter campaign cancelled",
       "newsletter_completed": "Newsletter finished — {{sent}} sent, {{failed}} failed",
       "newsletter_deleted": "Newsletter campaign deleted",
-      "customer_marketing_opt_out": "Customer newsletter consent changed"
+      "customer_marketing_opt_out": "Customer newsletter consent changed",
+      "css_template_remote_urls_removed": "Remote URLs removed from {{count}} CSS template(s) — see the release notes"
     },
     "people": {
       "title": "People in this gallery",

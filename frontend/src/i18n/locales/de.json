@@ -3127,7 +3127,8 @@
       "bulkDeleteCompleted_one": "Massen-Löschung abgeschlossen: {{count}} Event entfernt",
       "bulkDeleteCompleted_other": "Massen-Löschung abgeschlossen: {{count}} Events entfernt",
       "bulkArchiveCompleted_one": "Massen-Archivierung abgeschlossen: {{count}} Event archiviert",
-      "bulkArchiveCompleted_other": "Massen-Archivierung abgeschlossen: {{count}} Events archiviert"
+      "bulkArchiveCompleted_other": "Massen-Archivierung abgeschlossen: {{count}} Events archiviert",
+      "cssTemplateRemoteUrlsRemoved": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -3437,7 +3438,8 @@
       "newsletter_cancelled": "Newsletter-Kampagne abgebrochen",
       "newsletter_completed": "Newsletter abgeschlossen — {{sent}} gesendet, {{failed}} fehlgeschlagen",
       "newsletter_deleted": "Newsletter-Kampagne gelöscht",
-      "customer_marketing_opt_out": "Newsletter-Einwilligung des Kunden geändert"
+      "customer_marketing_opt_out": "Newsletter-Einwilligung des Kunden geändert",
+      "css_template_remote_urls_removed": "Externe URLs aus {{count}} CSS-Vorlage(n) entfernt — siehe Release Notes"
     },
     "people": {
       "title": "Personen in dieser Galerie",
