@@ -33,12 +33,21 @@ let active = 0;
 // actually looking at. The layouts that render every card at once (Masonry,
 // Timeline, Mosaic pass no `lazy`) make that the normal case, not the edge.
 const waitingHigh: Array<() => void> = [];
+const waitingPrefetch: Array<() => void> = [];
 const waiting: Array<() => void> = [];
+
+/** Highest non-empty tier first; FIFO within a tier. */
+function nextWaiter() {
+  if (waitingHigh.length > 0) return waitingHigh.shift();
+  if (waitingPrefetch.length > 0) return waitingPrefetch.shift();
+  return waiting.shift();
+}
 
 /** Hand the next waiter a slot, if anyone is queued and one is free. */
 function pump() {
-  while (active < MAX_CONCURRENT && (waitingHigh.length > 0 || waiting.length > 0)) {
-    const next = waitingHigh.length > 0 ? waitingHigh.shift() : waiting.shift();
+  while (active < MAX_CONCURRENT
+    && (waitingHigh.length > 0 || waitingPrefetch.length > 0 || waiting.length > 0)) {
+    const next = nextWaiter();
     if (!next) break;
     active += 1;
     next();
@@ -55,11 +64,20 @@ function pump() {
  */
 export interface ImageFetchOptions {
   /**
-   * 'high' jumps the backlog. Use it for an image the user is looking at
-   * right now — the lightbox, and its immediate neighbours for prefetch —
-   * never for grid thumbnails, which would put us back to one queue.
+   * Three tiers, drained highest-first:
+   *
+   *   'high'     the image on screen right now — the current lightbox slide
+   *   'prefetch' one interaction away — the lightbox neighbours
+   *   'normal'   grid thumbnails
+   *
+   * The middle tier exists because the lightbox's effects enqueue in slide
+   * order (previous, current, next). Sharing one tier with its neighbours
+   * meant the PREVIOUS slide could take the first freed slot while the image
+   * the user is actually looking at stayed queued behind it.
+   *
+   * Never mark thumbnails high; that is one queue again.
    */
-  priority?: 'high' | 'normal';
+  priority?: 'high' | 'prefetch' | 'normal';
 }
 
 export function withImageFetchSlot<T>(
@@ -87,6 +105,8 @@ export function withImageFetchSlot<T>(
       run();
     } else if (priority === 'high') {
       waitingHigh.push(run);
+    } else if (priority === 'prefetch') {
+      waitingPrefetch.push(run);
     } else {
       waiting.push(run);
     }
@@ -97,8 +117,9 @@ export function withImageFetchSlot<T>(
 export function __imageFetchQueueState() {
   return {
     active,
-    queued: waiting.length + waitingHigh.length,
+    queued: waiting.length + waitingPrefetch.length + waitingHigh.length,
     queuedHigh: waitingHigh.length,
+    queuedPrefetch: waitingPrefetch.length,
     max: MAX_CONCURRENT,
   };
 }

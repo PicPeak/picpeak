@@ -213,6 +213,47 @@ describe('withImageFetchSlot', () => {
       expect(order[0]).toBe('lightbox');
     });
 
+    it('serves the current slide before its own neighbour prefetches', async () => {
+      // Round-3 review: the lightbox's effects enqueue in slide order
+      // (previous, current, next). With neighbours on the same tier as the
+      // current slide, the PREVIOUS one took the first freed slot and the
+      // image actually on screen waited behind an off-screen prefetch.
+      const { max } = __imageFetchQueueState();
+      const blockers = Array.from({ length: max }, () => deferred<void>());
+      const held = blockers.map((g) => withImageFetchSlot(() => g.promise));
+      await flush();
+
+      const order: string[] = [];
+      // Enqueued in the order the lightbox mounts them.
+      const prev = withImageFetchSlot(async () => { order.push('prev'); }, { priority: 'prefetch' });
+      const current = withImageFetchSlot(async () => { order.push('current'); }, { priority: 'high' });
+      const next = withImageFetchSlot(async () => { order.push('next'); }, { priority: 'prefetch' });
+
+      blockers.forEach((g) => g.resolve());
+      await Promise.all([...held, prev, current, next]);
+
+      expect(order[0]).toBe('current');
+      // Neighbours keep their own FIFO below it.
+      expect(order.slice(1)).toEqual(['prev', 'next']);
+    });
+
+    it('serves prefetch ahead of grid thumbnails', async () => {
+      const { max } = __imageFetchQueueState();
+      const blockers = Array.from({ length: max }, () => deferred<void>());
+      const held = blockers.map((g) => withImageFetchSlot(() => g.promise));
+      await flush();
+
+      const order: string[] = [];
+      const thumbs = Array.from({ length: 5 }, (_, i) =>
+        withImageFetchSlot(async () => { order.push(`thumb${i}`); }));
+      const prefetch = withImageFetchSlot(async () => { order.push('prefetch'); }, { priority: 'prefetch' });
+
+      blockers.forEach((g) => g.resolve());
+      await Promise.all([...held, ...thumbs, prefetch]);
+
+      expect(order[0]).toBe('prefetch');
+    });
+
     it('still respects the concurrency cap for high-priority work', async () => {
       const { max } = __imageFetchQueueState();
       let running = 0;
