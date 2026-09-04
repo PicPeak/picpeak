@@ -325,7 +325,7 @@ export const SettingsBusinessProfilePage: React.FC = () => {
         <PdfToggleRow
           label={t('businessProfile.emailSignature.toggle', 'Show signature in email footers') as string}
           description={t('businessProfile.emailSignature.toggleHelp',
-            'When off, emails keep the plain logo + company name footer. Applies to every email, including test sends and previews.') as string}
+            'When off, emails keep the plain logo + company name footer. Applies to every automatic email — gallery notices, quotes, invoices, reminders — plus test sends and previews. Replies you write yourself in Messages are sent as typed and do not get the signature.') as string}
           enabled={profile.emailSignatureEnabled}
           onChange={(v) => setProfile({ ...profile, emailSignatureEnabled: v })}
         />

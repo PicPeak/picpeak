@@ -1444,6 +1444,7 @@ module.exports = {
   testEmailConnection,
   wrapEmailHtml,
   renderEmailSignatureText,
+  buildSignatureTextFor,
   safeTemplateReplace,
   getSupportEmail,
   htmlToText
