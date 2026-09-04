@@ -84,6 +84,24 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
       onToggleSelect={onToggleSelect}
       className={`photo-card relative group cursor-pointer aspect-square ${animationClass}`}
       lazy
+      /*
+       * Pre-load band (#1287). Grid was the only lazy layout passing no
+       * `inViewRootMargin`, so PhotoCard ran the observer at the
+       * IntersectionObserver default of 0px with threshold 0.1 — a tile could
+       * not begin loading until a tenth of it was already on screen. The
+       * gallery owner's description of the symptom is that exact shape:
+       * spinning the wheel outran loading by ~50 images, then it caught up.
+       *
+       * Viewport-relative rather than a fixed 100px like Justified: a phone
+       * and a 4K desktop scroll past very different amounts of grid per
+       * gesture, and a band tuned to one is wrong for the other.
+       *
+       * `%`, not `vh` — rootMargin only accepts px and percentages, and an
+       * IntersectionObserver constructed with a vh value throws. A percentage
+       * resolves against the root's own box, so 100% is one viewport height
+       * of lead in each direction, which is what vh would have meant.
+       */
+      inViewRootMargin="100% 0px"
       fadeInWhenVisible={animationType === 'fade'}
       skeletonClassName="skeleton aspect-square w-full rounded-lg"
       imageProps={{
