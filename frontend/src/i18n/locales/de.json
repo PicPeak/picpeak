@@ -3864,7 +3864,7 @@
       "testOk": "Verbunden mit {{folder}} — {{messages}} Nachrichten, {{unseen}} ungelesen.",
       "testFailed": "Verbindung fehlgeschlagen."
     },
-    "signatureOn": "Fusszeilen-Signatur ist an — Ihre Geschäftsadresse wird an jede ausgehende E-Mail angehängt.",
+    "signatureOn": "Fusszeilen-Signatur ist an — Ihre Geschäftsadresse wird an automatische E-Mails angehängt. Antworten, die Sie unter Nachrichten schreiben, werden unverändert gesendet.",
     "signatureOff": "Fusszeilen-Signatur ist aus — E-Mails zeigen nur Logo und Firmenname.",
     "signatureEdit": "Im Geschäftsprofil bearbeiten"
   },
@@ -6134,7 +6134,7 @@
       "title": "E-Mail-Signatur",
       "subtitle": "Hängt Ihre Firmendaten an die Fusszeile jeder E-Mail an, die diese Installation versendet. Wird aus den Adress- und Kontaktfeldern oben gebildet — nichts wird doppelt erfasst.",
       "toggle": "Signatur in E-Mail-Fusszeilen anzeigen",
-      "toggleHelp": "Wenn aus, behalten E-Mails die schlichte Fusszeile mit Logo und Firmenname. Gilt für jede E-Mail, auch für Testversand und Vorschau.",
+      "toggleHelp": "Wenn aus, behalten E-Mails die schlichte Fusszeile mit Logo und Firmenname. Gilt für jede automatische E-Mail — Galerie-Benachrichtigungen, Offerten, Rechnungen, Erinnerungen — sowie für Testversand und Vorschau. Antworten, die Sie selbst unter Nachrichten schreiben, werden unverändert gesendet und erhalten keine Signatur.",
       "extra": "Rechtliche Zeile (optional)",
       "extraPlaceholder": "Handelsregister Vaduz FL-0002.123.456-7",
       "extraHelp": "Registernummer, Haftungsausschluss oder jede Zeile ohne eigenes Feld. Reiner Text, maximal 500 Zeichen.",

@@ -3377,7 +3377,7 @@
       "testOk": "Connected to {{folder}} — {{messages}} messages, {{unseen}} unread.",
       "testFailed": "Connection failed."
     },
-    "signatureOn": "Footer signature is on — your business address is appended to every outgoing email.",
+    "signatureOn": "Footer signature is on — your business address is appended to automatic emails. Replies you write in Messages are sent as typed.",
     "signatureOff": "Footer signature is off — emails show the logo and company name only.",
     "signatureEdit": "Edit in Business profile"
   },
@@ -6133,7 +6133,7 @@
       "title": "Email signature",
       "subtitle": "Append your company details to the footer of every email this installation sends. Built from the address and contact fields above — nothing is duplicated.",
       "toggle": "Show signature in email footers",
-      "toggleHelp": "When off, emails keep the plain logo + company name footer. Applies to every email, including test sends and previews.",
+      "toggleHelp": "When off, emails keep the plain logo + company name footer. Applies to every automatic email — gallery notices, quotes, invoices, reminders — plus test sends and previews. Replies you write yourself in Messages are sent as typed and do not get the signature.",
       "extra": "Legal line (optional)",
       "extraPlaceholder": "Handelsregister Vaduz FL-0002.123.456-7",
       "extraHelp": "Registration number, disclaimer or any line with no field of its own. Plain text, up to 500 characters.",

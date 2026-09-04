@@ -327,6 +327,43 @@ function renderEmailSignature(signature, { mutedTextColor, brandingCompanyName, 
               </div>`;
 }
 
+/**
+ * The signature as plain text, for the text/plain MIME alternative.
+ *
+ * `sendTemplateEmail` uses a template's own `body_text` when it has one — and
+ * the seeded templates all do — so the text part is NOT derived from the
+ * wrapped HTML and would otherwise carry no signature at all. A text-only
+ * client, and the preview's Text tab, then showed a mail with no address and
+ * no legal line while the HTML part had both.
+ *
+ * Returns '' when the signature is disabled, so callers can append
+ * unconditionally.
+ */
+function renderEmailSignatureText(signature, { brandingCompanyName, language } = {}) {
+  if (!signature) return '';
+
+  const lines = [];
+  if (signature.companyName && signature.companyName !== brandingCompanyName) {
+    lines.push(signature.companyName);
+  }
+  if (signature.addressLines.length) {
+    lines.push(signature.addressLines.join(' \u00b7 '));
+  }
+  const contact = [signature.phone, signature.mobile, signature.email, signature.website]
+    .map((v) => (v || '').trim())
+    .filter(Boolean);
+  if (contact.length) lines.push(contact.join(' \u00b7 '));
+  if (signature.vatId) {
+    const label = SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
+    lines.push(`${label}: ${signature.vatId}`);
+  }
+  if (signature.extra) lines.push(signature.extra);
+
+  if (!lines.length) return '';
+  // A visual separator, the plain-text equivalent of the footer's top border.
+  return `\n\n--\n${lines.join('\n')}`;
+}
+
 // Wrap HTML body in the styled email template with header, footer, and logo
 async function wrapEmailHtml(htmlBody, subject, language = 'en') {
   // Email colour palette. The two original settings (email_primary_color and
@@ -841,6 +878,28 @@ async function processTemplate(template, variables, language = 'en') {
 }
 
 // Send email using template
+/**
+ * Resolve the signature and render its plain-text form for `language`.
+ * Never throws — a footer must not be able to fail a send.
+ */
+async function buildSignatureTextFor(language) {
+  try {
+    const signature = await businessProfileService.getEmailSignature();
+    if (!signature) return '';
+    let brandingCompanyName = 'PicPeak';
+    try {
+      const row = await db('app_settings').where('setting_key', 'branding_company_name').first();
+      if (row && row.setting_value) {
+        try { brandingCompanyName = JSON.parse(row.setting_value); } catch (_) { brandingCompanyName = row.setting_value; }
+      }
+    } catch (_) { /* fall back to the default name */ }
+    return renderEmailSignatureText(signature, { brandingCompanyName, language });
+  } catch (error) {
+    logger.warn('Could not render the plain-text email signature', { error: error.message });
+    return '';
+  }
+}
+
 async function sendTemplateEmail(to, templateKey, variables) {
   try {
     // Webhook transport (#1225) replaces SMTP entirely when configured, so an
@@ -910,7 +969,12 @@ async function sendTemplateEmail(to, templateKey, variables) {
       cc: ccList,
       subject: subject,
       html: htmlBody,
-      text: textBody || htmlToText(htmlBody),
+      // When the template supplies its own body_text the text part is not
+      // derived from the wrapped HTML, so the signature has to be appended
+      // here or the text/plain alternative silently omits it (#1264 review).
+      text: textBody
+        ? textBody + await buildSignatureTextFor(language)
+        : htmlToText(htmlBody),
       attachments,
     };
     const info = viaWebhook
@@ -1467,6 +1531,8 @@ module.exports = {
   stopEmailQueueProcessor,
   testEmailConnection,
   wrapEmailHtml,
+  renderEmailSignatureText,
+  buildSignatureTextFor,
   safeTemplateReplace,
   getSupportEmail,
   htmlToText

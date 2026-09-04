@@ -214,11 +214,23 @@ export const EmailConfigPage: React.FC = () => {
 
   // Migration 198 — whether the global footer signature is on. Read-only
   // here; the toggle itself lives on Settings → Business profile.
-  const { data: businessProfile } = useQuery({
+  //
+  // This tab is reachable with `email.view`, but GET /admin/business-profile
+  // requires `settings.view` / `settings.banking`. An email-only role gets a
+  // 403, and reporting that as "signature is off" would be stating something
+  // false about a mail they are about to send — so an unreadable profile
+  // renders nothing at all rather than a guess (#1264 review).
+  const { data: businessProfile, isError, isPending } = useQuery({
     queryKey: ['business-profile'],
     queryFn: () => businessProfileService.get(),
     enabled: activeTab === 'smtp',
+    retry: false,
   });
+  // Pending counts as unknown too. The other queries on this tab are often
+  // cached and paint first, so `?? false` announced "signature is off" for
+  // as long as this request was in flight — a wrong statement about a mail
+  // the admin is about to send, not merely a slow one.
+  const signatureUnknown = isError || isPending || !businessProfile;
   const signatureEnabled = businessProfile?.profile?.emailSignatureEnabled ?? false;
 
   // Fetch SMTP config
@@ -551,11 +563,12 @@ export const EmailConfigPage: React.FC = () => {
               wrapper to every send from this page, but it's configured on
               the Business profile — point at it from where the mail is set
               up rather than making the operator hunt for it. */}
+          {!signatureUnknown && (
           <div className="lg:col-span-2 flex items-start gap-2 rounded-md border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/60 p-3 text-sm text-neutral-600 dark:text-neutral-400">
             <Info className="w-4 h-4 mt-0.5 shrink-0" />
             <span>
               {signatureEnabled
-                ? t('email.signatureOn', 'Footer signature is on — your business address is appended to every outgoing email.')
+                ? t('email.signatureOn', 'Footer signature is on — your business address is appended to automatic emails. Replies you write in Messages are sent as typed.')
                 : t('email.signatureOff', 'Footer signature is off — emails show the logo and company name only.')}
               {' '}
               <Link to="/admin/settings?tab=businessProfile" className="underline hover:no-underline" style={{ color: 'var(--color-accent)' }}>
@@ -563,6 +576,7 @@ export const EmailConfigPage: React.FC = () => {
               </Link>
             </span>
           </div>
+          )}
           <Card padding="md">
             <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('email.smtpConfiguration')}</h2>
 

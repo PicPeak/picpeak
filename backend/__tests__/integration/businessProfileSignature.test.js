@@ -95,6 +95,25 @@ describe('business profile — email signature round-trip', () => {
     expect(profileOf(await get()).emailSignatureExtra).toBe('Registered in Vaduz');
   });
 
+  // Codex review: express-validator's isBoolean() accepts the STRINGS
+  // 'false' and '0', and Boolean('false') is true — so a form-encoded client
+  // trying to switch the signature OFF switched it on instead.
+  it.each([['false'], ['0']])('treats the string %s as off, not on', async (value) => {
+    await put({ emailSignatureEnabled: true });
+    expect(profileOf(await get()).emailSignatureEnabled).toBe(true);
+
+    const res = await put({ emailSignatureEnabled: value });
+    expect(res.status).toBe(200);
+    expect(profileOf(await get()).emailSignatureEnabled).toBe(false);
+  });
+
+  it.each([['true'], ['1']])('treats the string %s as on', async (value) => {
+    await put({ emailSignatureEnabled: false });
+    const res = await put({ emailSignatureEnabled: value });
+    expect(res.status).toBe(200);
+    expect(profileOf(await get()).emailSignatureEnabled).toBe(true);
+  });
+
   it('rejects a non-boolean toggle and a legal line over 500 chars', async () => {
     expect((await put({ emailSignatureEnabled: 'yes please' })).status).toBe(400);
     expect((await put({ emailSignatureExtra: 'x'.repeat(501) })).status).toBe(400);
