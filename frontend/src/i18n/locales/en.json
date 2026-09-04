@@ -6922,8 +6922,8 @@
     },
     "section": {
       "content": "Content",
-      "recipients": "Recipients",
-      "preview": "Preview & send"
+      "recipients": "Recipients & send",
+      "preview": "Preview"
     },
     "field": {
       "name": "Campaign name (internal)",
@@ -6969,6 +6969,7 @@
     "previewFailed": "Could not render the preview.",
     "testFailed": "Could not send the test email.",
     "queueFailed": "Could not queue the campaign.",
-    "cancelFailed": "Could not cancel the campaign."
+    "cancelFailed": "Could not cancel the campaign.",
+    "previewEmpty": "Refresh the preview to see the email as a customer will."
   }
 }

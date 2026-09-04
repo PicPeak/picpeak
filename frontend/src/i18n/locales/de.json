@@ -6923,8 +6923,8 @@
     },
     "section": {
       "content": "Inhalt",
-      "recipients": "Empfänger",
-      "preview": "Vorschau & Senden"
+      "recipients": "Empfänger & Versand",
+      "preview": "Vorschau"
     },
     "field": {
       "name": "Kampagnenname (intern)",
@@ -6970,6 +6970,7 @@
     "previewFailed": "Vorschau konnte nicht erzeugt werden.",
     "testFailed": "Test-E-Mail konnte nicht gesendet werden.",
     "queueFailed": "Kampagne konnte nicht eingereiht werden.",
-    "cancelFailed": "Kampagne konnte nicht abgebrochen werden."
+    "cancelFailed": "Kampagne konnte nicht abgebrochen werden.",
+    "previewEmpty": "Aktualisieren Sie die Vorschau, um die E-Mail so zu sehen, wie ein Kunde sie erhält."
   }
 }

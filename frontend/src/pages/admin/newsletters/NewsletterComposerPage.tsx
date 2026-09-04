@@ -225,9 +225,16 @@ export const NewsletterComposerPage: React.FC = () => {
         </Button>
       </div>
 
+      {/* Two columns, not three. An email body is 600px wide and the editor
+          toolbar has ~14 controls; giving each of the three panels an equal
+          third left the toolbar wrapping onto seven rows and the body being
+          composed in a box narrower than a phone, while the Recipients panel —
+          two radios, a count and one number field — sat mostly empty. Compose
+          gets the width, the send settings get the rail, and the preview moves
+          full-width below where it can render at true email size. */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* ---- 1. Content ---- */}
-        <Card>
+        <Card className="xl:col-span-2">
           <h3 className="font-semibold mb-4 text-neutral-900 dark:text-neutral-100">
             {t('newsletters.section.content', 'Content')}
           </h3>
@@ -289,7 +296,7 @@ export const NewsletterComposerPage: React.FC = () => {
           <div className="flex items-center gap-2 mb-4">
             <Users className="w-5 h-5 text-neutral-500" />
             <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">
-              {t('newsletters.section.recipients', 'Recipients')}
+              {t('newsletters.section.recipients', 'Recipients & send')}
             </h3>
           </div>
 
@@ -374,35 +381,9 @@ export const NewsletterComposerPage: React.FC = () => {
                 'Sends are spread out so your mail provider does not rate-limit you. Check your provider\'s hourly cap before raising this.')}
             </p>
           </div>
-        </Card>
 
-        {/* ---- 3. Preview & send ---- */}
-        <Card>
-          <div className="flex items-center gap-2 mb-4">
-            <Eye className="w-5 h-5 text-neutral-500" />
-            <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">
-              {t('newsletters.section.preview', 'Preview & send')}
-            </h3>
-          </div>
-
-          <Button variant="outline" onClick={loadPreview} className="w-full mb-3">
-            {t('newsletters.refreshPreview', 'Refresh preview')}
-          </Button>
-
-          {previewHtml && (
-            <iframe
-              data-testid="newsletter-preview"
-              title={t('newsletters.previewTitle', 'Newsletter preview') as string}
-              // No allow-scripts. The body is sanitized server-side; this is
-              // the second line of defence, and it is the only DOM campaign
-              // HTML ever reaches.
-              sandbox=""
-              srcDoc={previewHtml}
-              className="w-full h-96 border border-neutral-200 dark:border-neutral-700 rounded-md bg-white"
-            />
-          )}
-
-          <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700 space-y-3">
+          {/* Test + queue live with the recipient rule they act on. */}
+          <div className="mt-6 pt-4 border-t border-neutral-200 dark:border-neutral-700 space-y-3">
             <div className="flex gap-2 items-end">
               <div className="flex-1">
                 <Input
@@ -440,6 +421,40 @@ export const NewsletterComposerPage: React.FC = () => {
           </div>
         </Card>
       </div>
+
+      {/* ---- Preview, full width ---- */}
+      <Card className="mt-6">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div className="flex items-center gap-2">
+            <Eye className="w-5 h-5 text-neutral-500" />
+            <h3 className="font-semibold text-neutral-900 dark:text-neutral-100">
+              {t('newsletters.section.preview', 'Preview')}
+            </h3>
+          </div>
+          <Button variant="outline" onClick={loadPreview}>
+            {t('newsletters.refreshPreview', 'Refresh preview')}
+          </Button>
+        </div>
+
+        {previewHtml ? (
+          <iframe
+            data-testid="newsletter-preview"
+            title={t('newsletters.previewTitle', 'Newsletter preview') as string}
+            // No allow-scripts. The body is sanitized server-side; this is
+            // the second line of defence, and it is the only DOM campaign
+            // HTML ever reaches.
+            sandbox=""
+            srcDoc={previewHtml}
+            // 680px: the 600px email plus its wrapper padding, so it renders
+            // at the width a recipient sees instead of side-scrolling.
+            className="w-full max-w-[680px] mx-auto h-[640px] border border-neutral-200 dark:border-neutral-700 rounded-md bg-white"
+          />
+        ) : (
+          <div className="max-w-[680px] mx-auto h-[240px] rounded-md border border-dashed border-neutral-300 dark:border-neutral-600 flex items-center justify-center text-sm text-neutral-500 dark:text-neutral-400">
+            {t('newsletters.previewEmpty', 'Refresh the preview to see the email as a customer will.')}
+          </div>
+        )}
+      </Card>
     </div>
   );
 };
