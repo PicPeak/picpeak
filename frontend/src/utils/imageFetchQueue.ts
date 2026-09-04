@@ -27,12 +27,18 @@
 const MAX_CONCURRENT = 6;
 
 let active = 0;
+// Two tiers, drained high-first. A strict single FIFO meant the image the
+// user just clicked queued behind every thumbnail already enqueued — on a
+// 546-photo gallery that is minutes of waiting for the one image they are
+// actually looking at. The layouts that render every card at once (Masonry,
+// Timeline, Mosaic pass no `lazy`) make that the normal case, not the edge.
+const waitingHigh: Array<() => void> = [];
 const waiting: Array<() => void> = [];
 
 /** Hand the next waiter a slot, if anyone is queued and one is free. */
 function pump() {
-  while (active < MAX_CONCURRENT && waiting.length > 0) {
-    const next = waiting.shift();
+  while (active < MAX_CONCURRENT && (waitingHigh.length > 0 || waiting.length > 0)) {
+    const next = waitingHigh.length > 0 ? waitingHigh.shift() : waiting.shift();
     if (!next) break;
     active += 1;
     next();
@@ -47,7 +53,19 @@ function pump() {
  * is already cheap, and an AbortController on the underlying fetch is the
  * right way to cancel, not dropping the slot on the floor.
  */
-export function withImageFetchSlot<T>(task: () => Promise<T>): Promise<T> {
+export interface ImageFetchOptions {
+  /**
+   * 'high' jumps the backlog. Use it for an image the user is looking at
+   * right now — the lightbox, and its immediate neighbours for prefetch —
+   * never for grid thumbnails, which would put us back to one queue.
+   */
+  priority?: 'high' | 'normal';
+}
+
+export function withImageFetchSlot<T>(
+  task: () => Promise<T>,
+  { priority = 'normal' }: ImageFetchOptions = {},
+): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const run = () => {
       // Promise.resolve().then(task) rather than task() directly: a task that
@@ -67,6 +85,8 @@ export function withImageFetchSlot<T>(task: () => Promise<T>): Promise<T> {
     if (active < MAX_CONCURRENT) {
       active += 1;
       run();
+    } else if (priority === 'high') {
+      waitingHigh.push(run);
     } else {
       waiting.push(run);
     }
@@ -75,5 +95,10 @@ export function withImageFetchSlot<T>(task: () => Promise<T>): Promise<T> {
 
 /** Test-only visibility into the gate. */
 export function __imageFetchQueueState() {
-  return { active, queued: waiting.length, max: MAX_CONCURRENT };
+  return {
+    active,
+    queued: waiting.length + waitingHigh.length,
+    queuedHigh: waitingHigh.length,
+    max: MAX_CONCURRENT,
+  };
 }

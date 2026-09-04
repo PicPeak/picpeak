@@ -189,6 +189,81 @@ describe('withImageFetchSlot', () => {
     expect(started).toBe(max + 1);
   });
 
+  describe('priority', () => {
+    // Round-2 review: a single FIFO put the image the user just clicked
+    // behind every thumbnail already enqueued. On a 546-photo gallery — and
+    // Masonry/Timeline/Mosaic enqueue every card at once, since they pass no
+    // `lazy` — that is minutes of waiting for the one image being looked at.
+    it('serves a high-priority task ahead of an existing backlog', async () => {
+      const { max } = __imageFetchQueueState();
+      const blockers = Array.from({ length: max }, () => deferred<void>());
+      const held = blockers.map((g) => withImageFetchSlot(() => g.promise));
+      await flush();
+
+      const order: string[] = [];
+      // A realistic backlog of grid thumbnails...
+      const normal = Array.from({ length: 20 }, (_, i) =>
+        withImageFetchSlot(async () => { order.push(`thumb${i}`); }));
+      // ...then the lightbox opens.
+      const high = withImageFetchSlot(async () => { order.push('lightbox'); }, { priority: 'high' });
+
+      blockers.forEach((g) => g.resolve());
+      await Promise.all([...held, ...normal, high]);
+
+      expect(order[0]).toBe('lightbox');
+    });
+
+    it('still respects the concurrency cap for high-priority work', async () => {
+      const { max } = __imageFetchQueueState();
+      let running = 0;
+      let peak = 0;
+      const gates = Array.from({ length: max * 3 }, () => deferred<void>());
+
+      const tasks = gates.map((g) => withImageFetchSlot(async () => {
+        running += 1; peak = Math.max(peak, running);
+        await g.promise;
+        running -= 1;
+      }, { priority: 'high' }));
+
+      await flush();
+      expect(peak).toBe(max);
+      gates.forEach((g) => g.resolve());
+      await Promise.all(tasks);
+    });
+
+    it('keeps high-priority tasks in FIFO order among themselves', async () => {
+      const { max } = __imageFetchQueueState();
+      const blockers = Array.from({ length: max }, () => deferred<void>());
+      const held = blockers.map((g) => withImageFetchSlot(() => g.promise));
+      await flush();
+
+      const order: string[] = [];
+      const queued = ['a', 'b', 'c'].map((label) =>
+        withImageFetchSlot(async () => { order.push(label); }, { priority: 'high' }));
+
+      blockers.forEach((g) => g.resolve());
+      await Promise.all([...held, ...queued]);
+      expect(order).toEqual(['a', 'b', 'c']);
+    });
+
+    it('does not starve the normal tier once the high tier drains', async () => {
+      const { max } = __imageFetchQueueState();
+      const blockers = Array.from({ length: max }, () => deferred<void>());
+      const held = blockers.map((g) => withImageFetchSlot(() => g.promise));
+      await flush();
+
+      const done: string[] = [];
+      const normal = withImageFetchSlot(async () => { done.push('normal'); });
+      const high = withImageFetchSlot(async () => { done.push('high'); }, { priority: 'high' });
+
+      blockers.forEach((g) => g.resolve());
+      await Promise.all([...held, normal, high]);
+
+      expect(done).toEqual(['high', 'normal']);
+      expect(__imageFetchQueueState().active).toBe(0);
+    });
+  });
+
   it('keeps working after a mixed burst of successes and failures', async () => {
     await Promise.all(
       Array.from({ length: 30 }, (_, i) =>

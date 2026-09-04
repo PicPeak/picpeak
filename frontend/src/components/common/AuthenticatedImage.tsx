@@ -31,6 +31,9 @@ interface AuthenticatedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImage
   protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
   onLoad?: () => void;
+  /** 'high' jumps the shared fetch queue — for an image the user is
+   *  looking at now (the lightbox), not for grid thumbnails (#1287). */
+  fetchPriority?: 'high' | 'normal';
 }
 
 export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
@@ -57,6 +60,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   protectionLevel,
   useEnhancedProtection,
   onLoad,
+  fetchPriority = 'normal',
   ...props
 }) => {
   const unusedProps = {
@@ -185,7 +189,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         }
 
         return await response.blob();
-      });
+      }, { priority: fetchPriority });
       const objectUrl = URL.createObjectURL(blob);
       // The effect may have been torn down while this was in flight. Revoke
       // immediately rather than pushing onto an array nobody will read again.
@@ -244,7 +248,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src, fallbackSrc, slug]);
+  }, [src, fallbackSrc, slug, fetchPriority]);
 
   // Effect to draw to canvas when image is loaded and canvas rendering is enabled
   useEffect(() => {

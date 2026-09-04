@@ -1143,6 +1143,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   />
                 ) : (
                   <AuthenticatedImage
+                    // The user is looking at this one right now, so it jumps
+                    // the shared fetch queue ahead of the grid backlog (#1287).
+                    fetchPriority="high"
                     // Prefer the lightbox preview tier when the admin
                     // opted in (#492). Falls back to `url` (the
                     // original) when preview_url is null — happens
@@ -1171,6 +1174,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
               style={{ flex: '0 0 33.3333%' }}
             >
               <AuthenticatedImage
+                // Neighbour prefetch — still ahead of the grid backlog, since
+                // it is one arrow-key press from being on screen (#1287).
+                fetchPriority="high"
                 // Same preview-prefer-with-fallback logic as the
                 // off-screen tile above (#492).
                 src={lightboxImageUrl(photo)}
