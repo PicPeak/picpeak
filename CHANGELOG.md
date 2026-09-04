@@ -5,6 +5,22 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.123.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.7-beta.0...v3.123.0-beta.0) (2026-09-04)
+
+
+### Features
+
+* **crm:** newsletter campaigns behind a newsletters flag ([#1264](https://github.com/PicPeak/picpeak/issues/1264)) ([fc59540](https://github.com/PicPeak/picpeak/commit/fc595409b48960ed2988f4bea1a07260f96e24b6))
+* **email:** global signature footer from the business profile ([#1264](https://github.com/PicPeak/picpeak/issues/1264)) ([b6e40b9](https://github.com/PicPeak/picpeak/commit/b6e40b9a2ac48571fcb11a9a0688f61cecec56f4))
+
+
+### Bug Fixes
+
+* **cms:** enable the Tailwind typography plugin so prose classes work ([#1288](https://github.com/PicPeak/picpeak/issues/1288)) ([de3a7f7](https://github.com/PicPeak/picpeak/commit/de3a7f70bf74e477b152040c63975815854a477e))
+* **gallery:** bound concurrent image fetches and abort them on unmount ([#1287](https://github.com/PicPeak/picpeak/issues/1287)) ([4afe7a6](https://github.com/PicPeak/picpeak/commit/4afe7a6f0862fff8fd9cf9aae0249be7c90d6ff1))
+* **gallery:** show a guest their own likes when feedback sharing is off ([#1286](https://github.com/PicPeak/picpeak/issues/1286)) ([8f98f6b](https://github.com/PicPeak/picpeak/commit/8f98f6bdec4b719815a256afb257648c11bdb552))
+* **security:** make the CSS sanitizer's remote-URL block actually block ([a7d0972](https://github.com/PicPeak/picpeak/commit/a7d0972b1323b173a190bfb8cd05fa235a2d96f6))
+
 ## [3.122.7-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.6-beta.0...v3.122.7-beta.0) (2026-09-03)
 
 
