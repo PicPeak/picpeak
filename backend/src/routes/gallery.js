@@ -1022,10 +1022,17 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, noStoreCache, asy
     // frontend can seed correctly. Prefers req.guest.id when a verified
     // guest token is present (per-person identity), falls back to the
     // IP+UA hash that the original like was recorded under — same model
-    // the /my-feedback endpoint uses. Skipped when feedback is hidden
-    // from guests.
+    // the /my-feedback endpoint uses.
+    //
+    // NOT gated on showFeedbackToGuests (#1286). This query is filtered to
+    // the VIEWER — by guest_id or by their own identifier — so what it
+    // returns is their own selection, not shared aggregate data. Gating it
+    // emptied every heart the guest had set themselves on a gallery with
+    // sharing off, which reads as the gallery silently discarding their
+    // choices. Same reasoning the colour-label block below already applies;
+    // this was the one per-viewer field that disagreed with it.
     const likedPhotoIds = new Set();
-    if (showFeedbackToGuests && photos.length > 0) {
+    if (photos.length > 0) {
       const likeQuery = db('photo_feedback')
         // Hidden rows are not there, for the viewer's OWN feedback as much as
         // anyone's (#1150). getPhotoFeedback drops them, the filter drops them
@@ -1405,7 +1412,9 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, noStoreCache, asy
           // Per-viewer flag (#590 follow-up) — true when this viewer has
           // an active like row for this photo, false otherwise. Lets the
           // grid seed its lifted likedPhotoIds correctly on hard refresh.
-          is_liked: showFeedbackToGuests ? likedPhotoIds.has(photo.id) : false,
+          // Survives show_feedback_to_guests being off (#1286): the viewer's
+          // own heart is theirs, and the like_count beside it stays hidden.
+          is_liked: likedPhotoIds.has(photo.id),
           favorite_count: showFeedbackToGuests ? (photo.favorite_count || 0) : 0,
           // Colour labels (#1044). The COUNT is aggregate data and follows
           // show_feedback_to_guests like its siblings; the viewer's OWN label
