@@ -54,7 +54,14 @@
 .prose pre code {
   background-color: transparent;
   padding: 0;
-  font-size: 0.875em;
+  /*
+   * `inherit`, not a second 0.875em. This rule predates the typography
+   * plugin, which now sizes the <pre> itself to 0.875em (0.857em under
+   * prose-sm) and deliberately leaves its `pre code` at `inherit`. Keeping a
+   * multiplier here scaled block code TWICE — 12.25px in base prose, 10.5px
+   * in prose-sm, against 14px body.
+   */
+  font-size: inherit;
   color: inherit;
 }
 
