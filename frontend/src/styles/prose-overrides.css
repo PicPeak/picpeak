@@ -160,3 +160,35 @@
      consumer that forgets it from falling back to Tailwind's blue. */
   --tw-prose-links: var(--color-accent, var(--color-text));
 }
+
+/* ---------------------------------------------------------------------------
+ * H5 and H6 (#1288 review round 2)
+ *
+ * @tailwindcss/typography defines heading typography for h1-h4 only. Preflight
+ * still resets h5 and h6 to inherit size and weight, so those two toolbar
+ * buttons stayed exactly as inert as the four this PR fixed — the same bug,
+ * two levels down.
+ *
+ * Sized to continue the plugin's own scale (h4 is 1em/700) rather than
+ * inventing a new one: h5 slightly under body, h6 smaller and uppercase so it
+ * still reads as a heading at that size.
+ * ------------------------------------------------------------------------ */
+.prose :where(h5):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  color: var(--tw-prose-headings);
+  font-size: 0.9em;
+  font-weight: 600;
+  margin-top: 1.6em;
+  margin-bottom: 0.5em;
+  line-height: 1.5;
+}
+
+.prose :where(h6):not(:where([class~="not-prose"], [class~="not-prose"] *)) {
+  color: var(--tw-prose-headings);
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-top: 1.6em;
+  margin-bottom: 0.5em;
+  line-height: 1.5;
+}
