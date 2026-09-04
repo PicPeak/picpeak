@@ -31,6 +31,7 @@ describe('GET /api/public/newsletter/unsubscribe/:token', () => {
 
   const MOUNT = '/api/public/newsletter';
   const get = (token) => request(app).get(`${MOUNT}/unsubscribe/${token}`);
+  const post = (token) => request(app).post(`${MOUNT}/unsubscribe/${token}`);
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
@@ -43,6 +44,9 @@ describe('GET /api/public/newsletter/unsubscribe/:token', () => {
   });
 
   beforeEach(async () => {
+    // Cleared too: several cases assert on the presence or ABSENCE of a
+    // consent entry, which earlier cases in this file also write.
+    await db('activity_logs').del();
     await db('customer_accounts').del();
     const [id] = await db('customer_accounts').insert({
       email: 'sub@example.com', is_active: 1, marketing_opt_out: 0,
@@ -52,7 +56,7 @@ describe('GET /api/public/newsletter/unsubscribe/:token', () => {
   });
 
   it('opts the customer out and stamps the timestamp', async () => {
-    const res = await get(newsletterService.unsubscribeToken(customerId));
+    const res = await post(newsletterService.unsubscribeToken(customerId));
 
     expect(res.status).toBe(200);
     const row = await db('customer_accounts').where({ id: customerId }).first();
@@ -62,22 +66,22 @@ describe('GET /api/public/newsletter/unsubscribe/:token', () => {
 
   it('needs no authentication', async () => {
     // No cookie, no header, no session — a mail client on any device.
-    expect((await get(newsletterService.unsubscribeToken(customerId))).status).toBe(200);
+    expect((await post(newsletterService.unsubscribeToken(customerId))).status).toBe(200);
   });
 
   it('is idempotent — clicking twice is not an error', async () => {
     const token = newsletterService.unsubscribeToken(customerId);
-    const first = await get(token);
-    const second = await get(token);
+    const first = await post(token);
+    const second = await post(token);
 
     expect(second.status).toBe(first.status);
     expect(second.text).toBe(first.text);
   });
 
   it('answers identically for a valid token, a forged one and an unknown id', async () => {
-    const valid = await get(newsletterService.unsubscribeToken(customerId));
-    const forged = await get('dGFtcGVyZWQtdG9rZW4');
-    const unknown = await get(newsletterService.unsubscribeToken(987654));
+    const valid = await post(newsletterService.unsubscribeToken(customerId));
+    const forged = await post('dGFtcGVyZWQtdG9rZW4');
+    const unknown = await post(newsletterService.unsubscribeToken(987654));
 
     for (const res of [forged, unknown]) {
       expect(res.status).toBe(valid.status);
@@ -87,7 +91,7 @@ describe('GET /api/public/newsletter/unsubscribe/:token', () => {
   });
 
   it('leaves other customers untouched when the token is forged', async () => {
-    await get('bm90LWEtcmVhbC10b2tlbg');
+    await post('bm90LWEtcmVhbC10b2tlbg');
     const row = await db('customer_accounts').where({ id: customerId }).first();
     expect(row.marketing_opt_out).toBeFalsy();
   });
@@ -97,7 +101,7 @@ describe('GET /api/public/newsletter/unsubscribe/:token', () => {
     const sig = Buffer.from(token, 'base64url').toString('utf8').split('.')[1];
     const forged = Buffer.from(`${customerId + 1}.${sig}`, 'utf8').toString('base64url');
 
-    await get(forged);
+    await post(forged);
 
     // Neither the target nor the spliced neighbour is changed.
     expect((await db('customer_accounts').where({ id: customerId }).first()).marketing_opt_out)
@@ -105,7 +109,7 @@ describe('GET /api/public/newsletter/unsubscribe/:token', () => {
   });
 
   it('renders a script-free confirmation page', async () => {
-    const res = await get(newsletterService.unsubscribeToken(customerId));
+    const res = await post(newsletterService.unsubscribeToken(customerId));
 
     expect(res.headers['content-type']).toMatch(/text\/html/);
     expect(res.text).toContain('<!DOCTYPE html>');
@@ -115,22 +119,61 @@ describe('GET /api/public/newsletter/unsubscribe/:token', () => {
   });
 
   it('tells the reader transactional mail is unaffected', async () => {
-    const res = await get(newsletterService.unsubscribeToken(customerId));
+    const res = await post(newsletterService.unsubscribeToken(customerId));
     expect(res.text).toMatch(/transactional/i);
   });
 
   it('is not indexable', async () => {
-    const res = await get(newsletterService.unsubscribeToken(customerId));
+    const res = await post(newsletterService.unsubscribeToken(customerId));
     expect(res.headers['x-robots-tag']).toMatch(/noindex/);
     expect(res.headers['cache-control']).toMatch(/no-store/);
   });
 
   it('writes an activity log entry sourced to the link', async () => {
-    await get(newsletterService.unsubscribeToken(customerId));
+    await post(newsletterService.unsubscribeToken(customerId));
 
     const log = await db('activity_logs')
       .where({ activity_type: 'customer_marketing_opt_out' }).orderBy('id', 'desc').first();
     expect(log).toBeTruthy();
     expect(JSON.parse(log.metadata)).toMatchObject({ source: 'link', optOut: true });
+  });
+
+  // A GET must not change consent. Mail-security scanners, link prefetchers
+  // and corporate gateways follow every URL in a message before a human sees
+  // it — a mutating GET would unsubscribe much of a campaign automatically.
+  describe('GET only asks', () => {
+    it('does not change consent', async () => {
+      const res = await get(newsletterService.unsubscribeToken(customerId));
+
+      expect(res.status).toBe(200);
+      const row = await db('customer_accounts').where({ id: customerId }).first();
+      expect(row.marketing_opt_out).toBeFalsy();
+      expect(row.marketing_opt_out_at).toBeNull();
+    });
+
+    it('offers a form that posts back to the same token', async () => {
+      const token = newsletterService.unsubscribeToken(customerId);
+      const res = await get(token);
+
+      expect(res.text).toMatch(/<form[^>]+method="POST"/i);
+      expect(res.text).toContain(`/unsubscribe/${token}`);
+    });
+
+    it('writes no activity entry', async () => {
+      await get(newsletterService.unsubscribeToken(customerId));
+      const logs = await db('activity_logs')
+        .where({ activity_type: 'customer_marketing_opt_out' });
+      expect(logs).toHaveLength(0);
+    });
+
+    it('renders the same page for a forged token', async () => {
+      const valid = await get(newsletterService.unsubscribeToken(customerId));
+      const forged = await get('bm90LWEtdG9rZW4');
+      expect(forged.status).toBe(valid.status);
+      // Only the form action differs — it echoes the token back.
+      expect(forged.text.replace(/action="[^"]*"/, '')).toBe(
+        valid.text.replace(/action="[^"]*"/, '')
+      );
+    });
   });
 });

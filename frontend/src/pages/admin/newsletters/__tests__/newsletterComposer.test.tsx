@@ -44,6 +44,16 @@ vi.mock('../../../../components/admin/EmailTemplateEditor', () => ({
   ),
 }));
 
+// The composer gates manual recipient mode on `customers.view` (#1264
+// review), so it now consults PermissionsContext.
+let grantedPermissions = ['newsletters.view', 'newsletters.send', 'customers.view'];
+vi.mock('../../../../contexts/PermissionsContext', () => ({
+  usePermissions: () => ({
+    hasPermission: (p: string) => grantedPermissions.includes(p),
+    isLoading: false,
+  }),
+}));
+
 const confirmSpy = vi.fn(async () => true);
 vi.mock('../../../../components/common', async () => {
   const actual = await vi.importActual<any>('../../../../components/common');
@@ -122,6 +132,7 @@ function renderComposer() {
 
 describe('newsletter composer', () => {
   beforeEach(() => {
+    grantedPermissions = ['newsletters.view', 'newsletters.send', 'customers.view'];
     campaignFixture = { ...baseCampaign };
     resolution = {
       recipientCount: 42, skippedOptOut: 3, skippedNoEmail: 0,
@@ -226,5 +237,17 @@ describe('newsletter composer', () => {
 
     expect(await screen.findByText(/can no longer be edited/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Queue campaign/i })).not.toBeInTheDocument();
+  });
+
+  it('hides manual mode from a role that cannot read customers', async () => {
+    // The picker reads /admin/customers, which needs `customers.view`. Showing
+    // the radio to a newsletters-only role produced an empty list with no
+    // explanation (#1264 review).
+    grantedPermissions = ['newsletters.view', 'newsletters.send'];
+    renderComposer();
+    await screen.findByTestId('recipient-summary');
+
+    expect(screen.queryByRole('radio', { name: /Pick customers/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /All active customers/i })).toBeInTheDocument();
   });
 });

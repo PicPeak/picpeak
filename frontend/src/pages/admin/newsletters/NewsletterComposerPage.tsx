@@ -25,6 +25,7 @@ import {
   newslettersService, type Campaign, type RecipientMode,
 } from '../../../services/newsletters.service';
 import { customerAdminService } from '../../../services/customerAdmin.service';
+import { usePermissions } from '../../../contexts/PermissionsContext';
 
 /** Variables the server substitutes per recipient. */
 const VARIABLES = [
@@ -49,6 +50,11 @@ export const NewsletterComposerPage: React.FC = () => {
   const [draft, setDraft] = useState<Campaign | null>(null);
   useEffect(() => { if (data?.campaign) setDraft(data.campaign); }, [data]);
 
+  // The manual picker reads /admin/customers, which is gated on
+  // `customers.view` — a role holding only the newsletter permissions would
+  // get an empty list with no explanation (#1264 review).
+  const { hasPermission } = usePermissions();
+  const canPickCustomers = hasPermission('customers.view');
   const [testEmail, setTestEmail] = useState('');
   const [previewHtml, setPreviewHtml] = useState('');
   const [showCss, setShowCss] = useState(false);
@@ -68,7 +74,7 @@ export const NewsletterComposerPage: React.FC = () => {
   const { data: customers } = useQuery({
     queryKey: ['customers-for-newsletter'],
     queryFn: () => customerAdminService.list(),
-    enabled: draft?.recipientMode === 'manual',
+    enabled: draft?.recipientMode === 'manual' && canPickCustomers,
   });
 
   const save = useMutation({
@@ -288,7 +294,9 @@ export const NewsletterComposerPage: React.FC = () => {
           </div>
 
           <div className="space-y-2 mb-4">
-            {(['all_active', 'manual'] as RecipientMode[]).map((mode) => (
+            {(['all_active', 'manual'] as RecipientMode[])
+              .filter((mode) => mode === 'all_active' || canPickCustomers)
+              .map((mode) => (
               <label key={mode} className="flex items-start gap-2 cursor-pointer">
                 <input
                   type="radio"

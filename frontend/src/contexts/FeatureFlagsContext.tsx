@@ -135,6 +135,9 @@ function applyDependencyRules(flags: FeatureFlags): FeatureFlags {
     // NOTE: taxReport is intentionally NOT here anymore — the Tax export
     // moved permanently into the Accounting section (its own master).
     // future siblings: || out.messaging
+    // #1264 — newsletters is a Clients child; without it here the staged
+    // sidebar preview disagrees with the server until Save.
+    || out.newsletters
   );
   return out;
 }

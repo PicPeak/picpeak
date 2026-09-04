@@ -71,7 +71,11 @@ exports.up = async function (knex) {
       // Staggering rate. Clamped 1..120 at the service layer — a provider
       // limit (SES 14/s, many shared hosts 100/h) is the real constraint.
       t.integer('send_rate_per_minute').notNullable().defaultTo(20);
-      t.integer('created_by_admin_id').unsigned().references('id').inTable('admin_users');
+      // SET NULL, matching the ownership-reference invariant elsewhere: on
+      // Postgres the default NO ACTION would make deleteAdminUser() fail
+      // permanently once that admin had created a campaign.
+      t.integer('created_by_admin_id').unsigned()
+        .references('id').inTable('admin_users').onDelete('SET NULL');
       t.timestamp('test_sent_at');
       t.timestamp('queued_at');
       t.timestamp('completed_at');

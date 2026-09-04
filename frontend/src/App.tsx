@@ -356,12 +356,13 @@ function App() {
                           <Route element={<RequireFeature flag="crmDevelopment" />}>
                             <Route path="development" element={<CrmDevelopmentPage />} />
                           </Route>
-                          {/* Default: send /admin/clients (no sub-path) to
-                              the first enabled sub-feature. accounts comes
-                              first because it predates the others. The empty
-                              state inside ClientsLayout handles "parent on,
-                              all children off". */}
-                          <Route index element={<Navigate to="/admin/clients/accounts" replace />} />
+                          {/* No index redirect here: ClientsLayout picks the
+                              first sub-feature this user can actually reach,
+                              which a fixed /accounts target could not — a
+                              newsletters-only role has no customers.view and
+                              would bounce straight back out (#1264). It also
+                              owns the "parent on, all children off" empty
+                              state. */}
                         </Route>
                       </Route>
 

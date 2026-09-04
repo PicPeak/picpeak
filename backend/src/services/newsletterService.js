@@ -242,14 +242,17 @@ function verifyUnsubscribeToken(token) {
 }
 
 async function unsubscribeUrl(customerId) {
-  // The API origin, not the frontend one. `/api/public/newsletter/...` is
-  // served by the backend, and on a split-origin deployment (API_URL set
-  // separately from FRONTEND_URL) that path does not exist on the frontend
-  // host — the link in the mail would 404. getApiBaseUrl also gives an
-  // absolute URL, where the frontend resolver can return '' and leave a
-  // relative href that is meaningless in an email client.
-  const base = (await getApiBaseUrl()) || (await getFrontendBaseUrl()) || '';
-  return `${base}/api/public/newsletter/unsubscribe/${unsubscribeToken(customerId)}`;
+  // The API base, not the frontend origin: `/public/newsletter/...` is served
+  // by the backend, and on a split-origin deployment that path does not exist
+  // on the frontend host.
+  //
+  // getApiBaseUrl already ENDS IN /api — it returns `<origin>/api` when
+  // API_URL is unset, and the documented API_URL values
+  // (https://photos.example.com/api) include it too. Appending another
+  // `/api/...` here produced `<origin>/api/api/public/...`, so every
+  // unsubscribe link 404'd on both same-origin and split-origin installs.
+  const base = (await getApiBaseUrl()) || `${(await getFrontendBaseUrl()) || ''}/api`;
+  return `${base}/public/newsletter/unsubscribe/${unsubscribeToken(customerId)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -319,11 +322,15 @@ async function renderForRecipient(campaign, customer, options = {}) {
   // opt-out design rests on, and a body that simply omits {{unsubscribe_url}}
   // must not be able to break it. Appended only when the author did not place
   // it themselves, so a deliberate placement still wins.
+  // The URL is printed as TEXT beside the link, not only as an href: the
+  // plain-text alternative is derived with htmlToText, which drops <a> tags
+  // and their href entirely — a text-only recipient would have been left
+  // with the words "Unsubscribe from these emails" and no way to do it.
   const withUnsubscribe = safeBody.includes('{{unsubscribe_url}}')
     ? body
     : `${body}\n<p style="font-size:11px;color:#888888;margin-top:16px;">`
       + `<a href="${escapeAttribute(unsubUrl)}" style="color:#888888;">`
-      + 'Unsubscribe from these emails</a></p>';
+      + `Unsubscribe from these emails</a><br />${escapeAttribute(unsubUrl)}</p>`;
 
   const styled = css ? `<style type="text/css">${css}</style>\n${withUnsubscribe}` : withUnsubscribe;
 
@@ -563,11 +570,25 @@ async function cancel(campaignId, adminId) {
       await trx('email_campaign_recipients')
         .where({ campaign_id: campaign.id })
         .whereIn('email_queue_id', pendingIds)
+        // Only rows still waiting. A recipient that already exhausted its
+        // retries has status 'failed' while its queue row sits 'pending' —
+        // rewriting that to 'cancelled' erased the failure from the audit
+        // rows while `failed_count`, computed from them, kept counting it.
+        .whereIn('status', ['queued'])
         .update({ status: 'cancelled' });
     }
 
+    // Counters are derived from the recipient rows, so recompute them here
+    // rather than leaving a campaign whose failed_count disagrees with its
+    // own audit trail.
+    const remaining = await trx('email_campaign_recipients')
+      .where({ campaign_id: campaign.id })
+      .select('status');
+
     await trx('email_campaigns').where({ id: campaign.id }).update({
       status: 'cancelled',
+      sent_count: remaining.filter((r) => r.status === 'sent').length,
+      failed_count: remaining.filter((r) => r.status === 'failed').length,
       completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
