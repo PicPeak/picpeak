@@ -8,6 +8,9 @@ const {
 } = require('../utils/businessHours');
 const { hasColumnCached } = require('../utils/schemaCache');
 const emailWebhookTransport = require('./emailWebhookTransport');
+// Migration 198 — the global email footer signature is read from the
+// business profile. No cycle: businessProfileService only pulls db + utils.
+const businessProfileService = require('./businessProfileService');
 
 /**
  * The From identity for an outbound message (#1225).
@@ -230,6 +233,137 @@ function darkenColor(hex, amount = 0.15) {
   return `#${(1 << 24 | Math.round(r) << 16 | Math.round(g) << 8 | Math.round(b)).toString(16).slice(1)}`;
 }
 
+// ---- global email footer signature (migration 198, issue #1264) --------
+//
+// Built from the business_profile issuer block — the address, contact rows
+// and legal line the operator already maintains for their invoices — so it
+// appears under EVERY mail this install sends without a single template
+// being touched. Returns '' when the admin has not enabled it, which keeps
+// the footer byte-identical to what pre-198 installs render.
+
+// VAT is the one value that needs a label to mean anything. en/de only;
+// every other locale falls back to the English label, same as the rest of
+// the wrapper chrome ("All rights reserved").
+const SIGNATURE_VAT_LABELS = { en: 'VAT ID', de: 'USt-IdNr.' };
+
+// tel: hrefs take digits and a leading +; strip everything else so a pasted
+// "+41 79 123 45 67 (mobile only)" can't smuggle a scheme or a quote into
+// the attribute.
+function signatureTelHref(raw) {
+  const cleaned = String(raw || '').replace(/[^\d+]/g, '');
+  return cleaned ? `tel:${cleaned}` : null;
+}
+
+// Admins type "example.com" as often as "https://example.com". Anything not
+// already http(s) gets an https:// prefix — which also means a pasted
+// `javascript:` value becomes an inert https URL instead of a live scheme.
+function signatureWebsiteHref(raw) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return null;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+function renderSignatureLink(href, text, color) {
+  return `<a href="${escapeHtml(href)}" style="color:${color};text-decoration:none;">${escapeHtml(text)}</a>`;
+}
+
+/**
+ * @param {object|null} signature  businessProfileService.getEmailSignature()
+ * @param {object} opts  { mutedTextColor, brandingCompanyName, language }
+ * @returns {string} HTML rows for the footer <td>, or '' when disabled.
+ */
+function renderEmailSignature(signature, { mutedTextColor, brandingCompanyName, language }) {
+  if (!signature) return '';
+
+  const lineStyle = `color:${mutedTextColor};font-size:12px;line-height:18px;margin:4px 0;`;
+  const rows = [];
+
+  // The footer above already prints the BRANDING company name. Only repeat
+  // the profile's when the operator has actually given it a different legal
+  // name ("Foto Müller" vs "Müller Fotografie GmbH").
+  if (signature.companyName && signature.companyName !== brandingCompanyName) {
+    rows.push(`<p style="${lineStyle}">${escapeHtml(signature.companyName)}</p>`);
+  }
+
+  // A literal middle dot, not `&middot;`: the plain-text part of every mail
+  // is derived from this HTML by htmlToText, which decodes only the five
+  // core entities — an `&middot;` would survive verbatim into the text body.
+  if (signature.addressLines.length) {
+    rows.push(`<p style="${lineStyle}">${signature.addressLines.map(escapeHtml).join(' \u00b7 ')}</p>`);
+  }
+
+  const contact = [];
+  for (const number of [signature.phone, signature.mobile]) {
+    const href = signatureTelHref(number);
+    if (href) contact.push(renderSignatureLink(href, number, mutedTextColor));
+  }
+  if (signature.email) {
+    contact.push(renderSignatureLink(`mailto:${signature.email}`, signature.email, mutedTextColor));
+  }
+  const website = signatureWebsiteHref(signature.website);
+  if (website) contact.push(renderSignatureLink(website, signature.website, mutedTextColor));
+  if (contact.length) {
+    rows.push(`<p style="${lineStyle}">${contact.join(' \u00b7 ')}</p>`);
+  }
+
+  if (signature.vatId) {
+    const label = SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
+    rows.push(`<p style="${lineStyle}">${escapeHtml(label)}: ${escapeHtml(signature.vatId)}</p>`);
+  }
+
+  // Free text (Handelsregister line, disclaimer, …). Plain text, never
+  // HTML — escaped, then newlines become <br> so a pasted 3-line legal
+  // notice keeps its shape.
+  if (signature.extra) {
+    const extra = escapeHtml(signature.extra).replace(/\r\n|\r|\n/g, '<br />');
+    rows.push(`<p style="${lineStyle}font-size:11px;">${extra}</p>`);
+  }
+
+  if (!rows.length) return '';
+
+  return `
+              <div style="margin:15px 0 5px;padding-top:15px;border-top:1px solid #eeeeee;">
+                ${rows.join('\n                ')}
+              </div>`;
+}
+
+/**
+ * The signature as plain text, for the text/plain MIME alternative.
+ *
+ * `sendTemplateEmail` uses a template's own `body_text` when it has one — and
+ * the seeded templates all do — so the text part is NOT derived from the
+ * wrapped HTML and would otherwise carry no signature at all. A text-only
+ * client, and the preview's Text tab, then showed a mail with no address and
+ * no legal line while the HTML part had both.
+ *
+ * Returns '' when the signature is disabled, so callers can append
+ * unconditionally.
+ */
+function renderEmailSignatureText(signature, { brandingCompanyName, language } = {}) {
+  if (!signature) return '';
+
+  const lines = [];
+  if (signature.companyName && signature.companyName !== brandingCompanyName) {
+    lines.push(signature.companyName);
+  }
+  if (signature.addressLines.length) {
+    lines.push(signature.addressLines.join(' \u00b7 '));
+  }
+  const contact = [signature.phone, signature.mobile, signature.email, signature.website]
+    .map((v) => (v || '').trim())
+    .filter(Boolean);
+  if (contact.length) lines.push(contact.join(' \u00b7 '));
+  if (signature.vatId) {
+    const label = SIGNATURE_VAT_LABELS[language] || SIGNATURE_VAT_LABELS.en;
+    lines.push(`${label}: ${signature.vatId}`);
+  }
+  if (signature.extra) lines.push(signature.extra);
+
+  if (!lines.length) return '';
+  // A visual separator, the plain-text equivalent of the footer's top border.
+  return `\n\n--\n${lines.join('\n')}`;
+}
+
 // Wrap HTML body in the styled email template with header, footer, and logo
 async function wrapEmailHtml(htmlBody, subject, language = 'en') {
   // Email colour palette. The two original settings (email_primary_color and
@@ -291,6 +425,14 @@ async function wrapEmailHtml(htmlBody, subject, language = 'en') {
   const logoPath = (typeof logoUrl === 'string' && logoUrl.trim()) ? logoUrl : '/picpeak-logo-transparent.png';
   const logoFullUrl = `${frontendUrl}${logoPath.startsWith('/') ? '' : '/'}${logoPath}`;
   logger.debug('Email logo URL:', { frontendUrl, logoPath, logoFullUrl });
+
+  // Migration 198 — global footer signature from the business profile.
+  // Memoised for 60 s in the service, so a queue tick sending ten mails
+  // reads the row once. Never throws; returns null when disabled.
+  const signatureHtml = renderEmailSignature(
+    await businessProfileService.getEmailSignature(),
+    { mutedTextColor, brandingCompanyName: companyName, language }
+  );
 
   const year = new Date().getFullYear();
   // PR review follow-up — Outlook (Word engine) and Apple Mail under some
@@ -438,7 +580,7 @@ async function wrapEmailHtml(htmlBody, subject, language = 'en') {
           <tr>
             <td align="center" bgcolor="${secondaryColor}" class="email-footer" style="background-color:${secondaryColor};padding:30px;text-align:center;border-top:1px solid #eeeeee;">
               <img src="${logoFullUrl}" alt="${companyName}" width="120" style="max-width:120px;height:auto;opacity:0.8;margin-bottom:15px;border:0;">
-              <p style="color:${mutedTextColor};font-size:14px;margin:5px 0;">${companyName}</p>
+              <p style="color:${mutedTextColor};font-size:14px;margin:5px 0;">${companyName}</p>${signatureHtml}
               <p style="font-size:12px;color:#999999;margin:5px 0;">© ${year} ${companyName}. All rights reserved.</p>
             </td>
           </tr>
@@ -736,6 +878,28 @@ async function processTemplate(template, variables, language = 'en') {
 }
 
 // Send email using template
+/**
+ * Resolve the signature and render its plain-text form for `language`.
+ * Never throws — a footer must not be able to fail a send.
+ */
+async function buildSignatureTextFor(language) {
+  try {
+    const signature = await businessProfileService.getEmailSignature();
+    if (!signature) return '';
+    let brandingCompanyName = 'PicPeak';
+    try {
+      const row = await db('app_settings').where('setting_key', 'branding_company_name').first();
+      if (row && row.setting_value) {
+        try { brandingCompanyName = JSON.parse(row.setting_value); } catch (_) { brandingCompanyName = row.setting_value; }
+      }
+    } catch (_) { /* fall back to the default name */ }
+    return renderEmailSignatureText(signature, { brandingCompanyName, language });
+  } catch (error) {
+    logger.warn('Could not render the plain-text email signature', { error: error.message });
+    return '';
+  }
+}
+
 async function sendTemplateEmail(to, templateKey, variables) {
   try {
     // Webhook transport (#1225) replaces SMTP entirely when configured, so an
@@ -805,7 +969,12 @@ async function sendTemplateEmail(to, templateKey, variables) {
       cc: ccList,
       subject: subject,
       html: htmlBody,
-      text: textBody || htmlToText(htmlBody),
+      // When the template supplies its own body_text the text part is not
+      // derived from the wrapped HTML, so the signature has to be appended
+      // here or the text/plain alternative silently omits it (#1264 review).
+      text: textBody
+        ? textBody + await buildSignatureTextFor(language)
+        : htmlToText(htmlBody),
       attachments,
     };
     const info = viaWebhook
@@ -1274,6 +1443,8 @@ module.exports = {
   stopEmailQueueProcessor,
   testEmailConnection,
   wrapEmailHtml,
+  renderEmailSignatureText,
+  buildSignatureTextFor,
   safeTemplateReplace,
   getSupportEmail,
   htmlToText

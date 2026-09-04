@@ -85,6 +85,11 @@ const ALLOWED_PROFILE_FIELDS = [
   'business_hours',
   // Master switch for the scheduled-email business-hours floor (mig 114).
   'scheduled_email_floor_enabled',
+  // Global email footer signature (migration 198). The toggle plus one
+  // free-text legal line; every other value in the signature is read from
+  // the address/contact columns above, so there is no second copy.
+  'email_signature_enabled',
+  'email_signature_extra',
 ];
 
 const ALLOWED_BANK_FIELDS = [
@@ -125,6 +130,28 @@ function normaliseCountryCode(cc) {
   return String(cc).trim().toUpperCase().slice(0, 2);
 }
 
+/**
+ * Coerce an API boolean, honouring the string forms express-validator's
+ * `isBoolean()` accepts.
+ *
+ * `Boolean('false')` and `Boolean('0')` are both TRUE, so a URL-encoded or
+ * form-encoded client sending `emailSignatureEnabled=false` passed validation
+ * and then stored the toggle as ENABLED — the one value it was trying to
+ * clear. JSON clients were unaffected, which is why it was easy to miss.
+ *
+ * Applied to every boolean in this file, not just the new one: the PDF
+ * visibility toggles, the scheduled-email floor and the bank-account default
+ * flag all shared the coercion and therefore the bug.
+ */
+function toBoolean(value) {
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === 'false' || v === '0') return false;
+    if (v === 'true' || v === '1') return true;
+  }
+  return Boolean(value);
+}
+
 function sanitiseProfilePayload(payload) {
   const updates = pickFields(payload, ALLOWED_PROFILE_FIELDS);
 
@@ -142,7 +169,8 @@ function sanitiseProfilePayload(payload) {
   // when the admin pastes from a printed letterhead.
   for (const field of ['company_name', 'address_line1', 'address_line2',
     'city', 'state', 'country_name', 'phone', 'mobile', 'email', 'website',
-    'vat_id', 'tax_id', 'vat_label', 'footer_line', 'logo_path']) {
+    'vat_id', 'tax_id', 'vat_label', 'footer_line', 'logo_path',
+    'email_signature_extra']) {
     if (typeof updates[field] === 'string') {
       updates[field] = updates[field].trim();
     }
@@ -154,7 +182,7 @@ function sanitiseProfilePayload(payload) {
     'pdf_quote_show_net_days', 'pdf_quote_show_skonto',
   ]) {
     if (updates[field] !== undefined) {
-      updates[field] = formatBoolean(Boolean(updates[field]));
+      updates[field] = formatBoolean(toBoolean(updates[field]));
     }
   }
   // Folding-mark enum — whitelisted set. Garbage values fall back to
@@ -195,7 +223,12 @@ function sanitiseProfilePayload(payload) {
     }
   }
   if (updates.scheduled_email_floor_enabled !== undefined) {
-    updates.scheduled_email_floor_enabled = formatBoolean(Boolean(updates.scheduled_email_floor_enabled));
+    updates.scheduled_email_floor_enabled = formatBoolean(toBoolean(updates.scheduled_email_floor_enabled));
+  }
+  // Migration 198 — email footer signature master switch. Same
+  // explicit-undefined shape as the PDF toggles so `false` persists.
+  if (updates.email_signature_enabled !== undefined) {
+    updates.email_signature_enabled = formatBoolean(toBoolean(updates.email_signature_enabled));
   }
 
   return updates;
@@ -214,7 +247,7 @@ function sanitiseBankPayload(payload) {
     updates.currency = normaliseCurrency(updates.currency);
   }
   if (updates.is_default !== undefined) {
-    updates.is_default = formatBoolean(Boolean(updates.is_default));
+    updates.is_default = formatBoolean(toBoolean(updates.is_default));
   }
   for (const field of ['label', 'account_holder']) {
     if (typeof updates[field] === 'string') {
@@ -263,6 +296,10 @@ async function updateProfile(payload, adminId) {
   await withRetry(async () => {
     await db('business_profile').where({ id: 1 }).update(updates);
   });
+
+  // The email footer signature is built from these same columns, so any
+  // profile write invalidates it — not just the two signature fields.
+  invalidateEmailSignatureCache();
 
   logger.info('Business profile updated', {
     adminId,
@@ -369,9 +406,84 @@ async function resolveBankAccountForCurrency(currency, overrideId = null, conn =
   });
 }
 
+/**
+ * The global email footer signature (migration 198).
+ *
+ * `wrapEmailHtml` calls this on every single outgoing mail — transactional,
+ * preview, test and manual alike — so it is memoised for 60 s and cleared
+ * on any profile write. A queue tick sending 10 mails hits the DB once.
+ *
+ * Returns `null` when the toggle is off (or the table/column is missing on
+ * an install that hasn't migrated yet), which is the wrapper's signal to
+ * render exactly the footer it rendered before this feature existed.
+ *
+ * Every value is raw text — escaping is the renderer's job.
+ */
+const SIGNATURE_CACHE_TTL_MS = 60 * 1000;
+let signatureCache = { value: undefined, expiresAt: 0 };
+
+function invalidateEmailSignatureCache() {
+  signatureCache = { value: undefined, expiresAt: 0 };
+}
+
+function truthy(v) {
+  return v === true || v === 1 || v === '1' || v === 't' || v === 'true';
+}
+
+async function getEmailSignature() {
+  const now = Date.now();
+  if (signatureCache.value !== undefined && signatureCache.expiresAt > now) {
+    return signatureCache.value;
+  }
+
+  let signature = null;
+  try {
+    const profile = await withRetry(async () =>
+      db('business_profile').where({ id: 1 }).first()
+    );
+
+    if (profile && truthy(profile.email_signature_enabled)) {
+      // Same "PC City / Country" shape the PDF issuer block uses
+      // (pdfService.js:361). The locale-aware country lookup lives in the
+      // PDF renderer; an email footer takes the free-text `country_name`
+      // when the admin set one and the ISO code otherwise.
+      const cc = profile.country_code ? String(profile.country_code).toUpperCase() : '';
+      const pc = profile.postal_code || '';
+      const left = [cc && pc ? `${cc}-${pc}` : (pc || cc), profile.city || ''].filter(Boolean).join(' ');
+      const country = profile.country_name || '';
+      const cityCountry = [left, country].filter(Boolean).join(' / ');
+
+      signature = {
+        companyName: profile.company_name || '',
+        addressLines: [profile.address_line1, profile.address_line2, cityCountry]
+          .map((l) => (l == null ? '' : String(l).trim()))
+          .filter(Boolean),
+        phone: profile.phone || '',
+        mobile: profile.mobile || '',
+        email: profile.email || '',
+        website: profile.website || '',
+        vatId: profile.vat_id || '',
+        extra: profile.email_signature_extra || '',
+      };
+    }
+  } catch (error) {
+    // A missing table/column (pre-198 install mid-upgrade) must never break
+    // the mail itself — fall through to "no signature".
+    logger.warn('Could not read email signature from business profile', {
+      error: error.message,
+    });
+    signature = null;
+  }
+
+  signatureCache = { value: signature, expiresAt: now + SIGNATURE_CACHE_TTL_MS };
+  return signature;
+}
+
 module.exports = {
   getProfile,
   updateProfile,
+  getEmailSignature,
+  invalidateEmailSignatureCache,
   createBankAccount,
   updateBankAccount,
   deleteBankAccount,

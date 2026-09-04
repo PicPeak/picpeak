@@ -85,7 +85,10 @@ async function sendRecoveryEmail(toEmail, code, eventName = 'your gallery') {
     to: toEmail,
     subject,
     html: styledHtml,
-    text: `Your verification code is ${code}. It expires in 15 minutes.`,
+    // wrapEmailHtml gives the HTML part the signature; the text
+    // alternative needs it appended explicitly (#1264 review).
+    text: `Your verification code is ${code}. It expires in 15 minutes.`
+      + await require('./emailProcessor').buildSignatureTextFor('en'),
   };
   if (viaWebhook) {
     await emailWebhookTransport.send(mail);
