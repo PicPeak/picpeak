@@ -141,35 +141,14 @@ function sanitizeCampaignBody(html) {
     },
   })
     // sanitize-html keeps the style ATTRIBUTE contents verbatim. Clean each.
+    // sanitizeCSS blocks remote url() properly as of #1290 — it lexes the CSS
+    // rather than pattern-matching it, so the local pass this used to need is
+    // gone. Keeping a second copy would mean two definitions of "disallowed"
+    // drifting apart.
     .replace(/style="([^"]*)"/gi, (match, css) => {
       const { sanitized } = sanitizeCSS(css);
-      const cleaned = stripRemoteCssUrls(sanitized);
-      return cleaned ? `style="${cleaned.replace(/"/g, '')}"` : '';
+      return sanitized ? `style="${sanitized.replace(/"/g, '')}"` : '';
     });
-}
-
-/**
- * Remove every `url(...)` that is not an inline data: image.
- *
- * The shared `sanitizeCSS` *detects* a remote url() and prefixes it with a
- * `/* BLOCKED URL *\/` comment — but a CSS comment is stripped during
- * tokenization, so the declaration a mail client actually parses still
- * carries the live URL. Verified:
- *
- *   sanitizeCSS('.a{background:url(https://x/p.gif)}').sanitized
- *     → '.a{background:/* BLOCKED URL *\/ url(https://x/p.gif)}'
- *
- * In a newsletter that is a tracking pixel delivered to every recipient, so
- * this pass actually removes the token. Scoped to the newsletter path on
- * purpose: the same weakness affects gallery custom CSS, but changing shared
- * sanitizer behaviour is a separate change with its own blast radius.
- */
-function stripRemoteCssUrls(css) {
-  if (!css) return '';
-  return String(css)
-    .replace(/\/\*\s*BLOCKED URL\s*\*\//gi, '')
-    .replace(/url\s*\(\s*(['"]?)([^)'"]*)\1\s*\)/gi, (match, _quote, target) =>
-      (/^data:image\/(?:jpeg|jpg|png|gif|webp)/i.test(target.trim()) ? match : 'none'));
 }
 
 /**
@@ -178,7 +157,8 @@ function stripRemoteCssUrls(css) {
  * `javascript:` and every `url()` that is not a `data:` image.
  *
  * That is STRICTER than the issue's "https: images only" note — the shared
- * sanitizer allows no remote `url()` at all. Kept as-is rather than loosened:
+ * sanitizer allows no remote `url()` at all, and since #1290 it enforces
+ * that by lexing rather than by pattern-matching. Kept as-is rather than loosened:
  * a remote CSS url() in mail is a tracking pixel by another name, and a
  * campaign's images belong in `<img>` tags where the scheme filter sees them.
  *
@@ -187,7 +167,7 @@ function stripRemoteCssUrls(css) {
 function sanitizeCampaignCss(css) {
   if (!css) return { css: '', warnings: [] };
   const { sanitized, warnings } = sanitizeCSS(String(css));
-  return { css: stripRemoteCssUrls(sanitized), warnings };
+  return { css: sanitized, warnings };
 }
 
 // ---------------------------------------------------------------------------

@@ -286,6 +286,20 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     return () => {
       img.onload = null;
       img.onerror = null;
+      // Release the decoded bitmap (#1287). `imageRef` is what drawToCanvas
+      // reads, and it was never cleared — so a detached Image, and the
+      // decode behind it, stayed pinned by a live JS reference for the
+      // lifetime of the component. A decoded <img> in the document is
+      // evictable under memory pressure; one held by a ref is not.
+      //
+      // This matters at gallery scale because the grid is not virtualised:
+      // a 546-photo event mounts 546 of these and none of them ever unmount,
+      // so nothing was ever released. Dropping the src first lets the
+      // browser reclaim the decode without waiting for GC to notice.
+      if (imageRef.current === img) {
+        imageRef.current = null;
+      }
+      img.removeAttribute('src');
     };
   }, [imageSrc, useCanvasRendering, drawToCanvas, onLoad]);
 
