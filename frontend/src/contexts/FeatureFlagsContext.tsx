@@ -72,6 +72,10 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   workflows: false,
   // #1074 — off by default is the whole "zero behaviour change" guarantee.
   faces: false,
+  // Newsletter campaigns (migration 199, #1264). Off by default — an
+  // install that never turns this on never gains a nav entry or a way to
+  // mass-mail its customers.
+  newsletters: false,
 };
 
 export const FEATURE_FLAGS_QUERY_KEY = ['feature-flags'] as const;
@@ -131,6 +135,9 @@ function applyDependencyRules(flags: FeatureFlags): FeatureFlags {
     // NOTE: taxReport is intentionally NOT here anymore — the Tax export
     // moved permanently into the Accounting section (its own master).
     // future siblings: || out.messaging
+    // #1264 — newsletters is a Clients child; without it here the staged
+    // sidebar preview disagrees with the server until Save.
+    || out.newsletters
   );
   return out;
 }

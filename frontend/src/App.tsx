@@ -36,6 +36,11 @@ import {
   BillDetailPage,
 } from './pages/admin';
 import { CrmDevelopmentPage } from './pages/admin/clients/CrmDevelopmentPage';
+// Newsletter campaigns (#1264). Gated by the `newsletters` flag inside the
+// Clients block; the API refuses these routes independently when it is off.
+import { NewsletterListPage } from './pages/admin/newsletters/NewsletterListPage';
+import { NewsletterComposerPage } from './pages/admin/newsletters/NewsletterComposerPage';
+import { NewsletterDetailPage } from './pages/admin/newsletters/NewsletterDetailPage';
 import { TaxReportPage } from './pages/admin/clients/TaxReportPage';
 import { HoursLoggingPage } from './pages/admin/clients/HoursLoggingPage';
 // E.6 — Calendar page lazy-loaded so the ~200 KB FullCalendar bundle
@@ -272,7 +277,12 @@ function App() {
                           independently. */}
                       <Route element={<RequireFeature flag="clients" />}>
                         <Route path="clients" element={<ClientsLayout />}>
-                          <Route element={<RequireFeature flag="customerPortal" />}>
+                          {/* Newsletters also lives here: the customer detail
+                              page hosts the newsletter consent control, so a
+                              newsletter-only install (portal off) must still
+                              be able to open a customer to record a phone
+                              opt-out (#1264). */}
+                          <Route element={<RequireFeature anyOf={['customerPortal', 'newsletters']} />}>
                             <Route path="accounts" element={<CustomerManagementPage />} />
                             <Route path="accounts/:id" element={<CustomerDetailPage />} />
                           </Route>
@@ -334,16 +344,25 @@ function App() {
                               section. Keep this path as a redirect so old
                               bookmarks / links don't 404. */}
                           <Route path="tax-report" element={<Navigate to="/admin/accounting/tax-report" replace />} />
+                          {/* Newsletter campaigns (#1264) — gated by
+                              `newsletters`. Mass marketing mail to customer
+                              accounts, with per-customer opt-out. */}
+                          <Route element={<RequireFeature flag="newsletters" />}>
+                            <Route path="newsletters" element={<NewsletterListPage />} />
+                            <Route path="newsletters/:id" element={<NewsletterDetailPage />} />
+                            <Route path="newsletters/:id/edit" element={<NewsletterComposerPage />} />
+                          </Route>
                           {/* Developer tools — gated by `crmDevelopment`. */}
                           <Route element={<RequireFeature flag="crmDevelopment" />}>
                             <Route path="development" element={<CrmDevelopmentPage />} />
                           </Route>
-                          {/* Default: send /admin/clients (no sub-path) to
-                              the first enabled sub-feature. accounts comes
-                              first because it predates the others. The empty
-                              state inside ClientsLayout handles "parent on,
-                              all children off". */}
-                          <Route index element={<Navigate to="/admin/clients/accounts" replace />} />
+                          {/* No index redirect here: ClientsLayout picks the
+                              first sub-feature this user can actually reach,
+                              which a fixed /accounts target could not — a
+                              newsletters-only role has no customers.view and
+                              would bounce straight back out (#1264). It also
+                              owns the "parent on, all children off" empty
+                              state. */}
                         </Route>
                       </Route>
 

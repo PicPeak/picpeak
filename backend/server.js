@@ -916,12 +916,17 @@ app.use('/api/admin/vat-codes',  require('./src/routes/adminVatCodes'));
 app.use('/api/admin/system-health', require('./src/routes/adminSystemHealth'));
 app.use('/api/admin/dev',        require('./src/routes/adminDev'));
 app.use('/api/admin/transfers',  require('./src/routes/adminTransfers'));
+// Newsletter campaigns (#1264). Flag-gated inside the router.
+app.use('/api/admin/newsletters', require('./src/routes/adminNewsletters'));
 app.use('/api/public/quotes',  require('./src/routes/publicQuotes'));
 app.use('/api/public/contracts', require('./src/routes/publicContracts'));
 // PicTransfer (#997): recipient download + client upload, token-authenticated.
 app.use('/api/public/transfer', require('./src/routes/publicTransfer'));
 app.use('/api/public/transfer-upload', require('./src/routes/publicTransferUpload'));
 app.use('/api/public/payment-check', require('./src/routes/publicPaymentCheck'));
+// Newsletter unsubscribe (#1264). Deliberately NOT flag-gated: turning the
+// feature off must not break the links in mail that already went out.
+app.use('/api/public/newsletter', require('./src/routes/publicNewsletter'));
 app.use('/api/public/workflow-approvals', require('./src/routes/publicWorkflowApprovals'));
 app.use('/api/admin/event-types', require('./src/routes/adminEventTypes'));
 app.use('/api/admin/api-tokens', require('./src/routes/adminApiTokens'));

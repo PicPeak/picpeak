@@ -110,6 +110,11 @@ const KNOWN_FLAGS = [
   // the first of two deliberate actions — detection still has to be enabled
   // per event. Strictly opt-in.
   'faces',
+  // Newsletter campaigns (migration 199, #1264). Child of `clients` — mass
+  // marketing mail to customer accounts, with per-customer opt-out and an
+  // unsubscribe link on every send. Strictly opt-in: an install that never
+  // turns this on never gains a route, a nav entry or a way to mass-mail.
+  'newsletters',
 ];
 
 // Spec defaults for any flag missing from the DB (e.g. a row added by a
@@ -143,6 +148,7 @@ const DEFAULT_FLAGS = {
   workflows: false,
   // #1074 — off by default is the whole "zero behaviour change" guarantee.
   faces: false,
+  newsletters: false,
 };
 
 async function readAllFlags() {
@@ -207,6 +213,8 @@ function applyDependencyRules(flags) {
     // (calendarBooking is gated behind `calendar` so adding the parent
     // is sufficient.)
     || out.calendar
+    // Migration 199 (#1264) — newsletter campaigns live under Clients.
+    || out.newsletters
     // future siblings (out.messaging) go here
   );
   return out;

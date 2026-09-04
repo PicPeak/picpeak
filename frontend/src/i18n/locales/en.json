@@ -2963,6 +2963,14 @@
       "feature_flags_summary_one": "{{count}} features updated: {{summary}}",
       "feature_flags_summary_other": "{{count}} features updated: {{summary}}",
       "feature_flags_updated": "Feature settings updated",
+      "newsletter_created": "Newsletter campaign created",
+      "newsletter_updated": "Newsletter campaign updated",
+      "newsletter_test_sent": "Newsletter test email sent",
+      "newsletter_queued": "Newsletter queued to {{recipients}} recipients",
+      "newsletter_cancelled": "Newsletter campaign cancelled",
+      "newsletter_completed": "Newsletter finished — {{sent}} sent, {{failed}} failed",
+      "newsletter_deleted": "Newsletter campaign deleted",
+      "customer_marketing_opt_out": "Customer newsletter consent changed",
       "css_template_remote_urls_removed": "Remote URLs removed from {{count}} CSS template(s) — see the release notes"
     },
     "people": {
@@ -4807,7 +4815,10 @@
     "field": {
       "featureHoursLogging": "Hours logging",
       "hourlyRate": "Default hourly rate",
-      "hourlyRateHint": "Major units (e.g. 150.00 for {{currency}} 150). Leave blank to require a per-entry override on every block."
+      "hourlyRateHint": "Major units (e.g. 150.00 for {{currency}} 150). Leave blank to require a per-entry override on every block.",
+      "marketingOptOut": "Unsubscribed from newsletters",
+      "marketingOptOutHelp": "When on, this customer is skipped by every newsletter campaign. Emails about their galleries, quotes and invoices are not affected.",
+      "marketingOptOutSince": "Since {{date}}"
     },
     "hours": {
       "section": "Hours",
@@ -5012,7 +5023,8 @@
       "manageEvents": "Manage galleries",
       "rebillsSection": "Re-bills & passthrough",
       "noRebills": "No re-billed or passed-through supplier invoices for this customer yet.",
-      "companyName": "Company name"
+      "companyName": "Company name",
+      "marketingSection": "Newsletter consent"
     },
     "billing": {
       "section": "Billing cadence",
@@ -5102,7 +5114,8 @@
       "calendar": "Calendar",
       "bills": "Invoices",
       "taxReport": "Tax",
-      "development": "Development"
+      "development": "Development",
+      "newsletters": "Newsletters"
     }
   },
   "accounting": {
@@ -6872,5 +6885,93 @@
       "admin": "Admin",
       "super_admin": "Super Admin"
     }
+  },
+  "newsletters": {
+    "title": "Newsletters",
+    "subtitle": "Send a campaign to your customer accounts. Everyone who has opted out is skipped automatically, and every send carries an unsubscribe link.",
+    "new": "New campaign",
+    "untitled": "Untitled campaign",
+    "untitledSubject": "Newsletter",
+    "empty": "No campaigns yet.",
+    "allStatuses": "All statuses",
+    "filterByStatus": "Filter by status",
+    "backToList": "All campaigns",
+    "recipientsTitle": "Recipients",
+    "notEditable": "This campaign has already been queued and can no longer be edited.",
+    "viewCampaign": "View campaign",
+    "status": {
+      "draft": "Draft",
+      "queued": "Queued",
+      "sending": "Sending",
+      "sent": "Sent",
+      "cancelled": "Cancelled",
+      "failed": "Failed"
+    },
+    "recipientStatus": {
+      "queued": "Queued",
+      "sent": "Sent",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "skipped_opt_out": "Skipped (opted out)"
+    },
+    "col": {
+      "name": "Name",
+      "status": "Status",
+      "recipients": "Recipients",
+      "sent": "Sent",
+      "failed": "Failed",
+      "created": "Created"
+    },
+    "section": {
+      "content": "Content",
+      "recipients": "Recipients & send",
+      "preview": "Preview"
+    },
+    "field": {
+      "name": "Campaign name (internal)",
+      "subject": "Subject",
+      "body": "Body",
+      "rate": "Send rate (emails per minute)",
+      "testTo": "Send a test to"
+    },
+    "mode": {
+      "allActive": "All active customers",
+      "manual": "Pick customers"
+    },
+    "showCss": "Custom CSS (optional)",
+    "hideCss": "Hide custom CSS",
+    "cssHelp": "Many email clients drop a <style> block — keep the important styling on inline attributes. Remote images and @import are stripped.",
+    "rateHelp": "Sends are spread out so your mail provider does not rate-limit you. Check your provider's hourly cap before raising this.",
+    "recipientCount": "{{count}} recipients",
+    "skippedOptOut": "{{count}} skipped (opted out)",
+    "saveToRefresh": "Save to refresh this count.",
+    "refreshPreview": "Refresh preview",
+    "previewTitle": "Newsletter preview",
+    "sendTest": "Test",
+    "queueButton": "Queue campaign",
+    "queueBlocked": "A subject, a body and at least one recipient are needed before sending.",
+    "queueTitle": "Send this campaign?",
+    "queueBody": "This will email {{count}} customers at {{rate}} per minute (roughly {{minutes}} min). It cannot be undone once messages start going out.",
+    "queueConfirm": "Send to {{count}} customers",
+    "cancel": "Cancel campaign",
+    "cancelTitle": "Cancel this campaign?",
+    "cancelBody": "Emails that have not gone out yet will be dropped. Emails already sent cannot be recalled.",
+    "cancelled": "{{count}} pending emails cancelled.",
+    "sendingAt": "Sending at {{rate}} emails per minute.",
+    "deleteTitle": "Delete campaign?",
+    "deleteBody": "\"{{name}}\" will be deleted. This cannot be undone.",
+    "deleteAria": "Delete {{name}}",
+    "saved": "Campaign saved.",
+    "queued": "Campaign queued.",
+    "deleted": "Campaign deleted.",
+    "testSent": "Test email sent to {{to}}.",
+    "createFailed": "Could not create the campaign.",
+    "saveFailed": "Could not save the campaign.",
+    "deleteFailed": "Could not delete the campaign.",
+    "previewFailed": "Could not render the preview.",
+    "testFailed": "Could not send the test email.",
+    "queueFailed": "Could not queue the campaign.",
+    "cancelFailed": "Could not cancel the campaign.",
+    "previewEmpty": "Refresh the preview to see the email as a customer will."
   }
 }

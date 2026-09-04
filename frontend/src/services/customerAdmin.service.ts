@@ -37,6 +37,12 @@ export interface CustomerAccountSummary {
    *  null when admin hasn't set one — each entry then requires a
    *  per-block override. */
   hourlyRateMinor?: number | null;
+  /** Newsletter consent (migration 199, #1264). Opt-OUT: false means the
+   *  customer still receives campaigns. Transactional mail — galleries,
+   *  quotes, invoices — ignores this entirely. */
+  marketingOptOut?: boolean;
+  /** When the customer opted out. null while they are still subscribed. */
+  marketingOptOutAt?: string | null;
 }
 
 export interface CustomerAccountDetail extends CustomerAccountSummary {
@@ -174,6 +180,9 @@ export const customerAdminService = {
       skontoDisabled: 'skonto_disabled',
       // Per-customer re-bill proof-attachment override (#866). null clears it.
       rebillAttachProof: 'rebill_attach_proof',
+      // Newsletter consent (migration 199, #1264). Admin-settable so a
+      // customer who unsubscribes by phone can be honoured immediately.
+      marketingOptOut: 'marketing_opt_out',
     };
     for (const [k, v] of Object.entries(payload)) {
       if (k in map) snake[map[k]] = v;

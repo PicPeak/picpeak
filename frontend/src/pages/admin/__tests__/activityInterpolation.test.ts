@@ -87,6 +87,61 @@ describe('dashboard activity feed interpolation', () => {
   });
 });
 
+describe('newsletter activity strings (#1264)', () => {
+  beforeAll(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  // The exact metadata newsletterService writes for each type. Anything that
+  // drifts between the log call and the i18n string surfaces as a raw
+  // `{{token}}` in the dashboard feed and the bell.
+  const CASES: Array<[string, Record<string, unknown>]> = [
+    ['newsletter_created',   { campaignId: 1, name: 'Spring' }],
+    ['newsletter_updated',   { campaignId: 1, fields: ['subject'] }],
+    ['newsletter_test_sent', { campaignId: 1, to: 'you@example.com' }],
+    ['newsletter_queued',    { campaignId: 1, name: 'Spring', recipients: 42, skippedOptOut: 3, sendRatePerMinute: 10 }],
+    ['newsletter_cancelled', { campaignId: 1, name: 'Spring', cancelledRows: 12 }],
+    ['newsletter_completed', { campaignId: 1, name: 'Spring', sent: 40, failed: 2 }],
+    ['newsletter_deleted',   { campaignId: 1, name: 'Spring' }],
+    ['customer_marketing_opt_out', { customerId: 7, optOut: true, source: 'link' }],
+  ];
+
+  it.each(CASES)('renders %s without a raw placeholder', (type, metadata) => {
+    const msg = render(activity(type, metadata));
+    expect(msg).not.toContain('{{');
+    // A missing key would render the key path itself.
+    expect(msg).not.toContain('admin.activities.');
+  });
+
+  it('interpolates the recipient count into newsletter_queued', () => {
+    const msg = render(activity('newsletter_queued', { name: 'Spring', recipients: 42 }));
+    expect(msg).toContain('42');
+  });
+
+  it('interpolates both counts into newsletter_completed', () => {
+    const msg = render(activity('newsletter_completed', { name: 'Spring', sent: 40, failed: 2 }));
+    expect(msg).toContain('40');
+    expect(msg).toContain('2');
+  });
+
+  it('renders every newsletter string in German too', async () => {
+    await i18n.changeLanguage('de');
+    for (const [type, metadata] of CASES) {
+      const msg = render(activity(type, metadata));
+      expect(msg).not.toContain('{{');
+      expect(msg).not.toContain('admin.activities.');
+    }
+    await i18n.changeLanguage('en');
+  });
+
+  it('renders in the notification bell as well as the dashboard feed', () => {
+    for (const [type, metadata] of CASES) {
+      const msg = notificationsService.formatNotificationMessage(notification(type, metadata));
+      expect(msg).not.toContain('{{');
+    }
+  });
+});
+
 describe('notification bell interpolation', () => {
   beforeAll(async () => {
     await i18n.changeLanguage('en');

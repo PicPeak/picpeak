@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
 import {
   ArrowLeft, Mail, MapPin, Phone, Building2, Save, Trash2, AlertTriangle,
-  CheckCircle2, X, FileText, Calendar, KeyRound, ToggleLeft, Settings as SettingsIcon,
+  CheckCircle2, X, FileText, Calendar, KeyRound, ToggleLeft, Settings as SettingsIcon, Megaphone,
 } from 'lucide-react';
 
 import { Button, Card, CountrySelect, Input, Loading } from '../../components/common';
@@ -40,7 +40,8 @@ type EditableFields =
   | 'addressLine1' | 'addressLine2' | 'postalCode' | 'city' | 'state'
   | 'countryCode' | 'countryName' | 'preferredLanguage' | 'notes'
   | 'featureCalendar' | 'featureQuotes' | 'featureBills' | 'featureHoursLogging' | 'featureContracts'
-  | 'hourlyRateMinor' | 'billingCadence' | 'billingCycleDay' | 'skontoDisabled' | 'rebillAttachProof';
+  | 'hourlyRateMinor' | 'billingCadence' | 'billingCycleDay' | 'skontoDisabled' | 'rebillAttachProof'
+  | 'marketingOptOut';
 
 // `fmtDate` (from useLocalizedDate, below) is the single canonical date
 // formatter. It honors the admin's `general_date_format` setting AND
@@ -147,6 +148,8 @@ export const CustomerDetailPage: React.FC = () => {
         // Tri-state (null = inherit global). Kept as-is so the select can show
         // "Inherit" distinctly from an explicit on/off (#866).
         rebillAttachProof: customer.rebillAttachProof ?? null,
+        // Newsletter consent (#1264). Opt-OUT, so the default is false.
+        marketingOptOut: customer.marketingOptOut ?? false,
       } as any);
     }
   }, [customer, form]);
@@ -569,6 +572,46 @@ export const CustomerDetailPage: React.FC = () => {
           toggle inside it is OFF — an empty "Customer features" card
           with just a title + hint reads as broken. The Card reappears
           the moment any master flag is re-enabled. */}
+      {/* Newsletter consent (migration 199, #1264). Its OWN card, gated
+          only by `newsletters`: a consent record is not a per-customer
+          feature override, and the features card above hides itself when
+          the other CRM flags are off — which would make this unreachable on
+          an install that runs newsletters alone. Admin-settable so a
+          customer who unsubscribes by phone can be honoured immediately. */}
+      {flags.newsletters && (
+      <Card padding="lg">
+        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
+          <Megaphone className="w-5 h-5" />
+          {t('customers.detail.marketingSection', 'Newsletter consent')}
+        </h2>
+        <label className="flex items-start justify-between gap-3 cursor-pointer">
+          <span className="text-sm">
+            <span className="font-medium text-neutral-900 dark:text-neutral-100">
+              {t('customers.field.marketingOptOut', 'Unsubscribed from newsletters')}
+            </span>
+            <span className="block text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+              {t('customers.field.marketingOptOutHelp',
+                'When on, this customer is skipped by every newsletter campaign. Emails about their galleries, quotes and invoices are not affected.')}
+            </span>
+            {form.marketingOptOut && customer?.marketingOptOutAt && (
+              <span className="block text-xs text-neutral-400 dark:text-neutral-500 mt-1">
+                {t('customers.field.marketingOptOutSince', 'Since {{date}}',
+                  { date: fmtDate(customer.marketingOptOutAt) })}
+              </span>
+            )}
+          </span>
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 shrink-0"
+            checked={!!form.marketingOptOut}
+            onChange={(e) => setForm((prev) => ({
+              ...prev, marketingOptOut: e.target.checked,
+            } as any))}
+          />
+        </label>
+      </Card>
+      )}
+
       {(flags.calendar || flags.quotes || flags.bills || flags.hoursLogging || flags.contracts) && (
       <Card padding="lg">
         <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-1 flex items-center gap-2">
@@ -677,6 +720,7 @@ export const CustomerDetailPage: React.FC = () => {
             </p>
           </div>
         )}
+
       </Card>
       )}
 

@@ -12,11 +12,12 @@
  * active item with white icon + label.
  */
 import React from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Briefcase, UserCog, FileText, Receipt, Wrench, Clock, ScrollText, Calendar, FolderKanban } from 'lucide-react';
+import { Briefcase, UserCog, FileText, Receipt, Wrench, Clock, ScrollText, Calendar, FolderKanban, Megaphone } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useFeatureFlags, type FeatureKey } from '../../contexts/FeatureFlagsContext';
+import { usePermissions } from '../../contexts/PermissionsContext';
 
 interface NavItem {
   key: string;
@@ -30,6 +31,12 @@ interface NavItem {
    * to declare their own sub-flag here.
    */
   featureFlag: FeatureKey;
+  /**
+   * Permission required to reach the page behind this entry. Without it the
+   * item still rendered for anyone who could enter Clients at all, and the
+   * click landed on a backend 403 (#1264 review).
+   */
+  permission?: string;
 }
 
 export const ClientsLayout: React.FC = () => {
@@ -52,6 +59,7 @@ export const ClientsLayout: React.FC = () => {
       label: t('clients.subnav.accounts', 'Accounts'),
       icon: UserCog,
       featureFlag: 'customerPortal',
+      permission: 'customers.view',
     },
     {
       key: 'calendar',
@@ -93,6 +101,14 @@ export const ClientsLayout: React.FC = () => {
     // Future sub-features:
     //   { key: 'messaging', ... featureFlag: 'messaging' }
     {
+      key: 'newsletters',
+      to: '/admin/clients/newsletters',
+      label: t('clients.subnav.newsletters', 'Newsletters'),
+      icon: Megaphone,
+      featureFlag: 'newsletters',
+      permission: 'newsletters.view',
+    },
+    {
       key: 'development',
       to: '/admin/clients/development',
       label: t('clients.subnav.development', 'Development'),
@@ -101,7 +117,17 @@ export const ClientsLayout: React.FC = () => {
     },
   ];
 
-  const enabledItems = navItems.filter((item) => flags[item.featureFlag]);
+  const { hasPermission } = usePermissions();
+  const enabledItems = navItems.filter((item) =>
+    flags[item.featureFlag] && (!item.permission || hasPermission(item.permission)));
+
+  // /admin/clients has no page of its own. Rather than a hard-coded redirect
+  // to Accounts — which a newsletters-only role cannot open — land on the
+  // first entry this user can actually reach.
+  const isSectionRoot = location.pathname.replace(/\/+$/, '') === '/admin/clients';
+  if (isSectionRoot && enabledItems.length > 0) {
+    return <Navigate to={enabledItems[0].to} replace />;
+  }
 
   // When the parent `clients` flag is on but no sub-feature is enabled,
   // there's nothing to render. Settings → Features is one click away

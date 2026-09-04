@@ -992,6 +992,41 @@ async function sendTemplateEmail(to, templateKey, variables) {
 }
 
 /**
+ * Send one queued newsletter-campaign row (#1264).
+ *
+ * Campaigns carry their own body, so there is no `email_templates` row to
+ * look up and `sendTemplateEmail` cannot be used. The body is rendered per
+ * recipient (variables, the recipient's own unsubscribe link, the campaign
+ * CSS) and handed to the same `sendRawEmail` transport the manual composer
+ * uses. Returns the `{ html }` shape the queue processor persists into
+ * `rendered_html`, so a campaign send is as inspectable afterwards as any
+ * transactional mail.
+ */
+async function sendCampaignEmail(queueRow, emailData) {
+  const newsletterService = require('./newsletterService');
+
+  const campaign = await db('email_campaigns').where({ id: queueRow.campaign_id }).first();
+  if (!campaign) {
+    throw new Error(`Newsletter campaign ${queueRow.campaign_id} not found`);
+  }
+
+  // The customer row may be gone (deleted between queue and send). Fall back
+  // to the address on the queue row so the mail still goes out addressed to
+  // someone, with empty personalisation rather than a crash.
+  const customer = emailData.customerId
+    ? await db('customer_accounts').where({ id: emailData.customerId }).first()
+    : null;
+
+  const { subject, html } = await newsletterService.renderForRecipient(
+    campaign,
+    customer || { id: emailData.customerId || null, email: queueRow.recipient_email }
+  );
+
+  const info = await sendRawEmail({ to: queueRow.recipient_email, subject, html });
+  return { success: true, messageId: info.messageId, html };
+}
+
+/**
  * Send a fully-composed email (subject + HTML the admin already edited in the
  * Messages composer) WITHOUT a template. Used for replies + human-sent document
  * messages. Uses the configured SMTP identity + from address. Returns
@@ -1198,11 +1233,38 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
           emailData.eventId = email.event_id;
         }
 
-        const sendResult = await sendTemplateEmail(
-          email.recipient_email,
-          email.email_type,
-          emailData
-        );
+        // Newsletter campaigns (#1264) have no `email_templates` row — the
+        // body lives on the campaign. They also get the send-time opt-out
+        // re-check: a customer who unsubscribed after the campaign was
+        // queued is skipped here, not mailed.
+        let sendResult;
+        if (email.email_type === 'newsletter' && email.campaign_id) {
+          const newsletterService = require('./newsletterService');
+          // The batch above was materialised before this loop started. A
+          // cancel that lands in between deletes the pending rows, but this
+          // worker still holds them in memory — so without re-reading, up to
+          // a full batch goes out after the UI says the campaign is
+          // cancelled. Re-check the row still exists and is still pending.
+          const stillPending = await db('email_queue')
+            .where({ id: email.id, status: 'pending' })
+            .first('id');
+          if (!stillPending) {
+            logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
+            continue;
+          }
+          if (await newsletterService.shouldSkipForOptOut(emailData.customerId, email.recipient_email)) {
+            await newsletterService.markSkippedOptOut(email);
+            logger.info(`Email ${email.id} skipped — recipient opted out after queueing`);
+            continue;
+          }
+          sendResult = await sendCampaignEmail(email, emailData);
+        } else {
+          sendResult = await sendTemplateEmail(
+            email.recipient_email,
+            email.email_type,
+            emailData
+          );
+        }
 
         // Mark as sent, persisting the actual rendered HTML for the Project
         // Overview email preview (guarded — older installs without migration
@@ -1216,6 +1278,18 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         await db('email_queue')
           .where('id', email.id)
           .update(sentUpdate);
+
+        // Campaign bookkeeping (#1264). Best-effort by contract — a failure
+        // in the audit trail must never turn a delivered email into a
+        // failed one, so it is logged and swallowed.
+        if (email.campaign_id) {
+          try {
+            await require('./newsletterService')
+              .recordRecipientResult(email, { status: 'sent' });
+          } catch (hookError) {
+            logger.error(`Campaign bookkeeping failed for email ${email.id}:`, hookError);
+          }
+        }
 
         result.sent += 1;
         logger.info(`Email ${email.id} sent successfully`);
@@ -1241,6 +1315,20 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
           }
         }
           
+        // Campaign bookkeeping (#1264). Only record a FAILURE once the row
+        // has exhausted its retries — the same cap the pending query uses.
+        // Recording it on attempt 1 would mark the recipient failed while
+        // the queue is still going to retry them, and could flip the whole
+        // campaign terminal on a transient SMTP blip.
+        if (email.campaign_id && email.retry_count + 1 >= 3) {
+          try {
+            await require('./newsletterService')
+              .recordRecipientResult(email, { status: 'failed', errorMessage: error.message });
+          } catch (hookError) {
+            logger.error(`Campaign bookkeeping failed for email ${email.id}:`, hookError);
+          }
+        }
+
         logger.error(`Failed to send email ${email.id}:`, error);
       }
     }

@@ -63,6 +63,11 @@ function transformCustomer(c) {
     billingCycleDay: c.billing_cycle_day == null ? 1 : Number(c.billing_cycle_day),
     notes: c.notes,
     isActive: c.is_active,
+    // Newsletter consent (migration 199, #1264). Opt-OUT: false means the
+    // customer still receives campaigns. Transactional mail is unaffected.
+    marketingOptOut: c.marketing_opt_out === true || c.marketing_opt_out === 1
+      || c.marketing_opt_out === '1',
+    marketingOptOutAt: c.marketing_opt_out_at || null,
     // Passive customers (admin-only, no portal access) are identified
     // by a null password_hash. We never expose the hash itself —
     // this boolean is the only thing the frontend ever sees, and it
@@ -404,6 +409,8 @@ router.put('/:id', [
   body('preferred_language').optional({ nullable: true }).isString().isLength({ max: 8 }),
   body('notes').optional({ nullable: true }).isString(),
   body('is_active').optional().isBoolean(),
+  // Newsletter consent (migration 199, #1264).
+  body('marketing_opt_out').optional().isBoolean(),
   body('feature_calendar').optional().isBoolean(),
   body('feature_quotes').optional().isBoolean(),
   body('feature_bills').optional().isBoolean(),

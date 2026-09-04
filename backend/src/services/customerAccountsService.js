@@ -565,6 +565,9 @@ async function getCustomerById(id) {
  * typo before the customer accepts. Uniqueness is enforced.
  */
 async function updateCustomer(id, updates, updatedByAdminId) {
+  // Set when marketing_opt_out actually flips, so the dedicated consent
+  // event can be logged after the write lands.
+  let marketingConsentTransition = null;
   const customer = await db('customer_accounts').where('id', id).first();
   if (!customer) {
     throw new NotFoundError('Customer', id);
@@ -597,6 +600,10 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     // in its own branch below so null survives (formatBoolean would coerce
     // it to false and silently lose the "inherit" state).
     'rebill_attach_proof',
+    // Newsletter consent (migration 199, #1264). Admin-settable so a
+    // customer who unsubscribes by phone can be honoured without waiting
+    // for them to click a link. Transactional mail ignores it entirely.
+    'marketing_opt_out',
   ];
   for (const f of fields) {
     if (updates[f] !== undefined) {
@@ -613,6 +620,25 @@ async function updateCustomer(id, updates, updatedByAdminId) {
         || f === 'skonto_disabled'
       ) {
         allowed[f] = formatBoolean(updates[f]);
+      } else if (f === 'marketing_opt_out') {
+        // Only stamp on an actual transition. The customer form submits this
+        // field on every full-profile save, so saving an unrelated field
+        // while the customer stayed opted out would move
+        // marketing_opt_out_at to now — overwriting the moment consent was
+        // actually withdrawn with the moment someone edited a phone number.
+        const wasOptedOut = customer.marketing_opt_out === true
+          || customer.marketing_opt_out === 1
+          || customer.marketing_opt_out === '1';
+        const nowOptedOut = Boolean(updates[f]);
+        allowed[f] = formatBoolean(nowOptedOut);
+        if (wasOptedOut !== nowOptedOut) {
+          allowed.marketing_opt_out_at = nowOptedOut ? new Date().toISOString() : null;
+          // Consent changes are designed to be auditable in their own right.
+          // The generic `customer_updated` entry records only that a field
+          // named marketing_opt_out was touched — not the new value, and not
+          // that an admin made the change on the customer's behalf.
+          marketingConsentTransition = nowOptedOut;
+        }
       } else if (f === 'rebill_attach_proof') {
         // Tri-state override. null/'' → NULL (inherit global default);
         // otherwise a real boolean (coerced for SQLite).
@@ -679,6 +705,17 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     null,
     { type: 'admin', id: updatedByAdminId, name: 'system' }
   );
+
+  // The dedicated consent event, alongside the generic one. It is what the
+  // newsletter audit trail reads: the new VALUE and the source, rather than
+  // just the fact that a field with that name was written (#1264).
+  if (marketingConsentTransition !== null) {
+    await logActivity('customer_marketing_opt_out',
+      { customerId: id, optOut: marketingConsentTransition, source: 'admin' },
+      null,
+      { type: 'admin', id: updatedByAdminId, name: 'system' }
+    );
+  }
 
   return getCustomerById(id);
 }
