@@ -138,6 +138,20 @@ describe('newsletter campaigns', () => {
       expect(skippedOptOut).toBe(1);
     });
 
+    it('honours an opted-out twin that is NOT in the manual selection', async () => {
+      // The opted-out set is queried across every active customer, not just
+      // the selected ids — otherwise picking the opted-in twin of an
+      // unsubscribed account mails the address that opted out.
+      await seedCustomer({ email: 'twin@example.com', marketing_opt_out: 1 });
+      const selected = await seedCustomer({ email: 'TWIN@example.com', marketing_opt_out: 0 });
+      const campaign = await seedCampaign({
+        recipientMode: 'manual', customerIds: [selected.id],
+      });
+
+      const { recipients } = await newsletterService.resolveRecipients(campaign);
+      expect(recipients).toHaveLength(0);
+    });
+
     it('returns nobody for a manual campaign with no ids', async () => {
       await seedCustomer();
       const campaign = await seedCampaign({ recipientMode: 'manual', customerIds: [] });
@@ -193,6 +207,31 @@ describe('newsletter campaigns', () => {
       const match = html.match(/\/api\/public\/newsletter\/unsubscribe\/([A-Za-z0-9_-]+)/);
       expect(match).not.toBeNull();
       expect(newsletterService.verifyUnsubscribeToken(match[1])).toBe(customer.id);
+    });
+
+    it('appends an unsubscribe link when the body omits the placeholder', async () => {
+      // The opt-out design rests on every campaign carrying the link; a body
+      // that simply leaves out {{unsubscribe_url}} must not break it.
+      const customer = await seedCustomer();
+      const campaign = await seedCampaign({ bodyHtml: '<p>No link in here</p>' });
+
+      const { html } = await newsletterService.renderForRecipient(campaign, customer);
+
+      const match = html.match(/\/api\/public\/newsletter\/unsubscribe\/([A-Za-z0-9_-]+)/);
+      expect(match).not.toBeNull();
+      expect(newsletterService.verifyUnsubscribeToken(match[1])).toBe(customer.id);
+    });
+
+    it('does not double up when the body places the link itself', async () => {
+      const customer = await seedCustomer();
+      const campaign = await seedCampaign({
+        bodyHtml: '<p><a href="{{unsubscribe_url}}">Stop</a></p>',
+      });
+
+      const { html } = await newsletterService.renderForRecipient(campaign, customer);
+
+      const links = html.match(/\/api\/public\/newsletter\/unsubscribe\//g) || [];
+      expect(links).toHaveLength(1);
     });
 
     it('prefers the customer language over the campaign language', async () => {
@@ -548,6 +587,16 @@ describe('newsletter campaigns', () => {
       const customer = await seedCustomer();
       await db('customer_accounts').where({ id: customer.id }).update({ is_active: 0 });
       expect(await newsletterService.shouldSkipForOptOut(customer.id)).toBe(true);
+    });
+
+    it('skips when another account on the same address opted out', async () => {
+      // Consent belongs to the address: a click by the twin has to stop this
+      // mail too, or the person who unsubscribed still receives it.
+      const queued = await seedCustomer({ email: 'shared@example.com', marketing_opt_out: 0 });
+      await seedCustomer({ email: 'SHARED@example.com', marketing_opt_out: 1 });
+
+      expect(await newsletterService.shouldSkipForOptOut(queued.id, 'shared@example.com'))
+        .toBe(true);
     });
 
     it('does not skip an ordinary opted-in customer', async () => {

@@ -618,10 +618,19 @@ async function updateCustomer(id, updates, updatedByAdminId) {
       ) {
         allowed[f] = formatBoolean(updates[f]);
       } else if (f === 'marketing_opt_out') {
-        // Stamp the timestamp alongside the flag so the consent record
-        // carries a when, not just a whether.
-        allowed[f] = formatBoolean(updates[f]);
-        allowed.marketing_opt_out_at = updates[f] ? new Date().toISOString() : null;
+        // Only stamp on an actual transition. The customer form submits this
+        // field on every full-profile save, so saving an unrelated field
+        // while the customer stayed opted out would move
+        // marketing_opt_out_at to now — overwriting the moment consent was
+        // actually withdrawn with the moment someone edited a phone number.
+        const wasOptedOut = customer.marketing_opt_out === true
+          || customer.marketing_opt_out === 1
+          || customer.marketing_opt_out === '1';
+        const nowOptedOut = Boolean(updates[f]);
+        allowed[f] = formatBoolean(nowOptedOut);
+        if (wasOptedOut !== nowOptedOut) {
+          allowed.marketing_opt_out_at = nowOptedOut ? new Date().toISOString() : null;
+        }
       } else if (f === 'rebill_attach_proof') {
         // Tri-state override. null/'' → NULL (inherit global default);
         // otherwise a real boolean (coerced for SQLite).

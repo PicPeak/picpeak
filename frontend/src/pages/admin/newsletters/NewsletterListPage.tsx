@@ -148,7 +148,12 @@ export const NewsletterListPage: React.FC = () => {
                   <tr key={c.id} className="border-b border-neutral-100 dark:border-neutral-800 last:border-0">
                     <td className="px-4 py-3">
                       <Link
-                        to={`/admin/clients/newsletters/${c.id}`}
+                        // A draft opens straight in the composer: the detail
+                        // page has no edit action, so linking a draft there
+                        // left the operator with no way to resume it.
+                        to={c.status === 'draft' && canSend
+                          ? `/admin/clients/newsletters/${c.id}/edit`
+                          : `/admin/clients/newsletters/${c.id}`}
                         className="font-medium hover:underline"
                         style={{ color: 'var(--color-accent)' }}
                       >

@@ -52,6 +52,13 @@ interface NavItem {
    * constraint.
    */
   featureFlagsAny?: FeatureKey[];
+  /**
+   * Alternative permissions, any ONE of which reveals the entry. For a
+   * section whose sub-features are gated independently server-side — Clients
+   * hosts both customer accounts and newsletters, and the backend supports a
+   * role holding `newsletters.view` without `customers.view` (#1264).
+   */
+  permissionAny?: string[];
 }
 
 // Sidebar shape after the Settings reorg (#feature-flags-settings-reorg).
@@ -93,7 +100,9 @@ export const adminNavigation: NavItem[] = [
   // their own permission keys and the gate here grows into an OR.
   {
     nameKey: 'navigation.clients', href: '/admin/clients', icon: Briefcase,
-    permission: 'customers.view',
+    // Any of these opens the section; each sub-page is gated on its own
+    // permission once inside.
+    permissionAny: ['customers.view', 'newsletters.view'],
     featureFlag: 'clients',
     // Hide the entry when the parent is on but no sub-feature is —
     // there's nothing inside ClientsLayout to link to. Mirror the same
@@ -164,6 +173,8 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({ isOpen, onClose, col
 
   const filteredNavigation = adminNavigation.filter((item) => {
     if (item.permission && !hasPermission(item.permission as string)) return false;
+    if (item.permissionAny?.length
+      && !item.permissionAny.some((p) => hasPermission(p))) return false;
     if (item.featureFlag && !flags[item.featureFlag]) return false;
     // featureFlagsAny: entry is hidden when none of the listed
     // sub-flags are on, even if the parent flag IS on. Used by

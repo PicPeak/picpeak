@@ -28,7 +28,7 @@ const { AppError } = require('../utils/errors');
 const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
 const { sanitizeCSS } = require('../utils/cssSanitizer');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
-const { getFrontendBaseUrl } = require('../utils/frontendUrl');
+const { getFrontendBaseUrl, getApiBaseUrl } = require('../utils/frontendUrl');
 
 // A 200 KB body is already an absurd newsletter; the cap exists so a paste
 // from a WYSIWYG suite full of base64 images can't put a multi-megabyte row
@@ -242,13 +242,26 @@ function verifyUnsubscribeToken(token) {
 }
 
 async function unsubscribeUrl(customerId) {
-  const base = (await getFrontendBaseUrl()) || '';
+  // The API origin, not the frontend one. `/api/public/newsletter/...` is
+  // served by the backend, and on a split-origin deployment (API_URL set
+  // separately from FRONTEND_URL) that path does not exist on the frontend
+  // host — the link in the mail would 404. getApiBaseUrl also gives an
+  // absolute URL, where the frontend resolver can return '' and leave a
+  // relative href that is meaningless in an email client.
+  const base = (await getApiBaseUrl()) || (await getFrontendBaseUrl()) || '';
   return `${base}/api/public/newsletter/unsubscribe/${unsubscribeToken(customerId)}`;
 }
 
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
+
+/** Minimal attribute escaping for a server-generated URL. */
+function escapeAttribute(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 /** Everything a campaign body may interpolate. Absent keys stay literal. */
 function recipientVariables(customer, unsubUrl, supportEmail) {
@@ -302,7 +315,17 @@ async function renderForRecipient(campaign, customer, options = {}) {
   // <head>; this one sits in the content cell, which is where the clients
   // that keep <style> at all will honour it. Clients that strip it fall back
   // to the inline style attributes the sanitizer preserved.
-  const styled = css ? `<style type="text/css">${css}</style>\n${body}` : body;
+  // Every campaign carries an unsubscribe link — that is the promise the
+  // opt-out design rests on, and a body that simply omits {{unsubscribe_url}}
+  // must not be able to break it. Appended only when the author did not place
+  // it themselves, so a deliberate placement still wins.
+  const withUnsubscribe = safeBody.includes('{{unsubscribe_url}}')
+    ? body
+    : `${body}\n<p style="font-size:11px;color:#888888;margin-top:16px;">`
+      + `<a href="${escapeAttribute(unsubUrl)}" style="color:#888888;">`
+      + 'Unsubscribe from these emails</a></p>';
+
+  const styled = css ? `<style type="text/css">${css}</style>\n${withUnsubscribe}` : withUnsubscribe;
 
   const html = await wrapEmailHtml(styled, subject, language);
   return { subject, html, language };
@@ -349,8 +372,15 @@ async function resolveRecipients(campaign, conn = db) {
   // the mail — so filtering row-by-row would skip that one and still deliver
   // to the same person through the other. Clicking unsubscribe would appear
   // to do nothing.
+  // Queried across EVERY active customer, not just `all`. In manual mode
+  // `all` is already narrowed to the selected ids, so an unselected account
+  // that unsubscribed would not appear — and picking its opted-in twin would
+  // mail the address that opted out.
+  const optedOutRows = await conn('customer_accounts')
+    .where('is_active', formatBoolean(true))
+    .select('email', 'marketing_opt_out');
   const optedOutAddresses = new Set(
-    all.filter(isOptedOut)
+    optedOutRows.filter(isOptedOut)
       .map((row) => (row.email || '').trim().toLowerCase())
       .filter(Boolean)
   );
@@ -632,16 +662,31 @@ async function recomputeCounts(campaignId) {
  *
  * @returns {boolean} true when this row must NOT be sent.
  */
-async function shouldSkipForOptOut(customerId) {
-  if (!customerId) return false;
-  const row = await db('customer_accounts')
-    .where({ id: customerId })
-    .select('marketing_opt_out', 'is_active')
-    .first();
-  if (!row) return false;
-  if (isOptedOut(row)) return true;
-  const active = row.is_active;
-  return !(active === true || active === 1 || active === '1' || active === 't');
+async function shouldSkipForOptOut(customerId, recipientEmail = null) {
+  const row = customerId
+    ? await db('customer_accounts')
+      .where({ id: customerId })
+      .select('email', 'marketing_opt_out', 'is_active')
+      .first()
+    : null;
+
+  if (row) {
+    if (isOptedOut(row)) return true;
+    const active = row.is_active;
+    if (!(active === true || active === 1 || active === '1' || active === 't')) return true;
+  }
+
+  // Consent belongs to the ADDRESS. Another active account sharing this
+  // inbox may have unsubscribed after the campaign was queued, and that
+  // click has to stop this mail too — otherwise the person who
+  // unsubscribed still receives it.
+  const address = (recipientEmail || row?.email || '').trim().toLowerCase();
+  if (!address) return false;
+  const optedOutTwin = await db('customer_accounts')
+    .whereRaw('LOWER(TRIM(email)) = ?', [address])
+    .select('marketing_opt_out')
+    .then((rows) => rows.some(isOptedOut));
+  return optedOutTwin;
 }
 
 /** Mark a row the processor refused to send because consent was withdrawn. */

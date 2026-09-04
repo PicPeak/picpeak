@@ -124,22 +124,28 @@ export const NewsletterComposerPage: React.FC = () => {
     // Save BEFORE resolving the count and confirming: the dialog must quote
     // the recipient rule that is about to be used, not the one from before
     // the operator's last edit.
+    let fresh;
     try {
       await persistDraft();
-      await refetchRecipients();
+      // Use what the refetch RETURNS. `resolution` is captured from the
+      // render that produced this callback, so reading it here quotes the
+      // count from before the operator's last recipient change — the dialog
+      // would promise "all active customers" while the backend queues the
+      // manual selection just saved.
+      fresh = (await refetchRecipients()).data;
     } catch {
       toast.error(t('newsletters.saveFailed', 'Could not save the campaign.'));
       return;
     }
-    const count = resolution?.recipientCount ?? 0;
+    const count = fresh?.recipientCount ?? 0;
     const ok = await confirm({
       title: t('newsletters.queueTitle', 'Send this campaign?') as string,
       message: t('newsletters.queueBody',
         'This will email {{count}} customers at {{rate}} per minute (roughly {{minutes}} min). It cannot be undone once messages start going out.',
         {
           count,
-          rate: draft?.sendRatePerMinute ?? 20,
-          minutes: resolution?.estimatedMinutes ?? 1,
+          rate: fresh?.sendRatePerMinute ?? draft?.sendRatePerMinute ?? 10,
+          minutes: fresh?.estimatedMinutes ?? 1,
         }) as string,
       confirmLabel: t('newsletters.queueConfirm', 'Send to {{count}} customers', { count }) as string,
       variant: 'danger',
@@ -347,7 +353,10 @@ export const NewsletterComposerPage: React.FC = () => {
             <Input
               type="number"
               min={1}
-              max={120}
+              // 10 is what the queue can actually deliver: the processor takes
+              // 10 rows once a minute, globally. Anything higher was rejected
+              // server-side after passing this control.
+              max={10}
               label={t('newsletters.field.rate', 'Send rate (emails per minute)') as string}
               value={String(draft.sendRatePerMinute)}
               onChange={(e) => patch({ sendRatePerMinute: Number(e.target.value) })}

@@ -62,6 +62,12 @@ export const NewsletterDetailPage: React.FC = () => {
       page, limit: 25, status: statusFilter || undefined,
     }),
     enabled: Number.isFinite(campaignId),
+    // Poll alongside the summary while the campaign is draining — otherwise
+    // every row sat at "queued" until the operator reloaded, while the
+    // counters above them climbed.
+    refetchInterval: data?.campaign.status === 'queued' || data?.campaign.status === 'sending'
+      ? 5000
+      : false,
   });
 
   const cancelCampaign = async () => {

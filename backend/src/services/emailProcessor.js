@@ -1188,7 +1188,7 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
             logger.info(`Email ${email.id} skipped — cancelled after the batch was fetched`);
             continue;
           }
-          if (await newsletterService.shouldSkipForOptOut(emailData.customerId)) {
+          if (await newsletterService.shouldSkipForOptOut(emailData.customerId, email.recipient_email)) {
             await newsletterService.markSkippedOptOut(email);
             logger.info(`Email ${email.id} skipped — recipient opted out after queueing`);
             continue;
