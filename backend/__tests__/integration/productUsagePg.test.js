@@ -27,12 +27,25 @@ maybe('product usage on Postgres', () => {
   let UsageService;
 
   beforeAll(async () => {
-    db = knex({ client: 'pg', connection: PG_URL, pool: { min: 0, max: 10 } });
-    for (const t of ['product_usage_markers', 'product_usage_state', 'app_settings',
-      'feature_flags', 'events', 'css_templates', 'email_configs',
-      'mail_accounts', 'whatsapp_configs']) {
-      await db.raw(`DROP TABLE IF EXISTS ${t} CASCADE`);
-    }
+    // Its own schema, not `public`. CI hands every gated suite the same
+    // PICPEAK_PG_TEST_URL and runs jest with parallel workers, and both
+    // picpeakRestorePg and externalRelpathFoldPg drop and recreate `events`
+    // and `app_settings` there. Sharing that would have made all three
+    // intermittently destroy each other's fixtures. The service queries
+    // unqualified table names, so a searchPath keeps it entirely in here.
+    const bootstrap = knex({
+      client: 'pg', connection: PG_URL, pool: { min: 0, max: 2 }
+    });
+    await bootstrap.raw('DROP SCHEMA IF EXISTS usage_pg_test CASCADE');
+    await bootstrap.raw('CREATE SCHEMA usage_pg_test');
+    await bootstrap.destroy();
+
+    db = knex({
+      client: 'pg',
+      connection: PG_URL,
+      searchPath: ['usage_pg_test'],
+      pool: { min: 0, max: 10 }
+    });
     // The real migrations, on the real engine.
     await require('../../migrations/core/201_product_usage').up(db);
     await require('../../migrations/core/202_product_usage_cancel_requested').up(db);
@@ -61,7 +74,10 @@ maybe('product usage on Postgres', () => {
   }, 120000);
 
   afterAll(async () => {
-    if (db) await db.destroy();
+    if (db) {
+      await db.raw('DROP SCHEMA IF EXISTS usage_pg_test CASCADE');
+      await db.destroy();
+    }
     fs.rmSync(bindingDir, { recursive: true, force: true });
   });
 

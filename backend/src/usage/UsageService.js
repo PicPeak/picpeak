@@ -474,17 +474,26 @@ class UsageService {
           update.last_packet = JSON.stringify(envelope);
           update.last_report_date = packet.payload.report_date;
         }
-        await this.db('product_usage_state')
-          .where({ id: 1 })
-          .whereNot({ status: 'deletion_pending' })
-          .update(update);
+        // Activation goes in with the acknowledgement, not after it. Split
+        // across two writes, a failure or a stop between them left the row
+        // `activation_pending` with pending_packet already cleared — and
+        // tick() has nothing to retry from there, so the installation was
+        // registered with the collector but permanently stuck locally.
+        // Still guarded on activation_pending, so a withdrawal that arrived
+        // first is not overwritten.
+        const ack = this.db('product_usage_state').where({ id: 1 });
+        if (packet.action === 'register') {
+          update.status = 'active';
+          // Precisely activation_pending, not merely "not withdrawing" —
+          // this write is the one that turns participation on.
+          ack.where({ status: 'activation_pending' });
+        } else {
+          ack.whereNot({ status: 'deletion_pending' });
+        }
+        await ack.update(update);
         await this.db('product_usage_state')
           .where({ id: 1, status: 'deletion_pending' })
           .update({ sequence: packet.sequence, pending_packet: null });
-        if (packet.action === 'register')
-          await this.db('product_usage_state')
-            .where({ id: 1, status: 'activation_pending' })
-            .update({ status: 'active' });
       }
       return receipt;
     } catch (error) {

@@ -3,6 +3,14 @@
 // identifiers, paths, timing, or counts are retained or sent.
 const service = require('../services/productUsageService');
 const logger = require('../utils/logger');
+// Mirrors emailWebhookTransport: the webhook is in play only when both are
+// set, which is when adminEmail routes the test send through it.
+const webhookTransportConfigured = () =>
+  Boolean(
+    (process.env.EMAIL_WEBHOOK_URL || '').trim() &&
+      (process.env.EMAIL_WEBHOOK_SECRET || '').trim()
+  );
+
 const RULES = [
   [/^\/customers(?:\/|$)/, ['crm']],
   [/^\/quotes(?:\/|$)/, ['crm', 'crm_quotes']],
@@ -38,9 +46,14 @@ function productUsage(req, res, next) {
   const pathname = req.path;
   res.once('finish', () => {
     if (!req.admin?.id || res.statusCode < 200 || res.statusCode >= 300) return;
-    const features = RULES.filter(([pattern]) =>
+    let features = RULES.filter(([pattern]) =>
       pattern.test(pathname)
     ).flatMap(([, keys]) => keys);
+    // A webhook-only install sends /email/test through the webhook transport
+    // and never touches SMTP (adminEmail.js has an explicit path for it,
+    // #1225), so recording smtp here would permanently misclassify it.
+    if (features.includes('smtp') && webhookTransportConfigured())
+      features = features.filter((f) => f !== 'smtp');
     if (
       process.env.STORAGE_BACKEND === 's3' &&
       /^\/(?:photos|events)\/[^/]+\/upload(?:\/|$)/.test(pathname)
