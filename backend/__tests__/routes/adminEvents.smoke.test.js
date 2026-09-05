@@ -214,6 +214,44 @@ describe('admin events CRUD endpoints (smoke)', () => {
       expect(row.welcome_message).toBe('Hello guests');
     });
 
+    // #1296 — express-validator runs isInt/isIn/isBoolean element-wise on
+    // arrays, so a single-element array satisfies its field validator and
+    // survives into `updates`, which is spread into .update() with no column
+    // allow-list. That put an array into a scalar column (a PG insert error),
+    // and formatBoolean([false]) read as true. Guarded for every field, not
+    // just the ones that prompted it.
+    it.each([
+      ['image_quality', [72]],
+      ['protection_level', ['basic']],
+      ['use_canvas_rendering', [false]],
+      ['fragmentation_level', [3]],
+      // Not a protection field: the guard is not scoped to that block.
+      ['event_name', ['Arrayed']],
+      ['allow_downloads', [false]],
+    ])('400s on an array value for %s', async (field, value) => {
+      const id = await insertEvent(db, adminId, { event_name: 'Unchanged' });
+      const res = await auth(request(app).put(`/api/admin/events/${id}`))
+        .send({ [field]: value });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(field);
+      // And nothing was written.
+      const row = await db('events').where({ id }).first();
+      expect(row.event_name).toBe('Unchanged');
+    });
+
+    it('still accepts customer_account_ids, the one field that is an array', async () => {
+      const id = await insertEvent(db, adminId, { event_name: 'Keep' });
+      const res = await auth(request(app).put(`/api/admin/events/${id}`)).send({
+        event_name: 'Renamed',
+        customer_account_ids: [],
+      });
+
+      expect(res.status).toBe(200);
+      const row = await db('events').where({ id }).first();
+      expect(row.event_name).toBe('Renamed');
+    });
+
     it('404s when updating a missing event', async () => {
       const res = await auth(request(app).put('/api/admin/events/999999')).send({
         event_name: 'Ghost',

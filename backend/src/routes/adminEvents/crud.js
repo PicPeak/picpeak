@@ -30,7 +30,8 @@ const { clampIntOrUndefined } = require('../../utils/numericHelpers');
 const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const downloadZipService = require('../../services/downloadZipService');
 const { resolveEventFeedbackDefaults, applyFeedbackDefaults, KEYBIND_MODES } = require('../../services/feedbackDefaults');
-const { validateHeroImageAnchor, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults, getBrandingDefaults, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./helpers');
+const { validateHeroImageAnchor, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults,
+  getImageSecurityDefaults, resolveImageSecurityColumns, getBrandingDefaults, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./helpers');
 
 /**
  * `events.slug` is UNIQUE, and both routes that mint one do a read-then-insert
@@ -228,6 +229,13 @@ module.exports = (router) => {
     body('allow_downloads').optional().isBoolean(),
     body('disable_right_click').optional().isBoolean(),
     body('enable_devtools_protection').optional().isBoolean(),
+    // Image security. PUT /:id has validated these all along; create
+    // accepted none of them, so a value sent here used to be dropped on the
+    // floor and the column default applied instead (#1296).
+    body('protection_level').optional().not().isArray().isIn(['basic', 'standard', 'enhanced', 'maximum']),
+    body('use_canvas_rendering').optional().not().isArray().isBoolean().toBoolean(),
+    body('image_quality').optional().not().isArray().isInt({ min: 1, max: 100 }).toInt(),
+    body('fragmentation_level').optional().not().isArray().isInt({ min: 1, max: 10 }).toInt(),
     body('watermark_downloads').optional().isBoolean(),
     body('watermark_text').optional().trim(),
     // #328 follow-up: per-event opt-in for presigned-URL "Download All".
@@ -544,6 +552,14 @@ module.exports = (router) => {
       // the request explicitly overrides it (#317 — admin disabled it globally
       // but new events still got it ON because the column default is true).
       const protectionDefaults = await getDownloadProtectionDefaults();
+      // #1296 — the other four Image-security settings, which were written,
+      // rendered as controls, and read by nothing. Same inheritance rule as
+      // the devtools setting below. Creation-time only; see
+      // getImageSecurityDefaults for why existing events are left alone.
+      const imageSecurityColumns = resolveImageSecurityColumns(
+        req.body,
+        await getImageSecurityDefaults(),
+      );
       const effectiveEnableDevtoolsProtection =
       enableDevtoolsProtectionInput !== undefined
         ? enableDevtoolsProtectionInput
@@ -617,6 +633,9 @@ module.exports = (router) => {
         allow_downloads: formatBoolean(allow_downloads !== undefined ? allow_downloads : true),
         disable_right_click: formatBoolean(disable_right_click !== undefined ? disable_right_click : false),
         enable_devtools_protection: formatBoolean(effectiveEnableDevtoolsProtection),
+        // Request value, else the global default, else the column default —
+        // a key absent here is one the database fills in (#1296).
+        ...imageSecurityColumns,
         watermark_downloads: formatBoolean(watermark_downloads !== undefined ? watermark_downloads : false),
         watermark_text,
         allow_presigned_download: formatBoolean(allow_presigned_download === true || allow_presigned_download === 'true'),
@@ -1400,6 +1419,15 @@ module.exports = (router) => {
         allow_downloads: source.allow_downloads,
         disable_right_click: source.disable_right_click,
         enable_devtools_protection: source.enable_devtools_protection,
+        // A duplicate inherits the source's protection settings, NOT the
+        // current global defaults — copying the gallery is the whole point.
+        // These four sat next to enable_devtools_protection and were simply
+        // missed, so duplicating a 'maximum' event produced a 'standard' one
+        // (#1296).
+        protection_level: source.protection_level,
+        image_quality: source.image_quality,
+        use_canvas_rendering: source.use_canvas_rendering,
+        fragmentation_level: source.fragmentation_level,
         watermark_downloads: source.watermark_downloads,
         watermark_text: source.watermark_text,
         allow_presigned_download: source.allow_presigned_download,
@@ -1629,6 +1657,25 @@ module.exports = (router) => {
 
       const { id } = req.params;
       const updates = { ...req.body };
+
+      // express-validator applies isInt/isIn/isBoolean element-wise to
+      // arrays, so `image_quality: [72]` satisfies its validator and stays
+      // an array. This handler spreads req.body into .update() with no
+      // column allow-list, so such a value reaches a scalar column: a PG
+      // insert error, and `[false]` coerced to true by formatBoolean.
+      //
+      // Guarded here rather than per field because it applies to all 44
+      // validated fields, not to a chosen few. `customer_account_ids` is the
+      // only field that is legitimately an array, and it is deleted from
+      // `updates` below before the write (#1296).
+      const ARRAY_VALUED_FIELDS = new Set(['customer_account_ids']);
+      const arrayValued = Object.keys(updates)
+        .filter((key) => Array.isArray(updates[key]) && !ARRAY_VALUED_FIELDS.has(key));
+      if (arrayValued.length > 0) {
+        return res.status(400).json({
+          error: `Array values are not accepted for: ${arrayValued.join(', ')}`,
+        });
+      }
 
       // Strip identity/provenance/secret columns from the mass-assigned
       // body (GHSA-3rqx). The handler spreads req.body straight into the

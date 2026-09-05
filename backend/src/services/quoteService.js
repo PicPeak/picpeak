@@ -1683,6 +1683,8 @@ async function convertToEvent(quoteId, adminId, options = {}) {
     // ask the DB which columns exist and only keep the matching pairs
     // — bullet-proof against schema drift in either direction.
     const eventCols = await trx('events').columnInfo();
+    const { getImageSecurityDefaults, resolveImageSecurityColumns } = require('../routes/adminEvents/helpers');
+    const imageSecurityColumns = resolveImageSecurityColumns({}, await getImageSecurityDefaults(trx));
     const candidate = {
       slug: `quote-${quote.quote_number.toLowerCase()}-${crypto.randomBytes(3).toString('hex')}`,
       event_name: quote.event_name || `Event ${quote.quote_number}`,
@@ -1705,6 +1707,11 @@ async function convertToEvent(quoteId, adminId, options = {}) {
       quote_id: quote.id,
       created_at: new Date(),
       updated_at: new Date(),
+      // #1296 — a converted quote produces a real gallery, so the global
+      // Image Security defaults have to reach it too. Required lazily: this
+      // is a service reaching into a route helper, and the lazy form keeps
+      // the module graph acyclic the way the storage require below does.
+      ...imageSecurityColumns,
     };
     const eventRow = {};
     for (const [k, v] of Object.entries(candidate)) {
