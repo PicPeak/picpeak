@@ -144,9 +144,6 @@ export const PeopleSheet: React.FC<PeopleSheetProps> = ({
                         alt=""
                         isGallery
                         slug={slug}
-                        photoId={photo.id}
-                        requiresToken={photo.requires_token}
-                        secureUrlTemplate={photo.secure_url_template}
                         // Crop to the face, exactly as the strip does. Without
                         // this a group photo shows whoever is centred — often
                         // not the person being labelled, and identical for two

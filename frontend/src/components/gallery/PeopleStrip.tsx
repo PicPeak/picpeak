@@ -86,9 +86,6 @@ const PersonAvatar: React.FC<PersonAvatarProps> = ({
             alt=""
             isGallery
             slug={slug}
-            photoId={photo.id}
-            requiresToken={photo.requires_token}
-            secureUrlTemplate={photo.secure_url_template}
             style={cropStyle || { width: '100%', height: '100%', objectFit: 'cover' }}
           />
         ) : (
