@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.124.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.124.0-beta.0...v3.124.1-beta.0) (2026-09-05)
+
+
+### Bug Fixes
+
+* remove the fragmentation handling stranded by [#1303](https://github.com/PicPeak/picpeak/issues/1303) ([5dda14f](https://github.com/PicPeak/picpeak/commit/5dda14f7271265506a17acec5d253d9912784692))
+
 ## [3.124.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.123.0-beta.0...v3.124.0-beta.0) (2026-09-05)
 
 
