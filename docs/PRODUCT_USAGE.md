@@ -24,7 +24,7 @@ tracker or CORS policy is required. The collector is the separate
 | `USAGE_ENCRYPTION_KEY` | JWT_SECRET | 32+ characters, encrypts the local Ed25519 key with AES-256-GCM |
 
 Both database engines are supported. The state and marker tables are created
-by migrations 201-203 on PostgreSQL and SQLite alike, and the engine-sensitive
+by migrations 201-204 on PostgreSQL and SQLite alike, and the engine-sensitive
 paths are covered by `__tests__/integration/productUsagePg.test.js` against a
 real PostgreSQL — bigint columns come back as strings there, booleans are real
 booleans rather than 0/1, and the marker write takes `SELECT ... FOR UPDATE`
@@ -63,6 +63,16 @@ reports, projections, feedback/publications, votes, and sessions. PicPeak then
 erases the local fingerprint, private key and binding. A later join generates
 a fresh identity. Repeated deletion handles lost receipts safely.
 
+Migration 204 adds bounded, local-only privacy receipts and removes any legacy
+plaintext voting token from the last collector receipt. A completed export
+records its time and report count; confirmed opt-out replaces this with a
+deletion receipt containing only a random receipt ID, time, status and fixed
+scope. It retains no old installation hash, key, payload or credential. The
+settings page can download these receipts even after opt-out. They are local
+records of the collector acknowledgement, not independent proof of storage
+erasure. Downloaded exports carry their own dated receipt; the collector does
+not create a permanent per-person access/export log.
+
 A missing/mismatched storage binding or conflicting collector sequence stops
 reporting with identity conflict. A full clone of a signing identity cannot be
 distinguished cryptographically. Do not run the same participation identity in
@@ -85,9 +95,21 @@ Public voting uses a backend-authorized 15-minute session, never the lookup hash
 
 The closed schema is in `backend/src/usage/schema.cjs`, with signing in
 `protocol.cjs`. Keep both byte-identical to the collector's `protocol/` copies.
-The collector serves the schema, complete source archive, public projections,
-and full raw exports. Feature semantics and retention are documented in its
+The collector serves its schema and complete source archive publicly. Aggregate
+projections and the complete dataset are accessible to participating
+installations only; raw reports require the installation's confidential lookup
+hash. Raw exports contain the first accepted envelope of every unique usage
+report. Re-signed transport retries are deduplicated; feedback, registration,
+sessions and rejected requests are not usage reports. Full exports use a
+consistent database snapshot at their start, not a 200-record total limit.
+Feature semantics and retention are documented in its
 `docs/PROTOCOL.md` and `docs/OPERATIONS.md`.
+
+Public, reviewed testimonials are separate from marketing approval. Homepage
+integrations must use `/api/public/marketing-testimonials`, never the general
+portal testimonial feed. Each page is bounded and exposes its continuation
+cursor. Deletion removes the source publication; operators must also remove
+any externally copied content and follow the documented backup/log policies.
 
 Used flags represent successful allowlisted admin capability calls since
 joining, not visitor behavior or counts. OAuth marks successful admin SSO;

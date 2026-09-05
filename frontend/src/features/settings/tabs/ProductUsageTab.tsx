@@ -191,13 +191,13 @@ export default function ProductUsageTab() {
       await queryClient.invalidateQueries({ queryKey: ['productUsage'] });
     }
   };
-  const download = (value: unknown) => {
+  const download = (value: unknown, filename = 'picpeak-usage-packets.json') => {
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' })
     );
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'picpeak-usage-packets.json';
+    anchor.download = filename;
     anchor.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -300,6 +300,26 @@ export default function ProductUsageTab() {
           )}
         </div>
       </Card>
+      {data.privacy_receipts &&
+        Object.keys(data.privacy_receipts).length > 0 && (
+          <Card padding="md" className="space-y-4">
+            <h3 className="text-lg font-semibold">
+              {t('productUsage.auditTitle')}
+            </h3>
+            <p>{t('productUsage.auditDescription')}</p>
+            <Button
+              variant="outline"
+              onClick={() =>
+                download(
+                  data.privacy_receipts,
+                  'picpeak-usage-privacy-receipts.json'
+                )
+              }
+            >
+              {t('productUsage.auditDownload')}
+            </Button>
+          </Card>
+        )}
       {active && (
         <>
           <Card padding="md" className="space-y-4">

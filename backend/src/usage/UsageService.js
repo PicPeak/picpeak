@@ -239,6 +239,9 @@ class UsageService {
         ? JSON.parse(state.pending_packet).action
         : null,
       last_packet: state.last_packet ? JSON.parse(state.last_packet) : null,
+      privacy_receipts: state.privacy_receipts
+        ? JSON.parse(state.privacy_receipts)
+        : {},
       feedback_preferences: state.feedback_preferences
         ? JSON.parse(state.feedback_preferences)
         : { name: '' }
@@ -458,17 +461,37 @@ class UsageService {
             pending_packet: null,
             last_packet: null,
             last_receipt: null,
+            privacy_receipts: JSON.stringify({
+              last_deletion: {
+                receipt_version: 'local-audit.v1',
+                kind: 'deletion',
+                receipt_id: crypto.randomUUID(),
+                confirmed_at: new Date(this.now()).toISOString(),
+                status: 'collector-confirmed',
+                scope: [
+                  'reports',
+                  'snapshots',
+                  'feedback',
+                  'votes',
+                  'sessions',
+                  'operations',
+                  'registration'
+                ]
+              }
+            }),
             last_report_date: null,
             last_error: null,
             sequence: 0,
             feedback_preferences: null
           });
       } else {
+        const storedReceipt = { ...receipt };
+        delete storedReceipt.session_token;
         const update = {
           sequence: packet.sequence,
           pending_packet: null,
           last_error: null,
-          last_receipt: JSON.stringify(receipt)
+          last_receipt: JSON.stringify(storedReceipt)
         };
         if (packet.action === 'report') {
           update.last_packet = JSON.stringify(envelope);
@@ -805,11 +828,39 @@ class UsageService {
     if (!state.installation_id) throw new ConflictError('No usage identity');
     // Own-data export includes the complete retained history, not a truncated
     // packet subset. The acceptance/receipt path above stays strictly bounded.
-    return this.post(
+    const result = await this.post(
       '/api/participant/lookup',
       { installation_id: state.installation_id },
       Infinity
     );
+    // Only the last export during this participation is retained locally.
+    // Do not restore audit state if opt-out/identity replacement happened while
+    // the export was in flight. The downloaded file carries the full receipt.
+    const receipts = state.privacy_receipts
+      ? JSON.parse(state.privacy_receipts)
+      : {};
+    await this.db('product_usage_state')
+      .where({
+        id: 1,
+        status: 'active',
+        installation_id: state.installation_id
+      })
+      .update({
+        privacy_receipts: JSON.stringify({
+          ...receipts,
+          last_export: {
+            receipt_version: 'local-audit.v1',
+            kind: 'export',
+            receipt_id: crypto.randomUUID(),
+            confirmed_at: new Date(this.now()).toISOString(),
+            report_count: Array.isArray(result.packets)
+              ? result.packets.length
+              : 0,
+            scope: ['unique accepted usage reports']
+          }
+        })
+      });
+    return result;
   }
 }
 module.exports = { UsageService, FLAG_MAP };

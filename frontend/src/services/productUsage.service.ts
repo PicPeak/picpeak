@@ -16,6 +16,7 @@ export interface UsageStatus {
   last_error: string | null;
   pending_action: string | null;
   last_packet: unknown;
+  privacy_receipts?: Record<string, unknown>;
   feedback_preferences: { name: string };
 }
 export interface ProductFeedback {

@@ -67,6 +67,31 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('product usage controls', () => {
+  it('offers identity-free audit receipts after opt-out without restoring participation controls', async () => {
+    vi.mocked(service.status).mockResolvedValue({
+      ...status,
+      privacy_receipts: {
+        last_deletion: {
+          receipt_version: 'local-audit.v1',
+          kind: 'deletion',
+          status: 'collector-confirmed'
+        }
+      }
+    });
+    mount();
+    expect(
+      await screen.findByRole('button', { name: 'productUsage.auditDownload' })
+    ).toBeEnabled();
+    expect(
+      screen.getByText('productUsage.auditDescription')
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText('productUsage.hash')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('productUsage.feedbackTitle')
+    ).not.toBeInTheDocument();
+  });
   it('requires the disclosure and an unchecked-by-default consent before enabling', async () => {
     mount();
     fireEvent.click(await screen.findByText('productUsage.review'));

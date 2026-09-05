@@ -50,6 +50,7 @@ maybe('product usage on Postgres', () => {
     await require('../../migrations/core/201_product_usage').up(db);
     await require('../../migrations/core/202_product_usage_cancel_requested').up(db);
     await require('../../migrations/core/203_product_usage_cancel_seq').up(db);
+    await require('../../migrations/core/204_product_usage_privacy_receipts').up(db);
 
     await db.schema.createTable('app_settings', (t) => {
       t.string('setting_key').primary(); t.text('setting_value'); t.string('setting_type');
@@ -110,6 +111,18 @@ maybe('product usage on Postgres', () => {
     expect(cols.cancel_seq).toBeDefined();
     expect(cols.cancel_requested).toBeUndefined(); // dropped by 203
     expect(cols.sequence).toBeDefined();
+    expect(cols.privacy_receipts).toBeDefined();
+  });
+
+  it('reruns the receipt migration safely and scrubs legacy plaintext sessions', async () => {
+    const migration = require('../../migrations/core/204_product_usage_privacy_receipts');
+    await db('product_usage_state').where({ id: 1 }).update({
+      last_receipt: JSON.stringify({ status: 'accepted', session_token: 'synthetic-old-token' })
+    });
+    await migration.up(db);
+    await migration.up(db);
+    const row = await db('product_usage_state').where({ id: 1 }).first();
+    expect(JSON.parse(row.last_receipt)).toEqual({ status: 'accepted' });
   });
 
   it('reads bigint cancel_seq correctly even though pg returns it as a string', async () => {

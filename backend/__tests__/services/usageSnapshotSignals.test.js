@@ -27,6 +27,7 @@ async function bootDb() {
     t.string('instance_binding', 64);
     t.bigInteger('sequence').notNullable().defaultTo(0);
     t.text('pending_packet'); t.text('last_packet'); t.text('last_receipt');
+    t.text('privacy_receipts');
     t.string('last_report_date', 10); t.string('last_error', 80);
     t.text('feedback_preferences'); t.string('lease_token', 36);
     t.bigInteger('lease_until').notNullable().defaultTo(0);
