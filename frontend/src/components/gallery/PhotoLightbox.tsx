@@ -1159,9 +1159,6 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                     draggable={false}
                     isGallery={true}
                     slug={slug}
-                    photoId={photo.id}
-                    requiresToken={photo.requires_token}
-                    secureUrlTemplate={photo.secure_url_template}
                   />
                 )}
               </div>
@@ -1189,21 +1186,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                   transition: isDragging ? 'none' : 'transform 0.2s',
                 }}
                 draggable={false}
-                useWatermark={useEnhancedProtection}
-                watermarkText={useEnhancedProtection ? `${photo.filename} - Protected` : undefined}
                 isGallery={true}
                 slug={slug}
-                photoId={photo.id}
-                requiresToken={photo.requires_token}
-                secureUrlTemplate={photo.secure_url_template}
-                protectFromDownload={!allowDownloads || useEnhancedProtection}
-                protectionLevel={protectionLevel}
-                useEnhancedProtection={useEnhancedProtection}
                 useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
-                fragmentGrid={protectionLevel === 'enhanced' || protectionLevel === 'maximum'}
-                blockKeyboardShortcuts={useEnhancedProtection}
-                detectPrintScreen={useEnhancedProtection}
-                detectDevTools={protectionLevel === 'enhanced' || protectionLevel === 'maximum'}
                 onProtectionViolation={(violationType) => {
                   console.warn(`Protection violation in lightbox for photo ${photo.id}: ${violationType}`);
 

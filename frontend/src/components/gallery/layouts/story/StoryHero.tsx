@@ -22,9 +22,7 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
   stats,
   photo,
   slug,
-  allowDownloads = true,
   protectionLevel = 'standard',
-  useEnhancedProtection = false,
   useCanvasRendering = false
 }) => {
   const formattedDate = date
@@ -51,12 +49,6 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
             className="w-full h-full object-cover"
             isGallery={true}
             slug={slug}
-            photoId={photo.id}
-            requiresToken={photo.requires_token}
-            secureUrlTemplate={photo.secure_url_template}
-            protectFromDownload={!allowDownloads || useEnhancedProtection}
-            protectionLevel={protectionLevel}
-            useEnhancedProtection={useEnhancedProtection}
             useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
           />
         ) : (
