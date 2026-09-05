@@ -1591,13 +1591,18 @@ module.exports = (router) => {
     body('source_mode').optional().isIn(['managed', 'reference']),
     body('external_path').optional({ nullable: true }).isString().trim(),
     body('require_password').optional().isBoolean(),
-    // Download protection settings
-    body('protection_level').optional().isIn(['basic', 'standard', 'enhanced', 'maximum']),
-    body('enable_devtools_protection').optional().isBoolean(),
-    body('use_canvas_rendering').optional().isBoolean(),
-    body('overlay_protection').optional().isBoolean(),
-    body('image_quality').optional().isInt({ min: 1, max: 100 }),
-    body('fragmentation_level').optional().isInt({ min: 1, max: 10 }),
+    // Download protection settings. .not().isArray() because
+    // express-validator runs isIn/isBoolean/isInt element-wise: a
+    // single-element array like `image_quality: [72]` satisfies every check
+    // and stays an array, and this handler spreads req.body straight into
+    // the update — so it reached a scalar column as an array (a PG error,
+    // and `[false]` read as true). Same guard as the create chain (#1296).
+    body('protection_level').optional().not().isArray().isIn(['basic', 'standard', 'enhanced', 'maximum']),
+    body('enable_devtools_protection').optional().not().isArray().isBoolean(),
+    body('use_canvas_rendering').optional().not().isArray().isBoolean(),
+    body('overlay_protection').optional().not().isArray().isBoolean(),
+    body('image_quality').optional().not().isArray().isInt({ min: 1, max: 100 }),
+    body('fragmentation_level').optional().not().isArray().isInt({ min: 1, max: 10 }),
     body('password').optional().isString().custom((value) => {
       if (value === undefined || value === null || value === '') {
         return true;
