@@ -291,12 +291,22 @@ function sanitizeCSS(cssContent) {
   // Remove HTML comments that might be used for injection
   sanitized = sanitized.replace(/<!--[\s\S]*?-->/g, '');
 
-  // URLs are scanned AFTER the comment strip, not before. Removing
-  // `<!--x-->` from `u<!--x-->rl(https://evil.example/p.gif)` JOINS the
-  // remaining characters into a live `url(...)` — so a scan that ran first
-  // saw no token, reported the input clean, and the transformation below it
-  // then produced exactly the request the scan was there to prevent. Any
-  // pass that can join tokens has to happen before validation, not after.
+  // Remove control characters BEFORE the URL scan. This is the same
+  // token-joining hazard as the HTML-comment strip above: dropping the
+  // \u0001 from `u\u0001rl(https://evil.example/p.gif)` joins the remainder
+  // into a live `url(...)`, so a scan that ran first saw no token and
+  // reported the input clean. Newlines are control characters too, which
+  // made `u\nrl(...)` the same bypass in ordinary-looking CSS.
+  // eslint-disable-next-line no-control-regex -- intentional: strips control chars from untrusted CSS
+  sanitized = sanitized.replace(/[\u0000-\u001F\u007F]/g, '');
+
+  // URLs are scanned AFTER the comment and control-character strips, not
+  // before. Removing `<!--x-->` from `u<!--x-->rl(https://evil.example/p.gif)`
+  // JOINS the remaining characters into a live `url(...)` — so a scan that
+  // ran first saw no token, reported the input clean, and the transformation
+  // below it then produced exactly the request the scan was there to
+  // prevent. Any pass that can join tokens has to happen before validation,
+  // not after.
   const urlPass = stripDisallowedUrls(sanitized);
   if (urlPass.blocked > 0) {
     warnings.push(
@@ -305,10 +315,6 @@ function sanitizeCSS(cssContent) {
     );
     sanitized = urlPass.sanitized;
   }
-
-  // Remove control characters
-  // eslint-disable-next-line no-control-regex -- intentional: strips control chars from untrusted CSS
-  sanitized = sanitized.replace(/[\u0000-\u001F\u007F]/g, '');
 
   // Remove any remaining script-like content
   sanitized = sanitized.replace(/<[^>]*>/g, '/* BLOCKED TAG */');

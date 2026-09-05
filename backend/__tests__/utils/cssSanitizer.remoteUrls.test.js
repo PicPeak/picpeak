@@ -221,6 +221,24 @@ describe('sanitizeCSS', () => {
     expect(asParsed(sanitized)).not.toContain('evil.example');
   });
 
+  it.each([
+    ['a C0 control character', '\u0001'],
+    ['a NUL byte', '\u0000'],
+    ['a DEL byte', '\u007F'],
+    // Newlines are control characters for this strip, so the bypass did not
+    // need an exotic byte — ordinary-looking wrapped CSS was enough.
+    ['a newline', '\n'],
+  ])('blocks a url() that only becomes one after %s is removed', (_label, ch) => {
+    // Same token-joining hazard as the HTML-comment case above: the control
+    // strip used to run AFTER the URL scan, so `u\u0001rl(...)` was scanned
+    // as clean and then joined into a live remote request, with no warning.
+    const { sanitized, warnings } = sanitizeCSS(
+      `.a{background:u${ch}rl(https://evil.example/p.gif)}`
+    );
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+    expect(warnings.join(' ')).toContain('external URL');
+  });
+
   it('still blocks the other forbidden patterns', () => {
     const { sanitized } = sanitizeCSS(
       '@import url("https://x/e.css"); .a{width:expression(alert(1));behavior:url(e.htc)}'
