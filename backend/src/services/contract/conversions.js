@@ -229,6 +229,8 @@ async function convertToEvent(contractId, adminId) {
     || (await resolveDefaultEventType());
 
   const eventCols = await db('events').columnInfo();
+  const { getImageSecurityDefaults, resolveImageSecurityColumns } = require('../../routes/adminEvents/helpers');
+  const imageSecurityColumns = resolveImageSecurityColumns({}, await getImageSecurityDefaults());
   const candidate = {
     slug: `contract-${contract.contract_number.toLowerCase()}-${crypto.randomBytes(3).toString('hex')}`,
     // Prefer the contract's event_name snapshot (set on the contract
@@ -255,6 +257,11 @@ async function convertToEvent(contractId, adminId) {
     quote_id: null,
     created_at: new Date(),
     updated_at: new Date(),
+    // #1296 — a signed standalone contract converts straight to a gallery
+    // here, without going through quoteService, so the global Image Security
+    // defaults have to be applied on this path too. Not inside a transaction,
+    // so the global db read is fine.
+    ...imageSecurityColumns,
   };
   const eventRow = {};
   for (const [k, v] of Object.entries(candidate)) {

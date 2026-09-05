@@ -4,6 +4,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const secureImageMiddleware = require('../middleware/secureImageMiddleware');
 const logger = require('../utils/logger');
+const { decodeSettingValue } = require('./adminEvents/helpers');
 
 const router = express.Router();
 
@@ -40,14 +41,7 @@ router.get('/settings', adminAuth, requirePermission(['settings.view', 'image_se
       // edited, until consumers could no longer read them (#1296). Decode
       // here so a round trip is idempotent. This terminates: each parse of
       // a string is strictly shorter than its input.
-      let value = setting.setting_value;
-      while (typeof value === 'string') {
-        let parsed;
-        try { parsed = JSON.parse(value); } catch { break; }
-        if (parsed === value) break;
-        value = parsed;
-      }
-      config[setting.setting_key] = value;
+      config[setting.setting_key] = decodeSettingValue(setting.setting_value);
     });
 
     res.json(config);

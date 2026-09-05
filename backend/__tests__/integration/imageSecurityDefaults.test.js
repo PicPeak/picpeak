@@ -24,10 +24,11 @@ describe('image-security creation defaults', () => {
   let cleanup;
   let getImageSecurityDefaults;
   let resolveImageSecurityColumns;
+  let readBooleanSetting;
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
-    ({ getImageSecurityDefaults, resolveImageSecurityColumns } =
+    ({ getImageSecurityDefaults, resolveImageSecurityColumns, readBooleanSetting } =
       require('../../src/routes/adminEvents/helpers'));
   }, 120000);
 
@@ -146,6 +147,31 @@ describe('image-security creation defaults', () => {
     it('still rejects a malformed value however many times it was encoded', async () => {
       await setRaw('default_image_quality', JSON.stringify(JSON.stringify('72oops')));
       expect(await getImageSecurityDefaults()).toEqual({});
+    });
+  });
+
+  describe('readBooleanSetting shares the same decoder', () => {
+    // Every reader of app_settings has to agree, or the settings tab shows
+    // protection disabled while newly created galleries turn it on.
+    const setRaw2 = async (key, raw) => {
+      await db('app_settings')
+        .insert({ setting_key: key, setting_value: raw, setting_type: 'security' })
+        .onConflict('setting_key').merge();
+    };
+
+    it('reads a double-encoded false as false, not as absent', async () => {
+      await setRaw2('enable_devtools_protection', JSON.stringify(JSON.stringify(false)));
+      expect(await readBooleanSetting('enable_devtools_protection')).toBe(false);
+    });
+
+    it('still reads a singly-encoded value', async () => {
+      await setRaw2('enable_devtools_protection', JSON.stringify(true));
+      expect(await readBooleanSetting('enable_devtools_protection')).toBe(true);
+    });
+
+    it('returns undefined for a non-boolean, so the caller keeps its default', async () => {
+      await setRaw2('enable_devtools_protection', JSON.stringify('sometimes'));
+      expect(await readBooleanSetting('enable_devtools_protection')).toBeUndefined();
     });
   });
 

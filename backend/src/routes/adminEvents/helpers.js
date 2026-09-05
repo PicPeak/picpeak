@@ -73,14 +73,37 @@ const getEventFieldRequirements = async () => {
 // Helper to read app_settings booleans by key, used to inherit per-setting
 // defaults onto new events. Returns `undefined` for missing/non-boolean rows
 // so callers can fall back to a legacy default.
+/**
+ * Decode an app_settings value into the JS value it represents.
+ *
+ * setting_value is JSON text on SQLite and may already be decoded by the
+ * driver on a PG json column, so one parse does not normalise both. On top
+ * of that, the Image Security tab used to PUT back values it had read
+ * undecoded, wrapping another layer of quoting around each one on every
+ * save — the GET handler decodes now, but installs carry however many
+ * layers they accumulated before that.
+ *
+ * Every reader of app_settings has to agree about this, or the admin UI
+ * shows one thing while event creation does another.
+ *
+ * Terminates: each parse of a string is strictly shorter than its input.
+ */
+const decodeSettingValue = (raw) => {
+  let value = raw;
+  while (typeof value === 'string') {
+    let parsed;
+    try { parsed = JSON.parse(value); } catch { break; }
+    if (parsed === value) break;
+    value = parsed;
+  }
+  return value;
+};
+
 const readBooleanSetting = async (key) => {
   try {
     const setting = await db('app_settings').where('setting_key', key).first();
     if (!setting) return undefined;
-    let value = setting.setting_value;
-    if (typeof value === 'string') {
-      try { value = JSON.parse(value); } catch { /* keep raw */ }
-    }
+    const value = decodeSettingValue(setting.setting_value);
     return typeof value === 'boolean' ? value : undefined;
   } catch (error) {
     logger.error('Failed to read app setting', { key, error: error.message });
@@ -170,14 +193,7 @@ const getImageSecurityDefaults = async (trx = null) => {
     const read = (key) => {
       const row = rows.find((r) => r.setting_key === key);
       if (!row) return undefined;
-      let value = row.setting_value;
-      while (typeof value === 'string') {
-        let parsed;
-        try { parsed = JSON.parse(value); } catch { break; }
-        if (parsed === value) break;
-        value = parsed;
-      }
-      return value;
+      return decodeSettingValue(row.setting_value);
     };
 
     const level = read('default_protection_level');
@@ -684,6 +700,7 @@ module.exports = {
   getStoragePath,
   getEventFieldRequirements,
   readBooleanSetting,
+  decodeSettingValue,
   getDownloadProtectionDefaults,
   getImageSecurityDefaults,
   resolveImageSecurityColumns,

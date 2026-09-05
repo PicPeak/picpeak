@@ -37,7 +37,7 @@ const logger = require('../../utils/logger');
 const { slugify } = require('../../utils/slug');
 const { formatBoolean } = require('../../utils/dbCompat');
 const { parseBooleanInput } = require('../../utils/parsers');
-const { getImageSecurityDefaults, resolveImageSecurityColumns } = require('../adminEvents/helpers');
+const { getImageSecurityDefaults, resolveImageSecurityColumns, decodeSettingValue } = require('../adminEvents/helpers');
 const { isValidEventType } = require('../../services/eventTypeService');
 const { replacePhoto } = require('../../services/photoReplacementService');
 const { getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB } = require('../../services/uploadSettings');
@@ -236,10 +236,11 @@ router.post(
       if (devtoolsInput === undefined) {
         const setting = await db('app_settings').where('setting_key', 'enable_devtools_protection').first();
         if (setting) {
-          try {
-            const parsed = JSON.parse(setting.setting_value);
-            if (typeof parsed === 'boolean') devtoolsFallback = parsed;
-          } catch { /* keep true */ }
+          // Shared decoder: a legacy row can carry several layers of JSON
+          // quoting, and a single parse would leave the string 'false' here,
+          // reject it, and quietly enable protection the operator disabled.
+          const parsed = decodeSettingValue(setting.setting_value);
+          if (typeof parsed === 'boolean') devtoolsFallback = parsed;
         }
       }
       const enable_devtools_protection = parseBooleanInput(devtoolsInput, devtoolsFallback);
