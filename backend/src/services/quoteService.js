@@ -1684,7 +1684,7 @@ async function convertToEvent(quoteId, adminId, options = {}) {
     // — bullet-proof against schema drift in either direction.
     const eventCols = await trx('events').columnInfo();
     const { getImageSecurityDefaults, resolveImageSecurityColumns } = require('../routes/adminEvents/helpers');
-    const imageSecurityColumns = resolveImageSecurityColumns({}, await getImageSecurityDefaults());
+    const imageSecurityColumns = resolveImageSecurityColumns({}, await getImageSecurityDefaults(trx));
     const candidate = {
       slug: `quote-${quote.quote_number.toLowerCase()}-${crypto.randomBytes(3).toString('hex')}`,
       event_name: quote.event_name || `Event ${quote.quote_number}`,

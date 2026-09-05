@@ -134,6 +134,15 @@ describe('image-security creation defaults', () => {
       expect(await getImageSecurityDefaults()).toEqual({ image_quality: 72 });
     });
 
+    it('reads a value buried under many saves, not just one', async () => {
+      // Each visit to the settings tab used to add a layer, so the depth is
+      // however many times someone opened it — not a number to cap.
+      let raw = JSON.stringify('maximum');
+      for (let i = 0; i < 8; i += 1) raw = JSON.stringify(raw);
+      await setRaw('default_protection_level', raw);
+      expect(await getImageSecurityDefaults()).toEqual({ protection_level: 'maximum' });
+    });
+
     it('still rejects a malformed value however many times it was encoded', async () => {
       await setRaw('default_image_quality', JSON.stringify(JSON.stringify('72oops')));
       expect(await getImageSecurityDefaults()).toEqual({});

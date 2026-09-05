@@ -135,10 +135,16 @@ const toInteger = (value) => {
   return undefined;
 };
 
-const getImageSecurityDefaults = async () => {
+const getImageSecurityDefaults = async (trx = null) => {
   const defaults = {};
   try {
-    const rows = await db('app_settings')
+    // Accepts a transaction the way getAppSetting does. It matters on
+    // sqlite3, whose pool holds a single connection: a caller already inside
+    // db.transaction() that read through the global `db` would block on the
+    // connection its own transaction holds until the acquire timeout, and
+    // the catch below would then quietly swallow it and drop the defaults.
+    const query = trx || db;
+    const rows = await query('app_settings')
       .whereIn('setting_key', [
         'default_protection_level',
         'default_image_quality',
@@ -156,12 +162,16 @@ const getImageSecurityDefaults = async () => {
     // `true` is stored as "\"true\"" and a single parse yields the string
     // 'true', which the type checks below reject — the settings would go
     // quietly dead again, which is the bug this whole change exists to fix.
-    // Unwrap until it stops being a JSON string, bounded so nothing spins.
+    // The GET handler now decodes, so this stops accumulating — but installs
+    // that already stacked N layers have to keep working, and N is however
+    // many times someone opened that tab. So unwrap until it stops being a
+    // JSON string rather than to a fixed depth; this terminates because each
+    // parse of a string is strictly shorter than its input.
     const read = (key) => {
       const row = rows.find((r) => r.setting_key === key);
       if (!row) return undefined;
       let value = row.setting_value;
-      for (let i = 0; i < 4 && typeof value === 'string'; i += 1) {
+      while (typeof value === 'string') {
         let parsed;
         try { parsed = JSON.parse(value); } catch { break; }
         if (parsed === value) break;
