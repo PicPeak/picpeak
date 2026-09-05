@@ -220,29 +220,63 @@ class UsageService {
           'Finish the current participation before rejoining'
         );
       this.collectorUrl();
+      // A cancellation left over from an earlier participation must not veto
+      // this deliberate opt-in, so the flag is cleared before the slow work
+      // starts. Anything set from here on is a withdrawal aimed at THIS
+      // activation.
+      await this.db('product_usage_state')
+        .where({ id: 1 })
+        .update({ cancel_requested: formatBoolean(false) });
+
       const identity = generateIdentity();
       const pending = makePacket(identity, 'register', 0, {
         consent_version: consent
       });
-      await this.db('product_usage_state')
-        .where({ id: 1 })
+      // Identity generation and the binding file are the slow part, and the
+      // row still reads `disabled` throughout — which is why /disable could
+      // not see an activation in flight and its conditional update matched
+      // nothing.
+      const instanceBinding = await this.binding(true);
+
+      // The claim itself carries the check. Re-reading the flag and then
+      // updating would only move the window rather than close it: this is one
+      // conditional UPDATE, so a /disable that lands first makes it match no
+      // rows and the registration is never sent.
+      const claimed = await this.db('product_usage_state')
+        .where({ id: 1, status: 'disabled' })
+        .whereNot({ cancel_requested: formatBoolean(true) })
         .update({
           status: 'activation_pending',
           notice_dismissed: formatBoolean(true),
           installation_id: identity.installation_id,
           public_key: identity.public_key,
           private_key_encrypted: this.encrypt(identity.private_key),
-          instance_binding: await this.binding(true),
+          instance_binding: instanceBinding,
           sequence: 0,
           pending_packet: JSON.stringify(pending),
           last_error: null
         });
+      // Withdrawn while activating. Participation stays off and nothing was
+      // registered, so there is nothing to delete remotely either.
+      if (!claimed) return;
+
       await this.deliver(await this.state());
     });
     return this.status();
   }
 
   async disable() {
+    // Recorded unconditionally and first, because the interesting case is the
+    // one where there is seemingly nothing to stop: while /enable is still
+    // generating an identity the row reads `disabled`, so the conditional
+    // update below matches nothing and the lease conflict from tick() is
+    // swallowed — the admin was told participation was off while the
+    // activation went on to complete. enable() claims its state conditionally
+    // on this flag, so a withdrawal that lands during that window wins.
+    await this.db('product_usage_state')
+      .where({ id: 1 })
+      .update({ cancel_requested: formatBoolean(true) });
+
     // Stop collection before waiting for an in-flight send. The sender checks
     // state again before delivery and preserves this stop after its response.
     await this.db('product_usage_state')
