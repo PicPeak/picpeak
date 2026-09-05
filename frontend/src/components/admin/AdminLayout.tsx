@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 
 import { useAdminAuth } from '../../contexts';
@@ -11,6 +11,7 @@ import { MigrationBanner } from './MigrationBanner';
 import { MandatoryPasswordChangeModal } from './MandatoryPasswordChangeModal';
 
 const SIDEBAR_COLLAPSED_KEY = 'admin-sidebar-collapsed';
+const ProductUsageNotice = lazy(() => import('./ProductUsageNotice'));
 
 export const AdminLayout: React.FC = () => {
   const { isAuthenticated, isLoading, mustChangePassword } = useAdminAuth();
@@ -125,6 +126,7 @@ const AdminLayoutInner: React.FC<AdminLayoutInnerProps> = ({ sidebarOpen, setSid
             (or remove this mount) after operators have had time to update their
             docker-compose.yml. See #669. */}
         <MigrationBanner />
+        {!mustChangePassword && <Suspense fallback={null}><ProductUsageNotice /></Suspense>}
 
         {/* Page content - disabled when password change required.
             overflow moved up to the column so the scrollbar gutter is

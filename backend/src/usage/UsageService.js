@@ -1,0 +1,639 @@
+'use strict';
+const crypto = require('crypto');
+const fs = require('fs/promises');
+const path = require('path');
+const { getStoragePath } = require('../config/storage');
+const { formatBoolean } = require('../utils/dbCompat');
+const {
+  ConflictError,
+  ValidationError,
+  ServiceUnavailableError
+} = require('../utils/errors');
+const {
+  generateIdentity,
+  makePacket,
+  signPacket,
+  verifyEnvelope,
+  digest,
+  canonical,
+  FEATURE_KEYS,
+  LAYOUTS
+} = require('./protocol.cjs');
+
+const FLAG_MAP = {
+  crm: 'clients',
+  crm_quotes: 'quotes',
+  crm_invoices: 'bills',
+  crm_contracts: 'contracts',
+  crm_projects: 'projects',
+  crm_calendar: 'calendar',
+  crm_hours: 'hoursLogging',
+  customer_portal: 'customerPortal',
+  accounting: 'accounting',
+  workflows: 'workflows',
+  newsletters: 'newsletters',
+  face_recognition: 'faces',
+  whatsapp: 'whatsapp'
+};
+const SETTING_KEYS = [
+  'oidc_enabled',
+  'oidc_issuer_url',
+  'oidc_client_id',
+  'backup_enabled',
+  'backup_destination_type',
+  'backup_s3_bucket',
+  'theme_config',
+  'general_custom_css',
+  'general_public_site_custom_css'
+];
+const truth = (value) => value === true || value === 1 || value === '1';
+const parse = (value) => {
+  try {
+    return JSON.parse(value);
+  } catch (_) {
+    return value;
+  }
+};
+
+class UsageService {
+  constructor(db, options = {}) {
+    this.db = db;
+    this.fetch = options.fetch || global.fetch;
+    this.now = options.now || (() => Date.now());
+    this.version = options.version || require('../../package.json').version;
+    this.secret =
+      options.secret ||
+      process.env.USAGE_ENCRYPTION_KEY ||
+      process.env.JWT_SECRET;
+    this.endpoint =
+      options.endpoint ||
+      process.env.USAGE_COLLECTOR_URL ||
+      'https://usage.picpeak.app';
+    this.bindingPath =
+      options.bindingPath || path.join(getStoragePath(), 'usage-instance.key');
+    this.encKey = null;
+  }
+
+  collectorUrl() {
+    const url = new URL(this.endpoint);
+    const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+    if (
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== '/' ||
+      (url.protocol !== 'https:' &&
+        !(
+          url.protocol === 'http:' &&
+          loopback &&
+          process.env.NODE_ENV !== 'production'
+        ))
+    ) {
+      throw new ValidationError('Invalid usage collector URL');
+    }
+    return url.origin;
+  }
+  key() {
+    if (!this.secret || this.secret.length < 32)
+      throw new ServiceUnavailableError(
+        'Usage signing-key encryption is not configured'
+      );
+    if (!this.encKey)
+      this.encKey = crypto.scryptSync(
+        this.secret,
+        'picpeak-product-usage-v1',
+        32
+      );
+    return this.encKey;
+  }
+  encrypt(value) {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', this.key(), iv);
+    const data = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+    return [iv, cipher.getAuthTag(), data]
+      .map((v) => v.toString('base64url'))
+      .join('.');
+  }
+  decrypt(value) {
+    const [iv, tag, data] = value
+      .split('.')
+      .map((v) => Buffer.from(v, 'base64url'));
+    const cipher = crypto.createDecipheriv('aes-256-gcm', this.key(), iv);
+    cipher.setAuthTag(tag);
+    return Buffer.concat([cipher.update(data), cipher.final()]).toString(
+      'utf8'
+    );
+  }
+  async binding(create = false) {
+    if (create) {
+      await fs.mkdir(path.dirname(this.bindingPath), { recursive: true });
+      try {
+        await fs.writeFile(
+          this.bindingPath,
+          crypto.randomBytes(32).toString('hex'),
+          { flag: 'wx', mode: 0o600 }
+        );
+      } catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+      }
+    }
+    try {
+      return digest(await fs.readFile(this.bindingPath));
+    } catch (error) {
+      if (error.code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+  async state() {
+    return this.db('product_usage_state').where({ id: 1 }).first();
+  }
+  async status() {
+    const state = await this.state();
+    return {
+      status: state.status,
+      notice_dismissed: Boolean(state.notice_dismissed),
+      installation_id: state.installation_id,
+      collector_url: this.collectorUrl(),
+      schema_version: 'usage.v1',
+      last_report_date: state.last_report_date,
+      last_error: state.last_error,
+      pending_action: state.pending_packet
+        ? JSON.parse(state.pending_packet).action
+        : null,
+      last_packet: state.last_packet ? JSON.parse(state.last_packet) : null,
+      feedback_preferences: state.feedback_preferences
+        ? JSON.parse(state.feedback_preferences)
+        : { name: '' }
+    };
+  }
+
+  async locked(fn) {
+    const token = crypto.randomUUID();
+    const updated = await this.db('product_usage_state')
+      .where({ id: 1 })
+      .where('lease_until', '<=', this.now())
+      .update({ lease_token: token, lease_until: this.now() + 60000 });
+    if (!updated)
+      throw new ConflictError('Usage operation is already in progress');
+    try {
+      return await fn(await this.state());
+    } finally {
+      await this.db('product_usage_state')
+        .where({ id: 1, lease_token: token })
+        .update({ lease_token: null, lease_until: 0 });
+    }
+  }
+
+  async dismiss() {
+    await this.db('product_usage_state')
+      .where({ id: 1 })
+      .update({ notice_dismissed: formatBoolean(true) });
+    return this.status();
+  }
+  async enable(consent) {
+    if (consent !== 'usage-consent.v1')
+      throw new ValidationError('Explicit usage consent is required');
+    await this.locked(async (state) => {
+      if (state.status !== 'disabled')
+        throw new ConflictError(
+          'Finish the current participation before rejoining'
+        );
+      this.collectorUrl();
+      const identity = generateIdentity();
+      const pending = makePacket(identity, 'register', 0, {
+        consent_version: consent
+      });
+      await this.db('product_usage_state')
+        .where({ id: 1 })
+        .update({
+          status: 'activation_pending',
+          notice_dismissed: formatBoolean(true),
+          installation_id: identity.installation_id,
+          public_key: identity.public_key,
+          private_key_encrypted: this.encrypt(identity.private_key),
+          instance_binding: await this.binding(true),
+          sequence: 0,
+          pending_packet: JSON.stringify(pending),
+          last_error: null
+        });
+      await this.deliver(await this.state());
+    });
+    return this.status();
+  }
+
+  async disable() {
+    // Stop collection before waiting for an in-flight send. The sender checks
+    // state again before delivery and preserves this stop after its response.
+    await this.db('product_usage_state')
+      .where({ id: 1 })
+      .whereNot({ status: 'disabled' })
+      .update({
+        status: 'deletion_pending',
+        feedback_preferences: null,
+        pending_packet: null,
+        last_packet: null,
+        last_receipt: null,
+        last_report_date: null
+      });
+    await this.db('product_usage_markers').delete();
+    try {
+      await this.tick();
+    } catch (error) {
+      // A sender may still own the lease. Collection is already stopped and
+      // the next admin activity retries deletion after that sender finishes.
+      if (error.code !== 'CONFLICT') throw error;
+    }
+    return this.status();
+  }
+
+  async post(pathname, body, maxResponseBytes = 65536) {
+    const response = await this.fetch(`${this.collectorUrl()}${pathname}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      redirect: 'error',
+      signal: AbortSignal.timeout(10000)
+    });
+    if (Number(response.headers.get('content-length') || 0) > maxResponseBytes)
+      throw new ServiceUnavailableError('Invalid collector response');
+    let raw = '';
+    let bytes = 0;
+    const decoder = new TextDecoder();
+    for await (const chunk of response.body) {
+      bytes += chunk.length;
+      if (bytes > maxResponseBytes)
+        throw new ServiceUnavailableError('Invalid collector response');
+      raw += decoder.decode(chunk, { stream: true });
+    }
+    raw += decoder.decode();
+    const value = JSON.parse(raw);
+    if (!response.ok) {
+      const error = new Error('Collector rejected operation');
+      error.code = value.error;
+      throw error;
+    }
+    return value;
+  }
+  async deliver(state) {
+    const packet = JSON.parse(state.pending_packet);
+    if (
+      packet.action !== 'delete' &&
+      (await this.state()).status === 'deletion_pending'
+    )
+      return null;
+    try {
+      if (
+        packet.action !== 'delete' &&
+        state.instance_binding !== (await this.binding())
+      ) {
+        await this.db('product_usage_state')
+          .where({ id: 1 })
+          .update({
+            status: 'identity_conflict',
+            last_error: 'INSTANCE_COPY_DETECTED'
+          });
+        return null;
+      }
+      const envelope = signPacket(
+        packet,
+        {
+          public_key: state.public_key,
+          private_key: this.decrypt(state.private_key_encrypted)
+        },
+        new Date(this.now())
+      );
+      const receipt = await this.post('/api/envelopes', envelope);
+      if (
+        receipt.packet_id !== packet.packet_id ||
+        receipt.installation_id !== packet.installation_id ||
+        receipt.packet_digest !== digest(canonical(packet)) ||
+        receipt.action !== packet.action ||
+        receipt.sequence !== packet.sequence ||
+        receipt.status !== (packet.action === 'delete' ? 'deleted' : 'accepted')
+      ) {
+        throw new Error('Invalid collector receipt');
+      }
+      if (packet.action === 'delete') {
+        await fs.unlink(this.bindingPath).catch((error) => {
+          if (error.code !== 'ENOENT') throw error;
+        });
+        await this.db('product_usage_markers').delete();
+        await this.db('product_usage_state')
+          .where({ id: 1 })
+          .update({
+            status: 'disabled',
+            installation_id: null,
+            public_key: null,
+            private_key_encrypted: null,
+            instance_binding: null,
+            pending_packet: null,
+            last_packet: null,
+            last_receipt: null,
+            last_report_date: null,
+            last_error: null,
+            sequence: 0,
+            feedback_preferences: null
+          });
+      } else {
+        const update = {
+          sequence: packet.sequence,
+          pending_packet: null,
+          last_error: null,
+          last_receipt: JSON.stringify(receipt)
+        };
+        if (packet.action === 'report') {
+          update.last_packet = JSON.stringify(envelope);
+          update.last_report_date = packet.payload.report_date;
+        }
+        await this.db('product_usage_state')
+          .where({ id: 1 })
+          .whereNot({ status: 'deletion_pending' })
+          .update(update);
+        await this.db('product_usage_state')
+          .where({ id: 1, status: 'deletion_pending' })
+          .update({ sequence: packet.sequence, pending_packet: null });
+        if (packet.action === 'register')
+          await this.db('product_usage_state')
+            .where({ id: 1, status: 'activation_pending' })
+            .update({ status: 'active' });
+      }
+      return receipt;
+    } catch (error) {
+      const rejected = [
+        'INVALID_PACKET',
+        'INVALID_REPORT_DATE',
+        'INVALID_PUBLICATION_CONSENT',
+        'REQUEST_NOT_FOUND',
+        'FEEDBACK_CONFLICT'
+      ].includes(error.code);
+      if (rejected && ['feedback', 'vote', 'session'].includes(packet.action)) {
+        await this.db('product_usage_state')
+          .where({ id: 1 })
+          .whereNot({ status: 'deletion_pending' })
+          .update({ pending_packet: null, last_error: 'REQUEST_REJECTED' });
+        return null;
+      }
+      const conflict = [
+        'SEQUENCE_CONFLICT',
+        'IDENTITY_CONFLICT',
+        'IDENTITY_REVOKED',
+        'NOT_REGISTERED',
+        'PACKET_CONFLICT'
+      ].includes(error.code);
+      const code = conflict ? error.code : 'DELIVERY_FAILED';
+      await this.db('product_usage_state')
+        .where({ id: 1 })
+        .update({ last_error: code });
+      if (conflict && packet.action !== 'delete') {
+        await this.db('product_usage_state')
+          .where({ id: 1 })
+          .whereNot({ status: 'deletion_pending' })
+          .update({ status: 'identity_conflict' });
+      }
+      return null;
+    }
+  }
+
+  async tick() {
+    await this.locked(async (state) => {
+      if (state.status === 'disabled') return;
+      if (state.status === 'deletion_pending') {
+        const packet = makePacket(state, 'delete', Number(state.sequence), {});
+        state.pending_packet = JSON.stringify(packet);
+        await this.db('product_usage_state')
+          .where({ id: 1 })
+          .update({ pending_packet: state.pending_packet });
+        await this.deliver(state);
+        return;
+      }
+      if (state.status === 'identity_conflict') return;
+      if (state.pending_packet) {
+        await this.deliver(state);
+        state = await this.state();
+      }
+      if (state.status !== 'active' || state.pending_packet) return;
+      if (
+        state.last_report_date ===
+        new Date(this.now()).toISOString().slice(0, 10)
+      )
+        return;
+      const payload = await this.snapshot();
+      const packet = makePacket(
+        state,
+        'report',
+        Number(state.sequence) + 1,
+        payload
+      );
+      state.pending_packet = JSON.stringify(packet);
+      await this.db('product_usage_state')
+        .where({ id: 1 })
+        .update({ pending_packet: state.pending_packet });
+      await this.deliver(state);
+    });
+    return this.status();
+  }
+
+  async markUsed(features) {
+    const allowed = [...new Set(features)].filter((f) =>
+      FEATURE_KEYS.includes(f)
+    );
+    if (!allowed.length) return;
+    // Single-transaction status check prevents opt-out racing a late marker.
+    await this.db.transaction(async (tx) => {
+      const query = tx('product_usage_state').where({ id: 1 });
+      if (this.db.client.config.client === 'pg') query.forUpdate();
+      const state = await query.first();
+      if (!state || state.status !== 'active') return;
+      if (allowed.includes('backup')) {
+        const destination = await tx('app_settings')
+          .where({ setting_key: 'backup_destination_type' })
+          .first();
+        if (destination && parse(destination.setting_value) === 's3')
+          allowed.push('s3_storage');
+      }
+      await tx('product_usage_markers')
+        .insert(allowed.map((feature) => ({ feature })))
+        .onConflict('feature')
+        .ignore();
+    });
+  }
+
+  async snapshot() {
+    const rows = await this.db('app_settings')
+      .whereIn('setting_key', SETTING_KEYS)
+      .select('setting_key', 'setting_value');
+    const settings = Object.fromEntries(
+      rows.map((r) => [r.setting_key, parse(r.setting_value)])
+    );
+    const flagRows = await this.db('feature_flags')
+      .whereIn('key', Object.values(FLAG_MAP))
+      .select('key', 'value');
+    const flags = Object.fromEntries(
+      flagRows.map((r) => [r.key, truth(r.value)])
+    );
+    const used = new Set(
+      await this.db('product_usage_markers').pluck('feature')
+    );
+    const features = Object.fromEntries(
+      FEATURE_KEYS.map((key) => [
+        key,
+        { configured: Boolean(flags[FLAG_MAP[key]]), used: used.has(key) }
+      ])
+    );
+    features.oauth.configured =
+      truth(settings.oidc_enabled) &&
+      Boolean(settings.oidc_issuer_url && settings.oidc_client_id);
+    features.backup.configured = truth(settings.backup_enabled);
+    features.s3_storage.configured =
+      (settings.backup_destination_type === 's3' &&
+        Boolean(settings.backup_s3_bucket)) ||
+      (process.env.STORAGE_BACKEND === 's3' &&
+        Boolean(
+          process.env.STORAGE_S3_BUCKET &&
+            process.env.STORAGE_S3_ACCESS_KEY &&
+            process.env.STORAGE_S3_SECRET_KEY
+        ));
+    features.share_mounts.configured = Boolean(
+      await this.db('events')
+        .whereNotNull('external_path')
+        .whereNot('external_path', '')
+        .select('id')
+        .first()
+    );
+    features.smtp.configured =
+      Boolean(
+        await this.db('email_configs')
+          .whereNotNull('smtp_host')
+          .whereNot('smtp_host', '')
+          .select('id')
+          .first()
+      ) ||
+      Boolean(
+        await this.db('mail_accounts')
+          .whereNotNull('smtp_host')
+          .whereNot('smtp_host', '')
+          .select('id')
+          .first()
+      );
+    features.whatsapp.configured =
+      features.whatsapp.configured &&
+      Boolean(
+        await this.db('whatsapp_configs')
+          .where({ enabled: formatBoolean(true) })
+          .whereNot('phone_number_id', '')
+          .whereNot('access_token', '')
+          .select('id')
+          .first()
+      );
+    const theme = settings.theme_config || {};
+    features.custom_css.configured = Boolean(
+      settings.general_custom_css ||
+        settings.general_public_site_custom_css ||
+        theme.customCss
+    );
+    // Read only the theme field, never event names, IDs, sizes, counts, or photos.
+    const themes = await this.db('events').distinct('color_theme');
+    const layouts = new Set();
+    for (const row of themes) {
+      const value = parse(row.color_theme);
+      const layout =
+        value && typeof value === 'object'
+          ? value.galleryLayout || 'grid'
+          : 'grid';
+      layouts.add(LAYOUTS.includes(layout) ? layout : 'other');
+      if (value && typeof value === 'object' && value.customCss)
+        features.custom_css.configured = true;
+    }
+    // Applied CSS is already a capability in use; no visitor observation is
+    // needed. Remember its presence as a coarse lifetime marker after consent.
+    if (features.custom_css.configured) {
+      await this.markUsed(['custom_css']);
+      features.custom_css.used = true;
+    }
+    const now = new Date(this.now()).toISOString();
+    return {
+      picpeak_version: this.version,
+      report_date: now.slice(0, 10),
+      generated_at: now,
+      features,
+      gallery_layouts: [...layouts].sort()
+    };
+  }
+
+  async preview() {
+    const state = await this.state();
+    if (state.status !== 'active')
+      throw new ConflictError('Usage participation is not active');
+    return this.snapshot();
+  }
+  async command(action, payload) {
+    let receipt;
+    await this.locked(async (state) => {
+      if (state.status !== 'active')
+        throw new ConflictError('Usage participation is not active');
+      if (state.pending_packet)
+        throw new ConflictError('Retry the pending usage operation first');
+      if (!['feedback', 'vote', 'session'].includes(action))
+        throw new ValidationError('Invalid usage action');
+      const packet = makePacket(
+        state,
+        action,
+        Number(state.sequence) + 1,
+        payload
+      );
+      // Validate the complete packet before storing an un-sendable operation.
+      verifyEnvelope(
+        signPacket(
+          packet,
+          {
+            public_key: state.public_key,
+            private_key: this.decrypt(state.private_key_encrypted)
+          },
+          new Date(this.now())
+        ),
+        this.now()
+      );
+      state.pending_packet = JSON.stringify(packet);
+      await this.db('product_usage_state')
+        .where({ id: 1 })
+        .update({ pending_packet: state.pending_packet });
+      receipt = await this.deliver(state);
+    });
+    const state = await this.status();
+    return {
+      delivered: Boolean(receipt),
+      queued: Boolean(state.pending_action),
+      receipt,
+      state
+    };
+  }
+  async preferences(value) {
+    if (
+      !value ||
+      Object.keys(value).some((k) => k !== 'name') ||
+      typeof value.name !== 'string' ||
+      value.name.length > 80
+    )
+      throw new ValidationError('Invalid feedback preferences');
+    const updated = await this.db('product_usage_state')
+      .where({ id: 1, status: 'active' })
+      .update({
+        feedback_preferences: JSON.stringify({ name: value.name.trim() })
+      });
+    if (!updated) throw new ConflictError('Usage participation is not active');
+    return this.status();
+  }
+  async export() {
+    const state = await this.state();
+    if (!state.installation_id) throw new ConflictError('No usage identity');
+    // Own-data export includes the complete retained history, not a truncated
+    // packet subset. The acceptance/receipt path above stays strictly bounded.
+    return this.post(
+      '/api/participant/lookup',
+      { installation_id: state.installation_id },
+      Infinity
+    );
+  }
+}
+module.exports = { UsageService, FLAG_MAP };

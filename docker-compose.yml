@@ -81,6 +81,9 @@ services:
       # JWT_SECRET) and the break-glass override that re-enables local
       # password login when the IdP is down while SSO-only mode is active.
       - OIDC_ENCRYPTION_KEY=${OIDC_ENCRYPTION_KEY:-}
+      # Optional product usage (#1110); remains off until explicit in-app consent.
+      - USAGE_COLLECTOR_URL=${USAGE_COLLECTOR_URL:-https://usage.picpeak.app}
+      - USAGE_ENCRYPTION_KEY=${USAGE_ENCRYPTION_KEY:-}
       - OIDC_BREAK_GLASS=${OIDC_BREAK_GLASS:-}
       - ADMIN_URL=${ADMIN_URL:-}
       - TZ=${TZ:-UTC}

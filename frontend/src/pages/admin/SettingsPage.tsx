@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -25,6 +25,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { Loading } from '../../components/common';
+const ProductUsageTab = lazy(() => import('../../features/settings/tabs/ProductUsageTab'));
 import {
   useSettingsState,
   FeaturesTab,
@@ -64,6 +65,7 @@ import { Briefcase, Receipt, ScrollText, Landmark, Smartphone, MonitorPlay } fro
 // Tab keys driving the inner-nav. Must include every key used in
 // `navGroups` below and in the switch at the bottom of the component.
 type TabType =
+  | 'usage'
   | 'features'
   | 'general'
   | 'events'
@@ -107,6 +109,7 @@ interface NavGroup {
 }
 
 const ALL_TAB_KEYS: TabType[] = [
+  'usage',
   'features', 'general', 'events', 'eventTypes',
   'branding', 'categories', 'thumbnails', 'downloads', 'styling', 'cms',
   'email', 'moderation',
@@ -129,6 +132,7 @@ function isValidTab(value: string | null): value is TabType {
 // Settings via the broadened sidebar gate and sees only the tabs whose specific
 // permission it holds. Backend routes enforce the same perms regardless of UI.
 const TAB_PERMISSIONS: Record<TabType, string[]> = {
+  usage:            ['settings.edit'],
   features:          ['settings.view', 'settings.features'],
   general:           ['settings.view', 'settings.domains'],
   events:            ['settings.view'],
@@ -382,6 +386,7 @@ export const SettingsPage: React.FC = () => {
       items: [
         { key: 'status',    label: t('settings.systemStatus.title'),               icon: Activity },
         { key: 'analytics', label: t('settings.analytics.title'),                  icon: BarChart3 },
+        { key: 'usage', label: t('productUsage.title'), icon: Shield },
         { key: 'backup',    label: t('settings.backup.title',   'Backup'),         icon: HardDrive },
       ],
     },
@@ -538,6 +543,7 @@ export const SettingsPage: React.FC = () => {
           {activeTab === 'reminderTemplates' && <ReminderTemplatesPage />}
           {activeTab === 'accounting' && <AccountingTab />}
           {activeTab === 'whatsapp' && <WhatsAppTab />}
+          {activeTab === 'usage' && hasAnyPermission(['settings.edit']) && <Suspense fallback={<Loading />}><ProductUsageTab /></Suspense>}
 
           {activeTab === 'status' && (
             <StatusTab

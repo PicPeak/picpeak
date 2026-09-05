@@ -1,0 +1,178 @@
+const request = require('supertest');
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const mockDb = require('knex')({
+  client: 'sqlite3',
+  connection: { filename: ':memory:' },
+  useNullAsDefault: true
+});
+jest.mock('../../src/database/db', () => ({
+  get db() {
+    return mockDb;
+  }
+}));
+jest.mock('../../src/utils/tokenRevocation', () => ({
+  isTokenRevoked: jest.fn().mockResolvedValue(false)
+}));
+jest.mock('../../src/utils/sessionCutoff', () => ({
+  isTokenBeforeCutoff: jest.fn().mockResolvedValue(false)
+}));
+jest.mock('../../src/utils/logger', () => ({
+  warn: jest.fn(),
+  error: jest.fn(),
+  debug: jest.fn(),
+  info: jest.fn()
+}));
+jest.mock('../../src/services/productUsageService', () =>
+  Object.fromEntries(
+    [
+      'tick',
+      'status',
+      'dismiss',
+      'enable',
+      'disable',
+      'preview',
+      'export',
+      'preferences',
+      'command',
+      'markUsed'
+    ].map((key) => [key, jest.fn().mockResolvedValue({ status: 'disabled' })])
+  )
+);
+const service = require('../../src/services/productUsageService');
+const { productUsage } = require('../../src/middleware/productUsage');
+const SECRET = 'usage-auth-test-secret-not-a-live-credential';
+const token = (type, id = 1) =>
+  jwt.sign({ type, id }, SECRET, {
+    issuer: 'picpeak-auth',
+    algorithm: 'HS256'
+  });
+let app;
+beforeAll(async () => {
+  process.env.JWT_SECRET = SECRET;
+  await mockDb.schema.createTable('roles', (t) => {
+    t.increments('id');
+    t.string('name');
+  });
+  await mockDb.schema.createTable('admin_users', (t) => {
+    t.increments('id');
+    t.string('username');
+    t.string('email');
+    t.integer('role_id');
+    t.boolean('is_active');
+    t.timestamp('password_changed_at');
+  });
+  await mockDb.schema.createTable('permissions', (t) => {
+    t.increments('id');
+    t.string('name');
+  });
+  await mockDb.schema.createTable('role_permissions', (t) => {
+    t.integer('role_id');
+    t.integer('permission_id');
+  });
+  await mockDb('roles').insert([
+    { id: 1, name: 'super_admin' },
+    { id: 2, name: 'viewer' }
+  ]);
+  await mockDb('admin_users').insert([
+    {
+      id: 1,
+      username: 'owner',
+      email: 'owner@example.test',
+      role_id: 1,
+      is_active: 1
+    },
+    {
+      id: 2,
+      username: 'viewer',
+      email: 'viewer@example.test',
+      role_id: 2,
+      is_active: 1
+    }
+  ]);
+  await mockDb('permissions').insert({ id: 1, name: 'settings.edit' });
+  await mockDb('role_permissions').insert({ role_id: 1, permission_id: 1 });
+  app = express();
+  app.use(express.json());
+  app.use('/api/admin/usage', require('../../src/routes/adminUsage'));
+  app.use((err, _req, res, _next) =>
+    res.status(err.statusCode || 500).json({ code: err.code })
+  );
+});
+afterAll(() => mockDb.destroy());
+beforeEach(() => jest.clearAllMocks());
+
+const ROUTES = [
+  ['get', '/'],
+  ['post', '/activity'],
+  ['post', '/enable'],
+  ['post', '/disable'],
+  ['post', '/retry'],
+  ['post', '/dismiss'],
+  ['get', '/preview'],
+  ['get', '/export'],
+  ['put', '/feedback-preferences'],
+  ['post', '/feedback'],
+  ['post', '/vote'],
+  ['post', '/portal-session']
+];
+test.each(ROUTES)(
+  '%s %s rejects unauthenticated and gallery tokens',
+  async (method, route) => {
+    await request(app)[method](`/api/admin/usage${route}`).send({}).expect(401);
+    await request(app)[method](`/api/admin/usage${route}`)
+      .set('Authorization', `Bearer ${token('gallery')}`)
+      .send({})
+      .expect(403);
+    expect(service.tick).not.toHaveBeenCalled();
+    expect(service.enable).not.toHaveBeenCalled();
+  }
+);
+test.each(ROUTES.filter(([, route]) => route !== '/activity'))(
+  '%s %s requires settings.edit',
+  async (method, route) => {
+    await request(app)[method](`/api/admin/usage${route}`)
+      .set('Authorization', `Bearer ${token('admin', 2)}`)
+      .send({})
+      .expect(403);
+  }
+);
+test('an authenticated admin can trigger cadence without seeing identity or packet data', async () => {
+  const response = await request(app)
+    .post('/api/admin/usage/activity')
+    .set('Authorization', `Bearer ${token('admin', 2)}`)
+    .expect(200);
+  expect(response.body).toEqual({ ok: true });
+  expect(service.tick).toHaveBeenCalledTimes(1);
+});
+test('owner sees no-store status and supplies consent to the service', async () => {
+  await request(app)
+    .get('/api/admin/usage')
+    .set('Authorization', `Bearer ${token('admin')}`)
+    .expect('Cache-Control', 'no-store')
+    .expect(200);
+  await request(app)
+    .post('/api/admin/usage/enable')
+    .set('Authorization', `Bearer ${token('admin')}`)
+    .send({ consent_version: 'usage-consent.v1' })
+    .expect(200);
+  expect(service.enable).toHaveBeenCalledWith('usage-consent.v1');
+});
+test('public/gallery paths and failed/unauthenticated admin operations never set feature markers', async () => {
+  const { EventEmitter } = require('events');
+  const simulate = (path, admin, statusCode) => {
+    const res = new EventEmitter();
+    res.statusCode = statusCode;
+    productUsage({ path, admin }, res, () => {});
+    res.emit('finish');
+  };
+  simulate('/gallery/example', null, 200);
+  simulate('/customers', null, 200);
+  simulate('/quotes', { id: 1 }, 403);
+  expect(service.markUsed).not.toHaveBeenCalled();
+  simulate('/customers/42/hour-entries', { id: 1 }, 200);
+  expect(service.markUsed).toHaveBeenCalledWith(
+    expect.arrayContaining(['crm', 'crm_hours'])
+  );
+  expect(JSON.stringify(service.markUsed.mock.calls)).not.toContain('42');
+});
