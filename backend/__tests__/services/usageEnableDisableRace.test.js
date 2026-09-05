@@ -188,4 +188,35 @@ describe('withdrawal during an in-flight activation', () => {
 
     expect(posted).not.toContain('report');
   });
+
+  it('honours a withdrawal that lands between the lease claim and the state read', async () => {
+    // locked() claims the lease and reads the row in two statements. A
+    // /disable completing in that gap used to be adopted as this
+    // activation's own baseline and absorbed, so registration went ahead
+    // after the operator had withdrawn.
+    db = await bootDb();
+    const service = makeService(db);
+    const realState = service.state.bind(service);
+    let fired = false;
+    service.state = async () => {
+      // The withdrawal must land BEFORE this read returns, so the row carries
+      // the incremented counter. Incrementing afterwards would hand back the
+      // old value and both the broken and fixed versions would behave the
+      // same — which is exactly how an earlier version of this test passed
+      // against the bug it was meant to catch.
+      const first = await realState();
+      if (!fired && first.lease_token) {
+        fired = true;
+        await db('product_usage_state').where({ id: 1 }).increment('cancel_seq', 1);
+        return realState();
+      }
+      return first;
+    };
+
+    await service.enable('usage-consent.v1');
+
+    const row = await db('product_usage_state').where({ id: 1 }).first();
+    expect(row.status).toBe('disabled');
+    expect(row.installation_id).toBeNull();
+  });
 });

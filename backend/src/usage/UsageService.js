@@ -214,20 +214,22 @@ class UsageService {
   async enable(consent) {
     if (consent !== 'usage-consent.v1')
       throw new ValidationError('Explicit usage consent is required');
+    // Read BEFORE the lease, deliberately. locked() claims the lease and then
+    // reads the row in a second statement; a /disable completing between
+    // those two would be adopted as this activation's own baseline and
+    // silently absorbed. Taking the baseline first inverts that: every
+    // increment from this point on — including one in that gap — is later
+    // than the value the claim tests for, so the claim fails and the
+    // withdrawal wins. An increment from BEFORE this read is a withdrawal the
+    // operator already completed, and a deliberate opt-in afterwards should
+    // not be vetoed by it.
+    const cancelSeq = Number((await this.state())?.cancel_seq || 0);
     await this.locked(async (state) => {
       if (state.status !== 'disabled')
         throw new ConflictError(
           'Finish the current participation before rejoining'
         );
       this.collectorUrl();
-      // The withdrawal counter as it stood when this activation began. A
-      // /disable from an earlier participation is already reflected here and
-      // must not veto a deliberate opt-in; anything that increments it from
-      // now on is aimed at THIS activation. Recorded rather than cleared,
-      // because a clearing write of its own had the very race it was meant to
-      // close — a /disable landing between the lease and the clear was erased.
-      const cancelSeq = Number(state.cancel_seq || 0);
-
       const identity = generateIdentity();
       const pending = makePacket(identity, 'register', 0, {
         consent_version: consent
