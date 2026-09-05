@@ -235,7 +235,6 @@ module.exports = (router) => {
     body('protection_level').optional().not().isArray().isIn(['basic', 'standard', 'enhanced', 'maximum']),
     body('use_canvas_rendering').optional().not().isArray().isBoolean().toBoolean(),
     body('image_quality').optional().not().isArray().isInt({ min: 1, max: 100 }).toInt(),
-    body('fragmentation_level').optional().not().isArray().isInt({ min: 1, max: 10 }).toInt(),
     body('watermark_downloads').optional().isBoolean(),
     body('watermark_text').optional().trim(),
     // #328 follow-up: per-event opt-in for presigned-URL "Download All".
@@ -1427,7 +1426,6 @@ module.exports = (router) => {
         protection_level: source.protection_level,
         image_quality: source.image_quality,
         use_canvas_rendering: source.use_canvas_rendering,
-        fragmentation_level: source.fragmentation_level,
         watermark_downloads: source.watermark_downloads,
         watermark_text: source.watermark_text,
         allow_presigned_download: source.allow_presigned_download,
