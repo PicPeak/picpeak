@@ -260,6 +260,17 @@ describe('sanitizeCSS', () => {
     expect(asParsed(sanitized)).not.toContain('evil.example');
   });
 
+  it('blocks a url() the TAG strip would have un-quoted', () => {
+    // `<[^>]*>` deletes the span it matches, and `<">` takes a quote with it.
+    // Running that after the URL scan meant the scanner saw the url() safely
+    // inside a string and this pass then removed the quotes that made it so.
+    // URL validation has to be the last thing that looks at the text.
+    const { sanitized } = sanitizeCSS(
+      '--x:x<">;background:url(https://evil.example/p.gif);--y:x<">'
+    );
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
   it('does not treat NBSP as CSS whitespace inside url()', () => {
     // JS `\s` matches U+00A0; CSS whitespace does not. Skipping it let the
     // scanner read the following quote as a legitimate data: URI and swallow

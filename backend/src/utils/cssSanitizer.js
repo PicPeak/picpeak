@@ -345,6 +345,19 @@ function sanitizeCSS(cssContent) {
   // below it then produced exactly the request the scan was there to
   // prevent. Any pass that can join tokens has to happen before validation,
   // not after.
+  // Remove any remaining script-like content. This is the LAST pass that can
+  // move text, and so it must run before the URL scan, not after: it deletes
+  // the matched span, and a span like `<">` takes a quote with it. That is
+  // how `--x:x<">;background:url(https://evil.example/p.gif);--y:x<">` shipped
+  // a live background — the scanner saw the url() safely inside a string, and
+  // this line then removed the quotes that made it so.
+  sanitized = sanitized.replace(/<[^>]*>/g, '/* BLOCKED TAG */');
+
+  // URL validation runs LAST, deliberately. Every pass above rewrites the
+  // text, and each one that did so after this point has produced a bypass:
+  // the HTML-comment strip (#1290), the control-character strip, and the tag
+  // strip immediately above. Validating anything other than the final bytes
+  // means validating a string that is not the one that gets served.
   const urlPass = stripDisallowedUrls(sanitized);
   if (urlPass.blocked > 0) {
     warnings.push(
@@ -353,9 +366,6 @@ function sanitizeCSS(cssContent) {
     );
     sanitized = urlPass.sanitized;
   }
-
-  // Remove any remaining script-like content
-  sanitized = sanitized.replace(/<[^>]*>/g, '/* BLOCKED TAG */');
 
   return { sanitized: sanitized.trim(), warnings };
 }
