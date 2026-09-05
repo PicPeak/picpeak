@@ -154,10 +154,37 @@ function sanitizeCampaignBody(html) {
     // inside a real string, then makes the url() request — while the scanner
     // saw the apostrophe open a string and skipped everything after it. The
     // scanner has to be shown what the browser will actually parse.
-    .replace(/style="([^"]*)"/gi, (match, css) => {
-      const { sanitized } = sanitizeCSS(decodeHtmlEntities(css));
-      return sanitized ? `style="${encodeForAttribute(sanitized)}"` : '';
-    });
+    .replace(STYLE_ATTRIBUTE, sanitizeStyleAttribute);
+}
+
+/** Shared by the write-time sanitize and the post-substitution recheck. */
+const STYLE_ATTRIBUTE = /style="([^"]*)"/gi;
+
+function sanitizeStyleAttribute(match, css) {
+  const { sanitized } = sanitizeCSS(decodeHtmlEntities(css));
+  return sanitized ? `style="${encodeForAttribute(sanitized)}"` : '';
+}
+
+/**
+ * Re-check inline CSS AFTER template substitution.
+ *
+ * Sanitizing runs on the stored body, but `safeTemplateReplace` rewrites it
+ * afterwards — so the string that was validated is not the string that gets
+ * sent. A conditional inside a style attribute can delete the very characters
+ * that made a URL inert:
+ *
+ *   style="--x:x{{#if company_name}}'{{/if}};background:url(https://evil…)"
+ *
+ * At sanitize time the url() sits inside a CSS string and is correctly left
+ * alone; once the conditional is expanded the quotes are gone and the
+ * background is live. No amount of lexer correctness fixes that, because the
+ * text being lexed is not the text being delivered — the check has to run
+ * again on the final output. Substitution cannot introduce a `"` (values are
+ * HTML-escaped), so the attribute regex still matches what it should.
+ */
+function sanitizeInlineStylesAfterSubstitution(html) {
+  if (!html) return html;
+  return String(html).replace(STYLE_ATTRIBUTE, sanitizeStyleAttribute);
 }
 
 /**
@@ -330,7 +357,12 @@ async function renderForRecipient(campaign, customer, options = {}) {
   // Substitution happens AFTER sanitizing, with escaping on: a customer's own
   // company name is untrusted text and must not be able to inject markup by
   // riding in through a variable the sanitizer never saw.
-  const body = safeTemplateReplace(safeBody, variables, { escapeHtml: true });
+  // Re-checked after substitution, not only before it: expansion can remove
+  // the quoting that made a url() inert at sanitize time. See
+  // sanitizeInlineStylesAfterSubstitution.
+  const body = sanitizeInlineStylesAfterSubstitution(
+    safeTemplateReplace(safeBody, variables, { escapeHtml: true })
+  );
   const subject = safeTemplateReplace(campaign.subject || '', variables);
 
   const { css } = sanitizeCampaignCss(campaign.body_css);
@@ -942,6 +974,7 @@ async function sendTest(campaignId, toEmail, adminId) {
 
 module.exports = {
   sanitizeCampaignBody,
+  sanitizeInlineStylesAfterSubstitution,
   sanitizeCampaignCss,
   unsubscribeToken,
   verifyUnsubscribeToken,
