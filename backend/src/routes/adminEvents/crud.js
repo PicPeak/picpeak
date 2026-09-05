@@ -1591,18 +1591,13 @@ module.exports = (router) => {
     body('source_mode').optional().isIn(['managed', 'reference']),
     body('external_path').optional({ nullable: true }).isString().trim(),
     body('require_password').optional().isBoolean(),
-    // Download protection settings. .not().isArray() because
-    // express-validator runs isIn/isBoolean/isInt element-wise: a
-    // single-element array like `image_quality: [72]` satisfies every check
-    // and stays an array, and this handler spreads req.body straight into
-    // the update — so it reached a scalar column as an array (a PG error,
-    // and `[false]` read as true). Same guard as the create chain (#1296).
-    body('protection_level').optional().not().isArray().isIn(['basic', 'standard', 'enhanced', 'maximum']),
-    body('enable_devtools_protection').optional().not().isArray().isBoolean(),
-    body('use_canvas_rendering').optional().not().isArray().isBoolean(),
-    body('overlay_protection').optional().not().isArray().isBoolean(),
-    body('image_quality').optional().not().isArray().isInt({ min: 1, max: 100 }),
-    body('fragmentation_level').optional().not().isArray().isInt({ min: 1, max: 10 }),
+    // Download protection settings
+    body('protection_level').optional().isIn(['basic', 'standard', 'enhanced', 'maximum']),
+    body('enable_devtools_protection').optional().isBoolean(),
+    body('use_canvas_rendering').optional().isBoolean(),
+    body('overlay_protection').optional().isBoolean(),
+    body('image_quality').optional().isInt({ min: 1, max: 100 }),
+    body('fragmentation_level').optional().isInt({ min: 1, max: 10 }),
     body('password').optional().isString().custom((value) => {
       if (value === undefined || value === null || value === '') {
         return true;
@@ -1662,6 +1657,25 @@ module.exports = (router) => {
 
       const { id } = req.params;
       const updates = { ...req.body };
+
+      // express-validator applies isInt/isIn/isBoolean element-wise to
+      // arrays, so `image_quality: [72]` satisfies its validator and stays
+      // an array. This handler spreads req.body into .update() with no
+      // column allow-list, so such a value reaches a scalar column: a PG
+      // insert error, and `[false]` coerced to true by formatBoolean.
+      //
+      // Guarded here rather than per field because it applies to all 44
+      // validated fields, not to a chosen few. `customer_account_ids` is the
+      // only field that is legitimately an array, and it is deleted from
+      // `updates` below before the write (#1296).
+      const ARRAY_VALUED_FIELDS = new Set(['customer_account_ids']);
+      const arrayValued = Object.keys(updates)
+        .filter((key) => Array.isArray(updates[key]) && !ARRAY_VALUED_FIELDS.has(key));
+      if (arrayValued.length > 0) {
+        return res.status(400).json({
+          error: `Array values are not accepted for: ${arrayValued.join(', ')}`,
+        });
+      }
 
       // Strip identity/provenance/secret columns from the mass-assigned
       // body (GHSA-3rqx). The handler spreads req.body straight into the
