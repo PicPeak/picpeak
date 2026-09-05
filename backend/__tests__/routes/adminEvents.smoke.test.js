@@ -224,7 +224,6 @@ describe('admin events CRUD endpoints (smoke)', () => {
       ['image_quality', [72]],
       ['protection_level', ['basic']],
       ['use_canvas_rendering', [false]],
-      ['fragmentation_level', [3]],
       // Not a protection field: the guard is not scoped to that block.
       ['event_name', ['Arrayed']],
       ['allow_downloads', [false]],

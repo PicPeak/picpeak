@@ -5,7 +5,7 @@
  * rendered as toggles, and read by nothing:
  *
  *   default_protection_level, default_image_quality,
- *   enable_canvas_rendering, default_fragmentation_level
+ *   enable_canvas_rendering
  *
  * Each maps onto an `events` column migration 038 already created, and each
  * is labelled "… by default". `enable_devtools_protection` was the only one
@@ -46,7 +46,7 @@ describe('image-security creation defaults', () => {
   beforeEach(async () => {
     await db('app_settings').whereIn('setting_key', [
       'default_protection_level', 'default_image_quality',
-      'enable_canvas_rendering', 'default_fragmentation_level',
+      'enable_canvas_rendering',
     ]).del();
   });
 
@@ -60,13 +60,11 @@ describe('image-security creation defaults', () => {
     await setSetting('default_protection_level', 'enhanced');
     await setSetting('default_image_quality', 72);
     await setSetting('enable_canvas_rendering', true);
-    await setSetting('default_fragmentation_level', 5);
 
     expect(await getImageSecurityDefaults()).toEqual({
       protection_level: 'enhanced',
       image_quality: 72,
       use_canvas_rendering: true,
-      fragmentation_level: 5,
     });
   });
 
@@ -83,7 +81,6 @@ describe('image-security creation defaults', () => {
     ['image quality above 100', 'default_image_quality', 250],
     ['image quality of zero', 'default_image_quality', 0],
     ['a non-numeric quality', 'default_image_quality', 'high'],
-    ['fragmentation above the range', 'default_fragmentation_level', 99],
     ['a non-boolean canvas value', 'enable_canvas_rendering', 'yes'],
     // parseInt would have rescued each of these into a valid-looking
     // integer. The settings PUT stores values without validating them, so
@@ -91,8 +88,6 @@ describe('image-security creation defaults', () => {
     ['a numeric prefix with trailing junk', 'default_image_quality', '72oops'],
     ['a fractional quality', 'default_image_quality', 72.5],
     ['a single-element array', 'default_image_quality', [72]],
-    ['a fractional fragmentation level', 'default_fragmentation_level', 3.7],
-    ['a fragmentation level with trailing junk', 'default_fragmentation_level', '3x'],
   ])('ignores %s and falls through to the column default', async (_label, key, value) => {
     await setSetting(key, value);
     expect(await getImageSecurityDefaults()).toEqual({});
@@ -210,11 +205,10 @@ describe('image-security creation defaults', () => {
     it('resolves each column independently', () => {
       expect(resolveImageSecurityColumns(
         { image_quality: 60 },
-        { protection_level: 'enhanced', fragmentation_level: 4 },
+        { protection_level: 'enhanced' },
       )).toEqual({
         protection_level: 'enhanced',
         image_quality: 60,
-        fragmentation_level: 4,
       });
     });
 

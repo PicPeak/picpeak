@@ -138,7 +138,6 @@ const photoUpload = async (req, res, next) => {
  *               protection_level: { type: string, nullable: true, enum: [basic, standard, enhanced, maximum], description: "Image protection level. When omitted, falls back to the global default_protection_level setting." }
  *               use_canvas_rendering: { type: boolean, nullable: true, description: "Render gallery images to a canvas instead of an img tag. When omitted, falls back to the global enable_canvas_rendering setting." }
  *               image_quality: { type: integer, minimum: 1, maximum: 100, nullable: true, description: "Served image quality percentage. When omitted, falls back to the global default_image_quality setting." }
- *               fragmentation_level: { type: integer, minimum: 1, maximum: 10, nullable: true, description: "Stored for future use; no renderer consumes it yet. When omitted, falls back to the global default_fragmentation_level setting." }
  *               hero_logo_visible: { type: boolean, nullable: true, description: "Show event logo in the hero block. When omitted, falls back to the global branding_logo_display_hero setting." }
  *               hero_logo_size: { type: string, nullable: true, enum: [small, medium, large, xlarge], description: "Hero logo size. When omitted, falls back to the global branding_logo_size setting." }
  *               hero_logo_position: { type: string, nullable: true, enum: [top, center, bottom], description: "Hero logo position. Defaults to 'top' (not settings-backed — see migration 084)." }
@@ -187,7 +186,6 @@ router.post(
     body('protection_level').optional().not().isArray().isIn(['basic', 'standard', 'enhanced', 'maximum']),
     body('use_canvas_rendering').optional().not().isArray().isBoolean().toBoolean(),
     body('image_quality').optional().not().isArray().isInt({ min: 1, max: 100 }).toInt(),
-    body('fragmentation_level').optional().not().isArray().isInt({ min: 1, max: 10 }).toInt(),
     body('hero_logo_visible').optional().isBoolean(),
     body('hero_logo_size').optional().isIn(['small', 'medium', 'large', 'xlarge']),
     body('hero_logo_position').optional().isIn(['top', 'center', 'bottom'])

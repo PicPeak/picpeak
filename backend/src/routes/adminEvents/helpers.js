@@ -127,7 +127,6 @@ const getDownloadProtectionDefaults = async () => {
  *   default_protection_level     → events.protection_level
  *   default_image_quality        → events.image_quality
  *   enable_canvas_rendering      → events.use_canvas_rendering
- *   default_fragmentation_level  → events.fragmentation_level
  *
  * Each maps onto a column migration 038 already created, and each is
  * labelled "… by default", so applying them at creation is what the panel
@@ -172,7 +171,6 @@ const getImageSecurityDefaults = async (trx = null) => {
         'default_protection_level',
         'default_image_quality',
         'enable_canvas_rendering',
-        'default_fragmentation_level',
       ])
       .select('setting_key', 'setting_value');
 
@@ -214,10 +212,6 @@ const getImageSecurityDefaults = async (trx = null) => {
       defaults.use_canvas_rendering = canvas;
     }
 
-    const fragmentation = toInteger(read('default_fragmentation_level'));
-    if (fragmentation !== undefined && fragmentation >= 1 && fragmentation <= 10) {
-      defaults.fragmentation_level = fragmentation;
-    }
   } catch (error) {
     // A settings read must never block event creation; the column defaults
     // are a correct fallback.
@@ -262,8 +256,6 @@ const resolveImageSecurityColumns = (body = {}, defaults = {}) => {
   const canvas = pick('use_canvas_rendering');
   if (canvas !== undefined) columns.use_canvas_rendering = formatBoolean(canvas);
 
-  const fragmentation = pick('fragmentation_level');
-  if (fragmentation !== undefined) columns.fragmentation_level = fragmentation;
 
   return columns;
 };
