@@ -290,7 +290,6 @@ export interface GalleryData {
     image_quality?: number;
     use_canvas_rendering?: boolean;
     enable_devtools_protection?: boolean;
-    fragmentation_level?: number;
     overlay_protection?: boolean;
     // Hero logo customization fields
     hero_logo_visible?: boolean | null;

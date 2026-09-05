@@ -120,8 +120,6 @@ router.get('/:slug/secure/:photoId/:token',
         tokenLength: token?.length,
         hasAuthHeader: Boolean(req.headers.authorization),
       });
-      const { fragment } = req.query;
-
       // Verify secure token
       const tokenValidation = secureImageService.verifySecureToken(
         token,
@@ -212,8 +210,7 @@ router.get('/:slug/secure/:photoId/:token',
       const protectionSettings = {
         protectionLevel: event.protection_level || 'standard',
         quality: event.image_quality || 85,
-        addFingerprint: event.add_fingerprint !== false,
-        fragmentImage: event.use_canvas_rendering === true && fragment !== undefined
+        addFingerprint: event.add_fingerprint !== false
       };
 
       let processedImage;
@@ -230,11 +227,6 @@ router.get('/:slug/secure/:photoId/:token',
           error: resolveError.message,
         });
         return res.status(404).json({ error: 'Photo file not found' });
-      }
-
-      // Handle fragmented images
-      if (processedImage.type === 'fragmented') {
-        return await handleFragmentedImage(req, res, processedImage, fragment);
       }
 
       // Log successful access
@@ -266,58 +258,6 @@ router.get('/:slug/secure/:photoId/:token',
     }
   }
 );
-
-/**
- * Handle fragmented image delivery
- */
-async function handleFragmentedImage(req, res, fragmentedImage, fragmentIndex) {
-  const { photoId } = req.params;
-  
-  try {
-    if (fragmentIndex === undefined) {
-      // Return fragment metadata
-      res.json({
-        type: 'fragmented',
-        fragments: fragmentedImage.fragments.length,
-        dimensions: fragmentedImage.originalDimensions,
-        fragmentDimensions: fragmentedImage.fragmentDimensions
-      });
-      return;
-    }
-
-    const index = parseInt(fragmentIndex);
-    if (isNaN(index) || index < 0 || index >= fragmentedImage.fragments.length) {
-      return res.status(400).json({ error: 'Invalid fragment index' });
-    }
-
-    const fragment = fragmentedImage.fragments[index];
-    
-    // Log fragment access
-    await secureImageService.logImageAccess(
-      photoId,
-      req.event.id,
-      req.clientInfo,
-      `fragment_${index}`
-    );
-
-    res.set({
-      'Content-Type': 'image/jpeg',
-      'Content-Length': fragment.buffer.length,
-      'X-Fragment-Index': index,
-      'X-Fragment-Position': JSON.stringify(fragment.position)
-    });
-
-    res.send(fragment.buffer);
-
-  } catch (error) {
-    logger.error('Error serving image fragment', {
-      error: error.message,
-      fragmentIndex,
-      photoId
-    });
-    res.status(500).json({ error: 'Failed to serve image fragment' });
-  }
-}
 
 /**
  * Download protected image with watermark

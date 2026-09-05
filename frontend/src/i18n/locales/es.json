@@ -941,7 +941,6 @@
       "defaultProtectionHelp": "Estos ajustes se aplican a todos los nuevos eventos. Los eventos individuales pueden anular estos valores por defecto.",
       "protectionLevel": "Nivel de protección por defecto",
       "imageQuality": "Calidad de imagen por defecto",
-      "fragmentationLevel": "Nivel de fragmentación",
       "enableDevtools": "Habilitar detección de DevTools por defecto",
       "enableCanvas": "Habilitar renderizado con canvas por defecto (protección avanzada)",
       "rateLimiting": "Limitación de velocidad",

@@ -49,7 +49,6 @@ export interface ImageProtectionOptions {
   blockKeyboardShortcuts?: boolean;
   detectPrintScreen?: boolean;
   watermarkText?: string;
-  fragmentGrid?: boolean;
 }
 
 export interface ProtectedImageProps {
@@ -57,9 +56,6 @@ export interface ProtectedImageProps {
   alt: string;
   protectionLevel?: ProtectionLevel;
   watermarkText?: string;
-  fragmentGrid?: boolean;
-  gridSize?: number;
-  scrambleFragments?: boolean;
   invisibleWatermark?: boolean;
   onProtectionViolation?: (violationType: ViolationType) => void;
   fallbackSrc?: string;
@@ -81,13 +77,6 @@ export interface WatermarkConfig {
   color: string;
   positions: Array<{ x: number; y: number }>;
   rotation: number;
-}
-
-export interface FragmentConfig {
-  enabled: boolean;
-  gridSize: number;
-  scramble: boolean;
-  randomSeed?: number;
 }
 
 export interface SteganographyConfig {
@@ -121,7 +110,6 @@ export interface CanvasProtectionContext {
   originalImageData: ImageData;
   protectedImageData: ImageData;
   watermarkApplied: boolean;
-  fragmentsScrambled: boolean;
 }
 
 export interface PrintScreenDetectionState {
@@ -181,7 +169,6 @@ export interface ProtectionConfig {
   rendering: {
     canvas: {
       enabled: boolean;
-      fragmentGrid: FragmentConfig;
       watermark: WatermarkConfig;
       steganography: SteganographyConfig;
       noiseInjection: boolean;
@@ -231,9 +218,7 @@ export type ProtectionProps = {
 
 export type CanvasProtectionProps = ProtectionProps & {
   useCanvasRendering?: boolean;
-  fragmentGrid?: boolean;
   watermarkText?: string;
-  scrambleFragments?: boolean;
   invisibleWatermark?: boolean;
 };
 

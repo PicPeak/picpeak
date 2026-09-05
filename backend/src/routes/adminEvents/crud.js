@@ -1569,7 +1569,6 @@ module.exports = (router) => {
     body('use_canvas_rendering').optional().isBoolean(),
     body('overlay_protection').optional().isBoolean(),
     body('image_quality').optional().isInt({ min: 1, max: 100 }),
-    body('fragmentation_level').optional().isInt({ min: 1, max: 10 }),
     body('password').optional().isString().custom((value) => {
       if (value === undefined || value === null || value === '') {
         return true;
