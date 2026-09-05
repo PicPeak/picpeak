@@ -95,6 +95,85 @@ const getDownloadProtectionDefaults = async () => {
   return { enable_devtools_protection: await readBooleanSetting('enable_devtools_protection') };
 };
 
+/**
+ * The rest of Settings → Image security, as creation defaults (#1296).
+ *
+ * Four settings in that panel were written, reloaded and rendered as
+ * controls, and read by nothing:
+ *
+ *   default_protection_level     → events.protection_level
+ *   default_image_quality        → events.image_quality
+ *   enable_canvas_rendering      → events.use_canvas_rendering
+ *   default_fragmentation_level  → events.fragmentation_level
+ *
+ * Each maps onto a column migration 038 already created, and each is
+ * labelled "… by default", so applying them at creation is what the panel
+ * has always claimed to do. `enable_devtools_protection` above is the only
+ * one of the five that was ever wired.
+ *
+ * Creation-time only, deliberately. Applying them to EXISTING events would
+ * silently change live galleries on upgrade — an install with
+ * enable_canvas_rendering already on would switch every grid to canvas
+ * rendering, which is memory-expensive at scale and is the profile under
+ * investigation in #1287. New events only; existing rows untouched.
+ *
+ * Any value that is missing or malformed comes back undefined so the caller
+ * falls through to the column default, exactly as before this existed.
+ */
+const PROTECTION_LEVELS = ['basic', 'standard', 'enhanced', 'maximum'];
+
+const getImageSecurityDefaults = async () => {
+  const defaults = {};
+  try {
+    const rows = await db('app_settings')
+      .whereIn('setting_key', [
+        'default_protection_level',
+        'default_image_quality',
+        'enable_canvas_rendering',
+        'default_fragmentation_level',
+      ])
+      .select('setting_key', 'setting_value');
+
+    const read = (key) => {
+      const row = rows.find((r) => r.setting_key === key);
+      if (!row) return undefined;
+      let value = row.setting_value;
+      if (typeof value === 'string') {
+        try { value = JSON.parse(value); } catch { /* keep raw */ }
+      }
+      return value;
+    };
+
+    const level = read('default_protection_level');
+    if (typeof level === 'string' && PROTECTION_LEVELS.includes(level)) {
+      defaults.protection_level = level;
+    }
+
+    // The column is an integer percentage; anything outside 1..100 is a
+    // misconfiguration and falls through rather than being clamped into
+    // something the operator did not choose.
+    const quality = parseInt(read('default_image_quality'), 10);
+    if (Number.isInteger(quality) && quality >= 1 && quality <= 100) {
+      defaults.image_quality = quality;
+    }
+
+    const canvas = read('enable_canvas_rendering');
+    if (typeof canvas === 'boolean') {
+      defaults.use_canvas_rendering = canvas;
+    }
+
+    const fragmentation = parseInt(read('default_fragmentation_level'), 10);
+    if (Number.isInteger(fragmentation) && fragmentation >= 1 && fragmentation <= 10) {
+      defaults.fragmentation_level = fragmentation;
+    }
+  } catch (error) {
+    // A settings read must never block event creation; the column defaults
+    // are a correct fallback.
+    logger.error('Failed to read image-security defaults', { error: error.message });
+  }
+  return defaults;
+};
+
 // Helper to get branding defaults for new events (Feature 7: Branding Inheritance).
 //
 // Note: `branding_logo_position` (header bar — left/center/right) is a
@@ -528,6 +607,7 @@ module.exports = {
   getEventFieldRequirements,
   readBooleanSetting,
   getDownloadProtectionDefaults,
+  getImageSecurityDefaults,
   getBrandingDefaults,
   getCustomerNameFromPayload,
   getCustomerEmailFromPayload,
