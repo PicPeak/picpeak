@@ -37,6 +37,7 @@ const logger = require('../../utils/logger');
 const { slugify } = require('../../utils/slug');
 const { formatBoolean } = require('../../utils/dbCompat');
 const { parseBooleanInput } = require('../../utils/parsers');
+const { getImageSecurityDefaults, resolveImageSecurityColumns } = require('../adminEvents/helpers');
 const { isValidEventType } = require('../../services/eventTypeService');
 const { replacePhoto } = require('../../services/photoReplacementService');
 const { getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB } = require('../../services/uploadSettings');
@@ -134,6 +135,10 @@ const photoUpload = async (req, res, next) => {
  *               color_theme: { type: string, nullable: true, description: "Preset name (e.g. 'default') or JSON-encoded ThemeConfig. Persisted as-is on the event row." }
  *               feedback_enabled: { type: boolean, nullable: true, description: "Enable guest feedback for this gallery. When omitted, falls back to the global event_default_feedback_enabled setting." }
  *               enable_devtools_protection: { type: boolean, nullable: true, description: "Block right-click / devtools shortcuts in the gallery. When omitted, falls back to the global enable_devtools_protection setting." }
+ *               protection_level: { type: string, nullable: true, enum: [basic, standard, enhanced, maximum], description: "Image protection level. When omitted, falls back to the global default_protection_level setting." }
+ *               use_canvas_rendering: { type: boolean, nullable: true, description: "Render gallery images to a canvas instead of an img tag. When omitted, falls back to the global enable_canvas_rendering setting." }
+ *               image_quality: { type: integer, minimum: 1, maximum: 100, nullable: true, description: "Served image quality percentage. When omitted, falls back to the global default_image_quality setting." }
+ *               fragmentation_level: { type: integer, minimum: 1, maximum: 10, nullable: true, description: "Stored for future use; no renderer consumes it yet. When omitted, falls back to the global default_fragmentation_level setting." }
  *               hero_logo_visible: { type: boolean, nullable: true, description: "Show event logo in the hero block. When omitted, falls back to the global branding_logo_display_hero setting." }
  *               hero_logo_size: { type: string, nullable: true, enum: [small, medium, large, xlarge], description: "Hero logo size. When omitted, falls back to the global branding_logo_size setting." }
  *               hero_logo_position: { type: string, nullable: true, enum: [top, center, bottom], description: "Hero logo position. Defaults to 'top' (not settings-backed — see migration 084)." }
@@ -179,6 +184,10 @@ router.post(
     body('color_theme').optional({ nullable: true }).isString().trim(),
     body('feedback_enabled').optional().isBoolean(),
     body('enable_devtools_protection').optional().isBoolean(),
+    body('protection_level').optional().isIn(['basic', 'standard', 'enhanced', 'maximum']),
+    body('use_canvas_rendering').optional().isBoolean().toBoolean(),
+    body('image_quality').optional().isInt({ min: 1, max: 100 }).toInt(),
+    body('fragmentation_level').optional().isInt({ min: 1, max: 10 }).toInt(),
     body('hero_logo_visible').optional().isBoolean(),
     body('hero_logo_size').optional().isIn(['small', 'medium', 'large', 'xlarge']),
     body('hero_logo_position').optional().isIn(['top', 'center', 'bottom'])
@@ -234,6 +243,15 @@ router.post(
         }
       }
       const enable_devtools_protection = parseBooleanInput(devtoolsInput, devtoolsFallback);
+
+      // #1296 — same shape again, for the four Image Security settings that
+      // were stored and applied nowhere. Shared with the admin create route
+      // so a gallery's security level does not depend on which endpoint made
+      // it; #592 above is the bug this would otherwise repeat.
+      const imageSecurityColumns = resolveImageSecurityColumns(
+        req.body,
+        await getImageSecurityDefaults(),
+      );
 
       // Same shape as the feedback / devtools fallbacks: honour the global
       // event_default_require_password toggle (#317). Without this an admin
@@ -324,6 +342,8 @@ router.post(
         // Issue #592 — write the resolved devtools setting (input value
         // or global fallback) so the column default doesn't shadow it.
         enable_devtools_protection: formatBoolean(enable_devtools_protection),
+        // Request value, else the global default, else the column default.
+        ...imageSecurityColumns,
         // Branding inheritance — resolved value from body or app_settings.
         hero_logo_visible: formatBoolean(hero_logo_visible),
         hero_logo_size,

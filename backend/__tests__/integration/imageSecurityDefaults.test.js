@@ -23,10 +23,12 @@ describe('image-security creation defaults', () => {
   let db;
   let cleanup;
   let getImageSecurityDefaults;
+  let resolveImageSecurityColumns;
 
   beforeAll(async () => {
     ({ db, cleanup } = await bootCrmDb());
-    ({ getImageSecurityDefaults } = require('../../src/routes/adminEvents/helpers'));
+    ({ getImageSecurityDefaults, resolveImageSecurityColumns } =
+      require('../../src/routes/adminEvents/helpers'));
   }, 120000);
 
   afterAll(async () => {
@@ -82,6 +84,14 @@ describe('image-security creation defaults', () => {
     ['a non-numeric quality', 'default_image_quality', 'high'],
     ['fragmentation above the range', 'default_fragmentation_level', 99],
     ['a non-boolean canvas value', 'enable_canvas_rendering', 'yes'],
+    // parseInt would have rescued each of these into a valid-looking
+    // integer. The settings PUT stores values without validating them, so
+    // they can genuinely be in the table.
+    ['a numeric prefix with trailing junk', 'default_image_quality', '72oops'],
+    ['a fractional quality', 'default_image_quality', 72.5],
+    ['a single-element array', 'default_image_quality', [72]],
+    ['a fractional fragmentation level', 'default_fragmentation_level', 3.7],
+    ['a fragmentation level with trailing junk', 'default_fragmentation_level', '3x'],
   ])('ignores %s and falls through to the column default', async (_label, key, value) => {
     await setSetting(key, value);
     expect(await getImageSecurityDefaults()).toEqual({});
@@ -95,5 +105,54 @@ describe('image-security creation defaults', () => {
   it('never throws, so a settings failure cannot block event creation', async () => {
     await setSetting('default_image_quality', { nonsense: true });
     await expect(getImageSecurityDefaults()).resolves.toEqual({});
+  });
+
+  describe('resolveImageSecurityColumns', () => {
+    it('omits every column when neither the request nor the settings supply one', () => {
+      expect(resolveImageSecurityColumns({}, {})).toEqual({});
+    });
+
+    it('uses the global default when the request says nothing', () => {
+      expect(resolveImageSecurityColumns({}, { protection_level: 'maximum' }))
+        .toEqual({ protection_level: 'maximum' });
+    });
+
+    it('lets an explicit request value win over the global default', () => {
+      expect(resolveImageSecurityColumns(
+        { protection_level: 'basic' },
+        { protection_level: 'maximum' },
+      )).toEqual({ protection_level: 'basic' });
+    });
+
+    it('keeps an explicit false canvas value instead of reading it as absent', () => {
+      const columns = resolveImageSecurityColumns(
+        { use_canvas_rendering: false },
+        { use_canvas_rendering: true },
+      );
+      expect(columns.use_canvas_rendering).toBeFalsy();
+    });
+
+    it('keeps a zero-ish explicit value rather than falling through', () => {
+      // 0 is out of range for the column, but the guard is `!== undefined`,
+      // not truthiness — the validator is what rejects out-of-range input.
+      expect(resolveImageSecurityColumns({ image_quality: 0 }, { image_quality: 85 }))
+        .toEqual({ image_quality: 0 });
+    });
+
+    it('resolves each column independently', () => {
+      expect(resolveImageSecurityColumns(
+        { image_quality: 60 },
+        { protection_level: 'enhanced', fragmentation_level: 4 },
+      )).toEqual({
+        protection_level: 'enhanced',
+        image_quality: 60,
+        fragmentation_level: 4,
+      });
+    });
+
+    it('tolerates a missing body, which is what an empty API request looks like', () => {
+      expect(resolveImageSecurityColumns(undefined, { image_quality: 90 }))
+        .toEqual({ image_quality: 90 });
+    });
   });
 });

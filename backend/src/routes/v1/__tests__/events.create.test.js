@@ -126,6 +126,7 @@ const BASE_BODY = {
 const baseSettingsChains = () => [
   buildChain({ firstResult: null }), // feedback default
   buildChain({ firstResult: null }), // devtools default
+  buildChain({ selectResult: [] }),  // image-security whereIn → empty rows (#1296)
   buildChain({ selectResult: [] }),  // branding whereIn → empty rows
 ];
 
@@ -169,19 +170,21 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
   it('creates event_feedback_settings row when feedback_enabled=true is sent', async () => {
     // feedback_enabled provided → feedback probe SKIPPED. Sequence:
     //   1. devtools probe
-    //   2. branding probe (whereIn → select)
-    //   3. slug probe
-    //   4. events insert
-    //   5. feedback sub-toggle defaults probe (whereIn → select, #1044)
-    //   6. event_feedback_settings insert
+    //   2. image-security probe (whereIn → select, #1296)
+    //   3. branding probe (whereIn → select)
+    //   4. slug probe
+    //   5. events insert
+    //   6. feedback sub-toggle defaults probe (whereIn → select, #1044)
+    //   7. event_feedback_settings insert
     const devtoolsChain = buildChain({ firstResult: null });
+    const imageSecurityChain = buildChain({ selectResult: [] });
     const brandingChain = buildChain({ selectResult: [] });
     const slugChain = buildChain({ firstResult: null });
     const insertChain = buildChain({ returningResult: [{ id: 50 }] });
     const feedbackDefaultsChain = buildChain({ selectResult: [] });
     const feedbackInsertChain = buildChain();
     db.__setImplementations(
-      devtoolsChain, brandingChain, slugChain, insertChain,
+      devtoolsChain, imageSecurityChain, brandingChain, slugChain, insertChain,
       feedbackDefaultsChain, feedbackInsertChain,
     );
 
@@ -190,7 +193,7 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
       .send({ ...BASE_BODY, feedback_enabled: true })
       .expect(201);
 
-    expect(db).toHaveBeenNthCalledWith(6, 'event_feedback_settings');
+    expect(db).toHaveBeenNthCalledWith(7, 'event_feedback_settings');
 
     const feedbackRow = feedbackInsertChain.insert.mock.calls[0][0];
     expect(feedbackRow).toMatchObject({ event_id: 50 });
@@ -216,20 +219,21 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
   it('honours the event_default_feedback_enabled global when body omits feedback_enabled', async () => {
     // Feedback probe returns serialized "true" → fallback kicks in and
     // the feedback insert runs. Sequence: feedback probe, devtools probe,
-    // branding probe, slug, insert, sub-toggle defaults probe (#1044),
-    // feedback insert (7 calls total).
+    // image-security probe (#1296), branding probe, slug, insert, sub-toggle
+    // defaults probe (#1044), feedback insert (8 calls total).
     const feedbackProbe = buildChain({
       firstResult: { setting_key: 'event_default_feedback_enabled', setting_value: 'true' },
     });
     const devtoolsChain = buildChain({ firstResult: null });
+    const imageSecurityChain = buildChain({ selectResult: [] });
     const brandingChain = buildChain({ selectResult: [] });
     const slugChain = buildChain({ firstResult: null });
     const insertChain = buildChain({ returningResult: [{ id: 51 }] });
     const feedbackDefaultsChain = buildChain({ selectResult: [] });
     const feedbackInsertChain = buildChain();
     db.__setImplementations(
-      feedbackProbe, devtoolsChain, brandingChain, slugChain, insertChain,
-      feedbackDefaultsChain, feedbackInsertChain,
+      feedbackProbe, devtoolsChain, imageSecurityChain, brandingChain, slugChain,
+      insertChain, feedbackDefaultsChain, feedbackInsertChain,
     );
 
     await request(buildApp())
@@ -237,7 +241,7 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
       .send(BASE_BODY)
       .expect(201);
 
-    expect(db).toHaveBeenNthCalledWith(7, 'event_feedback_settings');
+    expect(db).toHaveBeenNthCalledWith(8, 'event_feedback_settings');
     expect(feedbackInsertChain.insert).toHaveBeenCalledTimes(1);
   });
 
@@ -251,9 +255,9 @@ describe('v1 POST /events — issue #550 (color_theme + feedback row)', () => {
       .send(BASE_BODY)
       .expect(201);
 
-    // 5 db() calls: feedback + devtools + branding probes, slug, insert.
-    // event_feedback_settings is never touched.
-    expect(db).toHaveBeenCalledTimes(5);
+    // 6 db() calls: feedback + devtools + image-security + branding probes,
+    // slug, insert. event_feedback_settings is never touched.
+    expect(db).toHaveBeenCalledTimes(6);
     expect(db).not.toHaveBeenCalledWith('event_feedback_settings');
   });
 

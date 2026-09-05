@@ -31,7 +31,7 @@ const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/fron
 const downloadZipService = require('../../services/downloadZipService');
 const { resolveEventFeedbackDefaults, applyFeedbackDefaults, KEYBIND_MODES } = require('../../services/feedbackDefaults');
 const { validateHeroImageAnchor, getEventFieldRequirements, readBooleanSetting, getDownloadProtectionDefaults,
-  getImageSecurityDefaults, getBrandingDefaults, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./helpers');
+  getImageSecurityDefaults, resolveImageSecurityColumns, getBrandingDefaults, getCustomerNameFromPayload, getCustomerEmailFromPayload, getCustomerPhoneFromPayload, isPhoneFieldEnabled, mapEventForApi, hasCustomerContactColumns, deleteEventCascade, SLIDESHOW_TRANSITIONS, SLIDESHOW_COLORFILTERS } = require('./helpers');
 
 /**
  * `events.slug` is UNIQUE, and both routes that mint one do a read-then-insert
@@ -229,6 +229,13 @@ module.exports = (router) => {
     body('allow_downloads').optional().isBoolean(),
     body('disable_right_click').optional().isBoolean(),
     body('enable_devtools_protection').optional().isBoolean(),
+    // Image security. PUT /:id has validated these all along; create
+    // accepted none of them, so a value sent here used to be dropped on the
+    // floor and the column default applied instead (#1296).
+    body('protection_level').optional().isIn(['basic', 'standard', 'enhanced', 'maximum']),
+    body('use_canvas_rendering').optional().isBoolean().toBoolean(),
+    body('image_quality').optional().isInt({ min: 1, max: 100 }).toInt(),
+    body('fragmentation_level').optional().isInt({ min: 1, max: 10 }).toInt(),
     body('watermark_downloads').optional().isBoolean(),
     body('watermark_text').optional().trim(),
     // #328 follow-up: per-event opt-in for presigned-URL "Download All".
@@ -546,9 +553,13 @@ module.exports = (router) => {
       // but new events still got it ON because the column default is true).
       const protectionDefaults = await getDownloadProtectionDefaults();
       // #1296 — the other four Image-security settings, which were written,
-      // rendered as controls, and read by nothing. Creation-time only; see
+      // rendered as controls, and read by nothing. Same inheritance rule as
+      // the devtools setting below. Creation-time only; see
       // getImageSecurityDefaults for why existing events are left alone.
-      const imageSecurityDefaults = await getImageSecurityDefaults();
+      const imageSecurityColumns = resolveImageSecurityColumns(
+        req.body,
+        await getImageSecurityDefaults(),
+      );
       const effectiveEnableDevtoolsProtection =
       enableDevtoolsProtectionInput !== undefined
         ? enableDevtoolsProtectionInput
@@ -622,18 +633,9 @@ module.exports = (router) => {
         allow_downloads: formatBoolean(allow_downloads !== undefined ? allow_downloads : true),
         disable_right_click: formatBoolean(disable_right_click !== undefined ? disable_right_click : false),
         enable_devtools_protection: formatBoolean(effectiveEnableDevtoolsProtection),
-        // Spread AFTER the explicit columns so a value the request supplied
-        // still wins; each key is present only when the global setting held
-        // a usable value, so anything unset falls through to the column
-        // default exactly as before (#1296).
-        ...(imageSecurityDefaults.protection_level !== undefined
-          ? { protection_level: imageSecurityDefaults.protection_level } : {}),
-        ...(imageSecurityDefaults.image_quality !== undefined
-          ? { image_quality: imageSecurityDefaults.image_quality } : {}),
-        ...(imageSecurityDefaults.use_canvas_rendering !== undefined
-          ? { use_canvas_rendering: formatBoolean(imageSecurityDefaults.use_canvas_rendering) } : {}),
-        ...(imageSecurityDefaults.fragmentation_level !== undefined
-          ? { fragmentation_level: imageSecurityDefaults.fragmentation_level } : {}),
+        // Request value, else the global default, else the column default —
+        // a key absent here is one the database fills in (#1296).
+        ...imageSecurityColumns,
         watermark_downloads: formatBoolean(watermark_downloads !== undefined ? watermark_downloads : false),
         watermark_text,
         allow_presigned_download: formatBoolean(allow_presigned_download === true || allow_presigned_download === 'true'),

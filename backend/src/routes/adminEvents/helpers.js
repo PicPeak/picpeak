@@ -122,6 +122,19 @@ const getDownloadProtectionDefaults = async () => {
  */
 const PROTECTION_LEVELS = ['basic', 'standard', 'enhanced', 'maximum'];
 
+// parseInt would rescue malformed settings instead of rejecting them:
+// parseInt('72oops') is 72, parseInt(72.5) is 72, parseInt([72]) is 72.
+// That matters because the settings PUT stores whatever JSON it is handed
+// without validating the value (adminImageSecurity.js writes
+// JSON.stringify(value) for any allow-listed key), so those shapes really
+// can be sitting in app_settings. Accept only a genuine integer, or a
+// string that is exactly one.
+const toInteger = (value) => {
+  if (typeof value === 'number') return Number.isInteger(value) ? value : undefined;
+  if (typeof value === 'string' && /^[+-]?\d+$/.test(value.trim())) return Number(value.trim());
+  return undefined;
+};
+
 const getImageSecurityDefaults = async () => {
   const defaults = {};
   try {
@@ -152,8 +165,8 @@ const getImageSecurityDefaults = async () => {
     // The column is an integer percentage; anything outside 1..100 is a
     // misconfiguration and falls through rather than being clamped into
     // something the operator did not choose.
-    const quality = parseInt(read('default_image_quality'), 10);
-    if (Number.isInteger(quality) && quality >= 1 && quality <= 100) {
+    const quality = toInteger(read('default_image_quality'));
+    if (quality !== undefined && quality >= 1 && quality <= 100) {
       defaults.image_quality = quality;
     }
 
@@ -162,8 +175,8 @@ const getImageSecurityDefaults = async () => {
       defaults.use_canvas_rendering = canvas;
     }
 
-    const fragmentation = parseInt(read('default_fragmentation_level'), 10);
-    if (Number.isInteger(fragmentation) && fragmentation >= 1 && fragmentation <= 10) {
+    const fragmentation = toInteger(read('default_fragmentation_level'));
+    if (fragmentation !== undefined && fragmentation >= 1 && fragmentation <= 10) {
       defaults.fragmentation_level = fragmentation;
     }
   } catch (error) {
@@ -172,6 +185,39 @@ const getImageSecurityDefaults = async () => {
     logger.error('Failed to read image-security defaults', { error: error.message });
   }
   return defaults;
+};
+
+/**
+ * Build the image-security columns for a NEW event: an explicit request
+ * value wins, then the global default, then the column default (the key is
+ * omitted entirely so the database supplies it).
+ *
+ * Shared by the admin create route and POST /api/v1/events so the configured
+ * security level cannot depend on which entry point created the gallery —
+ * the same split that made #592 (devtools) a separate bug from #317.
+ *
+ * `body` values are already validated by the route's express-validator
+ * chain; `defaults` come from getImageSecurityDefaults(), which validates
+ * them itself.
+ */
+const resolveImageSecurityColumns = (body = {}, defaults = {}) => {
+  const { formatBoolean } = require('../../utils/dbCompat');
+  const columns = {};
+  const pick = (key) => (body[key] !== undefined ? body[key] : defaults[key]);
+
+  const level = pick('protection_level');
+  if (level !== undefined) columns.protection_level = level;
+
+  const quality = pick('image_quality');
+  if (quality !== undefined) columns.image_quality = quality;
+
+  const canvas = pick('use_canvas_rendering');
+  if (canvas !== undefined) columns.use_canvas_rendering = formatBoolean(canvas);
+
+  const fragmentation = pick('fragmentation_level');
+  if (fragmentation !== undefined) columns.fragmentation_level = fragmentation;
+
+  return columns;
 };
 
 // Helper to get branding defaults for new events (Feature 7: Branding Inheritance).
@@ -608,6 +654,7 @@ module.exports = {
   readBooleanSetting,
   getDownloadProtectionDefaults,
   getImageSecurityDefaults,
+  resolveImageSecurityColumns,
   getBrandingDefaults,
   getCustomerNameFromPayload,
   getCustomerEmailFromPayload,
