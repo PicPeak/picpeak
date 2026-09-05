@@ -4,10 +4,18 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { ValidationError } = require('../utils/errors');
 const service = require('../services/productUsageService');
+const { ProtocolError } = require('../usage/protocol.cjs');
 const router = express.Router();
 const wrap = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res)).catch((error) => {
-    if (error.name === 'ProtocolError')
+    // instanceof, not `error.name`: ProtocolError extends Error without
+    // setting `name`, so every instance reports 'Error' and this branch never
+    // ran. A malformed vote or feedback payload fell through to the global
+    // handler, which logs it as an unhandled programming error and answers
+    // INTERNAL_ERROR in production — losing the validation code the caller
+    // needs. protocol.cjs is vendored byte-identical with picpeak-usage, so
+    // the fix belongs here rather than in the class.
+    if (error instanceof ProtocolError)
       return res
         .status(400)
         .json({ error: 'Invalid usage request', code: error.code });

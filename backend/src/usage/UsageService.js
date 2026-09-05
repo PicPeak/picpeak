@@ -572,7 +572,7 @@ class UsageService {
     return this.status();
   }
 
-  async markUsed(features) {
+  async markUsed(features, { destinationBackup = false } = {}) {
     const allowed = [...new Set(features)].filter((f) =>
       FEATURE_KEYS.includes(f)
     );
@@ -583,7 +583,12 @@ class UsageService {
       if (this.db.client.config.client === 'pg') query.forUpdate();
       const state = await query.first();
       if (!state || state.status !== 'active') return;
-      if (allowed.includes('backup')) {
+      // Only when the operation actually writes to the configured backup
+      // destination. Deriving this from "a backup ran while S3 is configured"
+      // marked S3 as USED for a local database backup or a .picpeak export,
+      // which the middleware also counts as `backup` — so merely configuring
+      // S3 and downloading a local export claimed S3 was in use.
+      if (destinationBackup && allowed.includes('backup')) {
         const destination = await tx('app_settings')
           .where({ setting_key: 'backup_destination_type' })
           .first();

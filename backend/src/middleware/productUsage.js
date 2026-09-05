@@ -28,6 +28,12 @@ const RULES = [
   [/^\/email\/(?:test|send)(?:\/|$)/, ['smtp']],
   [/^\/external-media(?:\/|$)/, ['share_mounts']]
 ];
+// Backup operations that write to the CONFIGURED destination, and so imply
+// S3 use when that destination is S3. Deliberately excludes
+// /backup/picpeak/export and everything under /database-backup/, which
+// produce a local file regardless of where scheduled backups go.
+const DESTINATION_BACKUP = /^\/backup\/(?:run|backup|create|start|test)(?:\/|$)/;
+
 function productUsage(req, res, next) {
   const pathname = req.path;
   res.once('finish', () => {
@@ -42,9 +48,11 @@ function productUsage(req, res, next) {
       features.push('s3_storage');
     if (features.length)
       service
-        .markUsed(features)
+        .markUsed(features, {
+          destinationBackup: DESTINATION_BACKUP.test(pathname)
+        })
         .catch(() => logger.warn('Product usage marker could not be recorded'));
   });
   next();
 }
-module.exports = { productUsage, RULES };
+module.exports = { productUsage, RULES, DESTINATION_BACKUP };

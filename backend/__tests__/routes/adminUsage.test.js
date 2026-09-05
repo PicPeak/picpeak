@@ -171,8 +171,33 @@ test('public/gallery paths and failed/unauthenticated admin operations never set
   simulate('/quotes', { id: 1 }, 403);
   expect(service.markUsed).not.toHaveBeenCalled();
   simulate('/customers/42/hour-entries', { id: 1 }, 200);
+  // The second argument tells markUsed whether this operation writes to the
+  // configured backup destination; a CRM route never does.
   expect(service.markUsed).toHaveBeenCalledWith(
-    expect.arrayContaining(['crm', 'crm_hours'])
+    expect.arrayContaining(['crm', 'crm_hours']),
+    expect.objectContaining({ destinationBackup: false })
   );
   expect(JSON.stringify(service.markUsed.mock.calls)).not.toContain('42');
+});
+
+test('only a backup that writes to the configured destination flags S3', () => {
+  // /database-backup/* and /backup/picpeak/export produce a local file, so
+  // they must not imply S3 use just because S3 is the configured destination.
+  const seen = [];
+  const simulate = (pathname) => {
+    service.markUsed.mockClear();
+    const res = new (require('events').EventEmitter)();
+    res.statusCode = 200;
+    productUsage({ path: pathname, admin: { id: 1 } }, res, () => {});
+    res.emit('finish');
+    seen.push([pathname, service.markUsed.mock.calls[0]?.[1]?.destinationBackup]);
+  };
+  simulate('/backup/run');
+  simulate('/database-backup/backup');
+  simulate('/backup/picpeak/export');
+  expect(seen).toEqual([
+    ['/backup/run', true],
+    ['/database-backup/backup', false],
+    ['/backup/picpeak/export', false],
+  ]);
 });

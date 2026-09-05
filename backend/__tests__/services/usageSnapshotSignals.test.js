@@ -150,3 +150,45 @@ describe('status survives a misconfigured collector URL', () => {
     expect(status.collector_url).toBe('https://usage.picpeak.app');
   });
 });
+
+describe('S3 use is only implied by backups that write to the destination', () => {
+  let db;
+  afterEach(async () => { if (db) await db.destroy(); db = null; });
+
+  const withS3Destination = async (database) => {
+    await database('app_settings').insert({
+      setting_key: 'backup_destination_type',
+      setting_value: JSON.stringify('s3'),
+    });
+    await database('product_usage_state').where({ id: 1 }).update({ status: 'active' });
+  };
+
+  it('marks S3 for a backup that uses the configured destination', async () => {
+    db = await bootDb();
+    await withS3Destination(db);
+    await service(db).markUsed(['backup'], { destinationBackup: true });
+    expect((await db('product_usage_markers').pluck('feature')).sort())
+      .toEqual(['backup', 's3_storage']);
+  });
+
+  it('does NOT mark S3 for a local backup, even with S3 configured', async () => {
+    // /database-backup/* and /backup/picpeak/export produce a local file. They
+    // count as `backup`, but claiming S3 was used for them made merely
+    // configuring S3 and downloading an export report s3_storage.used.
+    db = await bootDb();
+    await withS3Destination(db);
+    await service(db).markUsed(['backup']);
+    expect(await db('product_usage_markers').pluck('feature')).toEqual(['backup']);
+  });
+
+  it('does not mark S3 when the destination is not S3', async () => {
+    db = await bootDb();
+    await db('app_settings').insert({
+      setting_key: 'backup_destination_type',
+      setting_value: JSON.stringify('local'),
+    });
+    await db('product_usage_state').where({ id: 1 }).update({ status: 'active' });
+    await service(db).markUsed(['backup'], { destinationBackup: true });
+    expect(await db('product_usage_markers').pluck('feature')).toEqual(['backup']);
+  });
+});
