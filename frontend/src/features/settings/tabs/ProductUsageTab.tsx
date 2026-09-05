@@ -1,12 +1,40 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   productUsageService as service,
   type ProductFeedback
 } from '../../../services/productUsage.service';
+import {
+  Globe,
+  ListChecks,
+  MessageSquare,
+  Send,
+  ShieldOff,
+  Sparkles,
+  Trash2
+} from 'lucide-react';
 import { useConfirm } from '../../../components/common/ConfirmDialog';
 import { Button, Card } from '../../../components/common';
+
+/**
+ * Sections of the disclosure, in reading order. Each is a translated
+ * paragraph; the heading and icon give it a shape you can scan instead of
+ * seven identical blocks of prose.
+ */
+const DISCLOSURE: {
+  key: string;
+  heading: string;
+  Icon: ComponentType<{ className?: string }>;
+  tone?: 'positive';
+}[] = [
+  { key: 'fields', heading: 'sectionFields', Icon: ListChecks },
+  { key: 'excluded', heading: 'sectionExcluded', Icon: ShieldOff, tone: 'positive' },
+  { key: 'transport', heading: 'sectionTransport', Icon: Send },
+  { key: 'visibility', heading: 'sectionVisibility', Icon: Globe },
+  { key: 'deletion', heading: 'sectionDeletion', Icon: Trash2 },
+  { key: 'feedbackDisclosure', heading: 'sectionFeedback', Icon: MessageSquare }
+];
 
 function ConsentDialog({
   close,
@@ -30,58 +58,100 @@ function ConsentDialog({
       ref={ref}
       onCancel={close}
       aria-labelledby="usage-consent-title"
-      className="w-full max-w-2xl rounded-xl p-6 text-theme bg-theme-surface backdrop:bg-black/50"
+      // Column layout with its own scroll region, so the title stays put and
+      // the actions never scroll out of reach on a short screen.
+      //
+      // Surface is class-driven rather than `bg-theme-surface`: that variable
+      // does not follow dark mode, so it stayed white while the dark: text
+      // variants below turned near-white. neutral-800 is what `.card`
+      // resolves to in dark, which is what the rest of the admin UI uses.
+      className="w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden rounded-xl p-0 bg-white dark:bg-neutral-800 shadow-xl backdrop:bg-black/50"
     >
-      <h2 id="usage-consent-title" className="text-xl font-semibold">
-        {t('productUsage.consentTitle')}
-      </h2>
-      <div className="my-4 max-h-[55vh] overflow-y-auto space-y-3">
-        {[
-          'purpose',
-          'fields',
-          'excluded',
-          'transport',
-          'visibility',
-          'deletion',
-          'feedbackDisclosure'
-        ].map((key) => (
-          <p key={key}>{t(`productUsage.${key}`, { collector })}</p>
+      <header className="flex items-start gap-3 px-6 pt-6 pb-4">
+        <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full bg-primary-50 dark:bg-primary-900/30">
+          <Sparkles className="h-5 w-5 text-primary-600 dark:text-primary-300" />
+        </span>
+        <div className="min-w-0">
+          <h2
+            id="usage-consent-title"
+            className="text-lg font-semibold text-neutral-900 dark:text-neutral-100"
+          >
+            {t('productUsage.consentTitle')}
+          </h2>
+          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+            {t('productUsage.purpose')}
+          </p>
+        </div>
+      </header>
+
+      {/* A scrollable region is focusable, which is correct for keyboard use —
+          but unstyled it drew a default ring that made the disclosure look
+          like a textarea. Given a real label and ring so it reads as what it
+          is: a document you can scroll. */}
+      <div
+        tabIndex={0}
+        role="group"
+        aria-label={t('productUsage.consentTitle') as string}
+        className="flex-1 overflow-y-auto border-y border-neutral-200 dark:border-neutral-700 px-6 py-4 space-y-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
+      >
+        {DISCLOSURE.map(({ key, heading, Icon, tone }) => (
+          <section
+            key={key}
+            className={
+              tone === 'positive'
+                ? 'rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50/60 dark:bg-primary-900/20 p-3'
+                : undefined
+            }
+          >
+            <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              <Icon className="h-3.5 w-3.5" />
+              {t(`productUsage.${heading}`)}
+            </h3>
+            <p className="mt-1 text-sm text-neutral-700 dark:text-neutral-300">
+              {t(`productUsage.${key}`, { collector })}
+            </p>
+          </section>
         ))}
+
+        <div className="flex flex-wrap gap-x-6 gap-y-1 pt-1 text-sm">
+          <a
+            className="text-primary-600 dark:text-primary-400 hover:underline"
+            href={collector}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {t('productUsage.linkCollector')}
+          </a>
+          <a
+            className="text-primary-600 dark:text-primary-400 hover:underline"
+            href={`${collector}/transparency`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {t('productUsage.transparency')}
+          </a>
+        </div>
       </div>
-      <div className="mb-4 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-        <a
-          className={'text-primary-600 dark:text-primary-400 hover:underline'}
-          href={collector}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {t('productUsage.linkCollector')}
-        </a>
-        <a
-          className={'text-primary-600 dark:text-primary-400 hover:underline'}
-          href={`${collector}/transparency`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {t('productUsage.transparency')}
-        </a>
-      </div>
-      <label className="flex items-start gap-2 mb-4">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(e) => setChecked(e.target.checked)}
-        />
-        {t('productUsage.consentCheck')}
-      </label>
-      <div className="flex justify-end gap-3">
-        <Button variant="outline" onClick={close} disabled={busy}>
-          {t('productUsage.cancel')}
-        </Button>
-        <Button onClick={enable} disabled={!checked || busy}>
-          {t('productUsage.enable')}
-        </Button>
-      </div>
+
+      <footer className="px-6 pt-4 pb-6 space-y-4">
+        <label className="flex items-start gap-2.5 text-sm text-neutral-800 dark:text-neutral-200">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 flex-none"
+            checked={checked}
+            onChange={(e) => setChecked(e.target.checked)}
+          />
+          <span>{t('productUsage.consentCheck')}</span>
+        </label>
+        <div className="flex justify-end gap-3">
+          <Button variant="outline" onClick={close} disabled={busy}>
+            {t('productUsage.cancel')}
+          </Button>
+          <Button onClick={enable} disabled={!checked || busy}>
+            {t('productUsage.enable')}
+          </Button>
+        </div>
+      </footer>
     </dialog>
   );
 }
