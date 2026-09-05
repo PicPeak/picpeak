@@ -16,7 +16,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Save, Send, TestTube2, Users, Eye, ArrowLeft } from 'lucide-react';
+import { Save, Send, TestTube2, Users, Eye, ArrowLeft, AlertTriangle } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 import { Button, Card, Input, Loading, useConfirm } from '../../../components/common';
@@ -26,6 +26,17 @@ import {
 } from '../../../services/newsletters.service';
 import { customerAdminService } from '../../../services/customerAdmin.service';
 import { usePermissions } from '../../../contexts/PermissionsContext';
+
+/**
+ * Recipient count above which the composer warns about deliverability.
+ *
+ * Not a provider limit — the queue's own pacing handles rate. This is about
+ * reputation: what trips spam filtering is a domain that normally sends a
+ * trickle of transactional mail suddenly emitting hundreds of near-identical
+ * messages. 50 is deliberately conservative, because the operators who most
+ * need the warning are the ones sending their first campaign.
+ */
+const LARGE_SEND_THRESHOLD = 50;
 
 /** Variables the server substitutes per recipient. */
 const VARIABLES = [
@@ -378,7 +389,9 @@ export const NewsletterComposerPage: React.FC = () => {
             />
             <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
               {t('newsletters.rateHelp',
-                'Sends are spread out so your mail provider does not rate-limit you. Check your provider\'s hourly cap before raising this.')}
+                'Sends are spread out so your mail provider does not rate-limit you, and so a '
+                + 'sudden burst does not look like spam. Check your provider\'s hourly cap '
+                + 'before raising this.')}
             </p>
           </div>
 
@@ -403,6 +416,46 @@ export const NewsletterComposerPage: React.FC = () => {
                 {t('newsletters.sendTest', 'Test')}
               </Button>
             </div>
+
+            {(resolution?.recipientCount ?? 0) >= LARGE_SEND_THRESHOLD && (
+              <div
+                data-testid="large-send-warning"
+                className="rounded-md border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-900/20 p-3"
+              >
+                <div className="flex gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+                  <div className="text-xs text-amber-900 dark:text-amber-200 space-y-1">
+                    <p className="font-medium">
+                      {t('newsletters.largeSend.title',
+                        'Large send — check your sending reputation first')}
+                    </p>
+                    <p>
+                      {t('newsletters.largeSend.body',
+                        'Mailing {{count}} people at once from a domain that usually sends '
+                        + 'only transactional email is what makes spam filters take notice. '
+                        + 'Providers may throttle, junk or block the whole batch, and a bad '
+                        + 'run damages delivery of your gallery emails too.',
+                        { count: resolution?.recipientCount ?? 0 })}
+                    </p>
+                    <p>
+                      {t('newsletters.largeSend.advice',
+                        'Confirm SPF, DKIM and DMARC are set up for your sending domain, '
+                        + 'send yourself a test first, and consider splitting a first '
+                        + 'campaign across several smaller sends.')}
+                    </p>
+                    <p>
+                      {t('newsletters.largeSend.duration',
+                        'At {{rate}}/minute this takes about {{minutes}} minutes, and other '
+                        + 'email — gallery invitations, password resets — queues behind it.',
+                        {
+                          rate: draft.sendRatePerMinute,
+                          minutes: resolution?.estimatedMinutes ?? 1,
+                        })}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <Button
               onClick={queueCampaign}

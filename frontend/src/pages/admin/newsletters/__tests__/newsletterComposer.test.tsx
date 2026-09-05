@@ -151,6 +151,31 @@ describe('newsletter composer', () => {
     expect(summary).toHaveTextContent('3 skipped (opted out)');
   });
 
+  it('warns about deliverability once the send is large', async () => {
+    // Spam filtering reacts to a domain's volume, not to the queue's pacing,
+    // so the throttle alone is not something to reassure the operator with.
+    resolution = { ...resolution, recipientCount: 120, estimatedMinutes: 12 };
+    renderComposer();
+    await screen.findByTestId('recipient-summary');
+
+    const warning = await screen.findByTestId('large-send-warning');
+    expect(warning).toHaveTextContent(/sending reputation/i);
+    expect(warning).toHaveTextContent(/spam filters/i);
+    expect(warning).toHaveTextContent(/SPF, DKIM and DMARC/i);
+    // The operator is told what it costs: duration, and what waits behind it.
+    expect(warning).toHaveTextContent(/12 minutes/);
+    expect(warning).toHaveTextContent(/queues behind it/i);
+  });
+
+  it('does not warn on a send small enough not to matter', async () => {
+    resolution = { ...resolution, recipientCount: 12 };
+    renderComposer();
+    await screen.findByTestId('recipient-summary');
+    await waitFor(() => expect(resolveSpy).toHaveBeenCalled());
+
+    expect(screen.queryByTestId('large-send-warning')).not.toBeInTheDocument();
+  });
+
   it('renders the preview in a sandboxed iframe with no allow-scripts', async () => {
     renderComposer();
     await screen.findByTestId('recipient-summary');
