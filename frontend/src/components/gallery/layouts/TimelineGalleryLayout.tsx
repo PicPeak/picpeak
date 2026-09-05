@@ -130,7 +130,6 @@ export const TimelineGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                       className: 'w-full h-full object-cover rounded-lg',
                       loading: 'lazy',
                       isGallery: true,
-                      protectFromDownload: !allowDownloads,
                     }}
                     overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
                     allowDownloads={allowDownloads}

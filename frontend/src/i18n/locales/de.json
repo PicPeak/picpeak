@@ -1929,7 +1929,6 @@
       "defaultProtectionHelp": "Diese Einstellungen gelten für alle neuen Veranstaltungen. Einzelne Veranstaltungen können diese Standardwerte überschreiben.",
       "protectionLevel": "Standard-Schutzstufe",
       "imageQuality": "Standard-Bildqualität",
-      "fragmentationLevel": "Fragmentierungsstufe",
       "enableDevtools": "DevTools-Erkennung standardmäßig aktivieren",
       "enableCanvas": "Canvas-Rendering standardmäßig aktivieren (erweiterter Schutz)",
       "rateLimiting": "Ratenbegrenzung",
@@ -1946,7 +1945,6 @@
       "infoTitle": "Über Bildschutz",
       "infoText": "Diese Schutzfunktionen helfen, gelegentliches Herunterladen und Kopieren zu verhindern, können aber nicht alle Methoden blockieren. Entschlossene Benutzer finden möglicherweise trotzdem Wege, Bilder zu erfassen. Erwägen Sie die Verwendung von Wasserzeichen und rechtlichen Vereinbarungen für umfassenden Schutz.",
       "imageQualityHelp": "1–100, höher = bessere Qualität",
-      "fragmentationLevelHelp": "1–10, höher = mehr Schutz",
       "suspiciousActivityThresholdHelp": "Verstöße, bevor als verdächtig markiert wird",
       "autoBlockThresholdHelp": "Verstöße, bevor die IP automatisch gesperrt wird"
     },
@@ -7019,7 +7017,7 @@
     "showCss": "Eigenes CSS (optional)",
     "hideCss": "Eigenes CSS ausblenden",
     "cssHelp": "Viele E-Mail-Programme entfernen einen <style>-Block — halten Sie wichtige Gestaltung in Inline-Attributen. Externe Bilder und @import werden entfernt.",
-    "rateHelp": "Sendungen werden gestreckt, damit Ihr Mailanbieter nicht drosselt. Prüfen Sie das Stundenlimit Ihres Anbieters, bevor Sie diesen Wert erhöhen.",
+    "rateHelp": "Sendungen werden zeitlich verteilt, damit Ihr Mailanbieter Sie nicht drosselt und ein plötzlicher Schwall nicht wie Spam aussieht. Prüfen Sie das Stundenlimit Ihres Anbieters, bevor Sie diesen Wert erhöhen.",
     "recipientCount": "{{count}} Empfänger",
     "skippedOptOut": "{{count}} übersprungen (abgemeldet)",
     "saveToRefresh": "Speichern, um diese Zahl zu aktualisieren.",
@@ -7050,6 +7048,12 @@
     "testFailed": "Test-E-Mail konnte nicht gesendet werden.",
     "queueFailed": "Kampagne konnte nicht eingereiht werden.",
     "cancelFailed": "Kampagne konnte nicht abgebrochen werden.",
-    "previewEmpty": "Aktualisieren Sie die Vorschau, um die E-Mail so zu sehen, wie ein Kunde sie erhält."
+    "previewEmpty": "Aktualisieren Sie die Vorschau, um die E-Mail so zu sehen, wie ein Kunde sie erhält.",
+    "largeSend": {
+      "title": "Großer Versand — prüfen Sie zuerst Ihre Versandreputation",
+      "body": "{{count}} Personen auf einmal von einer Domain anzuschreiben, die sonst nur Transaktionsmails versendet, lässt Spamfilter aufmerksam werden. Anbieter können den gesamten Versand drosseln, als Spam einstufen oder blockieren — und ein schlechter Lauf beeinträchtigt auch die Zustellung Ihrer Galerie-E-Mails.",
+      "advice": "Stellen Sie sicher, dass SPF, DKIM und DMARC für Ihre Versanddomain eingerichtet sind, senden Sie sich zuerst einen Test, und teilen Sie eine erste Kampagne nach Möglichkeit in mehrere kleinere Sendungen auf.",
+      "duration": "Bei {{rate}}/Minute dauert dies etwa {{minutes}} Minuten. Die Versand-Warteschlange wird geteilt: Während der Kampagne können andere E-Mails — Galerie-Einladungen, Passwort-Zurücksetzungen — dahinter verzögert werden."
+    }
   }
 }

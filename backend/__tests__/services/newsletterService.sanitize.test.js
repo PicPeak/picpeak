@@ -12,7 +12,9 @@ jest.mock('../../src/database/db', () => ({ db: jest.fn(), logActivity: jest.fn(
 
 const {
   sanitizeCampaignBody, sanitizeCampaignCss, MAX_BODY_BYTES,
+  sanitizeInlineStylesAfterSubstitution,
 } = require('../../src/services/newsletterService');
+const { safeTemplateReplace } = require('../../src/services/emailProcessor');
 
 describe('sanitizeCampaignBody', () => {
   it('returns empty string for empty input', () => {
@@ -92,6 +94,35 @@ describe('sanitizeCampaignBody', () => {
     expect(out).not.toContain('http://evil.example');
   });
 
+  it('blocks a tracking url() hidden behind &quot; entities', () => {
+    // sanitize-html writes `"` inside an attribute as `&quot;`, so the CSS
+    // scanner and the recipient's browser disagreed about where strings
+    // start: the browser decodes first and reads the apostrophe as ordinary
+    // text inside a real string, then fetches the background — while the
+    // scanner saw the apostrophe open a string and skipped past the url().
+    const out = sanitizeCampaignBody(
+      `<p style="font-family:&quot;don't&quot;;background:url(https://evil.example/p.gif)">hi</p>`
+    );
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('blocks a tracking url() hidden behind an escaped quote', () => {
+    const out = sanitizeCampaignBody(
+      `<p style="--m:\\';background:url(https://evil.example/p.gif)">hi</p>`
+    );
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('keeps a legitimate quoted font stack, re-encoded for the attribute', () => {
+    const out = sanitizeCampaignBody(
+      `<p style="color:red;font-family:&quot;Helvetica Neue&quot;,sans-serif">hi</p>`
+    );
+    expect(out).toContain('color:red');
+    expect(out).toContain('Helvetica Neue');
+    // Re-encoded, so the attribute stays well formed rather than being cut short.
+    expect(out).not.toMatch(/style="[^"]*"[^>]*"/);
+  });
+
   it('strips expression() out of an inline style', () => {
     const out = sanitizeCampaignBody('<p style="width:expression(alert(1))">hi</p>');
     expect(out).not.toContain('expression(');
@@ -157,5 +188,48 @@ describe('sanitizeCampaignCss', () => {
     const { css } = sanitizeCampaignCss('.a{color:red}</style><script>alert(1)</script>');
     expect(css).not.toContain('<script');
     expect(css).not.toContain('</style>');
+  });
+});
+
+describe('inline CSS is re-checked after template substitution', () => {
+  // The stored body is sanitized, but safeTemplateReplace rewrites it
+  // afterwards — so the string that was validated is not the string that is
+  // sent. A conditional inside a style attribute can delete the quoting that
+  // made a url() inert, which no amount of lexer correctness can catch.
+  const payload =
+    `<p style="--x:x{{#if company_name}}'{{/if}};`
+    + `background:url(https://evil.example/p.gif);`
+    + `--y:x{{#if company_name}}'{{/if}}">hi</p>`;
+
+  it('neutralises a url() that substitution would activate', () => {
+    const stored = sanitizeCampaignBody(payload);
+    // Correctly left alone at write time: the url() really is inside a CSS
+    // string while the conditionals are still in place.
+    expect(stored).toContain('evil.example');
+
+    const substituted = safeTemplateReplace(stored, { company_name: '' }, { escapeHtml: true });
+    // Expansion removed the quotes, so without the recheck this ships live.
+    expect(substituted).toMatch(/background:url\(https:\/\/evil\.example/);
+
+    const rendered = sanitizeInlineStylesAfterSubstitution(substituted);
+    expect(rendered).not.toMatch(/url\(\s*['"]?https:\/\/evil\.example/);
+    expect(rendered).toContain('background:none');
+  });
+
+  it('leaves a body without style attributes untouched', () => {
+    const html = '<p>Hello {{first_name}}</p>';
+    expect(sanitizeInlineStylesAfterSubstitution(html)).toBe(html);
+  });
+
+  it('keeps legitimate inline styles through the recheck', () => {
+    const html = '<p style="color:red;font-size:14px">hi</p>';
+    const out = sanitizeInlineStylesAfterSubstitution(html);
+    expect(out).toContain('color:red');
+    expect(out).toContain('font-size:14px');
+  });
+
+  it('is safe on empty and nullish input', () => {
+    expect(sanitizeInlineStylesAfterSubstitution('')).toBe('');
+    expect(sanitizeInlineStylesAfterSubstitution(null)).toBeNull();
   });
 });

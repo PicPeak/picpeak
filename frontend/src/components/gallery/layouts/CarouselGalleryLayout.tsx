@@ -89,7 +89,6 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
           alt={currentPhoto.filename}
           className="w-full h-full object-contain"
           isGallery={true}
-          protectFromDownload={!allowDownloads}
         />
 
         {/* Colour labels for the photo in view (#1189). Bottom-left because it
@@ -267,7 +266,6 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                   className="w-full h-full object-cover"
                   loading="lazy"
                   isGallery={true}
-                  protectFromDownload={!allowDownloads}
                 />
                 {/* The strip is the only place this layout shows more than one
                     photo at a time, so it is the only place a label can

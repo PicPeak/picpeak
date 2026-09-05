@@ -4,6 +4,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const secureImageMiddleware = require('../middleware/secureImageMiddleware');
 const logger = require('../utils/logger');
+const { decodeSettingValue } = require('./adminEvents/helpers');
 
 const router = express.Router();
 
@@ -22,7 +23,6 @@ router.get('/settings', adminAuth, requirePermission(['settings.view', 'image_se
         'max_image_requests_per_hour',
         'suspicious_activity_threshold',
         'enable_canvas_rendering',
-        'default_fragmentation_level',
         'security_monitoring_enabled',
         'block_suspicious_ips',
         'log_security_events_to_db',
@@ -32,9 +32,15 @@ router.get('/settings', adminAuth, requirePermission(['settings.view', 'image_se
 
     const config = {};
     settings.forEach(setting => {
-      // PostgreSQL JSON columns are already parsed by the driver
-      // Just use the value directly - no need to JSON.parse
-      config[setting.setting_key] = setting.setting_value;
+      // setting_value is JSON text on SQLite, and already decoded by the
+      // driver on a PG json column — so returning it raw shipped strings
+      // like "true" to a tab that types the field as boolean. Worse, the
+      // tab PUTs this whole object straight back through JSON.stringify,
+      // so every save wrapped another layer of quoting around values nobody
+      // edited, until consumers could no longer read them (#1296). Decode
+      // here so a round trip is idempotent. This terminates: each parse of
+      // a string is strictly shorter than its input.
+      config[setting.setting_key] = decodeSettingValue(setting.setting_value);
     });
 
     res.json(config);
@@ -61,7 +67,6 @@ router.put('/settings', adminAuth, requirePermission('image_security.manage'), a
       'max_image_requests_per_hour',
       'suspicious_activity_threshold',
       'enable_canvas_rendering',
-      'default_fragmentation_level',
       'security_monitoring_enabled',
       'block_suspicious_ips',
       'log_security_events_to_db',

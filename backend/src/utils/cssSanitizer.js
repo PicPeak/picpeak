@@ -147,10 +147,26 @@ function stripDisallowedUrls(css) {
     if (input[i] === '"' || input[i] === '\'') {
       const quote = input[i];
       let j = i + 1;
+      let closed = false;
       while (j < input.length) {
         if (input[j] === '\\') { j += 2; continue; }
-        if (input[j] === quote) { j += 1; break; }
+        // A newline ends a string in CSS (it produces a bad-string token), so
+        // an unclosed quote must not run past the end of its own line.
+        if (input[j] === '\n' || input[j] === '\r' || input[j] === '\f') break;
+        if (input[j] === quote) { j += 1; closed = true; break; }
         j += 1;
+      }
+      // An UNTERMINATED quote is a parse error, and trusting it is how a
+      // stray apostrophe hid everything after it: `font-family:&quot;don't`
+      // opened a string that swallowed the url() following it, while the
+      // recipient's browser — which decodes the entity first — saw the
+      // apostrophe safely inside a real string and made the request. Failing
+      // closed here means emitting the quote as an ordinary character and
+      // carrying on scanning, so a later url() is still examined.
+      if (!closed) {
+        out += input[i];
+        i += 1;
+        continue;
       }
       out += input.slice(i, Math.min(j, input.length));
       i = Math.min(j, input.length);
@@ -161,7 +177,7 @@ function stripDisallowedUrls(css) {
     const ident = readIdentifier(input, i);
     if (ident.end > i && decodeCssEscapes(ident.raw).toLowerCase() === 'url') {
       let j = ident.end;
-      while (j < input.length && /\s/.test(input[j])) j += 1;
+      while (j < input.length && CSS_WS.test(input[j])) j += 1;
       if (input[j] === '(') {
         const token = readUrlToken(input, j);
         if (token) {
@@ -182,6 +198,19 @@ function stripDisallowedUrls(css) {
       // Not actually a url() call — emit the identifier and carry on.
       out += input.slice(i, ident.end);
       i = ident.end;
+      continue;
+    }
+
+    // --- escape that does NOT begin an identifier -------------------------
+    // Ordered AFTER readIdentifier deliberately. `\75` is the escape for
+    // `u`, so `\75rl(...)` is url() to a browser — consuming the escape
+    // first would hide it from the check above, which is a bypass this
+    // branch introduced when it ran earlier. What is left for it is the
+    // `\'` case: an escaped quote that must not be read as opening a
+    // string, since that swallowed the rest of the stylesheet unscanned.
+    if (input[i] === '\\' && i + 1 < input.length) {
+      out += input.slice(i, i + 2);
+      i += 2;
       continue;
     }
 
@@ -209,6 +238,15 @@ function matchEscape(input, start) {
  * escaped Tailwind selector) is emitted byte-identical rather than silently
  * rewritten to `.w-1/2`, which is a different selector.
  */
+// CSS whitespace is exactly space, tab, LF, CR and FF. JavaScript's `\s`
+// is NOT the same set — it also matches NBSP and the other Unicode spaces,
+// and that difference was a bypass: in `url(\u00a0"data:image/png);...")`
+// the scanner skipped the NBSP as whitespace and read the following quote as
+// a legitimate quoted data: URI, swallowing a remote url() inside it. A
+// browser treats NBSP as an ordinary character, making that an UNQUOTED
+// url-token that ends at the first `)` — leaving the remote background live.
+const CSS_WS = /[ \t\n\r\f]/;
+
 function readIdentifier(input, start) {
   let j = start;
   let raw = '';
@@ -228,7 +266,7 @@ function readIdentifier(input, start) {
 function readUrlToken(input, openParen) {
   let j = openParen + 1;
   let target = '';
-  while (j < input.length && /\s/.test(input[j])) j += 1;
+  while (j < input.length && CSS_WS.test(input[j])) j += 1;
 
   if (input[j] === '"' || input[j] === '\'') {
     // Quoted: the quote closes the value, so ")" inside it is content.
@@ -249,7 +287,7 @@ function readUrlToken(input, openParen) {
     }
   }
 
-  while (j < input.length && /\s/.test(input[j])) j += 1;
+  while (j < input.length && CSS_WS.test(input[j])) j += 1;
   // Unterminated url( — malformed. Leave it alone rather than swallowing the
   // remainder of the stylesheet.
   if (input[j] !== ')') return null;
@@ -291,12 +329,35 @@ function sanitizeCSS(cssContent) {
   // Remove HTML comments that might be used for injection
   sanitized = sanitized.replace(/<!--[\s\S]*?-->/g, '');
 
-  // URLs are scanned AFTER the comment strip, not before. Removing
-  // `<!--x-->` from `u<!--x-->rl(https://evil.example/p.gif)` JOINS the
-  // remaining characters into a live `url(...)` — so a scan that ran first
-  // saw no token, reported the input clean, and the transformation below it
-  // then produced exactly the request the scan was there to prevent. Any
-  // pass that can join tokens has to happen before validation, not after.
+  // Remove control characters BEFORE the URL scan. This is the same
+  // token-joining hazard as the HTML-comment strip above: dropping the
+  // \u0001 from `u\u0001rl(https://evil.example/p.gif)` joins the remainder
+  // into a live `url(...)`, so a scan that ran first saw no token and
+  // reported the input clean. Newlines are control characters too, which
+  // made `u\nrl(...)` the same bypass in ordinary-looking CSS.
+  // eslint-disable-next-line no-control-regex -- intentional: strips control chars from untrusted CSS
+  sanitized = sanitized.replace(/[\u0000-\u001F\u007F]/g, '');
+
+  // URLs are scanned AFTER the comment and control-character strips, not
+  // before. Removing `<!--x-->` from `u<!--x-->rl(https://evil.example/p.gif)`
+  // JOINS the remaining characters into a live `url(...)` — so a scan that
+  // ran first saw no token, reported the input clean, and the transformation
+  // below it then produced exactly the request the scan was there to
+  // prevent. Any pass that can join tokens has to happen before validation,
+  // not after.
+  // Remove any remaining script-like content. This is the LAST pass that can
+  // move text, and so it must run before the URL scan, not after: it deletes
+  // the matched span, and a span like `<">` takes a quote with it. That is
+  // how `--x:x<">;background:url(https://evil.example/p.gif);--y:x<">` shipped
+  // a live background — the scanner saw the url() safely inside a string, and
+  // this line then removed the quotes that made it so.
+  sanitized = sanitized.replace(/<[^>]*>/g, '/* BLOCKED TAG */');
+
+  // URL validation runs LAST, deliberately. Every pass above rewrites the
+  // text, and each one that did so after this point has produced a bypass:
+  // the HTML-comment strip (#1290), the control-character strip, and the tag
+  // strip immediately above. Validating anything other than the final bytes
+  // means validating a string that is not the one that gets served.
   const urlPass = stripDisallowedUrls(sanitized);
   if (urlPass.blocked > 0) {
     warnings.push(
@@ -305,13 +366,6 @@ function sanitizeCSS(cssContent) {
     );
     sanitized = urlPass.sanitized;
   }
-
-  // Remove control characters
-  // eslint-disable-next-line no-control-regex -- intentional: strips control chars from untrusted CSS
-  sanitized = sanitized.replace(/[\u0000-\u001F\u007F]/g, '');
-
-  // Remove any remaining script-like content
-  sanitized = sanitized.replace(/<[^>]*>/g, '/* BLOCKED TAG */');
 
   return { sanitized: sanitized.trim(), warnings };
 }

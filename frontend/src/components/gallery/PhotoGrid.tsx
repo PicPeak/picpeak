@@ -244,7 +244,6 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
   onDownload,
   allowDownloads = true,
   protectionLevel = 'standard',
-  useEnhancedProtection = false,
   useCanvasRendering = false,
   slug,
   feedbackEnabled = false
@@ -269,18 +268,7 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
             loading="lazy"
             isGallery={true}
             slug={slug}
-            photoId={photo.id}
-            requiresToken={photo.requires_token}
-            secureUrlTemplate={photo.secure_url_template}
-            protectFromDownload={!allowDownloads || useEnhancedProtection}
-            protectionLevel={protectionLevel}
-            useEnhancedProtection={useEnhancedProtection}
             useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
-            fragmentGrid={protectionLevel === 'enhanced' || protectionLevel === 'maximum'}
-            blockKeyboardShortcuts={useEnhancedProtection}
-            detectPrintScreen={useEnhancedProtection}
-            detectDevTools={protectionLevel === 'maximum'}
-            watermarkText={useEnhancedProtection ? 'Protected' : undefined}
             onProtectionViolation={(violationType) => {
               // Track analytics
               if (typeof window !== 'undefined' && (window as any).umami) {

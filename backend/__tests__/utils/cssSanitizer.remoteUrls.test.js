@@ -221,6 +221,92 @@ describe('sanitizeCSS', () => {
     expect(asParsed(sanitized)).not.toContain('evil.example');
   });
 
+  it.each([
+    ['a C0 control character', '\u0001'],
+    ['a NUL byte', '\u0000'],
+    ['a DEL byte', '\u007F'],
+    // Newlines are control characters for this strip, so the bypass did not
+    // need an exotic byte — ordinary-looking wrapped CSS was enough.
+    ['a newline', '\n'],
+  ])('blocks a url() that only becomes one after %s is removed', (_label, ch) => {
+    // Same token-joining hazard as the HTML-comment case above: the control
+    // strip used to run AFTER the URL scan, so `u\u0001rl(...)` was scanned
+    // as clean and then joined into a live remote request, with no warning.
+    const { sanitized, warnings } = sanitizeCSS(
+      `.a{background:u${ch}rl(https://evil.example/p.gif)}`
+    );
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+    expect(warnings.join(' ')).toContain('external URL');
+  });
+
+  it('blocks a url() hidden behind an escaped quote outside a string', () => {
+    // `\'` is an escaped identifier character, not a string opener. The
+    // scanner used to step onto the apostrophe, enter string mode, and copy
+    // the rest of the stylesheet — url() included — unexamined.
+    const { sanitized } = sanitizeCSS(
+      ".hero{--marker:\\';background:url(https://evil.example/p.gif)}"
+    );
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it.each([
+    ['a leading escape', '.a{background:\\75rl(https://evil.example/p.gif)}'],
+    ['an escape mid-identifier', '.a{background:u\\72l(https://evil.example/p.gif)}'],
+  ])('blocks a url() spelled with %s', (_label, css) => {
+    // `\75` is the CSS escape for `u`, so a browser reads `\75rl(` as
+    // url(). The escape-outside-a-string handling has to run AFTER the
+    // identifier check, or it eats the escape and hides the token.
+    const { sanitized } = sanitizeCSS(css);
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('blocks a url() the TAG strip would have un-quoted', () => {
+    // `<[^>]*>` deletes the span it matches, and `<">` takes a quote with it.
+    // Running that after the URL scan meant the scanner saw the url() safely
+    // inside a string and this pass then removed the quotes that made it so.
+    // URL validation has to be the last thing that looks at the text.
+    const { sanitized } = sanitizeCSS(
+      '--x:x<">;background:url(https://evil.example/p.gif);--y:x<">'
+    );
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('does not treat NBSP as CSS whitespace inside url()', () => {
+    // JS `\s` matches U+00A0; CSS whitespace does not. Skipping it let the
+    // scanner read the following quote as a legitimate data: URI and swallow
+    // a remote url() inside the "string", while a browser sees an unquoted
+    // url-token ending at the first `)` and fetches the remote background.
+    const NBSP = '\u00a0';
+    const { sanitized } = sanitizeCSS(
+      `.a{background:url(${NBSP}"data:image/png);background:url(https://evil.example/p.gif);--x:");}`
+    );
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('still allows ordinary CSS whitespace around a data: URI', () => {
+    const spaced = sanitizeCSS('.a{background:url( "data:image/png;base64,iVBORw0KGgo=" )}');
+    expect(spaced.sanitized).toContain('data:image/png');
+    const tabbed = sanitizeCSS('.a{background:url(\t"data:image/png;base64,iVBORw0KGgo=")}');
+    expect(tabbed.sanitized).toContain('data:image/png');
+  });
+
+  it('does not let an unterminated quote hide everything after it', () => {
+    // An unclosed quote is a parse error. Trusting it meant one stray
+    // apostrophe disabled scanning for the remainder of the stylesheet, so
+    // the safe reading is to treat it as an ordinary character and continue.
+    const { sanitized } = sanitizeCSS(
+      "p{font-family:'don't;background:url(https://evil.example/p.gif)}"
+    );
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('still keeps legitimate quoted values and data: images intact', () => {
+    const font = sanitizeCSS('p{font-family:"Helvetica Neue",sans-serif;color:red}');
+    expect(font.sanitized).toContain('"Helvetica Neue"');
+    const data = sanitizeCSS(".a{background:url('data:image/png;base64,iVBORw0KGgo=')}");
+    expect(data.sanitized).toContain('data:image/png');
+  });
+
   it('still blocks the other forbidden patterns', () => {
     const { sanitized } = sanitizeCSS(
       '@import url("https://x/e.css"); .a{width:expression(alert(1));behavior:url(e.htc)}'

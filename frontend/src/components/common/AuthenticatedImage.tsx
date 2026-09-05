@@ -11,25 +11,12 @@ import {
 interface AuthenticatedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'onLoad'> {
   src: string;
   fallbackSrc?: string;
-  useWatermark?: boolean;
   isGallery?: boolean;
-  protectFromDownload?: boolean;
   slug?: string;
-  photoId?: number;
-  requiresToken?: boolean;
-  secureUrlTemplate?: string;
-  downloadUrlTemplate?: string;
-  onProtectionViolation?: (violationType: string) => void;
-  watermarkText?: string;
-  overlayProtection?: boolean;
-  fragmentGrid?: boolean;
-  scrambleFragments?: boolean;
   useCanvasRendering?: boolean;
-  blockKeyboardShortcuts?: boolean;
-  detectPrintScreen?: boolean;
-  detectDevTools?: boolean;
-  protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
-  useEnhancedProtection?: boolean;
+  /** Fired when the canvas branch blocks a context-menu attempt. The only
+   *  protection callback this component actually implements (#1297). */
+  onProtectionViolation?: (violationType: string) => void;
   onLoad?: () => void;
   /**
    * Priority in the shared fetch queue (#1287). NOT the native `fetchPriority`
@@ -43,51 +30,44 @@ interface AuthenticatedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImage
   queuePriority?: 'high' | 'prefetch' | 'normal';
 }
 
+/**
+ * Fetches an image with the gallery's bearer token and renders it.
+ *
+ * IMAGE PROTECTION IS NOT IMPLEMENTED HERE (#1297). This component used to
+ * accept the whole protection prop surface — protectFromDownload,
+ * watermarkText, fragmentGrid, blockKeyboardShortcuts, detectPrintScreen,
+ * detectDevTools, protectionLevel and the rest — and discard every one of
+ * them in a `void unusedProps` block. Callers computed them from the event's
+ * protection level and passed them in good faith, so raising that level
+ * produced canvas rendering (via the layouts' own OR on
+ * `protectionLevel === 'maximum'`) and nothing else it implies.
+ *
+ * They are removed rather than implemented, so the interface states what the
+ * component actually does. The implementation those props describe already
+ * exists in `ProtectedImage` — which is exported and currently rendered
+ * nowhere. Wiring that in is a deliberate product decision about what
+ * protection level should mean, not a silent side effect of a cleanup.
+ *
+ * Two props survive because they are real:
+ *   useCanvasRendering    draws to a canvas instead of an <img>
+ *   onProtectionViolation fires from the canvas context-menu handler below
+ *
+ * `useWatermark` was removed too. #1297 did not list it — it sat outside the
+ * `unusedProps` block — but it was equally inert: declared, defaulted, never
+ * read.
+ */
 export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   src,
   fallbackSrc,
   alt,
-  useWatermark = false,
   isGallery = false,
-  protectFromDownload,
   slug,
-  photoId,
-  requiresToken,
-  secureUrlTemplate,
-  downloadUrlTemplate,
-  onProtectionViolation,
-  watermarkText,
-  overlayProtection,
-  fragmentGrid,
-  scrambleFragments,
   useCanvasRendering,
-  blockKeyboardShortcuts,
-  detectPrintScreen,
-  detectDevTools,
-  protectionLevel,
-  useEnhancedProtection,
+  onProtectionViolation,
   onLoad,
   queuePriority = 'normal',
   ...props
 }) => {
-  const unusedProps = {
-    protectFromDownload,
-    photoId,
-    requiresToken,
-    secureUrlTemplate,
-    downloadUrlTemplate,
-    onProtectionViolation,
-    watermarkText,
-    overlayProtection,
-    fragmentGrid,
-    scrambleFragments,
-    blockKeyboardShortcuts,
-    detectPrintScreen,
-    detectDevTools,
-    protectionLevel,
-    useEnhancedProtection
-  };
-  void unusedProps;
 
   const [imageSrc, setImageSrc] = useState<string>('');
   const [error, setError] = useState(false);
@@ -98,14 +78,16 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   const imageRef = useRef<HTMLImageElement | null>(null);
 
   // Draw image to canvas when canvas rendering is enabled
+  // Returns whether the pixels actually made it onto the canvas, so the
+  // caller knows if the source image is still needed (#1287).
   const drawToCanvas = useCallback(() => {
-    if (!useCanvasRendering || !canvasRef.current || !imageRef.current) return;
+    if (!useCanvasRendering || !canvasRef.current || !imageRef.current) return false;
 
     const canvas = canvasRef.current;
     const img = imageRef.current;
     const ctx = canvas.getContext('2d');
 
-    if (!ctx || !img.complete || img.naturalWidth === 0) return;
+    if (!ctx || !img.complete || img.naturalWidth === 0) return false;
 
     // Set canvas dimensions to match image
     canvas.width = img.naturalWidth;
@@ -115,6 +97,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     ctx.drawImage(img, 0, 0);
 
     setCanvasReady(true);
+    return true;
   }, [useCanvasRendering]);
 
   useEffect(() => {
@@ -271,7 +254,26 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
 
     img.onload = () => {
       imageRef.current = img;
-      drawToCanvas();
+      const drawn = drawToCanvas();
+      // Once drawImage has copied the pixels into the canvas the source
+      // decode is dead weight, so drop it here rather than at unmount. The
+      // grid is not virtualised — a 546-photo event mounts 546 of these and
+      // none of them unmount while the gallery is open — so a cleanup-only
+      // release never actually runs for the case it was meant to fix
+      // (#1287). Nothing redraws from `imageRef` afterwards: drawToCanvas
+      // has this one caller.
+      if (drawn) {
+        // Handlers off BEFORE the src goes. Measured in Chromium and WebKit:
+        // neither fires `error` when the attribute is removed after a
+        // successful load, so this is not fixing an observed bug — but if any
+        // engine ever did, `onerror` would set canvasFailed, swap the canvas
+        // for a plain <img>, and decode the image a second time, which is the
+        // exact opposite of what this release is for. The ordering is free.
+        img.onload = null;
+        img.onerror = null;
+        imageRef.current = null;
+        img.removeAttribute('src');
+      }
       onLoad?.();
     };
 
@@ -286,6 +288,17 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     return () => {
       img.onload = null;
       img.onerror = null;
+      // Fallback release for the paths the onload handler above cannot
+      // cover: the draw failed, or the source changed / the component
+      // unmounted before onload ever fired. `imageRef` is what drawToCanvas
+      // reads and it was never cleared, so a detached Image — and the decode
+      // behind it — stayed pinned by a live JS reference. A decoded <img> in
+      // the document is evictable under memory pressure; one held by a ref
+      // is not.
+      if (imageRef.current === img) {
+        imageRef.current = null;
+      }
+      img.removeAttribute('src');
     };
   }, [imageSrc, useCanvasRendering, drawToCanvas, onLoad]);
 

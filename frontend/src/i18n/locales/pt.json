@@ -924,7 +924,6 @@
       "defaultProtectionHelp": "Aplicado a novos eventos por padrão. Podem ser substituídas individualmente.",
       "protectionLevel": "Nível de Proteção Padrão",
       "imageQuality": "Qualidade de Imagem Padrão",
-      "fragmentationLevel": "Nível de Fragmentação",
       "enableDevtools": "Ativar detecção de DevTools por padrão",
       "enableCanvas": "Ativar renderização em Canvas por padrão",
       "rateLimiting": "Limite de Requisições",

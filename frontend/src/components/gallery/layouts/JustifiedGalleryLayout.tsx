@@ -70,7 +70,6 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
   allowDownloads = true,
   slug,
   protectionLevel = 'standard',
-  useEnhancedProtection = false,
   useCanvasRendering = false,
   feedbackEnabled = false,
   feedbackOptions,
@@ -134,18 +133,7 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
         loading: 'lazy',
         isGallery: true,
         slug,
-        photoId: photo.id,
-        requiresToken: photo.requires_token,
-        secureUrlTemplate: photo.secure_url_template,
-        protectFromDownload: !allowDownloads || useEnhancedProtection,
-        protectionLevel,
-        useEnhancedProtection,
         useCanvasRendering: useCanvasRendering || protectionLevel === 'maximum',
-        fragmentGrid: protectionLevel === 'enhanced' || protectionLevel === 'maximum',
-        blockKeyboardShortcuts: useEnhancedProtection,
-        detectPrintScreen: useEnhancedProtection,
-        detectDevTools: protectionLevel === 'maximum',
-        watermarkText: useEnhancedProtection ? 'Protected' : undefined,
         onProtectionViolation: (violationType: string) => {
           console.warn(`Protection violation on justified photo ${photo.id}: ${violationType}`);
         },
@@ -411,10 +399,6 @@ export const JustifiedGalleryLayout: React.FC<JustifiedGalleryLayoutProps> = ({
               className="w-full h-full object-cover"
               isGallery={true}
               slug={slug}
-              photoId={heroPhoto.id}
-              protectFromDownload={!allowDownloads || useEnhancedProtection}
-              protectionLevel={protectionLevel}
-              useEnhancedProtection={useEnhancedProtection}
               useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
             />
 

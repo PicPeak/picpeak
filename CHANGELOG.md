@@ -5,6 +5,48 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.124.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.124.0-beta.0...v3.124.1-beta.0) (2026-09-05)
+
+
+### Bug Fixes
+
+* remove the fragmentation handling stranded by [#1303](https://github.com/PicPeak/picpeak/issues/1303) ([5dda14f](https://github.com/PicPeak/picpeak/commit/5dda14f7271265506a17acec5d253d9912784692))
+
+## [3.124.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.123.0-beta.0...v3.124.0-beta.0) (2026-09-05)
+
+
+### Features
+
+* **newsletters:** warn about deliverability before a large send ([0536c86](https://github.com/PicPeak/picpeak/commit/0536c86ec9014bf3b64c6590841e863525d90326))
+* **newsletters:** warn about deliverability before a large send ([49197be](https://github.com/PicPeak/picpeak/commit/49197be3293bac4c312352b3915d9d7fd9973c29))
+
+
+### Bug Fixes
+
+* **gallery:** give the Grid layout a lazy-loading pre-load band ([#1287](https://github.com/PicPeak/picpeak/issues/1287)) ([b1e5287](https://github.com/PicPeak/picpeak/commit/b1e5287351b43a347957e0b7a32d4c81d00ba11b))
+* **gallery:** image-loading follow-ups — pre-load band, decode release, sanitizer dedup ([905fc59](https://github.com/PicPeak/picpeak/commit/905fc595e3c15d55e00347807047acbe58c9b5bc))
+* **gallery:** release the canvas decode when it is drawn, not at unmount ([fbe9757](https://github.com/PicPeak/picpeak/commit/fbe9757a53b1cbe460837534cc3319d990180b61)), closes [#1287](https://github.com/PicPeak/picpeak/issues/1287)
+* **gallery:** release the canvas-mode decode, and drop a now-duplicate sanitizer ([be8d79e](https://github.com/PicPeak/picpeak/commit/be8d79e9c4b6148a0b3f8a1f81f05fbf5fbf6880))
+* **gallery:** remove the inert image-protection prop surface from AuthenticatedImage ([1f316ef](https://github.com/PicPeak/picpeak/commit/1f316ef91cd2f74ac7ae68751fc00b9a3ccff410))
+* **gallery:** remove the inert image-protection prop surface from AuthenticatedImage ([e734e41](https://github.com/PicPeak/picpeak/commit/e734e41c412cede1be5efbe27aab617d59faee9d)), closes [#1297](https://github.com/PicPeak/picpeak/issues/1297)
+* **newsletters:** make the warning's duration and queue claim honest ([7b4a65e](https://github.com/PicPeak/picpeak/commit/7b4a65ecc79d93715c52d82e9d7adb2665540536))
+* remove the image-fragmentation surface ([ae23b1a](https://github.com/PicPeak/picpeak/commit/ae23b1adea03fb6b46aac0079f6e523b97e3594e))
+* remove the image-fragmentation surface ([967224c](https://github.com/PicPeak/picpeak/commit/967224c030b9cd721fb0217d0763e1ec1978c51e))
+* **security:** apply image-security defaults on every creation path ([ab6c33d](https://github.com/PicPeak/picpeak/commit/ab6c33d9eb485cc3ed05187a98a22f51926cc125)), closes [#1296](https://github.com/PicPeak/picpeak/issues/1296)
+* **security:** apply the Image-security defaults instead of storing them ([#1296](https://github.com/PicPeak/picpeak/issues/1296)) ([2e9bd54](https://github.com/PicPeak/picpeak/commit/2e9bd540c97001d274c6288800a86a164174ae9c))
+* **security:** apply the Image-security defaults instead of storing them ([#1296](https://github.com/PicPeak/picpeak/issues/1296)) ([8ca3610](https://github.com/PicPeak/picpeak/commit/8ca3610514dc9e16c1c14c82fce529042b728e47))
+* **security:** check for an escaped identifier before consuming the escape ([b6dc099](https://github.com/PicPeak/picpeak/commit/b6dc0991ce04b574a03aff9cd579f0333b11048e)), closes [#1264](https://github.com/PicPeak/picpeak/issues/1264)
+* **security:** close the remaining image-security default gaps ([19c518a](https://github.com/PicPeak/picpeak/commit/19c518aaa50f1bd8fb7cef260a55bf3d5f3eb7f3)), closes [#1296](https://github.com/PicPeak/picpeak/issues/1296)
+* **security:** close two CSS url() bypasses the sanitizer dedup exposed ([1cf8274](https://github.com/PicPeak/picpeak/commit/1cf82746b72c2639547871e4e479d390760b7c1d))
+* **security:** decode settings at the API boundary and honour the transaction ([0e560eb](https://github.com/PicPeak/picpeak/commit/0e560ebb193d8243ed4de059ea150f3f64fa1409)), closes [#1296](https://github.com/PicPeak/picpeak/issues/1296)
+* **security:** one settings decoder, and the last creation path ([0deef25](https://github.com/PicPeak/picpeak/commit/0deef2584f4a6287bb947bdc545f585ae30aab67)), closes [#1296](https://github.com/PicPeak/picpeak/issues/1296)
+* **security:** re-check inline CSS after template substitution ([027afb6](https://github.com/PicPeak/picpeak/commit/027afb608667ae072465fdf173751fa79f75110d)), closes [#1264](https://github.com/PicPeak/picpeak/issues/1264)
+* **security:** reject array values for every field on the event update ([933f2d8](https://github.com/PicPeak/picpeak/commit/933f2d8e0ee0685128f2e8f8bed5169a06b4116c)), closes [#1296](https://github.com/PicPeak/picpeak/issues/1296)
+* **security:** reject array values on the event update route too ([8f3436f](https://github.com/PicPeak/picpeak/commit/8f3436f17d6390a776c4258c53475d4c6038a63e)), closes [#1296](https://github.com/PicPeak/picpeak/issues/1296)
+* **security:** strip control characters before scanning CSS for url() ([99f54a3](https://github.com/PicPeak/picpeak/commit/99f54a39546591d21df5ca11149770a161c447d9)), closes [#1264](https://github.com/PicPeak/picpeak/issues/1264)
+* **security:** use CSS whitespace, not JavaScript's, in the url() reader ([4196e83](https://github.com/PicPeak/picpeak/commit/4196e83a5f0427984fc16538783a1f7418a10837)), closes [#1264](https://github.com/PicPeak/picpeak/issues/1264)
+* **security:** validate CSS urls last, after every pass that moves text ([1151e96](https://github.com/PicPeak/picpeak/commit/1151e96144a9ada7170461e829d2f3d5dcc8edb2)), closes [#1264](https://github.com/PicPeak/picpeak/issues/1264)
+
 ## [3.123.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.122.7-beta.0...v3.123.0-beta.0) (2026-09-04)
 
 

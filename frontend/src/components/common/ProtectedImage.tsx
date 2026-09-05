@@ -12,9 +12,6 @@ interface ProtectedImageProps extends React.CanvasHTMLAttributes<HTMLCanvasEleme
   alt: string;
   protectionLevel?: ProtectionLevel;
   watermarkText?: string;
-  fragmentGrid?: boolean;
-  gridSize?: number;
-  scrambleFragments?: boolean;
   invisibleWatermark?: boolean;
   onProtectionViolation?: (violationType: string) => void;
   fallbackSrc?: string;
@@ -26,9 +23,6 @@ export const ProtectedImage: React.FC<ProtectedImageProps> = ({
   alt,
   protectionLevel = 'standard',
   watermarkText,
-  fragmentGrid = false,
-  gridSize = 4,
-  scrambleFragments = false,
   invisibleWatermark = false,
   onProtectionViolation,
   fallbackSrc,
@@ -120,52 +114,6 @@ export const ProtectedImage: React.FC<ProtectedImageProps> = ({
     ctx.shadowOffsetY = 0;
   }, []);
 
-  // Fragment and scramble image for maximum protection
-  const renderFragmentedImage = useCallback((
-    ctx: CanvasRenderingContext2D,
-    img: HTMLImageElement,
-    width: number,
-    height: number
-  ) => {
-    const fragmentWidth = width / gridSize;
-    const fragmentHeight = height / gridSize;
-    const fragments: Array<{ x: number; y: number; destX: number; destY: number }> = [];
-    
-    // Create fragment map
-    for (let row = 0; row < gridSize; row++) {
-      for (let col = 0; col < gridSize; col++) {
-        fragments.push({
-          x: col * fragmentWidth,
-          y: row * fragmentHeight,
-          destX: col * fragmentWidth,
-          destY: row * fragmentHeight,
-        });
-      }
-    }
-    
-    // Scramble fragments if requested
-    if (scrambleFragments) {
-      for (let i = fragments.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        const temp = fragments[i].destX;
-        const tempY = fragments[i].destY;
-        fragments[i].destX = fragments[j].destX;
-        fragments[i].destY = fragments[j].destY;
-        fragments[j].destX = temp;
-        fragments[j].destY = tempY;
-      }
-    }
-    
-    // Draw fragments
-    fragments.forEach(fragment => {
-      ctx.drawImage(
-        img,
-        fragment.x, fragment.y, fragmentWidth, fragmentHeight,
-        fragment.destX, fragment.destY, fragmentWidth, fragmentHeight
-      );
-    });
-  }, [gridSize, scrambleFragments]);
-
   // Main canvas rendering function - wrapped in useCallback to prevent infinite re-renders
   const renderToCanvas = useCallback(() => {
     if (!canvasRef.current || !imageRef.current) {
@@ -199,14 +147,9 @@ export const ProtectedImage: React.FC<ProtectedImageProps> = ({
     ctx.globalCompositeOperation = 'source-over';  // Reset composite operation
     
     try {
-      if (fragmentGrid && (protectionLevel === 'enhanced' || protectionLevel === 'maximum')) {
-        // Render fragmented image
-        renderFragmentedImage(ctx, img, canvas.width, canvas.height);
-      } else {
-        // Render normal image - ensure image is valid before drawing
-        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        }
+      // Ensure image is valid before drawing
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       }
       
       // Apply watermarks
@@ -242,7 +185,7 @@ export const ProtectedImage: React.FC<ProtectedImageProps> = ({
       reportViolation('canvas_rendering_error');
       setError(true);
     }
-  }, [fragmentGrid, protectionLevel, renderFragmentedImage, watermarkText, invisibleWatermark, applyInvisibleWatermark, applyVisibleWatermark, reportViolation]);
+  }, [protectionLevel, watermarkText, invisibleWatermark, applyInvisibleWatermark, applyVisibleWatermark, reportViolation]);
 
   // Set up protection event listeners
   useEffect(() => {

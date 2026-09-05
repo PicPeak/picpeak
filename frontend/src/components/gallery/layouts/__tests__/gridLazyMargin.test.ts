@@ -1,0 +1,59 @@
+/**
+ * Grid's lazy-loading pre-load band (#1287).
+ *
+ * Grid was the only layout passing `lazy` without an `inViewRootMargin`, so
+ * PhotoCard ran its observer at the IntersectionObserver default of `0px`
+ * with `threshold: 0.1` — a tile could not begin loading until a tenth of it
+ * was already on screen. The gallery owner described exactly that: spinning
+ * the scroll wheel outran loading by ~50 images before it caught up.
+ *
+ * The unit matters as much as the value. `rootMargin` accepts only px and
+ * percentages; an IntersectionObserver constructed with a `vh` value throws
+ * SyntaxError, which would have broken every Grid gallery outright. Verified
+ * in Chrome:
+ *
+ *   '100% 0px'  → accepted
+ *   '100px 0px' → accepted
+ *   '100vh 0px' → SyntaxError: rootMargin must be specified in pixels or percent
+ *
+ * jsdom has no IntersectionObserver, so this asserts against the source
+ * rather than constructing one.
+ */
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+const layouts = resolve(__dirname, '..');
+const read = (f: string) => readFileSync(resolve(layouts, f), 'utf8');
+
+/** Only px and % are legal rootMargin units. */
+const LEGAL_ROOT_MARGIN = /^(-?\d+(px|%)|0)(\s+(-?\d+(px|%)|0)){0,3}$/;
+
+describe('grid lazy pre-load band', () => {
+  it('Grid passes an inViewRootMargin', () => {
+    expect(read('GridGalleryLayout.tsx')).toMatch(/inViewRootMargin=/);
+  });
+
+  it('every inViewRootMargin in every layout uses a legal unit', () => {
+    // A vh value throws at IntersectionObserver construction and takes the
+    // whole gallery down with it, so this guards the unit, not just presence.
+    for (const file of ['GridGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx']) {
+      const src = read(file);
+      for (const [, value] of src.matchAll(/inViewRootMargin="([^"]+)"/g)) {
+        expect(value, `${file}: "${value}"`).toMatch(LEGAL_ROOT_MARGIN);
+      }
+    }
+  });
+
+  it('every layout that lazy-renders also declares a pre-load band', () => {
+    // The defect was Grid being lazy with no margin. Any future layout that
+    // opts into `lazy` and forgets the margin reintroduces it.
+    for (const file of ['GridGalleryLayout.tsx', 'JustifiedGalleryLayout.tsx']) {
+      const src = read(file);
+      const isLazy = /^\s*lazy\s*$/m.test(src) || /\slazy=\{?true/.test(src);
+      if (!isLazy) continue;
+      expect(src, `${file} is lazy but declares no inViewRootMargin`)
+        .toMatch(/inViewRootMargin=/);
+    }
+  });
+});

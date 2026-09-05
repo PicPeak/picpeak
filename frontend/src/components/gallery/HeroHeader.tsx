@@ -43,9 +43,7 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
   heroLogoSize = 'medium',
   heroLogoPosition = 'top',
   dividerStyle = 'wave',
-  allowDownloads = true,
   protectionLevel = 'standard',
-  useEnhancedProtection = false,
   useCanvasRendering = false,
   onScrollToContent,
   heroImageAnchor = 'center'
@@ -144,10 +142,6 @@ export const HeroHeader: React.FC<HeroHeaderProps> = ({
           style={{ objectPosition: heroImageAnchor }}
           isGallery={true}
           slug={slug}
-          photoId={heroPhoto.id}
-          protectFromDownload={!allowDownloads || useEnhancedProtection}
-          protectionLevel={protectionLevel}
-          useEnhancedProtection={useEnhancedProtection}
           useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
         />
 
