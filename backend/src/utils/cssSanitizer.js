@@ -177,7 +177,7 @@ function stripDisallowedUrls(css) {
     const ident = readIdentifier(input, i);
     if (ident.end > i && decodeCssEscapes(ident.raw).toLowerCase() === 'url') {
       let j = ident.end;
-      while (j < input.length && /\s/.test(input[j])) j += 1;
+      while (j < input.length && CSS_WS.test(input[j])) j += 1;
       if (input[j] === '(') {
         const token = readUrlToken(input, j);
         if (token) {
@@ -238,6 +238,15 @@ function matchEscape(input, start) {
  * escaped Tailwind selector) is emitted byte-identical rather than silently
  * rewritten to `.w-1/2`, which is a different selector.
  */
+// CSS whitespace is exactly space, tab, LF, CR and FF. JavaScript's `\s`
+// is NOT the same set — it also matches NBSP and the other Unicode spaces,
+// and that difference was a bypass: in `url(\u00a0"data:image/png);...")`
+// the scanner skipped the NBSP as whitespace and read the following quote as
+// a legitimate quoted data: URI, swallowing a remote url() inside it. A
+// browser treats NBSP as an ordinary character, making that an UNQUOTED
+// url-token that ends at the first `)` — leaving the remote background live.
+const CSS_WS = /[ \t\n\r\f]/;
+
 function readIdentifier(input, start) {
   let j = start;
   let raw = '';
@@ -257,7 +266,7 @@ function readIdentifier(input, start) {
 function readUrlToken(input, openParen) {
   let j = openParen + 1;
   let target = '';
-  while (j < input.length && /\s/.test(input[j])) j += 1;
+  while (j < input.length && CSS_WS.test(input[j])) j += 1;
 
   if (input[j] === '"' || input[j] === '\'') {
     // Quoted: the quote closes the value, so ")" inside it is content.
@@ -278,7 +287,7 @@ function readUrlToken(input, openParen) {
     }
   }
 
-  while (j < input.length && /\s/.test(input[j])) j += 1;
+  while (j < input.length && CSS_WS.test(input[j])) j += 1;
   // Unterminated url( — malformed. Leave it alone rather than swallowing the
   // remainder of the stylesheet.
   if (input[j] !== ')') return null;

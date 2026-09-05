@@ -260,6 +260,25 @@ describe('sanitizeCSS', () => {
     expect(asParsed(sanitized)).not.toContain('evil.example');
   });
 
+  it('does not treat NBSP as CSS whitespace inside url()', () => {
+    // JS `\s` matches U+00A0; CSS whitespace does not. Skipping it let the
+    // scanner read the following quote as a legitimate data: URI and swallow
+    // a remote url() inside the "string", while a browser sees an unquoted
+    // url-token ending at the first `)` and fetches the remote background.
+    const NBSP = '\u00a0';
+    const { sanitized } = sanitizeCSS(
+      `.a{background:url(${NBSP}"data:image/png);background:url(https://evil.example/p.gif);--x:");}`
+    );
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('still allows ordinary CSS whitespace around a data: URI', () => {
+    const spaced = sanitizeCSS('.a{background:url( "data:image/png;base64,iVBORw0KGgo=" )}');
+    expect(spaced.sanitized).toContain('data:image/png');
+    const tabbed = sanitizeCSS('.a{background:url(\t"data:image/png;base64,iVBORw0KGgo=")}');
+    expect(tabbed.sanitized).toContain('data:image/png');
+  });
+
   it('does not let an unterminated quote hide everything after it', () => {
     // An unclosed quote is a parse error. Trusting it meant one stray
     // apostrophe disabled scanning for the remainder of the stylesheet, so
