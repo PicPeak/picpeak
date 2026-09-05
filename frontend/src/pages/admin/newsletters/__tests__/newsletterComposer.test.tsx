@@ -162,9 +162,30 @@ describe('newsletter composer', () => {
     expect(warning).toHaveTextContent(/sending reputation/i);
     expect(warning).toHaveTextContent(/spam filters/i);
     expect(warning).toHaveTextContent(/SPF, DKIM and DMARC/i);
-    // The operator is told what it costs: duration, and what waits behind it.
+    // The operator is told what it costs: duration, and what may wait behind
+    // it. 120 recipients at the fixture's 20/min clamps to the queue's real
+    // ceiling of 10/min, so the honest estimate is 12 minutes.
     expect(warning).toHaveTextContent(/12 minutes/);
-    expect(warning).toHaveTextContent(/queues behind it/i);
+    expect(warning).toHaveTextContent(/can be delayed behind it/i);
+  });
+
+  it('recomputes the duration when the rate is edited, before saving', async () => {
+    // The estimate the server returns is computed from the SAVED rate, while
+    // the input shows the edited one. Pairing them meant the warning could
+    // claim 12 minutes for a send that would actually take 120.
+    resolution = { ...resolution, recipientCount: 120, estimatedMinutes: 12 };
+    renderComposer();
+    await screen.findByTestId('recipient-summary');
+    await screen.findByTestId('large-send-warning');
+
+    const rate = screen.getByLabelText(/Send rate/i);
+    await userEvent.clear(rate);
+    await userEvent.type(rate, '1');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('large-send-warning')).toHaveTextContent(/At 1\/minute/);
+      expect(screen.getByTestId('large-send-warning')).toHaveTextContent(/120 minutes/);
+    });
   });
 
   it('does not warn on a send small enough not to matter', async () => {

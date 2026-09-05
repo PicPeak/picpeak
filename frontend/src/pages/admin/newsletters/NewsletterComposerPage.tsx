@@ -38,6 +38,14 @@ import { usePermissions } from '../../../contexts/PermissionsContext';
  */
 const LARGE_SEND_THRESHOLD = 50;
 
+/**
+ * Queue throughput ceiling, mirroring newsletterService.clampRate. The server
+ * clamps the stored rate to this, so the estimate has to clamp identically or
+ * it would promise a speed the queue cannot deliver.
+ */
+const MIN_RATE_PER_MINUTE = 1;
+const MAX_RATE_PER_MINUTE = 10;
+
 /** Variables the server substitutes per recipient. */
 const VARIABLES = [
   'customer_name', 'first_name', 'last_name', 'salutation',
@@ -181,6 +189,21 @@ export const NewsletterComposerPage: React.FC = () => {
   // A campaign with no subject, no body or nobody to send to must not be
   // sendable — the button is the last place to catch that before 2 000
   // people get a blank email.
+  // The rate the send will actually use: queueing persists the draft first,
+  // so an edited rate is the one that takes effect. `estimatedMinutes` from
+  // the resolution is computed from the SAVED rate, so pairing the two showed
+  // a contradiction after any unsaved edit — 120 recipients switched from
+  // 10/min to 1/min still claimed 12 minutes instead of 120. Recomputed here
+  // with the server's own formula (adminNewsletters.js: ceil(count / rate)).
+  const effectiveRate = Math.min(
+    MAX_RATE_PER_MINUTE,
+    Math.max(MIN_RATE_PER_MINUTE, Number(draft?.sendRatePerMinute) || MAX_RATE_PER_MINUTE)
+  );
+  const estimatedMinutes = Math.max(
+    1,
+    Math.ceil((resolution?.recipientCount ?? 0) / effectiveRate)
+  );
+
   const canQueue = useMemo(() => Boolean(
     draft
     && draft.status === 'draft'
@@ -445,12 +468,10 @@ export const NewsletterComposerPage: React.FC = () => {
                     </p>
                     <p>
                       {t('newsletters.largeSend.duration',
-                        'At {{rate}}/minute this takes about {{minutes}} minutes, and other '
-                        + 'email — gallery invitations, password resets — queues behind it.',
-                        {
-                          rate: draft.sendRatePerMinute,
-                          minutes: resolution?.estimatedMinutes ?? 1,
-                        })}
+                        'At {{rate}}/minute this takes about {{minutes}} minutes. The send '
+                        + 'queue is shared, so while it runs other email — gallery '
+                        + 'invitations, password resets — can be delayed behind it.',
+                        { rate: effectiveRate, minutes: estimatedMinutes })}
                     </p>
                   </div>
                 </div>
