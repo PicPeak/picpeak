@@ -78,14 +78,16 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   const imageRef = useRef<HTMLImageElement | null>(null);
 
   // Draw image to canvas when canvas rendering is enabled
+  // Returns whether the pixels actually made it onto the canvas, so the
+  // caller knows if the source image is still needed (#1287).
   const drawToCanvas = useCallback(() => {
-    if (!useCanvasRendering || !canvasRef.current || !imageRef.current) return;
+    if (!useCanvasRendering || !canvasRef.current || !imageRef.current) return false;
 
     const canvas = canvasRef.current;
     const img = imageRef.current;
     const ctx = canvas.getContext('2d');
 
-    if (!ctx || !img.complete || img.naturalWidth === 0) return;
+    if (!ctx || !img.complete || img.naturalWidth === 0) return false;
 
     // Set canvas dimensions to match image
     canvas.width = img.naturalWidth;
@@ -95,6 +97,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     ctx.drawImage(img, 0, 0);
 
     setCanvasReady(true);
+    return true;
   }, [useCanvasRendering]);
 
   useEffect(() => {
@@ -251,7 +254,26 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
 
     img.onload = () => {
       imageRef.current = img;
-      drawToCanvas();
+      const drawn = drawToCanvas();
+      // Once drawImage has copied the pixels into the canvas the source
+      // decode is dead weight, so drop it here rather than at unmount. The
+      // grid is not virtualised — a 546-photo event mounts 546 of these and
+      // none of them unmount while the gallery is open — so a cleanup-only
+      // release never actually runs for the case it was meant to fix
+      // (#1287). Nothing redraws from `imageRef` afterwards: drawToCanvas
+      // has this one caller.
+      if (drawn) {
+        // Handlers off BEFORE the src goes. Measured in Chromium and WebKit:
+        // neither fires `error` when the attribute is removed after a
+        // successful load, so this is not fixing an observed bug — but if any
+        // engine ever did, `onerror` would set canvasFailed, swap the canvas
+        // for a plain <img>, and decode the image a second time, which is the
+        // exact opposite of what this release is for. The ordering is free.
+        img.onload = null;
+        img.onerror = null;
+        imageRef.current = null;
+        img.removeAttribute('src');
+      }
       onLoad?.();
     };
 
@@ -266,6 +288,17 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     return () => {
       img.onload = null;
       img.onerror = null;
+      // Fallback release for the paths the onload handler above cannot
+      // cover: the draw failed, or the source changed / the component
+      // unmounted before onload ever fired. `imageRef` is what drawToCanvas
+      // reads and it was never cleared, so a detached Image — and the decode
+      // behind it — stayed pinned by a live JS reference. A decoded <img> in
+      // the document is evictable under memory pressure; one held by a ref
+      // is not.
+      if (imageRef.current === img) {
+        imageRef.current = null;
+      }
+      img.removeAttribute('src');
     };
   }, [imageSrc, useCanvasRendering, drawToCanvas, onLoad]);
 

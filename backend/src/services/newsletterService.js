@@ -141,35 +141,81 @@ function sanitizeCampaignBody(html) {
     },
   })
     // sanitize-html keeps the style ATTRIBUTE contents verbatim. Clean each.
-    .replace(/style="([^"]*)"/gi, (match, css) => {
-      const { sanitized } = sanitizeCSS(css);
-      const cleaned = stripRemoteCssUrls(sanitized);
-      return cleaned ? `style="${cleaned.replace(/"/g, '')}"` : '';
-    });
+    // sanitizeCSS blocks remote url() properly as of #1290 — it lexes the CSS
+    // rather than pattern-matching it, so the local pass this used to need is
+    // gone. Keeping a second copy would mean two definitions of "disallowed"
+    // drifting apart.
+    //
+    // Entities are decoded BEFORE the CSS is scanned, and re-encoded after.
+    // sanitize-html emits `"` inside an attribute as `&quot;`, so the scanner
+    // and the recipient's browser otherwise disagree about where CSS strings
+    // begin: in `style="font-family:&quot;don't&quot;;background:url(...)"`
+    // the browser decodes first and reads the apostrophe as ordinary text
+    // inside a real string, then makes the url() request — while the scanner
+    // saw the apostrophe open a string and skipped everything after it. The
+    // scanner has to be shown what the browser will actually parse.
+    .replace(STYLE_ATTRIBUTE, sanitizeStyleAttribute);
+}
+
+/** Shared by the write-time sanitize and the post-substitution recheck. */
+const STYLE_ATTRIBUTE = /style="([^"]*)"/gi;
+
+function sanitizeStyleAttribute(match, css) {
+  const { sanitized } = sanitizeCSS(decodeHtmlEntities(css));
+  return sanitized ? `style="${encodeForAttribute(sanitized)}"` : '';
 }
 
 /**
- * Remove every `url(...)` that is not an inline data: image.
+ * Re-check inline CSS AFTER template substitution.
  *
- * The shared `sanitizeCSS` *detects* a remote url() and prefixes it with a
- * `/* BLOCKED URL *\/` comment — but a CSS comment is stripped during
- * tokenization, so the declaration a mail client actually parses still
- * carries the live URL. Verified:
+ * Sanitizing runs on the stored body, but `safeTemplateReplace` rewrites it
+ * afterwards — so the string that was validated is not the string that gets
+ * sent. A conditional inside a style attribute can delete the very characters
+ * that made a URL inert:
  *
- *   sanitizeCSS('.a{background:url(https://x/p.gif)}').sanitized
- *     → '.a{background:/* BLOCKED URL *\/ url(https://x/p.gif)}'
+ *   style="--x:x{{#if company_name}}'{{/if}};background:url(https://evil…)"
  *
- * In a newsletter that is a tracking pixel delivered to every recipient, so
- * this pass actually removes the token. Scoped to the newsletter path on
- * purpose: the same weakness affects gallery custom CSS, but changing shared
- * sanitizer behaviour is a separate change with its own blast radius.
+ * At sanitize time the url() sits inside a CSS string and is correctly left
+ * alone; once the conditional is expanded the quotes are gone and the
+ * background is live. No amount of lexer correctness fixes that, because the
+ * text being lexed is not the text being delivered — the check has to run
+ * again on the final output. Substitution cannot introduce a `"` (values are
+ * HTML-escaped), so the attribute regex still matches what it should.
  */
-function stripRemoteCssUrls(css) {
-  if (!css) return '';
-  return String(css)
-    .replace(/\/\*\s*BLOCKED URL\s*\*\//gi, '')
-    .replace(/url\s*\(\s*(['"]?)([^)'"]*)\1\s*\)/gi, (match, _quote, target) =>
-      (/^data:image\/(?:jpeg|jpg|png|gif|webp)/i.test(target.trim()) ? match : 'none'));
+function sanitizeInlineStylesAfterSubstitution(html) {
+  if (!html) return html;
+  return String(html).replace(STYLE_ATTRIBUTE, sanitizeStyleAttribute);
+}
+
+/**
+ * Decode the HTML entities sanitize-html emits inside attribute values, so
+ * CSS is scanned in the form the recipient's parser will see. One pass, so
+ * `&amp;quot;` decodes to `&quot;` and not to `"`.
+ */
+function decodeHtmlEntities(value) {
+  return String(value).replace(
+    /&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|(quot|apos|amp|lt|gt));/g,
+    (whole, dec, hex, name) => {
+      if (dec !== undefined) {
+        const code = Number(dec);
+        return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+      }
+      if (hex !== undefined) {
+        const code = parseInt(hex, 16);
+        return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+      }
+      return { quot: '"', apos: '\'', amp: '&', lt: '<', gt: '>' }[name];
+    }
+  );
+}
+
+/** Re-encode a sanitized value so it is safe inside a double-quoted attribute. */
+function encodeForAttribute(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 /**
@@ -178,7 +224,8 @@ function stripRemoteCssUrls(css) {
  * `javascript:` and every `url()` that is not a `data:` image.
  *
  * That is STRICTER than the issue's "https: images only" note — the shared
- * sanitizer allows no remote `url()` at all. Kept as-is rather than loosened:
+ * sanitizer allows no remote `url()` at all, and since #1290 it enforces
+ * that by lexing rather than by pattern-matching. Kept as-is rather than loosened:
  * a remote CSS url() in mail is a tracking pixel by another name, and a
  * campaign's images belong in `<img>` tags where the scheme filter sees them.
  *
@@ -187,7 +234,7 @@ function stripRemoteCssUrls(css) {
 function sanitizeCampaignCss(css) {
   if (!css) return { css: '', warnings: [] };
   const { sanitized, warnings } = sanitizeCSS(String(css));
-  return { css: stripRemoteCssUrls(sanitized), warnings };
+  return { css: sanitized, warnings };
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +357,12 @@ async function renderForRecipient(campaign, customer, options = {}) {
   // Substitution happens AFTER sanitizing, with escaping on: a customer's own
   // company name is untrusted text and must not be able to inject markup by
   // riding in through a variable the sanitizer never saw.
-  const body = safeTemplateReplace(safeBody, variables, { escapeHtml: true });
+  // Re-checked after substitution, not only before it: expansion can remove
+  // the quoting that made a url() inert at sanitize time. See
+  // sanitizeInlineStylesAfterSubstitution.
+  const body = sanitizeInlineStylesAfterSubstitution(
+    safeTemplateReplace(safeBody, variables, { escapeHtml: true })
+  );
   const subject = safeTemplateReplace(campaign.subject || '', variables);
 
   const { css } = sanitizeCampaignCss(campaign.body_css);
@@ -922,6 +974,7 @@ async function sendTest(campaignId, toEmail, adminId) {
 
 module.exports = {
   sanitizeCampaignBody,
+  sanitizeInlineStylesAfterSubstitution,
   sanitizeCampaignCss,
   unsubscribeToken,
   verifyUnsubscribeToken,
