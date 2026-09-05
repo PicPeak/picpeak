@@ -50,6 +50,12 @@ beforeEach(() => {
     constructor() {
       super();
       created.push(this as unknown as HTMLImageElement);
+      // jsdom leaves these at 0/false for a blob: src, which makes
+      // drawToCanvas bail before it draws. Present a decoded image so the
+      // draw path is reachable.
+      Object.defineProperty(this, 'complete', { get: () => true });
+      Object.defineProperty(this, 'naturalWidth', { get: () => 10 });
+      Object.defineProperty(this, 'naturalHeight', { get: () => 10 });
       // jsdom never fires load for a blob: src, so drive it manually.
       setTimeout(() => this.onload?.(new Event('load')), 0);
     }
@@ -59,6 +65,31 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('AuthenticatedImage canvas mode', () => {
+  it('releases the decoded image as soon as it is drawn, without waiting for unmount', async () => {
+    // The case this whole change exists for. Every other test here asserts
+    // release on unmount or src change — neither of which happens to a grid
+    // tile, because the grid is not virtualised and the tiles stay mounted
+    // for as long as the gallery is open. Once drawImage has copied the
+    // pixels the source decode is dead weight and must go immediately.
+    const ctx = { drawImage: vi.fn() };
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, 'getContext')
+      .mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
+
+    render(
+      <AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" useCanvasRendering />
+    );
+
+    await waitFor(() => expect(created.length).toBeGreaterThan(0));
+    const img = created[0];
+
+    await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+    // Still mounted, still the same src — and already released.
+    await waitFor(() => expect(img.getAttribute('src')).toBeNull());
+
+    getContext.mockRestore();
+  });
+
   it('releases the decoded image on unmount', async () => {
     const { unmount } = render(
       <AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" useCanvasRendering />
