@@ -56,6 +56,41 @@ const SETTING_KEYS = [
   'general_public_site_custom_css'
 ];
 const truth = (value) => value === true || value === 1 || value === '1';
+
+// `events.color_theme` holds either a theme object or the NAME of a preset —
+// the admin theme picker stores names, and eventTypeService seeds them too
+// (`theme_preset: 'corporateTimeline'`). Reading only `value.galleryLayout`
+// therefore reported `grid` for every preset-themed install.
+//
+// Only the layout each name maps to is duplicated here, not the presets
+// themselves; frontend/src/types/theme.types.ts stays the source of truth. A
+// name this map does not know reports `other` rather than a confident `grid`,
+// so a preset added on the frontend degrades to "something else" instead of
+// quietly inflating the grid count.
+const PRESET_LAYOUTS = {
+  default: 'grid',
+  elegantWedding: 'grid',
+  modernMasonry: 'masonry',
+  birthdayFun: 'carousel',
+  corporateTimeline: 'timeline',
+  artisticMosaic: 'mosaic',
+  darkClassic: 'grid',
+  darkElegant: 'grid',
+  darkModern: 'masonry',
+  galleryPremium: 'gallery-premium',
+  galleryStory: 'gallery-story'
+};
+
+function resolveLayout(value) {
+  const named =
+    typeof value === 'string'
+      ? PRESET_LAYOUTS[value]
+      : value && typeof value === 'object'
+        ? value.galleryLayout
+        : null;
+  if (!named) return typeof value === 'string' ? 'other' : 'grid';
+  return LAYOUTS.includes(named) ? named : 'other';
+}
 const parse = (value) => {
   try {
     return JSON.parse(value);
@@ -170,11 +205,26 @@ class UsageService {
   }
   async status() {
     const state = await this.state();
+    // Reported, not thrown. status() used to call collectorUrl() bare, so a
+    // misconfigured USAGE_COLLECTOR_URL — a bare hostname, a path, a query, or
+    // http in production — failed this request outright. The settings page
+    // renders one generic failure when its status query errors, so the
+    // operator saw "the operation could not be completed" with no cause AND
+    // no way to reach their own state: they could not read the status or even
+    // withdraw, because every control on that tab is behind this call.
+    let collectorUrl = null;
+    let collectorError = null;
+    try {
+      collectorUrl = this.collectorUrl();
+    } catch {
+      collectorError = 'INVALID_COLLECTOR_URL';
+    }
     return {
       status: state.status,
       notice_dismissed: Boolean(state.notice_dismissed),
       installation_id: state.installation_id,
-      collector_url: this.collectorUrl(),
+      collector_url: collectorUrl,
+      collector_error: collectorError,
       schema_version: 'usage.v1',
       last_report_date: state.last_report_date,
       last_error: state.last_error,
@@ -613,21 +663,35 @@ class UsageService {
           .first()
       );
     const theme = settings.theme_config || {};
+    // An enabled template applied to an event is gallery styling by the same
+    // definition as the settings fields — the Custom CSS tab is where both are
+    // authored. Existence only; template contents are never read.
+    const appliedTemplate = await this.db('css_templates')
+      .where('is_enabled', formatBoolean(true))
+      .whereIn(
+        'id',
+        this.db('events').whereNotNull('css_template_id').select('css_template_id')
+      )
+      .select('id')
+      .first();
     features.custom_css.configured = Boolean(
       settings.general_custom_css ||
         settings.general_public_site_custom_css ||
-        theme.customCss
+        theme.customCss ||
+        appliedTemplate
     );
     // Read only the theme field, never event names, IDs, sizes, counts, or photos.
     const themes = await this.db('events').distinct('color_theme');
     const layouts = new Set();
+    // An event with no theme of its own renders with the global one.
+    const inheritedLayout = resolveLayout(theme);
     for (const row of themes) {
       const value = parse(row.color_theme);
-      const layout =
-        value && typeof value === 'object'
-          ? value.galleryLayout || 'grid'
-          : 'grid';
-      layouts.add(LAYOUTS.includes(layout) ? layout : 'other');
+      if (row.color_theme === null || row.color_theme === '') {
+        layouts.add(inheritedLayout);
+      } else {
+        layouts.add(resolveLayout(value));
+      }
       if (value && typeof value === 'object' && value.customCss)
         features.custom_css.configured = true;
     }

@@ -26,6 +26,7 @@
     "hash": "Your private lookup hash",
     "lastReport": "Last accepted report: {{date}} (UTC)",
     "deliveryProblem": "Delivery needs attention. Collection stops during deletion or an identity conflict. Use retry, or disable participation to delete its data.",
+    "invalidCollectorUrl": "The configured usage collector URL is not valid, so participation cannot be started or delivered. Set USAGE_COLLECTOR_URL to an https origin with no path, query or credentials (or leave it unset to use the default).",
     "signingKeyUnreadable": "The usage signing key cannot be read, which usually means USAGE_ENCRYPTION_KEY — or JWT_SECRET, which it falls back to — was changed. Reports cannot be sent and the deletion request cannot be signed either. Restore the original encryption material to finish deletion; retrying or disabling will not resolve it on its own.",
     "inspect": "See exactly what is shared",
     "preview": "Preview next report",

@@ -155,6 +155,14 @@ export default function ProductUsageTab() {
         {data.last_report_date && (
           <p>{t('productUsage.lastReport', { date: data.last_report_date })}</p>
         )}
+        {data.collector_error === 'INVALID_COLLECTOR_URL' && (
+          <p role="alert" className="text-amber-700 dark:text-amber-300">
+            {/* Shown alongside the real controls, not instead of them: with a
+                bad URL the operator still needs to read their status and
+                still needs to be able to withdraw. */}
+            {t('productUsage.invalidCollectorUrl')}
+          </p>
+        )}
         {data.last_error && (
           <p role="status">
             {/* Retrying cannot fix an unreadable signing key, and neither can
@@ -210,14 +218,16 @@ export default function ProductUsageTab() {
               </Button>
             </>
           )}
-          <a
-            className="text-sm text-primary-600 dark:text-primary-400 hover:underline self-center"
-            href={`${data.collector_url}/transparency`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {t('productUsage.transparency')}
-          </a>
+          {data.collector_url && (
+            <a
+              className="text-sm text-primary-600 dark:text-primary-400 hover:underline self-center"
+              href={`${data.collector_url}/transparency`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('productUsage.transparency')}
+            </a>
+          )}
         </div>
       </Card>
       {active && (
@@ -449,7 +459,7 @@ export default function ProductUsageTab() {
       {message && <p role="status">{message}</p>}
       {consent && (
         <ConsentDialog
-          collector={data.collector_url}
+          collector={data.collector_url ?? ''}
           busy={busy}
           close={() => setConsent(false)}
           enable={() =>

@@ -9,7 +9,8 @@ export interface UsageStatus {
     | 'identity_conflict';
   notice_dismissed: boolean;
   installation_id: string | null;
-  collector_url: string;
+  collector_url: string | null;
+  collector_error?: 'INVALID_COLLECTOR_URL' | null;
   schema_version: string;
   last_report_date: string | null;
   last_error: string | null;

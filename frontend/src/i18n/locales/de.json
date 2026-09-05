@@ -26,6 +26,7 @@
     "hash": "Dein vertraulicher Abfrage-Hash",
     "lastReport": "Zuletzt angenommener Bericht: {{date}} (UTC)",
     "deliveryProblem": "Die Übertragung benötigt Aufmerksamkeit. Bei Löschung oder Identitätskonflikt ist die Erfassung gestoppt. Versuche es erneut oder deaktiviere die Teilnahme, um die Daten zu löschen.",
+    "invalidCollectorUrl": "Die konfigurierte Collector-URL ist ungültig, daher kann die Teilnahme weder gestartet noch übermittelt werden. Setzen Sie USAGE_COLLECTOR_URL auf einen https-Origin ohne Pfad, Query oder Zugangsdaten (oder lassen Sie sie leer, um den Standard zu verwenden).",
     "signingKeyUnreadable": "Der Signaturschlüssel für die Nutzungsdaten kann nicht gelesen werden. Meist wurde USAGE_ENCRYPTION_KEY — oder das als Rückfallwert genutzte JWT_SECRET — geändert. Berichte können nicht gesendet und auch die Löschanfrage kann nicht signiert werden. Stellen Sie das ursprüngliche Schlüsselmaterial wieder her, um die Löschung abzuschließen; erneutes Senden oder Deaktivieren allein behebt dies nicht.",
     "inspect": "Genau sehen, was geteilt wird",
     "preview": "Nächsten Bericht ansehen",
