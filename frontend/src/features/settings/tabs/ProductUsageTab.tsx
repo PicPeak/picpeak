@@ -26,10 +26,9 @@ const DISCLOSURE: {
   key: string;
   heading: string;
   Icon: ComponentType<{ className?: string }>;
-  tone?: 'positive';
 }[] = [
   { key: 'fields', heading: 'sectionFields', Icon: ListChecks },
-  { key: 'excluded', heading: 'sectionExcluded', Icon: ShieldOff, tone: 'positive' },
+  { key: 'excluded', heading: 'sectionExcluded', Icon: ShieldOff },
   { key: 'transport', heading: 'sectionTransport', Icon: Send },
   { key: 'visibility', heading: 'sectionVisibility', Icon: Globe },
   { key: 'deletion', heading: 'sectionDeletion', Icon: Trash2 },
@@ -52,11 +51,19 @@ function ConsentDialog({
   const [checked, setChecked] = useState(false);
   useEffect(() => {
     ref.current?.showModal();
+    // showModal() focuses the first focusable descendant, which is the scroll
+    // region below — so its focus ring was drawn for everyone the moment the
+    // dialog opened, and because the dialog clips its sides an inset ring
+    // reads as two coloured bars across the disclosure rather than a ring.
+    // Focusing the dialog puts the ring back where it belongs: only when
+    // someone deliberately tabs to the region.
+    ref.current?.focus();
   }, []);
   return (
     <dialog
       ref={ref}
       onCancel={close}
+      tabIndex={-1}
       aria-labelledby="usage-consent-title"
       // Column layout with its own scroll region, so the title stays put and
       // the actions never scroll out of reach on a short screen.
@@ -65,7 +72,7 @@ function ConsentDialog({
       // does not follow dark mode, so it stayed white while the dark: text
       // variants below turned near-white. neutral-800 is what `.card`
       // resolves to in dark, which is what the rest of the admin UI uses.
-      className="w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden rounded-xl p-0 bg-white dark:bg-neutral-800 shadow-xl backdrop:bg-black/50"
+      className="w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden rounded-xl p-0 bg-white dark:bg-neutral-800 shadow-xl backdrop:bg-black/50 focus:outline-none"
     >
       <header className="flex items-start gap-3 px-6 pt-6 pb-4">
         <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full bg-primary-50 dark:bg-primary-900/30">
@@ -92,17 +99,10 @@ function ConsentDialog({
         tabIndex={0}
         role="group"
         aria-label={t('productUsage.consentTitle') as string}
-        className="flex-1 overflow-y-auto border-y border-neutral-200 dark:border-neutral-700 px-6 py-4 space-y-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-500"
+        className="flex-1 overflow-y-auto border-y border-neutral-200 dark:border-neutral-700 px-6 py-4 space-y-4 focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary-400"
       >
-        {DISCLOSURE.map(({ key, heading, Icon, tone }) => (
-          <section
-            key={key}
-            className={
-              tone === 'positive'
-                ? 'rounded-lg border border-primary-200 dark:border-primary-800 bg-primary-50/60 dark:bg-primary-900/20 p-3'
-                : undefined
-            }
-          >
+        {DISCLOSURE.map(({ key, heading, Icon }) => (
+          <section key={key}>
             <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
               <Icon className="h-3.5 w-3.5" />
               {t(`productUsage.${heading}`)}
