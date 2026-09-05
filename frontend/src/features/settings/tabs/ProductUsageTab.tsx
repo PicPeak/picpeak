@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useConfirm } from '../../../components/common/ConfirmDialog';
 import { Button, Card } from '../../../components/common';
+import { UsageCatalog } from '../UsageCatalog';
 
 /**
  * Sections of the disclosure, in reading order. Each is a translated
@@ -39,12 +40,14 @@ function ConsentDialog({
   close,
   enable,
   busy,
-  collector
+  collector,
+  upgrade = false
 }: {
   close: () => void;
   enable: () => void;
   busy: boolean;
   collector: string;
+  upgrade?: boolean;
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDialogElement>(null);
@@ -112,6 +115,8 @@ function ConsentDialog({
             </p>
           </section>
         ))}
+        <p className="text-sm">{t('productUsage.versionDisclosure')}</p>
+        <UsageCatalog />
 
         <div className="flex flex-wrap gap-x-6 gap-y-1 pt-1 text-sm">
           <a
@@ -148,7 +153,7 @@ function ConsentDialog({
             {t('productUsage.cancel')}
           </Button>
           <Button onClick={enable} disabled={!checked || busy}>
-            {t('productUsage.enable')}
+            {t(upgrade ? 'productUsage.upgrade' : 'productUsage.enable')}
           </Button>
         </div>
       </footer>
@@ -212,6 +217,16 @@ export default function ProductUsageTab() {
           {t(`productUsage.states.${data.status}`)}
         </h3>
         <p>{t(`productUsage.stateDetails.${data.status}`)}</p>
+        {data.status !== 'disabled' && <p>{t('productUsage.currentSchema', { schema: data.schema_version })}</p>}
+        {data.consent_update_available && (
+          <div className="rounded border border-theme p-3 space-y-2">
+            <p>{t('productUsage.upgradeExplanation')}</p>
+            <Button disabled={busy || Boolean(data.pending_action) || !data.collector_url} onClick={() => setConsent(true)}>
+              {t('productUsage.reviewUpgrade')}
+            </Button>
+          </div>
+        )}
+        {data.pending_action === 'consent' && <p role="status">{t('productUsage.upgradePending')}</p>}
         {data.installation_id && (
           <label className="block">
             {t('productUsage.hash')}
@@ -300,6 +315,7 @@ export default function ProductUsageTab() {
           )}
         </div>
       </Card>
+      <UsageCatalog />
       {data.privacy_receipts &&
         Object.keys(data.privacy_receipts).length > 0 && (
           <Card padding="md" className="space-y-4">
@@ -549,12 +565,17 @@ export default function ProductUsageTab() {
       {message && <p role="status">{message}</p>}
       {consent && (
         <ConsentDialog
+          upgrade={active}
           collector={data.collector_url ?? ''}
           busy={busy}
           close={() => setConsent(false)}
           enable={() =>
             run(async () => {
-              await service.enable();
+              if (active) {
+                const result = await service.upgradeConsent();
+                if (!result.delivered) setMessage(t('productUsage.queued'));
+                setPreview(null);
+              } else await service.enable();
               setConsent(false);
             })
           }

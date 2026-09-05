@@ -19,7 +19,7 @@ const SECRET = 'z'.repeat(48);
 // during signing, so the packet would never reach the collector for reasons
 // unrelated to what the test is checking.
 function validReport() {
-  const { FEATURE_KEYS } = require('../../src/usage/protocol.cjs');
+  const { LEGACY_FEATURE_KEYS: FEATURE_KEYS } = require('../../src/usage/protocol.cjs');
   return {
     picpeak_version: '3.0.0',
     report_date: '2026-09-05',
@@ -40,6 +40,7 @@ async function bootDb() {
   await db.schema.createTable('product_usage_state', (t) => {
     t.integer('id').primary();
     t.string('status', 30).notNullable().defaultTo('disabled');
+    t.string('consent_version', 40).notNullable().defaultTo('usage-consent.v1');
     t.boolean('notice_dismissed').notNullable().defaultTo(false);
     t.string('installation_id', 64);
     t.string('public_key', 59);
@@ -173,7 +174,8 @@ describe('withdrawal during an in-flight activation', () => {
           { installation_id: identity.installation_id },
           'report',
           2,
-          validReport()
+          validReport(),
+          'usage.v1'
         )
       ),
     });

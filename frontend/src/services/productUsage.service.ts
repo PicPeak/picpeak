@@ -12,6 +12,9 @@ export interface UsageStatus {
   collector_url: string | null;
   collector_error?: 'INVALID_COLLECTOR_URL' | null;
   schema_version: string;
+  available_schema_version?: string;
+  consent_version?: string;
+  consent_update_available?: boolean;
   last_report_date: string | null;
   last_error: string | null;
   pending_action: string | null;
@@ -40,9 +43,12 @@ export const productUsageService = {
   async enable(): Promise<UsageStatus> {
     return (
       await api.post('/admin/usage/enable', {
-        consent_version: 'usage-consent.v1'
+        consent_version: 'usage-consent.v2'
       })
     ).data;
+  },
+  async upgradeConsent(): Promise<{ delivered: boolean; queued: boolean; state: UsageStatus }> {
+    return (await api.post('/admin/usage/consent', { consent_version: 'usage-consent.v2' })).data;
   },
   async disable(): Promise<UsageStatus> {
     return (await api.post('/admin/usage/disable')).data;

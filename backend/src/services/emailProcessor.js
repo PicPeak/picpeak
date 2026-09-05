@@ -1091,7 +1091,7 @@ async function sendRawEmail({ to, cc, subject, html, text, attachments, accountK
     ? await emailWebhookTransport.send(mail)
     : await tx.sendMail(mail);
   logger.info(`Manual email sent: ${info.messageId}`);
-  return { messageId: info.messageId, html };
+  return { messageId: info.messageId, html, transport: viaWebhook ? 'webhook' : 'smtp' };
 }
 
 /**

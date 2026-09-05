@@ -3,6 +3,7 @@
 // identifiers, paths, timing, or counts are retained or sent.
 const service = require('../services/productUsageService');
 const logger = require('../utils/logger');
+const { capabilityKeys } = require('../usage/capabilityRules');
 // Mirrors emailWebhookTransport: the webhook is in play only when both are
 // set, which is when adminEmail routes the test send through it.
 const webhookTransportConfigured = () =>
@@ -59,13 +60,28 @@ function productUsage(req, res, next) {
       /^\/(?:photos|events)\/[^/]+\/upload(?:\/|$)/.test(pathname)
     )
       features.push('s3_storage');
-    if (features.length)
+    const expanded = [...new Set([
+      ...capabilityKeys(req.method, pathname),
+      ...(res.locals.productUsageFeatures || [])
+    ])];
+    if (features.length || expanded.length)
       service
-        .markUsed(features, {
+        .markUsed(expanded, {
+          legacyFeatures: features,
           destinationBackup: DESTINATION_BACKUP.test(pathname)
         })
         .catch(() => logger.warn('Product usage marker could not be recorded'));
   });
   next();
 }
-module.exports = { productUsage, RULES, DESTINATION_BACKUP };
+// Integration calls can record one general capability, but never trigger the
+// daily sender. Public/customer/gallery routes do not mount this middleware.
+function productUsageApi(req, res, next) {
+  res.once('finish', () => {
+    if (!req.admin?.id || !req.apiToken || res.statusCode < 200 || res.statusCode >= 300) return;
+    service.markUsed(['api_integration'], { legacyFeatures: [] })
+      .catch(() => logger.warn('Product usage API marker could not be recorded'));
+  });
+  next();
+}
+module.exports = { productUsage, productUsageApi, RULES, DESTINATION_BACKUP };

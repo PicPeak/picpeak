@@ -17,6 +17,12 @@ const {
   digest,
   canonical,
   FEATURE_KEYS,
+  LEGACY_FEATURE_KEYS,
+  CATALOG,
+  CURRENT_SCHEMA_VERSION,
+  CURRENT_CONSENT_VERSION,
+  featureKeysFor,
+  observesUse,
   LAYOUTS
 } = require('./protocol.cjs');
 
@@ -100,6 +106,10 @@ const parse = (value) => {
 };
 
 class UsageService {
+  schemaVersion(state) {
+    return state?.consent_version === CURRENT_CONSENT_VERSION
+      ? CURRENT_SCHEMA_VERSION : 'usage.v1';
+  }
   constructor(db, options = {}) {
     this.db = db;
     this.fetch = options.fetch || global.fetch;
@@ -232,7 +242,10 @@ class UsageService {
       installation_id: state.installation_id,
       collector_url: collectorUrl,
       collector_error: collectorError,
-      schema_version: 'usage.v1',
+      schema_version: this.schemaVersion(state),
+      available_schema_version: CURRENT_SCHEMA_VERSION,
+      consent_version: state.consent_version || 'usage-consent.v1',
+      consent_update_available: state.status === 'active' && this.schemaVersion(state) !== CURRENT_SCHEMA_VERSION,
       last_report_date: state.last_report_date,
       last_error: state.last_error,
       pending_action: state.pending_packet
@@ -272,7 +285,7 @@ class UsageService {
     return this.status();
   }
   async enable(consent) {
-    if (consent !== 'usage-consent.v1')
+    if (!['usage-consent.v1', CURRENT_CONSENT_VERSION].includes(consent))
       throw new ValidationError('Explicit usage consent is required');
     // Read BEFORE the lease, deliberately. locked() claims the lease and then
     // reads the row in a second statement; a /disable completing between
@@ -293,7 +306,7 @@ class UsageService {
       const identity = generateIdentity();
       const pending = makePacket(identity, 'register', 0, {
         consent_version: consent
-      });
+      }, this.schemaVersion({ consent_version: consent }));
       // Identity generation and the binding file are the slow part, and the
       // row still reads `disabled` throughout — which is why /disable could
       // not see an activation in flight and its conditional update matched
@@ -308,6 +321,7 @@ class UsageService {
         .where({ id: 1, status: 'disabled', cancel_seq: cancelSeq })
         .update({
           status: 'activation_pending',
+          consent_version: consent,
           notice_dismissed: formatBoolean(true),
           installation_id: identity.installation_id,
           public_key: identity.public_key,
@@ -513,7 +527,18 @@ class UsageService {
         } else {
           ack.whereNot({ status: 'deletion_pending' });
         }
-        await ack.update(update);
+        if (packet.action === 'consent') {
+          // Upgrade and reset the observation period atomically. A late receipt
+          // must never re-enable collection after an intervening opt-out.
+          await this.db.transaction(async (tx) => {
+            const upgraded = await tx('product_usage_state')
+              .where({ id: 1, status: 'active', installation_id: packet.installation_id })
+              .update({ ...update, consent_version: CURRENT_CONSENT_VERSION });
+            if (upgraded) await tx('product_usage_markers').delete();
+          });
+        } else {
+          await ack.update(update);
+        }
         await this.db('product_usage_state')
           .where({ id: 1, status: 'deletion_pending' })
           .update({ sequence: packet.sequence, pending_packet: null });
@@ -563,7 +588,7 @@ class UsageService {
     await this.locked(async (state) => {
       if (state.status === 'disabled') return;
       if (state.status === 'deletion_pending') {
-        const packet = makePacket(state, 'delete', Number(state.sequence), {});
+        const packet = makePacket(state, 'delete', Number(state.sequence), {}, this.schemaVersion(state));
         state.pending_packet = JSON.stringify(packet);
         await this.db('product_usage_state')
           .where({ id: 1 })
@@ -582,12 +607,13 @@ class UsageService {
         new Date(this.now()).toISOString().slice(0, 10)
       )
         return;
-      const payload = await this.snapshot();
+      const payload = await this.snapshot(this.schemaVersion(state));
       const packet = makePacket(
         state,
         'report',
         Number(state.sequence) + 1,
-        payload
+        payload,
+        this.schemaVersion(state)
       );
       state.pending_packet = JSON.stringify(packet);
       // Only while still active. /disable clears pending_packet and moves the
@@ -604,8 +630,8 @@ class UsageService {
     return this.status();
   }
 
-  async markUsed(features, { destinationBackup = false } = {}) {
-    const allowed = [...new Set(features)].filter((f) =>
+  async markUsed(features, { destinationBackup = false, legacyFeatures } = {}) {
+    let allowed = [...new Set([...features, ...(legacyFeatures || [])])].filter((f) =>
       FEATURE_KEYS.includes(f)
     );
     if (!allowed.length) return;
@@ -615,6 +641,10 @@ class UsageService {
       if (this.db.client.config.client === 'pg') query.forUpdate();
       const state = await query.first();
       if (!state || state.status !== 'active') return;
+      const version = this.schemaVersion(state);
+      if (legacyFeatures) allowed = version === 'usage.v1' ? legacyFeatures : features;
+      allowed = allowed.filter((feature) => featureKeysFor(version).includes(feature) && observesUse(feature, version));
+      if (!allowed.length) return;
       // Only when the operation actually writes to the configured backup
       // destination. Deriving this from "a backup ran while S3 is configured"
       // marked S3 as USED for a local database backup or a .picpeak export,
@@ -624,17 +654,20 @@ class UsageService {
         const destination = await tx('app_settings')
           .where({ setting_key: 'backup_destination_type' })
           .first();
-        if (destination && parse(destination.setting_value) === 's3')
+        if (destination && parse(destination.setting_value) === 's3') {
           allowed.push('s3_storage');
+          if (version === CURRENT_SCHEMA_VERSION) allowed.push('s3_backups');
+        }
       }
       await tx('product_usage_markers')
-        .insert(allowed.map((feature) => ({ feature })))
+        .insert([...new Set(allowed)].map((feature) => ({ feature })))
         .onConflict('feature')
         .ignore();
     });
   }
 
-  async snapshot() {
+  async snapshot(version) {
+    version = version || this.schemaVersion(await this.state());
     const rows = await this.db('app_settings')
       .whereIn('setting_key', SETTING_KEYS)
       .select('setting_key', 'setting_value');
@@ -642,7 +675,9 @@ class UsageService {
       rows.map((r) => [r.setting_key, parse(r.setting_value)])
     );
     const flagRows = await this.db('feature_flags')
-      .whereIn('key', Object.values(FLAG_MAP))
+      .whereIn('key', version === CURRENT_SCHEMA_VERSION
+        ? [...new Set([...Object.values(FLAG_MAP), 'incomingMail', ...Object.values(CATALOG.features).map((f) => f.flag).filter(Boolean)])]
+        : Object.values(FLAG_MAP))
       .select('key', 'value');
     const flags = Object.fromEntries(
       flagRows.map((r) => [r.key, truth(r.value)])
@@ -651,7 +686,7 @@ class UsageService {
       await this.db('product_usage_markers').pluck('feature')
     );
     const features = Object.fromEntries(
-      FEATURE_KEYS.map((key) => [
+      LEGACY_FEATURE_KEYS.map((key) => [
         key,
         { configured: Boolean(flags[FLAG_MAP[key]]), used: used.has(key) }
       ])
@@ -746,11 +781,14 @@ class UsageService {
       features.custom_css.used = true;
     }
     const now = new Date(this.now()).toISOString();
+    const expanded = version === CURRENT_SCHEMA_VERSION
+      ? await require('./expandedSnapshot').expandSnapshot(this.db, { features, flags, used, now: this.now() })
+      : features;
     return {
       picpeak_version: this.version,
       report_date: now.slice(0, 10),
       generated_at: now,
-      features,
+      features: expanded,
       gallery_layouts: [...layouts].sort()
     };
   }
@@ -768,13 +806,16 @@ class UsageService {
         throw new ConflictError('Usage participation is not active');
       if (state.pending_packet)
         throw new ConflictError('Retry the pending usage operation first');
-      if (!['feedback', 'vote', 'session'].includes(action))
+      if (!['feedback', 'vote', 'session', 'consent'].includes(action))
         throw new ValidationError('Invalid usage action');
+      if (action === 'consent' && state.consent_version === CURRENT_CONSENT_VERSION)
+        throw new ConflictError('Usage consent is already current');
       const packet = makePacket(
         state,
         action,
         Number(state.sequence) + 1,
-        payload
+        payload,
+        action === 'consent' ? CURRENT_SCHEMA_VERSION : this.schemaVersion(state)
       );
       // Validate the complete packet before storing an un-sendable operation.
       verifyEnvelope(

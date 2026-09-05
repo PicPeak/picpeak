@@ -3,13 +3,18 @@ const crypto = require("node:crypto");
 const Ajv = require("ajv");
 const {
   envelopeSchema,
+  envelopeSchemas,
+  CURRENT_SCHEMA_VERSION,
   FEATURE_KEYS,
   LAYOUTS,
   payloads,
 } = require("./schema.cjs");
-const validate = new Ajv({ allErrors: false, strict: true }).compile(
-  envelopeSchema,
-);
+const ajv = new Ajv({ allErrors: false, strict: true });
+const validators = new Map(Object.entries(envelopeSchemas).map(
+  ([version, schema]) => [version, ajv.compile(schema)],
+));
+const validate = (envelope) =>
+  Boolean(validators.get(envelope?.packet?.schema_version)?.(envelope));
 const MAX_BYTES = 16384;
 const MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -56,9 +61,9 @@ function generateIdentity() {
     private_key: keys.privateKey.export({ format: "pem", type: "pkcs8" }),
   };
 }
-function makePacket(identity, action, sequence, payload) {
+function makePacket(identity, action, sequence, payload, schemaVersion = CURRENT_SCHEMA_VERSION) {
   return {
-    schema_version: "usage.v1",
+    schema_version: schemaVersion,
     installation_id: identity.installation_id,
     packet_id: crypto.randomUUID(),
     action,
@@ -139,6 +144,7 @@ function verifyEnvelope(envelope, now = Date.now()) {
   return envelope.packet;
 }
 module.exports = {
+  ...require("./schema.cjs"),
   canonical,
   digest,
   generateIdentity,

@@ -3,7 +3,8 @@ import {
   screen,
   fireEvent,
   waitFor,
-  cleanup
+  cleanup,
+  within
 } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
@@ -27,6 +28,7 @@ vi.mock('../../../services/productUsage.service', () => ({
   productUsageService: {
     status: vi.fn(),
     enable: vi.fn(),
+    upgradeConsent: vi.fn(),
     disable: vi.fn(),
     retry: vi.fn(),
     preview: vi.fn(),
@@ -66,6 +68,40 @@ beforeEach(() => {
   };
 });
 afterEach(cleanup);
+it('shows every v2 signal locally before participation, without collector calls', async () => {
+  mount();
+  await screen.findByText('productUsage.catalogTitle');
+  expect(screen.getAllByRole('heading', { level: 4, hidden: true })).toHaveLength(73);
+  expect(service.enable).not.toHaveBeenCalled();
+  expect(service.preview).not.toHaveBeenCalled();
+  expect(service.upgradeConsent).not.toHaveBeenCalled();
+});
+it('existing v1 requires renewed unchecked consent; cancellation keeps v1 unchanged', async () => {
+  vi.mocked(service.status).mockResolvedValue({ ...status, status: 'active', consent_update_available: true });
+  vi.mocked(service.upgradeConsent).mockResolvedValue({ delivered: false, queued: true, state: { ...status, status: 'active', pending_action: 'consent' } });
+  mount();
+  fireEvent.click(await screen.findByText('productUsage.reviewUpgrade'));
+  let dialog = within(screen.getByRole('dialog'));
+  expect(dialog.getByRole('button', { name: 'productUsage.upgrade' })).toBeDisabled();
+  expect(dialog.getByRole('checkbox')).not.toBeChecked();
+  expect(dialog.getByText('productUsage.versionDisclosure')).toBeInTheDocument();
+  fireEvent.click(dialog.getByRole('button', { name: 'productUsage.cancel' }));
+  expect(service.upgradeConsent).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText('productUsage.reviewUpgrade'));
+  dialog = within(screen.getByRole('dialog'));
+  fireEvent.click(dialog.getByRole('checkbox'));
+  fireEvent.click(dialog.getByRole('button', { name: 'productUsage.upgrade' }));
+  await waitFor(() => expect(service.upgradeConsent).toHaveBeenCalledTimes(1));
+  expect(service.enable).not.toHaveBeenCalled();
+  expect(await screen.findByText('productUsage.queued')).toBeInTheDocument();
+});
+it('pending v2 confirmation clearly keeps v1 and cannot queue another upgrade', async () => {
+  vi.mocked(service.status).mockResolvedValue({ ...status, status: 'active', consent_update_available: true, pending_action: 'consent' });
+  mount();
+  expect(await screen.findByText('productUsage.upgradePending')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'productUsage.reviewUpgrade' })).toBeDisabled();
+  expect(service.upgradeConsent).not.toHaveBeenCalled();
+});
 describe('product usage controls', () => {
   it('offers identity-free audit receipts after opt-out without restoring participation controls', async () => {
     vi.mocked(service.status).mockResolvedValue({

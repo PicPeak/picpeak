@@ -24,7 +24,7 @@ tracker or CORS policy is required. The collector is the separate
 | `USAGE_ENCRYPTION_KEY` | JWT_SECRET | 32+ characters, encrypts the local Ed25519 key with AES-256-GCM |
 
 Both database engines are supported. The state and marker tables are created
-by migrations 201-204 on PostgreSQL and SQLite alike, and the engine-sensitive
+by migrations 201-205 on PostgreSQL and SQLite alike, and the engine-sensitive
 paths are covered by `__tests__/integration/productUsagePg.test.js` against a
 real PostgreSQL — bigint columns come back as strings there, booleans are real
 booleans rather than 0/1, and the marker write takes `SELECT ... FOR UPDATE`
@@ -50,6 +50,25 @@ table, not the generic readable settings. A random mode-0600 file at
 `getStoragePath()/usage-instance.key` binds the database to its local storage.
 
 ## Consent and deletion lifecycle
+
+### Versioned, explicit scope upgrades
+
+New participants explicitly consent to usage.v2. Existing v1 participants stay
+on v1 until they review and explicitly accept the expanded scope; migration 205
+defaults their consent to v1. A signed consent command preserves the identity
+and raw history. Collector confirmation atomically upgrades local consent and
+resets the local used-marker observation period. Lost receipts/outages leave the
+upgrade visibly pending and retryable, with v1-only collection until confirmed.
+Opt-out still stops everything immediately. Deploy the v2 collector first.
+
+The [complete feature and privacy matrix](FEATURE_COVERAGE.md) lists all 73
+signals (19 existing, 54 new), all 81 current route families and 26 feature flags.
+56 capabilities have configured/used booleans; 17 guest-facing or automatic
+capabilities are configuration-only, without a used field. The full catalog is
+available locally before consent in EN/DE and publicly in the usage portal.
+Missing signals from older versions are unknown in aggregates, not unused.
+
+### Participation lifecycle
 
 Disabled → activation pending → active. Registration/delivery failures are
 durable and retried. Multiple admin tabs/processes share a database lease;
@@ -93,8 +112,8 @@ Public voting uses a backend-authorized 15-minute session, never the lookup hash
 
 ## Contract
 
-The closed schema is in `backend/src/usage/schema.cjs`, with signing in
-`protocol.cjs`. Keep both byte-identical to the collector's `protocol/` copies.
+The closed v1/v2 schemas are in `backend/src/usage/schema.cjs`, with signing in
+`protocol.cjs`. Keep these and `features.v2.json` byte-identical to the collector's `protocol/` copies.
 The collector serves its schema and complete source archive publicly. Aggregate
 projections and the complete dataset are accessible to participating
 installations only; raw reports require the installation's confidential lookup
@@ -112,10 +131,12 @@ cursor. Deletion removes the source publication; operators must also remove
 any externally copied content and follow the documented backup/log policies.
 
 Used flags represent successful allowlisted admin capability calls since
-joining, not visitor behavior or counts. OAuth marks successful admin SSO;
+consent to the current schema (v1: joining; v2: joining or explicit upgrade),
+not visitor behavior or counts. OAuth marks successful admin SSO;
 applied CSS is observed during report generation. Gallery layouts are controlled
 enums extracted from event themes without IDs or counts. Other signals use the
-explicit rules in `middleware/productUsage.js` and `usage/UsageService.js`.
+explicit rules in `middleware/productUsage.js`, `usage/capabilityRules.js`,
+`usage/capabilityEvidence.js`, `usage/expandedSnapshot.js` and `usage/UsageService.js`.
 
 Tests: `backend/__tests__/routes/adminUsage.test.js`, frontend
 `features/settings/__tests__/ProductUsageTab.test.tsx`, and the collector's

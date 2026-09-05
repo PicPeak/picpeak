@@ -1,5 +1,369 @@
 {
   "productUsage": {
+    "fields": "usage.v2-Berichte enthalten einen Installationsfingerabdruck, PicPeak-Version, UTC-Berichtstag und Erstellungszeit, Schema-/Signaturmetadaten, feste Galerie-Layouts und 73 fest definierte Funktionssignale: 56 Konfiguriert/Genutzt-Paare und 17 reine Konfigurationswerte. Der vollständige Katalog unten erklärt jedes Feld. Keine Aktionsanzahlen und keine Besucherbeobachtung.",
+    "catalogTitle": "Vollständiger Katalog: alle 73 Funktionssignale (usage.v2)",
+    "catalogExplanation": "Konfiguriert beschreibt technische Verfügbarkeit oder Konfiguration, nicht Beliebtheit. Integrierte Funktionen sind immer verfügbar. Genutzt ist ein einziges installationsweites Ja/Nein seit Zustimmung zum aktuellen Schema (v1: seit Teilnahme; v2: seit Teilnahme oder ausdrücklicher Erweiterung). Angenommene Aufträge gelten als gestartet, nicht zwingend abgeschlossen. Reine Konfigurationssignale haben kein Genutzt-Feld. Die Marker speichern weder Person noch Ereignis-ID, Aktionszeit oder Häufigkeit.",
+    "catalogSearch": "Funktionsname oder Schlüssel suchen",
+    "catalogEmpty": "Keine passenden Funktionen.",
+    "configuredLabel": "Konfiguriert",
+    "usedLabel": "Genutzt",
+    "configurationOnly": "Nur Konfiguration — tatsächliche Nutzung wird nicht erfasst.",
+    "versionDisclosure": "Diese Zustimmung gilt für usage.v2 / usage-consent.v2. Bestehende v1-Teilnehmer teilen weiterhin nur die bisherigen 19 Funktionen, bis sie der Erweiterung ausdrücklich zustimmen. Vertrauliche Identität und Rohberichtshistorie bleiben erhalten; der lokale Beobachtungszeitraum der Nutzungsmarker beginnt mit der Collector-Bestätigung neu. Pro UTC-Tag wird höchstens ein Bericht angenommen; der erste v2-Bericht kann daher am nächsten aktiven Tag erfolgen. Vor Bestätigung werden keine neuen lokalen Marker erfasst.",
+    "currentSchema": "Aktuelles Berichtsschema: {{schema}}",
+    "reviewUpgrade": "Erweiterten Umfang von usage.v2 prüfen",
+    "upgrade": "usage.v2 ausdrücklich zustimmen",
+    "upgradeExplanation": "Deine bestehende usage.v1-Teilnahme bleibt unverändert. Prüfe den vollständigen erweiterten Katalog, bevor du über das Upgrade entscheidest. Eine Ablehnung beendet deine bisherige Teilnahme nicht.",
+    "upgradePending": "Die signierte Erweiterung der Zustimmung wartet auf Bestätigung. Es wird nur der bisherige v1-Umfang erfasst. Versuche es erneut, sobald der Collector erreichbar ist, oder deaktiviere die Teilnahme zum Stoppen und Löschen.",
+    "catalog": {
+      "crm": {
+        "name": "Kundenverwaltung",
+        "configured": "Der Funktionsschalter clients ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "crm_quotes": {
+        "name": "Angebote",
+        "configured": "Der Funktionsschalter quotes ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "crm_invoices": {
+        "name": "Rechnungen",
+        "configured": "Der Funktionsschalter bills ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "crm_contracts": {
+        "name": "Verträge",
+        "configured": "Der Funktionsschalter contracts ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "crm_projects": {
+        "name": "Projekte",
+        "configured": "Der Funktionsschalter projects ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "crm_calendar": {
+        "name": "Admin-Kalender",
+        "configured": "Der Funktionsschalter calendar ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "crm_hours": {
+        "name": "Zeiterfassung",
+        "configured": "Der Funktionsschalter hoursLogging ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "customer_portal": {
+        "name": "Kundenportal",
+        "configured": "Der Funktionsschalter customerPortal ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "accounting": {
+        "name": "Buchhaltung",
+        "configured": "Der Funktionsschalter accounting ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "workflows": {
+        "name": "Workflows",
+        "configured": "Der Funktionsschalter workflows ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "newsletters": {
+        "name": "Newsletter",
+        "configured": "Der Funktionsschalter newsletters ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "face_recognition": {
+        "name": "Gesichtserkennung",
+        "configured": "Der Funktionsschalter faces ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "custom_css": {
+        "name": "Eigenes CSS",
+        "configured": "Eigenes CSS ist global oder über Galerie/Theme/Vorlage eingerichtet; CSS-Inhalte werden nicht gesendet.",
+        "used": "Angewendetes CSS nach Zustimmung festgestellt, ohne Besucher zu beobachten."
+      },
+      "oauth": {
+        "name": "Admin-SSO",
+        "configured": "Admin-OIDC ist aktiviert und die Anbieter-/Client-Konfiguration vorhanden; keine Anbieter- oder Zugangsdaten.",
+        "used": "Erfolgreiche Admin-SSO-Anmeldung; keine Konto-, Anbieter- oder Sitzungsdetails."
+      },
+      "smtp": {
+        "name": "SMTP-Versand",
+        "configured": "Ein ausgehender SMTP-Host ist konfiguriert; keine Hosts, Konten, Adressen oder Zugangsdaten.",
+        "used": "Erfolgreicher ausdrücklich ausgelöster Admin-SMTP-Test/-Versand; keine Empfänger oder Nachrichten."
+      },
+      "whatsapp": {
+        "name": "WhatsApp-Integration",
+        "configured": "Die WhatsApp-Funktion ist aktiviert und eine nutzbare Konfiguration vorhanden; keine Telefonnummer, Tokens oder Vorlagen.",
+        "used": "Erfolgreicher Admin-Integrationstest; keine Empfänger, Nachrichten oder Zustellverläufe."
+      },
+      "backup": {
+        "name": "Sicherungen",
+        "configured": "Ein Voll- oder Datenbanksicherungsplan ist aktiviert; keine Zeitpläne, Pfade, Speichergrößen oder Sicherungsnamen.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "s3_storage": {
+        "name": "S3-Speicher",
+        "configured": "S3 ist für Medien oder Sicherungen konfiguriert; keine Buckets, Endpunkte, Zugangsdaten oder Objektschlüssel.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "share_mounts": {
+        "name": "Externe Ordner",
+        "configured": "Mindestens eine Galerie verwendet einen externen Ordner; nur Existenz, keine Ordnerpfade oder Galeriekennungen.",
+        "used": "Ein Admin hat einen angenommenen Import aus einem externen Ordner ausgelöst; keine Pfade, Dateien oder Anzahlen."
+      },
+      "galleries": {
+        "name": "Galerieverwaltung",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "photo_management": {
+        "name": "Medienverwaltung",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "photo_exports": {
+        "name": "Admin-Medienexport",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "photo_processing": {
+        "name": "Medien-Wartungswerkzeuge",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "archive_management": {
+        "name": "Galeriearchive",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "gallery_sharing": {
+        "name": "Galeriefreigabe und QR",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "short_links": {
+        "name": "Kurzlinks",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "gallery_categories": {
+        "name": "Fotokategorien",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "event_types": {
+        "name": "Ereignistypen und Vorlagen",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "slideshow": {
+        "name": "Live-Diashow",
+        "configured": "Der Funktionsschalter slideshow ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "transfers": {
+        "name": "PicTransfer",
+        "configured": "Der Funktionsschalter transfers ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "video_uploads": {
+        "name": "Admin-Video-Uploads",
+        "configured": "Videoformate sind in den globalen Upload-Einstellungen erlaubt; keine Metadaten hochgeladener Dateien.",
+        "used": "Mindestens eine Admin-Videodatei wurde erfolgreich gespeichert/angenommen; keine Namen, Formate, Längen, Größen oder Verarbeitungs-/Besucherverläufe."
+      },
+      "camera_raw_uploads": {
+        "name": "Admin-Kamera-RAW-Uploads",
+        "configured": "Kamera-RAW (DNG) ist in den globalen Upload-Einstellungen erlaubt; keine Kameramodelle oder EXIF-Daten.",
+        "used": "Mindestens ein Admin-Kamera-RAW-Upload wurde gespeichert/angenommen; nur das Capability-Bit, keine Dateinamen oder Metadaten."
+      },
+      "messaging": {
+        "name": "Nachrichtenwerkzeuge",
+        "configured": "Der Funktionsschalter messaging ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "incoming_mail": {
+        "name": "IMAP-Empfang",
+        "configured": "Eingehende E-Mails sind aktiviert und eine IMAP-Konfiguration vorhanden; keine Postfächer, Server, Ordner oder Zugangsdaten.",
+        "used": "Erfolgreicher expliziter Admin-Verbindungstest oder nicht übersprungener manueller Abruf; kein Hintergrundempfang, keine Nachrichten, Anhänge oder Anzahlen."
+      },
+      "reminder_emails": {
+        "name": "Automatische Ereigniserinnerungen",
+        "configured": "Der Funktionsschalter reminderEmails ist effektiv aktiviert; nur ein Wahrheitswert."
+      },
+      "email_templates": {
+        "name": "E-Mail-Vorlagen",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "email_webhook": {
+        "name": "E-Mail-Webhook-Transport",
+        "configured": "Beide E-Mail-Webhook-Einstellungen sind vorhanden; keine URL oder Geheimnisse.",
+        "used": "Erfolgreicher ausdrücklich ausgelöster Admin-Versand/-Test über den Webhook-Transport; keine Empfänger, Nachrichten oder automatischen Zustellungen."
+      },
+      "accounting_incoming_invoices": {
+        "name": "Eingangsrechnungen",
+        "configured": "Der Funktionsschalter incomingInvoices ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "accounting_expenses": {
+        "name": "Ausgaben",
+        "configured": "Der Funktionsschalter expenses ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "accounting_tax_report": {
+        "name": "Steuerberichte",
+        "configured": "Der Funktionsschalter taxReport ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "accounting_ledger": {
+        "name": "Kontenplan und Buchhaltungsexport",
+        "configured": "Der Funktionsschalter accounting ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "crm_installments": {
+        "name": "Ratenplan-Werkzeuge",
+        "configured": "Angebote oder Rechnungen sind aktiviert; tatsächliche Ratenpläne, Beträge oder Zahlungsstatus werden nicht geprüft.",
+        "used": "Ein Admin hat einen Ratenplan gespeichert; keine Termine, Beträge, Währungen, Zahlungsstatus oder Dokumentkennungen."
+      },
+      "document_templates": {
+        "name": "Dokumentvorlagen und Bausteine",
+        "configured": "Angebote oder Verträge sind aktiviert und stellen Dokumentvorlagen/-bausteine bereit; keine Vorlageninhalte.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "cms": {
+        "name": "CMS-Seiten",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "public_site": {
+        "name": "Öffentliche Startseite",
+        "configured": "Die Einstellung für die öffentliche Startseite ist aktiviert; keine HTML-Inhalte, Texte, Domains oder Besucher."
+      },
+      "branding": {
+        "name": "Branding-Einstellungen",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "seo_customization": {
+        "name": "SEO-Einstellungen",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "admin_management": {
+        "name": "Admin- und Rollenverwaltung",
+        "configured": "Der Funktionsschalter userManagement ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "api_integration": {
+        "name": "HTTP-API-Integration",
+        "configured": "Ein nicht widerrufener und nicht abgelaufener API-Zugang existiert; keine Tokens, Namen, Berechtigungswerte oder Inhaberdaten.",
+        "used": "Erfolgreicher authentifizierter HTTP-API-Funktionsaufruf; nur dieses Bit, niemals URLs, Requestwerte, Token-/Inhaberkennungen oder Aufrufzahlen. Löst keinen Report aus."
+      },
+      "webhooks": {
+        "name": "Ausgehende Webhooks",
+        "configured": "Mindestens ein aktiver Webhook ist konfiguriert; keine Ziele, Abonnements, Geheimnisse oder Zustellprotokolle.",
+        "used": "Erfolgreicher expliziter Admin-Webhook-Test/-Replay; keine automatischen oder durch Besucher ausgelösten Zustellungen."
+      },
+      "restore": {
+        "name": "Wiederherstellung",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "portable_backup": {
+        "name": "Portabler PicPeak-Export/Import",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "database_backup": {
+        "name": "Datenbanksicherungen",
+        "configured": "Geplante Datenbanksicherungen sind aktiviert; keine Zeitpläne, Dateinamen oder Datenbankinhalte.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "s3_photo_storage": {
+        "name": "S3-Medienspeicher",
+        "configured": "S3 ist als Medienspeicher konfiguriert und erforderliche Zugangsdaten sind vorhanden; keine Werte werden gesendet.",
+        "used": "Erfolgreiche Admin-Medienspeicherung/angenommener Upload nach S3; keine Buckets, Objekte oder Größen."
+      },
+      "s3_backups": {
+        "name": "S3-Sicherungsziel",
+        "configured": "Das konfigurierte Sicherungsziel ist S3 und ein Bucket ist angegeben; kein Bucketname oder Zugangsdaten.",
+        "used": "Ein Admin hat eine Sicherung zum konfigurierten S3-Ziel oder einen erfolgreichen S3-Testupload gestartet; lokale Exporte implizieren keine S3-Nutzung."
+      },
+      "analytics_dashboard": {
+        "name": "Bestehendes Analytics-Modul",
+        "configured": "Der Funktionsschalter analytics ist effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "feedback_moderation": {
+        "name": "Feedback-Moderation",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "guest_management": {
+        "name": "Gastverwaltungswerkzeuge",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
+      },
+      "gallery_feedback_likes": {
+        "name": "Galerie-Likes aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_feedback_ratings": {
+        "name": "Galerie-Sternebewertungen aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_feedback_comments": {
+        "name": "Galerie-Kommentare aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_feedback_favorites": {
+        "name": "Galerie-Favoriten aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_feedback_reactions": {
+        "name": "Galerie-Reaktionen aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_feedback_color_labels": {
+        "name": "Galerie-Farblabels aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_guest_accounts": {
+        "name": "Gastidentitäten aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_guest_uploads": {
+        "name": "Gast-Uploads aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_downloads": {
+        "name": "Galerie-Downloads erlaubt",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "download_resolution_picker": {
+        "name": "Download-Auflösungswahl aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_client_access": {
+        "name": "Client-Zugang aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_watermarks": {
+        "name": "Wasserzeichen aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_image_protection": {
+        "name": "Bildschutz aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_reveal": {
+        "name": "Galerie-Enthüllung aktiviert",
+        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      },
+      "gallery_expiration": {
+        "name": "Galerieablauf konfiguriert",
+        "configured": "Mindestens eine Galerie hat einen Ablauf konfiguriert; keine Daten, Galeriekennungen oder Anzahlen."
+      }
+    },
     "auditTitle": "Export- und Löschquittungen",
     "auditDescription": "Lade deine privaten Nachweise herunter. PicPeak speichert nur die letzte Exportquittung während der Teilnahme und die letzte Löschbestätigung. Sie enthalten keinen Installationshash, Schlüssel oder Bericht-/Feedbackinhalt. Opt-out entfernt die lokale Exportquittung; die Löschbestätigung ohne Identitätsbezug bleibt erhalten. Der Collector führt keinen Export- oder Zugriffsverlauf.",
     "auditDownload": "Datenschutzquittungen herunterladen",
@@ -20,7 +384,6 @@
     "sectionVisibility": "Wo er sichtbar ist",
     "sectionDeletion": "Beenden und löschen",
     "sectionFeedback": "Feedback ist getrennt",
-    "fields": "Berichte enthalten einen Installationsfingerabdruck, PicPeak-Version, Berichtstag, Schema- und Signaturmetadaten, Galerie-Layouts sowie Konfiguriert/Genutzt-Werte für CRM und Unterfunktionen, Buchhaltung, Workflows, Newsletter, Gesichtserkennung, eigenes CSS, OAuth, SMTP, WhatsApp, Backups, S3 und eingebundene Freigaben. „Genutzt“ bedeutet seit der Teilnahme beobachtet, nicht wie häufig.",
     "excluded": "Automatische Berichte enthalten keine Galeriebesucher, Klickverläufe, Foto- oder Galerieanzahlen, Namen, E-Mail-Adressen, Domains, Dateinamen oder Zugangsdaten.",
     "transport": "Dein PicPeak-Backend verwahrt den Signaturschlüssel und sendet einmal pro UTC-Tag bei Admin-Nutzung signierte Nutzungsberichte an {{collector}}. Du kannst Berichte vorab ansehen und jeden eindeutig angenommenen Bericht genau wie beim ersten Empfang herunterladen; Übertragungswiederholungen werden zusammengeführt. Abgelehnte Versuche und getrennt gesendetes Feedback gehören nicht zu diesem Berichtsexport.",
     "visibility": "Nur teilnehmende Installationen können den Funktionsdatensatz und aggregierte Ergebnisse einsehen, auch Gruppen mit nur einer Installation. Schema und Quellcode sind öffentlich; geprüfte Funktionswünsche und Empfehlungen werden nur mit Erlaubnis ihrer Verfasser veröffentlicht. Dein Fingerabdruck ist pseudonym, nicht anonym. Bewahre deinen Abfrage-Hash vertraulich auf: Er ermöglicht lesenden Zugriff auf deine eigenen Berichte und den Teilnehmerdatensatz.",

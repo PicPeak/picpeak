@@ -51,6 +51,7 @@ maybe('product usage on Postgres', () => {
     await require('../../migrations/core/202_product_usage_cancel_requested').up(db);
     await require('../../migrations/core/203_product_usage_cancel_seq').up(db);
     await require('../../migrations/core/204_product_usage_privacy_receipts').up(db);
+    await require('../../migrations/core/205_product_usage_consent_version').up(db);
 
     await db.schema.createTable('app_settings', (t) => {
       t.string('setting_key').primary(); t.text('setting_value'); t.string('setting_type');
@@ -112,6 +113,7 @@ maybe('product usage on Postgres', () => {
     expect(cols.cancel_requested).toBeUndefined(); // dropped by 203
     expect(cols.sequence).toBeDefined();
     expect(cols.privacy_receipts).toBeDefined();
+    expect(cols.consent_version).toBeDefined();
   });
 
   it('reruns the receipt migration safely and scrubs legacy plaintext sessions', async () => {
@@ -123,6 +125,27 @@ maybe('product usage on Postgres', () => {
     await migration.up(db);
     const row = await db('product_usage_state').where({ id: 1 }).first();
     expect(JSON.parse(row.last_receipt)).toEqual({ status: 'accepted' });
+  });
+
+  it('migration preserves v1 consent and v2 snapshot works with PostgreSQL booleans and optional modules', async () => {
+    const migration = require('../../migrations/core/205_product_usage_consent_version');
+    await migration.up(db); await migration.up(db);
+    const svc = service();
+    await db('product_usage_state').where({ id: 1 }).update({ status: 'active' });
+    await svc.markUsed(['video_uploads']);
+    expect(await db('product_usage_markers').pluck('feature')).toEqual([]);
+    expect((await svc.status()).schema_version).toBe('usage.v1');
+    await db('product_usage_state').where({ id: 1 }).update({ consent_version: 'usage-consent.v2' });
+    await db('feature_flags').insert({ key: 'quotes', value: true });
+    await db('app_settings').insert({ setting_key: 'general_allowed_file_types', setting_value: '"dng,mp4"' });
+    await svc.markUsed(['video_uploads', 'gallery_downloads']);
+    const report = await svc.snapshot();
+    expect(Object.keys(report.features)).toHaveLength(73);
+    expect(report.features.video_uploads).toEqual({ configured: true, used: true });
+    expect(report.features.camera_raw_uploads).toEqual({ configured: true, used: false });
+    expect(report.features.gallery_downloads).toEqual({ configured: false });
+    expect(report.features.crm.configured).toBe(true);
+    expect(report.features.api_integration.configured).toBe(false);
   });
 
   it('reads bigint cancel_seq correctly even though pg returns it as a string', async () => {

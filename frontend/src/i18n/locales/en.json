@@ -1,5 +1,369 @@
 {
   "productUsage": {
+    "fields": "usage.v2 reports contain an installation fingerprint, PicPeak version, UTC report date and generation time, schema/signing metadata, controlled gallery layouts, and 73 fixed capability signals: 56 configured/used pairs and 17 configuration-only booleans. The complete catalog below defines every field. There are no action counts or visitor observations.",
+    "catalogTitle": "Full catalog: all 73 capability signals (usage.v2)",
+    "catalogExplanation": "Configured describes current technical availability or configuration, not popularity. Built-in capabilities are always available. Used is a single installation-wide yes/no bit since consent to the current schema (v1: since joining; v2: since joining or explicit upgrade). Accepted jobs count as initiated, not necessarily finished. Configuration-only capabilities have no used field. No actor, event identifier, action time or frequency is stored in these markers.",
+    "catalogSearch": "Search capability name or key",
+    "catalogEmpty": "No matching capabilities.",
+    "configuredLabel": "Configured",
+    "usedLabel": "Used",
+    "configurationOnly": "Configuration only — actual use is not collected.",
+    "versionDisclosure": "This consent covers usage.v2 / usage-consent.v2. Existing v1 participants continue sharing only the previous 19 capabilities unless they explicitly upgrade. The same private identity and raw history remain; the local usage-marker observation period restarts when the collector confirms the upgrade. At most one report per UTC day is accepted, so the first v2 report can be on the next active day. New local markers are not recorded before confirmation.",
+    "currentSchema": "Current reporting schema: {{schema}}",
+    "reviewUpgrade": "Review expanded usage.v2 scope",
+    "upgrade": "Explicitly agree to usage.v2",
+    "upgradeExplanation": "Your existing usage.v1 participation is unchanged. Review the complete expanded catalog before deciding whether to upgrade. Declining does not end your current participation.",
+    "upgradePending": "The signed consent upgrade is pending confirmation. Only the existing v1 scope is collected. Retry when the collector is available, or disable participation to stop and delete.",
+    "catalog": {
+      "crm": {
+        "name": "Client management",
+        "configured": "The clients capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "crm_quotes": {
+        "name": "Quotes",
+        "configured": "The quotes capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "crm_invoices": {
+        "name": "Invoices",
+        "configured": "The bills capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "crm_contracts": {
+        "name": "Contracts",
+        "configured": "The contracts capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "crm_projects": {
+        "name": "Projects",
+        "configured": "The projects capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "crm_calendar": {
+        "name": "Admin calendar",
+        "configured": "The calendar capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "crm_hours": {
+        "name": "Hours logging",
+        "configured": "The hoursLogging capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "customer_portal": {
+        "name": "Customer portal",
+        "configured": "The customerPortal capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "accounting": {
+        "name": "Accounting",
+        "configured": "The accounting capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "workflows": {
+        "name": "Workflows",
+        "configured": "The workflows capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "newsletters": {
+        "name": "Newsletters",
+        "configured": "The newsletters capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "face_recognition": {
+        "name": "Face recognition",
+        "configured": "The faces capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "custom_css": {
+        "name": "Custom CSS",
+        "configured": "Custom CSS is configured globally or applied through a gallery/theme/template; CSS text is not sent.",
+        "used": "Applied CSS observed after consent, without observing visitors."
+      },
+      "oauth": {
+        "name": "Admin SSO",
+        "configured": "Admin OIDC is enabled and issuer/client configuration is present; no provider or credential values.",
+        "used": "Successful admin SSO login; no account, identity-provider or session details."
+      },
+      "smtp": {
+        "name": "SMTP delivery",
+        "configured": "An outgoing SMTP host is configured; no host, account, address or credentials.",
+        "used": "A successful explicitly initiated admin SMTP test/send; no recipients or messages."
+      },
+      "whatsapp": {
+        "name": "WhatsApp integration",
+        "configured": "The WhatsApp capability is enabled and a usable configuration is present; no phone number, token or template.",
+        "used": "Successful admin integration test; no recipient, message or delivery history."
+      },
+      "backup": {
+        "name": "Backups",
+        "configured": "A full or database backup schedule is enabled; no schedule, path, storage sizes or backup names.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "s3_storage": {
+        "name": "S3 storage",
+        "configured": "S3 is configured for media or backups; no bucket, endpoint, credentials or object keys.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "share_mounts": {
+        "name": "External folders",
+        "configured": "At least one gallery uses an external folder; only existence, no folder paths or gallery identifiers.",
+        "used": "An admin initiated an accepted external-folder import; no scanned paths, files or counts."
+      },
+      "galleries": {
+        "name": "Gallery management",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "photo_management": {
+        "name": "Media management",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "photo_exports": {
+        "name": "Admin media export",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "photo_processing": {
+        "name": "Media maintenance tools",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "archive_management": {
+        "name": "Gallery archives",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "gallery_sharing": {
+        "name": "Gallery sharing and QR",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "short_links": {
+        "name": "Short links",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "gallery_categories": {
+        "name": "Photo categories",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "event_types": {
+        "name": "Event types and presets",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "slideshow": {
+        "name": "Live slideshow",
+        "configured": "The slideshow capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "transfers": {
+        "name": "PicTransfer",
+        "configured": "The transfers capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "video_uploads": {
+        "name": "Admin video uploads",
+        "configured": "Video extensions are allowed in global upload settings; no uploaded-file metadata.",
+        "used": "At least one admin video file was successfully stored/accepted; no names, formats, lengths, sizes or processing/visitor history."
+      },
+      "camera_raw_uploads": {
+        "name": "Admin camera RAW uploads",
+        "configured": "Camera RAW (DNG) is allowed in global upload settings; no camera models or EXIF.",
+        "used": "At least one admin camera RAW upload was stored/accepted; only the capability bit, no filename or metadata."
+      },
+      "messaging": {
+        "name": "Messaging tools",
+        "configured": "The messaging capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "incoming_mail": {
+        "name": "IMAP intake",
+        "configured": "Incoming mail is enabled and an IMAP configuration is present; no mailbox, server, folders or credentials.",
+        "used": "A successful explicit admin connection test or non-skipped manual poll; no background intake, messages, attachments or counts."
+      },
+      "reminder_emails": {
+        "name": "Automatic event reminders",
+        "configured": "The reminderEmails capability switch is effectively enabled; only a boolean."
+      },
+      "email_templates": {
+        "name": "Email templates",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "email_webhook": {
+        "name": "Email webhook transport",
+        "configured": "Both email webhook settings are present; no URL or secret.",
+        "used": "Successful explicitly initiated admin send/test through the webhook transport; no recipients, messages or automatic deliveries."
+      },
+      "accounting_incoming_invoices": {
+        "name": "Incoming invoices",
+        "configured": "The incomingInvoices capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "accounting_expenses": {
+        "name": "Expenses",
+        "configured": "The expenses capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "accounting_tax_report": {
+        "name": "Tax reports",
+        "configured": "The taxReport capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "accounting_ledger": {
+        "name": "Ledger and accounting export",
+        "configured": "The accounting capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "crm_installments": {
+        "name": "Installment-plan tools",
+        "configured": "Quotes or invoices are enabled; no actual payment plans, amounts or statuses are inspected.",
+        "used": "An admin saved an installment plan; no dates, amounts, currencies, payment status or document IDs."
+      },
+      "document_templates": {
+        "name": "Document presets and blocks",
+        "configured": "Quotes or contracts are enabled, making document presets/blocks available; no template content.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "cms": {
+        "name": "CMS pages",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "public_site": {
+        "name": "Public landing page",
+        "configured": "The public landing-page setting is enabled; no page HTML, texts, domains or visitors."
+      },
+      "branding": {
+        "name": "Branding settings",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "seo_customization": {
+        "name": "SEO settings",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "admin_management": {
+        "name": "Admin and role management",
+        "configured": "The userManagement capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "api_integration": {
+        "name": "HTTP API integration",
+        "configured": "An unrevoked, unexpired API credential exists; no tokens, names, scopes or owner data.",
+        "used": "Successful authenticated HTTP API capability call; only this bit, never URLs, request values, token/owner IDs or call counts. Does not trigger a report."
+      },
+      "webhooks": {
+        "name": "Outbound webhooks",
+        "configured": "At least one active webhook is configured; no destinations, subscriptions, secrets or delivery logs.",
+        "used": "Successful explicit admin webhook test/replay; no automatic or visitor-triggered deliveries."
+      },
+      "restore": {
+        "name": "Restore",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "portable_backup": {
+        "name": "Portable PicPeak export/import",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "database_backup": {
+        "name": "Database backups",
+        "configured": "Scheduled database backups are enabled; no schedules, file names or database contents.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "s3_photo_storage": {
+        "name": "S3 media storage",
+        "configured": "S3 is the configured media backend and required credentials are present; no values are sent.",
+        "used": "Successful admin media storage/accepted upload to S3; no buckets, objects or sizes."
+      },
+      "s3_backups": {
+        "name": "S3 backup destination",
+        "configured": "The configured backup destination is S3 with a bucket present; no bucket or credentials.",
+        "used": "An admin started a backup to the configured S3 destination or a successful S3 test upload; local exports never imply S3 use."
+      },
+      "analytics_dashboard": {
+        "name": "Existing analytics module",
+        "configured": "The analytics capability switch is effectively enabled; only a boolean.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "feedback_moderation": {
+        "name": "Feedback moderation",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "guest_management": {
+        "name": "Guest administration tools",
+        "configured": "Built-in capability is available; this is not evidence of use.",
+        "used": "A documented successful authenticated admin capability operation was observed since consent to this schema. No actor, operation history, parameters or counts."
+      },
+      "gallery_feedback_likes": {
+        "name": "Gallery likes enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_feedback_ratings": {
+        "name": "Gallery star ratings enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_feedback_comments": {
+        "name": "Gallery comments enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_feedback_favorites": {
+        "name": "Gallery favorites enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_feedback_reactions": {
+        "name": "Gallery reactions enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_feedback_color_labels": {
+        "name": "Gallery color labels enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_guest_accounts": {
+        "name": "Guest identities enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_guest_uploads": {
+        "name": "Guest uploads enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_downloads": {
+        "name": "Gallery downloads allowed",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "download_resolution_picker": {
+        "name": "Download resolution picker enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_client_access": {
+        "name": "Client access enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_watermarks": {
+        "name": "Watermarks enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_image_protection": {
+        "name": "Image protection enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_reveal": {
+        "name": "Gallery reveal enabled",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      },
+      "gallery_expiration": {
+        "name": "Gallery expiration configured",
+        "configured": "At least one gallery has an expiry configured; no dates, gallery IDs or counts."
+      }
+    },
     "auditTitle": "Export and deletion receipts",
     "auditDescription": "Download your private audit receipts. PicPeak keeps only the latest export receipt during participation and the latest deletion confirmation. These contain no installation hash, key or report/feedback content. Opt-out removes the local export receipt; the identity-free deletion confirmation remains. The collector does not keep an export/access history.",
     "auditDownload": "Download privacy receipts",
@@ -20,7 +384,6 @@
     "sectionVisibility": "Where it is visible",
     "sectionDeletion": "Leaving and deleting",
     "sectionFeedback": "Feedback is separate",
-    "fields": "Reports contain an installation fingerprint, PicPeak version, report day, schema and signing metadata, gallery layout choices, and configured/used booleans for CRM and its subfeatures, accounting, workflows, newsletters, face recognition, custom CSS, OAuth, SMTP, WhatsApp, backups, S3, and share mounts. “Used” means observed since joining, not how often.",
     "excluded": "No gallery visitors, clickstreams, photo or gallery counts, names, emails, domains, filenames, or configuration secrets are included in automatic usage reports.",
     "transport": "Your PicPeak backend keeps the signing key and sends signed usage reports to {{collector}} once per UTC day during admin use. Preview reports and download each unique accepted report exactly as first received; transport retries are deduplicated. Rejected attempts and separately submitted feedback are not part of this report export.",
     "visibility": "Only participating installations can inspect the feature dataset and aggregate results, including groups of one. The schema and source are public; approved feature requests and testimonials are public only with their authors’ permission. Your fingerprint is pseudonymous, not anonymous. Keep your lookup hash private: it grants read-only access to your own reports and the participant dataset.",

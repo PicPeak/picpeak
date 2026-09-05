@@ -55,6 +55,14 @@ router.post(
   )
 );
 router.post(
+  '/consent',
+  wrap(async (req, res) => {
+    if (!req.body || Object.keys(req.body).length !== 1 || req.body.consent_version !== 'usage-consent.v2')
+      throw new ValidationError('Explicit usage v2 consent is required');
+    res.json(await service.command('consent', { consent_version: 'usage-consent.v2' }));
+  })
+);
+router.post(
   '/disable',
   wrap(async (_req, res) => res.json(await service.disable()))
 );

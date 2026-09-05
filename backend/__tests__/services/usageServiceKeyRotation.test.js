@@ -23,6 +23,7 @@ async function bootDb() {
   await db.schema.createTable('product_usage_state', (t) => {
     t.integer('id').primary();
     t.string('status', 30).notNullable().defaultTo('disabled');
+    t.string('consent_version', 40).notNullable().defaultTo('usage-consent.v1');
     t.boolean('notice_dismissed').notNullable().defaultTo(false);
     t.string('installation_id', 64);
     t.string('public_key', 59);

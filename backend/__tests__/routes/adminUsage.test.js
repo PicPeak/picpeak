@@ -41,6 +41,7 @@ jest.mock('../../src/services/productUsageService', () =>
 );
 const service = require('../../src/services/productUsageService');
 const { productUsage } = require('../../src/middleware/productUsage');
+const { productUsageApi } = require('../../src/middleware/productUsage');
 const SECRET = 'usage-auth-test-secret-not-a-live-credential';
 const token = (type, id = 1) =>
   jwt.sign({ type, id }, SECRET, {
@@ -102,10 +103,27 @@ beforeAll(async () => {
 afterAll(() => mockDb.destroy());
 beforeEach(() => jest.clearAllMocks());
 
+test('scoped API use records only its fixed v2 capability and never triggers a report', () => {
+  const simulate = (admin, apiToken, statusCode) => {
+    const res = new (require('events').EventEmitter)(); res.statusCode = statusCode;
+    productUsageApi({ admin, apiToken, body: { user: 'PRIVATE@example.test' } }, res, () => {});
+    res.emit('finish');
+  };
+  simulate(null, { id: 99 }, 200);
+  simulate({ id: 42 }, null, 200);
+  simulate({ id: 42 }, { id: 99 }, 403);
+  expect(service.markUsed).not.toHaveBeenCalled();
+  simulate({ id: 42 }, { id: 99 }, 200);
+  expect(service.markUsed).toHaveBeenCalledWith(['api_integration'], { legacyFeatures: [] });
+  expect(service.tick).not.toHaveBeenCalled();
+  expect(JSON.stringify(service.markUsed.mock.calls)).not.toMatch(/PRIVATE|42|99/);
+});
+
 const ROUTES = [
   ['get', '/'],
   ['post', '/activity'],
   ['post', '/enable'],
+  ['post', '/consent'],
   ['post', '/disable'],
   ['post', '/retry'],
   ['post', '/dismiss'],
@@ -162,8 +180,9 @@ test('public/gallery paths and failed/unauthenticated admin operations never set
   const { EventEmitter } = require('events');
   const simulate = (path, admin, statusCode) => {
     const res = new EventEmitter();
+    res.locals = {};
     res.statusCode = statusCode;
-    productUsage({ path, admin }, res, () => {});
+    productUsage({ path, method: 'POST', admin }, res, () => {});
     res.emit('finish');
   };
   simulate('/gallery/example', null, 200);
@@ -180,6 +199,15 @@ test('public/gallery paths and failed/unauthenticated admin operations never set
   expect(JSON.stringify(service.markUsed.mock.calls)).not.toContain('42');
 });
 
+test('consent upgrade accepts exactly the explicit v2 choice, never extra fields', async () => {
+  for (const data of [{}, { consent_version: 'usage-consent.v1' }, { consent_version: 'usage-consent.v2', user: 'PRIVATE' }])
+    await request(app).post('/api/admin/usage/consent').set('Authorization', `Bearer ${token('admin')}`).send(data).expect(400);
+  expect(service.command).not.toHaveBeenCalled();
+  await request(app).post('/api/admin/usage/consent').set('Authorization', `Bearer ${token('admin')}`)
+    .send({ consent_version: 'usage-consent.v2' }).expect(200);
+  expect(service.command).toHaveBeenCalledWith('consent', { consent_version: 'usage-consent.v2' });
+});
+
 test('only a backup that writes to the configured destination flags S3', () => {
   // /database-backup/* and /backup/picpeak/export produce a local file, so
   // they must not imply S3 use just because S3 is the configured destination.
@@ -187,8 +215,9 @@ test('only a backup that writes to the configured destination flags S3', () => {
   const simulate = (pathname) => {
     service.markUsed.mockClear();
     const res = new (require('events').EventEmitter)();
+    res.locals = {};
     res.statusCode = 200;
-    productUsage({ path: pathname, admin: { id: 1 } }, res, () => {});
+    productUsage({ path: pathname, method: pathname.endsWith('/export') ? 'GET' : 'POST', admin: { id: 1 } }, res, () => {});
     res.emit('finish');
     seen.push([pathname, service.markUsed.mock.calls[0]?.[1]?.destinationBackup]);
   };
