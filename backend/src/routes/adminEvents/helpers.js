@@ -147,12 +147,25 @@ const getImageSecurityDefaults = async () => {
       ])
       .select('setting_key', 'setting_value');
 
+    // app_settings holds JSON text on SQLite, while a PG json column comes
+    // back already decoded — so one parse is not enough to normalise both.
+    // Worse, GET /api/admin/image-security/settings returns setting_value
+    // without decoding it and the settings tab PUTs the whole fetched object
+    // straight back through JSON.stringify, so opening the tab and saving
+    // re-encodes every value it read as text. After one such round trip
+    // `true` is stored as "\"true\"" and a single parse yields the string
+    // 'true', which the type checks below reject — the settings would go
+    // quietly dead again, which is the bug this whole change exists to fix.
+    // Unwrap until it stops being a JSON string, bounded so nothing spins.
     const read = (key) => {
       const row = rows.find((r) => r.setting_key === key);
       if (!row) return undefined;
       let value = row.setting_value;
-      if (typeof value === 'string') {
-        try { value = JSON.parse(value); } catch { /* keep raw */ }
+      for (let i = 0; i < 4 && typeof value === 'string'; i += 1) {
+        let parsed;
+        try { parsed = JSON.parse(value); } catch { break; }
+        if (parsed === value) break;
+        value = parsed;
       }
       return value;
     };
@@ -203,7 +216,16 @@ const getImageSecurityDefaults = async () => {
 const resolveImageSecurityColumns = (body = {}, defaults = {}) => {
   const { formatBoolean } = require('../../utils/dbCompat');
   const columns = {};
-  const pick = (key) => (body[key] !== undefined ? body[key] : defaults[key]);
+  // express-validator runs isInt/isIn/isBoolean element-wise on arrays, so a
+  // single-element array like `image_quality: [72]` passes the route's chain
+  // and arrives here still an array. The routes reject those with
+  // .not().isArray(); this guard means any future caller cannot write one
+  // into a scalar column (a PG insert error, or `[false]` coerced to true).
+  const scalar = (v) => (v !== null && typeof v === 'object' ? undefined : v);
+  const pick = (key) => {
+    const fromBody = scalar(body[key]);
+    return fromBody !== undefined ? fromBody : defaults[key];
+  };
 
   const level = pick('protection_level');
   if (level !== undefined) columns.protection_level = level;

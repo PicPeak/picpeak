@@ -232,10 +232,10 @@ module.exports = (router) => {
     // Image security. PUT /:id has validated these all along; create
     // accepted none of them, so a value sent here used to be dropped on the
     // floor and the column default applied instead (#1296).
-    body('protection_level').optional().isIn(['basic', 'standard', 'enhanced', 'maximum']),
-    body('use_canvas_rendering').optional().isBoolean().toBoolean(),
-    body('image_quality').optional().isInt({ min: 1, max: 100 }).toInt(),
-    body('fragmentation_level').optional().isInt({ min: 1, max: 10 }).toInt(),
+    body('protection_level').optional().not().isArray().isIn(['basic', 'standard', 'enhanced', 'maximum']),
+    body('use_canvas_rendering').optional().not().isArray().isBoolean().toBoolean(),
+    body('image_quality').optional().not().isArray().isInt({ min: 1, max: 100 }).toInt(),
+    body('fragmentation_level').optional().not().isArray().isInt({ min: 1, max: 10 }).toInt(),
     body('watermark_downloads').optional().isBoolean(),
     body('watermark_text').optional().trim(),
     // #328 follow-up: per-event opt-in for presigned-URL "Download All".
@@ -1419,6 +1419,15 @@ module.exports = (router) => {
         allow_downloads: source.allow_downloads,
         disable_right_click: source.disable_right_click,
         enable_devtools_protection: source.enable_devtools_protection,
+        // A duplicate inherits the source's protection settings, NOT the
+        // current global defaults — copying the gallery is the whole point.
+        // These four sat next to enable_devtools_protection and were simply
+        // missed, so duplicating a 'maximum' event produced a 'standard' one
+        // (#1296).
+        protection_level: source.protection_level,
+        image_quality: source.image_quality,
+        use_canvas_rendering: source.use_canvas_rendering,
+        fragmentation_level: source.fragmentation_level,
         watermark_downloads: source.watermark_downloads,
         watermark_text: source.watermark_text,
         allow_presigned_download: source.allow_presigned_download,

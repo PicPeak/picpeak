@@ -107,6 +107,39 @@ describe('image-security creation defaults', () => {
     await expect(getImageSecurityDefaults()).resolves.toEqual({});
   });
 
+  describe('double-encoded settings (the settings tab round trip)', () => {
+    // GET returns setting_value undecoded and the tab PUTs the whole object
+    // back through JSON.stringify, so on SQLite one visit to the tab turns
+    // every value it read into a doubly-encoded string. A single parse left
+    // a string behind, the type checks rejected it, and the defaults went
+    // silently dead again.
+    const setRaw = async (key, raw) => {
+      await db('app_settings')
+        .insert({ setting_key: key, setting_value: raw, setting_type: 'security' })
+        .onConflict('setting_key').merge();
+    };
+
+    it('reads a double-encoded boolean', async () => {
+      await setRaw('enable_canvas_rendering', JSON.stringify(JSON.stringify(true)));
+      expect(await getImageSecurityDefaults()).toEqual({ use_canvas_rendering: true });
+    });
+
+    it('reads a double-encoded protection level', async () => {
+      await setRaw('default_protection_level', JSON.stringify(JSON.stringify('enhanced')));
+      expect(await getImageSecurityDefaults()).toEqual({ protection_level: 'enhanced' });
+    });
+
+    it('reads a double-encoded integer', async () => {
+      await setRaw('default_image_quality', JSON.stringify(JSON.stringify(72)));
+      expect(await getImageSecurityDefaults()).toEqual({ image_quality: 72 });
+    });
+
+    it('still rejects a malformed value however many times it was encoded', async () => {
+      await setRaw('default_image_quality', JSON.stringify(JSON.stringify('72oops')));
+      expect(await getImageSecurityDefaults()).toEqual({});
+    });
+  });
+
   describe('resolveImageSecurityColumns', () => {
     it('omits every column when neither the request nor the settings supply one', () => {
       expect(resolveImageSecurityColumns({}, {})).toEqual({});
