@@ -140,18 +140,6 @@ function stripDisallowedUrls(css) {
       continue;
     }
 
-    // --- escape OUTSIDE a string -----------------------------------------
-    // `\'` is an escaped identifier character, not the start of a string.
-    // Without this the scanner stepped onto the apostrophe, entered string
-    // mode, and copied the rest of the stylesheet unscanned — so
-    // `.hero{--marker:\';background:url(https://evil.example/p.gif)}` kept a
-    // live remote URL. Consume the escape and its escaped character together.
-    if (input[i] === '\\' && i + 1 < input.length) {
-      out += input.slice(i, i + 2);
-      i += 2;
-      continue;
-    }
-
     // --- string ----------------------------------------------------------
     // Escape-aware: `\"` inside a double-quoted string does NOT close it.
     // Decoding escapes up front (an earlier attempt) turned that into a real
@@ -210,6 +198,19 @@ function stripDisallowedUrls(css) {
       // Not actually a url() call — emit the identifier and carry on.
       out += input.slice(i, ident.end);
       i = ident.end;
+      continue;
+    }
+
+    // --- escape that does NOT begin an identifier -------------------------
+    // Ordered AFTER readIdentifier deliberately. `\75` is the escape for
+    // `u`, so `\75rl(...)` is url() to a browser — consuming the escape
+    // first would hide it from the check above, which is a bypass this
+    // branch introduced when it ran earlier. What is left for it is the
+    // `\'` case: an escaped quote that must not be read as opening a
+    // string, since that swallowed the rest of the stylesheet unscanned.
+    if (input[i] === '\\' && i + 1 < input.length) {
+      out += input.slice(i, i + 2);
+      i += 2;
       continue;
     }
 

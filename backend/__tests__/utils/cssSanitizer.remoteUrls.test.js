@@ -249,6 +249,17 @@ describe('sanitizeCSS', () => {
     expect(asParsed(sanitized)).not.toContain('evil.example');
   });
 
+  it.each([
+    ['a leading escape', '.a{background:\\75rl(https://evil.example/p.gif)}'],
+    ['an escape mid-identifier', '.a{background:u\\72l(https://evil.example/p.gif)}'],
+  ])('blocks a url() spelled with %s', (_label, css) => {
+    // `\75` is the CSS escape for `u`, so a browser reads `\75rl(` as
+    // url(). The escape-outside-a-string handling has to run AFTER the
+    // identifier check, or it eats the escape and hides the token.
+    const { sanitized } = sanitizeCSS(css);
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
   it('does not let an unterminated quote hide everything after it', () => {
     // An unclosed quote is a parse error. Trusting it meant one stray
     // apostrophe disabled scanning for the remainder of the stylesheet, so
