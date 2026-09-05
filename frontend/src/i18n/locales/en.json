@@ -1,9 +1,11 @@
 {
   "productUsage": {
     "title": "Product usage & feedback",
-    "notice": "Help shape PicPeak. Optional product usage reports show which features matter to the community. Reporting is off until you choose to participate.",
+    "noticeTitle": "Help shape PicPeak",
+    "notice": "Optional product usage reports show which features matter to the community. Reporting is off until you choose to participate.",
+    "ignore": "Ignore",
+    "ignoreHint": "This notice won't appear again — you can still join from Settings → Product usage.",
     "review": "Review participation",
-    "later": "Not now",
     "cancel": "Cancel",
     "loading": "Loading participation settings…",
     "failed": "The operation could not be completed. Check the status and try again.",

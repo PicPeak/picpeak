@@ -1,9 +1,11 @@
 {
   "productUsage": {
     "title": "Produktnutzung & Feedback",
-    "notice": "Hilf mit, PicPeak weiterzuentwickeln. Freiwillige Nutzungsberichte zeigen, welche Funktionen der Community wichtig sind. Berichte bleiben aus, bis du ausdrücklich teilnimmst.",
+    "noticeTitle": "Gestalten Sie PicPeak mit",
+    "notice": "Optionale Nutzungsberichte zeigen, welche Funktionen für die Community wichtig sind. Die Übermittlung ist aus, bis Sie sich aktiv dafür entscheiden.",
+    "ignore": "Ignorieren",
+    "ignoreHint": "Dieser Hinweis erscheint nicht erneut — Sie können weiterhin unter Einstellungen → Produktnutzung teilnehmen.",
     "review": "Teilnahme prüfen",
-    "later": "Nicht jetzt",
     "cancel": "Abbrechen",
     "loading": "Teilnahmeeinstellungen werden geladen…",
     "failed": "Der Vorgang konnte nicht abgeschlossen werden. Prüfe den Status und versuche es erneut.",
