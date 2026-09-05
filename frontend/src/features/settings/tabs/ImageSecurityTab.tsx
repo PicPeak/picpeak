@@ -162,19 +162,34 @@ export const ImageSecurityTab: React.FC = () => {
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('settings.imageSecurity.imageQualityHelp', '1-100, higher = better quality')}</p>
             </div>
 
+            {/*
+              Disabled, not removed (#1300). Nothing consumes this value:
+              the server fragmenter hardcodes a 3x3 grid and the only client
+              that could reassemble fragments is rendered nowhere. It stays
+              visible so an operator who already set it can see the value
+              they chose and why it does nothing, rather than finding the
+              control silently gone. Re-enable when the level actually
+              drives the grid on both sides.
+            */}
             <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+              <label className="block text-sm font-medium text-neutral-500 dark:text-neutral-500 mb-1">
                 {t('settings.imageSecurity.fragmentationLevel', 'Fragmentation Level')}
               </label>
               <input
                 type="number"
                 min="1"
                 max="10"
+                disabled
                 value={settings.default_fragmentation_level}
-                onChange={(e) => handleChange('default_fragmentation_level', parseInt(e.target.value) || 3)}
-                className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                readOnly
+                className="w-full px-3 py-2 border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-100 dark:bg-neutral-900 text-neutral-400 dark:text-neutral-500 cursor-not-allowed"
               />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('settings.imageSecurity.fragmentationLevelHelp', '1-10, higher = more protection')}</p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                {t(
+                  'settings.imageSecurity.fragmentationLevelDisabled',
+                  'Not active yet — this value has no effect on how images are served. Kept visible so an existing setting is not lost.'
+                )}
+              </p>
             </div>
           </div>
 

@@ -1433,6 +1433,7 @@
       "infoText": "These protection features help prevent casual downloading and copying but cannot block all methods. Determined users may still find ways to capture images. Consider using watermarks and legal agreements for comprehensive protection.",
       "imageQualityHelp": "1-100, higher = better quality",
       "fragmentationLevelHelp": "1-10, higher = more protection",
+      "fragmentationLevelDisabled": "Not active yet — this value has no effect on how images are served. Kept visible so an existing setting is not lost.",
       "suspiciousActivityThresholdHelp": "Violations before flagging as suspicious",
       "autoBlockThresholdHelp": "Violations before auto-blocking IP"
     },

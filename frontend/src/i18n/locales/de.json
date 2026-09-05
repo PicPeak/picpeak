@@ -1870,6 +1870,7 @@
       "infoText": "Diese Schutzfunktionen helfen, gelegentliches Herunterladen und Kopieren zu verhindern, können aber nicht alle Methoden blockieren. Entschlossene Benutzer finden möglicherweise trotzdem Wege, Bilder zu erfassen. Erwägen Sie die Verwendung von Wasserzeichen und rechtlichen Vereinbarungen für umfassenden Schutz.",
       "imageQualityHelp": "1–100, höher = bessere Qualität",
       "fragmentationLevelHelp": "1–10, höher = mehr Schutz",
+      "fragmentationLevelDisabled": "Noch nicht aktiv — dieser Wert hat keinen Einfluss darauf, wie Bilder ausgeliefert werden. Bleibt sichtbar, damit eine vorhandene Einstellung nicht verloren geht.",
       "suspiciousActivityThresholdHelp": "Verstöße, bevor als verdächtig markiert wird",
       "autoBlockThresholdHelp": "Verstöße, bevor die IP automatisch gesperrt wird"
     },
