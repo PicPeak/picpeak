@@ -48,6 +48,7 @@ const SETTING_KEYS = [
   'oidc_issuer_url',
   'oidc_client_id',
   'backup_enabled',
+  'database_backup_enabled',
   'backup_destination_type',
   'backup_s3_bucket',
   'theme_config',
@@ -308,6 +309,12 @@ class UsageService {
       ) {
         await this.db('product_usage_state')
           .where({ id: 1 })
+          // Never over an opt-out. A withdrawal that arrived while this
+          // binding lookup was in flight would otherwise be replaced by
+          // identity_conflict, and tick() stops there — so the deletion the
+          // operator asked for would never be sent. The collector-conflict
+          // handler below already guards the same way.
+          .whereNot({ status: 'deletion_pending' })
           .update({
             status: 'identity_conflict',
             last_error: 'INSTANCE_COPY_DETECTED'
@@ -507,7 +514,12 @@ class UsageService {
     features.oauth.configured =
       truth(settings.oidc_enabled) &&
       Boolean(settings.oidc_issuer_url && settings.oidc_client_id);
-    features.backup.configured = truth(settings.backup_enabled);
+    // Either kind counts. The middleware records /backup/* and
+    // /database-backup/* under the same capability, so reading only
+    // backup_enabled reported `used: true, configured: false` for an install
+    // whose only backup is the scheduled database one.
+    features.backup.configured =
+      truth(settings.backup_enabled) || truth(settings.database_backup_enabled);
     features.s3_storage.configured =
       (settings.backup_destination_type === 's3' &&
         Boolean(settings.backup_s3_bucket)) ||

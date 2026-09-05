@@ -156,7 +156,17 @@ export default function ProductUsageTab() {
           <p>{t('productUsage.lastReport', { date: data.last_report_date })}</p>
         )}
         {data.last_error && (
-          <p role="status">{t('productUsage.deliveryProblem')}</p>
+          <p role="status">
+            {/* Retrying cannot fix an unreadable signing key, and neither can
+                disabling: without the original encryption material the
+                deletion request cannot be signed either. Telling the operator
+                to retry would send them in a circle. */}
+            {t(
+              data.last_error === 'SIGNING_KEY_UNREADABLE'
+                ? 'productUsage.signingKeyUnreadable'
+                : 'productUsage.deliveryProblem'
+            )}
+          </p>
         )}
         <div className="flex flex-wrap gap-3">
           {data.status === 'disabled' ? (
