@@ -26,7 +26,12 @@ tracker or CORS policy is required. The collector is the separate
 Local development can use an HTTP loopback collector outside production. The
 collector URL is never writable through generic settings or request payloads.
 Keep the encryption material stable and protected; losing it makes the old
-identity unable to sign deletion requests. Keys live in a dedicated database
+identity unable to sign deletion requests. Note that `USAGE_ENCRYPTION_KEY`
+defaults to `JWT_SECRET`, so rotating `JWT_SECRET` without setting a dedicated
+`USAGE_ENCRYPTION_KEY` first loses it. The settings page then reports
+`SIGNING_KEY_UNREADABLE` rather than a generic delivery failure, because the
+consequence is specific: reports stop and the deletion request can no longer
+be signed either. Keys live in a dedicated database
 table, not the generic readable settings. A random mode-0600 file at
 `getStoragePath()/usage-instance.key` binds the database to its local storage.
 

@@ -6,7 +6,7 @@ import {
   type ProductFeedback
 } from '../../../services/productUsage.service';
 import { useConfirm } from '../../../components/common/ConfirmDialog';
-import { Button } from '../../../components/common/Button';
+import { Button, Card } from '../../../components/common';
 
 function ConsentDialog({
   close,
@@ -47,6 +47,24 @@ function ConsentDialog({
         ].map((key) => (
           <p key={key}>{t(`productUsage.${key}`, { collector })}</p>
         ))}
+      </div>
+      <div className="mb-4 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+        <a
+          className={'text-primary-600 dark:text-primary-400 hover:underline'}
+          href={collector}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {t('productUsage.linkCollector')}
+        </a>
+        <a
+          className={'text-primary-600 dark:text-primary-400 hover:underline'}
+          href={`${collector}/transparency`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {t('productUsage.transparency')}
+        </a>
       </div>
       <label className="flex items-start gap-2 mb-4">
         <input
@@ -119,8 +137,8 @@ export default function ProductUsageTab() {
   return (
     <div className="space-y-6 text-theme">
       <p>{t('productUsage.purpose')}</p>
-      <section className="rounded-xl border border-theme bg-theme-surface p-5 space-y-4">
-        <h3 className="text-lg font-semibold">
+      <Card padding="md" className="space-y-4">
+        <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
           {t(`productUsage.states.${data.status}`)}
         </h3>
         <p>{t(`productUsage.stateDetails.${data.status}`)}</p>
@@ -183,7 +201,7 @@ export default function ProductUsageTab() {
             </>
           )}
           <a
-            className="underline self-center"
+            className="text-sm text-primary-600 dark:text-primary-400 hover:underline self-center"
             href={`${data.collector_url}/transparency`}
             target="_blank"
             rel="noreferrer"
@@ -191,11 +209,11 @@ export default function ProductUsageTab() {
             {t('productUsage.transparency')}
           </a>
         </div>
-      </section>
+      </Card>
       {active && (
         <>
-          <section className="rounded-xl border border-theme bg-theme-surface p-5 space-y-4">
-            <h3 className="text-lg font-semibold">
+          <Card padding="md" className="space-y-4">
+            <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
               {t('productUsage.inspect')}
             </h3>
             <div className="flex flex-wrap gap-3">
@@ -256,9 +274,10 @@ export default function ProductUsageTab() {
                 {JSON.stringify(preview, null, 2)}
               </pre>
             )}
-          </section>
+          </Card>
+          <Card padding="md">
           <form
-            className="rounded-xl border border-theme bg-theme-surface p-5 space-y-4"
+            className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
               void run(async () => {
@@ -285,7 +304,7 @@ export default function ProductUsageTab() {
               });
             }}
           >
-            <h3 className="text-lg font-semibold">
+            <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
               {t('productUsage.feedbackTitle')}
             </h3>
             <p>{t('productUsage.feedbackDisclosure')}</p>
@@ -407,6 +426,7 @@ export default function ProductUsageTab() {
               {t('productUsage.sendFeedback')}
             </Button>
           </form>
+          </Card>
         </>
       )}
       {message && <p role="status">{message}</p>}

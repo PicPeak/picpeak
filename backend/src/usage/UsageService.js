@@ -20,6 +20,14 @@ const {
   LAYOUTS
 } = require('./protocol.cjs');
 
+// The collector this installation reports to. Declared once rather than
+// inline, because it is a deployment choice: self-hosters point
+// USAGE_COLLECTOR_URL at their own collector, and the admin UI links to
+// whatever is configured rather than to this default. Kept out of the wire
+// contract — `schema.cjs` is vendored byte-identical with picpeak-usage and
+// its `$id` is a schema identity, not a delivery address.
+const DEFAULT_COLLECTOR_URL = 'https://usage.picpeak.app';
+
 const FLAG_MAP = {
   crm: 'clients',
   crm_quotes: 'quotes',
@@ -66,9 +74,7 @@ class UsageService {
       process.env.USAGE_ENCRYPTION_KEY ||
       process.env.JWT_SECRET;
     this.endpoint =
-      options.endpoint ||
-      process.env.USAGE_COLLECTOR_URL ||
-      'https://usage.picpeak.app';
+      options.endpoint || process.env.USAGE_COLLECTOR_URL || DEFAULT_COLLECTOR_URL;
     this.bindingPath =
       options.bindingPath || path.join(getStoragePath(), 'usage-instance.key');
     this.encKey = null;
@@ -116,14 +122,27 @@ class UsageService {
       .join('.');
   }
   decrypt(value) {
-    const [iv, tag, data] = value
-      .split('.')
-      .map((v) => Buffer.from(v, 'base64url'));
-    const cipher = crypto.createDecipheriv('aes-256-gcm', this.key(), iv);
-    cipher.setAuthTag(tag);
-    return Buffer.concat([cipher.update(data), cipher.final()]).toString(
-      'utf8'
-    );
+    try {
+      const [iv, tag, data] = value
+        .split('.')
+        .map((v) => Buffer.from(v, 'base64url'));
+      const cipher = crypto.createDecipheriv('aes-256-gcm', this.key(), iv);
+      cipher.setAuthTag(tag);
+      return Buffer.concat([cipher.update(data), cipher.final()]).toString(
+        'utf8'
+      );
+    } catch (error) {
+      // The signing key is encrypted with USAGE_ENCRYPTION_KEY, which defaults
+      // to JWT_SECRET — so rotating JWT_SECRET, the correct response to a
+      // suspected compromise, makes this key unreadable. Without a name of its
+      // own that surfaced as a generic DELIVERY_FAILED that retried forever,
+      // and it silently blocks the DELETE packet too: participation could
+      // never be withdrawn from the collector. Tagged so the operator is told
+      // what actually happened.
+      const failure = new Error('Usage signing key cannot be decrypted');
+      failure.code = 'SIGNING_KEY_UNREADABLE';
+      throw failure;
+    }
   }
   async binding(create = false) {
     if (create) {
@@ -381,7 +400,11 @@ class UsageService {
         'NOT_REGISTERED',
         'PACKET_CONFLICT'
       ].includes(error.code);
-      const code = conflict ? error.code : 'DELIVERY_FAILED';
+      const code = conflict
+        ? error.code
+        : error.code === 'SIGNING_KEY_UNREADABLE'
+          ? 'SIGNING_KEY_UNREADABLE'
+          : 'DELIVERY_FAILED';
       await this.db('product_usage_state')
         .where({ id: 1 })
         .update({ last_error: code });

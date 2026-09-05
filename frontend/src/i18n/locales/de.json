@@ -20,6 +20,7 @@
     "disable": "Deaktivieren & Daten löschen",
     "retry": "Erneut versuchen / fälligen Bericht senden",
     "transparency": "Öffentliches Schema & Datenschutzhinweise",
+    "linkCollector": "Wohin Berichte gesendet werden",
     "hash": "Dein vertraulicher Abfrage-Hash",
     "lastReport": "Zuletzt angenommener Bericht: {{date}} (UTC)",
     "deliveryProblem": "Die Übertragung benötigt Aufmerksamkeit. Bei Löschung oder Identitätskonflikt ist die Erfassung gestoppt. Versuche es erneut oder deaktiviere die Teilnahme, um die Daten zu löschen.",

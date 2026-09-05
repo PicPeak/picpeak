@@ -20,6 +20,7 @@
     "disable": "Disable & delete my data",
     "retry": "Retry / send if due",
     "transparency": "Read the public schema & privacy details",
+    "linkCollector": "Where reports are sent",
     "hash": "Your private lookup hash",
     "lastReport": "Last accepted report: {{date}} (UTC)",
     "deliveryProblem": "Delivery needs attention. Collection stops during deletion or an identity conflict. Use retry, or disable participation to delete its data.",

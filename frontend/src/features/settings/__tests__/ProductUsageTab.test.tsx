@@ -14,7 +14,11 @@ import {
 } from '../../../services/productUsage.service';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key })
+  useTranslation: () => ({ t: (key: string) => key }),
+  // The tab imports from the components/common barrel, which reaches
+  // ErrorBoundary -> i18n/config, and that calls .use(initReactI18next) at
+  // import time. Same shim as FaceRecognitionCard.sidecarHealth.test.tsx.
+  initReactI18next: { type: '3rdParty', init: () => {} }
 }));
 vi.mock('../../../components/common/ConfirmDialog', () => ({
   useConfirm: () => async () => true
