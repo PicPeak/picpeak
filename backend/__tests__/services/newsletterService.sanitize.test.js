@@ -92,6 +92,35 @@ describe('sanitizeCampaignBody', () => {
     expect(out).not.toContain('http://evil.example');
   });
 
+  it('blocks a tracking url() hidden behind &quot; entities', () => {
+    // sanitize-html writes `"` inside an attribute as `&quot;`, so the CSS
+    // scanner and the recipient's browser disagreed about where strings
+    // start: the browser decodes first and reads the apostrophe as ordinary
+    // text inside a real string, then fetches the background — while the
+    // scanner saw the apostrophe open a string and skipped past the url().
+    const out = sanitizeCampaignBody(
+      `<p style="font-family:&quot;don't&quot;;background:url(https://evil.example/p.gif)">hi</p>`
+    );
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('blocks a tracking url() hidden behind an escaped quote', () => {
+    const out = sanitizeCampaignBody(
+      `<p style="--m:\\';background:url(https://evil.example/p.gif)">hi</p>`
+    );
+    expect(out).not.toContain('evil.example');
+  });
+
+  it('keeps a legitimate quoted font stack, re-encoded for the attribute', () => {
+    const out = sanitizeCampaignBody(
+      `<p style="color:red;font-family:&quot;Helvetica Neue&quot;,sans-serif">hi</p>`
+    );
+    expect(out).toContain('color:red');
+    expect(out).toContain('Helvetica Neue');
+    // Re-encoded, so the attribute stays well formed rather than being cut short.
+    expect(out).not.toMatch(/style="[^"]*"[^>]*"/);
+  });
+
   it('strips expression() out of an inline style', () => {
     const out = sanitizeCampaignBody('<p style="width:expression(alert(1))">hi</p>');
     expect(out).not.toContain('expression(');

@@ -140,6 +140,18 @@ function stripDisallowedUrls(css) {
       continue;
     }
 
+    // --- escape OUTSIDE a string -----------------------------------------
+    // `\'` is an escaped identifier character, not the start of a string.
+    // Without this the scanner stepped onto the apostrophe, entered string
+    // mode, and copied the rest of the stylesheet unscanned — so
+    // `.hero{--marker:\';background:url(https://evil.example/p.gif)}` kept a
+    // live remote URL. Consume the escape and its escaped character together.
+    if (input[i] === '\\' && i + 1 < input.length) {
+      out += input.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
+
     // --- string ----------------------------------------------------------
     // Escape-aware: `\"` inside a double-quoted string does NOT close it.
     // Decoding escapes up front (an earlier attempt) turned that into a real
@@ -147,10 +159,26 @@ function stripDisallowedUrls(css) {
     if (input[i] === '"' || input[i] === '\'') {
       const quote = input[i];
       let j = i + 1;
+      let closed = false;
       while (j < input.length) {
         if (input[j] === '\\') { j += 2; continue; }
-        if (input[j] === quote) { j += 1; break; }
+        // A newline ends a string in CSS (it produces a bad-string token), so
+        // an unclosed quote must not run past the end of its own line.
+        if (input[j] === '\n' || input[j] === '\r' || input[j] === '\f') break;
+        if (input[j] === quote) { j += 1; closed = true; break; }
         j += 1;
+      }
+      // An UNTERMINATED quote is a parse error, and trusting it is how a
+      // stray apostrophe hid everything after it: `font-family:&quot;don't`
+      // opened a string that swallowed the url() following it, while the
+      // recipient's browser — which decodes the entity first — saw the
+      // apostrophe safely inside a real string and made the request. Failing
+      // closed here means emitting the quote as an ordinary character and
+      // carrying on scanning, so a later url() is still examined.
+      if (!closed) {
+        out += input[i];
+        i += 1;
+        continue;
       }
       out += input.slice(i, Math.min(j, input.length));
       i = Math.min(j, input.length);

@@ -145,10 +145,50 @@ function sanitizeCampaignBody(html) {
     // rather than pattern-matching it, so the local pass this used to need is
     // gone. Keeping a second copy would mean two definitions of "disallowed"
     // drifting apart.
+    //
+    // Entities are decoded BEFORE the CSS is scanned, and re-encoded after.
+    // sanitize-html emits `"` inside an attribute as `&quot;`, so the scanner
+    // and the recipient's browser otherwise disagree about where CSS strings
+    // begin: in `style="font-family:&quot;don't&quot;;background:url(...)"`
+    // the browser decodes first and reads the apostrophe as ordinary text
+    // inside a real string, then makes the url() request — while the scanner
+    // saw the apostrophe open a string and skipped everything after it. The
+    // scanner has to be shown what the browser will actually parse.
     .replace(/style="([^"]*)"/gi, (match, css) => {
-      const { sanitized } = sanitizeCSS(css);
-      return sanitized ? `style="${sanitized.replace(/"/g, '')}"` : '';
+      const { sanitized } = sanitizeCSS(decodeHtmlEntities(css));
+      return sanitized ? `style="${encodeForAttribute(sanitized)}"` : '';
     });
+}
+
+/**
+ * Decode the HTML entities sanitize-html emits inside attribute values, so
+ * CSS is scanned in the form the recipient's parser will see. One pass, so
+ * `&amp;quot;` decodes to `&quot;` and not to `"`.
+ */
+function decodeHtmlEntities(value) {
+  return String(value).replace(
+    /&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|(quot|apos|amp|lt|gt));/g,
+    (whole, dec, hex, name) => {
+      if (dec !== undefined) {
+        const code = Number(dec);
+        return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+      }
+      if (hex !== undefined) {
+        const code = parseInt(hex, 16);
+        return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+      }
+      return { quot: '"', apos: '\'', amp: '&', lt: '<', gt: '>' }[name];
+    }
+  );
+}
+
+/** Re-encode a sanitized value so it is safe inside a double-quoted attribute. */
+function encodeForAttribute(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 /**

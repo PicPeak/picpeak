@@ -239,6 +239,33 @@ describe('sanitizeCSS', () => {
     expect(warnings.join(' ')).toContain('external URL');
   });
 
+  it('blocks a url() hidden behind an escaped quote outside a string', () => {
+    // `\'` is an escaped identifier character, not a string opener. The
+    // scanner used to step onto the apostrophe, enter string mode, and copy
+    // the rest of the stylesheet — url() included — unexamined.
+    const { sanitized } = sanitizeCSS(
+      ".hero{--marker:\\';background:url(https://evil.example/p.gif)}"
+    );
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('does not let an unterminated quote hide everything after it', () => {
+    // An unclosed quote is a parse error. Trusting it meant one stray
+    // apostrophe disabled scanning for the remainder of the stylesheet, so
+    // the safe reading is to treat it as an ordinary character and continue.
+    const { sanitized } = sanitizeCSS(
+      "p{font-family:'don't;background:url(https://evil.example/p.gif)}"
+    );
+    expect(asParsed(sanitized)).not.toContain('evil.example');
+  });
+
+  it('still keeps legitimate quoted values and data: images intact', () => {
+    const font = sanitizeCSS('p{font-family:"Helvetica Neue",sans-serif;color:red}');
+    expect(font.sanitized).toContain('"Helvetica Neue"');
+    const data = sanitizeCSS(".a{background:url('data:image/png;base64,iVBORw0KGgo=')}");
+    expect(data.sanitized).toContain('data:image/png');
+  });
+
   it('still blocks the other forbidden patterns', () => {
     const { sanitized } = sanitizeCSS(
       '@import url("https://x/e.css"); .a{width:expression(alert(1));behavior:url(e.htc)}'

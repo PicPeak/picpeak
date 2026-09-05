@@ -283,6 +283,14 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       // (#1287). Nothing redraws from `imageRef` afterwards: drawToCanvas
       // has this one caller.
       if (drawn) {
+        // Handlers off BEFORE the src goes. Measured in Chromium and WebKit:
+        // neither fires `error` when the attribute is removed after a
+        // successful load, so this is not fixing an observed bug — but if any
+        // engine ever did, `onerror` would set canvasFailed, swap the canvas
+        // for a plain <img>, and decode the image a second time, which is the
+        // exact opposite of what this release is for. The ordering is free.
+        img.onload = null;
+        img.onerror = null;
         imageRef.current = null;
         img.removeAttribute('src');
       }
