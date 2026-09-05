@@ -151,6 +151,52 @@ describe('newsletter composer', () => {
     expect(summary).toHaveTextContent('3 skipped (opted out)');
   });
 
+  it('warns about deliverability once the send is large', async () => {
+    // Spam filtering reacts to a domain's volume, not to the queue's pacing,
+    // so the throttle alone is not something to reassure the operator with.
+    resolution = { ...resolution, recipientCount: 120, estimatedMinutes: 12 };
+    renderComposer();
+    await screen.findByTestId('recipient-summary');
+
+    const warning = await screen.findByTestId('large-send-warning');
+    expect(warning).toHaveTextContent(/sending reputation/i);
+    expect(warning).toHaveTextContent(/spam filters/i);
+    expect(warning).toHaveTextContent(/SPF, DKIM and DMARC/i);
+    // The operator is told what it costs: duration, and what may wait behind
+    // it. 120 recipients at the fixture's 20/min clamps to the queue's real
+    // ceiling of 10/min, so the honest estimate is 12 minutes.
+    expect(warning).toHaveTextContent(/12 minutes/);
+    expect(warning).toHaveTextContent(/can be delayed behind it/i);
+  });
+
+  it('recomputes the duration when the rate is edited, before saving', async () => {
+    // The estimate the server returns is computed from the SAVED rate, while
+    // the input shows the edited one. Pairing them meant the warning could
+    // claim 12 minutes for a send that would actually take 120.
+    resolution = { ...resolution, recipientCount: 120, estimatedMinutes: 12 };
+    renderComposer();
+    await screen.findByTestId('recipient-summary');
+    await screen.findByTestId('large-send-warning');
+
+    const rate = screen.getByLabelText(/Send rate/i);
+    await userEvent.clear(rate);
+    await userEvent.type(rate, '1');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('large-send-warning')).toHaveTextContent(/At 1\/minute/);
+      expect(screen.getByTestId('large-send-warning')).toHaveTextContent(/120 minutes/);
+    });
+  });
+
+  it('does not warn on a send small enough not to matter', async () => {
+    resolution = { ...resolution, recipientCount: 12 };
+    renderComposer();
+    await screen.findByTestId('recipient-summary');
+    await waitFor(() => expect(resolveSpy).toHaveBeenCalled());
+
+    expect(screen.queryByTestId('large-send-warning')).not.toBeInTheDocument();
+  });
+
   it('renders the preview in a sandboxed iframe with no allow-scripts', async () => {
     renderComposer();
     await screen.findByTestId('recipient-summary');

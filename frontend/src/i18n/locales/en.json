@@ -6941,7 +6941,7 @@
     "showCss": "Custom CSS (optional)",
     "hideCss": "Hide custom CSS",
     "cssHelp": "Many email clients drop a <style> block — keep the important styling on inline attributes. Remote images and @import are stripped.",
-    "rateHelp": "Sends are spread out so your mail provider does not rate-limit you. Check your provider's hourly cap before raising this.",
+    "rateHelp": "Sends are spread out so your mail provider does not rate-limit you, and so a sudden burst does not look like spam. Check your provider's hourly cap before raising this.",
     "recipientCount": "{{count}} recipients",
     "skippedOptOut": "{{count}} skipped (opted out)",
     "saveToRefresh": "Save to refresh this count.",
@@ -6972,6 +6972,12 @@
     "testFailed": "Could not send the test email.",
     "queueFailed": "Could not queue the campaign.",
     "cancelFailed": "Could not cancel the campaign.",
-    "previewEmpty": "Refresh the preview to see the email as a customer will."
+    "previewEmpty": "Refresh the preview to see the email as a customer will.",
+    "largeSend": {
+      "title": "Large send — check your sending reputation first",
+      "body": "Mailing {{count}} people at once from a domain that usually sends only transactional email is what makes spam filters take notice. Providers may throttle, junk or block the whole batch, and a bad run damages delivery of your gallery emails too.",
+      "advice": "Confirm SPF, DKIM and DMARC are set up for your sending domain, send yourself a test first, and consider splitting a first campaign across several smaller sends.",
+      "duration": "At {{rate}}/minute this takes about {{minutes}} minutes. The send queue is shared, so while it runs other email — gallery invitations, password resets — can be delayed behind it."
+    }
   }
 }
