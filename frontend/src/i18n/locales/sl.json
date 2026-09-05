@@ -911,7 +911,6 @@
       "defaultProtectionHelp": "Te nastavitve veljajo za vse nove dogodke. Posamezni dogodki lahko te privzete nastavitve prepišejo.",
       "protectionLevel": "Privzeta raven zaščite",
       "imageQuality": "Privzeta kakovost slike",
-      "fragmentationLevel": "Raven fragmentacije",
       "enableDevtools": "Privzeto omogoči zaznavanje DevTools",
       "enableCanvas": "Privzeto omogoči izris prek canvas (napredna zaščita)",
       "rateLimiting": "Omejevanje hitrosti",

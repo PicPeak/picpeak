@@ -1415,7 +1415,6 @@
       "defaultProtectionHelp": "These settings apply to all new events. Individual events can override these defaults.",
       "protectionLevel": "Default Protection Level",
       "imageQuality": "Default Image Quality",
-      "fragmentationLevel": "Fragmentation Level",
       "enableDevtools": "Enable DevTools detection by default",
       "enableCanvas": "Enable canvas rendering by default (advanced protection)",
       "rateLimiting": "Rate Limiting",
@@ -1432,7 +1431,6 @@
       "infoTitle": "About Image Protection",
       "infoText": "These protection features help prevent casual downloading and copying but cannot block all methods. Determined users may still find ways to capture images. Consider using watermarks and legal agreements for comprehensive protection.",
       "imageQualityHelp": "1-100, higher = better quality",
-      "fragmentationLevelHelp": "1-10, higher = more protection",
       "suspiciousActivityThresholdHelp": "Violations before flagging as suspicious",
       "autoBlockThresholdHelp": "Violations before auto-blocking IP"
     },

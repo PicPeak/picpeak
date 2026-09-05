@@ -1227,7 +1227,6 @@ router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, noStoreCache, asy
       protection_level: req.event.protection_level || 'standard',
       image_quality: req.event.image_quality || 85,
       use_canvas_rendering: parseBooleanInput(req.event.use_canvas_rendering, false),
-      fragmentation_level: req.event.fragmentation_level || 3,
       overlay_protection: parseBooleanInput(req.event.overlay_protection, true)
     };
 

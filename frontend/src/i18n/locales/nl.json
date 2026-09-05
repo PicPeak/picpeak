@@ -907,7 +907,6 @@
       "defaultProtectionHelp": "Deze instellingen zijn van toepassing op alle nieuwe evenementen. Individuele evenementen kunnen deze standaardwaarden overschrijven.",
       "protectionLevel": "Standaard beveiligingsniveau",
       "imageQuality": "Standaard beeldkwaliteit",
-      "fragmentationLevel": "Fragmentatieniveau",
       "enableDevtools": "Standaard DevTools-detectie inschakelen",
       "enableCanvas": "Standaard canvas-rendering inschakelen (geavanceerde beveiliging)",
       "rateLimiting": "Snelheidsbeperking",

@@ -117,8 +117,7 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     const protectionSettings = {
       protectionLevel: eventProtectionLevel,
       quality: req.event.image_quality || 85,
-      addFingerprint: req.event.add_fingerprint !== false,
-      fragmentImage: eventProtectionLevel === 'maximum'
+      addFingerprint: req.event.add_fingerprint !== false
     };
 
     // Resolve photo location through the storage backend (managed) or local
@@ -150,21 +149,6 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
       const processedImage = storageKey
         ? await withLocalCopy(storageKey, runProcessing)
         : await runProcessing(resolvePhotoFilePath(req.event, photo));
-
-      if (processedImage.type === 'fragmented') {
-        return res.json({
-          type: 'fragmented',
-          fragments: processedImage.fragments.map(f => ({
-            index: f.index,
-            row: f.row,
-            col: f.col,
-            data: f.buffer.toString('base64'),
-            position: f.position
-          })),
-          dimensions: processedImage.originalDimensions,
-          fragmentDimensions: processedImage.fragmentDimensions
-        });
-      }
 
       finalImage = processedImage;
     }

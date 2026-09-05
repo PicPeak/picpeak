@@ -20,7 +20,6 @@ interface UseImageProtectionOptions {
   blockKeyboardShortcuts?: boolean;
   detectPrintScreen?: boolean;
   watermarkText?: string;
-  fragmentGrid?: boolean;
 }
 
 export const useImageProtection = (options: UseImageProtectionOptions) => {

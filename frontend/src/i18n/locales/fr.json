@@ -911,7 +911,6 @@
       "defaultProtectionHelp": "Ces paramètres s'appliquent à tous les nouveaux événements. Les événements individuels peuvent remplacer ces valeurs par défaut.",
       "protectionLevel": "Niveau de protection par défaut",
       "imageQuality": "Qualité d'image par défaut",
-      "fragmentationLevel": "Niveau de fragmentation",
       "enableDevtools": "Activer la détection des outils DevTools par défaut",
       "enableCanvas": "Activer le rendu canvas par défaut (protection avancée)",
       "rateLimiting": "Limitation de débit",

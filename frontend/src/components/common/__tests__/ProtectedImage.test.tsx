@@ -128,25 +128,6 @@ describe('ProtectedImage', () => {
     expect(mockContext.fillText).toHaveBeenCalled();
   });
 
-  it('handles fragment grid rendering', async () => {
-    render(
-      <ProtectedImage
-        {...defaultProps}
-        fragmentGrid={true}
-        gridSize={4}
-        protectionLevel="enhanced"
-      />
-    );
-
-    await waitFor(() => {
-      const canvas = screen.getByRole('img', { name: 'Test image' });
-      expect(canvas).toHaveStyle({ opacity: '1' });
-    });
-
-    // Verify multiple drawImage calls for fragments
-    expect(mockContext.drawImage).toHaveBeenCalled();
-  });
-
   it('blocks interactions in maximum protection mode', async () => {
     const onViolation = vi.fn();
 
@@ -228,25 +209,6 @@ describe('ProtectedImage', () => {
     // Verify getImageData and putImageData called for steganography
     expect(mockContext.getImageData).toHaveBeenCalled();
     expect(mockContext.putImageData).toHaveBeenCalled();
-  });
-
-  it('scrambles fragments when enabled', async () => {
-    render(
-      <ProtectedImage
-        {...defaultProps}
-        fragmentGrid={true}
-        scrambleFragments={true}
-        protectionLevel="maximum"
-      />
-    );
-
-    await waitFor(() => {
-      const canvas = screen.getByRole('img', { name: 'Test image' });
-      expect(canvas).toHaveStyle({ opacity: '1' });
-    });
-
-    // Fragment scrambling should result in multiple drawImage calls
-    expect(mockContext.drawImage).toHaveBeenCalled();
   });
 
   it('adds random noise in maximum protection', async () => {

@@ -15,7 +15,6 @@ interface ImageSecuritySettings {
   max_image_requests_per_hour: number;
   suspicious_activity_threshold: number;
   enable_canvas_rendering: boolean;
-  default_fragmentation_level: number;
   security_monitoring_enabled: boolean;
   block_suspicious_ips: boolean;
   log_security_events_to_db: boolean;
@@ -31,7 +30,6 @@ const defaultSettings: ImageSecuritySettings = {
   max_image_requests_per_hour: 500,
   suspicious_activity_threshold: 10,
   enable_canvas_rendering: false,
-  default_fragmentation_level: 3,
   security_monitoring_enabled: true,
   block_suspicious_ips: true,
   log_security_events_to_db: true,
@@ -160,21 +158,6 @@ export const ImageSecurityTab: React.FC = () => {
                 className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('settings.imageSecurity.imageQualityHelp', '1-100, higher = better quality')}</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">
-                {t('settings.imageSecurity.fragmentationLevel', 'Fragmentation Level')}
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={settings.default_fragmentation_level}
-                onChange={(e) => handleChange('default_fragmentation_level', parseInt(e.target.value) || 3)}
-                className="w-full px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              />
-              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">{t('settings.imageSecurity.fragmentationLevelHelp', '1-10, higher = more protection')}</p>
             </div>
           </div>
 
