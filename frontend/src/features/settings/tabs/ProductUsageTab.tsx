@@ -304,6 +304,13 @@ export default function ProductUsageTab() {
                         : 'productUsage.failed'
                   )
                 );
+                // Every consent choice resets with the item it was made for.
+                // Leaving `named` checked meant the next submission carried
+                // the previous name automatically, which contradicts the
+                // per-item, anonymous-by-default promise the disclosure makes
+                // — the remembered name stays in preferences, but attaching
+                // it is a decision taken again each time.
+                setNamed(false);
                 setForm({
                   ...form,
                   title: '',

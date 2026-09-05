@@ -220,13 +220,13 @@ class UsageService {
           'Finish the current participation before rejoining'
         );
       this.collectorUrl();
-      // A cancellation left over from an earlier participation must not veto
-      // this deliberate opt-in, so the flag is cleared before the slow work
-      // starts. Anything set from here on is a withdrawal aimed at THIS
-      // activation.
-      await this.db('product_usage_state')
-        .where({ id: 1 })
-        .update({ cancel_requested: formatBoolean(false) });
+      // The withdrawal counter as it stood when this activation began. A
+      // /disable from an earlier participation is already reflected here and
+      // must not veto a deliberate opt-in; anything that increments it from
+      // now on is aimed at THIS activation. Recorded rather than cleared,
+      // because a clearing write of its own had the very race it was meant to
+      // close — a /disable landing between the lease and the clear was erased.
+      const cancelSeq = Number(state.cancel_seq || 0);
 
       const identity = generateIdentity();
       const pending = makePacket(identity, 'register', 0, {
@@ -243,8 +243,7 @@ class UsageService {
       // conditional UPDATE, so a /disable that lands first makes it match no
       // rows and the registration is never sent.
       const claimed = await this.db('product_usage_state')
-        .where({ id: 1, status: 'disabled' })
-        .whereNot({ cancel_requested: formatBoolean(true) })
+        .where({ id: 1, status: 'disabled', cancel_seq: cancelSeq })
         .update({
           status: 'activation_pending',
           notice_dismissed: formatBoolean(true),
@@ -266,16 +265,16 @@ class UsageService {
   }
 
   async disable() {
-    // Recorded unconditionally and first, because the interesting case is the
+    // Counted unconditionally and first, because the interesting case is the
     // one where there is seemingly nothing to stop: while /enable is still
     // generating an identity the row reads `disabled`, so the conditional
     // update below matches nothing and the lease conflict from tick() is
     // swallowed — the admin was told participation was off while the
-    // activation went on to complete. enable() claims its state conditionally
-    // on this flag, so a withdrawal that lands during that window wins.
+    // activation went on to complete. enable() claims its state only if this
+    // counter is unchanged, so a withdrawal landing in that window wins.
     await this.db('product_usage_state')
       .where({ id: 1 })
-      .update({ cancel_requested: formatBoolean(true) });
+      .increment('cancel_seq', 1);
 
     // Stop collection before waiting for an in-flight send. The sender checks
     // state again before delivery and preserves this stop after its response.
@@ -363,6 +362,16 @@ class UsageService {
         },
         new Date(this.now())
       );
+      // Last check before anything leaves. The guard at the top of this
+      // method runs before the binding lookup above, which is asynchronous —
+      // so a withdrawal that COMPLETED during it would previously still have
+      // had its registration or report dispatched afterwards. This is not
+      // about an already-in-flight request; it is about not starting one.
+      if (
+        packet.action !== 'delete' &&
+        (await this.state()).status === 'deletion_pending'
+      )
+        return null;
       const receipt = await this.post('/api/envelopes', envelope);
       if (
         receipt.packet_id !== packet.packet_id ||
@@ -490,9 +499,15 @@ class UsageService {
         payload
       );
       state.pending_packet = JSON.stringify(packet);
-      await this.db('product_usage_state')
-        .where({ id: 1 })
+      // Only while still active. /disable clears pending_packet and moves the
+      // status without taking the lease, so an unconditional write here could
+      // put a report back into the outbox after the withdrawal had emptied
+      // it — and deliver() would then leave it there, since it declines to
+      // send anything but the delete.
+      const enqueued = await this.db('product_usage_state')
+        .where({ id: 1, status: 'active' })
         .update({ pending_packet: state.pending_packet });
+      if (!enqueued) return;
       await this.deliver(state);
     });
     return this.status();
@@ -664,9 +679,14 @@ class UsageService {
         this.now()
       );
       state.pending_packet = JSON.stringify(packet);
-      await this.db('product_usage_state')
-        .where({ id: 1 })
+      // Same guard as the report enqueue in tick(): a command captured while
+      // active must not restore its payload — feedback body and name
+      // included — into the outbox that /disable has just cleared.
+      const enqueued = await this.db('product_usage_state')
+        .where({ id: 1, status: 'active' })
         .update({ pending_packet: state.pending_packet });
+      if (!enqueued)
+        throw new ConflictError('Usage participation is not active');
       receipt = await this.deliver(state);
     });
     const state = await this.status();
