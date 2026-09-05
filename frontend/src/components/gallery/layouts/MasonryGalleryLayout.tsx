@@ -120,7 +120,6 @@ const MasonryPhoto: React.FC<MasonryPhotoProps> = ({
         className: 'w-full h-full object-cover rounded-lg',
         loading: 'lazy',
         isGallery: true,
-        protectFromDownload: !allowDownloads,
       }}
       overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
       allowDownloads={allowDownloads}
@@ -376,7 +375,6 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 className: 'w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]',
                 loading: 'lazy',
                 isGallery: true,
-                protectFromDownload: !allowDownloads,
               }}
               overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
               actionVariant="dark"
@@ -434,7 +432,6 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 className: 'w-full h-full object-cover rounded-lg transition-transform duration-300 group-hover:scale-[1.02]',
                 loading: 'lazy',
                 isGallery: true,
-                protectFromDownload: !allowDownloads,
               }}
               overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 rounded-lg flex items-center justify-center gap-2"
               actionVariant="dark"
@@ -501,7 +498,6 @@ export const MasonryGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 className: 'w-full h-full object-cover transition-transform duration-300 group-hover:scale-105',
                 loading: 'lazy',
                 isGallery: true,
-                protectFromDownload: !allowDownloads,
               }}
               overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 flex items-center justify-center gap-2"
               actionVariant="dark"

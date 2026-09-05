@@ -68,9 +68,7 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   isSelectionMode,
   isLiked,
   slug,
-  allowDownloads = true,
   protectionLevel = 'standard',
-  useEnhancedProtection = false,
   useCanvasRendering = false,
   feedbackEnabled = false,
   allowLikes = false,
@@ -124,12 +122,6 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         loading="lazy"
         isGallery={true}
         slug={slug}
-        photoId={photo.id}
-        requiresToken={photo.requires_token}
-        secureUrlTemplate={photo.secure_url_template}
-        protectFromDownload={!allowDownloads || useEnhancedProtection}
-        protectionLevel={protectionLevel}
-        useEnhancedProtection={useEnhancedProtection}
         useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
       />
 

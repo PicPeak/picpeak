@@ -83,7 +83,6 @@ const MosaicPhoto: React.FC<MosaicPhotoProps> = ({
           className: 'w-full h-full object-cover transition-transform duration-300 group-hover:scale-105',
           loading: 'lazy',
           isGallery: true,
-          protectFromDownload: !allowDownloads,
         }}
         overlayBaseClassName="absolute inset-0 bg-black/40 transition-opacity duration-200 flex items-center justify-center gap-2"
         allowDownloads={allowDownloads}
