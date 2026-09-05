@@ -109,8 +109,15 @@ class UsageService {
       options.secret ||
       process.env.USAGE_ENCRYPTION_KEY ||
       process.env.JWT_SECRET;
-    this.endpoint =
-      options.endpoint || process.env.USAGE_COLLECTOR_URL || DEFAULT_COLLECTOR_URL;
+    // Falls back to the default whenever nothing usable is configured —
+    // unset, empty, or whitespace. Deployments that template the variable in
+    // (docker-compose writes USAGE_COLLECTOR_URL=${USAGE_COLLECTOR_URL:-...})
+    // can hand over an empty string, and that must mean "use the default",
+    // not "no collector". A value that is present but malformed is NOT
+    // silently replaced: quietly retargeting a self-hoster's collector at
+    // ours would send their reports somewhere they did not choose.
+    const configured = (options.endpoint ?? process.env.USAGE_COLLECTOR_URL ?? '').trim();
+    this.endpoint = configured || DEFAULT_COLLECTOR_URL;
     this.bindingPath =
       options.bindingPath || path.join(getStoragePath(), 'usage-instance.key');
     this.encKey = null;

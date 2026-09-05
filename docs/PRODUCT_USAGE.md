@@ -23,6 +23,20 @@ tracker or CORS policy is required. The collector is the separate
 | `USAGE_COLLECTOR_URL` | https://usage.picpeak.app | Fixed operator-configured collector origin, HTTPS in production |
 | `USAGE_ENCRYPTION_KEY` | JWT_SECRET | 32+ characters, encrypts the local Ed25519 key with AES-256-GCM |
 
+Both database engines are supported. The state and marker tables are created
+by migrations 201-203 on PostgreSQL and SQLite alike, and the engine-sensitive
+paths are covered by `__tests__/integration/productUsagePg.test.js` against a
+real PostgreSQL — bigint columns come back as strings there, booleans are real
+booleans rather than 0/1, and the marker write takes `SELECT ... FOR UPDATE`
+only on that engine. That suite is gated behind `PICPEAK_PG_TEST_URL` and runs
+in CI, which provides one.
+
+If `USAGE_COLLECTOR_URL` is unset, empty or blank the built-in default
+`https://usage.picpeak.app` is used. A value that is present but malformed is
+reported as a configuration error rather than being replaced by the default:
+silently retargeting a self-hosted collector at ours would send reports
+somewhere the operator did not choose.
+
 Local development can use an HTTP loopback collector outside production. The
 collector URL is never writable through generic settings or request payloads.
 Keep the encryption material stable and protected; losing it makes the old
