@@ -4,7 +4,7 @@
   "description": "Backend for PicPeak event photo sharing platform",
   "main": "server.js",
   "engines": {
-    "node": "^20.19.0 || >=22"
+    "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
     "start": "node server.js",
@@ -62,7 +62,7 @@
     "postcss": "8.5.23",
     "qrcode": "^1.5.4",
     "react-i18next": "^15.6.0",
-    "sanitize-html": "2.17.5",
+    "sanitize-html": "2.17.7",
     "sharp": "0.35.3",
     "sqlite3": "^5.1.6",
     "swagger-jsdoc": "^6.2.8",
