@@ -15,7 +15,7 @@ readonly SCRIPT_VERSION="2.1.0"
 readonly APP_NAME="PicPeak"
 readonly REPO_URL="https://github.com/PicPeak/picpeak.git"
 readonly NODE_VERSION="20"
-readonly NODE_MIN_VERSION="20.19.0"  # backend engines: ^20.19.0 || >=22 (sharp 0.35, html-to-text 10)
+readonly NODE_MIN_VERSION="20.19.0"  # backend engines: ^20.19.0 || >=22.12.0 (sharp 0.35, html-to-text 10; sanitize-html 2.17.7 needs require(esm), unflagged in 20.19 and 22.12)
 readonly MIN_RAM_DOCKER=2048
 readonly MIN_RAM_NATIVE=1024
 readonly MIN_DISK_GB=2
@@ -822,6 +822,19 @@ EOF
 # Native Installation
 ################################################################################
 
+# True when a Node.js version satisfies the backend's engines range
+# (^20.19.0 || >=22.12.0). 21.x is out, and so is 22.0-22.11.
+node_version_supported() {
+    local ver="$1" major minor
+    major="${ver%%.*}"
+    minor="${ver#*.}"; minor="${minor%%.*}"
+    [[ "$major" =~ ^[0-9]+$ && "$minor" =~ ^[0-9]+$ ]] || return 1
+    [[ "$(printf '%s\n' "$NODE_MIN_VERSION" "$ver" | sort -V | head -1)" == "$NODE_MIN_VERSION" ]] || return 1
+    [[ "$major" == "21" ]] && return 1
+    [[ "$major" == "22" && "$minor" -lt 12 ]] && return 1
+    return 0
+}
+
 install_nodejs() {
     # --update dispatches here before main() runs detect_os, so detect on demand
     if [[ -z "$PACKAGE_MANAGER" ]]; then
@@ -830,8 +843,10 @@ install_nodejs() {
 
     local node_ver
     node_ver=$(command_exists node && node -v | cut -d'v' -f2 || echo "0")
-    # backend engines range is ^20.19.0 || >=22 (Node 21 is excluded by the glob/minimatch family)
-    if [[ "$(printf '%s\n' "$NODE_MIN_VERSION" "$node_ver" | sort -V | head -1)" == "$NODE_MIN_VERSION" && "${node_ver%%.*}" != "21" ]]; then
+    # backend engines range is ^20.19.0 || >=22.12.0 (Node 21 is excluded by the glob/minimatch
+    # family; 22.0-22.11 lack unflagged require(esm), which sanitize-html 2.17.7's ESM-only
+    # htmlparser2 needs — the backend would not start)
+    if node_version_supported "$node_ver"; then
         log_success "Node.js $(node -v) is already installed"
         return
     fi
@@ -851,8 +866,8 @@ install_nodejs() {
 
     # Package managers won't downgrade a newer Node (e.g. 21), so re-verify before continuing
     node_ver=$(command_exists node && node -v | cut -d'v' -f2 || echo "0")
-    if [[ "$(printf '%s\n' "$NODE_MIN_VERSION" "$node_ver" | sort -V | head -1)" != "$NODE_MIN_VERSION" || "${node_ver%%.*}" == "21" ]]; then
-        die "Node.js v$node_ver does not satisfy the backend requirement (^$NODE_MIN_VERSION || >=22); remove the current Node.js, install a supported version, then re-run this script"
+    if ! node_version_supported "$node_ver"; then
+        die "Node.js v$node_ver does not satisfy the backend requirement (^$NODE_MIN_VERSION || >=22.12.0); remove the current Node.js, install a supported version, then re-run this script"
     fi
     log_success "Node.js installed: $(node -v)"
 }

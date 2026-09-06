@@ -13,5 +13,9 @@ module.exports = {
   testMatch: [
     '**/__tests__/**/*.test.js'
   ],
-  setupFilesAfterEnv: ['<rootDir>/jest.setup.js']
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  // sanitize-html's htmlparser2 12 is ESM-only; see jest.sanitizeHtml.js.
+  moduleNameMapper: {
+    '^sanitize-html$': '<rootDir>/jest.sanitizeHtml.js'
+  }
 };
