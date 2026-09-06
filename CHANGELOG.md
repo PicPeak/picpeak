@@ -5,6 +5,25 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.125.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.124.1-beta.0...v3.125.0-beta.0) (2026-09-06)
+
+
+### Features
+
+* add opt-in product usage and feedback ([#1110](https://github.com/PicPeak/picpeak/issues/1110)) ([35b42bb](https://github.com/PicPeak/picpeak/commit/35b42bba9d57e89599f8efaeb1c89a778e96d8da))
+* expand opt-in capability coverage with versioned consent ([a738259](https://github.com/PicPeak/picpeak/commit/a7382591bfd73c841ea91fe821e2ab739c2990d0))
+
+
+### Bug Fixes
+
+* **usage:** close the QA findings on opt-in product usage ([1e8b6f1](https://github.com/PicPeak/picpeak/commit/1e8b6f1b0f98f7242de132abceae62afdb592f65))
+* **usage:** let an operator clear a participation the collector never accepted ([e40bc47](https://github.com/PicPeak/picpeak/commit/e40bc474bc65f1a167fc4012b28ce0ce65ea9575))
+
+
+### Documentation
+
+* **usage:** state in the consent dialog that the connection only runs outwards ([c741dc2](https://github.com/PicPeak/picpeak/commit/c741dc22c579e495b4c0514e4c222f06279aaf7d))
+
 ## [3.124.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.124.0-beta.0...v3.124.1-beta.0) (2026-09-05)
 
 
