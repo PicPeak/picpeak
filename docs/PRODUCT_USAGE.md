@@ -1,23 +1,28 @@
 # Optional product usage and feedback (#1110)
 
-Current scope: **usage.v3**. The expanded catalog contains 86 capabilities
+Current scope: **usage.v4**. v4 replaces `gallery_downloads` with
+`gallery_downloads_restricted` after explicit `usage-consent.v4` consent.
+All v1/v2/v3 schemas and queued packets remain immutable. Historical views
+keep both questions separate; neither can be inferred by inverting the other.
+
+The inventory and other capabilities are unchanged from v3. The expanded catalog contains 86 capabilities
 (including ML face recognition and invoice import) and exactly two inventory
 totals: stored gallery records and non-video photo records, including drafts
 and retained archive records. No content, identifiers, per-gallery breakdowns,
 biometric results, financial values or visitor actions.
 
-Existing v1/v2 participants retain their previous scope until explicit signed
-v3 consent is confirmed. New count queries and markers do not run before that
-confirmation. Collector must be deployed first. v1/v2 wire schemas and raw
+Existing v1/v2/v3 participants retain their previous scope until explicit signed
+v4 consent is confirmed. The new restriction query does not run before that
+confirmation. Collector must be deployed first. v1/v2/v3 wire schemas and raw
 history remain unchanged. See [current coverage](FEATURE_COVERAGE.md) for all
-definitions and [v3 inventory](usage-coverage.v3.json) for code boundaries.
+definitions and [v4 inventory](usage-coverage.v4.json) for code boundaries.
 
 The sections below also document the historical v1/v2 implementation. Any
 statements excluding all gallery/photo counts describe those earlier versions;
 v3 adds only the two installation totals above.
 
 Backward compatibility is required for future changes. The collector continues
-to accept v1/v2/v3 reports, including omitted or null measurements, using their
+to accept v1/v2/v3/v4 reports, including omitted or null measurements, using their
 declared schema and original reporting day. Missing values remain unknown in
 aggregates and histories. PicPeak still emits complete reports through the
 unchanged sender schemas; only reception is more tolerant. Consent, field
@@ -205,8 +210,8 @@ Public voting uses a backend-authorized 15-minute session, never the lookup hash
 
 ## Contract
 
-The closed v1/v2 schemas are in `backend/src/usage/schema.cjs`, with signing in
-`protocol.cjs`. Keep these and `features.v2.json` byte-identical to the collector's `protocol/` copies.
+The closed v1/v2/v3/v4 schemas are in `backend/src/usage/schema.cjs`, with signing in
+`protocol.cjs`. Keep these and all versioned `features.v*.json` catalogs byte-identical to the collector's `protocol/` copies.
 The collector serves its schema and complete source archive publicly. Aggregate
 projections and the complete dataset are accessible to participating
 installations only; raw reports require the installation's confidential lookup
@@ -224,7 +229,7 @@ cursor. Deletion removes the source publication; operators must also remove
 any externally copied content and follow the documented backup/log policies.
 
 Used flags represent successful allowlisted admin capability calls since
-consent to the current schema (v1: joining; v2: joining or explicit upgrade),
+consent to the current schema (v1: joining; v2/v3/v4: joining or explicit upgrade),
 not visitor behavior or counts. OAuth marks successful admin SSO;
 applied CSS is observed during report generation. Gallery layouts are controlled
 enums extracted from event themes without IDs or counts. Other signals use the

@@ -539,6 +539,9 @@ class UsageService {
     return value;
   }
   async deliver(state) {
+    // A lost receipt may mean this packet is already stored by the collector.
+    // Preserve its original schema, date and payload across binary upgrades;
+    // only re-sign transport metadata, never rebuild under the same packet ID.
     const packet = JSON.parse(state.pending_packet);
     if (
       packet.action !== 'delete' &&
@@ -957,7 +960,7 @@ class UsageService {
       generated_at: now,
       features: expanded,
       gallery_layouts: [...layouts].sort(),
-      ...(version === 'usage.v3' ? { inventory: await require('./inventorySnapshot').inventorySnapshot(this.db) } : {})
+      ...(['usage.v3', 'usage.v4'].includes(version) ? { inventory: await require('./inventorySnapshot').inventorySnapshot(this.db) } : {})
     };
   }
 

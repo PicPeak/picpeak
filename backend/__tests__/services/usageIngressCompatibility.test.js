@@ -7,13 +7,13 @@ const signHistorical = (packet, id) => {
   return { ...signed, signature: crypto.sign(null, Buffer.from(p.canonical(signed)), id.private_key).toString('base64url') };
 };
 
-describe.each(['usage.v1', 'usage.v2', 'usage.v3'])('%s receiver compatibility never loosens the PicPeak sender', version => {
+describe.each(['usage.v1', 'usage.v2', 'usage.v3', 'usage.v4'])('%s receiver compatibility never loosens the PicPeak sender', version => {
   test('complete original reports still sign and verify', () => {
     const id = p.generateIdentity();
     const packet = p.makePacket(id, 'report', 1, {
       picpeak_version: '1.0.0', report_date: '2026-09-06', generated_at: new Date(now).toISOString(),
       features: p.emptyFeatures(version), gallery_layouts: [],
-      ...(version === 'usage.v3' ? { inventory: { galleries: 0, photos: 0 } } : {}),
+      ...(['usage.v3', 'usage.v4'].includes(version) ? { inventory: { galleries: 0, photos: 0 } } : {}),
     }, version);
     const envelope = p.signPacket(packet, id, new Date(now));
     expect(p.verifyEnvelope(envelope, now)).toEqual(packet);

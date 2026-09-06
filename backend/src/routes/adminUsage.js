@@ -82,7 +82,7 @@ router.post(
 router.post(
   '/consent',
   wrap(async (req, res) => {
-    if (!req.body || Object.keys(req.body).length !== 1 || !['usage.v2', 'usage.v3'].includes(schemaForConsent(req.body.consent_version)))
+    if (!req.body || Object.keys(req.body).length !== 1 || !['usage.v2', 'usage.v3', 'usage.v4'].includes(schemaForConsent(req.body.consent_version)))
       throw new ValidationError('Explicit usage consent is required');
     res.json(await service.command('consent', { consent_version: req.body.consent_version }));
   })

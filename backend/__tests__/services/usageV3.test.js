@@ -27,7 +27,7 @@ for (const engine of ['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : 
       await db.schema.createTable('feature_flags', t => { t.string('key').primary(); t.boolean('value'); });
       await db.schema.createTable('events', t => {
         t.increments('id'); t.text('color_theme'); t.string('external_path'); t.integer('css_template_id');
-        t.string('default_photo_sort'); t.boolean('is_archived'); t.boolean('is_draft');
+        t.string('default_photo_sort'); t.boolean('is_archived'); t.boolean('is_draft'); t.boolean('allow_downloads');
       });
       await db.schema.createTable('photos', t => { t.increments('id'); t.integer('event_id'); t.string('media_type'); t.string('filename'); });
       await db.schema.createTable('css_templates', t => { t.increments('id'); t.boolean('is_enabled'); t.text('css_content'); });
@@ -62,7 +62,7 @@ for (const engine of ['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : 
       expect(queries.filter(sql => /from ["`]photos["`]/.test(sql))).toEqual([expect.stringMatching(/select count\(\*\)/)]);
       expect(JSON.stringify(report)).not.toContain('PRIVATE');
       const identity = p.generateIdentity();
-      const envelope = p.signPacket(p.makePacket(identity, 'report', 1, report), identity, new Date(now));
+      const envelope = p.signPacket(p.makePacket(identity, 'report', 1, report, 'usage.v3'), identity, new Date(now));
       expect(p.verifyEnvelope(envelope, now).payload).toEqual(report);
       await db('photos').where({ id: 1 }).delete();
       await db('events').where({ id: 1 }).delete();
@@ -133,6 +133,40 @@ for (const engine of ['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : 
       process.env.PICPEAK_SINGLE_CONTAINER = 'true';
       expect((await client.snapshot()).features.face_recognition).toEqual({ configured: false, used: true });
       // No faces, people, embeddings or recognition-result tables exist in this fixture.
+    });
+
+    test.each([
+      [[], false, false], [[true], true, false], [[false], false, true],
+      [[true, false], true, true], [[null], false, false],
+    ])('v4 measures explicit restrictions independently from legacy allowed downloads: %p', async (values, allowed, restricted) => {
+      if (values.length) await db('events').insert(values.map(allow_downloads => ({ allow_downloads })));
+      const queries = [];
+      db.on('query', q => queries.push(q));
+      for (const version of ['usage.v1', 'usage.v2', 'usage.v3', 'usage.v4']) {
+        await db('product_usage_state').where({ id: 1 }).update({ consent_version: p.CONSENT_VERSIONS[version] });
+        queries.length = 0;
+        const report = await client.preview();
+        const downloadQueries = queries.filter(q => /where ["`]allow_downloads["`] =/.test(q.sql));
+        if (version === 'usage.v4') {
+          expect(report.features.gallery_downloads_restricted).toEqual({ configured: restricted });
+          expect(report.features).not.toHaveProperty('gallery_downloads');
+          expect(report.inventory).toEqual({ galleries: values.length, photos: 0 });
+          expect(downloadQueries).toHaveLength(1);
+          expect(downloadQueries[0].sql).toMatch(/select 1 as present/);
+          expect(Number(downloadQueries[0].bindings[0])).toBe(0);
+        } else {
+          expect(report.features).not.toHaveProperty('gallery_downloads_restricted');
+          if (version === 'usage.v1') expect(downloadQueries).toHaveLength(0);
+          else {
+            expect(report.features.gallery_downloads).toEqual({ configured: allowed });
+            expect(downloadQueries).toHaveLength(1);
+            expect(Number(downloadQueries[0].bindings[0])).toBe(1);
+          }
+        }
+        const identity = p.generateIdentity();
+        const envelope = p.signPacket(p.makePacket(identity, 'report', 1, report, version), identity, new Date(now));
+        expect(p.verifyEnvelope(envelope, now).payload).toEqual(report);
+      }
     });
   });
 }

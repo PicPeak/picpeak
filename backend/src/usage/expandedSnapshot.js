@@ -82,9 +82,15 @@ async function expandSnapshot(db, { features, flags, used, now, version = 'usage
   });
   result.webhooks.configured = await enabled('webhooks', 'active');
   for (const [key, column] of Object.entries({
-    gallery_guest_uploads: 'allow_user_uploads', gallery_downloads: 'allow_downloads',
+    gallery_guest_uploads: 'allow_user_uploads',
     gallery_client_access: 'client_access_enabled', gallery_watermarks: 'watermark_downloads'
   })) result[key].configured = await enabled('events', column);
+  if (version === 'usage.v4') {
+    result.gallery_downloads_restricted.configured = await exists('events', ['allow_downloads'], (query) =>
+      query.where('allow_downloads', formatBoolean(false)));
+  } else {
+    result.gallery_downloads.configured = await enabled('events', 'allow_downloads');
+  }
   result.gallery_watermarks.configured ||= truth(settings.branding_watermark_enabled);
   result.gallery_reveal.configured = await exists('events', ['allow_user_uploads', 'reveal_mode'], (query) =>
     query.where({ allow_user_uploads: formatBoolean(true), reveal_mode: formatBoolean(true) }));
@@ -116,7 +122,7 @@ async function expandSnapshot(db, { features, flags, used, now, version = 'usage
     query.where({ feedback_enabled: formatBoolean(true), [column]: formatBoolean(true) }));
   result.gallery_guest_accounts.configured = await exists('event_feedback_settings', ['feedback_enabled', 'identity_mode'], (query) =>
     query.where('feedback_enabled', formatBoolean(true)).whereIn('identity_mode', ['guest', 'shared']));
-  if (version === 'usage.v3') {
+  if (['usage.v3', 'usage.v4'].includes(version)) {
     result.gallery_folders.configured = await exists('photo_categories', ['is_folder', 'event_id'], (query) =>
       query.where('is_folder', formatBoolean(true)).where((q) => q.whereNull('event_id').orWhereIn('event_id', db('events').select('id'))));
     result.transfer_upload_links.configured = Boolean(effective.transfers) && await exists('transfers',

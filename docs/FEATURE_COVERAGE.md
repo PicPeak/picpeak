@@ -1,19 +1,21 @@
-# Product-usage coverage: usage.v3
+# Product-usage coverage: usage.v4
 
 Reviewed PicPeak baseline: a5ff9264 (3.124.1-beta.0), plus the usage integration.
 The inventory covers 81 backend route families (80 product families plus usage),
 all 26 feature flags and all current settings tabs. This is capability coverage,
-not instrumentation of every UI field. Source of truth: `usage-coverage.v3.json`.
-The prior `usage-coverage.v2.json` and v2 wire catalog remain available unchanged.
+not instrumentation of every UI field. Source of truth: `usage-coverage.v4.json`.
+The prior v2/v3 inventories and all v1/v2/v3 wire catalogs/schemas remain unchanged.
 
 ## Data scope
 
 There are 86 capabilities: the original 19 in v1, 54 added in v2, and 13 added in
-v3. 63 have configured/used booleans; 23 are configuration-only and omit `used`.
+v3. v4 replaces `gallery_downloads` with `gallery_downloads_restricted`; the active
+catalog remains at 86. 63 have configured/used booleans; 23 are configuration-only
+and omit `used`. Historical views retain both questions separately (87 total keys).
 ML face recognition was already included: only effective availability and a
 successful authenticated admin capability operation, never biometric results.
 
-v3 additionally reports exactly two installation-wide integers under `inventory`:
+v3 and v4 report exactly two installation-wide integers under `inventory`:
 current gallery records and non-video photo records. Counts include drafts and
 retained archive records. They are not uploads, unique files or processing-success
 counts. No grouping by gallery, customer, user, content, media format or source.
@@ -36,25 +38,22 @@ records can include guest uploads without observing individual upload actions.
 
 ## Consent and version transition
 
-- v1 and v2 keep their exact wire schemas and feature allowlists. Updating code
-  does not grant consent or collect v3 markers/inventory for an older participant.
-- The local EN/DE dialog lists all 86 capabilities and both inventory definitions.
-  An unchecked checkbox requires explicit consent to `usage-consent.v3`.
-- A signed v3 consent command upgrades v1 or v2 without changing identity/history.
-  Prior queued operations finish first. Only a matching accepted receipt changes
-  local consent and atomically clears previous local usage markers. Lost receipts
-  remain retryable; a withdrawal always wins over a late upgrade receipt.
-- Consent cannot downgrade. Older clients may continue sending their already
-  consented older report schema. Old reports retain their original raw envelopes.
-- Collector first, client second. Older collectors reject v3 rather than accepting
-  undisclosed fields. No second report on the same UTC day; the first v3 report
-  may be on the next day of admin activity.
-- Summary/history count the latest report per reporter (per period for history).
-  Missing older fields are unknown. Feature denominators use only supplied fields.
-  Inventory has `{ total, reported }` per key; zero with `reported=0` means unknown,
-  while zero with a positive denominator is a reported empty inventory. Never sum
-  every daily report as if it were a different installation. Opt-out removes
-  current and historical contributions, including these totals.
+- v1/v2/v3 retain their exact sender and receiver contracts. Updating code does
+  not grant consent to v4 or start collecting the restricted-downloads signal.
+- v4 asks whether at least one gallery has downloads disabled, instead of the
+  v2/v3 question whether at least one gallery allows them. These questions are
+  not complements: mixed galleries can make both true. Never invert old values.
+- The EN/DE dialog explains the change and all 86 capabilities plus both totals.
+  An unchecked checkbox requires explicit `usage-consent.v4` consent.
+- Prior queued packets finish unchanged: preserve packet ID, sequence, payload,
+  logical day and digest. Only issue time, nonce and signature change on retry.
+  Never rebuild an existing packet with a new snapshot under its old packet ID.
+- Signed v4 consent can upgrade v1/v2/v3 without changing identity or history.
+  Only the matching accepted receipt changes local scope and resets local markers.
+  Lost receipts remain retryable; opt-out always wins over a late response.
+- Collector first, client second. v1/v2/v3 remain accepted even after v4 consent.
+  Missing fields stay unknown. Historical aggregation uses the union of known
+  questions, while the active v4 sender still has exactly 86 fields.
 
 ## Every reported capability
 
@@ -129,7 +128,7 @@ Definitions are shipped byte-identically in both applications as
 | `gallery_feedback_color_labels` — Gallery color labels enabled / Galerie-Farblabels aktiviert | usage.v2 | Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts. | Not collected: configuration only. |
 | `gallery_guest_accounts` — Guest identities enabled / Gastidentitäten aktiviert | usage.v2 | Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts. | Not collected: configuration only. |
 | `gallery_guest_uploads` — Guest uploads enabled / Gast-Uploads aktiviert | usage.v2 | Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts. | Not collected: configuration only. |
-| `gallery_downloads` — Gallery downloads allowed / Galerie-Downloads erlaubt | usage.v2 | Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts. | Not collected: configuration only. |
+| `gallery_downloads_restricted` — Gallery downloads restricted / Galerie-Downloads eingeschränkt | usage.v4 | At least one gallery has downloads switched off; only existence across the installation, never gallery IDs or counts. | Not collected (configuration only). |
 | `download_resolution_picker` — Download resolution picker enabled / Download-Auflösungswahl aktiviert | usage.v2 | Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts. | Not collected: configuration only. |
 | `gallery_client_access` — Client access enabled / Client-Zugang aktiviert | usage.v2 | Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts. | Not collected: configuration only. |
 | `gallery_watermarks` — Watermarks enabled / Wasserzeichen aktiviert | usage.v2 | Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts. | Not collected: configuration only. |
@@ -167,11 +166,11 @@ Definitions are shipped byte-identically in both applications as
 | `adminBackup.js` | partial: `backup`, `portable_backup`, `restore`, `s3_storage`, `s3_backups` | Admin backup initiation, portable export/import and successful S3 roundtrip test. Local export never implies S3; names, schedules, sizes, contents and history excluded. |
 | `adminBusinessProfile.js` | excluded: no telemetry | Business identity/bank/tax-address configuration and VAT-code helper surface are not separate usage signals. Billing/accounting capabilities are covered without profiling the business. |
 | `adminCalendar.js` | partial: `crm`, `crm_calendar` | Authenticated admin calendar retrieval is capability use; no calendar entries, dates, recurrence, availability or bookings. |
-| `adminCategories.js` | partial: `gallery_categories`, `gallery_folders` | Admin category CRUD; no names, descriptions, colors or ordering values. v3 adds only: gallery_folders. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
+| `adminCategories.js` | partial: `gallery_categories`, `gallery_folders` | Admin category CRUD; no names, descriptions, colors or ordering values. v3 adds only: gallery_folders. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
 | `adminCMS.js` | partial: `cms` | Admin CMS page CRUD only. Public page traffic, slug, HTML, text, links and media excluded. |
-| `adminContracts.js` | partial: `crm`, `crm_contracts`, `document_templates`, `crm_document_conversion` | Admin contract/block operations only; no legal text, signatures, signing parties or customer signing events. v3 adds only: crm_document_conversion. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
+| `adminContracts.js` | partial: `crm`, `crm_contracts`, `document_templates`, `crm_document_conversion` | Admin contract/block operations only; no legal text, signatures, signing parties or customer signing events. v3 adds only: crm_document_conversion. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
 | `adminCssTemplates.js` | configuration: `custom_css` | Only existence of enabled applied CSS and locally observed application, not editing/viewing templates or any CSS text. |
-| `adminCustomers.js` | partial: `crm`, `crm_hours`, `customer_portal`, `crm_combined_billing`, `crm_monthly_billing_manual` | Successful admin CRM/hour-entry/invitation operations only. No customer/account names, IDs, rates, billed hours, payment state or portal behavior. v3 adds only: crm_combined_billing, crm_monthly_billing_manual. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
+| `adminCustomers.js` | partial: `crm`, `crm_hours`, `customer_portal`, `crm_combined_billing`, `crm_monthly_billing_manual` | Successful admin CRM/hour-entry/invitation operations only. No customer/account names, IDs, rates, billed hours, payment state or portal behavior. v3 adds only: crm_combined_billing, crm_monthly_billing_manual. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
 | `adminDashboard.js` | partial: `analytics_dashboard` | Admin analytics capability endpoint only; no stats, activities, health/CRM polls, underlying visitor data or dashboard values. |
 | `adminDatabaseBackup.js` | partial: `backup`, `database_backup` | Admin database-backup initiation plus schedule-enabled boolean, no file data/history. |
 | `adminDeals.js` | partial: `crm`, `crm_installments` | Admin installment-plan changes only. No actual plans, invoice links, amounts, paid states or deal reporting. |
@@ -179,7 +178,7 @@ Definitions are shipped byte-identically in both applications as
 | `adminEmail.js` | partial: `messaging`, `incoming_mail`, `smtp`, `email_templates`, `email_webhook`, `reminder_emails` | Admin message operation/template edit, actual successful manual send/test transport and non-skipped manual IMAP poll/test. Reminder flag configuration only. No automated sends/polls, received-message or recipient data, queue/log reads, mailbox addresses or templates. |
 | `adminEventRename.js` | partial: `galleries` | Successful rename only, not validate-rename. No former/new names or identifiers. |
 | `adminEvents/archiveBulk.js` | partial: `galleries`, `archive_management`, `photo_exports` | Admin archive/delete/restore/download initiation only; filenames, histories, storage sizes and polling excluded. |
-| `adminEvents/crud.js` | partial: `galleries`, `gallery_guest_uploads`, `gallery_downloads`, `gallery_client_access`, `gallery_watermarks`, `gallery_reveal`, `gallery_expiration`, `gallery_sharing`, `custom_css`, `gallery_capture_date_sort` | Admin creation/edit/publish etc. set galleries; sharing has its own fixed key. Guest/download/protection/reveal/expiry are configuration only; themes contribute controlled layouts and CSS presence. No gallery metadata or guest action history. v3 adds only: gallery_capture_date_sort. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
+| `adminEvents/crud.js` | partial: `galleries`, `gallery_guest_uploads`, `gallery_downloads_restricted`, `gallery_client_access`, `gallery_watermarks`, `gallery_reveal`, `gallery_expiration`, `gallery_sharing`, `custom_css`, `gallery_capture_date_sort` | Admin creation/edit/publish etc. set galleries; sharing has its own fixed key. Guest/download/protection/reveal/expiry are configuration only; themes contribute controlled layouts and CSS presence. No gallery metadata or guest action history. v3 adds only: gallery_capture_date_sort. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
 | `adminEvents/downloadResolutions.js` | configuration: `download_resolution_picker` | Only whether a picker is configured globally or in a gallery. No chosen resolution, download event or counts. |
 | `adminEvents/faces.js` | partial: `face_recognition` | Effective flag plus successful admin faces/people operation. No health polling, embeddings, names, groups, detections or visitor searches. |
 | `adminEvents/helpers.js` | composition: no telemetry | Router composition / helpers; decisions are recorded for each mounted family. |
@@ -195,30 +194,30 @@ Definitions are shipped byte-identically in both applications as
 | `adminFeedback.js` | partial: `feedback_moderation`, `gallery_feedback_likes`, `gallery_feedback_ratings`, `gallery_feedback_comments`, `gallery_feedback_favorites`, `gallery_feedback_reactions`, `gallery_feedback_color_labels`, `gallery_guest_accounts` | Admin moderation/word-filter operations only. Visitor feedback is not observed. Master-enabled per-gallery feedback-option booleans only; no contents, ratings, likes, colors, identities or word lists. |
 | `adminGuests.js` | partial: `guest_management` | Admin guest management/export initiation only. No guest names, invitations, tokens, contact data, guest counts or visitor interactions. |
 | `adminImageSecurity.js` | configuration: `gallery_image_protection` | Only gallery/global technical protection configuration existence. No security events, blocked IPs, request counts, threat scores or admin monitoring access. |
-| `adminInvoices.js` | partial: `crm`, `crm_invoices`, `crm_invoice_import` | Admin invoice operations only; no amounts, VAT/customer/payment values or payment-check responses. v3 adds only: crm_invoice_import. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
+| `adminInvoices.js` | partial: `crm`, `crm_invoices`, `crm_invoice_import` | Admin invoice operations only; no amounts, VAT/customer/payment values or payment-check responses. v3 adds only: crm_invoice_import. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
 | `adminLedger.js` | partial: `accounting`, `accounting_ledger` | Admin ledger-account/VAT/mapping edits and ledger export initiation only; no account/currency/VAT identifiers or exported records. |
 | `adminNewsletters.js` | partial: `newsletters` | Admin campaign changes/test/queue/cancel only. Recipient resolution, previews, subscriptions/unsubscribes, delivery/open/click data and automatic sending excluded. |
 | `adminNotifications.js` | excluded: no telemetry | Bootstrap, passwords/MFA/session/profile, per-person notifications, developer helpers and operational health/update/log polling are outside the prioritization purpose. |
 | `adminPhotoDimensions.js` | partial: `photo_processing` | Admin repair/regenerate/configuration initiation, never status polling or processing totals. |
-| `adminPhotoExport.js` | partial: `photo_exports`, `photo_xmp_export` | Admin export initiation only; export filters, selected files, sizes and contents excluded. v3 adds only: photo_xmp_export. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
-| `adminPhotos.js` | partial: `photo_management`, `photo_exports`, `photo_processing`, `video_uploads`, `camera_raw_uploads`, `s3_storage`, `s3_photo_storage`, `photo_replacement`, `photo_admin_marks` | Successful admin edits/exports and accepted upload evidence only. Chunk init/status, failed uploads and public downloads excluded. Only video/RAW/S3 booleans survive, never file metadata/EXIF/content. v3 adds only: photo_replacement, photo_admin_marks. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
+| `adminPhotoExport.js` | partial: `photo_exports`, `photo_xmp_export` | Admin export initiation only; export filters, selected files, sizes and contents excluded. v3 adds only: photo_xmp_export. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
+| `adminPhotos.js` | partial: `photo_management`, `photo_exports`, `photo_processing`, `video_uploads`, `camera_raw_uploads`, `s3_storage`, `s3_photo_storage`, `photo_replacement`, `photo_admin_marks` | Successful admin edits/exports and accepted upload evidence only. Chunk init/status, failed uploads and public downloads excluded. Only video/RAW/S3 booleans survive, never file metadata/EXIF/content. v3 adds only: photo_replacement, photo_admin_marks. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
 | `adminProjects.js` | partial: `crm`, `crm_projects` | Admin project operations only; project/person names, business performance, metadata and totals excluded. |
-| `adminQuotes.js` | partial: `crm`, `crm_quotes`, `document_templates`, `crm_document_conversion` | Admin quote/preset operations only; no quote content, prices, customer acceptance or signatures. v3 adds only: crm_document_conversion. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
+| `adminQuotes.js` | partial: `crm`, `crm_quotes`, `document_templates`, `crm_document_conversion` | Admin quote/preset operations only; no quote content, prices, customer acceptance or signatures. v3 adds only: crm_document_conversion. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
 | `adminRestore.js` | partial: `restore` | Admin restore initiation only, never file selection, content, progress, errors or timing. |
 | `adminRoles.js` | partial: `admin_management` | Admin account/role management capability; no names, permissions, role labels, password reset operations or active-user counts. Auth/self-profile endpoints excluded. |
-| `adminSettings.js` | partial: `custom_css`, `oauth`, `smtp`, `backup`, `s3_storage`, `video_uploads`, `camera_raw_uploads`, `public_site`, `branding`, `seo_customization`, `slideshow`, `download_resolution_picker`, `gallery_watermarks`, `database_backup`, `s3_auto_import`, `download_original_filenames` | Only specified configuration presence/booleans and explicit branding/SEO/slideshow operations. Generic settings reads, security policies, passwords, storage data, SMTP/OIDC credentials, custom HTML/CSS/SEO values excluded. v3 adds only: s3_auto_import, download_original_filenames. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
+| `adminSettings.js` | partial: `custom_css`, `oauth`, `smtp`, `backup`, `s3_storage`, `video_uploads`, `camera_raw_uploads`, `public_site`, `branding`, `seo_customization`, `slideshow`, `download_resolution_picker`, `gallery_watermarks`, `database_backup`, `s3_auto_import`, `download_original_filenames` | Only specified configuration presence/booleans and explicit branding/SEO/slideshow operations. Generic settings reads, security policies, passwords, storage data, SMTP/OIDC credentials, custom HTML/CSS/SEO values excluded. v3 adds only: s3_auto_import, download_original_filenames. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
 | `adminShortUrls.js` | partial: `gallery_sharing`, `short_links` | Admin short-link creation/deletion only; link/token/click metadata excluded. |
 | `adminSystem.js` | excluded: no telemetry | Bootstrap, passwords/MFA/session/profile, per-person notifications, developer helpers and operational health/update/log polling are outside the prioritization purpose. |
 | `adminSystemHealth.js` | excluded: no telemetry | Bootstrap, passwords/MFA/session/profile, per-person notifications, developer helpers and operational health/update/log polling are outside the prioritization purpose. |
 | `adminTaxReport.js` | partial: `accounting`, `accounting_tax_report` | Admin tax report generation/export only; no totals, dates, tax regimes, geography or currency. |
 | `adminThumbnails.js` | partial: `photo_processing` | Admin repair/regenerate/configuration initiation, never status polling or processing totals. |
-| `adminTransfers.js` | partial: `transfers`, `transfer_upload_links` | Admin transfer CRUD/files/link management/download only. Public recipients, received-file data, upload and download statistics excluded. v3 adds only: transfer_upload_links. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
+| `adminTransfers.js` | partial: `transfers`, `transfer_upload_links` | Admin transfer CRUD/files/link management/download only. Public recipients, received-file data, upload and download statistics excluded. v3 adds only: transfer_upload_links. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
 | `adminUsage.js` | excluded: no telemetry | Consent, inspection, export, feedback, voting, deletion and abandoning an unsignable deletion are explicit protocol operations; not product-use signals. Activity only triggers a due fixed report. |
 | `adminUsers.js` | partial: `admin_management` | Admin account/role management capability; no names, permissions, role labels, password reset operations or active-user counts. Auth/self-profile endpoints excluded. |
 | `adminVatCodes.js` | excluded: no telemetry | Business identity/bank/tax-address configuration and VAT-code helper surface are not separate usage signals. Billing/accounting capabilities are covered without profiling the business. |
 | `adminWebhooks.js` | partial: `webhooks` | Active configuration existence plus successful admin manual test/replay enqueue. Actual network delivery/results/subscriptions/destinations excluded. |
 | `adminWhatsapp.js` | partial: `whatsapp` | Effective configured sender and successful manual test only. No automated deliveries, phone numbers, templates or delivery statuses. |
-| `adminWorkflows.js` | partial: `workflows`, `workflow_automation_enabled` | Admin workflow authoring/approval/test initiation only. Runtime triggers, payloads, execution frequency/results and public approvals excluded. v3 adds only: workflow_automation_enabled. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface. |
+| `adminWorkflows.js` | partial: `workflows`, `workflow_automation_enabled` | Admin workflow authoring/approval/test initiation only. Runtime triggers, payloads, execution frequency/results and public approvals excluded. v3 adds only: workflow_automation_enabled. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. |
 | `analyticsTrackerProxy.js` | excluded: no telemetry | Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers. |
 | `auth.js` | partial: `oauth` | Only successful admin OIDC callback sets oauth. Password/gallery authentication, MFA, account claims and provider details excluded. |
 | `customer.js` | excluded: no telemetry | Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers. |
@@ -247,6 +246,6 @@ Definitions are shipped byte-identically in both applications as
 - Automated newsletter, reminder, WhatsApp, webhook and IMAP jobs
 - Security/audit logs, biometric embeddings and recognition results
 - Operational health, migration, update and polling metrics
-- Business/customer/user identities, geography, financial amounts and document contents; only explicit v3 inventory totals are permitted.
+- Business/customer/user identities, geography, financial amounts and document contents; only explicit v3/v4 inventory totals are permitted.
 - Disabled calendarBooking and internal crmDevelopment; hosted future product #1111
 - Image fragmentation: removed from current PicPeak, not a live capability

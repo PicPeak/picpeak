@@ -1,17 +1,17 @@
 {
   "productUsage": {
-    "fields": "usage.v3-Berichte enthalten einen Installationsfingerabdruck, PicPeak-Version, UTC-Berichtsdatum und Erstellungszeit, Schema-/Signaturmetadaten, feste Galerie-Layouts, 86 Funktionssignale (63 Konfiguriert/Genutzt-Paare und 23 reine Konfigurationswerte) sowie zwei Gesamtzahlen der Installation: gespeicherte Galerien und Fotoeinträge ohne Videos. Entwürfe, archivierte Galerien und deren erhaltene Fotoeinträge zählen mit. Der Katalog unten erklärt jedes Feld. Keine Aktionsanzahlen oder Besucherbeobachtung.",
-    "catalogTitle": "Vollständiger Katalog: 86 Funktionssignale und 2 Bestandszahlen (usage.v3)",
+    "fields": "usage.v4-Berichte enthalten einen Installationsfingerabdruck, PicPeak-Version, UTC-Berichtsdatum und Erstellungszeit, Schema-/Signaturmetadaten, feste Galerie-Layouts, 86 Funktionssignale (63 Konfiguriert/Genutzt-Paare und 23 reine Konfigurationswerte) sowie zwei Gesamtzahlen der Installation: gespeicherte Galerien und Fotoeinträge ohne Videos. Entwürfe, archivierte Galerien und deren erhaltene Fotoeinträge zählen mit. Der Katalog unten erklärt jedes Feld. Keine Aktionsanzahlen oder Besucherbeobachtung.",
+    "catalogTitle": "Vollständiger Katalog: 86 Funktionssignale und 2 Bestandszahlen (usage.v4)",
     "catalogExplanation": "Konfiguriert beschreibt die aktuelle technische Verfügbarkeit oder Einrichtung. Integriert bedeutet verfügbar, nicht genutzt. Genutzt ist ein installationsweites Ja/Nein seit Zustimmung zum Berichtsschema; angenommene Aufträge gelten als gestartet, nicht zwingend abgeschlossen. Reine Konfigurationssignale enthalten kein Genutzt-Feld. Der Bestand enthält nur aktuelle Gesamtzahlen der Galerie-/Fotoeinträge, ohne Aufschlüsselung nach Galerien. Nutzungsmarker speichern keine Personen, Objektkennungen, Aktionszeiten oder Häufigkeiten.",
     "catalogSearch": "Funktionsname oder Schlüssel suchen",
     "catalogEmpty": "Keine passenden Funktionen.",
     "configuredLabel": "Konfiguriert",
     "usedLabel": "Genutzt",
     "configurationOnly": "Nur Konfiguration — tatsächliche Nutzung wird nicht erfasst.",
-    "versionDisclosure": "Diese Zustimmung gilt für usage.v3 / usage-consent.v3. Bestehende v1- und v2-Teilnahmen behalten ihre bisherigen 19 bzw. 73 Fähigkeiten ohne Bestandszahlen bis zur ausdrücklichen Erweiterung. Identität und Rohhistorie bleiben erhalten; lokale Nutzungsmarker beginnen erst nach Bestätigung durch den Collector neu. Höchstens ein Bericht pro UTC-Tag wird angenommen, der erste v3-Bericht kann daher am nächsten aktiven Tag folgen. Neue Marker und Bestandszahlen werden vor Bestätigung nicht erfasst.",
+    "versionDisclosure": "Diese Zustimmung gilt für usage.v4 / usage-consent.v4. Sie ersetzt die Frage „Erlaubt mindestens eine Galerie Downloads?“ durch „Hat mindestens eine Galerie Downloads abgeschaltet?“. Bestehende v1/v2/v3-Teilnahmen behalten ihren bisherigen Umfang bis zur ausdrücklichen Erweiterung. Identität und Rohhistorie bleiben erhalten; wartende Pakete werden vor dem Upgrade unverändert zugestellt. Lokale Nutzungsmarker beginnen erst nach Bestätigung neu. Der erste v4-Bericht kann am nächsten aktiven UTC-Tag folgen. Das neue Signal wird vor Bestätigung nicht erfasst.",
     "currentSchema": "Aktuelles Berichtsschema: {{schema}}",
-    "reviewUpgrade": "Erweiterten Umfang von usage.v3 prüfen",
-    "upgrade": "usage.v3 ausdrücklich zustimmen",
+    "reviewUpgrade": "Erweiterten Umfang von usage.v4 prüfen",
+    "upgrade": "usage.v4 ausdrücklich zustimmen",
     "upgradeExplanation": "Deine bestehende Teilnahme behält ihren bisherigen Umfang. Prüfe den erweiterten Katalog und die beiden Bestandszahlen, bevor du dich entscheidest. Ablehnen beendet die Teilnahme nicht.",
     "upgradePending": "Die signierte Erweiterung wartet auf Bestätigung. Es wird nur der bisher bestätigte Umfang erfasst. Wiederhole den Versuch, wenn der Collector erreichbar ist, oder deaktiviere die Teilnahme zum Stoppen und Löschen.",
     "catalog": {
@@ -421,6 +421,10 @@
       "download_original_filenames": {
         "name": "Originaldateinamen für Downloads aktiviert",
         "configured": "Der Schalter für Originaldateinamen beim Download ist aktiviert; keine Dateinamen oder Downloads werden gelesen oder gesendet."
+      },
+      "gallery_downloads_restricted": {
+        "name": "Galerie-Downloads eingeschränkt",
+        "configured": "Mindestens eine Galerie hat Downloads abgeschaltet; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
       }
     },
     "auditTitle": "Export- und Löschquittungen",
