@@ -11,9 +11,7 @@ interface StoryHeroProps {
   photo?: Photo | null;
   slug: string;
   allowDownloads?: boolean;
-  protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
-  useCanvasRendering?: boolean;
 }
 
 export const StoryHero: React.FC<StoryHeroProps> = ({
@@ -22,8 +20,6 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
   stats,
   photo,
   slug,
-  protectionLevel = 'standard',
-  useCanvasRendering = false
 }) => {
   const formattedDate = date
     ? new Date(date).toLocaleDateString('en-US', {
@@ -49,7 +45,6 @@ export const StoryHero: React.FC<StoryHeroProps> = ({
             className="w-full h-full object-cover"
             isGallery={true}
             slug={slug}
-            useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
           />
         ) : (
           <div className="w-full h-full bg-gray-900" />

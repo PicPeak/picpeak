@@ -184,7 +184,7 @@ export const ImageSecurityTab: React.FC = () => {
               />
               <Image className="w-4 h-4 ml-2 mr-1 text-neutral-500" />
               <span className="text-sm text-neutral-700 dark:text-neutral-300">
-                {t('settings.imageSecurity.enableCanvas', 'Enable canvas rendering by default (advanced protection)')}
+                {t('settings.imageSecurity.enableCanvas', 'Enable canvas rendering in the lightbox by default (advanced protection)')}
               </span>
             </label>
           </div>

@@ -255,9 +255,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
         photo={heroPhoto}
         slug={slug}
         allowDownloads={allowDownloads}
-        protectionLevel={protectionLevel}
         useEnhancedProtection={useEnhancedProtection}
-        useCanvasRendering={useCanvasRendering}
       />
 
       {/* Main Content - Scenes */}
@@ -281,9 +279,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                   onPhotoClick={handleOpenLightbox}
                   slug={slug}
                   allowDownloads={allowDownloads}
-                  protectionLevel={protectionLevel}
                   useEnhancedProtection={useEnhancedProtection}
-                  useCanvasRendering={useCanvasRendering}
                 />
               ) : (
                 <div id={`gallery-${scene.id}`} className="story-gallery-grid">
@@ -298,9 +294,7 @@ export const GalleryStoryLayout: React.FC<GalleryStoryLayoutProps> = ({
                       slug={slug}
                       galleryId={`gallery-${scene.id}`}
                       allowDownloads={allowDownloads}
-                      protectionLevel={protectionLevel}
                       useEnhancedProtection={useEnhancedProtection}
-                      useCanvasRendering={useCanvasRendering}
                       // Mark first photo in each grid as featured
                       featured={index === 0 && scene.photos.length > 4}
                     />

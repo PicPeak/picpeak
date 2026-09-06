@@ -669,7 +669,7 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
                   className="w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
                 />
                 <Image className="w-4 h-4 ml-2 mr-1 text-neutral-500 dark:text-neutral-400" />
-                <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('events.useCanvasRendering', 'Canvas rendering (advanced protection)')}</span>
+                <span className="text-sm text-neutral-700 dark:text-neutral-300">{t('events.useCanvasRendering', 'Canvas rendering in the lightbox (advanced protection)')}</span>
               </label>
 
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-2">
