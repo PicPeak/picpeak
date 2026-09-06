@@ -39,6 +39,30 @@ somewhere the operator did not choose.
 
 Local development can use an HTTP loopback collector outside production. The
 collector URL is never writable through generic settings or request payloads.
+
+### The connection only runs outwards
+
+PicPeak sends; it never pulls. There is exactly one place in the service that
+reaches the network, it is a POST, and it makes requests to exactly two paths:
+`/api/envelopes` and — only when an operator asks for their own data export —
+`/api/participant/lookup`. There is no scheduled job that contacts the
+collector (the daily rollup is driven solely by an authenticated admin hitting
+`/activity`), no route the collector could call, and `redirect: 'error'` so the
+collector cannot even redirect a request elsewhere.
+
+From a reply the service reads only the acknowledgement for the packet it just
+sent, and compares `packet_id`, `installation_id`, `packet_digest`, `action`,
+`sequence` and `status` against that packet before accepting it; a mismatch is
+an error and nothing else in the response is looked at. The stored copy drops
+the session token, and no read path hands it back to the UI. A requested data
+export is streamed to the operator as a file attachment and is never
+interpreted or executed.
+
+The consequence is the point, and it is stated in the consent dialog: this
+channel cannot deliver code, configuration or content into an installation —
+not even from a collector that has been taken over. It is a one-way path by
+design, not by convention, and `__tests__/services/usageOutboundOnly.test.js`
+fails if that ever stops being true.
 Keep the encryption material stable and protected; losing it makes the old
 identity unable to sign deletion requests. Note that `USAGE_ENCRYPTION_KEY`
 defaults to `JWT_SECRET`, so rotating `JWT_SECRET` without setting a dedicated

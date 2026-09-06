@@ -304,3 +304,16 @@ it('returns focus to the control that opened the consent dialog', async () => {
     )
   );
 });
+
+// A security property, not a nicety: the consent dialog is where an operator
+// decides whether to open a connection at all, so it has to say which way that
+// connection runs. UsageService makes exactly two outbound POSTs and reads
+// nothing but the acknowledgement for the packet it just sent.
+it('states in the consent dialog that the connection only runs outwards', async () => {
+  mount();
+  fireEvent.click(await screen.findByText('productUsage.review'));
+  const dialog = await screen.findByText('productUsage.consentTitle');
+  expect(dialog).toBeTruthy();
+  await screen.findByText('productUsage.sectionOneWay');
+  await screen.findByText('productUsage.oneWay');
+});

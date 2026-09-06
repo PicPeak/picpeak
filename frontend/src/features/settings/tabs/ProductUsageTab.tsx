@@ -6,6 +6,7 @@ import {
   type ProductFeedback
 } from '../../../services/productUsage.service';
 import {
+  ArrowUpFromLine,
   Globe,
   ListChecks,
   MessageSquare,
@@ -31,6 +32,10 @@ const DISCLOSURE: {
   { key: 'fields', heading: 'sectionFields', Icon: ListChecks },
   { key: 'excluded', heading: 'sectionExcluded', Icon: ShieldOff },
   { key: 'transport', heading: 'sectionTransport', Icon: Send },
+  // Directly after transport, because it is a property of the transport and
+  // the reason the transport is shaped this way: the connection only ever
+  // runs outwards, so this cannot become a way to push anything in.
+  { key: 'oneWay', heading: 'sectionOneWay', Icon: ArrowUpFromLine },
   { key: 'visibility', heading: 'sectionVisibility', Icon: Globe },
   { key: 'deletion', heading: 'sectionDeletion', Icon: Trash2 },
   { key: 'feedbackDisclosure', heading: 'sectionFeedback', Icon: MessageSquare }
