@@ -317,3 +317,30 @@ it('states in the consent dialog that the connection only runs outwards', async 
   await screen.findByText('productUsage.sectionOneWay');
   await screen.findByText('productUsage.oneWay');
 });
+
+// The portal is public. Reaching it must not depend on having joined or on
+// the 15-minute voting session that `connect` creates — an operator deciding
+// whether to participate should be able to look at it first.
+describe('the plain usage portal link', () => {
+  it('opens the collector in a new tab before participation, without a session', async () => {
+    mount();
+    const link = await screen.findByRole('link', { name: 'productUsage.openUsagePortal' });
+    expect(link).toHaveAttribute('href', 'https://usage.picpeak.app');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(service.portalSession).not.toHaveBeenCalled();
+    // The session-bound link is a different thing and stays behind `connect`.
+    expect(screen.queryByText('productUsage.openPortal')).toBeNull();
+  });
+
+  it('is not offered when the collector URL is unusable', async () => {
+    vi.mocked(service.status).mockResolvedValue({
+      ...status,
+      collector_url: null,
+      collector_error: 'INVALID_COLLECTOR_URL'
+    });
+    mount();
+    await screen.findByText('productUsage.invalidCollectorUrl');
+    expect(screen.queryByRole('link', { name: 'productUsage.openUsagePortal' })).toBeNull();
+  });
+});
