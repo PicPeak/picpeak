@@ -118,6 +118,8 @@ function isAuthenticated(req) {
     // Only an admin session earns the skip. A gallery token is minted for
     // free on password-less galleries and slideshow links, so treating it as
     // "authenticated" handed anyone an unlimited budget on every /api route.
+    // The one thing a gallery token does buy is its own gallery's images —
+    // see isOwnGalleryImageRequest below.
     if (decoded.type !== 'admin') {
       return false;
     }
@@ -125,6 +127,46 @@ function isAuthenticated(req) {
     req.tokenPayload = decoded;
     
     return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// The routes a gallery viewer fetches once per tile: thumbnail, preview,
+// hero, photo. Downloads, the photo list, feedback and everything else stay
+// on the budget.
+const GALLERY_IMAGE_RE = /^\/api\/gallery\/([^/]+)\/(thumbnail|preview|hero|photo)\/[^/]+$/i;
+
+/**
+ * A verified gallery viewer fetching that gallery's own images (#1287).
+ *
+ * Since gallery tokens stopped earning the authenticated skip, every guest
+ * has been spending the anonymous per-IP budget — 300 requests per 15
+ * minutes by default — on the gallery's thumbnails. A 546-photo grid runs
+ * out of budget mid-scroll: the remaining tiles come back 429, which the
+ * frontend rendered as blank tiles with no error, and the next refresh
+ * finds the photo list rate-limited too. A per-IP limit that one legitimate
+ * viewer exhausts on one gallery protects nothing.
+ *
+ * So a token that verifies AND names the gallery in the path is exempt on
+ * the image routes only. The token proves the viewer passed whatever gate
+ * the gallery has (the gate itself is still limited), the slug check stops a
+ * token for one gallery buying images from another, and GET-only keeps every
+ * write on the budget. The bandwidth these routes cost was never something a
+ * 300-request budget bounded — a viewer can refetch a cached thumbnail 300
+ * times too — so nothing is given up here that the budget actually held.
+ */
+function isOwnGalleryImageRequest(req) {
+  if (req.method && req.method !== 'GET') return false;
+  const match = (req.path || '').match(GALLERY_IMAGE_RE);
+  if (!match) return false;
+  const slug = match[1];
+  try {
+    const token = getGalleryTokenFromRequest(req, slug);
+    if (!token) return false;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return Boolean(decoded) && typeof decoded === 'object'
+      && decoded.type === 'gallery' && decoded.eventSlug === slug;
   } catch (error) {
     return false;
   }
@@ -145,8 +187,10 @@ function shouldSkipRateLimit(req, config) {
     return false;
   }
 
-  // Check if we should skip authenticated requests
-  if (config.skipAuthenticated && isAuthenticated(req)) {
+  // Check if we should skip authenticated requests. A gallery viewer's own
+  // image fetches ride on the same switch: an operator who turns the skip
+  // off gets every request counted, guests included.
+  if (config.skipAuthenticated && (isAuthenticated(req) || isOwnGalleryImageRequest(req))) {
     return true;
   }
 
@@ -292,5 +336,6 @@ module.exports = {
   createRateLimiter,
   createAuthRateLimiter,
   isAuthenticated,
+  isOwnGalleryImageRequest,
   shouldSkipRateLimit
 };
