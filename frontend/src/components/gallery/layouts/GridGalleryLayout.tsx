@@ -101,6 +101,26 @@ const GridPhoto: React.FC<GridPhotoProps> = ({
        * of lead in each direction, which is what vh would have meant.
        */
       inViewRootMargin="100% 0px"
+      /*
+       * Release band (#1287). The pre-load band above fixed tiles arriving
+       * late; it did nothing about tiles never leaving. Every tile scrolled
+       * past kept its object URL — and, where image protection is on, a
+       * full-resolution canvas that the browser is not allowed to evict — for
+       * the life of the page. On a several-hundred-photo gallery that grows
+       * monotonically, which is the shape a memory-constrained browser
+       * discards the tab over.
+       *
+       * Three viewport heights, against a one-viewport load band: a tile has
+       * to travel two further viewport heights after it stops loading before
+       * it is released, so ordinary scrolling never crosses both edges.
+       * Thumbnails are served `private, max-age=1800`, so coming back costs a
+       * cache hit rather than a round trip.
+       *
+       * Grid only, and deliberately so: the skeleton here is `aspect-square`
+       * and holds the tile's box exactly, so releasing shifts nothing. The
+       * measured layouts have no such guarantee.
+       */
+      releaseRootMargin="300% 0px"
       fadeInWhenVisible={animationType === 'fade'}
       skeletonClassName="skeleton aspect-square w-full rounded-lg"
       imageProps={{
