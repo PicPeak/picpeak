@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.126.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.125.0-beta.0...v3.126.0-beta.0) (2026-09-06)
+
+
+### Features
+
+* **usage:** add beta capabilities and gallery/photo totals with explicit consent ([b0bb65d](https://github.com/PicPeak/picpeak/commit/b0bb65d0d28124548c2b746f4c52c79f1b1f7542))
+
 ## [3.125.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.124.1-beta.0...v3.125.0-beta.0) (2026-09-06)
 
 
