@@ -402,6 +402,7 @@
     "deliveryProblem": "Delivery needs attention. Collection stops during deletion or an identity conflict. Use retry, or disable participation to delete its data.",
     "invalidCollectorUrl": "The configured usage collector URL is not valid, so participation cannot be started or delivered. Set USAGE_COLLECTOR_URL to an https origin with no path, query or credentials (or leave it unset to use the default).",
     "signingKeyUnreadable": "The usage signing key cannot be read, which usually means USAGE_ENCRYPTION_KEY — or JWT_SECRET, which it falls back to — was changed. Reports cannot be sent and the deletion request cannot be signed either. Restore the original encryption material to finish deletion; retrying or disabling will not resolve it on its own.",
+    "schemaNotAccepted": "The collector rejected the packet outright, which means it does not accept this report version yet — usually a collector that has not been upgraded. Retrying will not change that. Nothing has been registered, so you can discard the participation and join again once the collector supports it.",
     "inspect": "See exactly what is shared",
     "preview": "Preview next report",
     "lastPacket": "Last accepted signed usage report",
@@ -443,7 +444,9 @@
     "retryScheduled": "The next automatic attempt is at {{time}}. \"Retry\" sends immediately.",
     "abandon": "Discard local identity",
     "abandonExplanation": "The deletion request cannot be signed without the original encryption material. If you cannot restore it, you can discard the local identity: collection and keys are removed here, but the collector does not confirm the deletion.",
+    "abandonExplanationUnregistered": "This participation was never accepted by the collector, so nothing is stored there and there is nothing to delete. You can discard it here and start again at any time.",
     "abandonConfirm": "This deletes the installation identity, the key material and every local marker. The collector is not notified and keeps the reports already sent — the receipt records that as unconfirmed. You can join again afterwards.",
+    "abandonConfirmUnregistered": "This deletes the local installation identity, the key material and every local marker. The collector never accepted this participation, so nothing is removed anywhere else. You can join again afterwards.",
     "auditPreviousParticipation": "Deletion confirmations refer to an earlier participation, not the current one."
   },
   "userManagement": {

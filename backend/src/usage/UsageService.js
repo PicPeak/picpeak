@@ -106,6 +106,29 @@ const parse = (value) => {
 };
 
 class UsageService {
+  // The collector has provably never accepted anything from this identity:
+  // no packet was ever acknowledged, so there is nothing remote to delete.
+  // Abandoning such a participation is harmless, which is why it may be
+  // offered without the warning the registered case needs.
+  static neverAccepted(state) {
+    return Number(state?.sequence || 0) === 0 && !state?.last_receipt;
+  }
+
+  // The two ways a participation can reach a state no amount of retrying will
+  // resolve. Kept as one predicate so the settings page and the endpoint can
+  // never disagree about whether the exit is available.
+  static abandonable(state) {
+    if (!['activation_pending', 'deletion_pending'].includes(state?.status))
+      return false;
+    // The signing key is gone: the delete packet can never be produced.
+    if (state.last_error === 'SIGNING_KEY_UNREADABLE') return true;
+    // Or the collector never accepted anything and a delivery is failing —
+    // the ordinary shape of "opted in against a collector that does not speak
+    // this report version yet". Nothing is registered remotely, so clearing
+    // the local state costs nothing and is the only way out of the tab.
+    return Boolean(state.last_error) && UsageService.neverAccepted(state);
+  }
+
   schemaVersion(state) {
     return state?.consent_version === CURRENT_CONSENT_VERSION
       ? CURRENT_SCHEMA_VERSION : 'usage.v1';
@@ -254,14 +277,12 @@ class UsageService {
         Number(state.next_attempt_at || 0) > this.now()
           ? Number(state.next_attempt_at)
           : null,
-      // The one failure the operator cannot retry their way out of: the
-      // signing key is unreadable, so the delete packet can never be signed.
-      // Without this flag the settings page has no way to offer the only
-      // remaining exit (abandon), and the install sits in deletion_pending
-      // forever.
-      can_abandon:
-        state.status === 'deletion_pending' &&
-        state.last_error === 'SIGNING_KEY_UNREADABLE',
+      // Whether the only remaining exit should be offered. Without it the tab
+      // shows a permanent error and no control that can clear it.
+      can_abandon: UsageService.abandonable(state),
+      // Distinguishes the harmless case (nothing was ever registered, so
+      // abandoning deletes nothing remote) from the one that needs a warning.
+      abandon_never_registered: UsageService.neverAccepted(state),
       pending_action: state.pending_packet
         ? JSON.parse(state.pending_packet).action
         : null,
@@ -433,13 +454,11 @@ class UsageService {
   // unconfirmed deletion is its own decision, not a side effect of opting in.
   async abandon() {
     await this.locked(async (state) => {
-      if (
-        state.status !== 'deletion_pending' ||
-        state.last_error !== 'SIGNING_KEY_UNREADABLE'
-      )
+      if (!UsageService.abandonable(state))
         throw new ConflictError(
-          'Only an unsignable withdrawal can be abandoned'
+          'Only a participation that cannot be completed can be abandoned'
         );
+      const neverRegistered = UsageService.neverAccepted(state);
       await fs.unlink(this.bindingPath).catch((error) => {
         if (error.code !== 'ENOENT') throw error;
       });
@@ -448,7 +467,8 @@ class UsageService {
         ? JSON.parse(state.privacy_receipts)
         : {};
       await this.db('product_usage_state')
-        .where({ id: 1, status: 'deletion_pending' })
+        .where({ id: 1 })
+        .whereIn('status', ['activation_pending', 'deletion_pending'])
         .update({
           status: 'disabled',
           installation_id: null,
@@ -471,8 +491,15 @@ class UsageService {
               kind: 'abandonment',
               receipt_id: crypto.randomUUID(),
               confirmed_at: new Date(this.now()).toISOString(),
-              status: 'collector-unconfirmed',
-              reason: 'SIGNING_KEY_UNREADABLE',
+              // Two different truths, and the receipt has to tell them apart.
+              // Nothing was ever accepted -> there is provably nothing at the
+              // collector. Otherwise the collector may still hold reports and
+              // was never told to delete them; saying "unconfirmed" is the
+              // only honest wording for that.
+              status: neverRegistered
+                ? 'never-registered'
+                : 'collector-unconfirmed',
+              reason: state.last_error,
               installation_id: state.installation_id,
               scope: ['local identity', 'local markers', 'local key material']
             }
@@ -681,11 +708,18 @@ class UsageService {
         'NOT_REGISTERED',
         'PACKET_CONFLICT'
       ].includes(error.code);
+      // A collector that answers INVALID_PACKET to a registration or a deletion
+      // does not understand the wire version we speak — most often because it
+      // has not been upgraded to usage.v2 yet. Retrying cannot fix that, and
+      // reporting it as DELIVERY_FAILED sent the operator looking for a
+      // network problem they do not have.
       const code = conflict
         ? error.code
         : error.code === 'SIGNING_KEY_UNREADABLE'
           ? 'SIGNING_KEY_UNREADABLE'
-          : 'DELIVERY_FAILED';
+          : rejected && ['register', 'delete'].includes(packet.action)
+            ? 'SCHEMA_NOT_ACCEPTED'
+            : 'DELIVERY_FAILED';
       await this.db('product_usage_state')
         .where({ id: 1 })
         .update({ last_error: code });

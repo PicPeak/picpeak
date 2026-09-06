@@ -77,7 +77,20 @@ state. It erases the local identity, key material and markers and records an
 abandonment receipt marked `collector-unconfirmed`: the collector was never
 told, so it keeps the reports already accepted, and the receipt says so rather
 than claiming a deletion that did not happen. Participation can be started
-again afterwards with a fresh identity. Keys live in a dedicated database
+again afterwards with a fresh identity.
+
+The same exit covers the other way a participation can become impossible to
+finish: a collector that rejects the packet outright. Opting in to usage.v2
+against a collector that still only speaks usage.v1 — the deployment order
+this document warns about above — is answered with `INVALID_PACKET`, which is
+surfaced as `SCHEMA_NOT_ACCEPTED` rather than a generic delivery failure,
+because retrying cannot resolve it. Nothing is registered in that case, so
+**Discard local identity** is offered immediately and its receipt records
+`never-registered` rather than an unconfirmed deletion. The exit is never
+offered while a participation the collector *did* accept could still be
+deleted remotely; that case keeps the explicit warning.
+
+Keys live in a dedicated database
 table, not the generic readable settings. A random mode-0600 file at
 `getStoragePath()/usage-instance.key` binds the database to its local storage.
 

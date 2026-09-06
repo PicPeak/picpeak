@@ -260,3 +260,100 @@ describe('delivery backoff', () => {
     expect(Number(cleared.next_attempt_at)).toBe(0);
   });
 });
+
+/**
+ * The same dead end, reached the ordinary way. If an installation opts in to
+ * usage.v2 while the collector still only speaks usage.v1 — the deployment
+ * order the docs warn about — the registration is rejected outright. Nothing
+ * exists at the collector, and yet the operator could not clear the tab:
+ * disable moved to deletion_pending, retry was futile, enable refused, and the
+ * abandon hatch was gated on SIGNING_KEY_UNREADABLE, which this is not.
+ *
+ * Verified against the live collector before this was written: a valid v2
+ * register is answered with INVALID_PACKET while the identical v1 flow is
+ * accepted.
+ */
+describe('a participation the collector never accepted', () => {
+  let db;
+  afterEach(async () => { if (db) await db.destroy(); db = null; });
+
+  const rejectingCollector = async (status) => {
+    db = await bootDb();
+    await db.schema.createTable('product_usage_markers', (t) => {
+      t.string('feature', 60).primary();
+    });
+    const identity = generateIdentity();
+    const service = new UsageService(db, {
+      secret: SECRET_A,
+      endpoint: 'https://usage.example.test',
+      bindingPath: `${require('os').tmpdir()}/usage-unreg-${Date.now()}-${Math.random()}.key`,
+      fetch: async () => ({
+        ok: false,
+        status: 400,
+        headers: { get: () => null },
+        body: (async function* () { yield Buffer.from(JSON.stringify({ error: 'INVALID_PACKET' })); })(),
+      }),
+    });
+    await db('product_usage_state').where({ id: 1 }).update({
+      status,
+      consent_version: 'usage-consent.v2',
+      installation_id: identity.installation_id,
+      public_key: identity.public_key,
+      private_key_encrypted: service.encrypt(identity.private_key),
+      sequence: 0,
+      pending_packet: JSON.stringify(
+        makePacket(identity, status === 'deletion_pending' ? 'delete' : 'register', 0,
+          status === 'deletion_pending' ? {} : { consent_version: 'usage-consent.v2' }, 'usage.v2')
+      ),
+    });
+    return service;
+  };
+
+  it('names the rejection instead of blaming the network', async () => {
+    const service = await rejectingCollector('activation_pending');
+    await service.tick({ force: true });
+    expect((await service.state()).last_error).toBe('SCHEMA_NOT_ACCEPTED');
+  });
+
+  it('offers the exit straight from activation_pending', async () => {
+    const service = await rejectingCollector('activation_pending');
+    await service.tick({ force: true });
+    const status = await service.status();
+    expect(status.can_abandon).toBe(true);
+    expect(status.abandon_never_registered).toBe(true);
+
+    await service.abandon();
+    const after = await service.state();
+    expect(after.status).toBe('disabled');
+    expect(after.installation_id).toBeNull();
+    // Provably nothing remote, so the receipt must not hedge.
+    expect(JSON.parse(after.privacy_receipts).last_abandonment.status)
+      .toBe('never-registered');
+  });
+
+  it('offers it from deletion_pending too, once the withdrawal is also undeliverable', async () => {
+    const service = await rejectingCollector('deletion_pending');
+    await service.tick({ force: true });
+    expect((await service.status()).can_abandon).toBe(true);
+    await service.abandon();
+    expect((await service.state()).status).toBe('disabled');
+  });
+
+  it('never offers it while a registered participation could still be deleted remotely', async () => {
+    const service = await rejectingCollector('deletion_pending');
+    // Something WAS accepted once: the collector may still hold reports, so
+    // clearing local state silently would be a lie.
+    await db('product_usage_state').where({ id: 1 }).update({
+      sequence: 3,
+      last_receipt: JSON.stringify({ status: 'accepted' }),
+      last_error: 'DELIVERY_FAILED',
+    });
+    expect((await service.status()).can_abandon).toBe(false);
+    await expect(service.abandon()).rejects.toThrow(/cannot be completed/);
+  });
+
+  it('does not offer it before a delivery has actually failed', async () => {
+    const service = await rejectingCollector('activation_pending');
+    expect((await service.status()).can_abandon).toBe(false);
+  });
+});

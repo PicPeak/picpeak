@@ -278,7 +278,9 @@ export default function ProductUsageTab() {
             {t(
               data.last_error === 'SIGNING_KEY_UNREADABLE'
                 ? 'productUsage.signingKeyUnreadable'
-                : 'productUsage.deliveryProblem'
+                : data.last_error === 'SCHEMA_NOT_ACCEPTED'
+                  ? 'productUsage.schemaNotAccepted'
+                  : 'productUsage.deliveryProblem'
             )}
           </p>
         )}
@@ -296,7 +298,13 @@ export default function ProductUsageTab() {
           // The one dead end the operator cannot retry out of. Offered only
           // here, and worded so nobody mistakes it for a confirmed deletion.
           <div className="rounded border border-amber-300 dark:border-amber-700 p-3 space-y-2">
-            <p>{t('productUsage.abandonExplanation')}</p>
+            <p>
+              {t(
+                data.abandon_never_registered
+                  ? 'productUsage.abandonExplanationUnregistered'
+                  : 'productUsage.abandonExplanation'
+              )}
+            </p>
             <Button
               variant="outline"
               className={WRAPPING_BUTTON}
@@ -305,7 +313,11 @@ export default function ProductUsageTab() {
                 if (
                   await confirm({
                     title: t('productUsage.abandon'),
-                    message: t('productUsage.abandonConfirm'),
+                    message: t(
+                      data.abandon_never_registered
+                        ? 'productUsage.abandonConfirmUnregistered'
+                        : 'productUsage.abandonConfirm'
+                    ),
                     confirmLabel: t('productUsage.abandon'),
                     variant: 'danger'
                   })

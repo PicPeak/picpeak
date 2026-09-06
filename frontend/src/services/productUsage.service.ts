@@ -19,8 +19,10 @@ export interface UsageStatus {
   last_error: string | null;
   /** Epoch ms the paced sender is waiting for, or null when nothing is paced. */
   retry_after?: number | null;
-  /** True only for a withdrawal whose delete packet can never be signed. */
+  /** True when the participation cannot be completed and the only exit is to discard it. */
   can_abandon?: boolean;
+  /** True when the collector never accepted anything, so discarding deletes nothing remote. */
+  abandon_never_registered?: boolean;
   pending_action: string | null;
   last_packet: unknown;
   privacy_receipts?: Record<string, unknown>;

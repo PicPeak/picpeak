@@ -402,6 +402,7 @@
     "deliveryProblem": "Die Übertragung benötigt Aufmerksamkeit. Bei Löschung oder Identitätskonflikt ist die Erfassung gestoppt. Versuchen Sie es erneut oder deaktivieren Sie die Teilnahme, um die Daten zu löschen.",
     "invalidCollectorUrl": "Die konfigurierte Collector-URL ist ungültig, daher kann die Teilnahme weder gestartet noch übermittelt werden. Setzen Sie USAGE_COLLECTOR_URL auf einen https-Origin ohne Pfad, Query oder Zugangsdaten (oder lassen Sie sie leer, um den Standard zu verwenden).",
     "signingKeyUnreadable": "Der Signaturschlüssel für die Nutzungsdaten kann nicht gelesen werden. Meist wurde USAGE_ENCRYPTION_KEY — oder das als Rückfallwert genutzte JWT_SECRET — geändert. Berichte können nicht gesendet und auch die Löschanfrage kann nicht signiert werden. Stellen Sie das ursprüngliche Schlüsselmaterial wieder her, um die Löschung abzuschließen; erneutes Senden oder Deaktivieren allein behebt dies nicht.",
+    "schemaNotAccepted": "Der Collector hat das Paket rundheraus abgelehnt — er nimmt diese Berichtsversion also noch nicht an, meist weil er nicht aktualisiert wurde. Erneutes Senden ändert daran nichts. Es wurde nichts registriert; Sie können die Teilnahme verwerfen und erneut beitreten, sobald der Collector sie unterstützt.",
     "inspect": "Genau sehen, was geteilt wird",
     "preview": "Nächsten Bericht ansehen",
     "lastPacket": "Zuletzt angenommener signierter Nutzungsbericht",
@@ -443,7 +444,9 @@
     "retryScheduled": "Der nächste automatische Versuch erfolgt um {{time}}. „Erneut versuchen“ sendet sofort.",
     "abandon": "Lokale Identität verwerfen",
     "abandonExplanation": "Die Löschanfrage kann ohne das ursprüngliche Schlüsselmaterial nicht signiert werden. Wenn Sie es nicht wiederherstellen können, lässt sich die lokale Identität verwerfen: Erfassung und Schlüssel werden hier entfernt, der Collector bestätigt die Löschung dabei aber nicht.",
+    "abandonExplanationUnregistered": "Diese Teilnahme wurde vom Collector nie angenommen, dort ist also nichts gespeichert und es gibt nichts zu löschen. Sie können sie hier verwerfen und jederzeit neu beginnen.",
     "abandonConfirm": "Installationsidentität, Schlüsselmaterial und alle lokalen Marker werden gelöscht. Der Collector wird nicht benachrichtigt und behält die bisher gesendeten Berichte — die Quittung hält das als unbestätigt fest. Danach ist eine neue Teilnahme wieder möglich.",
+    "abandonConfirmUnregistered": "Installationsidentität, Schlüsselmaterial und alle lokalen Marker werden gelöscht. Der Collector hat diese Teilnahme nie angenommen, es wird also nirgendwo sonst etwas entfernt. Danach ist eine neue Teilnahme wieder möglich.",
     "auditPreviousParticipation": "Löschbestätigungen beziehen sich auf eine frühere Teilnahme, nicht auf die aktuelle."
   },
   "userManagement": {
