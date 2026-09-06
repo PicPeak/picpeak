@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.126.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.126.0-beta.0...v3.126.1-beta.0) (2026-09-06)
+
+
+### Bug Fixes
+
+* **usage:** preserve compatibility with old and partial reports ([b801f3a](https://github.com/PicPeak/picpeak/commit/b801f3a6b8d74ece0e6d6be136a43bc58f458e47))
+* **usage:** preserve report contracts with compatible receiver validation ([7ca783f](https://github.com/PicPeak/picpeak/commit/7ca783f89b8ed735ec3e69306a837c0f40e0670b))
+
 ## [3.126.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.125.0-beta.0...v3.126.0-beta.0) (2026-09-06)
 
 
