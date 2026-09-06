@@ -1252,8 +1252,8 @@
         "de": "Bildschutz aktiviert"
       },
       "configured": {
-        "en": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts.",
-        "de": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+        "en": "Enabled beyond the shipped defaults — a stronger protection level, canvas rendering, or right-click disabled — globally or on at least one gallery; only existence across the installation, never gallery IDs or counts.",
+        "de": "Über die Auslieferungsvorgaben hinaus aktiviert — höhere Schutzstufe, Canvas-Rendering oder deaktivierter Rechtsklick — global oder in mindestens einer Galerie; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
       },
       "used": null
     },

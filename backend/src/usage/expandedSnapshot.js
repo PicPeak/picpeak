@@ -91,12 +91,24 @@ async function expandSnapshot(db, { features, flags, used, now }) {
   result.gallery_expiration.configured = await exists('events', ['expires_at'], (query) => query.whereNotNull('expires_at'));
   result.download_resolution_picker.configured = truth(settings.download_resolution_picker_enabled) ||
     await enabled('events', 'download_resolution_picker_enabled');
-  result.gallery_image_protection.configured = ['standard', 'enhanced', 'maximum'].includes(settings.default_protection_level) ||
-    truth(settings.enable_devtools_protection) || truth(settings.enable_canvas_rendering);
-  for (const column of ['disable_right_click', 'enable_devtools_protection', 'use_canvas_rendering'])
+  // Only what an operator actually changed. PicPeak ships
+  // default_protection_level='standard' and enable_devtools_protection=true —
+  // globally and on every event row — so accepting either as evidence made
+  // this signal `true` on a bare install with no galleries at all. It reported
+  // fleet-wide 100% and could never separate a deliberate configuration from
+  // an untouched one, which is a field that costs consent budget and explains
+  // nothing. `enable_devtools_protection` is therefore not read at all: being
+  // on by default, its only informative state is off, which is the opposite
+  // of what this key claims. The remaining inputs each ship off ('standard'
+  // protection, no canvas rendering, right-click allowed), so a true here is
+  // always a decision someone made.
+  result.gallery_image_protection.configured =
+    ['enhanced', 'maximum'].includes(settings.default_protection_level) ||
+    truth(settings.enable_canvas_rendering);
+  for (const column of ['disable_right_click', 'use_canvas_rendering'])
     result.gallery_image_protection.configured ||= await enabled('events', column);
   result.gallery_image_protection.configured ||= await exists('events', ['protection_level'], (query) =>
-    query.whereIn('protection_level', ['standard', 'enhanced', 'maximum']));
+    query.whereIn('protection_level', ['enhanced', 'maximum']));
   for (const [suffix, column] of Object.entries({
     likes: 'allow_likes', ratings: 'allow_ratings', comments: 'allow_comments',
     favorites: 'allow_favorites', reactions: 'allow_reactions', color_labels: 'allow_color_labels'

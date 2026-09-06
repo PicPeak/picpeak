@@ -36,6 +36,13 @@ const DISCLOSURE: {
   { key: 'feedbackDisclosure', heading: 'sectionFeedback', Icon: MessageSquare }
 ];
 
+// `.btn` is whitespace-nowrap and `.btn-md` a fixed 2.5rem tall — right for
+// short labels, wrong for the sentence-length ones in this tab, which ran off
+// the card at 390px and then, once allowed to wrap, out of the fixed height.
+// h-auto lets the second line have somewhere to go; min-h keeps a one-line
+// button the same size as every other button beside it.
+const WRAPPING_BUTTON = 'max-w-full whitespace-normal text-left h-auto min-h-[2.5rem]';
+
 function ConsentDialog({
   close,
   enable,
@@ -53,6 +60,12 @@ function ConsentDialog({
   const ref = useRef<HTMLDialogElement>(null);
   const [checked, setChecked] = useState(false);
   useEffect(() => {
+    // React unmounts this <dialog> on close rather than only closing it, so
+    // the focus restoration showModal() normally performs has nothing left to
+    // return to and focus drops to <body> — a keyboard user is thrown back to
+    // the top of the page every time they cancel (WCAG 2.4.3). Remember the
+    // opener and put focus back by hand.
+    const opener = document.activeElement as HTMLElement | null;
     ref.current?.showModal();
     // showModal() focuses the first focusable descendant, which is the scroll
     // region below — so its focus ring was drawn for everyone the moment the
@@ -61,6 +74,9 @@ function ConsentDialog({
     // Focusing the dialog puts the ring back where it belongs: only when
     // someone deliberately tabs to the region.
     ref.current?.focus();
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
   }, []);
   return (
     <dialog
@@ -261,6 +277,46 @@ export default function ProductUsageTab() {
             )}
           </p>
         )}
+        {data.retry_after && (
+          // A paced install is waiting, not broken. Without this the tab shows
+          // a delivery error and an idle Retry button, and nothing says the
+          // sender is going to try again on its own.
+          <p role="status" className="text-sm text-neutral-600 dark:text-neutral-400">
+            {t('productUsage.retryScheduled', {
+              time: new Date(data.retry_after).toLocaleTimeString()
+            })}
+          </p>
+        )}
+        {data.can_abandon && (
+          // The one dead end the operator cannot retry out of. Offered only
+          // here, and worded so nobody mistakes it for a confirmed deletion.
+          <div className="rounded border border-amber-300 dark:border-amber-700 p-3 space-y-2">
+            <p>{t('productUsage.abandonExplanation')}</p>
+            <Button
+              variant="outline"
+              className={WRAPPING_BUTTON}
+              disabled={busy}
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: t('productUsage.abandon'),
+                    message: t('productUsage.abandonConfirm'),
+                    confirmLabel: t('productUsage.abandon'),
+                    variant: 'danger'
+                  })
+                ) {
+                  await run(async () => {
+                    await service.abandon();
+                    setPreview(null);
+                    setPortalUrl(null);
+                  });
+                }
+              }}
+            >
+              {t('productUsage.abandon')}
+            </Button>
+          </div>
+        )}
         <div className="flex flex-wrap gap-3">
           {data.status === 'disabled' ? (
             <Button disabled={busy} onClick={() => setConsent(true)}>
@@ -323,6 +379,19 @@ export default function ProductUsageTab() {
               {t('productUsage.auditTitle')}
             </h3>
             <p>{t('productUsage.auditDescription')}</p>
+            {/* The receipts outlive the participation they describe: rejoining
+                does not clear them, so an active install would otherwise show
+                a bare "deletion confirmed" next to its own live participation
+                and read as a contradiction. */}
+            {active &&
+              Boolean(
+                data.privacy_receipts.last_deletion ||
+                  data.privacy_receipts.last_abandonment
+              ) && (
+                <p className="text-sm text-neutral-600 dark:text-neutral-400">
+                  {t('productUsage.auditPreviousParticipation')}
+                </p>
+              )}
             <Button
               variant="outline"
               onClick={() =>
@@ -342,9 +411,14 @@ export default function ProductUsageTab() {
             <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
               {t('productUsage.inspect')}
             </h3>
+            {/* `.btn` sets whitespace-nowrap, and these labels are long
+                sentences in both locales — at 390px two of them ran past the
+                card and their text was simply cut off. Allowed to wrap and
+                capped at the container width instead. */}
             <div className="flex flex-wrap gap-3">
               <Button
                 variant="outline"
+                className={WRAPPING_BUTTON}
                 disabled={busy}
                 onClick={() =>
                   run(async () => setPreview(await service.preview()))
@@ -354,6 +428,7 @@ export default function ProductUsageTab() {
               </Button>
               <Button
                 variant="outline"
+                className={WRAPPING_BUTTON}
                 disabled={busy || !data.last_packet}
                 onClick={() => setPreview(data.last_packet)}
               >
@@ -361,6 +436,7 @@ export default function ProductUsageTab() {
               </Button>
               <Button
                 variant="outline"
+                className={WRAPPING_BUTTON}
                 disabled={busy}
                 onClick={() =>
                   run(async () => download(await service.export()))
@@ -370,6 +446,7 @@ export default function ProductUsageTab() {
               </Button>
               <Button
                 variant="outline"
+                className={WRAPPING_BUTTON}
                 disabled={busy || Boolean(data.pending_action)}
                 onClick={() =>
                   run(async () => {

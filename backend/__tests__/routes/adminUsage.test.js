@@ -31,6 +31,7 @@ jest.mock('../../src/services/productUsageService', () =>
       'dismiss',
       'enable',
       'disable',
+      'abandon',
       'preview',
       'export',
       'preferences',
@@ -125,6 +126,7 @@ const ROUTES = [
   ['post', '/enable'],
   ['post', '/consent'],
   ['post', '/disable'],
+  ['post', '/abandon'],
   ['post', '/retry'],
   ['post', '/dismiss'],
   ['get', '/preview'],
@@ -229,4 +231,90 @@ test('only a backup that writes to the configured destination flags S3', () => {
     ['/database-backup/backup', false],
     ['/backup/picpeak/export', false],
   ]);
+});
+
+// The route allowlist and the packet schema have to agree. The allowlist used
+// to let `name`, `allow_public` and `allow_marketing` be omitted while the
+// schema requires all three, so an API caller got a bare INVALID_PACKET from
+// deep inside signing instead of being told which field was missing.
+const VALID_FEEDBACK = {
+  kind: 'feedback',
+  title: 'Title',
+  body: 'Body',
+  name: '',
+  allow_public: false,
+  allow_marketing: false
+};
+test.each([
+  ['no body at all', {}],
+  ['missing name', { ...VALID_FEEDBACK, name: undefined }],
+  ['missing allow_public', { ...VALID_FEEDBACK, allow_public: undefined }],
+  ['missing allow_marketing', { ...VALID_FEEDBACK, allow_marketing: undefined }],
+  ['a boolean sent as a string', { ...VALID_FEEDBACK, allow_public: 'true' }],
+  ['a title of only whitespace', { ...VALID_FEEDBACK, title: '   ' }],
+  ['an unknown field', { ...VALID_FEEDBACK, ownerId: 7 }]
+])('feedback rejects %s before anything is signed', async (_label, data) => {
+  const response = await request(app)
+    .post('/api/admin/usage/feedback')
+    .set('Authorization', `Bearer ${token('admin')}`)
+    .send(JSON.parse(JSON.stringify(data)))
+    .expect(400);
+  // Named, not a bare protocol failure the caller cannot act on.
+  expect(response.body.code).toBe('VALIDATION_ERROR');
+  expect(service.command).not.toHaveBeenCalled();
+});
+test('feedback accepts the complete payload and mints the id server-side', async () => {
+  await request(app)
+    .post('/api/admin/usage/feedback')
+    .set('Authorization', `Bearer ${token('admin')}`)
+    .send({ ...VALID_FEEDBACK, name: 'QA' })
+    .expect(200);
+  expect(service.command).toHaveBeenCalledWith(
+    'feedback',
+    expect.objectContaining({ name: 'QA', feedback_id: expect.any(String) })
+  );
+});
+
+// Runs last on purpose: the limiter's budget is per-process and shared with
+// every test above that reaches an outbound route, so consuming it here cannot
+// starve them. The assertion is deliberately about the property — some request
+// is refused and the service stops being called — rather than an exact count,
+// which would depend on how much budget earlier tests used.
+test('the outbound routes are throttled so an admin session cannot flood the collector', async () => {
+  const codes = [];
+  for (let i = 0; i < 45; i += 1) {
+    const response = await request(app)
+      .post('/api/admin/usage/feedback')
+      .set('Authorization', `Bearer ${token('admin')}`)
+      .send({ ...VALID_FEEDBACK, title: `flood ${i}` });
+    codes.push(response.status);
+    if (response.status === 429) {
+      expect(response.body.code).toBe('USAGE_RATE_LIMITED');
+      break;
+    }
+  }
+  expect(codes).toContain(429);
+  expect(service.command.mock.calls.length).toBeLessThan(codes.length);
+
+  // The same budget covers the other two routes that relay to the collector.
+  await request(app)
+    .post('/api/admin/usage/vote')
+    .set('Authorization', `Bearer ${token('admin')}`)
+    .send({ feedback_id: '11111111-1111-4111-8111-111111111111', voted: true })
+    .expect(429);
+  await request(app)
+    .post('/api/admin/usage/portal-session')
+    .set('Authorization', `Bearer ${token('admin')}`)
+    .expect(429);
+
+  // Reading status and withdrawing must never be throttled: those are how an
+  // operator sees what is happening and how they get out.
+  await request(app)
+    .get('/api/admin/usage')
+    .set('Authorization', `Bearer ${token('admin')}`)
+    .expect(200);
+  await request(app)
+    .post('/api/admin/usage/disable')
+    .set('Authorization', `Bearer ${token('admin')}`)
+    .expect(200);
 });

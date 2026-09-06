@@ -18,6 +18,7 @@ const knex = require('knex');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { generateIdentity, makePacket } = require('../../src/usage/protocol.cjs');
 
 const PG_URL = process.env.PICPEAK_PG_TEST_URL;
 const maybe = PG_URL ? describe : describe.skip;
@@ -52,6 +53,7 @@ maybe('product usage on Postgres', () => {
     await require('../../migrations/core/203_product_usage_cancel_seq').up(db);
     await require('../../migrations/core/204_product_usage_privacy_receipts').up(db);
     await require('../../migrations/core/205_product_usage_consent_version').up(db);
+    await require('../../migrations/core/206_product_usage_delivery_backoff').up(db);
 
     await db.schema.createTable('app_settings', (t) => {
       t.string('setting_key').primary(); t.text('setting_value'); t.string('setting_type');
@@ -114,6 +116,56 @@ maybe('product usage on Postgres', () => {
     expect(cols.sequence).toBeDefined();
     expect(cols.privacy_receipts).toBeDefined();
     expect(cols.consent_version).toBeDefined();
+    // next_attempt_at is a bigint like sequence and cancel_seq, so pg hands it
+    // back as a STRING — the tick() gate compares it against a number.
+    expect(cols.attempts).toBeDefined();
+    expect(cols.next_attempt_at).toBeDefined();
+  });
+
+  it('reruns the backoff migration safely', async () => {
+    const migration = require('../../migrations/core/206_product_usage_delivery_backoff');
+    await migration.up(db);
+    await migration.up(db);
+    const row = await db('product_usage_state').where({ id: 1 }).first();
+    expect(Number(row.attempts)).toBe(0);
+    expect(Number(row.next_attempt_at)).toBe(0);
+  });
+
+  it('honours the retry gate even though pg returns next_attempt_at as a string', async () => {
+    let clock = 5_000_000;
+    let calls = 0;
+    const identity = generateIdentity();
+    const client = service({
+      now: () => clock,
+      fetch: async () => { calls += 1; throw new Error('collector unreachable'); },
+    });
+    await db('product_usage_state').where({ id: 1 }).update({
+      status: 'active',
+      consent_version: 'usage-consent.v2',
+      installation_id: identity.installation_id,
+      public_key: identity.public_key,
+      private_key_encrypted: client.encrypt(identity.private_key),
+      sequence: 1,
+      attempts: 0,
+      next_attempt_at: 0,
+      pending_packet: JSON.stringify(makePacket(identity, 'session', 2, {}, 'usage.v2')),
+    });
+
+    await client.tick();
+    expect(calls).toBe(1);
+    const paced = await db('product_usage_state').where({ id: 1 }).first();
+    // A '5000120000' > 5000000 string comparison would be a different answer.
+    expect(typeof paced.next_attempt_at).toBe('string');
+    await client.tick();
+    expect(calls).toBe(1);
+
+    clock = Number(paced.next_attempt_at) + 1;
+    await client.tick();
+    expect(calls).toBe(2);
+
+    await db('product_usage_state').where({ id: 1 }).update({
+      status: 'disabled', pending_packet: null, attempts: 0, next_attempt_at: 0,
+    });
   });
 
   it('reruns the receipt migration safely and scrubs legacy plaintext sessions', async () => {

@@ -1218,7 +1218,7 @@
     "adminUsage.js": {
       "decision": "excluded",
       "signals": [],
-      "reason": "Consent, inspection, export, feedback, voting and deletion are explicit protocol operations; not product-use signals. Activity only triggers a due fixed report.",
+      "reason": "Consent, inspection, export, feedback, voting, deletion and abandoning an unsignable deletion are explicit protocol operations; not product-use signals. Activity only triggers a due fixed report.",
       "route_signatures": [
         "POST /activity",
         "GET /",
@@ -1226,6 +1226,7 @@
         "POST /enable",
         "POST /consent",
         "POST /disable",
+        "POST /abandon",
         "POST /retry",
         "GET /preview",
         "GET /export",

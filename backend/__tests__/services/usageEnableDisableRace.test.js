@@ -57,6 +57,8 @@ async function bootDb() {
     t.string('lease_token', 36);
     t.bigInteger('lease_until').notNullable().defaultTo(0);
     t.bigInteger('cancel_seq').notNullable().defaultTo(0);
+    t.integer('attempts').notNullable().defaultTo(0);
+    t.bigInteger('next_attempt_at').notNullable().defaultTo(0);
   });
   await db.schema.createTable('product_usage_markers', (t) => {
     t.string('feature', 60).primary();

@@ -248,6 +248,20 @@ class UsageService {
       consent_update_available: state.status === 'active' && this.schemaVersion(state) !== CURRENT_SCHEMA_VERSION,
       last_report_date: state.last_report_date,
       last_error: state.last_error,
+      // Epoch ms, or null when nothing is being paced. The settings page shows
+      // it so a waiting install reads as "waiting" rather than as broken.
+      retry_after:
+        Number(state.next_attempt_at || 0) > this.now()
+          ? Number(state.next_attempt_at)
+          : null,
+      // The one failure the operator cannot retry their way out of: the
+      // signing key is unreadable, so the delete packet can never be signed.
+      // Without this flag the settings page has no way to offer the only
+      // remaining exit (abandon), and the install sits in deletion_pending
+      // forever.
+      can_abandon:
+        state.status === 'deletion_pending' &&
+        state.last_error === 'SIGNING_KEY_UNREADABLE',
       pending_action: state.pending_packet
         ? JSON.parse(state.pending_packet).action
         : null,
@@ -276,6 +290,29 @@ class UsageService {
         .where({ id: 1, lease_token: token })
         .update({ lease_token: null, lease_until: 0 });
     }
+  }
+
+  // Consecutive failures pace the unattended sender: 2, 4, 8, 16, 32 minutes,
+  // then hourly. Capped rather than unbounded because a collector that comes
+  // back after a long outage should be noticed within the hour, and a report
+  // is only due once per UTC day anyway.
+  backoffMs(attempts) {
+    return Math.min(2 ** Math.max(1, attempts), 60) * 60000;
+  }
+  async noteDeliveryFailure() {
+    const state = await this.state();
+    const attempts = Number(state?.attempts || 0) + 1;
+    await this.db('product_usage_state')
+      .where({ id: 1 })
+      .update({
+        attempts,
+        next_attempt_at: this.now() + this.backoffMs(attempts)
+      });
+  }
+  async clearDeliveryBackoff() {
+    await this.db('product_usage_state')
+      .where({ id: 1 })
+      .update({ attempts: 0, next_attempt_at: 0 });
   }
 
   async dismiss() {
@@ -329,7 +366,9 @@ class UsageService {
           instance_binding: instanceBinding,
           sequence: 0,
           pending_packet: JSON.stringify(pending),
-          last_error: null
+          last_error: null,
+          attempts: 0,
+          next_attempt_at: 0
         });
       // Withdrawn while activating. Participation stays off and nothing was
       // registered, so there is nothing to delete remotely either.
@@ -363,16 +402,83 @@ class UsageService {
         pending_packet: null,
         last_packet: null,
         last_receipt: null,
-        last_report_date: null
+        last_report_date: null,
+        attempts: 0,
+        next_attempt_at: 0
       });
     await this.db('product_usage_markers').delete();
     try {
-      await this.tick();
+      await this.tick({ force: true });
     } catch (error) {
       // A sender may still own the lease. Collection is already stopped and
       // the next admin activity retries deletion after that sender finishes.
       if (error.code !== 'CONFLICT') throw error;
     }
+    return this.status();
+  }
+
+  // The escape hatch for a withdrawal that can never be signed. When
+  // USAGE_ENCRYPTION_KEY — or the JWT_SECRET it falls back to — has been
+  // rotated, the private key is unreadable, so the delete packet cannot be
+  // produced at all. Retrying and disabling both no-op forever, and enable()
+  // refuses because the row is not `disabled`: the feature is bricked with no
+  // control left. Restoring the old key material is the correct fix and stays
+  // the documented one, but an operator who rotated because of a suspected
+  // compromise no longer has it.
+  //
+  // This drops the local identity and says so honestly: collection is already
+  // stopped, but the collector was never told, so the receipt records
+  // `collector-unconfirmed` rather than claiming a deletion that did not
+  // happen. Deliberately not folded into enable() — abandoning an
+  // unconfirmed deletion is its own decision, not a side effect of opting in.
+  async abandon() {
+    await this.locked(async (state) => {
+      if (
+        state.status !== 'deletion_pending' ||
+        state.last_error !== 'SIGNING_KEY_UNREADABLE'
+      )
+        throw new ConflictError(
+          'Only an unsignable withdrawal can be abandoned'
+        );
+      await fs.unlink(this.bindingPath).catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+      });
+      await this.db('product_usage_markers').delete();
+      const receipts = state.privacy_receipts
+        ? JSON.parse(state.privacy_receipts)
+        : {};
+      await this.db('product_usage_state')
+        .where({ id: 1, status: 'deletion_pending' })
+        .update({
+          status: 'disabled',
+          installation_id: null,
+          public_key: null,
+          private_key_encrypted: null,
+          instance_binding: null,
+          pending_packet: null,
+          last_packet: null,
+          last_receipt: null,
+          last_report_date: null,
+          last_error: null,
+          sequence: 0,
+          attempts: 0,
+          next_attempt_at: 0,
+          feedback_preferences: null,
+          privacy_receipts: JSON.stringify({
+            ...receipts,
+            last_abandonment: {
+              receipt_version: 'local-audit.v1',
+              kind: 'abandonment',
+              receipt_id: crypto.randomUUID(),
+              confirmed_at: new Date(this.now()).toISOString(),
+              status: 'collector-unconfirmed',
+              reason: 'SIGNING_KEY_UNREADABLE',
+              installation_id: state.installation_id,
+              scope: ['local identity', 'local markers', 'local key material']
+            }
+          })
+        });
+    });
     return this.status();
   }
 
@@ -496,6 +602,8 @@ class UsageService {
             last_report_date: null,
             last_error: null,
             sequence: 0,
+            attempts: 0,
+            next_attempt_at: 0,
             feedback_preferences: null
           });
       } else {
@@ -505,6 +613,8 @@ class UsageService {
           sequence: packet.sequence,
           pending_packet: null,
           last_error: null,
+          attempts: 0,
+          next_attempt_at: 0,
           last_receipt: JSON.stringify(storedReceipt)
         };
         if (packet.action === 'report') {
@@ -556,7 +666,12 @@ class UsageService {
         await this.db('product_usage_state')
           .where({ id: 1 })
           .whereNot({ status: 'deletion_pending' })
-          .update({ pending_packet: null, last_error: 'REQUEST_REJECTED' });
+          .update({
+            pending_packet: null,
+            last_error: 'REQUEST_REJECTED',
+            attempts: 0,
+            next_attempt_at: 0
+          });
         return null;
       }
       const conflict = [
@@ -574,6 +689,11 @@ class UsageService {
       await this.db('product_usage_state')
         .where({ id: 1 })
         .update({ last_error: code });
+      // Paced, not abandoned: the packet stays pending and the operator can
+      // still force a retry from the settings page. Only the automatic sender
+      // waits, which is what stops one permanently rejected packet from
+      // producing one collector request per admin click.
+      await this.noteDeliveryFailure();
       if (conflict && packet.action !== 'delete') {
         await this.db('product_usage_state')
           .where({ id: 1 })
@@ -584,9 +704,15 @@ class UsageService {
     }
   }
 
-  async tick() {
+  // `force` is what the Retry button and /disable pass: an operator asking for
+  // an attempt now must not be held behind a backoff they can see and want to
+  // skip. The unattended callers — /activity and the settings ticker — leave
+  // it off, so a failing packet costs one request per backoff window instead
+  // of one per admin action.
+  async tick({ force = false } = {}) {
     await this.locked(async (state) => {
       if (state.status === 'disabled') return;
+      if (!force && Number(state.next_attempt_at || 0) > this.now()) return;
       if (state.status === 'deletion_pending') {
         const packet = makePacket(state, 'delete', Number(state.sequence), {}, this.schemaVersion(state));
         state.pending_packet = JSON.stringify(packet);
@@ -666,7 +792,13 @@ class UsageService {
     });
   }
 
-  async snapshot(version) {
+  // `persist` is false for the settings preview. snapshot() records applied
+  // custom CSS as a lifetime marker, which meant the "see exactly what would
+  // be sent" view changed what gets sent — a read with a write behind it, in
+  // the one place whose whole job is transparency. The reported value is
+  // unaffected: the marker is derived here either way, and the next real
+  // report persists it.
+  async snapshot(version, { persist = true } = {}) {
     version = version || this.schemaVersion(await this.state());
     const rows = await this.db('app_settings')
       .whereIn('setting_key', SETTING_KEYS)
@@ -777,7 +909,7 @@ class UsageService {
     // Applied CSS is already a capability in use; no visitor observation is
     // needed. Remember its presence as a coarse lifetime marker after consent.
     if (features.custom_css.configured) {
-      await this.markUsed(['custom_css']);
+      if (persist) await this.markUsed(['custom_css']);
       features.custom_css.used = true;
     }
     const now = new Date(this.now()).toISOString();
@@ -797,7 +929,7 @@ class UsageService {
     const state = await this.state();
     if (state.status !== 'active')
       throw new ConflictError('Usage participation is not active');
-    return this.snapshot();
+    return this.snapshot(null, { persist: false });
   }
   async command(action, payload) {
     let receipt;
@@ -894,10 +1026,23 @@ class UsageService {
             kind: 'export',
             receipt_id: crypto.randomUUID(),
             confirmed_at: new Date(this.now()).toISOString(),
+            // Reports only. Counting every packet — feedback, votes, portal
+            // sessions, the registration — and labelling the total "usage
+            // reports" made a privacy receipt state something untrue about
+            // its own contents, which is exactly the document that has to be
+            // exact. `packet_count` keeps the total available alongside it.
             report_count: Array.isArray(result.packets)
+              ? result.packets.filter(
+                (envelope) => envelope?.packet?.action === 'report'
+              ).length
+              : 0,
+            packet_count: Array.isArray(result.packets)
               ? result.packets.length
               : 0,
-            scope: ['unique accepted usage reports']
+            scope: [
+              'accepted usage reports',
+              'accepted participant operations'
+            ]
           }
         })
       });

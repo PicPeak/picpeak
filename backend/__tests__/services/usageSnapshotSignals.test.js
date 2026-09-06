@@ -34,6 +34,8 @@ async function bootDb() {
     t.text('feedback_preferences'); t.string('lease_token', 36);
     t.bigInteger('lease_until').notNullable().defaultTo(0);
     t.bigInteger('cancel_seq').notNullable().defaultTo(0);
+    t.integer('attempts').notNullable().defaultTo(0);
+    t.bigInteger('next_attempt_at').notNullable().defaultTo(0);
   });
   await db('product_usage_state').insert({ id: 1 });
   await db.schema.createTable('product_usage_markers', (t) => t.string('feature', 60).primary());
@@ -193,6 +195,116 @@ describe('S3 use is only implied by backups that write to the destination', () =
     await db('product_usage_state').where({ id: 1 }).update({ status: 'active' });
     await service(db).markUsed(['backup'], { destinationBackup: true });
     expect(await db('product_usage_markers').pluck('feature')).toEqual(['backup']);
+  });
+});
+
+/**
+ * A signal whose answer is fixed by the shipped defaults is not a signal.
+ * PicPeak ships default_protection_level='standard' and
+ * enable_devtools_protection=true, so accepting either as evidence made
+ * gallery_image_protection true on a bare install with no galleries — a
+ * fleet-wide 100% that cannot separate a decision from an untouched default.
+ */
+describe('gallery_image_protection reports decisions, not shipped defaults', () => {
+  let db;
+  afterEach(async () => { if (db) await db.destroy(); db = null; });
+
+  const v2 = async () => {
+    db = await bootDb();
+    await db.schema.alterTable('events', (t) => {
+      for (const column of ['disable_right_click', 'enable_devtools_protection', 'use_canvas_rendering']) t.boolean(column);
+      t.string('protection_level');
+    });
+    await db('product_usage_state').where({ id: 1 })
+      .update({ status: 'active', consent_version: 'usage-consent.v2' });
+    return service(db);
+  };
+  const shipped = async () => {
+    // Exactly what migration 038 seeds, plus an event carrying the column
+    // defaults from the same migration.
+    await db('app_settings').insert([
+      { setting_key: 'default_protection_level', setting_value: '"standard"' },
+      { setting_key: 'enable_devtools_protection', setting_value: 'true' },
+      { setting_key: 'enable_canvas_rendering', setting_value: 'false' },
+    ]);
+    await db('events').insert({
+      protection_level: 'standard',
+      enable_devtools_protection: true,
+      use_canvas_rendering: false,
+      disable_right_click: false,
+    });
+  };
+
+  it('is false on a bare install with no galleries at all', async () => {
+    const client = await v2();
+    expect((await client.snapshot()).features.gallery_image_protection)
+      .toEqual({ configured: false });
+  });
+
+  it('is false when every value is still the shipped default', async () => {
+    const client = await v2();
+    await shipped();
+    expect((await client.snapshot()).features.gallery_image_protection)
+      .toEqual({ configured: false });
+  });
+
+  it('ignores the devtools flag entirely, since it ships on', async () => {
+    const client = await v2();
+    await shipped();
+    // Turning it OFF is the only informative state it has, and that is the
+    // opposite of what this key claims — so neither state may set it.
+    await db('app_settings').where({ setting_key: 'enable_devtools_protection' })
+      .update({ setting_value: 'false' });
+    await db('events').update({ enable_devtools_protection: false });
+    expect((await client.snapshot()).features.gallery_image_protection)
+      .toEqual({ configured: false });
+  });
+
+  it.each([
+    ['a stronger global level', async (db) => db('app_settings').where({ setting_key: 'default_protection_level' }).update({ setting_value: '"maximum"' })],
+    ['global canvas rendering', async (db) => db('app_settings').where({ setting_key: 'enable_canvas_rendering' }).update({ setting_value: 'true' })],
+    ['a stronger level on one gallery', async (db) => db('events').update({ protection_level: 'enhanced' })],
+    ['canvas rendering on one gallery', async (db) => db('events').update({ use_canvas_rendering: true })],
+    ['right-click disabled on one gallery', async (db) => db('events').update({ disable_right_click: true })],
+  ])('is true for %s', async (_label, change) => {
+    const client = await v2();
+    await shipped();
+    await change(db);
+    expect((await client.snapshot()).features.gallery_image_protection)
+      .toEqual({ configured: true });
+  });
+});
+
+/**
+ * The settings preview is the "see exactly what would be sent" view. It shared
+ * snapshot() with the real sender, and snapshot() records applied custom CSS
+ * as a lifetime marker — so reading the transparency view wrote a marker.
+ */
+describe('preview does not change what will be sent', () => {
+  let db;
+  afterEach(async () => { if (db) await db.destroy(); db = null; });
+
+  const withAppliedCss = async () => {
+    db = await bootDb();
+    await db('product_usage_state').where({ id: 1 })
+      .update({ status: 'active', consent_version: 'usage-consent.v2' });
+    await db('app_settings').insert({
+      setting_key: 'general_custom_css', setting_value: '".x{}"'
+    });
+    return service(db);
+  };
+
+  it('reports custom_css as used without persisting the marker', async () => {
+    const client = await withAppliedCss();
+    const preview = await client.preview();
+    expect(preview.features.custom_css).toEqual({ configured: true, used: true });
+    expect(await db('product_usage_markers').pluck('feature')).toEqual([]);
+  });
+
+  it('still persists it when the sender builds the real report', async () => {
+    const client = await withAppliedCss();
+    await client.snapshot();
+    expect(await db('product_usage_markers').pluck('feature')).toEqual(['custom_css']);
   });
 });
 

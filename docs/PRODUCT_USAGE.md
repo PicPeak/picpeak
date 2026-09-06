@@ -45,7 +45,15 @@ defaults to `JWT_SECRET`, so rotating `JWT_SECRET` without setting a dedicated
 `USAGE_ENCRYPTION_KEY` first loses it. The settings page then reports
 `SIGNING_KEY_UNREADABLE` rather than a generic delivery failure, because the
 consequence is specific: reports stop and the deletion request can no longer
-be signed either. Keys live in a dedicated database
+be signed either. Restoring the original key material is the correct fix and
+completes the pending deletion. When it is genuinely gone — a rotation done
+because the secret was compromised — the settings page offers **Discard local
+identity** (`POST /api/admin/usage/abandon`), which is available in no other
+state. It erases the local identity, key material and markers and records an
+abandonment receipt marked `collector-unconfirmed`: the collector was never
+told, so it keeps the reports already accepted, and the receipt says so rather
+than claiming a deletion that did not happen. Participation can be started
+again afterwards with a fresh identity. Keys live in a dedicated database
 table, not the generic readable settings. A random mode-0600 file at
 `getStoragePath()/usage-instance.key` binds the database to its local storage.
 
@@ -75,6 +83,16 @@ durable and retried. Multiple admin tabs/processes share a database lease;
 only accepted receipts advance the sequence and report date. Re-signed retries
 reuse the immutable packet ID so lost acknowledgements do not duplicate data.
 
+Retries are paced (migration 206). Consecutive failures set `attempts` and
+`next_attempt_at`, and the unattended sender — the activity endpoint and the
+settings ticker — waits for that gate: 2, 4, 8, 16, 32 minutes, then hourly.
+Without it a packet the collector rejects permanently produced one collector
+request per admin action, because any authenticated admin reaches the activity
+endpoint and every open admin tab fires it every five minutes. Explicit
+operator actions are not paced: **Retry** and opt-out send immediately, and the
+settings page names the time of the next automatic attempt so a waiting
+installation does not read as a broken one.
+
 Opt-out immediately stops collection, clears markers/previews/feedback
 preferences, and enters deletion pending. It keeps only credentials and the
 deletion operation until the collector confirms deletion. The collector removes
@@ -84,9 +102,12 @@ a fresh identity. Repeated deletion handles lost receipts safely.
 
 Migration 204 adds bounded, local-only privacy receipts and removes any legacy
 plaintext voting token from the last collector receipt. A completed export
-records its time and report count; confirmed opt-out replaces this with a
-deletion receipt containing only a random receipt ID, time, status and fixed
-scope. It retains no old installation hash, key, payload or credential. The
+records its time, the number of accepted reports and the total number of
+accepted packets separately — feedback, votes and portal sessions are
+participant operations, not reports, and a receipt that folded them into one
+"reports" figure stated something untrue about its own contents. Confirmed
+opt-out replaces this with a deletion receipt containing only a random receipt
+ID, time, status and fixed scope. It retains no old installation hash, key, payload or credential. The
 settings page can download these receipts even after opt-out. They are local
 records of the collector acknowledgement, not independent proof of storage
 erasure. Downloaded exports carry their own dated receipt; the collector does
@@ -104,6 +125,14 @@ Only settings.edit can inspect identity/packets or change participation and
 feedback preferences. Any authenticated admin may trigger the fixed daily
 report; the activity endpoint accepts no telemetry input. Every usage endpoint
 uses adminAuth, including token-type checks. Gallery tokens cannot use it.
+
+Feedback, votes and portal sessions share one installation-wide budget of 30
+per hour. They are the only endpoints whose effect is an outbound request
+carrying operator-written free text, and the platform's general limiter skips
+authenticated requests by design — correct for endpoints that touch only this
+installation, wrong for a relay. Reading status, retrying and opting out are
+never throttled: those are how an operator sees what is happening and how they
+leave.
 
 Feedback is sent only on explicit submission. Each item defaults anonymous and
 private; names, publication permission, and testimonial marketing permission

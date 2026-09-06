@@ -17,6 +17,10 @@ export interface UsageStatus {
   consent_update_available?: boolean;
   last_report_date: string | null;
   last_error: string | null;
+  /** Epoch ms the paced sender is waiting for, or null when nothing is paced. */
+  retry_after?: number | null;
+  /** True only for a withdrawal whose delete packet can never be signed. */
+  can_abandon?: boolean;
   pending_action: string | null;
   last_packet: unknown;
   privacy_receipts?: Record<string, unknown>;
@@ -55,6 +59,9 @@ export const productUsageService = {
   },
   async retry(): Promise<UsageStatus> {
     return (await api.post('/admin/usage/retry')).data;
+  },
+  async abandon(): Promise<UsageStatus> {
+    return (await api.post('/admin/usage/abandon')).data;
   },
   async preview(): Promise<unknown> {
     return (await api.get('/admin/usage/preview')).data;

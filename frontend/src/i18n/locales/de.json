@@ -12,8 +12,8 @@
     "currentSchema": "Aktuelles Berichtsschema: {{schema}}",
     "reviewUpgrade": "Erweiterten Umfang von usage.v2 prüfen",
     "upgrade": "usage.v2 ausdrücklich zustimmen",
-    "upgradeExplanation": "Deine bestehende usage.v1-Teilnahme bleibt unverändert. Prüfe den vollständigen erweiterten Katalog, bevor du über das Upgrade entscheidest. Eine Ablehnung beendet deine bisherige Teilnahme nicht.",
-    "upgradePending": "Die signierte Erweiterung der Zustimmung wartet auf Bestätigung. Es wird nur der bisherige v1-Umfang erfasst. Versuche es erneut, sobald der Collector erreichbar ist, oder deaktiviere die Teilnahme zum Stoppen und Löschen.",
+    "upgradeExplanation": "Ihre bestehende usage.v1-Teilnahme bleibt unverändert. Prüfen Sie den vollständigen erweiterten Katalog, bevor Sie über das Upgrade entscheiden. Eine Ablehnung beendet Ihre bisherige Teilnahme nicht.",
+    "upgradePending": "Die signierte Erweiterung der Zustimmung wartet auf Bestätigung. Es wird nur der bisherige v1-Umfang erfasst. Versuchen Sie es erneut, sobald der Collector erreichbar ist, oder deaktivieren Sie die Teilnahme zum Stoppen und Löschen.",
     "catalog": {
       "crm": {
         "name": "Kundenverwaltung",
@@ -353,7 +353,7 @@
       },
       "gallery_image_protection": {
         "name": "Bildschutz aktiviert",
-        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+        "configured": "Über die Auslieferungsvorgaben hinaus aktiviert — höhere Schutzstufe, Canvas-Rendering oder deaktivierter Rechtsklick — global oder in mindestens einer Galerie; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
       },
       "gallery_reveal": {
         "name": "Galerie-Enthüllung aktiviert",
@@ -365,17 +365,17 @@
       }
     },
     "auditTitle": "Export- und Löschquittungen",
-    "auditDescription": "Lade deine privaten Nachweise herunter. PicPeak speichert nur die letzte Exportquittung während der Teilnahme und die letzte Löschbestätigung. Sie enthalten keinen Installationshash, Schlüssel oder Bericht-/Feedbackinhalt. Opt-out entfernt die lokale Exportquittung; die Löschbestätigung ohne Identitätsbezug bleibt erhalten. Der Collector führt keinen Export- oder Zugriffsverlauf.",
+    "auditDescription": "Laden Sie Ihre privaten Nachweise herunter. PicPeak speichert nur die letzte Exportquittung während der Teilnahme und die letzte Löschbestätigung. Sie enthalten keinen Installationshash, Schlüssel oder Bericht-/Feedbackinhalt. Opt-out entfernt die lokale Exportquittung; die Löschbestätigung ohne Identitätsbezug bleibt erhalten. Der Collector führt keinen Export- oder Zugriffsverlauf.",
     "auditDownload": "Datenschutzquittungen herunterladen",
     "title": "Produktnutzung & Feedback",
     "noticeTitle": "Gestalten Sie PicPeak mit",
     "notice": "Optionale Nutzungsberichte zeigen, welche Funktionen für die Community wichtig sind. Die Übermittlung ist aus, bis Sie sich aktiv dafür entscheiden.",
     "ignore": "Ignorieren",
-    "ignoreHint": "Dieser Hinweis erscheint nicht erneut — Sie können weiterhin unter Einstellungen → Produktnutzung teilnehmen.",
+    "ignoreHint": "Wenn Sie ignorieren, erscheint dieser Hinweis nicht erneut — Sie können weiterhin unter Einstellungen → Produktnutzung teilnehmen.",
     "review": "Teilnahme prüfen",
     "cancel": "Abbrechen",
     "loading": "Teilnahmeeinstellungen werden geladen…",
-    "failed": "Der Vorgang konnte nicht abgeschlossen werden. Prüfe den Status und versuche es erneut.",
+    "failed": "Der Vorgang konnte nicht abgeschlossen werden. Prüfen Sie den Status und versuchen Sie es erneut.",
     "purpose": "Hilf bei der Priorisierung von PicPeak-Funktionen, Fehlerbehebungen und Wartung mit groben Informationen über teilnehmende Installationen.",
     "consentTitle": "Produktnutzung freiwillig teilen",
     "sectionFields": "Was ein Bericht enthält",
@@ -385,19 +385,19 @@
     "sectionDeletion": "Beenden und löschen",
     "sectionFeedback": "Feedback ist getrennt",
     "excluded": "Automatische Berichte enthalten keine Galeriebesucher, Klickverläufe, Foto- oder Galerieanzahlen, Namen, E-Mail-Adressen, Domains, Dateinamen oder Zugangsdaten.",
-    "transport": "Dein PicPeak-Backend verwahrt den Signaturschlüssel und sendet einmal pro UTC-Tag bei Admin-Nutzung signierte Nutzungsberichte an {{collector}}. Du kannst Berichte vorab ansehen und jeden eindeutig angenommenen Bericht genau wie beim ersten Empfang herunterladen; Übertragungswiederholungen werden zusammengeführt. Abgelehnte Versuche und getrennt gesendetes Feedback gehören nicht zu diesem Berichtsexport.",
-    "visibility": "Nur teilnehmende Installationen können den Funktionsdatensatz und aggregierte Ergebnisse einsehen, auch Gruppen mit nur einer Installation. Schema und Quellcode sind öffentlich; geprüfte Funktionswünsche und Empfehlungen werden nur mit Erlaubnis ihrer Verfasser veröffentlicht. Dein Fingerabdruck ist pseudonym, nicht anonym. Bewahre deinen Abfrage-Hash vertraulich auf: Er ermöglicht lesenden Zugriff auf deine eigenen Berichte und den Teilnehmerdatensatz.",
+    "transport": "Ihr PicPeak-Backend verwahrt den Signaturschlüssel und sendet einmal pro UTC-Tag bei Admin-Nutzung signierte Nutzungsberichte an {{collector}}. Sie können Berichte vorab ansehen und jeden eindeutig angenommenen Bericht genau wie beim ersten Empfang herunterladen; Übertragungswiederholungen werden zusammengeführt. Abgelehnte Versuche und getrennt gesendetes Feedback gehören nicht zu diesem Berichtsexport.",
+    "visibility": "Nur teilnehmende Installationen können den Funktionsdatensatz und aggregierte Ergebnisse einsehen, auch Gruppen mit nur einer Installation. Schema und Quellcode sind öffentlich; geprüfte Funktionswünsche und Empfehlungen werden nur mit Erlaubnis ihrer Verfasser veröffentlicht. Ihr Fingerabdruck ist pseudonym, nicht anonym. Bewahren Sie Ihren Abfrage-Hash vertraulich auf: Er ermöglicht lesenden Zugriff auf Ihre eigenen Berichte und den Teilnehmerdatensatz.",
     "deletion": "Deaktivieren stoppt die Erfassung sofort und fordert die Löschung der Berichte, Aggregatbeiträge, Rückmeldungen, Veröffentlichungen, Stimmen und Sitzungen an. Bei einem Ausfall bleiben nur die zur Löschung nötigen Zugangsdaten erhalten; die Oberfläche zeigt die ausstehende Löschung. Nach Bestätigung werden Hash und Schlüssel lokal gelöscht; eine erneute Teilnahme erzeugt eine neue Identität. Der Collector behält einen Einweg-Sperrwert und kurzlebige Missbrauchszähler ohne Installationsbezug. PicPeak speichert eine herunterladbare lokale Löschquittung ohne den alten Hash, Schlüssel oder Inhalte.",
-    "feedbackDisclosure": "Feedback wird getrennt von automatischen Berichten und nur beim Absenden übertragen. Jeder Beitrag ist anonym, sofern du keinen Namen angibst, und nur für Betreuer sichtbar, sofern du die Veröffentlichung nicht ausdrücklich erlaubst. Öffentliche Beiträge werden geprüft. Die Verwendung einer Empfehlung für Marketing benötigt eine zusätzliche Erlaubnis.",
+    "feedbackDisclosure": "Feedback wird getrennt von automatischen Berichten und nur beim Absenden übertragen. Jeder Beitrag ist anonym, sofern Sie keinen Namen angeben, und nur für Betreuer sichtbar, sofern Sie die Veröffentlichung nicht ausdrücklich erlauben. Öffentliche Beiträge werden geprüft. Die Verwendung einer Empfehlung für Marketing benötigt eine zusätzliche Erlaubnis.",
     "consentCheck": "Ich habe diese Hinweise gelesen und stimme der Teilnahme ausdrücklich zu.",
     "enable": "Produktnutzung aktivieren",
     "disable": "Deaktivieren & Daten löschen",
     "retry": "Erneut versuchen / fälligen Bericht senden",
     "transparency": "Öffentliches Schema & Datenschutzhinweise",
     "linkCollector": "Wohin Berichte gesendet werden",
-    "hash": "Dein vertraulicher Abfrage-Hash",
+    "hash": "Ihr vertraulicher Abfrage-Hash",
     "lastReport": "Zuletzt angenommener Bericht: {{date}} (UTC)",
-    "deliveryProblem": "Die Übertragung benötigt Aufmerksamkeit. Bei Löschung oder Identitätskonflikt ist die Erfassung gestoppt. Versuche es erneut oder deaktiviere die Teilnahme, um die Daten zu löschen.",
+    "deliveryProblem": "Die Übertragung benötigt Aufmerksamkeit. Bei Löschung oder Identitätskonflikt ist die Erfassung gestoppt. Versuchen Sie es erneut oder deaktivieren Sie die Teilnahme, um die Daten zu löschen.",
     "invalidCollectorUrl": "Die konfigurierte Collector-URL ist ungültig, daher kann die Teilnahme weder gestartet noch übermittelt werden. Setzen Sie USAGE_COLLECTOR_URL auf einen https-Origin ohne Pfad, Query oder Zugangsdaten (oder lassen Sie sie leer, um den Standard zu verwenden).",
     "signingKeyUnreadable": "Der Signaturschlüssel für die Nutzungsdaten kann nicht gelesen werden. Meist wurde USAGE_ENCRYPTION_KEY — oder das als Rückfallwert genutzte JWT_SECRET — geändert. Berichte können nicht gesendet und auch die Löschanfrage kann nicht signiert werden. Stellen Sie das ursprüngliche Schlüsselmaterial wieder her, um die Löschung abzuschließen; erneutes Senden oder Deaktivieren allein behebt dies nicht.",
     "inspect": "Genau sehen, was geteilt wird",
@@ -410,7 +410,7 @@
     "feedbackTitle": "Feedback & Funktionswünsche",
     "kind": "Art",
     "subject": "Titel",
-    "message": "Deine Nachricht",
+    "message": "Ihre Nachricht",
     "includeName": "Diesem Beitrag einen Namen hinzufügen",
     "name": "Anzeigename",
     "saveName": "Diesen Namen lokal merken",
@@ -418,26 +418,31 @@
     "allowPublic": "Ich erlaube die Veröffentlichung dieses Textes und des angegebenen Namens im Nutzungsportal nach Prüfung.",
     "allowMarketing": "Ich erlaube zusätzlich die Verwendung dieser Empfehlung und des angegebenen Namens für Marketing auf der PicPeak-Homepage.",
     "sendFeedback": "Feedback absenden",
-    "feedbackSent": "Feedback erhalten. Eine Veröffentlichung erfordert deine Erlaubnis und die Prüfung durch Betreuer.",
+    "feedbackSent": "Feedback erhalten. Eine Veröffentlichung erfordert Ihre Erlaubnis und die Prüfung durch Betreuer.",
     "states": {
       "disabled": "Teilnahme ist deaktiviert",
       "activation_pending": "Aktivierung ausstehend",
-      "active": "Du nimmst teil",
+      "active": "Sie nehmen teil",
       "deletion_pending": "Löschung ausstehend",
       "identity_conflict": "Konflikt der Installationsidentität"
     },
     "stateDetails": {
-      "disabled": "Es werden keine Produktnutzungsdaten erfasst oder gesendet. Prüfe die Hinweise, bevor du dich entscheidest.",
+      "disabled": "Es werden keine Produktnutzungsdaten erfasst oder gesendet. Prüfen Sie die Hinweise, bevor Sie sich entscheiden.",
       "activation_pending": "Die Zustimmung ist gespeichert. Die Registrierung wird bei Admin-Nutzung oder über „Erneut versuchen“ wiederholt.",
       "active": "Nur die beschriebenen Funktionssignale werden erfasst. Tagesberichte werden bei Admin-Nutzung gesendet.",
-      "deletion_pending": "Erfassung und Berichte sind gestoppt. Die Signaturdaten bleiben ausschließlich für die bestätigte Löschung erhalten. Versuche es erneut, sobald der Dienst erreichbar ist.",
+      "deletion_pending": "Erfassung und Berichte sind gestoppt. Die Signaturdaten bleiben ausschließlich für die bestätigte Löschung erhalten. Versuchen Sie es erneut, sobald der Dienst erreichbar ist.",
       "identity_conflict": "Möglicherweise wurde diese Installation wiederhergestellt oder kopiert, oder die Berichtsfolge stimmt nicht mehr mit dem Dienst überein. Berichte sind gestoppt. Deaktiviere und lösche die alte Teilnahme vor einem erneuten Beitritt mit neuer Identität. Dadurch werden auch die Daten einer weiteren Kopie derselben Identität gelöscht."
     },
     "kinds": {
       "feedback": "Privates Feedback",
       "feature_request": "Funktionswunsch",
       "testimonial": "Empfehlung"
-    }
+    },
+    "retryScheduled": "Der nächste automatische Versuch erfolgt um {{time}}. „Erneut versuchen“ sendet sofort.",
+    "abandon": "Lokale Identität verwerfen",
+    "abandonExplanation": "Die Löschanfrage kann ohne das ursprüngliche Schlüsselmaterial nicht signiert werden. Wenn Sie es nicht wiederherstellen können, lässt sich die lokale Identität verwerfen: Erfassung und Schlüssel werden hier entfernt, der Collector bestätigt die Löschung dabei aber nicht.",
+    "abandonConfirm": "Installationsidentität, Schlüsselmaterial und alle lokalen Marker werden gelöscht. Der Collector wird nicht benachrichtigt und behält die bisher gesendeten Berichte — die Quittung hält das als unbestätigt fest. Danach ist eine neue Teilnahme wieder möglich.",
+    "auditPreviousParticipation": "Löschbestätigungen beziehen sich auf eine frühere Teilnahme, nicht auf die aktuelle."
   },
   "userManagement": {
     "title": "Benutzerverwaltung",

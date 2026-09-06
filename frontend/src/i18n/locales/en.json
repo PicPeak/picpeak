@@ -353,7 +353,7 @@
       },
       "gallery_image_protection": {
         "name": "Image protection enabled",
-        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+        "configured": "Enabled beyond the shipped defaults — a stronger protection level, canvas rendering, or right-click disabled — globally or on at least one gallery; only existence across the installation, never gallery IDs or counts."
       },
       "gallery_reveal": {
         "name": "Gallery reveal enabled",
@@ -371,7 +371,7 @@
     "noticeTitle": "Help shape PicPeak",
     "notice": "Optional product usage reports show which features matter to the community. Reporting is off until you choose to participate.",
     "ignore": "Ignore",
-    "ignoreHint": "This notice won't appear again — you can still join from Settings → Product usage.",
+    "ignoreHint": "If you ignore this, the notice won't appear again — you can still join from Settings → Product usage.",
     "review": "Review participation",
     "cancel": "Cancel",
     "loading": "Loading participation settings…",
@@ -437,7 +437,12 @@
       "feedback": "Private feedback",
       "feature_request": "Feature request",
       "testimonial": "Testimonial"
-    }
+    },
+    "retryScheduled": "The next automatic attempt is at {{time}}. \"Retry\" sends immediately.",
+    "abandon": "Discard local identity",
+    "abandonExplanation": "The deletion request cannot be signed without the original encryption material. If you cannot restore it, you can discard the local identity: collection and keys are removed here, but the collector does not confirm the deletion.",
+    "abandonConfirm": "This deletes the installation identity, the key material and every local marker. The collector is not notified and keeps the reports already sent — the receipt records that as unconfirmed. You can join again afterwards.",
+    "auditPreviousParticipation": "Deletion confirmations refer to an earlier participation, not the current one."
   },
   "userManagement": {
     "title": "User Management",

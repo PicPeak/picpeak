@@ -31,6 +31,7 @@ vi.mock('../../../services/productUsage.service', () => ({
     upgradeConsent: vi.fn(),
     disable: vi.fn(),
     retry: vi.fn(),
+    abandon: vi.fn(),
     preview: vi.fn(),
     export: vi.fn(),
     preferences: vi.fn(),
@@ -215,4 +216,91 @@ describe('product usage controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'productUsage.retry' }));
     await waitFor(() => expect(service.retry).toHaveBeenCalled());
   });
+});
+
+describe('a withdrawal that can never be signed', () => {
+  const stuck: UsageStatus = {
+    ...status,
+    status: 'deletion_pending',
+    installation_id: 'a'.repeat(64),
+    schema_version: 'usage.v2',
+    last_error: 'SIGNING_KEY_UNREADABLE',
+    can_abandon: true
+  };
+
+  it('explains the dead end and offers the only remaining exit', async () => {
+    vi.mocked(service.status).mockResolvedValue(stuck);
+    vi.mocked(service.abandon).mockResolvedValue({ ...status });
+    mount();
+
+    // The operator is told what happened before being offered the exit.
+    await screen.findByText('productUsage.signingKeyUnreadable');
+    await screen.findByText('productUsage.abandonExplanation');
+    fireEvent.click(await screen.findByText('productUsage.abandon'));
+    await waitFor(() => expect(service.abandon).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not offer it for a withdrawal that is merely undelivered', async () => {
+    vi.mocked(service.status).mockResolvedValue({
+      ...stuck,
+      last_error: 'DELIVERY_FAILED',
+      can_abandon: false
+    });
+    mount();
+    await screen.findByText('productUsage.deliveryProblem');
+    expect(screen.queryByText('productUsage.abandon')).toBeNull();
+  });
+});
+
+it('says the sender is waiting rather than leaving a bare error on screen', async () => {
+  vi.mocked(service.status).mockResolvedValue({
+    ...status,
+    status: 'active',
+    schema_version: 'usage.v2',
+    installation_id: 'a'.repeat(64),
+    last_error: 'DELIVERY_FAILED',
+    retry_after: Date.now() + 600000
+  });
+  mount();
+  await screen.findByText('productUsage.retryScheduled');
+});
+
+it('marks a deletion receipt as belonging to an earlier participation', async () => {
+  const receipts = { last_deletion: { kind: 'deletion' } };
+  vi.mocked(service.status).mockResolvedValue({
+    ...status,
+    status: 'active',
+    schema_version: 'usage.v2',
+    installation_id: 'a'.repeat(64),
+    privacy_receipts: receipts
+  });
+  mount();
+  await screen.findByText('productUsage.auditPreviousParticipation');
+
+  cleanup();
+  // Withdrawn: the same receipt now describes the participation just ended,
+  // so the qualifier would be wrong.
+  vi.mocked(service.status).mockResolvedValue({ ...status, privacy_receipts: receipts });
+  mount();
+  await screen.findByText('productUsage.auditTitle');
+  expect(screen.queryByText('productUsage.auditPreviousParticipation')).toBeNull();
+});
+
+it('returns focus to the control that opened the consent dialog', async () => {
+  mount();
+  const trigger = await screen.findByText('productUsage.review');
+  trigger.focus();
+  expect(document.activeElement).toBe(trigger);
+
+  fireEvent.click(trigger);
+  await screen.findByText('productUsage.consentTitle');
+  fireEvent.click(screen.getByText('productUsage.cancel'));
+
+  // Without the restore this lands on <body>, dropping a keyboard user back
+  // to the top of the page (WCAG 2.4.3).
+  await waitFor(() =>
+    expect(document.activeElement).toBe(
+      screen.getByText('productUsage.review')
+    )
+  );
 });
