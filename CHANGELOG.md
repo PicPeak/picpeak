@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.126.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.126.2-beta.0...v3.126.3-beta.0) (2026-09-06)
+
+
+### Bug Fixes
+
+* **usage:** introduce consented v4 download restriction reporting ([5306fe3](https://github.com/PicPeak/picpeak/commit/5306fe378c8d7787d50ba926ad80f9ca6a85d136))
+* **usage:** introduce consented v4 without changing historical reports ([ef8a52f](https://github.com/PicPeak/picpeak/commit/ef8a52f02c4afa10dbc5fccafb6030b1aedc936c))
+
 ## [3.126.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.126.1-beta.0...v3.126.2-beta.0) (2026-09-06)
 
 
