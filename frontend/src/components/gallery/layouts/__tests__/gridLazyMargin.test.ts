@@ -45,6 +45,26 @@ describe('grid lazy pre-load band', () => {
     }
   });
 
+  it('Grid releases what it loaded, and the outer band is legal and wider', () => {
+    // The pre-load band fixed tiles arriving late; it did nothing about them
+    // never leaving. Measured in Chrome on a seeded 546-photo grid: without a
+    // release band the mounted count climbs 24 → 100 → 212 → 364 → 546 and
+    // never falls, because a tile that has been scrolled past keeps its object
+    // URL and any protection canvas for the life of the page. With it the peak
+    // is 68.
+    const src = read('GridGalleryLayout.tsx');
+    const release = src.match(/releaseRootMargin="([^"]+)"/);
+    expect(release, 'Grid declares no releaseRootMargin').toBeTruthy();
+    expect(release![1]).toMatch(LEGAL_ROOT_MARGIN);
+
+    // The gap between the bands is the hysteresis. If the outer band were not
+    // strictly wider, a tile would be released and immediately reloaded on
+    // every scroll across the edge.
+    const load = src.match(/inViewRootMargin="([^"]+)"/);
+    const percent = (value: string) => Number(value.split(/\s+/)[0].replace('%', ''));
+    expect(percent(release![1])).toBeGreaterThan(percent(load![1]));
+  });
+
   it('every layout that lazy-renders also declares a pre-load band', () => {
     // The defect was Grid being lazy with no margin. Any future layout that
     // opts into `lazy` and forgets the margin reintroduces it.
