@@ -72,7 +72,7 @@ afterEach(cleanup);
 it('shows every v2 signal locally before participation, without collector calls', async () => {
   mount();
   await screen.findByText('productUsage.catalogTitle');
-  expect(screen.getAllByRole('heading', { level: 4, hidden: true })).toHaveLength(73);
+  expect(screen.getAllByRole('heading', { level: 4, hidden: true })).toHaveLength(87);
   expect(service.enable).not.toHaveBeenCalled();
   expect(service.preview).not.toHaveBeenCalled();
   expect(service.upgradeConsent).not.toHaveBeenCalled();

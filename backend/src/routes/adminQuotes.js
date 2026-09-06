@@ -27,6 +27,7 @@
  */
 
 const express = require('express');
+const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -484,6 +485,7 @@ router.post(
     validateRequest(req);
     const id = parseInt(req.params.id, 10);
     const result = await quoteService.convertToEvent(id, req.admin.id);
+    if (!result.alreadyConverted) capabilityEvidence(res, 'crm_document_conversion');
     return successResponse(res, result, 200, result.alreadyConverted ? 'Already converted' : 'Quote converted');
   })
 );
@@ -499,6 +501,7 @@ router.post(
     validateRequest(req);
     const id = parseInt(req.params.id, 10);
     const result = await quoteService.convertToInvoiceOnly(id, req.admin.id);
+    if (!result.alreadyConverted) capabilityEvidence(res, 'crm_document_conversion');
     return successResponse(res, result, 200, 'Invoices created from quote');
   })
 );
@@ -519,6 +522,7 @@ router.post(
     const contractService = require('../services/contractService');
     const id = parseInt(req.params.id, 10);
     const result = await contractService.createFromQuote(id, req.admin.id);
+    if (!result.alreadyConverted) capabilityEvidence(res, 'crm_document_conversion');
     return successResponse(res, result, 200,
       result.alreadyConverted ? 'Already linked to a contract' : 'Contract drafted from quote');
   })

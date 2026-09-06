@@ -4,6 +4,7 @@
  */
 
 const express = require('express');
+const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const router = express.Router();
 const { body, query, validationResult } = require('express-validator');
 const { db, withRetry } = require('../database/db');
@@ -227,6 +228,8 @@ router.post('/:eventId/export', adminAuth, requirePermission('photos.download'),
       ...options,
       admin_id: req.admin.id,
     });
+
+    if (format === 'xmp') capabilityEvidence(res, 'photo_xmp_export');
 
     if (result.type === 'stream') {
       res.setHeader('Content-Type', result.contentType);

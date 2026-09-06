@@ -5,7 +5,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { ValidationError } = require('../utils/errors');
 const service = require('../services/productUsageService');
-const { ProtocolError } = require('../usage/protocol.cjs');
+const { ProtocolError, schemaForConsent } = require('../usage/protocol.cjs');
 const router = express.Router();
 const wrap = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res)).catch((error) => {
@@ -82,9 +82,9 @@ router.post(
 router.post(
   '/consent',
   wrap(async (req, res) => {
-    if (!req.body || Object.keys(req.body).length !== 1 || req.body.consent_version !== 'usage-consent.v2')
-      throw new ValidationError('Explicit usage v2 consent is required');
-    res.json(await service.command('consent', { consent_version: 'usage-consent.v2' }));
+    if (!req.body || Object.keys(req.body).length !== 1 || !['usage.v2', 'usage.v3'].includes(schemaForConsent(req.body.consent_version)))
+      throw new ValidationError('Explicit usage consent is required');
+    res.json(await service.command('consent', { consent_version: req.body.consent_version }));
   })
 );
 router.post(

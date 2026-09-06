@@ -7,6 +7,7 @@
  */
 
 const express = require('express');
+const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -719,6 +720,7 @@ router.post('/:id/bill-combined', [
     { includeHours: req.body.includeHours !== false, includeRebills: req.body.includeRebills !== false },
     req.admin.id,
   );
+  if (result.invoiceId) capabilityEvidence(res, 'crm_combined_billing');
   successResponse(res, result, 201);
 }));
 
@@ -769,6 +771,7 @@ router.post('/:id/trigger-monthly-bill', [
     parseInt(req.params.id, 10),
     req.admin.id,
   );
+  if (result.invoiceId) capabilityEvidence(res, 'crm_monthly_billing_manual');
   successResponse(res, result, 201);
 }));
 
