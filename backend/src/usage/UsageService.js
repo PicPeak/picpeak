@@ -564,14 +564,31 @@ class UsageService {
           });
         return null;
       }
-      const envelope = signPacket(
-        packet,
-        {
-          public_key: state.public_key,
-          private_key: this.decrypt(state.private_key_encrypted)
-        },
-        new Date(this.now())
-      );
+      const identity = {
+        public_key: state.public_key,
+        private_key: this.decrypt(state.private_key_encrypted)
+      };
+      let envelope;
+      try {
+        envelope = signPacket(packet, identity, new Date(this.now()));
+      } catch (error) {
+        // A report queued under a catalog this build no longer ships — the
+        // upgrade replaced a key in the same wire version — fails local
+        // validation before anything is sent, and retrying cannot repair it.
+        // Left as it was it blocked every operation behind it for good. A
+        // report's payload is derived state, so rebuild it from the current
+        // snapshot in place. The packet ID and sequence are kept: a re-signed
+        // retry must reuse them so a lost acknowledgement does not duplicate
+        // data. Reports only — a stale registration, deletion or command is a
+        // genuine conflict and keeps the handling below.
+        if (error.code !== 'INVALID_PACKET' || packet.action !== 'report') throw error;
+        packet.payload = await this.snapshot(packet.schema_version);
+        state.pending_packet = JSON.stringify(packet);
+        await this.db('product_usage_state')
+          .where({ id: 1, status: 'active' })
+          .update({ pending_packet: state.pending_packet });
+        envelope = signPacket(packet, identity, new Date(this.now()));
+      }
       // Last check before anything leaves. The guard at the top of this
       // method runs before the binding lookup above, which is asynchronous —
       // so a withdrawal that COMPLETED during it would previously still have

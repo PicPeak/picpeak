@@ -22,7 +22,7 @@
       "signals": [
         "galleries",
         "gallery_guest_uploads",
-        "gallery_downloads",
+        "gallery_downloads_restricted",
         "gallery_client_access",
         "gallery_watermarks",
         "gallery_image_protection",
@@ -569,7 +569,7 @@
       "signals": [
         "galleries",
         "gallery_guest_uploads",
-        "gallery_downloads",
+        "gallery_downloads_restricted",
         "gallery_client_access",
         "gallery_watermarks",
         "gallery_reveal",
@@ -1774,7 +1774,7 @@
     "gallery_feedback_color_labels",
     "gallery_guest_accounts",
     "gallery_guest_uploads",
-    "gallery_downloads",
+    "gallery_downloads_restricted",
     "download_resolution_picker",
     "gallery_client_access",
     "gallery_watermarks",

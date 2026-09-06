@@ -335,9 +335,9 @@
         "name": "Gast-Uploads aktiviert",
         "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
       },
-      "gallery_downloads": {
-        "name": "Galerie-Downloads erlaubt",
-        "configured": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+      "gallery_downloads_restricted": {
+        "name": "Galerie-Downloads eingeschränkt",
+        "configured": "Mindestens eine Galerie hat Downloads abgeschaltet; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
       },
       "download_resolution_picker": {
         "name": "Download-Auflösungswahl aktiviert",

@@ -27,7 +27,7 @@ for (const engine of ['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : 
       await db.schema.createTable('feature_flags', t => { t.string('key').primary(); t.boolean('value'); });
       await db.schema.createTable('events', t => {
         t.increments('id'); t.text('color_theme'); t.string('external_path'); t.integer('css_template_id');
-        t.string('default_photo_sort'); t.boolean('is_archived'); t.boolean('is_draft');
+        t.string('default_photo_sort'); t.boolean('is_archived'); t.boolean('is_draft'); t.boolean('allow_downloads');
       });
       await db.schema.createTable('photos', t => { t.increments('id'); t.integer('event_id'); t.string('media_type'); t.string('filename'); });
       await db.schema.createTable('css_templates', t => { t.increments('id'); t.boolean('is_enabled'); t.text('css_content'); });
@@ -124,6 +124,69 @@ for (const engine of ['sqlite3', ...(process.env.PICPEAK_PG_TEST_URL ? ['pg'] : 
       expect((await snap({ transfers: true })).transfer_upload_links.configured).toBe(false);
       await db('photo_categories').update({ event_id: 999 });
       expect((await snap({})).gallery_folders.configured).toBe(false);
+    });
+
+    test('gallery_downloads_restricted counts galleries with downloads switched off, and v2 keeps its old key', async () => {
+      // allow_downloads ships true, so the v2 key was true on every install
+      // with a gallery. Only switching downloads off is a decision.
+      const snap = version => expandSnapshot(db, { features: p.emptyFeatures('usage.v1'), flags: {}, used: new Set(), now, version });
+      expect((await snap('usage.v3')).gallery_downloads_restricted).toEqual({ configured: false });
+      expect(await snap('usage.v3')).not.toHaveProperty('gallery_downloads');
+      await db('events').insert([{ allow_downloads: true }, { allow_downloads: true }]);
+      expect((await snap('usage.v3')).gallery_downloads_restricted.configured).toBe(false);
+      expect((await snap('usage.v2')).gallery_downloads).toEqual({ configured: true });
+      expect(await snap('usage.v2')).not.toHaveProperty('gallery_downloads_restricted');
+      await db('events').insert({ allow_downloads: false });
+      expect((await snap('usage.v3')).gallery_downloads_restricted.configured).toBe(true);
+      expect((await snap('usage.v2')).gallery_downloads.configured).toBe(true);
+    });
+
+    test('a report queued under the replaced catalog is rebuilt in place, keeping its packet id', async () => {
+      const identity = p.generateIdentity();
+      const posted = [];
+      const service = new UsageService(db, {
+        now: () => now, secret: 'v3-test-only-secret'.repeat(3), endpoint: 'http://127.0.0.1:9/',
+        fetch: async (_url, init) => { posted.push(JSON.parse(init.body).packet); throw new Error('collector unreachable'); },
+      });
+      service.binding = async () => 'b'.repeat(64);
+      const report = (features) => ({
+        picpeak_version: '1.0.0', report_date: '2026-09-05', generated_at: new Date(now).toISOString(),
+        features, gallery_layouts: [], inventory: { galleries: 0, photos: 0 },
+      });
+      // The v3 catalog as it stood before gallery_downloads_restricted replaced gallery_downloads.
+      const { gallery_downloads_restricted, ...rest } = p.emptyFeatures('usage.v3');
+      const stale = { ...rest, gallery_downloads: gallery_downloads_restricted };
+      const seed = (payload) => db('product_usage_state').where({ id: 1 }).update({
+        status: 'active', installation_id: identity.installation_id, public_key: identity.public_key,
+        private_key_encrypted: service.encrypt(identity.private_key), instance_binding: 'b'.repeat(64),
+        sequence: 1, last_error: null, attempts: 3, next_attempt_at: now + 60_000,
+        pending_packet: JSON.stringify(p.makePacket(identity, 'report', 2, payload, 'usage.v3')),
+      });
+
+      await seed(report(stale));
+      const queued = JSON.parse((await db('product_usage_state').where({ id: 1 }).first()).pending_packet);
+      await service.deliver(await db('product_usage_state').where({ id: 1 }).first());
+      // Sent once, under the current catalog, as the same packet.
+      expect(posted).toHaveLength(1);
+      expect(posted[0].packet_id).toBe(queued.packet_id);
+      expect(posted[0].sequence).toBe(2);
+      expect(posted[0].payload.features).toHaveProperty('gallery_downloads_restricted');
+      expect(posted[0].payload.features).not.toHaveProperty('gallery_downloads');
+      // The rebuilt packet is what stays queued for the ordinary retry path.
+      let row = await db('product_usage_state').where({ id: 1 }).first();
+      const retained = JSON.parse(row.pending_packet);
+      expect(retained.packet_id).toBe(queued.packet_id);
+      expect(retained.payload.features).toHaveProperty('gallery_downloads_restricted');
+      expect(row.status).toBe('active');
+      expect(row.last_error).toBe('DELIVERY_FAILED');
+
+      // Narrow: a report that still validates is sent as queued, payload untouched.
+      await seed(report(p.emptyFeatures('usage.v3')));
+      await service.deliver(await db('product_usage_state').where({ id: 1 }).first());
+      expect(posted).toHaveLength(2);
+      expect(posted[1].payload.report_date).toBe('2026-09-05');
+      row = await db('product_usage_state').where({ id: 1 }).first();
+      expect(JSON.parse(row.pending_packet).payload.report_date).toBe('2026-09-05');
     });
 
     test('ML recognition is already represented without querying faces or results', async () => {

@@ -335,9 +335,9 @@
         "name": "Guest uploads enabled",
         "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
       },
-      "gallery_downloads": {
-        "name": "Gallery downloads allowed",
-        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
+      "gallery_downloads_restricted": {
+        "name": "Gallery downloads restricted",
+        "configured": "At least one gallery has downloads switched off; only existence across the installation, never gallery IDs or counts."
       },
       "download_resolution_picker": {
         "name": "Download resolution picker enabled",

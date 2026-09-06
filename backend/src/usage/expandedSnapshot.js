@@ -82,9 +82,20 @@ async function expandSnapshot(db, { features, flags, used, now, version = 'usage
   });
   result.webhooks.configured = await enabled('webhooks', 'active');
   for (const [key, column] of Object.entries({
-    gallery_guest_uploads: 'allow_user_uploads', gallery_downloads: 'allow_downloads',
+    gallery_guest_uploads: 'allow_user_uploads',
     gallery_client_access: 'client_access_enabled', gallery_watermarks: 'watermark_downloads'
   })) result[key].configured = await enabled('events', column);
+  // allow_downloads ships true — column default and the create route both set
+  // it — so "at least one gallery allows downloads" is true on every install
+  // with a gallery and says nothing. v2 consented to that key under that
+  // description, so v2 keeps sending it unchanged. v3 asks the question that
+  // is actually a decision: has anyone switched downloads off.
+  if (version === 'usage.v3') {
+    result.gallery_downloads_restricted.configured = await exists('events', ['allow_downloads'], (query) =>
+      query.where('allow_downloads', formatBoolean(false)));
+  } else {
+    result.gallery_downloads.configured = await enabled('events', 'allow_downloads');
+  }
   result.gallery_watermarks.configured ||= truth(settings.branding_watermark_enabled);
   result.gallery_reveal.configured = await exists('events', ['allow_user_uploads', 'reveal_mode'], (query) =>
     query.where({ allow_user_uploads: formatBoolean(true), reveal_mode: formatBoolean(true) }));
