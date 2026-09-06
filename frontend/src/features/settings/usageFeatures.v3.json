@@ -1182,18 +1182,18 @@
       },
       "used": null
     },
-    "gallery_downloads_restricted": {
+    "gallery_downloads": {
       "category": "gallery_configuration",
-      "since": "usage.v3",
+      "since": "usage.v2",
       "measurement": "configuration",
       "configuration": "configuration",
       "name": {
-        "en": "Gallery downloads restricted",
-        "de": "Galerie-Downloads eingeschränkt"
+        "en": "Gallery downloads allowed",
+        "de": "Galerie-Downloads erlaubt"
       },
       "configured": {
-        "en": "At least one gallery has downloads switched off; only existence across the installation, never gallery IDs or counts.",
-        "de": "Mindestens eine Galerie hat Downloads abgeschaltet; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+        "en": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts.",
+        "de": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
       },
       "used": null
     },

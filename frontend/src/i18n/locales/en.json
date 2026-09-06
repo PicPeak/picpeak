@@ -1,17 +1,17 @@
 {
   "productUsage": {
-    "fields": "usage.v3 reports contain an installation fingerprint, PicPeak version, UTC report date and generation time, schema/signing metadata, controlled gallery layouts, 86 fixed capability signals (63 configured/used pairs and 23 configuration-only booleans), and two installation totals: stored galleries and photo records excluding videos. Drafts and archived galleries and their retained photo records are included. The catalog below defines every field. There are no action counts or visitor observations.",
-    "catalogTitle": "Full catalog: 86 capability signals and 2 inventory totals (usage.v3)",
+    "fields": "usage.v4 reports contain an installation fingerprint, PicPeak version, UTC report date and generation time, schema/signing metadata, controlled gallery layouts, 86 fixed capability signals (63 configured/used pairs and 23 configuration-only booleans), and two installation totals: stored galleries and photo records excluding videos. Drafts and archived galleries and their retained photo records are included. The catalog below defines every field. There are no action counts or visitor observations.",
+    "catalogTitle": "Full catalog: 86 capability signals and 2 inventory totals (usage.v4)",
     "catalogExplanation": "Configured describes current technical availability or configuration. Built-in means available, not used. Used is one installation-wide yes/no bit since consent to the reporting schema; accepted jobs mean initiated, not necessarily completed. Configuration-only capabilities omit used. Inventory contains only current gallery/photo record totals, with no per-gallery breakdown. No actor, entity identifier, action time or frequency is stored in usage markers.",
     "catalogSearch": "Search capability name or key",
     "catalogEmpty": "No matching capabilities.",
     "configuredLabel": "Configured",
     "usedLabel": "Used",
     "configurationOnly": "Configuration only — actual use is not collected.",
-    "versionDisclosure": "This consent covers usage.v3 / usage-consent.v3. Existing v1 and v2 participants retain their previous 19 or 73 capabilities without inventory totals until they explicitly upgrade. Identity and raw history remain; local usage markers restart only after the collector confirms the upgrade. At most one report per UTC day is accepted, so the first v3 report may be on the next active day. New markers and totals are not collected before confirmation.",
+    "versionDisclosure": "This consent covers usage.v4 / usage-consent.v4. It replaces the question “does any gallery allow downloads?” with “does any gallery have downloads switched off?”. Existing v1/v2/v3 participants keep their exact previous scope until they explicitly upgrade. Identity and raw history remain; pending packets are delivered unchanged before an upgrade. Local usage markers restart only after confirmation. The first v4 report may be on the next active UTC day. The new signal is never collected before confirmation.",
     "currentSchema": "Current reporting schema: {{schema}}",
-    "reviewUpgrade": "Review expanded usage.v3 scope",
-    "upgrade": "Explicitly agree to usage.v3",
+    "reviewUpgrade": "Review expanded usage.v4 scope",
+    "upgrade": "Explicitly agree to usage.v4",
     "upgradeExplanation": "Your existing participation keeps its current scope. Review the expanded catalog and the two inventory totals before deciding whether to upgrade. Declining does not end participation.",
     "upgradePending": "The signed consent upgrade is pending confirmation. Only the previously accepted scope is collected. Retry when the collector is available, or disable participation to stop and delete.",
     "catalog": {
@@ -335,9 +335,9 @@
         "name": "Guest uploads enabled",
         "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
       },
-      "gallery_downloads_restricted": {
-        "name": "Gallery downloads restricted",
-        "configured": "At least one gallery has downloads switched off; only existence across the installation, never gallery IDs or counts."
+      "gallery_downloads": {
+        "name": "Gallery downloads allowed",
+        "configured": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts."
       },
       "download_resolution_picker": {
         "name": "Download resolution picker enabled",
@@ -421,6 +421,10 @@
       "download_original_filenames": {
         "name": "Original download filenames enabled",
         "configured": "The original-download-filenames switch is enabled; no filenames or downloads are read or sent."
+      },
+      "gallery_downloads_restricted": {
+        "name": "Gallery downloads restricted",
+        "configured": "At least one gallery has downloads switched off; only existence across the installation, never gallery IDs or counts."
       }
     },
     "auditTitle": "Export and deletion receipts",

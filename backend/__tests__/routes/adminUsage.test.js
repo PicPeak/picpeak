@@ -201,13 +201,13 @@ test('public/gallery paths and failed/unauthenticated admin operations never set
   expect(JSON.stringify(service.markUsed.mock.calls)).not.toContain('42');
 });
 
-test('consent upgrade accepts exactly the explicit v2 choice, never extra fields', async () => {
-  for (const data of [{}, { consent_version: 'usage-consent.v1' }, { consent_version: 'usage-consent.v2', user: 'PRIVATE' }])
+test.each(['usage-consent.v2', 'usage-consent.v3', 'usage-consent.v4'])('consent upgrade accepts exactly the explicit %s choice, never extra fields', async (consent_version) => {
+  for (const data of [{}, { consent_version: 'usage-consent.v1' }, { consent_version: 'usage-consent.v5' }, { consent_version, user: 'PRIVATE' }])
     await request(app).post('/api/admin/usage/consent').set('Authorization', `Bearer ${token('admin')}`).send(data).expect(400);
   expect(service.command).not.toHaveBeenCalled();
   await request(app).post('/api/admin/usage/consent').set('Authorization', `Bearer ${token('admin')}`)
-    .send({ consent_version: 'usage-consent.v2' }).expect(200);
-  expect(service.command).toHaveBeenCalledWith('consent', { consent_version: 'usage-consent.v2' });
+    .send({ consent_version }).expect(200);
+  expect(service.command).toHaveBeenCalledWith('consent', { consent_version });
 });
 
 test('only a backup that writes to the configured destination flags S3', () => {

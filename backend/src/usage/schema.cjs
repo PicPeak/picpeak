@@ -2,10 +2,10 @@
 
 // Vendored byte-identical in PicPeak. Existing wire versions stay immutable;
 // every expansion requires explicit consent to its own version.
-const CATALOG = require("./features.v3.json");
-const CATALOGS = { "usage.v2": require("./features.v2.json"), "usage.v3": CATALOG };
-const CONSENT_VERSIONS = { "usage.v1": "usage-consent.v1", "usage.v2": "usage-consent.v2", "usage.v3": "usage-consent.v3" };
-const CURRENT_SCHEMA_VERSION = "usage.v3";
+const CATALOG = require("./features.v4.json");
+const CATALOGS = { "usage.v2": require("./features.v2.json"), "usage.v3": require("./features.v3.json"), "usage.v4": CATALOG };
+const CONSENT_VERSIONS = { "usage.v1": "usage-consent.v1", "usage.v2": "usage-consent.v2", "usage.v3": "usage-consent.v3", "usage.v4": "usage-consent.v4" };
+const CURRENT_SCHEMA_VERSION = "usage.v4";
 const CURRENT_CONSENT_VERSION = CONSENT_VERSIONS[CURRENT_SCHEMA_VERSION];
 const schemaForConsent = (consent) => Object.keys(CONSENT_VERSIONS).find((version) => CONSENT_VERSIONS[version] === consent);
 const schemaRank = (version) => Object.keys(CONSENT_VERSIONS).indexOf(version);
@@ -19,6 +19,10 @@ const LEGACY_FEATURE_KEYS = [
   "whatsapp", "backup", "s3_storage", "share_mounts",
 ];
 const FEATURE_KEYS = Object.keys(CATALOG.features);
+// Historical questions remain independently visible after a newer schema
+// stops asking them. Never rename or invert a retained report's values.
+const ALL_FEATURES = Object.assign({}, ...Object.values(CATALOGS).map(c => c.features));
+const ALL_FEATURE_KEYS = Object.keys(ALL_FEATURES);
 const LAYOUTS = ["grid", "masonry", "carousel", "timeline", "mosaic", "gallery-premium", "gallery-story", "other"];
 const object = (properties, required = Object.keys(properties)) => ({
   type: "object", additionalProperties: false, properties, required,
@@ -45,7 +49,7 @@ const report = (version) => object({
     key, object({ configured: boolean, ...(observesUse(key, version) ? { used: boolean } : {}) })
   ]))),
   gallery_layouts: { type: "array", uniqueItems: true, maxItems: LAYOUTS.length, items: { enum: LAYOUTS } },
-  ...(version === "usage.v3" ? { inventory: object(Object.fromEntries(INVENTORY_KEYS.map(key => [key,
+  ...(["usage.v3", "usage.v4"].includes(version) ? { inventory: object(Object.fromEntries(INVENTORY_KEYS.map(key => [key,
     { type: "integer", minimum: 0, maximum: MAX_INVENTORY_COUNT }
   ]))) } : {}),
 });
@@ -109,7 +113,7 @@ const ingressEnvelopeSchemas = Object.fromEntries(Object.entries(envelopeSchemas
   return [version, schema];
 }));
 module.exports = {
-  FEATURE_KEYS, LEGACY_FEATURE_KEYS, LAYOUTS, CATALOG, CATALOGS, CONSENT_VERSIONS,
+  FEATURE_KEYS, ALL_FEATURES, ALL_FEATURE_KEYS, LEGACY_FEATURE_KEYS, LAYOUTS, CATALOG, CATALOGS, CONSENT_VERSIONS,
   schemaForConsent, schemaRank, INVENTORY_KEYS, MAX_INVENTORY_COUNT, CURRENT_SCHEMA_VERSION,
   CURRENT_CONSENT_VERSION, featureKeysFor, observesUse, emptyFeatures,
   envelopeSchema, envelopeSchemas, ingressEnvelopeSchemas, payloads, payloadsByVersion,

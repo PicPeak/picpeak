@@ -22,7 +22,7 @@
       "signals": [
         "galleries",
         "gallery_guest_uploads",
-        "gallery_downloads",
+        "gallery_downloads_restricted",
         "gallery_client_access",
         "gallery_watermarks",
         "gallery_image_protection",
@@ -336,7 +336,7 @@
         "gallery_categories",
         "gallery_folders"
       ],
-      "reason": "Admin category CRUD; no names, descriptions, colors or ordering values. v3 adds only: gallery_folders. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Admin category CRUD; no names, descriptions, colors or ordering values. v3 adds only: gallery_folders. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /global",
         "GET /event/:eventId",
@@ -371,7 +371,7 @@
         "document_templates",
         "crm_document_conversion"
       ],
-      "reason": "Admin contract/block operations only; no legal text, signatures, signing parties or customer signing events. v3 adds only: crm_document_conversion. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Admin contract/block operations only; no legal text, signatures, signing parties or customer signing events. v3 adds only: crm_document_conversion. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /blocks",
         "POST /blocks",
@@ -419,7 +419,7 @@
         "crm_combined_billing",
         "crm_monthly_billing_manual"
       ],
-      "reason": "Successful admin CRM/hour-entry/invitation operations only. No customer/account names, IDs, rates, billed hours, payment state or portal behavior. v3 adds only: crm_combined_billing, crm_monthly_billing_manual. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Successful admin CRM/hour-entry/invitation operations only. No customer/account names, IDs, rates, billed hours, payment state or portal behavior. v3 adds only: crm_combined_billing, crm_monthly_billing_manual. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /",
         "GET /search",
@@ -569,7 +569,7 @@
       "signals": [
         "galleries",
         "gallery_guest_uploads",
-        "gallery_downloads",
+        "gallery_downloads_restricted",
         "gallery_client_access",
         "gallery_watermarks",
         "gallery_reveal",
@@ -578,7 +578,7 @@
         "custom_css",
         "gallery_capture_date_sort"
       ],
-      "reason": "Admin creation/edit/publish etc. set galleries; sharing has its own fixed key. Guest/download/protection/reveal/expiry are configuration only; themes contribute controlled layouts and CSS presence. No gallery metadata or guest action history. v3 adds only: gallery_capture_date_sort. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Admin creation/edit/publish etc. set galleries; sharing has its own fixed key. Guest/download/protection/reveal/expiry are configuration only; themes contribute controlled layouts and CSS presence. No gallery metadata or guest action history. v3 adds only: gallery_capture_date_sort. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "POST /",
         "GET /",
@@ -852,7 +852,7 @@
         "crm_invoices",
         "crm_invoice_import"
       ],
-      "reason": "Admin invoice operations only; no amounts, VAT/customer/payment values or payment-check responses. v3 adds only: crm_invoice_import. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Admin invoice operations only; no amounts, VAT/customer/payment values or payment-check responses. v3 adds only: crm_invoice_import. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /",
         "GET /:id",
@@ -946,7 +946,7 @@
         "photo_exports",
         "photo_xmp_export"
       ],
-      "reason": "Admin export initiation only; export filters, selected files, sizes and contents excluded. v3 adds only: photo_xmp_export. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Admin export initiation only; export filters, selected files, sizes and contents excluded. v3 adds only: photo_xmp_export. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /:eventId/filtered",
         "GET /:eventId/filter-summary",
@@ -967,7 +967,7 @@
         "photo_replacement",
         "photo_admin_marks"
       ],
-      "reason": "Successful admin edits/exports and accepted upload evidence only. Chunk init/status, failed uploads and public downloads excluded. Only video/RAW/S3 booleans survive, never file metadata/EXIF/content. v3 adds only: photo_replacement, photo_admin_marks. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Successful admin edits/exports and accepted upload evidence only. Chunk init/status, failed uploads and public downloads excluded. Only video/RAW/S3 booleans survive, never file metadata/EXIF/content. v3 adds only: photo_replacement, photo_admin_marks. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "POST /:eventId/upload",
         "GET /uploads/:upload_id/status",
@@ -1022,7 +1022,7 @@
         "document_templates",
         "crm_document_conversion"
       ],
-      "reason": "Admin quote/preset operations only; no quote content, prices, customer acceptance or signatures. v3 adds only: crm_document_conversion. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Admin quote/preset operations only; no quote content, prices, customer acceptance or signatures. v3 adds only: crm_document_conversion. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /",
         "GET /:id",
@@ -1109,7 +1109,7 @@
         "s3_auto_import",
         "download_original_filenames"
       ],
-      "reason": "Only specified configuration presence/booleans and explicit branding/SEO/slideshow operations. Generic settings reads, security policies, passwords, storage data, SMTP/OIDC credentials, custom HTML/CSS/SEO values excluded. v3 adds only: s3_auto_import, download_original_filenames. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Only specified configuration presence/booleans and explicit branding/SEO/slideshow operations. Generic settings reads, security policies, passwords, storage data, SMTP/OIDC credentials, custom HTML/CSS/SEO values excluded. v3 adds only: s3_auto_import, download_original_filenames. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /",
         "GET /:type",
@@ -1217,7 +1217,7 @@
         "transfers",
         "transfer_upload_links"
       ],
-      "reason": "Admin transfer CRUD/files/link management/download only. Public recipients, received-file data, upload and download statistics excluded. v3 adds only: transfer_upload_links. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Admin transfer CRUD/files/link management/download only. Public recipients, received-file data, upload and download statistics excluded. v3 adds only: transfer_upload_links. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /",
         "POST /",
@@ -1321,7 +1321,7 @@
         "workflows",
         "workflow_automation_enabled"
       ],
-      "reason": "Admin workflow authoring/approval/test initiation only. Runtime triggers, payloads, execution frequency/results and public approvals excluded. v3 adds only: workflow_automation_enabled. Exact definitions are in features.v3.json; configuration-only signals never observe the public surface.",
+      "reason": "Admin workflow authoring/approval/test initiation only. Runtime triggers, payloads, execution frequency/results and public approvals excluded. v3 adds only: workflow_automation_enabled. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
       "route_signatures": [
         "GET /approvals",
         "POST /approvals/:id/:action",
@@ -1774,7 +1774,7 @@
     "gallery_feedback_color_labels",
     "gallery_guest_accounts",
     "gallery_guest_uploads",
-    "gallery_downloads",
+    "gallery_downloads_restricted",
     "download_resolution_picker",
     "gallery_client_access",
     "gallery_watermarks",

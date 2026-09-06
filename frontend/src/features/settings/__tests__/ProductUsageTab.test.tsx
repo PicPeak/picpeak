@@ -69,7 +69,7 @@ beforeEach(() => {
   };
 });
 afterEach(cleanup);
-it('shows every v2 signal locally before participation, without collector calls', async () => {
+it('shows every v4 signal locally before participation, without collector calls', async () => {
   mount();
   await screen.findByText('productUsage.catalogTitle');
   expect(screen.getAllByRole('heading', { level: 4, hidden: true })).toHaveLength(87);
@@ -77,8 +77,8 @@ it('shows every v2 signal locally before participation, without collector calls'
   expect(service.preview).not.toHaveBeenCalled();
   expect(service.upgradeConsent).not.toHaveBeenCalled();
 });
-it('existing v1 requires renewed unchecked consent; cancellation keeps v1 unchanged', async () => {
-  vi.mocked(service.status).mockResolvedValue({ ...status, status: 'active', consent_update_available: true });
+it.each(['usage.v1', 'usage.v2', 'usage.v3'])('existing %s requires renewed unchecked consent; cancellation keeps its scope unchanged', async (schema_version) => {
+  vi.mocked(service.status).mockResolvedValue({ ...status, status: 'active', schema_version, consent_update_available: true });
   vi.mocked(service.upgradeConsent).mockResolvedValue({ delivered: false, queued: true, state: { ...status, status: 'active', pending_action: 'consent' } });
   mount();
   fireEvent.click(await screen.findByText('productUsage.reviewUpgrade'));

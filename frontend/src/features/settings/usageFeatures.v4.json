@@ -1,6 +1,6 @@
 {
-  "schema_version": "usage.v3",
-  "consent_version": "usage-consent.v3",
+  "schema_version": "usage.v4",
+  "consent_version": "usage-consent.v4",
   "features": {
     "crm": {
       "category": "crm",
@@ -1182,18 +1182,18 @@
       },
       "used": null
     },
-    "gallery_downloads": {
+    "gallery_downloads_restricted": {
       "category": "gallery_configuration",
-      "since": "usage.v2",
+      "since": "usage.v4",
       "measurement": "configuration",
       "configuration": "configuration",
       "name": {
-        "en": "Gallery downloads allowed",
-        "de": "Galerie-Downloads erlaubt"
+        "en": "Gallery downloads restricted",
+        "de": "Galerie-Downloads eingeschränkt"
       },
       "configured": {
-        "en": "Enabled in applicable gallery/global configuration; only existence across the installation, never gallery IDs or counts.",
-        "de": "In der betreffenden Galerie-/Globalkonfiguration aktiviert; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
+        "en": "At least one gallery has downloads switched off; only existence across the installation, never gallery IDs or counts.",
+        "de": "Mindestens eine Galerie hat Downloads abgeschaltet; nur installationsweite Existenz, niemals Galeriekennungen oder Anzahlen."
       },
       "used": null
     },

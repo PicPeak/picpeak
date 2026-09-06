@@ -85,12 +85,7 @@ async function expandSnapshot(db, { features, flags, used, now, version = 'usage
     gallery_guest_uploads: 'allow_user_uploads',
     gallery_client_access: 'client_access_enabled', gallery_watermarks: 'watermark_downloads'
   })) result[key].configured = await enabled('events', column);
-  // allow_downloads ships true — column default and the create route both set
-  // it — so "at least one gallery allows downloads" is true on every install
-  // with a gallery and says nothing. v2 consented to that key under that
-  // description, so v2 keeps sending it unchanged. v3 asks the question that
-  // is actually a decision: has anyone switched downloads off.
-  if (version === 'usage.v3') {
+  if (version === 'usage.v4') {
     result.gallery_downloads_restricted.configured = await exists('events', ['allow_downloads'], (query) =>
       query.where('allow_downloads', formatBoolean(false)));
   } else {
@@ -127,7 +122,7 @@ async function expandSnapshot(db, { features, flags, used, now, version = 'usage
     query.where({ feedback_enabled: formatBoolean(true), [column]: formatBoolean(true) }));
   result.gallery_guest_accounts.configured = await exists('event_feedback_settings', ['feedback_enabled', 'identity_mode'], (query) =>
     query.where('feedback_enabled', formatBoolean(true)).whereIn('identity_mode', ['guest', 'shared']));
-  if (version === 'usage.v3') {
+  if (['usage.v3', 'usage.v4'].includes(version)) {
     result.gallery_folders.configured = await exists('photo_categories', ['is_folder', 'event_id'], (query) =>
       query.where('is_folder', formatBoolean(true)).where((q) => q.whereNull('event_id').orWhereIn('event_id', db('events').select('id'))));
     result.transfer_upload_links.configured = Boolean(effective.transfers) && await exists('transfers',
