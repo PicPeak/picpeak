@@ -31,6 +31,44 @@ interface AuthenticatedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImage
 }
 
 /**
+ * Retry budget for a fetch that rejects (#1287). Three attempts with a
+ * doubling delay — 2 s, 4 s, 8 s — and each one waits until the placeholder
+ * is actually on screen and the document is visible before it fires.
+ */
+const MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 2000;
+
+/** A non-OK response, with its status so the retry can tell transient from final. */
+class HttpError extends Error {
+  status: number;
+  /** Server-stated cooldown from `Retry-After`, in ms; 0 when absent. */
+  retryAfterMs: number;
+  constructor(status: number, statusText: string, retryAfter: string | null) {
+    super(`Failed to fetch image: ${status} ${statusText}`);
+    this.status = status;
+    this.retryAfterMs = parseRetryAfter(retryAfter);
+  }
+}
+
+/** `Retry-After` is either delay-seconds or an HTTP date. */
+function parseRetryAfter(value: string | null): number {
+  if (!value) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(value);
+  return Number.isFinite(at) ? Math.max(0, at - Date.now()) : 0;
+}
+
+/**
+ * A 4xx other than 408 (timeout) and 429 (rate limited) is the server's final
+ * answer for this URL — an expired gallery token, a missing photo — and asking
+ * again cannot change it. Everything else (network failure, 5xx, aborts that
+ * were not ours) may.
+ */
+const isFinalStatus = (status: number) =>
+  status >= 400 && status < 500 && status !== 408 && status !== 429;
+
+/**
  * Fetches an image with the gallery's bearer token and renders it.
  *
  * IMAGE PROTECTION IS NOT IMPLEMENTED HERE (#1297). This component used to
@@ -76,6 +114,17 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   const [canvasFailed, setCanvasFailed] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  // Retry state (#1287). The nonce is a dependency of the fetch effect, so
+  // bumping it is the retry; the counter is per src, so a new image gets a
+  // fresh budget without an extra effect run to reset it.
+  const [retryNonce, setRetryNonce] = useState(0);
+  const attemptsRef = useRef(0);
+  // Cooldown the server asked for on the last failure (#1287). The backoff
+  // alone would spend all three retries inside a 15-minute rate-limit window
+  // and leave the tile blank after the limit had actually lifted.
+  const retryAfterRef = useRef(0);
+  const lastSrcRef = useRef<string | undefined>(undefined);
+  const retryRef = useRef<HTMLDivElement | null>(null);
 
   // Draw image to canvas when canvas rendering is enabled
   // Returns whether the pixels actually made it onto the canvas, so the
@@ -108,9 +157,15 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     // screen, which on a several-hundred-photo gallery is most of them.
     const controller = new AbortController();
 
+    if (lastSrcRef.current !== src) {
+      lastSrcRef.current = src;
+      attemptsRef.current = 0;
+    }
+
     // Determine which token to use based on context
     if (!src) {
       setImageSrc(fallbackSrc || '');
+      setError(false);
       setIsLoading(false);
       return;
     }
@@ -175,7 +230,11 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         });
 
         if (!response.ok) {
-          throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+          throw new HttpError(
+            response.status,
+            response.statusText,
+            response.headers?.get?.('Retry-After') ?? null,
+          );
         }
 
         return await response.blob();
@@ -203,6 +262,13 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         // Returning here also stops the fallback below from firing a second
         // request against an already-aborted signal.
         if (aborted) return;
+        // A final 4xx exhausts the retry budget: on a 68-tile viewport, three
+        // retries per tile against an expired token would be ~200 requests
+        // that cannot succeed.
+        if (err instanceof HttpError && isFinalStatus(err.status)) {
+          attemptsRef.current = MAX_RETRIES;
+        }
+        retryAfterRef.current = err instanceof HttpError ? err.retryAfterMs : 0;
         setIsLoading(false);
         if (fallbackSrc && fallbackSrc !== src) {
           try {
@@ -238,7 +304,65 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src, fallbackSrc, slug, queuePriority]);
+  }, [src, fallbackSrc, slug, queuePriority, retryNonce]);
+
+  // Retry a failed fetch once the tile is back on screen (#1287).
+  //
+  // Before this, a rejected fetch set `error` and nothing ever asked again:
+  // the effect above only re-runs when its inputs change, and for a grid
+  // tile they never do. On the original reporter's install that was the
+  // difference between a transient failure and a permanently blank tile —
+  // a hiccup on cellular, or Safari cancelling loads when the tab goes to
+  // the background, left a tile with no image, no request in flight and
+  // nothing in any log, for as long as the gallery stayed open. That is the
+  // retry-on-scrolling-back-into-view the reporter asked for in the issue.
+  //
+  // Bounded, and gated on visibility. The delay doubles per attempt so a
+  // server that is actually down is not hammered, and an attempt does not
+  // fire until the placeholder intersects the viewport and the document is
+  // visible — a tile that failed while backgrounded retries when the user
+  // comes back, not while they are still away. Without IntersectionObserver
+  // the placeholder counts as visible.
+  const retryable = error && !fallbackSrc && attemptsRef.current < MAX_RETRIES;
+  useEffect(() => {
+    if (!retryable) return;
+    const el = retryRef.current;
+    if (!el) return;
+
+    let cancelled = false;
+    let delayElapsed = false;
+    let onScreen = typeof IntersectionObserver === 'undefined';
+
+    const retry = () => {
+      if (cancelled || !delayElapsed || !onScreen) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      cancelled = true;
+      attemptsRef.current += 1;
+      setRetryNonce((n) => n + 1);
+    };
+
+    const timer = setTimeout(() => {
+      delayElapsed = true;
+      retry();
+    }, Math.max(RETRY_BASE_DELAY_MS * 2 ** attemptsRef.current, retryAfterRef.current));
+
+    let observer: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== 'undefined') {
+      observer = new IntersectionObserver((entries) => {
+        onScreen = entries.some((entry) => entry.isIntersecting);
+        retry();
+      });
+      observer.observe(el);
+    }
+    document.addEventListener('visibilitychange', retry);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      observer?.disconnect();
+      document.removeEventListener('visibilitychange', retry);
+    };
+  }, [retryable, retryNonce]);
 
   // Effect to draw to canvas when image is loaded and canvas rendering is enabled
   useEffect(() => {
@@ -312,6 +436,15 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
 
   if (error && fallbackSrc) {
     return <img src={fallbackSrc} alt={alt} {...props} />;
+  }
+
+  if (error) {
+    // Same box as the loading placeholder, and the element the retry effect
+    // observes. Returning null here (as this used to) left nothing to watch
+    // and nothing for the user to see either.
+    return (
+      <div ref={retryRef} className={props.className} style={{ backgroundColor: '#f3f4f6', ...props.style }} />
+    );
   }
 
   if (!imageSrc) {

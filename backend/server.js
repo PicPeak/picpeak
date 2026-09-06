@@ -239,7 +239,12 @@ const corsOptions = {
   // deployments can read the server's chosen download filename. Used
   // by the gallery/admin download flows to honour the #493 "original
   // camera filename" toggle on individual photo downloads (#507).
-  exposedHeaders: ['Content-Disposition'],
+  //
+  // Retry-After is not CORS-safelisted either. AuthenticatedImage reads it
+  // off a 429 to wait out the rate-limit window before retrying a thumbnail
+  // fetch; without it a split-origin deployment would spend its retry budget
+  // inside the window and leave the tile blank after the limit had lifted.
+  exposedHeaders: ['Content-Disposition', 'Retry-After'],
 };
 
 // Only attach CORS to API endpoints, not static assets
