@@ -196,7 +196,6 @@ export const PhotoGrid: React.FC<PhotoGridProps> = ({
             allowDownloads={allowDownloads}
             protectionLevel={protectionLevel}
             useEnhancedProtection={useEnhancedProtection}
-            useCanvasRendering={useCanvasRendering}
             slug={slug}
             feedbackEnabled={feedbackEnabled}
           />
@@ -214,6 +213,7 @@ export const PhotoGrid: React.FC<PhotoGridProps> = ({
           allowDownloads={allowDownloads}
           protectionLevel={protectionLevel}
           useEnhancedProtection={useEnhancedProtection}
+          useCanvasRendering={useCanvasRendering}
           disableRightClick={disableRightClick}
           enableDevtoolsProtection={enableDevtoolsProtection}
         />
@@ -231,7 +231,6 @@ interface PhotoThumbnailProps {
   allowDownloads?: boolean;
   protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
-  useCanvasRendering?: boolean;
   slug: string; // Add slug as required prop
   feedbackEnabled?: boolean;
 }
@@ -244,7 +243,6 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
   onDownload,
   allowDownloads = true,
   protectionLevel = 'standard',
-  useCanvasRendering = false,
   slug,
   feedbackEnabled = false
 }) => {
@@ -268,7 +266,6 @@ const PhotoThumbnail: React.FC<PhotoThumbnailProps> = ({
             loading="lazy"
             isGallery={true}
             slug={slug}
-            useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
             onProtectionViolation={(violationType) => {
               // Track analytics
               if (typeof window !== 'undefined' && (window as any).umami) {

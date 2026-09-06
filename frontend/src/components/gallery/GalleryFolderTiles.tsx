@@ -22,9 +22,7 @@ interface GalleryFolderTilesProps {
    * so a gallery configured for canvas rendering or maximum protection must not
    * get an ordinary blob-backed <img> here just because it is a cover.
    */
-  protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
-  useCanvasRendering?: boolean;
   allowDownloads?: boolean;
   /**
    * Compact chip row instead of cover cards. Used by the full-bleed layouts
@@ -40,8 +38,6 @@ export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({
   onOpen,
   compact = false,
   slug,
-  protectionLevel,
-  useCanvasRendering,
 }) => {
   const { t } = useTranslation();
 
@@ -95,10 +91,6 @@ export const GalleryFolderTiles: React.FC<GalleryFolderTilesProps> = ({
                   isGallery
                   slug={slug}
                   // Same rule as every other gallery image path: maximum
-                  // protection implies canvas rendering even when the separate
-                  // toggle is off (its default), otherwise a cover silently
-                  // falls back to a blob-backed <img>.
-                  useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">

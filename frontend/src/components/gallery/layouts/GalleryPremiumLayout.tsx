@@ -46,9 +46,7 @@ interface PhotoCardProps {
   isLiked: boolean;
   slug: string;
   allowDownloads?: boolean;
-  protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
-  useCanvasRendering?: boolean;
   feedbackEnabled?: boolean;
   // #506: track the per-event "allow likes" toggle so the per-photo
   // Like button respects it. `feedbackEnabled` alone isn't enough —
@@ -68,8 +66,6 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
   isSelectionMode,
   isLiked,
   slug,
-  protectionLevel = 'standard',
-  useCanvasRendering = false,
   feedbackEnabled = false,
   allowLikes = false,
   index
@@ -122,7 +118,6 @@ const PhotoCard: React.FC<PhotoCardProps> = ({
         loading="lazy"
         isGallery={true}
         slug={slug}
-        useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
       />
 
       {/* Colour label (#1044) — same badge every layout uses. */}
@@ -208,9 +203,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
   allowDownloads = true,
   downloadChoices,
   onPickResolution,
-  protectionLevel = 'standard',
   useEnhancedProtection = false,
-  useCanvasRendering = false,
   feedbackEnabled = false,
   feedbackOptions,
   heroPhotoOverride,
@@ -629,9 +622,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
                   isLiked={likedPhotoIds.has(originalPhoto.id)}
                   slug={slug}
                   allowDownloads={allowDownloads}
-                  protectionLevel={protectionLevel}
                   useEnhancedProtection={useEnhancedProtection}
-                  useCanvasRendering={useCanvasRendering}
                   feedbackEnabled={feedbackEnabled}
                   allowLikes={!!feedbackOptions?.allowLikes}
                   index={photoIndex}

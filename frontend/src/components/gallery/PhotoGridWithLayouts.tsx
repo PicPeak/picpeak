@@ -361,9 +361,7 @@ export const PhotoGridWithLayouts: React.FC<PhotoGridWithLayoutsProps> = ({
           heroLogoPosition={heroLogoPosition}
           dividerStyle={heroDividerStyle}
           allowDownloads={allowDownloads}
-          protectionLevel={protectionLevel}
           useEnhancedProtection={useEnhancedProtection}
-          useCanvasRendering={useCanvasRendering}
           heroImageAnchor={heroImageAnchor}
         />
       )}

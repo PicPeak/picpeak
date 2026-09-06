@@ -1311,9 +1311,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       onOpen={openFolderBySlug}
       compact={compact}
       slug={slug}
-      protectionLevel={protectionLevel}
       useEnhancedProtection={protectionLevel !== 'basic'}
-      useCanvasRendering={useCanvasRendering}
       allowDownloads={allowDownloads}
     />
   );

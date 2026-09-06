@@ -14,9 +14,7 @@ interface StoryCarouselProps {
   slug: string;
   id: string;
   allowDownloads?: boolean;
-  protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
-  useCanvasRendering?: boolean;
 }
 
 export const StoryCarousel: React.FC<StoryCarouselProps> = ({
@@ -27,9 +25,7 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
   slug,
   id,
   allowDownloads = true,
-  protectionLevel = 'standard',
   useEnhancedProtection = false,
-  useCanvasRendering = false
 }) => {
   return (
     <div id={id} className="story-carousel">
@@ -53,9 +49,7 @@ export const StoryCarousel: React.FC<StoryCarouselProps> = ({
                 slug={slug}
                 galleryId={id}
                 allowDownloads={allowDownloads}
-                protectionLevel={protectionLevel}
                 useEnhancedProtection={useEnhancedProtection}
-                useCanvasRendering={useCanvasRendering}
               />
             </div>
           </SwiperSlide>

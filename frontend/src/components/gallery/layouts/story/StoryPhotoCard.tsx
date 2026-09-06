@@ -14,9 +14,7 @@ interface StoryPhotoCardProps {
   onClick?: () => void;
   slug: string;
   allowDownloads?: boolean;
-  protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
-  useCanvasRendering?: boolean;
   featured?: boolean;
   galleryId: string;
 }
@@ -28,8 +26,6 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
   onToggleFavorite,
   onClick,
   slug,
-  protectionLevel = 'standard',
-  useCanvasRendering = false,
   featured = false,
   galleryId: _galleryId
 }) => {
@@ -103,7 +99,6 @@ export const StoryPhotoCard: React.FC<StoryPhotoCardProps> = ({
           }`}
           isGallery={true}
           slug={slug}
-          useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
         />
         )}
       </a>

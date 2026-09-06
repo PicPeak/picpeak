@@ -40,9 +40,7 @@ interface JustifiedPhotoProps {
   animationType?: string;
   allowDownloads?: boolean;
   slug?: string;
-  protectionLevel?: 'basic' | 'standard' | 'enhanced' | 'maximum';
   useEnhancedProtection?: boolean;
-  useCanvasRendering?: boolean;
   feedbackEnabled?: boolean;
   feedbackOptions?: {
     allowLikes?: boolean;
@@ -69,8 +67,6 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
   animationType = 'fade',
   allowDownloads = true,
   slug,
-  protectionLevel = 'standard',
-  useCanvasRendering = false,
   feedbackEnabled = false,
   feedbackOptions,
   savedIdentity,
@@ -133,7 +129,6 @@ const JustifiedPhoto: React.FC<JustifiedPhotoProps> = ({
         loading: 'lazy',
         isGallery: true,
         slug,
-        useCanvasRendering: useCanvasRendering || protectionLevel === 'maximum',
         onProtectionViolation: (violationType: string) => {
           console.warn(`Protection violation on justified photo ${photo.id}: ${violationType}`);
         },
@@ -214,9 +209,7 @@ export const JustifiedGalleryLayout: React.FC<JustifiedGalleryLayoutProps> = ({
   isSelectionMode = false,
   onPhotoSelect,
   allowDownloads = true,
-  protectionLevel = 'standard',
   useEnhancedProtection = false,
-  useCanvasRendering = false,
   feedbackEnabled = false,
   feedbackOptions,
   // Hero props
@@ -399,7 +392,6 @@ export const JustifiedGalleryLayout: React.FC<JustifiedGalleryLayoutProps> = ({
               className="w-full h-full object-cover"
               isGallery={true}
               slug={slug}
-              useCanvasRendering={useCanvasRendering || protectionLevel === 'maximum'}
             />
 
             {/* Overlay */}
@@ -523,9 +515,7 @@ export const JustifiedGalleryLayout: React.FC<JustifiedGalleryLayoutProps> = ({
               animationType={animation}
               allowDownloads={allowDownloads}
               slug={slug}
-              protectionLevel={protectionLevel}
               useEnhancedProtection={useEnhancedProtection}
-              useCanvasRendering={useCanvasRendering}
               feedbackEnabled={feedbackEnabled}
               feedbackOptions={feedbackOptions}
               savedIdentity={savedIdentity}
