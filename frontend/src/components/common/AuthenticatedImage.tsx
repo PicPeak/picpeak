@@ -17,7 +17,8 @@ interface AuthenticatedImageProps extends Omit<React.ImgHTMLAttributes<HTMLImage
   /** Fired when the canvas branch blocks a context-menu attempt. The only
    *  protection callback this component actually implements (#1297). */
   onProtectionViolation?: (violationType: string) => void;
-  onLoad?: () => void;
+  /** Dimensions of the loaded rendition, which can differ from the original. */
+  onLoad?: (dimensions: { width: number; height: number }) => void;
   /**
    * Priority in the shared fetch queue (#1287). NOT the native `fetchPriority`
    * DOM attribute, which stays available on this component and takes
@@ -112,8 +113,17 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [canvasReady, setCanvasReady] = useState(false);
   const [canvasFailed, setCanvasFailed] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  // Release the backing store immediately when a lightbox slide stops being
+  // a canvas, including when the carousel retains its detached DOM node.
+  const setCanvasRef = useCallback((canvas: HTMLCanvasElement | null) => {
+    if (canvasRef.current && canvasRef.current !== canvas) {
+      canvasRef.current.width = 0;
+      canvasRef.current.height = 0;
+    }
+    canvasRef.current = canvas;
+  }, []);
   // Retry state (#1287). The nonce is a dependency of the fetch effect, so
   // bumping it is the retry; the counter is per src, so a new image gets a
   // fresh budget without an extra effect run to reset it.
@@ -378,6 +388,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
 
     img.onload = () => {
       imageRef.current = img;
+      const dimensions = { width: img.naturalWidth, height: img.naturalHeight };
       const drawn = drawToCanvas();
       // Once drawImage has copied the pixels into the canvas the source
       // decode is dead weight, so drop it here rather than at unmount. The
@@ -398,7 +409,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
         imageRef.current = null;
         img.removeAttribute('src');
       }
-      onLoad?.();
+      onLoad?.(dimensions);
     };
 
     img.onerror = (e) => {
@@ -455,7 +466,7 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
   if (useCanvasRendering && !canvasFailed) {
     return (
       <canvas
-        ref={canvasRef}
+        ref={setCanvasRef}
         className={props.className}
         style={{
           ...props.style,
@@ -480,5 +491,8 @@ export const AuthenticatedImage: React.FC<AuthenticatedImageProps> = ({
     );
   }
 
-  return <img src={imageSrc} alt={alt} onLoad={onLoad} {...props} />;
+  return <img src={imageSrc} alt={alt} onLoad={(event) => onLoad?.({
+    width: event.currentTarget.naturalWidth,
+    height: event.currentTarget.naturalHeight,
+  })} {...props} />;
 };

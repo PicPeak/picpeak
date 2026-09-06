@@ -8,7 +8,7 @@
  * so the tiles render <img> whatever the protection level says, and the
  * lightbox keeps the per-event toggle and the `maximum` implication.
  *
- * Source-level pin: nothing under components/gallery except PhotoLightbox
+ * Source-level pin: nothing under components/gallery except the lightbox renderers
  * may hand `useCanvasRendering` to AuthenticatedImage.
  */
 import fs from 'fs';
@@ -27,6 +27,7 @@ function walk(dir: string): string[] {
 describe('canvas rendering stays in the lightbox', () => {
   const files = walk(root);
   const lightbox = path.join(root, 'PhotoLightbox.tsx');
+  const lightboxRenderers = [lightbox, path.join(root, 'layouts/PremiumLightboxImage.tsx')];
 
   /** The JSX props of every <AuthenticatedImage> in a file, plus every
    *  `imageProps={{ ... }}` object a layout hands to PhotoCard to spread in. */
@@ -35,16 +36,18 @@ describe('canvas rendering stays in the lightbox', () => {
     ...source.split('imageProps={{').slice(1).map((chunk) => chunk.split('}}')[0]),
   ];
 
-  it('only PhotoLightbox passes useCanvasRendering to AuthenticatedImage', () => {
-    const offenders = files.filter((file) => file !== lightbox
+  it('only lightbox renderers pass useCanvasRendering to AuthenticatedImage', () => {
+    const offenders = files.filter((file) => !lightboxRenderers.includes(file)
       && imageProps(fs.readFileSync(file, 'utf8')).some((props) => props.includes('useCanvasRendering')));
     expect(offenders.map((f) => path.relative(root, f))).toEqual([]);
     // The pin has teeth: the lightbox itself is caught by the same probe.
-    expect(imageProps(fs.readFileSync(lightbox, 'utf8')).some((props) => props.includes('useCanvasRendering'))).toBe(true);
+    for (const renderer of lightboxRenderers) {
+      expect(imageProps(fs.readFileSync(renderer, 'utf8')).some((props) => props.includes('useCanvasRendering'))).toBe(true);
+    }
   });
 
-  it('only PhotoLightbox turns canvas on for protection level maximum', () => {
-    const offenders = files.filter((file) => file !== lightbox
+  it('only lightbox renderers turn canvas on for protection level maximum', () => {
+    const offenders = files.filter((file) => !lightboxRenderers.includes(file)
       && /useCanvasRendering[^\n]*protectionLevel === 'maximum'/.test(fs.readFileSync(file, 'utf8')));
     expect(offenders.map((f) => path.relative(root, f))).toEqual([]);
   });

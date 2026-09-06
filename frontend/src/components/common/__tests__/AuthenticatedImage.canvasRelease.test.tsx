@@ -11,7 +11,7 @@
  * ever released. A decoded <img> in the document is evictable under memory
  * pressure; one held by a ref is not.
  */
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../utils/galleryAuthStorage', () => ({
@@ -75,9 +75,10 @@ describe('AuthenticatedImage canvas mode', () => {
     const getContext = vi
       .spyOn(HTMLCanvasElement.prototype, 'getContext')
       .mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
+    const onLoad = vi.fn();
 
     render(
-      <AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" useCanvasRendering />
+      <AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" useCanvasRendering onLoad={onLoad} />
     );
 
     await waitFor(() => expect(created.length).toBeGreaterThan(0));
@@ -86,6 +87,7 @@ describe('AuthenticatedImage canvas mode', () => {
     await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
     // Still mounted, still the same src — and already released.
     await waitFor(() => expect(img.getAttribute('src')).toBeNull());
+    expect(onLoad).toHaveBeenCalledWith({ width: 10, height: 10 });
 
     getContext.mockRestore();
   });
@@ -131,5 +133,17 @@ describe('AuthenticatedImage canvas mode', () => {
     await waitFor(() => expect(created.length).toBe(2));
 
     expect(first.getAttribute('src')).toBeNull();
+  });
+
+  it('reports the decoded dimensions in ordinary image mode too', async () => {
+    const onLoad = vi.fn();
+    const { container } = render(
+      <AuthenticatedImage src="/api/gallery/demo/thumbnail/1" alt="t" onLoad={onLoad} />
+    );
+    await waitFor(() => expect(container.querySelector('img')).not.toBeNull());
+    const img = container.querySelector('img')!;
+    Object.defineProperties(img, { naturalWidth: { value: 320 }, naturalHeight: { value: 240 } });
+    fireEvent.load(img);
+    expect(onLoad).toHaveBeenCalledWith({ width: 320, height: 240 });
   });
 });
