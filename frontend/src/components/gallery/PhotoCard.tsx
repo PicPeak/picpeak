@@ -35,6 +35,13 @@ export interface PhotoCardProps {
   /** Lazy-render via IntersectionObserver with a skeleton placeholder. */
   lazy?: boolean;
   inViewRootMargin?: string;
+  /**
+   * Outer band, in `rootMargin` form. When set, a tile that leaves it is
+   * unmounted again rather than kept for the life of the page (#1287). Opt-in
+   * per layout: only a layout whose skeleton holds the tile's box can release
+   * without reflowing, which today is Grid (`aspect-square`).
+   */
+  releaseRootMargin?: string;
   skeletonClassName?: string;
   /** Keep container at opacity 0 until in view (only meaningful with `lazy`). */
   fadeInWhenVisible?: boolean;
@@ -85,6 +92,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   imageProps,
   lazy = false,
   inViewRootMargin,
+  releaseRootMargin,
   skeletonClassName = 'skeleton w-full h-full rounded-lg',
   fadeInWhenVisible = false,
   overlayBaseClassName,
@@ -157,13 +165,40 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
     }
   }, [isSelectionMode, hideOverlay]);
 
-  // Lazy loading with intersection observer
-  const { ref, inView: observedInView } = useInView({
-    triggerOnce: true,
+  // Lazy loading with intersection observer.
+  //
+  // Two bands with a deliberate gap between them (#1287). The inner one, from
+  // `inViewRootMargin`, decides when a tile starts loading. The outer one,
+  // from `releaseRootMargin`, decides when it is far enough away to unmount —
+  // and unmounting is the part that frees anything, because AuthenticatedImage
+  // revokes its object URL and drops any protection canvas in its cleanup, and
+  // neither is reclaimable while the tile stays mounted. On a 546-photo grid
+  // the old latch meant every tile scrolled past was retained for the life of
+  // the page, which is the memory profile iOS Safari discards a tab over.
+  //
+  // The gap between the bands is the hysteresis: a tile is not released until
+  // it is well outside the band that would immediately reload it, so scrolling
+  // back and forth across one edge cannot thrash. Without a release band the
+  // observer keeps its original `triggerOnce` latch, so every other layout
+  // behaves exactly as before.
+  const releases = Boolean(lazy && releaseRootMargin);
+  const { ref: loadBandRef, inView: withinLoadBand } = useInView({
+    triggerOnce: !releases,
     threshold: 0.1,
     rootMargin: inViewRootMargin,
   });
-  const inView = !lazy || observedInView;
+  const { ref: keepBandRef, inView: withinKeepBand } = useInView({
+    skip: !releases,
+    threshold: 0,
+    rootMargin: releaseRootMargin,
+  });
+  const [rendered, setRendered] = useState(false);
+  useEffect(() => {
+    if (!releases) return;
+    if (withinLoadBand) setRendered(true);
+    else if (!withinKeepBand) setRendered(false);
+  }, [releases, withinLoadBand, withinKeepBand]);
+  const inView = !lazy || (releases ? rendered : withinLoadBand);
 
   // Tile width for the responsive tier (#1095), measured rather than inferred.
   // The observer entry only exists for `lazy` cards, and Mosaic, Masonry and
@@ -183,8 +218,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
   const [tile, setTile] = useState<{ width: number | null } | null>(null);
   const setContainerRef = useCallback((node: HTMLDivElement | null) => {
     containerRef.current = node;
-    if (lazy) ref(node);
-  }, [ref, lazy]);
+    if (!lazy) return;
+    loadBandRef(node);
+    if (releases) keepBandRef(node);
+  }, [loadBandRef, keepBandRef, lazy, releases]);
 
   useLayoutEffect(() => {
     if (!inView || tile) return;
