@@ -82,9 +82,35 @@ const envelopeSchemas = Object.fromEntries(Object.entries(payloadsByVersion).map
 }]));
 const envelopeSchema = envelopeSchemas[CURRENT_SCHEMA_VERSION];
 const payloads = payloadsByVersion[CURRENT_SCHEMA_VERSION];
+// Writers retain their immutable, complete contracts. The receiver accepts
+// missing measurements from older/partial reporters, without expanding any
+// version's allowlist or changing the signed object. Null also means unknown.
+const nullable = (schema) => ({ anyOf: [schema, { type: "null" }] });
+const ingressEnvelopeSchemas = Object.fromEntries(Object.entries(envelopeSchemas).map(([version, source]) => {
+  const schema = structuredClone(source);
+  schema.$id = `https://usage.picpeak.app/schema/ingress/${version}.json`;
+  schema.title = `PicPeak ${version} compatible report reception`;
+  const payload = schema.properties.packet.oneOf.find(p => p.properties.action.const === "report").properties.payload;
+  payload.required = ["report_date", "generated_at"];
+  const features = payload.properties.features;
+  features.required = [];
+  for (const signal of Object.values(features.properties)) {
+    signal.required = [];
+    for (const key of Object.keys(signal.properties)) signal.properties[key] = nullable(signal.properties[key]);
+  }
+  for (const key of Object.keys(features.properties)) features.properties[key] = nullable(features.properties[key]);
+  if (payload.properties.inventory) {
+    const inventory = payload.properties.inventory;
+    inventory.required = [];
+    for (const key of Object.keys(inventory.properties)) inventory.properties[key] = nullable(inventory.properties[key]);
+  }
+  for (const key of ["picpeak_version", "features", "gallery_layouts", "inventory"])
+    if (payload.properties[key]) payload.properties[key] = nullable(payload.properties[key]);
+  return [version, schema];
+}));
 module.exports = {
   FEATURE_KEYS, LEGACY_FEATURE_KEYS, LAYOUTS, CATALOG, CATALOGS, CONSENT_VERSIONS,
   schemaForConsent, schemaRank, INVENTORY_KEYS, MAX_INVENTORY_COUNT, CURRENT_SCHEMA_VERSION,
   CURRENT_CONSENT_VERSION, featureKeysFor, observesUse, emptyFeatures,
-  envelopeSchema, envelopeSchemas, payloads, payloadsByVersion,
+  envelopeSchema, envelopeSchemas, ingressEnvelopeSchemas, payloads, payloadsByVersion,
 };
