@@ -65,9 +65,17 @@ type InitConfig = UmamiInitConfig | RybbitInitConfig | CustomInitConfig | NoneIn
 declare global {
   interface Window {
     umami?: {
-      track: (eventName: string, eventData?: any) => void;
-      trackView: (url?: string, referrer?: string, websiteId?: string) => void;
-      trackEvent: (
+      // Current script.js (v2): `track(name, data)` sends a named event;
+      // `track(fn)` sends fn(defaultPayload) — a payload without `name` is a
+      // page view. This is the only page-view API the shipped tracker has.
+      track?: {
+        (eventName: string, eventData?: any): void;
+        (payload: (props: Record<string, unknown>) => Record<string, unknown>): void;
+      };
+      // Legacy (v1) API. Absent from current script.js — calling it
+      // unguarded is what threw on every admin route change (issue 1316).
+      trackView?: (url?: string, referrer?: string, websiteId?: string) => void;
+      trackEvent?: (
         eventValue: string,
         eventType: string,
         url?: string,
@@ -185,7 +193,7 @@ class AnalyticsService {
   track(eventName: string, eventData?: Record<string, any>) {
     if (!this.initialized) return;
     if (this.provider === 'umami' && typeof window !== 'undefined' && window.umami) {
-      window.umami.track(eventName, eventData);
+      window.umami.track?.(eventName, eventData);
     } else if (this.provider === 'rybbit' && typeof window !== 'undefined' && window.rybbit) {
       window.rybbit.event(eventName, eventData);
     }
@@ -217,10 +225,30 @@ class AnalyticsService {
     // ONLY page-view source. Rybbit keeps its own auto-tracking with
     // data-mask-patterns doing the redaction, so a manual call would
     // double-count — skip it. 'none'/'custom' have no page-view API.
-    if (this.provider !== 'umami' || typeof window === 'undefined' || !window.umami) return;
+    if (this.provider !== 'umami' || typeof window === 'undefined') return;
+    // The script tag is injected async, so `window.umami` is absent until it
+    // has loaded; a route change before that is simply not recorded.
+    const umami = window.umami;
+    if (!umami) return;
     const raw = url ?? window.location.pathname;
     const safe = this.sanitizeTrackedUrl(raw);
-    window.umami.trackView(safe, referrer, this.websiteId || undefined);
+    try {
+      if (typeof umami.track === 'function') {
+        // Umami v2 page view: merge the sanitized URL into the tracker's own
+        // default payload (website, screen, language, title, …). Without a
+        // `name` the collector records it as a page view.
+        umami.track((props) => ({
+          ...props,
+          url: safe,
+          ...(referrer !== undefined ? { referrer } : {}),
+        }));
+      } else if (typeof umami.trackView === 'function') {
+        umami.trackView(safe, referrer, this.websiteId || undefined);
+      }
+      // Neither API → no-op. Analytics must never break navigation.
+    } catch (err) {
+      console.warn('Analytics: page-view tracking failed', err);
+    }
   }
 
   // Gallery-specific tracking events
