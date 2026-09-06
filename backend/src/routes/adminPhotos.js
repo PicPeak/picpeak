@@ -7,6 +7,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { ensureThumbnail } = require('../services/imageProcessor');
 const { isVideoMimeType } = require('../services/videoProcessor');
+const { acceptedUpload } = require('../usage/capabilityEvidence');
 const { generatePhotoFilename, buildContentDisposition } = require('../utils/filenameSanitizer');
 const {
   getUseOriginalFilenames,
@@ -357,6 +358,11 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
             event,
           });
           if (result.success) {
+            acceptedUpload(res, {
+              video: isVideoMimeType(file.mimetype),
+              raw: path.extname(file.originalname).toLowerCase() === '.dng',
+              s3: process.env.STORAGE_BACKEND === 's3'
+            });
             replacedPhotos.push({
               id: result.photo.id,
               filename: result.photo.filename,
@@ -470,6 +476,8 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
           })
           .returning('id');
         const photoId = inserted[0]?.id || inserted[0];
+
+        acceptedUpload(res, { video: isVideo, raw: extension.toLowerCase() === '.dng', s3: process.env.STORAGE_BACKEND === 's3' });
 
         uploadedPhotos.push({
           id: photoId,
@@ -1720,6 +1728,11 @@ router.post('/:eventId/chunked-upload/:uploadId/complete', adminAuth, requirePer
       'admin',
       category_id || null
     );
+    if (uploadedPhotos.length) acceptedUpload(res, {
+      video: isVideoMimeType(fileObj.mimetype),
+      raw: path.extname(fileObj.originalname).toLowerCase() === '.dng',
+      s3: process.env.STORAGE_BACKEND === 's3'
+    });
 
     // Clean up temp directory
     try {

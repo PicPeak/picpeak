@@ -176,6 +176,7 @@ router.post('/test', adminAuth, requirePermission('whatsapp.manage'), async (req
     };
     const testComponents = buildComponents(testData, language, params);
     const result = await sendWhatsAppMessage(phone, config, language, testComponents);
+    require('../usage/capabilityEvidence').capabilityEvidence(res, 'whatsapp');
     res.json({ success: true, messageId: result.messageId });
   } catch (error) {
     logger.error('WhatsApp test send error:', error);

@@ -1,4 +1,5 @@
 const express = require('express');
+const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const nodemailer = require('nodemailer');
 const { body, query, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
@@ -221,6 +222,7 @@ router.post('/incoming-config/test', adminAuth, requirePermission('email.view'),
     if (result && result.ok === false) {
       return res.status(400).json({ error: 'Incoming mail is not configured yet — enter host, username and password first.' });
     }
+    if (result?.ok) capabilityEvidence(res, 'incoming_mail');
     res.json(result);
   } catch (error) {
     logger.error('IMAP connection test error:', error);
@@ -234,7 +236,10 @@ router.post('/incoming-config/roundtrip', adminAuth, requirePermission('email.se
   try {
     const emailIntakeService = require('../services/emailIntakeService');
     const result = await emailIntakeService.roundTripTest();
-    if (result.ok) return res.json(result);
+    if (result.ok) {
+      capabilityEvidence(res, 'incoming_mail', 'smtp');
+      return res.json(result);
+    }
     const map = {
       smtp_unconfigured: 'Configure and save the outgoing SMTP settings first.',
       imap_unconfigured: 'Configure and save the incoming IMAP settings first.',
@@ -257,6 +262,7 @@ router.post('/incoming-config/poll', adminAuth, requirePermission('email.view'),
   try {
     const emailIntakeService = require('../services/emailIntakeService');
     const result = await emailIntakeService.pollOnce();
+    if (result && !result.skipped) capabilityEvidence(res, 'incoming_mail');
     res.json(result); // { processed } or { skipped: 'disabled'|'unconfigured'|'busy' }
   } catch (error) {
     logger.error('Manual poll error:', error);
@@ -456,6 +462,7 @@ router.post('/accounts/test', adminAuth, messagingGate, requirePermission('email
       host: b.imap_host, port: b.imap_port, secure: b.imap_secure,
       user: b.imap_user, pass, folder: b.imap_folder || 'INBOX',
     });
+    if (result?.ok) capabilityEvidence(res, 'incoming_mail');
     res.json(result);
   } catch (error) {
     res.status(422).json({ ok: false, error: `Mailbox test failed (${error.message}).` });
@@ -511,6 +518,7 @@ router.post('/test', adminAuth, requirePermission('email.send'), async (req, res
           details: webhookError.message,
         });
       }
+      capabilityEvidence(res, 'email_webhook');
       return res.json({ message: 'Test email sent successfully' });
     }
 
@@ -587,6 +595,7 @@ router.post('/test', adminAuth, requirePermission('email.send'), async (req, res
         + await buildSignatureTextFor('en')
     });
 
+    capabilityEvidence(res, 'smtp');
     res.json({ message: 'Test email sent successfully' });
   } catch (error) {
     logger.error('Test email error:', error);
@@ -847,6 +856,8 @@ router.post('/send', adminAuth, messagingGate, requirePermission('email.send'), 
 
     const emailProcessor = require('../services/emailProcessor');
     const result = await emailProcessor.sendRawEmail({ to, cc, subject, html, accountKey });
+    if (result.transport === 'webhook') capabilityEvidence(res, 'email_webhook');
+    if (result.transport === 'smtp') capabilityEvidence(res, 'smtp');
 
     await db('email_queue').insert({
       recipient_email: to,

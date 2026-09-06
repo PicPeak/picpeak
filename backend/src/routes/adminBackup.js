@@ -795,6 +795,8 @@ router.post('/s3/test-upload', adminAuth, requirePermission('backup.create'), as
     
     // Test deletion
     await s3Adapter.delete(testKey);
+
+    if (contentMatch) require('../usage/capabilityEvidence').capabilityEvidence(res, 's3_storage', 's3_backups');
     
     res.json({
       success: true,

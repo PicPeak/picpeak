@@ -1145,6 +1145,10 @@ router.get('/admin/sso/callback', async (req, res) => {
     await logActivity('admin_sso_login', { provider: 'oidc' }, null, {
       type: 'admin', id: admin.id, name: admin.username,
     });
+    // Only a successful ADMIN SSO callback sets this opt-in capability marker.
+    // No token, claim, address, or account identifier reaches product usage.
+    require('../services/productUsageService').markUsed(['oauth'])
+      .catch(() => logger.warn('Product usage marker could not be recorded'));
 
     return res.redirect(`${frontendBase}/admin/dashboard`);
   } catch (error) {

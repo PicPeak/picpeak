@@ -1,0 +1,1758 @@
+{
+  "settings_tabs": {
+    "usage": {
+      "signals": [],
+      "reason": "Explicit consent/report inspection/feedback is not itself adoption telemetry."
+    },
+    "features": {
+      "signals": [],
+      "reason": "Only the allowlisted effective feature booleans; no settings visit/save marker."
+    },
+    "general": {
+      "signals": [
+        "video_uploads",
+        "camera_raw_uploads",
+        "public_site",
+        "custom_css"
+      ],
+      "reason": "General technical upload/public-site/CSS configuration only; no title, URLs, limits, times, HTML or identity."
+    },
+    "events": {
+      "signals": [
+        "galleries",
+        "gallery_guest_uploads",
+        "gallery_downloads",
+        "gallery_client_access",
+        "gallery_watermarks",
+        "gallery_image_protection",
+        "gallery_reveal",
+        "gallery_expiration"
+      ],
+      "reason": "Gallery operations and disclosed configuration only; no event/customer values or visitor use."
+    },
+    "eventTypes": {
+      "signals": [
+        "event_types"
+      ],
+      "reason": "General admin event-type capability; no names or preset contents."
+    },
+    "branding": {
+      "signals": [
+        "branding",
+        "gallery_watermarks"
+      ],
+      "reason": "Branding operation and watermark configuration only; no branding text, logos or colors."
+    },
+    "categories": {
+      "signals": [
+        "gallery_categories"
+      ],
+      "reason": "Category management capability only; no names/order/category membership."
+    },
+    "thumbnails": {
+      "signals": [
+        "photo_processing"
+      ],
+      "reason": "Admin processing settings/regeneration initiation only; no image data or progress."
+    },
+    "downloads": {
+      "signals": [
+        "download_resolution_picker"
+      ],
+      "reason": "Configuration boolean only; no actual download/selection behavior or resolution values."
+    },
+    "styling": {
+      "signals": [
+        "custom_css"
+      ],
+      "reason": "Presence/application only plus controlled gallery-layout enums, never CSS/theme values."
+    },
+    "cms": {
+      "signals": [
+        "cms",
+        "public_site"
+      ],
+      "reason": "Admin page editing capability/public-site enabled only; no HTML, slugs or traffic."
+    },
+    "email": {
+      "signals": [
+        "smtp",
+        "incoming_mail",
+        "messaging",
+        "email_templates",
+        "email_webhook"
+      ],
+      "reason": "Configuration and documented manual admin capability operations only; messages, recipients, automatic activity and mailbox values excluded."
+    },
+    "moderation": {
+      "signals": [
+        "feedback_moderation"
+      ],
+      "reason": "Admin moderation/word-filter capability, never feedback content or visitor behavior."
+    },
+    "security": {
+      "signals": [],
+      "reason": "Excluded password/MFA/session/rate-limit/security profiles and operations."
+    },
+    "sso": {
+      "signals": [
+        "oauth"
+      ],
+      "reason": "Enabled/config-present and successful admin callback only; no claims/provider details."
+    },
+    "imageSecurity": {
+      "signals": [
+        "gallery_image_protection"
+      ],
+      "reason": "Configuration presence only; no blocked-IP/security analytics or monitoring history."
+    },
+    "seo": {
+      "signals": [
+        "seo_customization"
+      ],
+      "reason": "Admin SEO configuration operation only; no meta tags, URLs, robots or verification tokens."
+    },
+    "apiTokens": {
+      "signals": [
+        "api_integration"
+      ],
+      "reason": "Valid credential presence and one successful scoped API capability bit; no tokens/scopes/owner metadata."
+    },
+    "webhooks": {
+      "signals": [
+        "webhooks"
+      ],
+      "reason": "Active configuration and manual test/replay enqueue only; no delivery data."
+    },
+    "status": {
+      "signals": [],
+      "reason": "Excluded operational health, diagnostics, resource data, update and storage polling."
+    },
+    "analytics": {
+      "signals": [
+        "analytics_dashboard"
+      ],
+      "reason": "Analytics capability and admin aggregate-view use only; no embedded analytics results/tracker IDs or visitors."
+    },
+    "backup": {
+      "signals": [
+        "backup",
+        "database_backup",
+        "portable_backup",
+        "restore",
+        "s3_backups"
+      ],
+      "reason": "Schedule presence/manual capability initiation only, no histories, sizes, paths or files."
+    },
+    "businessProfile": {
+      "signals": [],
+      "reason": "Excluded business identity, bank accounts and addresses."
+    },
+    "crm": {
+      "signals": [
+        "crm",
+        "crm_quotes",
+        "crm_invoices",
+        "crm_projects",
+        "crm_hours",
+        "customer_portal",
+        "crm_installments"
+      ],
+      "reason": "Only coarse module capabilities; no policies/amounts/customer/payment values."
+    },
+    "contracts": {
+      "signals": [
+        "crm_contracts",
+        "document_templates"
+      ],
+      "reason": "Admin contract/template capability only; no legal text or signatures."
+    },
+    "reminderTemplates": {
+      "signals": [
+        "reminder_emails",
+        "email_templates"
+      ],
+      "reason": "Reminder flag configuration and admin template editing only; no automatic reminder sends/recipients/content."
+    },
+    "accounting": {
+      "signals": [
+        "accounting",
+        "accounting_incoming_invoices",
+        "accounting_expenses",
+        "accounting_tax_report",
+        "accounting_ledger"
+      ],
+      "reason": "Only module capabilities, no tax codes, rates, balances or business identity."
+    },
+    "whatsapp": {
+      "signals": [
+        "whatsapp"
+      ],
+      "reason": "Configured integration plus manual test only; no phone numbers, tokens or automatic delivery."
+    },
+    "slideshow": {
+      "signals": [
+        "slideshow"
+      ],
+      "reason": "Admin setup capability only; no kiosk viewers, slide progress or photos."
+    }
+  },
+  "reviewed_picpeak_base": "a5ff9264 (3.124.1-beta.0)",
+  "schema_version": "usage.v2",
+  "purpose": "Feature prioritization, bug fixes and maintenance only; no user/visitor behavior, identifiers, content, counts or event histories.",
+  "route_families": {
+    "acceptInvite.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:token",
+        "POST /:token"
+      ]
+    },
+    "admin.js": {
+      "decision": "composition",
+      "signals": [],
+      "reason": "Router composition / helpers; decisions are recorded for each mounted family.",
+      "route_signatures": []
+    },
+    "adminApiTokens.js": {
+      "decision": "configuration",
+      "signals": [
+        "api_integration"
+      ],
+      "reason": "Only existence of a valid credential; no marker from token listing/creation, no scope, owner, token, expiry date or last-used time.",
+      "route_signatures": [
+        "GET /",
+        "POST /",
+        "DELETE /:id"
+      ]
+    },
+    "adminArchives.js": {
+      "decision": "partial",
+      "signals": [
+        "galleries",
+        "archive_management",
+        "photo_exports"
+      ],
+      "reason": "Admin archive/delete/restore/download initiation only; filenames, histories, storage sizes and polling excluded.",
+      "route_signatures": [
+        "GET /",
+        "GET /:id",
+        "POST /:id/restore",
+        "GET /:id/download",
+        "DELETE /:id"
+      ]
+    },
+    "adminAuth.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Bootstrap, passwords/MFA/session/profile, per-person notifications, developer helpers and operational health/update/log polling are outside the prioritization purpose.",
+      "route_signatures": [
+        "GET /profile",
+        "PUT /profile",
+        "POST /change-password",
+        "POST /logout",
+        "GET /mfa/status",
+        "POST /mfa/setup",
+        "POST /mfa/enable",
+        "POST /mfa/disable",
+        "POST /mfa/recovery-codes"
+      ]
+    },
+    "adminBackup.js": {
+      "decision": "partial",
+      "signals": [
+        "backup",
+        "portable_backup",
+        "restore",
+        "s3_storage",
+        "s3_backups"
+      ],
+      "reason": "Admin backup initiation, portable export/import and successful S3 roundtrip test. Local export never implies S3; names, schedules, sizes, contents and history excluded.",
+      "route_signatures": [
+        "GET /config",
+        "PUT /config",
+        "GET /status",
+        "POST /run",
+        "GET /picpeak/export",
+        "POST /picpeak/import",
+        "GET /runs/:id",
+        "GET /files",
+        "DELETE /cleanup",
+        "POST /test-connection",
+        "GET /manifest/:backupRunId",
+        "POST /manifest/validate",
+        "GET /manifest/:backupRunId/download",
+        "GET /manifests/:backupId",
+        "GET /manifests/:backupId/download",
+        "POST /manifests/validate",
+        "GET /s3/buckets",
+        "GET /s3/files",
+        "DELETE /s3/cleanup",
+        "POST /s3/test-upload",
+        "GET /download/:backupId",
+        "GET /checksums",
+        "POST /estimate"
+      ]
+    },
+    "adminBusinessProfile.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Business identity/bank/tax-address configuration and VAT-code helper surface are not separate usage signals. Billing/accounting capabilities are covered without profiling the business.",
+      "route_signatures": [
+        "GET /",
+        "GET /logo-diagnostic",
+        "POST /logo",
+        "DELETE /logo",
+        "PUT /",
+        "GET /bank-accounts",
+        "POST /bank-accounts",
+        "PUT /bank-accounts/:id",
+        "DELETE /bank-accounts/:id"
+      ]
+    },
+    "adminCalendar.js": {
+      "decision": "partial",
+      "signals": [
+        "crm",
+        "crm_calendar"
+      ],
+      "reason": "Authenticated admin calendar retrieval is capability use; no calendar entries, dates, recurrence, availability or bookings.",
+      "route_signatures": [
+        "GET /items"
+      ]
+    },
+    "adminCategories.js": {
+      "decision": "partial",
+      "signals": [
+        "gallery_categories"
+      ],
+      "reason": "Admin category CRUD; no names, descriptions, colors or ordering values.",
+      "route_signatures": [
+        "GET /global",
+        "GET /event/:eventId",
+        "POST /",
+        "PUT /:id",
+        "PUT /:id/hero",
+        "DELETE /:id",
+        "POST /reorder",
+        "DELETE /reorder/:eventId",
+        "POST /reorder-global"
+      ]
+    },
+    "adminCMS.js": {
+      "decision": "partial",
+      "signals": [
+        "cms"
+      ],
+      "reason": "Admin CMS page CRUD only. Public page traffic, slug, HTML, text, links and media excluded.",
+      "route_signatures": [
+        "GET /pages",
+        "GET /pages/:slug",
+        "PUT /pages/:slug",
+        "POST /pages/:slug/logo",
+        "DELETE /pages/:slug/logo"
+      ]
+    },
+    "adminContracts.js": {
+      "decision": "partial",
+      "signals": [
+        "crm",
+        "crm_contracts",
+        "document_templates"
+      ],
+      "reason": "Admin contract/block operations only; no legal text, signatures, signing parties or customer signing events.",
+      "route_signatures": [
+        "GET /blocks",
+        "POST /blocks",
+        "PUT /blocks/:id",
+        "DELETE /blocks/:id",
+        "GET /",
+        "POST /",
+        "GET /:id",
+        "PUT /:id",
+        "POST /:id/send",
+        "POST /:id/cancel",
+        "POST /:id/convert-to-event",
+        "POST /:id/convert-to-invoice",
+        "POST /:id/resend-signed",
+        "POST /:id/restamp-signatures",
+        "POST /:id/countersign",
+        "POST /:id/upload-signed-pdf",
+        "GET /:id/pdf",
+        "GET /:id/signed-pdf",
+        "GET /:id/audit-trail",
+        "GET /:id/verify-integrity",
+        "GET /:id/preview"
+      ]
+    },
+    "adminCssTemplates.js": {
+      "decision": "configuration",
+      "signals": [
+        "custom_css"
+      ],
+      "reason": "Only existence of enabled applied CSS and locally observed application, not editing/viewing templates or any CSS text.",
+      "route_signatures": [
+        "GET /",
+        "GET /enabled",
+        "GET /:slotNumber",
+        "PUT /:slotNumber",
+        "POST /:slotNumber/reset"
+      ]
+    },
+    "adminCustomers.js": {
+      "decision": "partial",
+      "signals": [
+        "crm",
+        "crm_hours",
+        "customer_portal"
+      ],
+      "reason": "Successful admin CRM/hour-entry/invitation operations only. No customer/account names, IDs, rates, billed hours, payment state or portal behavior.",
+      "route_signatures": [
+        "GET /",
+        "GET /search",
+        "GET /invitations",
+        "POST /invite",
+        "DELETE /invitations/:id",
+        "POST /",
+        "POST /:id/send-invite",
+        "GET /:id",
+        "PUT /:id",
+        "POST /:id/deactivate",
+        "POST /:id/reactivate",
+        "POST /:id/erase",
+        "POST /:id/password-reset",
+        "PUT /:id/events",
+        "GET /hour-entries/unbilled-summary",
+        "GET /:id/hour-entries",
+        "POST /:id/hour-entries",
+        "PUT /:id/hour-entries/:entryId",
+        "DELETE /:id/hour-entries/:entryId",
+        "POST /:id/hour-entries/bill",
+        "POST /:id/bill-combined",
+        "POST /:id/trigger-monthly-bill",
+        "GET /:id/monthly-draft"
+      ]
+    },
+    "adminDashboard.js": {
+      "decision": "partial",
+      "signals": [
+        "analytics_dashboard"
+      ],
+      "reason": "Admin analytics capability endpoint only; no stats, activities, health/CRM polls, underlying visitor data or dashboard values.",
+      "route_signatures": [
+        "GET /stats",
+        "GET /activity",
+        "GET /health",
+        "GET /analytics",
+        "GET /crm-stats"
+      ]
+    },
+    "adminDatabaseBackup.js": {
+      "decision": "partial",
+      "signals": [
+        "backup",
+        "database_backup"
+      ],
+      "reason": "Admin database-backup initiation plus schedule-enabled boolean, no file data/history.",
+      "route_signatures": [
+        "GET /status",
+        "PUT /config",
+        "POST /backup",
+        "GET /progress",
+        "GET /history",
+        "DELETE /cleanup",
+        "POST /test",
+        "GET /checksums"
+      ]
+    },
+    "adminDeals.js": {
+      "decision": "partial",
+      "signals": [
+        "crm",
+        "crm_installments"
+      ],
+      "reason": "Admin installment-plan changes only. No actual plans, invoice links, amounts, paid states or deal reporting.",
+      "route_signatures": [
+        "GET /:uuid/documents",
+        "PUT /:uuid/installment-plan"
+      ]
+    },
+    "adminDev.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Bootstrap, passwords/MFA/session/profile, per-person notifications, developer helpers and operational health/update/log polling are outside the prioritization purpose.",
+      "route_signatures": [
+        "GET /email-templates",
+        "POST /send-test-email"
+      ]
+    },
+    "adminEmail.js": {
+      "decision": "partial",
+      "signals": [
+        "messaging",
+        "incoming_mail",
+        "smtp",
+        "email_templates",
+        "email_webhook",
+        "reminder_emails"
+      ],
+      "reason": "Admin message operation/template edit, actual successful manual send/test transport and non-skipped manual IMAP poll/test. Reminder flag configuration only. No automated sends/polls, received-message or recipient data, queue/log reads, mailbox addresses or templates.",
+      "route_signatures": [
+        "GET /config",
+        "POST /config",
+        "GET /incoming-config",
+        "POST /incoming-config",
+        "POST /incoming-config/folders",
+        "POST /incoming-config/test",
+        "POST /incoming-config/roundtrip",
+        "POST /incoming-config/poll",
+        "GET /received",
+        "GET /received/:id",
+        "POST /item/:kind/:id/state",
+        "DELETE /item/:kind/:id",
+        "GET /accounts",
+        "GET /identities",
+        "POST /accounts",
+        "POST /accounts/test",
+        "POST /test",
+        "POST /flush-queue",
+        "GET /queue",
+        "GET /queue/:id",
+        "POST /send",
+        "GET /templates",
+        "GET /templates/:key",
+        "PUT /templates/:key",
+        "POST /templates",
+        "POST /templates/:key/preview"
+      ]
+    },
+    "adminEventRename.js": {
+      "decision": "partial",
+      "signals": [
+        "galleries"
+      ],
+      "reason": "Successful rename only, not validate-rename. No former/new names or identifiers.",
+      "route_signatures": [
+        "POST /:eventId/rename",
+        "POST /:eventId/validate-rename"
+      ]
+    },
+    "adminEvents/archiveBulk.js": {
+      "decision": "partial",
+      "signals": [
+        "galleries",
+        "archive_management",
+        "photo_exports"
+      ],
+      "reason": "Admin archive/delete/restore/download initiation only; filenames, histories, storage sizes and polling excluded.",
+      "route_signatures": [
+        "POST /:id/archive",
+        "POST /bulk-archive",
+        "POST /bulk-delete"
+      ]
+    },
+    "adminEvents/crud.js": {
+      "decision": "partial",
+      "signals": [
+        "galleries",
+        "gallery_guest_uploads",
+        "gallery_downloads",
+        "gallery_client_access",
+        "gallery_watermarks",
+        "gallery_reveal",
+        "gallery_expiration",
+        "gallery_sharing",
+        "custom_css"
+      ],
+      "reason": "Admin creation/edit/publish etc. set galleries; sharing has its own fixed key. Guest/download/protection/reveal/expiry are configuration only; themes contribute controlled layouts and CSS presence. No gallery metadata or guest action history.",
+      "route_signatures": [
+        "POST /",
+        "GET /",
+        "GET /:id",
+        "POST /:id/send-gallery-email",
+        "POST /:id/publish",
+        "POST /:id/duplicate",
+        "PUT /:id",
+        "POST /:id/reveal",
+        "DELETE /:id",
+        "POST /:id/toggle-status",
+        "POST /:id/extend"
+      ]
+    },
+    "adminEvents/downloadResolutions.js": {
+      "decision": "configuration",
+      "signals": [
+        "download_resolution_picker"
+      ],
+      "reason": "Only whether a picker is configured globally or in a gallery. No chosen resolution, download event or counts.",
+      "route_signatures": [
+        "GET /:id/download-resolutions",
+        "PATCH /:id/download-resolutions"
+      ]
+    },
+    "adminEvents/faces.js": {
+      "decision": "partial",
+      "signals": [
+        "face_recognition"
+      ],
+      "reason": "Effective flag plus successful admin faces/people operation. No health polling, embeddings, names, groups, detections or visitor searches.",
+      "route_signatures": [
+        "GET /faces/health",
+        "GET /:id/faces",
+        "PATCH /:id/faces",
+        "GET /:id/people",
+        "GET /:id/people/suggestions",
+        "POST /:id/people/suggestions/dismiss",
+        "PATCH /:id/people/:personId",
+        "POST /:id/people/merge",
+        "POST /:id/people/:personId/split",
+        "GET /:id/people/:personId/faces",
+        "POST /:id/faces/rescan",
+        "POST /:id/faces/recluster",
+        "GET /faces/auto-categories",
+        "PUT /faces/auto-categories",
+        "POST /:id/faces/categorize",
+        "DELETE /:id/faces/categorize",
+        "DELETE /:id/faces"
+      ]
+    },
+    "adminEvents/helpers.js": {
+      "decision": "composition",
+      "signals": [],
+      "reason": "Router composition / helpers; decisions are recorded for each mounted family.",
+      "route_signatures": []
+    },
+    "adminEvents/index.js": {
+      "decision": "composition",
+      "signals": [],
+      "reason": "Router composition / helpers; decisions are recorded for each mounted family.",
+      "route_signatures": []
+    },
+    "adminEvents/logo.js": {
+      "decision": "partial",
+      "signals": [
+        "branding"
+      ],
+      "reason": "Successful admin logo operation only; image/filename/content excluded.",
+      "route_signatures": [
+        "POST /:id/logo",
+        "DELETE /:id/logo"
+      ]
+    },
+    "adminEvents/qr.js": {
+      "decision": "partial",
+      "signals": [
+        "gallery_sharing"
+      ],
+      "reason": "Admin QR generation only; no scans, tokens or URLs.",
+      "route_signatures": [
+        "GET /:id/qr",
+        "GET /:id/qr-print"
+      ]
+    },
+    "adminEvents/resets.js": {
+      "decision": "partial",
+      "signals": [
+        "galleries",
+        "gallery_sharing"
+      ],
+      "reason": "Admin gallery reset/sharing capability only; no password, recipient, token or reset statistics.",
+      "route_signatures": [
+        "POST /:id/reset-password",
+        "POST /:id/resend-email"
+      ]
+    },
+    "adminEvents/slideshow.js": {
+      "decision": "partial",
+      "signals": [
+        "slideshow"
+      ],
+      "reason": "Admin generate/disable/configure only, never kiosk viewers or slide advances.",
+      "route_signatures": [
+        "POST /:id/slideshow/generate",
+        "POST /:id/slideshow/disable",
+        "PATCH /:id/slideshow"
+      ]
+    },
+    "adminEventTypes.js": {
+      "decision": "partial",
+      "signals": [
+        "event_types"
+      ],
+      "reason": "Admin event-type CRUD; preset contents/names excluded.",
+      "route_signatures": [
+        "GET /",
+        "GET /active",
+        "GET /:id",
+        "POST /",
+        "PUT /:id",
+        "DELETE /:id",
+        "POST /reorder"
+      ]
+    },
+    "adminExpenses.js": {
+      "decision": "partial",
+      "signals": [
+        "accounting",
+        "accounting_expenses",
+        "accounting_incoming_invoices"
+      ],
+      "reason": "Admin expense/inbound-invoice operations; no financial values, suppliers, mileage/location, dates, receipt files or OCR text.",
+      "route_signatures": [
+        "GET /categories",
+        "POST /categories",
+        "PATCH /categories/:id",
+        "DELETE /categories/:id",
+        "POST /inbound",
+        "GET /inbound",
+        "GET /inbound/pending-summary",
+        "POST /inbound/bill-pending",
+        "GET /inbound/by-customer/:customerAccountId",
+        "GET /inbound/:id/file",
+        "GET /inbound/:id/page/:n",
+        "GET /inbound/:id",
+        "PATCH /inbound/:id",
+        "POST /inbound/:id/categorize",
+        "POST /inbound/:id/rebill",
+        "POST /inbound/:id/supplier-payment",
+        "GET /",
+        "POST /",
+        "GET /:id/proof",
+        "GET /:id",
+        "PATCH /:id",
+        "POST /:id/invoice",
+        "POST /:id/paid"
+      ]
+    },
+    "adminExternalMedia.js": {
+      "decision": "partial",
+      "signals": [
+        "share_mounts"
+      ],
+      "reason": "Only admin import operation; status/list/browse are not use. Snapshot checks external-path presence, never reports a path.",
+      "route_signatures": [
+        "GET /list",
+        "POST /events/:id/import-external"
+      ]
+    },
+    "adminFeatureFlags.js": {
+      "decision": "configuration",
+      "signals": [
+        "crm",
+        "crm_quotes",
+        "crm_invoices",
+        "crm_contracts",
+        "crm_projects",
+        "crm_calendar",
+        "crm_hours",
+        "customer_portal",
+        "accounting",
+        "workflows",
+        "newsletters",
+        "face_recognition",
+        "slideshow",
+        "transfers",
+        "messaging",
+        "reminder_emails",
+        "accounting_incoming_invoices",
+        "accounting_expenses",
+        "accounting_tax_report",
+        "accounting_ledger",
+        "admin_management",
+        "analytics_dashboard"
+      ],
+      "reason": "Only allowlisted effective capability booleans. No marker from reading or saving feature flags. Disabled roadmap/developer flags excluded.",
+      "route_signatures": [
+        "GET /",
+        "PUT /"
+      ]
+    },
+    "adminFeedback.js": {
+      "decision": "partial",
+      "signals": [
+        "feedback_moderation",
+        "gallery_feedback_likes",
+        "gallery_feedback_ratings",
+        "gallery_feedback_comments",
+        "gallery_feedback_favorites",
+        "gallery_feedback_reactions",
+        "gallery_feedback_color_labels",
+        "gallery_guest_accounts"
+      ],
+      "reason": "Admin moderation/word-filter operations only. Visitor feedback is not observed. Master-enabled per-gallery feedback-option booleans only; no contents, ratings, likes, colors, identities or word lists.",
+      "route_signatures": [
+        "GET /events/:eventId/feedback-settings",
+        "PUT /events/:eventId/feedback-settings",
+        "GET /events/:eventId/feedback",
+        "PUT /feedback/:feedbackId/:action",
+        "DELETE /feedback/:feedbackId",
+        "GET /events/:eventId/feedback-analytics",
+        "GET /events/:eventId/feedback/export",
+        "GET /feedback/pending-moderation",
+        "GET /word-filters",
+        "POST /word-filters",
+        "PUT /word-filters/:id",
+        "DELETE /word-filters/:id"
+      ]
+    },
+    "adminGuests.js": {
+      "decision": "partial",
+      "signals": [
+        "guest_management"
+      ],
+      "reason": "Admin guest management/export initiation only. No guest names, invitations, tokens, contact data, guest counts or visitor interactions.",
+      "route_signatures": [
+        "GET /events/:eventId/guests",
+        "GET /events/:eventId/guests/aggregate",
+        "GET /events/:eventId/guests/invites",
+        "POST /events/:eventId/guests/invites",
+        "DELETE /events/:eventId/guests/invites/:inviteId",
+        "GET /events/:eventId/guests/export-all",
+        "GET /events/:eventId/guests/:guestId",
+        "GET /events/:eventId/guests/:guestId/export",
+        "DELETE /events/:eventId/guests/:guestId",
+        "POST /events/:eventId/guests/:keepId/merge"
+      ]
+    },
+    "adminImageSecurity.js": {
+      "decision": "configuration",
+      "signals": [
+        "gallery_image_protection"
+      ],
+      "reason": "Only gallery/global technical protection configuration existence. No security events, blocked IPs, request counts, threat scores or admin monitoring access.",
+      "route_signatures": [
+        "GET /settings",
+        "PUT /settings",
+        "GET /dashboard",
+        "GET /logs",
+        "GET /events/:eventId/access-logs",
+        "POST /block-ip",
+        "DELETE /logs/cleanup",
+        "GET /export"
+      ]
+    },
+    "adminInvoices.js": {
+      "decision": "partial",
+      "signals": [
+        "crm",
+        "crm_invoices"
+      ],
+      "reason": "Admin invoice operations only; no amounts, VAT/customer/payment values or payment-check responses.",
+      "route_signatures": [
+        "GET /",
+        "GET /:id",
+        "POST /",
+        "POST /import",
+        "PUT /:id",
+        "GET /:id/rebill-proofs",
+        "POST /:id/send",
+        "POST /:id/mark-paid",
+        "POST /:id/send-reminder",
+        "POST /:id/test-payment-check",
+        "POST /:id/reissue",
+        "POST /:id/release-for-delivery",
+        "POST /:id/cancel",
+        "GET /:id/pdf",
+        "POST /preview",
+        "GET /:id/payment-log"
+      ]
+    },
+    "adminLedger.js": {
+      "decision": "partial",
+      "signals": [
+        "accounting",
+        "accounting_ledger"
+      ],
+      "reason": "Admin ledger-account/VAT/mapping edits and ledger export initiation only; no account/currency/VAT identifiers or exported records.",
+      "route_signatures": [
+        "GET /accounts",
+        "POST /accounts",
+        "PATCH /accounts/:id",
+        "DELETE /accounts/:id",
+        "GET /vat-codes",
+        "POST /vat-codes",
+        "PATCH /vat-codes/:id",
+        "DELETE /vat-codes/:id",
+        "GET /mappings",
+        "PATCH /mappings/category/:id",
+        "PATCH /mappings/settings",
+        "GET /export"
+      ]
+    },
+    "adminNewsletters.js": {
+      "decision": "partial",
+      "signals": [
+        "newsletters"
+      ],
+      "reason": "Admin campaign changes/test/queue/cancel only. Recipient resolution, previews, subscriptions/unsubscribes, delivery/open/click data and automatic sending excluded.",
+      "route_signatures": [
+        "GET /",
+        "GET /:id",
+        "GET /:id/recipients",
+        "POST /",
+        "PUT /:id",
+        "DELETE /:id",
+        "POST /:id/preview",
+        "POST /:id/recipients/resolve",
+        "POST /:id/test",
+        "POST /:id/queue",
+        "POST /:id/cancel"
+      ]
+    },
+    "adminNotifications.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Bootstrap, passwords/MFA/session/profile, per-person notifications, developer helpers and operational health/update/log polling are outside the prioritization purpose.",
+      "route_signatures": [
+        "GET /",
+        "PUT /:id/read",
+        "PUT /read-all",
+        "DELETE /clear-all"
+      ]
+    },
+    "adminPhotoDimensions.js": {
+      "decision": "partial",
+      "signals": [
+        "photo_processing"
+      ],
+      "reason": "Admin repair/regenerate/configuration initiation, never status polling or processing totals.",
+      "route_signatures": [
+        "POST /repair-dimensions",
+        "GET /repair-dimensions/status",
+        "POST /repair-capture-dates",
+        "GET /repair-capture-dates/status",
+        "POST /repair-orientation",
+        "GET /repair-orientation/status"
+      ]
+    },
+    "adminPhotoExport.js": {
+      "decision": "partial",
+      "signals": [
+        "photo_exports"
+      ],
+      "reason": "Admin export initiation only; export filters, selected files, sizes and contents excluded.",
+      "route_signatures": [
+        "GET /:eventId/filtered",
+        "GET /:eventId/filter-summary",
+        "POST /:eventId/export",
+        "GET /export-formats"
+      ]
+    },
+    "adminPhotos.js": {
+      "decision": "partial",
+      "signals": [
+        "photo_management",
+        "photo_exports",
+        "photo_processing",
+        "video_uploads",
+        "camera_raw_uploads",
+        "s3_storage",
+        "s3_photo_storage"
+      ],
+      "reason": "Successful admin edits/exports and accepted upload evidence only. Chunk init/status, failed uploads and public downloads excluded. Only video/RAW/S3 booleans survive, never file metadata/EXIF/content.",
+      "route_signatures": [
+        "POST /:eventId/upload",
+        "GET /uploads/:upload_id/status",
+        "GET /uploads/:upload_id/stream",
+        "POST /photos/:photoId/retry",
+        "DELETE /:eventId/photos/:photoId",
+        "PUT /:eventId/photos/:photoId/mark",
+        "PATCH /:eventId/photos/:photoId",
+        "POST /:eventId/photos/bulk-delete",
+        "POST /:eventId/photos/bulk-update",
+        "GET /:eventId/photos/:photoId/download",
+        "GET /:eventId/photos",
+        "GET /:eventId/photo/:photoId",
+        "GET /:eventId/thumbnail/:photoId",
+        "GET /:eventId/preview/:photoId",
+        "GET /:eventId/debug",
+        "POST /:eventId/chunked-upload/init",
+        "POST /:eventId/chunked-upload/:uploadId/chunk/:chunkIndex",
+        "POST /:eventId/chunked-upload/:uploadId/complete",
+        "GET /:eventId/chunked-upload/:uploadId/status",
+        "DELETE /:eventId/chunked-upload/:uploadId"
+      ]
+    },
+    "adminProjects.js": {
+      "decision": "partial",
+      "signals": [
+        "crm",
+        "crm_projects"
+      ],
+      "reason": "Admin project operations only; project/person names, business performance, metadata and totals excluded.",
+      "route_signatures": [
+        "GET /",
+        "POST /",
+        "GET /:id",
+        "PUT /:id",
+        "POST /:id/events",
+        "POST /:id/quotes",
+        "POST /:id/contracts",
+        "GET /:id/overview",
+        "GET /email/:emailId/preview",
+        "POST /email/:emailId/resend",
+        "POST /email/:emailId/cancel",
+        "POST /email/:emailId/retry",
+        "POST /email/:emailId/send-now"
+      ]
+    },
+    "adminQuotes.js": {
+      "decision": "partial",
+      "signals": [
+        "crm",
+        "crm_quotes",
+        "document_templates"
+      ],
+      "reason": "Admin quote/preset operations only; no quote content, prices, customer acceptance or signatures.",
+      "route_signatures": [
+        "GET /",
+        "GET /:id",
+        "POST /",
+        "PUT /:id",
+        "POST /:id/send",
+        "POST /:id/duplicate",
+        "POST /:id/accept",
+        "POST /:id/decline",
+        "POST /:id/convert",
+        "POST /:id/convert-to-invoice",
+        "POST /:id/convert-to-contract",
+        "GET /:id/pdf",
+        "POST /preview",
+        "GET /presets/line-items",
+        "POST /presets/line-items",
+        "PUT /presets/line-items/:id",
+        "DELETE /presets/line-items/:id",
+        "GET /presets/payment-terms",
+        "POST /presets/payment-terms",
+        "PUT /presets/payment-terms/:id",
+        "DELETE /presets/payment-terms/:id",
+        "GET /presets/payment-net-days",
+        "POST /presets/payment-net-days",
+        "PUT /presets/payment-net-days/:id",
+        "DELETE /presets/payment-net-days/:id",
+        "GET /presets/payment-timing",
+        "POST /presets/payment-timing",
+        "PUT /presets/payment-timing/:id",
+        "DELETE /presets/payment-timing/:id"
+      ]
+    },
+    "adminRestore.js": {
+      "decision": "partial",
+      "signals": [
+        "restore"
+      ],
+      "reason": "Admin restore initiation only, never file selection, content, progress, errors or timing.",
+      "route_signatures": [
+        "GET /status",
+        "POST /validate",
+        "POST /start",
+        "GET /progress",
+        "GET /run/:id",
+        "GET /run/:id/report",
+        "GET /available-backups",
+        "POST /list-backups",
+        "GET /settings",
+        "PUT /settings"
+      ]
+    },
+    "adminRoles.js": {
+      "decision": "partial",
+      "signals": [
+        "admin_management"
+      ],
+      "reason": "Admin account/role management capability; no names, permissions, role labels, password reset operations or active-user counts. Auth/self-profile endpoints excluded.",
+      "route_signatures": [
+        "GET /",
+        "GET /permissions",
+        "POST /",
+        "POST /:id/clone",
+        "PUT /:id",
+        "DELETE /:id"
+      ]
+    },
+    "adminSettings.js": {
+      "decision": "partial",
+      "signals": [
+        "custom_css",
+        "oauth",
+        "smtp",
+        "backup",
+        "s3_storage",
+        "video_uploads",
+        "camera_raw_uploads",
+        "public_site",
+        "branding",
+        "seo_customization",
+        "slideshow",
+        "download_resolution_picker",
+        "gallery_watermarks",
+        "database_backup"
+      ],
+      "reason": "Only specified configuration presence/booleans and explicit branding/SEO/slideshow operations. Generic settings reads, security policies, passwords, storage data, SMTP/OIDC credentials, custom HTML/CSS/SEO values excluded.",
+      "route_signatures": [
+        "GET /",
+        "GET /:type",
+        "GET /customer-surface",
+        "PUT /customer-surface",
+        "PUT /accounting",
+        "PUT /slideshow",
+        "GET /downloads",
+        "PUT /downloads",
+        "GET /sso",
+        "PUT /sso",
+        "POST /sso/test",
+        "GET /:type",
+        "GET /password/complexity",
+        "PUT /branding",
+        "POST /logo",
+        "DELETE /logo",
+        "POST /branding/watermark-logo",
+        "PUT /theme",
+        "PUT /general",
+        "PUT /security",
+        "PUT /analytics",
+        "PUT /seo",
+        "GET /storage/info",
+        "POST /favicon",
+        "PUT /security/rate-limit",
+        "GET /public-site/default",
+        "POST /public-site/reset"
+      ]
+    },
+    "adminShortUrls.js": {
+      "decision": "partial",
+      "signals": [
+        "gallery_sharing",
+        "short_links"
+      ],
+      "reason": "Admin short-link creation/deletion only; link/token/click metadata excluded.",
+      "route_signatures": [
+        "GET /events/:eventId/short-urls",
+        "POST /events/:eventId/short-urls",
+        "DELETE /short-urls/:id"
+      ]
+    },
+    "adminSystem.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Bootstrap, passwords/MFA/session/profile, per-person notifications, developer helpers and operational health/update/log polling are outside the prioritization purpose.",
+      "route_signatures": [
+        "GET /version",
+        "GET /updates",
+        "GET /updates/whatsnew",
+        "POST /updates/whatsnew/seen",
+        "GET /updates/changelog",
+        "GET /updates/instructions",
+        "GET /status",
+        "GET /database",
+        "GET /updates/notifications",
+        "PUT /updates/notifications",
+        "POST /updates/notifications/send",
+        "POST /updates/notifications/check"
+      ]
+    },
+    "adminSystemHealth.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Bootstrap, passwords/MFA/session/profile, per-person notifications, developer helpers and operational health/update/log polling are outside the prioritization purpose.",
+      "route_signatures": [
+        "GET /backup-integrity",
+        "GET /backup-coverage",
+        "GET /failures",
+        "POST /failures/email/:id/retry",
+        "DELETE /failures/email/:id"
+      ]
+    },
+    "adminTaxReport.js": {
+      "decision": "partial",
+      "signals": [
+        "accounting",
+        "accounting_tax_report"
+      ],
+      "reason": "Admin tax report generation/export only; no totals, dates, tax regimes, geography or currency.",
+      "route_signatures": [
+        "GET /",
+        "GET /pdf",
+        "GET /csv"
+      ]
+    },
+    "adminThumbnails.js": {
+      "decision": "partial",
+      "signals": [
+        "photo_processing"
+      ],
+      "reason": "Admin repair/regenerate/configuration initiation, never status polling or processing totals.",
+      "route_signatures": [
+        "GET /settings",
+        "PUT /settings",
+        "POST /regenerate",
+        "POST /regenerate-previews",
+        "GET /regenerate/status"
+      ]
+    },
+    "adminTransfers.js": {
+      "decision": "partial",
+      "signals": [
+        "transfers"
+      ],
+      "reason": "Admin transfer CRUD/files/link management/download only. Public recipients, received-file data, upload and download statistics excluded.",
+      "route_signatures": [
+        "GET /",
+        "POST /",
+        "GET /:id",
+        "PATCH /:id",
+        "DELETE /:id",
+        "POST /:id/files",
+        "DELETE /:id/files/:fileId",
+        "POST /:id/upload-files",
+        "DELETE /:id/extra-files/:extraId",
+        "GET /:id/extra-files/:extraId/download",
+        "POST /:id/upload-link",
+        "DELETE /:id/upload-link",
+        "GET /:id/download",
+        "GET /:id/uploads/:uploadId/download"
+      ]
+    },
+    "adminUsage.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Consent, inspection, export, feedback, voting, deletion and abandoning an unsignable deletion are explicit protocol operations; not product-use signals. Activity only triggers a due fixed report.",
+      "route_signatures": [
+        "POST /activity",
+        "GET /",
+        "POST /dismiss",
+        "POST /enable",
+        "POST /consent",
+        "POST /disable",
+        "POST /abandon",
+        "POST /retry",
+        "GET /preview",
+        "GET /export",
+        "PUT /feedback-preferences",
+        "POST /feedback",
+        "POST /vote",
+        "POST /portal-session"
+      ]
+    },
+    "adminUsers.js": {
+      "decision": "partial",
+      "signals": [
+        "admin_management"
+      ],
+      "reason": "Admin account/role management capability; no names, permissions, role labels, password reset operations or active-user counts. Auth/self-profile endpoints excluded.",
+      "route_signatures": [
+        "GET /me/permissions",
+        "GET /",
+        "GET /roles",
+        "GET /invitations",
+        "POST /invite",
+        "DELETE /invitations/:id",
+        "GET /:id",
+        "PUT /:id",
+        "POST /:id/deactivate",
+        "POST /:id/activate",
+        "DELETE /:id",
+        "POST /:id/reset-password"
+      ]
+    },
+    "adminVatCodes.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Business identity/bank/tax-address configuration and VAT-code helper surface are not separate usage signals. Billing/accounting capabilities are covered without profiling the business.",
+      "route_signatures": [
+        "GET /"
+      ]
+    },
+    "adminWebhooks.js": {
+      "decision": "partial",
+      "signals": [
+        "webhooks"
+      ],
+      "reason": "Active configuration existence plus successful admin manual test/replay enqueue. Actual network delivery/results/subscriptions/destinations excluded.",
+      "route_signatures": [
+        "GET /",
+        "POST /",
+        "GET /:id",
+        "PUT /:id",
+        "DELETE /:id",
+        "POST /:id/test",
+        "GET /:id/deliveries",
+        "GET /:id/deliveries/:deliveryId",
+        "POST /:id/deliveries/:deliveryId/replay"
+      ]
+    },
+    "adminWhatsapp.js": {
+      "decision": "partial",
+      "signals": [
+        "whatsapp"
+      ],
+      "reason": "Effective configured sender and successful manual test only. No automated deliveries, phone numbers, templates or delivery statuses.",
+      "route_signatures": [
+        "GET /config",
+        "PUT /config",
+        "POST /test"
+      ]
+    },
+    "adminWorkflows.js": {
+      "decision": "partial",
+      "signals": [
+        "workflows"
+      ],
+      "reason": "Admin workflow authoring/approval/test initiation only. Runtime triggers, payloads, execution frequency/results and public approvals excluded.",
+      "route_signatures": [
+        "GET /approvals",
+        "POST /approvals/:id/:action",
+        "GET /runs/:runId/steps",
+        "GET /:id/runs",
+        "POST /:id/test-run",
+        "GET /",
+        "GET /:id",
+        "POST /",
+        "PUT /:id",
+        "PATCH /:id/enabled",
+        "DELETE /:id"
+      ]
+    },
+    "analyticsTrackerProxy.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": []
+    },
+    "auth.js": {
+      "decision": "partial",
+      "signals": [
+        "oauth"
+      ],
+      "reason": "Only successful admin OIDC callback sets oauth. Password/gallery authentication, MFA, account claims and provider details excluded.",
+      "route_signatures": [
+        "POST /admin/login",
+        "POST /admin/login/mfa",
+        "POST /logout",
+        "POST /gallery/verify",
+        "POST /gallery/:slug/client-login",
+        "POST /gallery/share-login",
+        "POST /gallery/logout",
+        "GET /session",
+        "POST /admin/change-password",
+        "POST /password-strength",
+        "GET /admin/sso/login",
+        "GET /admin/sso/callback"
+      ]
+    },
+    "customer.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /events",
+        "GET /events/:slug/access-token",
+        "GET /profile",
+        "PUT /profile",
+        "GET /profile/marketing",
+        "PUT /profile/marketing",
+        "POST /profile/password",
+        "GET /quotes",
+        "GET /invoices",
+        "GET /quotes/:id/pdf",
+        "GET /invoices/:id/pdf",
+        "GET /contracts",
+        "GET /contracts/:id/pdf"
+      ]
+    },
+    "customerAuth.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "POST /login",
+        "POST /logout",
+        "GET /session",
+        "GET /invite/:token",
+        "POST /accept-invite",
+        "GET /password-reset/:token",
+        "POST /password-reset"
+      ]
+    },
+    "gallery.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /resolve/:identifier",
+        "GET /:slug/verify-token/:token",
+        "GET /:slug/info",
+        "GET /:slug/show/:token/session",
+        "GET /:slug/show/:token/state",
+        "GET /:slug/photos",
+        "GET /:slug/people",
+        "PATCH /:slug/photos/:photoId/visibility",
+        "PATCH /:slug/photos/visibility/bulk",
+        "GET /:slug/download/:photoId",
+        "GET /:slug/download-all",
+        "POST /:slug/download-selected",
+        "POST /:slug/download-jobs",
+        "GET /:slug/download-jobs/:token",
+        "GET /:slug/download-jobs/:token/file",
+        "POST /:slug/photo/:photoId/view",
+        "GET /:slug/photo/:photoId",
+        "GET /:slug/thumbnail/:photoId",
+        "GET /:slug/hero/:photoId",
+        "GET /:slug/preview/:photoId",
+        "GET /:slug/stats",
+        "POST /:eventId/upload",
+        "GET /:slug/uploads/status",
+        "GET /:slug/css-template"
+      ]
+    },
+    "galleryFeedback.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:slug/feedback-settings",
+        "GET /:slug/photos/:photoId/feedback",
+        "POST /:slug/photos/:photoId/feedback",
+        "GET /:slug/feedback-summary",
+        "GET /:slug/my-feedback"
+      ]
+    },
+    "galleryGuests.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "POST /:slug/guest",
+        "GET /:slug/guest/me",
+        "DELETE /:slug/guest/me",
+        "POST /:slug/guest/recover",
+        "POST /:slug/guest/verify",
+        "POST /:slug/guest/redeem"
+      ]
+    },
+    "protectedImages.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:slug/photo/:photoId/view",
+        "POST /:slug/photo/:photoId/generate-secure-token",
+        "POST /:slug/photo/:photoId/generate-url",
+        "GET /:slug/photo/:photoId/signed/:token"
+      ]
+    },
+    "publicCMS.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /pages/:slug"
+      ]
+    },
+    "publicContracts.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:token",
+        "POST /:token/sign",
+        "POST /:token/upload-signed-pdf",
+        "GET /:token/pdf"
+      ]
+    },
+    "publicFonts.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /"
+      ]
+    },
+    "publicNewsletter.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /unsubscribe/:token",
+        "POST /unsubscribe/:token"
+      ]
+    },
+    "publicPaymentCheck.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:token",
+        "POST /:token"
+      ]
+    },
+    "publicQuotes.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:token",
+        "POST /:token/respond"
+      ]
+    },
+    "publicSettings.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /"
+      ]
+    },
+    "publicTransfer.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:token",
+        "GET /:token/download",
+        "GET /:token/download/:fileId"
+      ]
+    },
+    "publicTransferUpload.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:token",
+        "POST /:token"
+      ]
+    },
+    "publicWorkflowApprovals.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /:token/:action",
+        "POST /:token/:action"
+      ]
+    },
+    "secureImages.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "POST /:slug/generate-token",
+        "GET /:slug/secure/:photoId/:token",
+        "GET /:slug/secure-download/:photoId/:token",
+        "GET /security/stats"
+      ]
+    },
+    "setup.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Bootstrap, passwords/MFA/session/profile, per-person notifications, developer helpers and operational health/update/log polling are outside the prioritization purpose.",
+      "route_signatures": [
+        "GET /status",
+        "POST /verify-token",
+        "POST /admin",
+        "POST /complete"
+      ]
+    },
+    "v1/events.js": {
+      "decision": "partial",
+      "signals": [
+        "api_integration"
+      ],
+      "reason": "Single bit after successful admin-owned scoped API authentication. No request/response values; API requests do not trigger reports.",
+      "route_signatures": [
+        "POST /events",
+        "GET /events",
+        "GET /event-types",
+        "GET /events/:id",
+        "POST /events/:id/photos",
+        "GET /events/:id/share-link",
+        "GET /events/:id/photos"
+      ]
+    }
+  },
+  "feature_flags": {
+    "accounting": {
+      "signals": [
+        "accounting",
+        "accounting_ledger"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "analytics": {
+      "signals": [
+        "analytics_dashboard"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "bills": {
+      "signals": [
+        "crm_invoices"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "calendar": {
+      "signals": [
+        "crm_calendar"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "calendarBooking": {
+      "signals": [],
+      "reason": "Excluded: disabled roadmap placeholder, not an implemented booking capability."
+    },
+    "clients": {
+      "signals": [
+        "crm"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "contracts": {
+      "signals": [
+        "crm_contracts"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "crmDevelopment": {
+      "signals": [],
+      "reason": "Excluded: internal development/test helpers, not product adoption."
+    },
+    "customerPortal": {
+      "signals": [
+        "customer_portal"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "expenses": {
+      "signals": [
+        "accounting_expenses"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "faces": {
+      "signals": [
+        "face_recognition"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "galleries": {
+      "signals": [
+        "galleries"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "hoursLogging": {
+      "signals": [
+        "crm_hours"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "incomingInvoices": {
+      "signals": [
+        "accounting_incoming_invoices"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "incomingMail": {
+      "signals": [
+        "incoming_mail"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "messaging": {
+      "signals": [
+        "messaging"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "newsletters": {
+      "signals": [
+        "newsletters"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "projects": {
+      "signals": [
+        "crm_projects"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "quotes": {
+      "signals": [
+        "crm_quotes"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "reminderEmails": {
+      "signals": [
+        "reminder_emails"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "slideshow": {
+      "signals": [
+        "slideshow"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "taxReport": {
+      "signals": [
+        "accounting_tax_report"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "transfers": {
+      "signals": [
+        "transfers"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "userManagement": {
+      "signals": [
+        "admin_management"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "whatsapp": {
+      "signals": [
+        "whatsapp"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "workflows": {
+      "signals": [
+        "workflows"
+      ],
+      "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    }
+  },
+  "excluded_runtime": [
+    "Gallery/customer/public events and optional website analytics",
+    "Automated newsletter, reminder, WhatsApp, webhook and IMAP jobs",
+    "Security/audit logs, biometric embeddings and recognition results",
+    "Operational health, migration, update and polling metrics",
+    "Business/customer/user identities, geography, amounts and document contents",
+    "Disabled calendarBooking and internal crmDevelopment; hosted future product #1111",
+    "Image fragmentation: removed from current PicPeak, not a live capability"
+  ],
+  "configuration_only": [
+    "reminder_emails",
+    "public_site",
+    "gallery_feedback_likes",
+    "gallery_feedback_ratings",
+    "gallery_feedback_comments",
+    "gallery_feedback_favorites",
+    "gallery_feedback_reactions",
+    "gallery_feedback_color_labels",
+    "gallery_guest_accounts",
+    "gallery_guest_uploads",
+    "gallery_downloads",
+    "download_resolution_picker",
+    "gallery_client_access",
+    "gallery_watermarks",
+    "gallery_image_protection",
+    "gallery_reveal",
+    "gallery_expiration"
+  ]
+}

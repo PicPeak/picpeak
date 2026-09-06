@@ -824,6 +824,8 @@ app.get(
 // Routes
 app.use('/api/setup', setupRoutes); // public first-run bootstrap (self-closes after setup)
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', require('./src/middleware/productUsage').productUsage);
+app.use('/api/admin/usage', require('./src/routes/adminUsage'));
 app.use('/api/admin/external-media', require('./src/routes/adminExternalMedia'));
 // Gallery routes - main routes first, then feedback routes
 app.use('/api/gallery', galleryRoutes);
@@ -933,7 +935,7 @@ app.use('/api/admin/api-tokens', require('./src/routes/adminApiTokens'));
 app.use('/api/admin/webhooks', require('./src/routes/adminWebhooks'));
 // Public v1 API for n8n / external integrations (#322). Mounted under
 // /api/v1; auth handled per-route via apiTokenAuth (Bearer tokens).
-app.use('/api/v1', require('./src/routes/v1/events'));
+app.use('/api/v1', require('./src/middleware/productUsage').productUsageApi, require('./src/routes/v1/events'));
 
 // Swagger UI for the v1 API. Admin-gated since it lists endpoint shapes
 // that should not be enumerable to anonymous users (a common reduce-info-leak hardening).
