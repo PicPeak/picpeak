@@ -5,6 +5,15 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.126.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.126.1-beta.0...v3.126.2-beta.0) (2026-09-06)
+
+
+### Bug Fixes
+
+* **gallery:** release grid tiles once they are far enough out of view ([b3937d0](https://github.com/PicPeak/picpeak/commit/b3937d0b8c54c8ddf8a428be88aa444ab2b4f2d2))
+* **gallery:** retry a failed image fetch once the tile is back on screen ([c4b03a8](https://github.com/PicPeak/picpeak/commit/c4b03a831f843ec447a54d712aefa89c9761e8e8))
+* **gallery:** retry a failed image fetch once the tile is back on screen ([77ae94e](https://github.com/PicPeak/picpeak/commit/77ae94e649f367bb0a44166d3215ce1884c660d2))
+
 ## [3.126.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.126.0-beta.0...v3.126.1-beta.0) (2026-09-06)
 
 
