@@ -454,6 +454,7 @@
     "enable": "Enable product usage",
     "disable": "Disable & delete my data",
     "retry": "Retry / send if due",
+    "openUsagePortal": "Open usage portal",
     "transparency": "Read the public schema & privacy details",
     "linkCollector": "Where reports are sent",
     "hash": "Your private lookup hash",

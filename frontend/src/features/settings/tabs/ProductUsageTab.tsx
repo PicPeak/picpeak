@@ -7,6 +7,7 @@ import {
 } from '../../../services/productUsage.service';
 import {
   ArrowUpFromLine,
+  ExternalLink,
   Globe,
   ListChecks,
   MessageSquare,
@@ -377,14 +378,29 @@ export default function ProductUsageTab() {
             </>
           )}
           {data.collector_url && (
-            <a
-              className="text-sm text-primary-600 dark:text-primary-400 hover:underline self-center"
-              href={`${data.collector_url}/transparency`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {t('productUsage.transparency')}
-            </a>
+            <>
+              {/* The public portal itself, not the session-bound link below:
+                  it needs neither participation nor a voting session, so an
+                  operator can look at the portal before deciding to join.
+                  Styled as a button so it reads as an action, not a footnote. */}
+              <a
+                className="btn btn-outline btn-md"
+                href={data.collector_url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t('productUsage.openUsagePortal')}
+                <ExternalLink className="ml-2 h-4 w-4" aria-hidden="true" />
+              </a>
+              <a
+                className="text-sm text-primary-600 dark:text-primary-400 hover:underline self-center"
+                href={`${data.collector_url}/transparency`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t('productUsage.transparency')}
+              </a>
+            </>
           )}
         </div>
       </Card>
