@@ -7,7 +7,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { ensureThumbnail } = require('../services/imageProcessor');
 const { isVideoMimeType } = require('../services/videoProcessor');
-const { acceptedUpload } = require('../usage/capabilityEvidence');
+const { acceptedUpload, capabilityEvidence } = require('../usage/capabilityEvidence');
 const { generatePhotoFilename, buildContentDisposition } = require('../utils/filenameSanitizer');
 const {
   getUseOriginalFilenames,
@@ -358,6 +358,7 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
             event,
           });
           if (result.success) {
+            capabilityEvidence(res, 'photo_replacement');
             acceptedUpload(res, {
               video: isVideoMimeType(file.mimetype),
               raw: path.extname(file.originalname).toLowerCase() === '.dng',
@@ -861,6 +862,7 @@ router.put('/:eventId/photos/:photoId/mark', adminAuth, requirePermission('photo
       parseInt(eventId, 10), photoId, req.admin.id, mark,
     );
 
+    capabilityEvidence(res, 'photo_admin_marks');
     res.json({ success: true, mark: result });
   } catch (error) {
     // Validation errors from the service are the caller's fault, not a 500.

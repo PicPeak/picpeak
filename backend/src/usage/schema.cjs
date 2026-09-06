@@ -1,10 +1,17 @@
 "use strict";
 
-// Vendored byte-identical in PicPeak. v1 stays immutable; a larger allowlist
-// has a new wire version and requires explicit, signed v2 consent.
-const CATALOG = require("./features.v2.json");
-const CURRENT_SCHEMA_VERSION = "usage.v2";
-const CURRENT_CONSENT_VERSION = "usage-consent.v2";
+// Vendored byte-identical in PicPeak. Existing wire versions stay immutable;
+// every expansion requires explicit consent to its own version.
+const CATALOG = require("./features.v3.json");
+const CATALOGS = { "usage.v2": require("./features.v2.json"), "usage.v3": CATALOG };
+const CONSENT_VERSIONS = { "usage.v1": "usage-consent.v1", "usage.v2": "usage-consent.v2", "usage.v3": "usage-consent.v3" };
+const CURRENT_SCHEMA_VERSION = "usage.v3";
+const CURRENT_CONSENT_VERSION = CONSENT_VERSIONS[CURRENT_SCHEMA_VERSION];
+const schemaForConsent = (consent) => Object.keys(CONSENT_VERSIONS).find((version) => CONSENT_VERSIONS[version] === consent);
+const schemaRank = (version) => Object.keys(CONSENT_VERSIONS).indexOf(version);
+const INVENTORY_KEYS = ["galleries", "photos"];
+// At the collector's 100,000-reporter limit, sums remain safe JS integers.
+const MAX_INVENTORY_COUNT = 1000000000;
 const LEGACY_FEATURE_KEYS = [
   "crm", "crm_quotes", "crm_invoices", "crm_contracts", "crm_projects",
   "crm_calendar", "crm_hours", "customer_portal", "accounting", "workflows",
@@ -22,9 +29,9 @@ const timestamp = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2
 const text = (maxLength, minLength = 1) => ({ type: "string", minLength, maxLength });
 const boolean = { type: "boolean" };
 const featureKeysFor = (version = CURRENT_SCHEMA_VERSION) =>
-  version === "usage.v1" ? LEGACY_FEATURE_KEYS : version === "usage.v2" ? FEATURE_KEYS : [];
+  version === "usage.v1" ? LEGACY_FEATURE_KEYS : Object.keys(CATALOGS[version]?.features || {});
 const observesUse = (key, version = CURRENT_SCHEMA_VERSION) =>
-  version === "usage.v1" || CATALOG.features[key]?.measurement === "configuration_and_use";
+  version === "usage.v1" || CATALOGS[version]?.features[key]?.measurement === "configuration_and_use";
 const emptyFeatures = (version = CURRENT_SCHEMA_VERSION) => Object.fromEntries(
   featureKeysFor(version).map(key => [key, {
     configured: false, ...(observesUse(key, version) ? { used: false } : {})
@@ -38,6 +45,9 @@ const report = (version) => object({
     key, object({ configured: boolean, ...(observesUse(key, version) ? { used: boolean } : {}) })
   ]))),
   gallery_layouts: { type: "array", uniqueItems: true, maxItems: LAYOUTS.length, items: { enum: LAYOUTS } },
+  ...(version === "usage.v3" ? { inventory: object(Object.fromEntries(INVENTORY_KEYS.map(key => [key,
+    { type: "integer", minimum: 0, maximum: MAX_INVENTORY_COUNT }
+  ]))) } : {}),
 });
 const feedback = object({
   feedback_id: uuid, kind: { enum: ["feedback", "feature_request", "testimonial"] },
@@ -45,14 +55,14 @@ const feedback = object({
   allow_public: boolean, allow_marketing: boolean,
 });
 const makePayloads = (version) => ({
-  register: object({ consent_version: { const: version === "usage.v1" ? "usage-consent.v1" : CURRENT_CONSENT_VERSION } }),
+  register: object({ consent_version: { const: CONSENT_VERSIONS[version] } }),
   report: report(version),
   delete: object({}), feedback,
   vote: object({ feedback_id: uuid, voted: boolean }),
   session: object({}),
-  ...(version === "usage.v2" ? { consent: object({ consent_version: { const: CURRENT_CONSENT_VERSION } }) } : {}),
+  ...(version !== "usage.v1" ? { consent: object({ consent_version: { const: CONSENT_VERSIONS[version] } }) } : {}),
 });
-const payloadsByVersion = Object.fromEntries(["usage.v1", "usage.v2"].map(version => [version, makePayloads(version)]));
+const payloadsByVersion = Object.fromEntries(Object.keys(CONSENT_VERSIONS).map(version => [version, makePayloads(version)]));
 const envelopeSchemas = Object.fromEntries(Object.entries(payloadsByVersion).map(([version, actions]) => [version, {
   $schema: "http://json-schema.org/draft-07/schema#",
   $id: `https://usage.picpeak.app/schema/${version}.json`,
@@ -73,7 +83,8 @@ const envelopeSchemas = Object.fromEntries(Object.entries(payloadsByVersion).map
 const envelopeSchema = envelopeSchemas[CURRENT_SCHEMA_VERSION];
 const payloads = payloadsByVersion[CURRENT_SCHEMA_VERSION];
 module.exports = {
-  FEATURE_KEYS, LEGACY_FEATURE_KEYS, LAYOUTS, CATALOG, CURRENT_SCHEMA_VERSION,
+  FEATURE_KEYS, LEGACY_FEATURE_KEYS, LAYOUTS, CATALOG, CATALOGS, CONSENT_VERSIONS,
+  schemaForConsent, schemaRank, INVENTORY_KEYS, MAX_INVENTORY_COUNT, CURRENT_SCHEMA_VERSION,
   CURRENT_CONSENT_VERSION, featureKeysFor, observesUse, emptyFeatures,
   envelopeSchema, envelopeSchemas, payloads, payloadsByVersion,
 };

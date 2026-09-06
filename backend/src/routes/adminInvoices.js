@@ -19,6 +19,7 @@
  */
 
 const express = require('express');
+const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const { body, param, query } = require('express-validator');
 const multer = require('multer');
 const path = require('path');
@@ -563,6 +564,7 @@ router.post(
 
     const inserted = await db('invoices').insert(row).returning('id');
     const invoiceId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+    capabilityEvidence(res, 'crm_invoice_import');
 
     return successResponse(res, {
       invoice: transformInvoice(await db('invoices').where({ id: invoiceId }).first()),

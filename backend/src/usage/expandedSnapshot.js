@@ -1,5 +1,5 @@
 'use strict';
-const { CATALOG, emptyFeatures } = require('./schema.cjs');
+const { CATALOGS, emptyFeatures } = require('./schema.cjs');
 const { formatBoolean } = require('../utils/dbCompat');
 
 const truth = (value) => value === true || value === 1 || value === '1';
@@ -14,8 +14,8 @@ const parse = (value) => {
 // Technical configuration only. Never read photos, feedback contents, guest /
 // customer / admin profiles, messages, audit logs, delivery logs or counts.
 // Presence queries return a literal 1, not even a row's identifying primary key.
-async function expandSnapshot(db, { features, flags, used, now }) {
-  const result = { ...emptyFeatures('usage.v2'), ...features };
+async function expandSnapshot(db, { features, flags, used, now, version = 'usage.v2' }) {
+  const result = { ...emptyFeatures(version), ...features };
   const effective = { analytics: true, userManagement: true, ...flags };
   if (!effective.quotes) effective.bills = false;
   if (effective.bills) effective.accounting = true;
@@ -27,7 +27,7 @@ async function expandSnapshot(db, { features, flags, used, now }) {
   effective.clients = ['customerPortal', 'quotes', 'bills', 'contracts', 'projects', 'calendar', 'hoursLogging', 'newsletters']
     .some((flag) => effective[flag]);
   if (['1', 'true', 'yes'].includes(String(process.env.PICPEAK_SINGLE_CONTAINER || '').toLowerCase())) effective.faces = false;
-  for (const [key, definition] of Object.entries(CATALOG.features)) {
+  for (const [key, definition] of Object.entries(CATALOGS[version].features)) {
     if (definition.configuration === 'builtin') result[key].configured = true;
     if (definition.flag) result[key].configured = Boolean(effective[definition.flag]);
     if (definition.used && key !== 'custom_css') result[key].used = used.has(key);
@@ -116,6 +116,24 @@ async function expandSnapshot(db, { features, flags, used, now }) {
     query.where({ feedback_enabled: formatBoolean(true), [column]: formatBoolean(true) }));
   result.gallery_guest_accounts.configured = await exists('event_feedback_settings', ['feedback_enabled', 'identity_mode'], (query) =>
     query.where('feedback_enabled', formatBoolean(true)).whereIn('identity_mode', ['guest', 'shared']));
+  if (version === 'usage.v3') {
+    result.gallery_folders.configured = await exists('photo_categories', ['is_folder', 'event_id'], (query) =>
+      query.where('is_folder', formatBoolean(true)).where((q) => q.whereNull('event_id').orWhereIn('event_id', db('events').select('id'))));
+    result.transfer_upload_links.configured = Boolean(effective.transfers) && await exists('transfers',
+      ['allow_uploads', 'deleted_at', 'upload_expires_at', 'expires_at', 'upload_token'], (query) =>
+        query.where('allow_uploads', formatBoolean(true)).whereNull('deleted_at').whereNotNull('upload_token').whereNot('upload_token', '')
+          .where((q) => q.where('upload_expires_at', '>', new Date(now).toISOString())
+            .orWhere((fallback) => fallback.whereNull('upload_expires_at').where((expiry) =>
+              expiry.whereNull('expires_at').orWhere('expires_at', '>', new Date(now).toISOString())))));
+    result.workflow_automation_enabled.configured = Boolean(effective.workflows) && await enabled('workflows', 'enabled');
+    result.s3_auto_import.configured = result.s3_photo_storage.configured && process.env.STORAGE_AUTO_IMPORT === 'true';
+    result.crm_combined_billing.configured = Boolean(effective.bills && effective.incomingInvoices);
+    result.crm_document_conversion.configured = Boolean(effective.quotes || effective.contracts);
+    result.gallery_capture_date_sort.configured = await exists('events', ['default_photo_sort'], (query) =>
+      query.whereIn('default_photo_sort', ['capture_date_asc', 'capture_date_desc']));
+    const originalNames = await db('app_settings').where({ setting_key: 'general_use_original_filenames_for_downloads' }).first('setting_value');
+    result.download_original_filenames.configured = truth(parse(originalNames?.setting_value));
+  }
   return result;
 }
 module.exports = { expandSnapshot };

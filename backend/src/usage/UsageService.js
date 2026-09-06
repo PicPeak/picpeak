@@ -20,7 +20,9 @@ const {
   LEGACY_FEATURE_KEYS,
   CATALOG,
   CURRENT_SCHEMA_VERSION,
-  CURRENT_CONSENT_VERSION,
+  CONSENT_VERSIONS,
+  schemaForConsent,
+  schemaRank,
   featureKeysFor,
   observesUse,
   LAYOUTS
@@ -130,8 +132,7 @@ class UsageService {
   }
 
   schemaVersion(state) {
-    return state?.consent_version === CURRENT_CONSENT_VERSION
-      ? CURRENT_SCHEMA_VERSION : 'usage.v1';
+    return schemaForConsent(state?.consent_version) || 'usage.v1';
   }
   constructor(db, options = {}) {
     this.db = db;
@@ -343,7 +344,7 @@ class UsageService {
     return this.status();
   }
   async enable(consent) {
-    if (!['usage-consent.v1', CURRENT_CONSENT_VERSION].includes(consent))
+    if (!Object.values(CONSENT_VERSIONS).includes(consent))
       throw new ValidationError('Explicit usage consent is required');
     // Read BEFORE the lease, deliberately. locked() claims the lease and then
     // reads the row in a second statement; a /disable completing between
@@ -670,7 +671,7 @@ class UsageService {
           await this.db.transaction(async (tx) => {
             const upgraded = await tx('product_usage_state')
               .where({ id: 1, status: 'active', installation_id: packet.installation_id })
-              .update({ ...update, consent_version: CURRENT_CONSENT_VERSION });
+              .update({ ...update, consent_version: packet.payload.consent_version });
             if (upgraded) await tx('product_usage_markers').delete();
           });
         } else {
@@ -816,7 +817,7 @@ class UsageService {
           .first();
         if (destination && parse(destination.setting_value) === 's3') {
           allowed.push('s3_storage');
-          if (version === CURRENT_SCHEMA_VERSION) allowed.push('s3_backups');
+          if (version !== 'usage.v1') allowed.push('s3_backups');
         }
       }
       await tx('product_usage_markers')
@@ -841,7 +842,7 @@ class UsageService {
       rows.map((r) => [r.setting_key, parse(r.setting_value)])
     );
     const flagRows = await this.db('feature_flags')
-      .whereIn('key', version === CURRENT_SCHEMA_VERSION
+      .whereIn('key', version !== 'usage.v1'
         ? [...new Set([...Object.values(FLAG_MAP), 'incomingMail', ...Object.values(CATALOG.features).map((f) => f.flag).filter(Boolean)])]
         : Object.values(FLAG_MAP))
       .select('key', 'value');
@@ -947,15 +948,16 @@ class UsageService {
       features.custom_css.used = true;
     }
     const now = new Date(this.now()).toISOString();
-    const expanded = version === CURRENT_SCHEMA_VERSION
-      ? await require('./expandedSnapshot').expandSnapshot(this.db, { features, flags, used, now: this.now() })
+    const expanded = version !== 'usage.v1'
+      ? await require('./expandedSnapshot').expandSnapshot(this.db, { features, flags, used, now: this.now(), version })
       : features;
     return {
       picpeak_version: this.version,
       report_date: now.slice(0, 10),
       generated_at: now,
       features: expanded,
-      gallery_layouts: [...layouts].sort()
+      gallery_layouts: [...layouts].sort(),
+      ...(version === 'usage.v3' ? { inventory: await require('./inventorySnapshot').inventorySnapshot(this.db) } : {})
     };
   }
 
@@ -974,14 +976,17 @@ class UsageService {
         throw new ConflictError('Retry the pending usage operation first');
       if (!['feedback', 'vote', 'session', 'consent'].includes(action))
         throw new ValidationError('Invalid usage action');
-      if (action === 'consent' && state.consent_version === CURRENT_CONSENT_VERSION)
+      const targetVersion = action === 'consent' ? schemaForConsent(payload?.consent_version) : null;
+      if (action === 'consent' && (!targetVersion || targetVersion === 'usage.v1'))
+        throw new ValidationError('Explicit usage consent is required');
+      if (action === 'consent' && schemaRank(targetVersion) <= schemaRank(this.schemaVersion(state)))
         throw new ConflictError('Usage consent is already current');
       const packet = makePacket(
         state,
         action,
         Number(state.sequence) + 1,
         payload,
-        action === 'consent' ? CURRENT_SCHEMA_VERSION : this.schemaVersion(state)
+        action === 'consent' ? targetVersion : this.schemaVersion(state)
       );
       // Validate the complete packet before storing an un-sendable operation.
       verifyEnvelope(

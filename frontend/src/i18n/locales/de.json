@@ -1,19 +1,19 @@
 {
   "productUsage": {
-    "fields": "usage.v2-Berichte enthalten einen Installationsfingerabdruck, PicPeak-Version, UTC-Berichtstag und Erstellungszeit, Schema-/Signaturmetadaten, feste Galerie-Layouts und 73 fest definierte Funktionssignale: 56 Konfiguriert/Genutzt-Paare und 17 reine Konfigurationswerte. Der vollständige Katalog unten erklärt jedes Feld. Keine Aktionsanzahlen und keine Besucherbeobachtung.",
-    "catalogTitle": "Vollständiger Katalog: alle 73 Funktionssignale (usage.v2)",
-    "catalogExplanation": "Konfiguriert beschreibt technische Verfügbarkeit oder Konfiguration, nicht Beliebtheit. Integrierte Funktionen sind immer verfügbar. Genutzt ist ein einziges installationsweites Ja/Nein seit Zustimmung zum aktuellen Schema (v1: seit Teilnahme; v2: seit Teilnahme oder ausdrücklicher Erweiterung). Angenommene Aufträge gelten als gestartet, nicht zwingend abgeschlossen. Reine Konfigurationssignale haben kein Genutzt-Feld. Die Marker speichern weder Person noch Ereignis-ID, Aktionszeit oder Häufigkeit.",
+    "fields": "usage.v3-Berichte enthalten einen Installationsfingerabdruck, PicPeak-Version, UTC-Berichtsdatum und Erstellungszeit, Schema-/Signaturmetadaten, feste Galerie-Layouts, 86 Funktionssignale (63 Konfiguriert/Genutzt-Paare und 23 reine Konfigurationswerte) sowie zwei Gesamtzahlen der Installation: gespeicherte Galerien und Fotoeinträge ohne Videos. Entwürfe, archivierte Galerien und deren erhaltene Fotoeinträge zählen mit. Der Katalog unten erklärt jedes Feld. Keine Aktionsanzahlen oder Besucherbeobachtung.",
+    "catalogTitle": "Vollständiger Katalog: 86 Funktionssignale und 2 Bestandszahlen (usage.v3)",
+    "catalogExplanation": "Konfiguriert beschreibt die aktuelle technische Verfügbarkeit oder Einrichtung. Integriert bedeutet verfügbar, nicht genutzt. Genutzt ist ein installationsweites Ja/Nein seit Zustimmung zum Berichtsschema; angenommene Aufträge gelten als gestartet, nicht zwingend abgeschlossen. Reine Konfigurationssignale enthalten kein Genutzt-Feld. Der Bestand enthält nur aktuelle Gesamtzahlen der Galerie-/Fotoeinträge, ohne Aufschlüsselung nach Galerien. Nutzungsmarker speichern keine Personen, Objektkennungen, Aktionszeiten oder Häufigkeiten.",
     "catalogSearch": "Funktionsname oder Schlüssel suchen",
     "catalogEmpty": "Keine passenden Funktionen.",
     "configuredLabel": "Konfiguriert",
     "usedLabel": "Genutzt",
     "configurationOnly": "Nur Konfiguration — tatsächliche Nutzung wird nicht erfasst.",
-    "versionDisclosure": "Diese Zustimmung gilt für usage.v2 / usage-consent.v2. Bestehende v1-Teilnehmer teilen weiterhin nur die bisherigen 19 Funktionen, bis sie der Erweiterung ausdrücklich zustimmen. Vertrauliche Identität und Rohberichtshistorie bleiben erhalten; der lokale Beobachtungszeitraum der Nutzungsmarker beginnt mit der Collector-Bestätigung neu. Pro UTC-Tag wird höchstens ein Bericht angenommen; der erste v2-Bericht kann daher am nächsten aktiven Tag erfolgen. Vor Bestätigung werden keine neuen lokalen Marker erfasst.",
+    "versionDisclosure": "Diese Zustimmung gilt für usage.v3 / usage-consent.v3. Bestehende v1- und v2-Teilnahmen behalten ihre bisherigen 19 bzw. 73 Fähigkeiten ohne Bestandszahlen bis zur ausdrücklichen Erweiterung. Identität und Rohhistorie bleiben erhalten; lokale Nutzungsmarker beginnen erst nach Bestätigung durch den Collector neu. Höchstens ein Bericht pro UTC-Tag wird angenommen, der erste v3-Bericht kann daher am nächsten aktiven Tag folgen. Neue Marker und Bestandszahlen werden vor Bestätigung nicht erfasst.",
     "currentSchema": "Aktuelles Berichtsschema: {{schema}}",
-    "reviewUpgrade": "Erweiterten Umfang von usage.v2 prüfen",
-    "upgrade": "usage.v2 ausdrücklich zustimmen",
-    "upgradeExplanation": "Ihre bestehende usage.v1-Teilnahme bleibt unverändert. Prüfen Sie den vollständigen erweiterten Katalog, bevor Sie über das Upgrade entscheiden. Eine Ablehnung beendet Ihre bisherige Teilnahme nicht.",
-    "upgradePending": "Die signierte Erweiterung der Zustimmung wartet auf Bestätigung. Es wird nur der bisherige v1-Umfang erfasst. Versuchen Sie es erneut, sobald der Collector erreichbar ist, oder deaktivieren Sie die Teilnahme zum Stoppen und Löschen.",
+    "reviewUpgrade": "Erweiterten Umfang von usage.v3 prüfen",
+    "upgrade": "usage.v3 ausdrücklich zustimmen",
+    "upgradeExplanation": "Deine bestehende Teilnahme behält ihren bisherigen Umfang. Prüfe den erweiterten Katalog und die beiden Bestandszahlen, bevor du dich entscheidest. Ablehnen beendet die Teilnahme nicht.",
+    "upgradePending": "Die signierte Erweiterung wartet auf Bestätigung. Es wird nur der bisher bestätigte Umfang erfasst. Wiederhole den Versuch, wenn der Collector erreichbar ist, oder deaktiviere die Teilnahme zum Stoppen und Löschen.",
     "catalog": {
       "crm": {
         "name": "Kundenverwaltung",
@@ -71,7 +71,7 @@
         "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
       },
       "face_recognition": {
-        "name": "Gesichtserkennung",
+        "name": "ML-Gesichtserkennung",
         "configured": "Der Funktionsschalter faces ist effektiv aktiviert; nur ein Wahrheitswert.",
         "used": "Eine dokumentierte erfolgreiche authentifizierte Admin-Funktionsoperation wurde seit Zustimmung zu diesem Schema beobachtet. Keine Person, Operationshistorie, Parameter oder Anzahlen."
       },
@@ -362,6 +362,65 @@
       "gallery_expiration": {
         "name": "Galerieablauf konfiguriert",
         "configured": "Mindestens eine Galerie hat einen Ablauf konfiguriert; keine Daten, Galeriekennungen oder Anzahlen."
+      },
+      "photo_xmp_export": {
+        "name": "XMP-Export",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Ein Admin hat erfolgreich einen XMP-Export erstellt; keine Sidecars, Dateinamen, Bewertungen, Auswahlen oder Anzahlen."
+      },
+      "photo_replacement": {
+        "name": "Fotoersetzung",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Ein Admin-Upload hat tatsächlich erfolgreich ein Foto ersetzt; keine Dateinamen, Abgleichwerte, Kennungen oder Anzahlen."
+      },
+      "photo_admin_marks": {
+        "name": "Fotografenmarkierungen",
+        "configured": "Integrierte Funktion ist verfügbar; dies ist kein Nutzungsnachweis.",
+        "used": "Ein Admin hat eine eigene Fotomarkierung erfolgreich gespeichert; keine Bewertung, Farbe, Foto- oder Admin-Identität."
+      },
+      "gallery_folders": {
+        "name": "Galerieordner eingerichtet",
+        "configured": "Eine anwendbare globale oder Galerie-Kategorie ist als Ordner eingerichtet; keine Namen, Inhalte, Anzahlen oder Besucheraktivität."
+      },
+      "transfer_upload_links": {
+        "name": "PicTransfer-Uploadlinks aktiviert",
+        "configured": "PicTransfer ist aktiviert und ein nicht gelöschter Transfer erlaubt noch gültige Uploads; keine Links, Tokens, Daten, Empfänger oder Uploads."
+      },
+      "workflow_automation_enabled": {
+        "name": "Workflow-Automation aktiviert",
+        "configured": "Das Workflow-Modul und mindestens ein Workflow sind aktiviert; keine Namen, Graphen, Auslöser, Entscheidungen oder Durchläufe."
+      },
+      "s3_auto_import": {
+        "name": "Automatischer S3-Import aktiviert",
+        "configured": "S3-Medienspeicher ist eingerichtet und STORAGE_AUTO_IMPORT aktiviert; keine Buckets, Präfixe, Zugangsdaten, Abfragen oder importierten Objekte."
+      },
+      "crm_invoice_import": {
+        "name": "Rechnungsimport",
+        "configured": "Die erforderlichen Produktfunktionen sind effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Ein Admin hat eine bestehende Rechnung erfolgreich importiert; keine PDF, Rechnungsnummer, Beträge, Währung, Kunden oder Zahlungsstände."
+      },
+      "crm_combined_billing": {
+        "name": "Kombinierte Abrechnung",
+        "configured": "Die erforderlichen Produktfunktionen sind effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Ein Admin hat erfolgreich eine kombinierte Abrechnung erstellt; keine Stunden, Ausgaben, Kunden, Dokumente oder Finanzwerte."
+      },
+      "crm_monthly_billing_manual": {
+        "name": "Manuelle Monatsabrechnung",
+        "configured": "Die erforderlichen Produktfunktionen sind effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Ein Admin hat einen Monatsentwurf erfolgreich zum Versand freigegeben; die tatsächliche E-Mail-Zustellung wird nicht gemessen. Keine Scheduler-Aktivität, Kunden, Intervalle oder Rechnungswerte."
+      },
+      "crm_document_conversion": {
+        "name": "Dokumentumwandlung",
+        "configured": "Die erforderlichen Produktfunktionen sind effektiv aktiviert; nur ein Wahrheitswert.",
+        "used": "Ein Admin hat ein Angebot oder einen Vertrag erfolgreich in ein Dokument oder eine Galerie umgewandelt; keine Inhalte, Verknüpfungen, Annahmestände oder automatischen Workflows."
+      },
+      "gallery_capture_date_sort": {
+        "name": "Sortierung nach Aufnahmezeit eingerichtet",
+        "configured": "Eine Galerie sortiert standardmäßig nach Aufnahmezeit; keine Aufnahmedaten, EXIF oder Sortieraktionen von Besuchern."
+      },
+      "download_original_filenames": {
+        "name": "Originaldateinamen für Downloads aktiviert",
+        "configured": "Der Schalter für Originaldateinamen beim Download ist aktiviert; keine Dateinamen oder Downloads werden gelesen oder gesendet."
       }
     },
     "auditTitle": "Export- und Löschquittungen",
@@ -384,11 +443,11 @@
     "sectionVisibility": "Wo er sichtbar ist",
     "sectionDeletion": "Beenden und löschen",
     "sectionFeedback": "Feedback ist getrennt",
-    "excluded": "Automatische Berichte enthalten keine Galeriebesucher, Klickverläufe, Foto- oder Galerieanzahlen, Namen, E-Mail-Adressen, Domains, Dateinamen oder Zugangsdaten.",
+    "excluded": "Automatische Berichte enthalten keine Besucheraktivität, Klickverläufe, Aufschlüsselungen nach Galerien oder Fotos, Namen, E-Mails, Domains, Dateinamen, Bildinhalte, biometrischen Ergebnisse, Finanzwerte oder Konfigurationsgeheimnisse.",
     "transport": "Ihr PicPeak-Backend verwahrt den Signaturschlüssel und sendet einmal pro UTC-Tag bei Admin-Nutzung signierte Nutzungsberichte an {{collector}}. Sie können Berichte vorab ansehen und jeden eindeutig angenommenen Bericht genau wie beim ersten Empfang herunterladen; Übertragungswiederholungen werden zusammengeführt. Abgelehnte Versuche und getrennt gesendetes Feedback gehören nicht zu diesem Berichtsexport.",
     "sectionOneWay": "Nur senden — kein Rückkanal",
     "oneWay": "PicPeak sendet ausschließlich. Es ruft beim Collector nichts ab, holt sich keine Anweisungen und stellt ihm keinen Endpunkt bereit, den er aufrufen könnte — auf diesem Weg gibt es weder einen geplanten Job noch eine eingehende Route. Aus einer Antwort wird nur die Bestätigung für das eben gesendete Paket gelesen, und jedes ihrer Felder wird gegen dieses Paket geprüft, bevor sie angenommen wird; alles andere wird verworfen. Ein von Ihnen angeforderter Datenexport wird Ihnen als Datei übergeben und niemals ausgewertet oder ausgeführt. Über diesen Kanal können also weder Code noch Konfiguration oder Inhalte in Ihre Installation gelangen — auch nicht von einem übernommenen Collector.",
-    "visibility": "Nur teilnehmende Installationen können den Funktionsdatensatz und aggregierte Ergebnisse einsehen, auch Gruppen mit nur einer Installation. Schema und Quellcode sind öffentlich; geprüfte Funktionswünsche und Empfehlungen werden nur mit Erlaubnis ihrer Verfasser veröffentlicht. Ihr Fingerabdruck ist pseudonym, nicht anonym. Bewahren Sie Ihren Abfrage-Hash vertraulich auf: Er ermöglicht lesenden Zugriff auf Ihre eigenen Berichte und den Teilnehmerdatensatz.",
+    "visibility": "Teilnehmende Installationen können den gemeinsamen Datensatz der neuesten Funktionskombinationen und Bestandszahlen einschließlich Einzelgruppen sowie aggregierte Zeitverläufe einsehen. Maintainer können alle aufbewahrten Originalberichte und privates Feedback einsehen und exportieren. Dies erlaubt keine Veröffentlichung privaten Feedbacks. Schema und Quellcode sind öffentlich. Dein Fingerabdruck und die Daten sind pseudonym, nicht anonym. Halte deinen Lookup-Hash geheim: Er gewährt Lesezugriff auf deine Berichte und den Teilnehmerdatensatz.",
     "deletion": "Deaktivieren stoppt die Erfassung sofort und fordert die Löschung der Berichte, Aggregatbeiträge, Rückmeldungen, Veröffentlichungen, Stimmen und Sitzungen an. Bei einem Ausfall bleiben nur die zur Löschung nötigen Zugangsdaten erhalten; die Oberfläche zeigt die ausstehende Löschung. Nach Bestätigung werden Hash und Schlüssel lokal gelöscht; eine erneute Teilnahme erzeugt eine neue Identität. Der Collector behält einen Einweg-Sperrwert und kurzlebige Missbrauchszähler ohne Installationsbezug. PicPeak speichert eine herunterladbare lokale Löschquittung ohne den alten Hash, Schlüssel oder Inhalte.",
     "feedbackDisclosure": "Feedback wird getrennt von automatischen Berichten und nur beim Absenden übertragen. Jeder Beitrag ist anonym, sofern Sie keinen Namen angeben, und nur für Betreuer sichtbar, sofern Sie die Veröffentlichung nicht ausdrücklich erlauben. Öffentliche Beiträge werden geprüft. Die Verwendung einer Empfehlung für Marketing benötigt eine zusätzliche Erlaubnis.",
     "consentCheck": "Ich habe diese Hinweise gelesen und stimme der Teilnahme ausdrücklich zu.",
@@ -447,7 +506,19 @@
     "abandonExplanationUnregistered": "Diese Teilnahme wurde vom Collector nie angenommen, dort ist also nichts gespeichert und es gibt nichts zu löschen. Sie können sie hier verwerfen und jederzeit neu beginnen.",
     "abandonConfirm": "Installationsidentität, Schlüsselmaterial und alle lokalen Marker werden gelöscht. Der Collector wird nicht benachrichtigt und behält die bisher gesendeten Berichte — die Quittung hält das als unbestätigt fest. Danach ist eine neue Teilnahme wieder möglich.",
     "abandonConfirmUnregistered": "Installationsidentität, Schlüsselmaterial und alle lokalen Marker werden gelöscht. Der Collector hat diese Teilnahme nie angenommen, es wird also nirgendwo sonst etwas entfernt. Danach ist eine neue Teilnahme wieder möglich.",
-    "auditPreviousParticipation": "Löschbestätigungen beziehen sich auf eine frühere Teilnahme, nicht auf die aktuelle."
+    "auditPreviousParticipation": "Löschbestätigungen beziehen sich auf eine frühere Teilnahme, nicht auf die aktuelle.",
+    "inventoryTitle": "Zwei Bestandszahlen",
+    "inventoryExplanation": "Die Gesamtzahlen beschreiben aktuell gespeicherte Datenbankeinträge, keine Upload-Aktivität oder eindeutigen Dateien. Vorschaubilder und Videos zählen nicht zur Fotoanzahl. Nur diese beiden Zahlen verlassen die Installation.",
+    "inventory": {
+      "galleries": {
+        "name": "Gespeicherte Galerien",
+        "description": "Aktuelle Anzahl gespeicherter Galerien einschließlich Entwürfen, inaktiven und archivierten Galerien. Gelöschte Galerien zählen nicht. Eine Gesamtzahl der Installation, ohne Aufschlüsselung oder Kennungen."
+      },
+      "photos": {
+        "name": "Gespeicherte Fotoeinträge",
+        "description": "Aktuelle Anzahl der Fotoeinträge ohne Videos, einschließlich RAW, Gast-Uploads und Einträgen archivierter Galerien. Eine Gesamtzahl der Installation; keine eindeutigen Dateien, Vorschaubilder, Verarbeitungserfolge oder Fotoinhalte. Gelöschte Einträge zählen nicht."
+      }
+    }
   },
   "userManagement": {
     "title": "Benutzerverwaltung",

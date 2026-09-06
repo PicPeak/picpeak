@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import catalog from './usageFeatures.v2.json';
+import catalog from './usageFeatures.v3.json';
 
 /** Local, static disclosure: opening it never contacts the collector. */
 export function UsageCatalog() {
@@ -12,6 +12,13 @@ export function UsageCatalog() {
     <details className="rounded border border-theme p-3">
       <summary className="cursor-pointer font-semibold">{t('productUsage.catalogTitle')}</summary>
       <p className="my-3 text-sm">{t('productUsage.catalogExplanation')}</p>
+      <section className="my-3 space-y-2 text-sm">
+        <h4 className="font-semibold">{t('productUsage.inventoryTitle')}</h4>
+        <p>{t('productUsage.inventoryExplanation')}</p>
+        {Object.keys(catalog.inventory).map((key) => <p key={key}>
+          <strong>{t(`productUsage.inventory.${key}.name`)}</strong>: {t(`productUsage.inventory.${key}.description`)}
+        </p>)}
+      </section>
       <label className="block text-sm">
         {t('productUsage.catalogSearch')}
         <input type="search" value={search} onChange={(e) => setSearch(e.target.value)}

@@ -23,6 +23,7 @@
  */
 
 const express = require('express');
+const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
@@ -414,6 +415,7 @@ router.post(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const result = await contractService.convertToEvent(parseInt(req.params.id, 10), req.admin?.id);
+    if (!result.alreadyConverted) capabilityEvidence(res, 'crm_document_conversion');
     return successResponse(res, result, 200,
       result.alreadyConverted ? 'Already converted to event' : 'Contract converted to event');
   }),
@@ -427,6 +429,7 @@ router.post(
   handleAsync(async (req, res) => {
     validateRequest(req);
     const result = await contractService.convertToInvoiceOnly(parseInt(req.params.id, 10), req.admin?.id);
+    if (!result.alreadyConverted) capabilityEvidence(res, 'crm_document_conversion');
     return successResponse(res, result, 200, 'Invoices created from contract');
   }),
 );

@@ -10,7 +10,9 @@
  */
 const knex = require('knex');
 const { UsageService } = require('../../src/usage/UsageService');
-const { FEATURE_KEYS, CATALOG, generateIdentity, makePacket, signPacket, verifyEnvelope } = require('../../src/usage/protocol.cjs');
+const { featureKeysFor, CATALOGS, generateIdentity, makePacket, signPacket, verifyEnvelope } = require('../../src/usage/protocol.cjs');
+const FEATURE_KEYS = featureKeysFor('usage.v2');
+const CATALOG = CATALOGS['usage.v2'];
 
 async function bootDb() {
   const db = knex({
@@ -369,7 +371,7 @@ describe('v2 technical configuration and privacy boundaries', () => {
     expect(await db('product_usage_markers').pluck('feature')).toHaveLength(56);
     expect(JSON.stringify(report)).not.toContain('PRIVATE');
     const identity = generateIdentity();
-    const envelope = signPacket(makePacket(identity, 'report', 1, report), identity, new Date(report.generated_at));
+    const envelope = signPacket(makePacket(identity, 'report', 1, report, 'usage.v2'), identity, new Date(report.generated_at));
     expect(verifyEnvelope(envelope, Date.parse(report.generated_at))).toEqual(envelope.packet);
   });
 

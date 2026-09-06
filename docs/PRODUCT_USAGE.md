@@ -1,5 +1,22 @@
 # Optional product usage and feedback (#1110)
 
+Current scope: **usage.v3**. The expanded catalog contains 86 capabilities
+(including ML face recognition and invoice import) and exactly two inventory
+totals: stored gallery records and non-video photo records, including drafts
+and retained archive records. No content, identifiers, per-gallery breakdowns,
+biometric results, financial values or visitor actions.
+
+Existing v1/v2 participants retain their previous scope until explicit signed
+v3 consent is confirmed. New count queries and markers do not run before that
+confirmation. Collector must be deployed first. v1/v2 wire schemas and raw
+history remain unchanged. See [current coverage](FEATURE_COVERAGE.md) for all
+definitions and [v3 inventory](usage-coverage.v3.json) for code boundaries.
+
+The sections below also document the historical v1/v2 implementation. Any
+statements excluding all gallery/photo counts describe those earlier versions;
+v3 adds only the two installation totals above.
+
+
 Tracking is disabled by default. After updating, settings editors see a
 dismissible invitation in the admin shell. Only explicit consent in Settings →
 Product usage & feedback registers an installation. Public galleries never
