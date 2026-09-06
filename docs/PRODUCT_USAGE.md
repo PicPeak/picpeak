@@ -16,6 +16,16 @@ The sections below also document the historical v1/v2 implementation. Any
 statements excluding all gallery/photo counts describe those earlier versions;
 v3 adds only the two installation totals above.
 
+Backward compatibility is required for future changes. The collector continues
+to accept v1/v2/v3 reports, including omitted or null measurements, using their
+declared schema and original reporting day. Missing values remain unknown in
+aggregates and histories. PicPeak still emits complete reports through the
+unchanged sender schemas; only reception is more tolerant. Consent, field
+allowlists, signatures and retry/deletion rules remain mandatory. Deploy the
+compatible collector first; old PicPeak clients require no update or renewed
+consent to keep delivering their existing report scope. New fields still
+require a new explicitly consented schema; never redefine an old field.
+
 
 Tracking is disabled by default. After updating, settings editors see a
 dismissible invitation in the admin shell. Only explicit consent in Settings →

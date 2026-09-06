@@ -4,6 +4,7 @@ const Ajv = require("ajv");
 const {
   envelopeSchema,
   envelopeSchemas,
+  ingressEnvelopeSchemas,
   CURRENT_SCHEMA_VERSION,
   FEATURE_KEYS,
   LAYOUTS,
@@ -15,6 +16,11 @@ const validators = new Map(Object.entries(envelopeSchemas).map(
 ));
 const validate = (envelope) =>
   Boolean(validators.get(envelope?.packet?.schema_version)?.(envelope));
+const ingressValidators = new Map(Object.entries(ingressEnvelopeSchemas).map(
+  ([version, schema]) => [version, ajv.compile(schema)],
+));
+const validateIngress = (envelope) =>
+  Boolean(ingressValidators.get(envelope?.packet?.schema_version)?.(envelope));
 const MAX_BYTES = 16384;
 const MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -90,9 +96,15 @@ function signPacket(packet, identity, now = new Date()) {
   return envelope;
 }
 function verifyEnvelope(envelope, now = Date.now()) {
+  return verify(envelope, now, validate);
+}
+function verifyReceivedEnvelope(envelope, now = Date.now()) {
+  return verify(envelope, now, validateIngress);
+}
+function verify(envelope, now, validateEnvelope) {
   if (
     Buffer.byteLength(JSON.stringify(envelope) || "") > MAX_BYTES ||
-    !validate(envelope)
+    !validateEnvelope(envelope)
   )
     throw new ProtocolError("INVALID_PACKET");
   const issued = Date.parse(envelope.issued_at);
@@ -151,6 +163,7 @@ module.exports = {
   makePacket,
   signPacket,
   verifyEnvelope,
+  verifyReceivedEnvelope,
   ProtocolError,
   MAX_BYTES,
   MAX_AGE_MS,
