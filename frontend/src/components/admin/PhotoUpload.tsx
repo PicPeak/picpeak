@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { categoriesService } from '../../services/categories.service';
 import { settingsService } from '../../services/settings.service';
 import { useTranslation } from 'react-i18next';
-import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
+import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, isAllowedUploadFile } from '../../utils/fileTypes';
 import { useUploadSession } from '../../contexts/UploadSessionContext';
 
 interface PhotoUploadProps {
@@ -86,8 +86,14 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
   // the dashed-border zone looked draggable but silently fell through to
   // the browser's default "open the file in a new tab" behaviour.
   const addFiles = (incoming: File[]) => {
+    const rejected: string[] = [];
     const imageFiles = incoming.filter((file) => {
-      if (!allowedMimeTypes.includes(normalizeFileMimeType(file.name, file.type))) return false;
+      // Matches on the extension when the browser reports no type, which is
+      // what it does for camera RAW on macOS and Windows.
+      if (!isAllowedUploadFile(file, allowedMimeTypes)) {
+        rejected.push(file.name);
+        return false;
+      }
       // Pre-flight size check, mirroring the guest uploader: without it the
       // admin streams the whole oversized file before the backend 400s it.
       const limitMb = sizeLimitMbFor(file);
@@ -97,6 +103,12 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadStart
       }
       return true;
     });
+    // Dropping a file used to produce nothing at all: no toast, no log, no
+    // request. The dropzone simply did not react, which reads as a broken
+    // page rather than a rejected format.
+    if (rejected.length > 0) {
+      toast.error(t('upload.invalidFileType', { names: rejected.join(', ') }));
+    }
     if (imageFiles.length === 0) return;
 
     const totalFiles = selectedFiles.length + imageFiles.length;

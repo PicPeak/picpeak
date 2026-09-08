@@ -5,7 +5,11 @@ const {
   EXTENSION_TO_MIME,
   extensionsToMimeTypes,
 } = require('../../src/services/uploadSettings');
-const { validateFileType, ALLOWED_MEDIA_TYPES } = require('../../src/utils/fileSecurityUtils');
+const {
+  validateFileType,
+  ALLOWED_MEDIA_TYPES,
+  ALLOWED_IMAGE_TYPES,
+} = require('../../src/utils/fileSecurityUtils');
 
 // Every format the browser types badly or not at all: the RAW set, plus HEIC
 // and HEIF. These are the entries most likely to be dropped by an accidental
@@ -26,11 +30,19 @@ const RAW_AND_HEIF_TYPES = {
   srw: 'image/x-samsung-srw',
 };
 
+const frontendSource = () => fs.readFileSync(
+  path.join(__dirname, '../../../frontend/src/utils/fileTypes.ts'),
+  'utf8'
+);
+
+function getFrontendUntypedExtensions() {
+  const match = frontendSource().match(/const UNTYPED_EXTENSIONS = new Set\(\[([\s\S]*?)\]\)/);
+  if (!match) throw new Error('Could not find frontend UNTYPED_EXTENSIONS');
+  return (match[1].match(/'(\w+)'/g) || []).map(quoted => quoted.slice(1, -1));
+}
+
 function getFrontendExtensionMap() {
-  const source = fs.readFileSync(
-    path.join(__dirname, '../../../frontend/src/utils/fileTypes.ts'),
-    'utf8'
-  );
+  const source = frontendSource();
   const match = source.match(/const EXTENSION_TO_MIME[^=]*= \{([\s\S]*?)\n\};/);
   if (!match) throw new Error('Could not find frontend EXTENSION_TO_MIME');
 
@@ -69,6 +81,19 @@ describe('configured upload file types', () => {
       expect(typeConfig).toBeDefined();
       expect(typeConfig.extensions).toContain(`.${extension}`);
     }
+  });
+
+  test('the frontend falls back to the extension for exactly the RAW set', () => {
+    // The frontend matches a picked file on its extension when the browser
+    // reports no type. If its list were wider than the backend's, the picker
+    // would accept files the server rejects; narrower, and a format an admin
+    // configured stays greyed out.
+    const backendRawExtensions = Object.values(ALLOWED_IMAGE_TYPES)
+      .filter(config => config.raw)
+      .flatMap(config => config.extensions)
+      .map(extension => extension.replace(/^\./, ''));
+
+    expect(getFrontendUntypedExtensions().sort()).toEqual(backendRawExtensions.sort());
   });
 
   test('uses the same extension-to-MIME map as the frontend', () => {
