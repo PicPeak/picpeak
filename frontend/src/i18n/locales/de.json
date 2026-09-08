@@ -871,6 +871,7 @@
     "replacedFiles_other": "{{count}} Fotos ersetzt",
     "uploadingChunks_one": "{{count}} Teil wird hochgeladen",
     "uploadingChunks_other": "{{count}} Teile werden hochgeladen",
+    "invalidFileType": "Nicht unterstützter Dateityp: {{names}}",
     "fileTooLarge": "Datei zu groß: {{name}} (max. {{limit}}MB)",
     "uploadingAs": "Upload als {{name}}",
     "notYou": "Nicht du?",

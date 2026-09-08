@@ -17,7 +17,10 @@
  * value that does not depend on the selection at drop time, since that can
  * change while the walk is pending. Only files passing `accept` are
  * collected and counted, so sidecars and oversized files inside the folder
- * do not use up the budget.
+ * do not use up the budget. It is told how deep the file sits: depth 0 is an
+ * item the user dropped by hand, anything above it was found inside a folder,
+ * which is the difference between a rejection worth naming and one that is
+ * just noise.
  *
  * A directory's entry list is always drained and sorted as a whole — names
  * only, which is cheap — because `readEntries` batches come in unspecified
@@ -39,7 +42,7 @@ export const EXAMINED_PER_COLLECTED = 5;
 
 export interface CollectOptions {
   limit?: number;
-  accept?: (file: File) => boolean;
+  accept?: (file: File, depth: number) => boolean;
   onTruncated?: () => void;
 }
 
@@ -66,7 +69,7 @@ export async function collectDroppedFiles(
     out: [], limit, accept, examined: 0, maxExamined: limit * EXAMINED_PER_COLLECTED, truncated: false,
   };
   for (const entry of entries) {
-    await walkEntry(entry, walk);
+    await walkEntry(entry, walk, 0);
   }
   if (walk.truncated) options.onTruncated?.();
   return walk.out;
@@ -75,7 +78,7 @@ export async function collectDroppedFiles(
 interface Walk {
   out: File[];
   limit: number;
-  accept: (file: File) => boolean;
+  accept: (file: File, depth: number) => boolean;
   examined: number;
   maxExamined: number;
   truncated: boolean;
@@ -91,12 +94,12 @@ const spent = (walk: Walk) => {
   return true;
 };
 
-async function walkEntry(entry: FileSystemEntry, walk: Walk): Promise<void> {
+async function walkEntry(entry: FileSystemEntry, walk: Walk, depth: number): Promise<void> {
   if (spent(walk)) return;
   if (entry.isFile) {
     walk.examined += 1;
     const file = await fileOf(entry as FileSystemFileEntry);
-    if (file && walk.accept(file)) walk.out.push(file);
+    if (file && walk.accept(file, depth)) walk.out.push(file);
     return;
   }
   if (!entry.isDirectory) return;
@@ -105,7 +108,7 @@ async function walkEntry(entry: FileSystemEntry, walk: Walk): Promise<void> {
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   for (const child of children) {
     if (spent(walk)) return;
-    await walkEntry(child, walk);
+    await walkEntry(child, walk, depth + 1);
   }
 }
 
