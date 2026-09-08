@@ -41,7 +41,7 @@ const router = express.Router();
 const SECRET_MASK = '••••••••';
 const { normaliseDownloadLimit } = require('../services/downloadQuota');
 const { GUEST_NAME_MODES } = require('../services/photoCredit');
-const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileSizeCache, clearMaxVideoSizeCache, MAX_ALLOWED_FILE_SIZE_MB } = require('../services/uploadSettings');
+const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileSizeCache, clearMaxVideoSizeCache, MAX_ALLOWED_FILE_SIZE_MB, clearAllowedTypesCache } = require('../services/uploadSettings');
 const watermarkService = require('../services/watermarkService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
 
@@ -1876,6 +1876,13 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       clearMaxFilesPerUploadCache();
       clearMaxFileSizeCache();
       clearMaxVideoSizeCache();
+    }
+    // The allowed-types list is cached for a minute like the caps above, but
+    // nothing was dropping it. An admin who added a format to accept a batch
+    // of files got a full minute of "Invalid file type. Check allowed file
+    // types in system settings." on the setting they had just changed.
+    if (Object.prototype.hasOwnProperty.call(settings, 'general_allowed_file_types')) {
+      clearAllowedTypesCache();
     }
     if (Object.prototype.hasOwnProperty.call(settings, 'general_short_gallery_urls')) {
       clearShareLinkSettingsCache();

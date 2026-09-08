@@ -110,6 +110,30 @@ function isPathSafe(filePath) {
 /**
  * Enhanced MIME type validation for images and videos
  */
+// TIFF byte-order marks. Every RAW format below is a TIFF container, and the
+// vendors disagree on byte order - Nikon and Pentax ship big-endian files - so
+// each RAW type lists both as alternatives rather than picking one and
+// rejecting half the cameras that produce it.
+const TIFF_LITTLE_ENDIAN = [{ offset: 0, bytes: [0x49, 0x49, 0x2A, 0x00] }]; // "II*\0"
+const TIFF_BIG_ENDIAN = [{ offset: 0, bytes: [0x4D, 0x4D, 0x00, 0x2A] }];    // "MM\0*"
+const TIFF_EITHER_BYTE_ORDER = [TIFF_LITTLE_ENDIAN, TIFF_BIG_ENDIAN];
+
+// Olympus stamps its own marker where the TIFF magic would be: "IIRO" on most
+// bodies, "IIRS" on a few, "MMOR" on the big-endian E-series.
+const ORF_SIGNATURES = [
+  [{ offset: 0, bytes: [0x49, 0x49, 0x52, 0x4F] }], // "IIRO"
+  [{ offset: 0, bytes: [0x49, 0x49, 0x52, 0x53] }], // "IIRS"
+  [{ offset: 0, bytes: [0x4D, 0x4D, 0x4F, 0x52] }]  // "MMOR"
+];
+
+// One RAW entry. `raw: true` is what makes normalizeUploadMimeType willing to
+// name this type from the extension alone.
+const rawImageType = (extension, magicNumberAlternatives = TIFF_EITHER_BYTE_ORDER) => ({
+  extensions: [extension],
+  raw: true,
+  magicNumberAlternatives
+});
+
 const ALLOWED_IMAGE_TYPES = {
   'image/jpeg': {
     extensions: ['.jpg', '.jpeg'],
@@ -158,24 +182,50 @@ const ALLOWED_IMAGE_TYPES = {
       { offset: 4, bytes: [0x66, 0x74, 0x79, 0x70] } // "ftyp"
     ]
   },
-  // Camera RAW / Apple ProRAW (#821). DNG is a TIFF container, so it carries the
-  // TIFF magic. The pipeline can't sharp-decode it directly — it extracts the
-  // embedded JPEG preview (exiftool) for thumbnails/display while storing the
-  // original for download. Browsers disagree on the MIME they report for a DNG;
-  // normalizeUploadMimeType() maps the variants onto this entry.
-  'image/x-adobe-dng': {
-    extensions: ['.dng'],
-    // TIFF comes in both byte orders and both occur in the wild. This used to
-    // accept only little-endian on the belief that Apple ProRAW is, but an
-    // iPhone 15 Pro Max ProRAW file opens "MM\0*" then "APPLEDNG": big-endian.
-    // Every such file was rejected on admin upload (issue 821). Alternatives
-    // because the checks in one set must ALL match.
-    magicNumberAlternatives: [
-      [{ offset: 0, bytes: [0x49, 0x49, 0x2A, 0x00] }], // little-endian TIFF (II*\0)
-      [{ offset: 0, bytes: [0x4D, 0x4D, 0x00, 0x2A] }] // big-endian TIFF (MM\0*)
-    ]
-  }
+  // Camera RAW, including Apple ProRAW (#821). None of these is in
+  // DEFAULT_ALLOWED_FILE_TYPES: an admin opts in per install by adding the
+  // extension to general_allowed_file_types.
+  //
+  // Two things set RAW apart from every format above.
+  //
+  // The browser tells us nothing useful. macOS and Windows register no MIME
+  // for .arw, .cr2 or .nef, so file.type arrives empty, and some Linux
+  // desktops send application/octet-stream. Browsers that do type a DNG
+  // disagree about how (image/dng, image/x-dng, image/tiff).
+  // normalizeUploadMimeType names the type from the extension for this set,
+  // which is what the `raw: true` marker selects; it did the same for DNG
+  // alone before the rest of the set arrived.
+  //
+  // The signature is generic. These are TIFF containers, so the leading bytes
+  // prove only "this is a TIFF" - a renamed .tif satisfies them too. That is
+  // the guarantee DNG has shipped with since #833 and it is deliberate: the
+  // real content check is downstream, where extractRawPreview either finds an
+  // embedded JPEG preview or the photo fails processing. Sharp cannot decode
+  // any of them directly, so the pipeline works from that preview and keeps
+  // the original for download.
+  'image/x-adobe-dng': rawImageType('.dng'),
+  'image/x-sony-arw': rawImageType('.arw'),
+  'image/x-sony-sr2': rawImageType('.sr2'),
+  'image/x-sony-srf': rawImageType('.srf'),
+  'image/x-canon-cr2': rawImageType('.cr2'),
+  'image/x-nikon-nef': rawImageType('.nef'),
+  'image/x-nikon-nrw': rawImageType('.nrw'),
+  'image/x-pentax-pef': rawImageType('.pef'),
+  'image/x-samsung-srw': rawImageType('.srw'),
+  'image/x-olympus-orf': rawImageType('.orf', ORF_SIGNATURES)
+  // Canon CR3, Fuji RAF and Panasonic RW2 are not TIFF and need their own
+  // signatures. Left out until someone asks for them.
+
 };
+
+// Extension -> MIME for the RAW set only, derived from the table above so the
+// two cannot drift apart.
+const RAW_EXTENSION_TO_MIME = Object.entries(ALLOWED_IMAGE_TYPES)
+  .filter(([, config]) => config.raw)
+  .reduce((map, [mimeType, config]) => {
+    config.extensions.forEach((extension) => { map[extension] = mimeType; });
+    return map;
+  }, {});
 
 const ALLOWED_VIDEO_TYPES = {
   'video/mp4': {
@@ -224,6 +274,44 @@ const ALLOWED_DOCUMENT_TYPES = {
   }
 };
 
+// What a browser reports for a RAW file when it reports anything at all. The
+// OS type table decides, so it varies (image/dng, image/tiff), and a machine
+// with no RAW codec reports nothing, which multer delivers as an empty string
+// or application/octet-stream. Not one of these names a vendor format, so not
+// one of them can be taken at its word.
+const GENERIC_RAW_MIMES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
+
+/**
+ * The MIME type an upload should be validated and stored as.
+ *
+ * Normally that is whatever the browser said. The exception is camera RAW,
+ * which browsers either do not type at all - a .arw picked on macOS or
+ * Windows arrives with an empty type - or type generically, as image/tiff or
+ * application/octet-stream. None of those answers tells a Sony original apart
+ * from a random binary, so for RAW extensions the extension decides instead.
+ *
+ * A reported MIME is a name, not evidence, so this admits nothing new: the
+ * extension still has to be allowed and routes that inspect content still
+ * check the TIFF signature. It is narrow in two further ways. It rescues
+ * nothing outside the RAW set, so an untyped .exe is left exactly as it
+ * arrived. And the type it returns is still tested against the caller's own
+ * allow-list, so a route that does not permit image/x-sony-arw does not
+ * quietly start taking .arw files. That second point is load-bearing:
+ * publicTransferUpload.js is unauthenticated and shares this code.
+ *
+ * @param {string} filename - The uploaded filename, read for its extension
+ * @param {string} mimetype - What the client reported, possibly nothing
+ * @returns {string} - The MIME to validate against, or `mimetype` unchanged
+ */
+function normalizeUploadMimeType(filename, mimetype) {
+  const ext = path.extname(String(filename == null ? '' : filename)).toLowerCase();
+  const rawMime = RAW_EXTENSION_TO_MIME[ext];
+  if (rawMime && GENERIC_RAW_MIMES.has(mimetype || '')) {
+    return rawMime;
+  }
+  return mimetype;
+}
+
 /**
  * Validate file type by MIME type and extension
  * @param {string} filename - The filename
@@ -232,8 +320,12 @@ const ALLOWED_DOCUMENT_TYPES = {
  * @returns {boolean} - True if file type is valid
  */
 function validateFileType(filename, mimetype, allowedTypes) {
+  // RAW arrives untyped from the browser; every other format is taken at its
+  // word, exactly as before.
+  const effectiveMime = normalizeUploadMimeType(filename, mimetype);
+
   // Check if MIME type is allowed
-  if (!allowedTypes.includes(mimetype)) {
+  if (!effectiveMime || !allowedTypes.includes(effectiveMime)) {
     return false;
   }
 
@@ -241,12 +333,32 @@ function validateFileType(filename, mimetype, allowedTypes) {
   const ext = path.extname(filename).toLowerCase();
 
   // Check if extension matches the MIME type
-  const typeConfig = ALLOWED_MEDIA_TYPES[mimetype] || ALLOWED_DOCUMENT_TYPES[mimetype];
+  const typeConfig = ALLOWED_MEDIA_TYPES[effectiveMime] || ALLOWED_DOCUMENT_TYPES[effectiveMime];
   if (!typeConfig || !typeConfig.extensions.includes(ext)) {
     return false;
   }
 
   return true;
+}
+
+// Enough for every signature in the tables above; the deepest offset is 8.
+const SIGNATURE_READ_BYTES = 64;
+
+/**
+ * The signature groups a type can be satisfied by.
+ *
+ * `magicNumbers` is one AND group: WebP is only WebP when it carries RIFF at 0
+ * AND WEBP at 8. `magicNumberAlternatives` is a list of such groups, any one of which
+ * is enough. RAW needs the second form because the vendors ship both TIFF byte
+ * orders, and rejecting a big-endian NEF would be a bug rather than a defence.
+ *
+ * @param {Object} typeConfig - An ALLOWED_MEDIA_TYPES entry
+ * @returns {Array|null} - Groups to test, or null when the type has no signature
+ */
+function signatureGroups(typeConfig) {
+  if (typeConfig.magicNumberAlternatives) return typeConfig.magicNumberAlternatives;
+  if (typeConfig.magicNumbers) return [typeConfig.magicNumbers];
+  return null;
 }
 
 /**
@@ -262,32 +374,32 @@ async function validateFileContent(filePath, expectedMimeType) {
       return false;
     }
 
-    // Either one signature set, all of which must match, or several
-    // alternative sets of which one must match in full.
-    const signatureSets = typeConfig.magicNumberAlternatives
-      || (typeConfig.magicNumbers && [typeConfig.magicNumbers]);
-
+    const groups = signatureGroups(typeConfig);
     // Skip validation for file types without magic numbers (like SVG)
-    if (!signatureSets) {
+    if (!groups) {
       return true;
     }
 
-    // Read the first 20 bytes of the file (enough for most magic numbers)
-    const buffer = Buffer.alloc(20);
+    const buffer = Buffer.alloc(SIGNATURE_READ_BYTES);
     const fileHandle = await fs.open(filePath, 'r');
-    await fileHandle.read(buffer, 0, 20, 0);
-    await fileHandle.close();
+    try {
+      await fileHandle.read(buffer, 0, SIGNATURE_READ_BYTES, 0);
+    } finally {
+      // In a finally so a failed read cannot leak the descriptor. A short file
+      // is not an error here: the buffer stays zero-filled and simply fails to
+      // match, which is the right answer for a 3-byte "JPEG".
+      await fileHandle.close();
+    }
 
     // Check magic numbers
-    const matches = (magic) => {
+    return groups.some(group => group.every(magic => {
       for (let i = 0; i < magic.bytes.length; i++) {
         if (buffer[magic.offset + i] !== magic.bytes[i]) {
           return false;
         }
       }
       return true;
-    };
-    return signatureSets.some((set) => set.every(matches));
+    }));
   } catch (error) {
     logger.error('Error validating file content:', error);
     return false;
@@ -355,7 +467,12 @@ function createFileUploadValidator(options = {}) {
 
         // Validate file content if enabled
         if (validateContent && file.path) {
-          const isValidContent = await validateFileContent(file.path, file.mimetype);
+          // The resolved type, not the browser's - for RAW the browser sent
+          // nothing, and validateFileContent would find no entry for ''.
+          const isValidContent = await validateFileContent(
+            file.path,
+            normalizeUploadMimeType(file.originalname, file.mimetype)
+          );
           if (!isValidContent) {
             await discardUploadedFiles();
             return res.status(400).json({
@@ -374,27 +491,6 @@ function createFileUploadValidator(options = {}) {
   };
 }
 
-// What browsers report for a .dng besides image/x-adobe-dng. It comes from the
-// OS type table, so it varies (image/dng, image/tiff), and a machine without a
-// RAW codec reports nothing, which multer delivers as application/octet-stream.
-const DNG_MIME_ALIASES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
-
-/**
- * The MIME type to validate an upload against. A browser-reported MIME is a
- * name, not evidence, so mapping these variants onto the canonical DNG entry
- * admits nothing new: the extension still has to be allowed, and routes that
- * inspect content still check the TIFF signature.
- * @param {string} filename - The original filename
- * @param {string} mimetype - The MIME type the client reported
- * @returns {string} - The canonical MIME type, or `mimetype` unchanged
- */
-function normalizeUploadMimeType(filename, mimetype) {
-  const ext = path.extname(filename || '').toLowerCase();
-  if (ext === '.dng' && DNG_MIME_ALIASES.has(mimetype || '')) {
-    return 'image/x-adobe-dng';
-  }
-  return mimetype;
-}
 
 module.exports = {
   safePathJoin,

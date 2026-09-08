@@ -45,10 +45,28 @@ const EXTENSION_TO_MIME = {
   'heif': 'image/heif',
   // Camera RAW / Apple ProRAW. Not sharp-decodable directly — the processing
   // pipeline extracts the embedded JPEG preview (exiftool) for thumbnails/
-  // display, keeping the original for download. Browsers also report a DNG as
-  // image/dng, image/tiff, or no type at all; the upload filters map those onto
-  // this entry via normalizeUploadMimeType() (utils/fileSecurityUtils.js).
+  // display, keeping the original for download.
+  //
+  // Browsers do not type these. macOS and Windows register no MIME for .arw,
+  // .cr2 or .nef, so the file arrives with an empty type; DNG is the exception
+  // Chrome happens to know, and even then it may say image/dng or image/tiff.
+  // normalizeUploadMimeType() (utils/fileSecurityUtils.js) names the type from
+  // the extension for this set, which is why an entry here is enough to make
+  // the format uploadable. Kept to TIFF-container formats: CR3, RAF and RW2
+  // need their own signatures in fileSecurityUtils and are not mapped yet.
+  //
+  // Adding an extension here does not enable it. Every one is opt-in through
+  // general_allowed_file_types, and none is in DEFAULT_ALLOWED_FILE_TYPES.
   'dng': 'image/x-adobe-dng',
+  'arw': 'image/x-sony-arw',
+  'sr2': 'image/x-sony-sr2',
+  'srf': 'image/x-sony-srf',
+  'cr2': 'image/x-canon-cr2',
+  'nef': 'image/x-nikon-nef',
+  'nrw': 'image/x-nikon-nrw',
+  'orf': 'image/x-olympus-orf',
+  'pef': 'image/x-pentax-pef',
+  'srw': 'image/x-samsung-srw',
 };
 
 const DEFAULT_ALLOWED_FILE_TYPES = 'jpg,jpeg,png,webp';
@@ -213,7 +231,7 @@ const clearMaxVideoSizeCache = () => {
 
 /**
  * Convert a comma-separated list of file extensions into an array of MIME types.
- * Unknown extensions are silently ignored.
+ * Unknown extensions are ignored, with a warning.
  */
 const extensionsToMimeTypes = (extString) => {
   if (!extString || typeof extString !== 'string') {
@@ -221,13 +239,28 @@ const extensionsToMimeTypes = (extString) => {
   }
 
   const mimeSet = new Set();
+  const unknown = [];
   extString.split(',').forEach(ext => {
     const cleaned = ext.trim().toLowerCase().replace(/^\./, '');
+    if (!cleaned) return;
     const mime = EXTENSION_TO_MIME[cleaned];
     if (mime) {
       mimeSet.add(mime);
+    } else {
+      unknown.push(cleaned);
     }
   });
+
+  if (unknown.length > 0) {
+    // An extension this map does not know is dropped here, and the admin who
+    // typed it into Settings gets no feedback at all: uploads of that format
+    // are simply rejected further down, with a message about system settings
+    // they have already changed. At least say so in the log.
+    logger.warn(
+      `Ignoring unsupported upload file type(s) in general_allowed_file_types: ${unknown.join(', ')}. `
+      + `Supported: ${Object.keys(EXTENSION_TO_MIME).join(', ')}`
+    );
+  }
 
   if (mimeSet.size === 0) {
     return extensionsToMimeTypes(DEFAULT_ALLOWED_FILE_TYPES);

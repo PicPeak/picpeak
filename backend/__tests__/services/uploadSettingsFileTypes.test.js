@@ -5,12 +5,25 @@ const {
   EXTENSION_TO_MIME,
   extensionsToMimeTypes,
 } = require('../../src/services/uploadSettings');
-const { validateFileType } = require('../../src/utils/fileSecurityUtils');
+const { validateFileType, ALLOWED_MEDIA_TYPES } = require('../../src/utils/fileSecurityUtils');
 
+// Every format the browser types badly or not at all: the RAW set, plus HEIC
+// and HEIF. These are the entries most likely to be dropped by an accidental
+// map edit, because none of them is in DEFAULT_ALLOWED_FILE_TYPES and so none
+// is covered by the default-path tests.
 const RAW_AND_HEIF_TYPES = {
-  dng: 'image/x-adobe-dng',
   heic: 'image/heic',
   heif: 'image/heif',
+  dng: 'image/x-adobe-dng',
+  arw: 'image/x-sony-arw',
+  sr2: 'image/x-sony-sr2',
+  srf: 'image/x-sony-srf',
+  cr2: 'image/x-canon-cr2',
+  nef: 'image/x-nikon-nef',
+  nrw: 'image/x-nikon-nrw',
+  orf: 'image/x-olympus-orf',
+  pef: 'image/x-pentax-pef',
+  srw: 'image/x-samsung-srw',
 };
 
 function getFrontendExtensionMap() {
@@ -37,11 +50,24 @@ function getFrontendExtensionMap() {
 }
 
 describe('configured upload file types', () => {
-  test('supports configured DNG, HEIC, and HEIF uploads', () => {
-    expect(extensionsToMimeTypes('dng,heic,heif')).toEqual(Object.values(RAW_AND_HEIF_TYPES));
+  test('supports configured RAW, HEIC, and HEIF uploads', () => {
+    const extensions = Object.keys(RAW_AND_HEIF_TYPES);
+    expect(extensionsToMimeTypes(extensions.join(','))).toEqual(Object.values(RAW_AND_HEIF_TYPES));
 
     for (const [extension, mimeType] of Object.entries(RAW_AND_HEIF_TYPES)) {
       expect(validateFileType(`image.${extension}`, mimeType, [mimeType])).toBe(true);
+    }
+  });
+
+  test('every extension in the map resolves to a type the validator knows', () => {
+    // The two tables are separate by design — uploadSettings decides what an
+    // admin may configure, fileSecurityUtils decides what the bytes must look
+    // like — so nothing but this stops an extension being configurable and
+    // then rejected at the gate.
+    for (const [extension, mimeType] of Object.entries(EXTENSION_TO_MIME)) {
+      const typeConfig = ALLOWED_MEDIA_TYPES[mimeType];
+      expect(typeConfig).toBeDefined();
+      expect(typeConfig.extensions).toContain(`.${extension}`);
     }
   });
 

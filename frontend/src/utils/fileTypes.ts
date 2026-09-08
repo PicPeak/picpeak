@@ -16,7 +16,18 @@ const EXTENSION_TO_MIME: Record<string, string> = {
   heic: 'image/heic',
   heif: 'image/heif',
   // Camera RAW / Apple ProRAW — backend extracts the embedded JPEG preview.
+  // Browsers report no type at all for most of these, so the upload components
+  // fall back to matching on the extension. Kept in sync with the backend map.
   dng: 'image/x-adobe-dng',
+  arw: 'image/x-sony-arw',
+  sr2: 'image/x-sony-sr2',
+  srf: 'image/x-sony-srf',
+  cr2: 'image/x-canon-cr2',
+  nef: 'image/x-nikon-nef',
+  nrw: 'image/x-nikon-nrw',
+  orf: 'image/x-olympus-orf',
+  pef: 'image/x-pentax-pef',
+  srw: 'image/x-samsung-srw',
 };
 
 const DEFAULT_ALLOWED = 'jpg,jpeg,png,webp';
