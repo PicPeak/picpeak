@@ -8,6 +8,7 @@ const logger = require('../utils/logger');
 const { db } = require('../database/db');
 const { getStorage } = require('./storage');
 const { heroAnchorPoint, normalizeHeroAnchor, heroRenditionName } = require('../utils/heroAnchor');
+const { RAW_EXTENSIONS, isRawFilename, originalNeedsPreview } = require('../utils/rawFormats');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
@@ -15,21 +16,6 @@ const execFileAsync = promisify(execFile);
 // Configure sharp for better memory management with large batches
 sharp.cache(false); // Disable cache to prevent memory buildup
 sharp.concurrency(2); // Limit concurrent operations
-
-// Camera RAW / DNG formats. Sharp's bundled libvips has no raw loader, so these
-// can't be fed to sharp() directly — instead we extract the full-resolution JPEG
-// preview that every RAW file embeds (via exiftool) and process THAT. Gated
-// strictly by extension, so nothing here runs for ordinary jpg/png/webp photos.
-const RAW_EXTENSIONS = new Set([
-  'dng', 'cr2', 'cr3', 'nef', 'nrw', 'arw', 'sr2', 'srf',
-  'raf', 'rw2', 'orf', 'pef', 'srw', 'raw', '3fr', 'dcr', 'kdc'
-]);
-
-function isRawFilename(name) {
-  if (!name || typeof name !== 'string') return false;
-  const ext = path.extname(name).toLowerCase().replace(/^\./, '');
-  return RAW_EXTENSIONS.has(ext);
-}
 
 /**
  * Extract the embedded full-resolution JPEG preview from a RAW/DNG file to a
@@ -1613,6 +1599,13 @@ const RESIZE_PRESERVES_FORMAT = new Set([
  */
 async function resizeToBox(inputBuffer, box, options = {}) {
   if (!box || !box.width || !box.height) return inputBuffer;
+  // RAW, for the same reason as HEIC below, but decided on the name because
+  // the bytes cannot be trusted to give the answer. Most RAW makes sharp throw
+  // and lands in the catch, which returns the input — the accident this makes
+  // deliberate. The one that does not is the danger: a RAW that libvips' TIFF
+  // loader happens to open falls through to the JPEG branch and ships JPEG
+  // bytes under a .arw name with a RAW mime, a file no converter will open.
+  if (options.sourceName && isRawFilename(options.sourceName)) return inputBuffer;
   try {
     const probe = sharp(inputBuffer, { limitInputPixels: 268402689, failOn: 'none' });
     const metadata = await probe.metadata();
@@ -1709,6 +1702,7 @@ module.exports = {
   extractCaptureDate,
   withLocalCopy,
   isRawFilename,
+  originalNeedsPreview,
   extractRawPreview,
   withProcessableImage,
   RAW_EXTENSIONS,

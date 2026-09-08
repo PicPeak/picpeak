@@ -4,8 +4,12 @@
  * dependency), so these cover the gating logic: which files are treated as RAW,
  * and that ordinary images pass through untouched (zero cost / no extraction).
  */
-const path = require('path');
-const { isRawFilename, withProcessableImage, RAW_EXTENSIONS } = require('../../src/services/imageProcessor');
+const {
+  isRawFilename,
+  withProcessableImage,
+  originalNeedsPreview,
+  RAW_EXTENSIONS,
+} = require('../../src/services/imageProcessor');
 
 describe('isRawFilename', () => {
   it('recognises common RAW / DNG extensions', () => {
@@ -29,6 +33,37 @@ describe('isRawFilename', () => {
 
   it('RAW_EXTENSIONS includes dng (Apple ProRAW)', () => {
     expect(RAW_EXTENSIONS.has('dng')).toBe(true);
+  });
+});
+
+describe('originalNeedsPreview', () => {
+  it('sends the lightbox to the preview for every RAW format', () => {
+    for (const ext of ['arw', 'cr2', 'cr3', 'nef', 'dng', 'raf', 'rw2', 'orf']) {
+      expect(originalNeedsPreview({ filename: `IMG_1234.${ext}` })).toBe(true);
+      expect(originalNeedsPreview({ filename: `IMG_1234.${ext.toUpperCase()}` })).toBe(true);
+    }
+  });
+
+  it('recognises the type as well as the name', () => {
+    // The stored name is a sanitised generated one on some ingest paths, so
+    // neither signal alone is enough.
+    expect(originalNeedsPreview({ filename: 'abc123', mime_type: 'image/x-sony-arw' })).toBe(true);
+    expect(originalNeedsPreview({ filename: 'abc123', mime_type: 'IMAGE/HEIC' })).toBe(true);
+  });
+
+  it('prefers the original filename over the stored one', () => {
+    // original_filename is NULL for rows predating migration 062, which is why
+    // filename is still consulted.
+    expect(originalNeedsPreview({ filename: 'gen_abc.jpg', original_filename: 'DSC01234.ARW' })).toBe(true);
+    expect(originalNeedsPreview({ filename: 'gen_abc.jpg' })).toBe(false);
+  });
+
+  it('covers HEIC and HEIF, and leaves ordinary images alone', () => {
+    expect(originalNeedsPreview({ filename: 'a.heic' })).toBe(true);
+    expect(originalNeedsPreview({ filename: 'a.heif' })).toBe(true);
+    for (const name of ['a.jpg', 'a.png', 'a.webp', 'a.gif', 'clip.mp4', 'noextension']) {
+      expect(originalNeedsPreview({ filename: name })).toBe(false);
+    }
   });
 });
 
