@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.132.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.131.8-beta.0...v3.132.0-beta.0) (2026-09-13)
+
+
+### Features
+
+* **admin:** upload single files above the batch cap through the chunked API ([#1431](https://github.com/PicPeak/picpeak/issues/1431)) ([c448572](https://github.com/PicPeak/picpeak/commit/c44857259ca97677dcb68776488a0980841f4f74))
+
 ## [3.131.8-beta.0](https://github.com/PicPeak/picpeak/compare/v3.131.7-beta.0...v3.131.8-beta.0) (2026-09-12)
 
 
