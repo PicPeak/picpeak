@@ -301,14 +301,19 @@ class SecureImageMiddleware {
   }
 
   /**
-   * Get client IP address with proxy support
+   * Client IP as resolved through Express `trust proxy` (utils/clientIp.js).
+   *
+   * This used to read X-Forwarded-For / X-Real-IP first. Any caller sets
+   * those, and the address feeds the suspicious-IP block list and the image
+   * access log: a scraper could dodge its own block by rotating the header,
+   * or trip the suspicious-activity check with someone else's address and get
+   * that address blocked. Behind a trusted reverse proxy req.ip already is the
+   * forwarded client address.
    */
   getClientIP(req) {
-    return req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-           req.headers['x-real-ip'] ||
-           req.connection.remoteAddress ||
-           req.socket.remoteAddress ||
-           req.ip;
+    return require('../utils/clientIp').clientIpForAudit(req)
+      || req.socket?.remoteAddress
+      || null;
   }
 
   /**
