@@ -104,11 +104,17 @@ describe('publicQuotes routes', () => {
     // branch is unreachable at the route level. Test it directly
     // against loadActionToken in a unit suite if you want coverage.
 
-    it('returns 200 with a sanitised quote payload for a valid token', async () => {
+    it('returns 200 with a sanitised quote payload for a verified visitor', async () => {
       const token = await createPublicToken(db, 'quote_action_tokens', {
         quote_id: quoteId,
       });
-      const res = await request(app).get(`/api/public/quotes/${token}`);
+      // The full view needs the grant issued after the emailed code; the
+      // code step itself is covered in publicDocumentVerification.test.js.
+      const verification = require('../../src/services/publicDocumentVerificationService');
+      const tokenRow = await db('quote_action_tokens').where({ token }).first();
+      const res = await request(app)
+        .get(`/api/public/quotes/${token}`)
+        .set('X-Document-Access', verification.issueGrant('quote', tokenRow, token));
       expect(res.status).toBe(200);
       expect(res.body.quote).toBeDefined();
       // API uses camelCase on the public view (see publicQuoteView in

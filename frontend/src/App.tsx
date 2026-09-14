@@ -74,6 +74,8 @@ import {
   CustomerQuotesPage,
   CustomerBillsPage,
   CustomerContractsPage,
+  CustomerContractSignPage,
+  CustomerQuoteRespondPage,
   CustomerResetPasswordPage,
 } from './pages/customer';
 import { CustomerAuthProvider } from './contexts/CustomerAuthContext';
@@ -472,7 +474,11 @@ function App() {
                           <Route path="dashboard" element={<CustomerDashboardPage />} />
                           <Route path="calendar" element={<CustomerCalendarPage />} />
                           <Route path="quotes" element={<CustomerQuotesPage />} />
+                          {/* Respond / sign inside the portal session, so the
+                              portal never hands out the emailed link tokens. */}
+                          <Route path="quotes/:id/respond" element={<CustomerQuoteRespondPage />} />
                           <Route path="contracts" element={<CustomerContractsPage />} />
+                          <Route path="contracts/:id/sign" element={<CustomerContractSignPage />} />
                           <Route path="bills" element={<CustomerBillsPage />} />
                           <Route path="profile" element={<CustomerProfilePage />} />
                         </Route>

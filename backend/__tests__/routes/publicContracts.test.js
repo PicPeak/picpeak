@@ -157,8 +157,13 @@ describe('publicContracts routes', () => {
       const token = await createPublicToken(db, 'contract_action_tokens', {
         contract_id: contractId,
       });
+      // With a grant, so the request actually reaches multer (the grant
+      // check runs before it and would otherwise answer 401).
+      const verification = require('../../src/services/publicDocumentVerificationService');
+      const tokenRow = await db('contract_action_tokens').where({ token }).first();
       const res = await request(app)
         .post(`/api/public/contracts/${token}/upload-signed-pdf`)
+        .set('X-Document-Access', verification.issueGrant('contract', tokenRow, token))
         .field('evil[999999999]', 'x')
         .attach('file', Buffer.from('%PDF-1.4 fake'), 'signed.pdf');
       // multer aborts the request before the handler runs; buildRouteApp's
@@ -173,8 +178,11 @@ describe('publicContracts routes', () => {
       const token = await createPublicToken(db, 'contract_action_tokens', {
         contract_id: contractId,
       });
+      const verification = require('../../src/services/publicDocumentVerificationService');
+      const tokenRow = await db('contract_action_tokens').where({ token }).first();
       const res = await request(appWithErrorHandler)
         .post(`/api/public/contracts/${token}/upload-signed-pdf`)
+        .set('X-Document-Access', verification.issueGrant('contract', tokenRow, token))
         .field('evil[999999999]', 'x')
         .attach('file', Buffer.from('%PDF-1.4 fake'), 'signed.pdf');
       expect(res.status).toBe(400);

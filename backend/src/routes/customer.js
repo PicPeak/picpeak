@@ -26,6 +26,9 @@ const { getClientIp } = require('../utils/requestIp');
 const { customerAuth } = require('../middleware/customerAuth');
 const { setGalleryAuthCookies } = require('../utils/tokenUtils');
 const customerAccountsService = require('../services/customerAccountsService');
+const publicDocumentViews = require('../services/publicDocumentViews');
+const { clientIpForAudit } = require('../utils/clientIp');
+const contractSignedPdfUpload = require('../utils/contractSignedPdfUpload');
 
 // Gate a customer-facing route on BOTH the global master flag AND the
 // per-customer override — getEffectiveFeaturesForCustomer combines them, so an
@@ -479,20 +482,12 @@ router.get('/quotes', customerAuth, async (req, res) => {
         'accepted_at', 'declined_at',
       );
 
-    // Look up the active accept/decline token for each non-locked
-    // quote so the customer dashboard can deep-link back into the
-    // public response page when the admin already sent it. We avoid
-    // re-issuing tokens here — the dashboard is for review, not
-    // re-sending.
-    const tokensByQuote = new Map();
-    if (rows.length > 0) {
-      const tokens = await dbi('quote_action_tokens')
-        .whereIn('quote_id', rows.map((r) => r.id))
-        .whereNull('used_at')
-        .where('expires_at', '>', new Date())
-        .select('quote_id', 'token');
-      for (const t of tokens) tokensByQuote.set(t.quote_id, t.token);
-    }
+    // Whether each quote can still be answered. The list used to carry the
+    // live accept/decline token so the dashboard could link to the public
+    // page, which put a bearer secret — usable with no login and no emailed
+    // code — into every portal response. The portal now answers through
+    // POST /quotes/:id/respond with the customer's session instead.
+    const usableTokens = await publicDocumentViews.usableQuoteTokens(rows.map((r) => r.id));
 
     res.json({
       quotes: rows.map((q) => ({
@@ -516,7 +511,7 @@ router.get('/quotes', customerAuth, async (req, res) => {
         responseLockedAt: q.response_locked_at,
         acceptedAt: q.accepted_at,
         declinedAt: q.declined_at,
-        responseToken: tokensByQuote.get(q.id) || null,
+        canRespond: publicDocumentViews.quoteAcceptsResponse(q) && usableTokens.has(q.id),
       })),
     });
   } catch (error) {
@@ -707,17 +702,11 @@ router.get('/contracts', customerAuth, async (req, res) => {
         'pdf_path', 'signed_pdf_path',
       );
 
-    // Live tokens for the public sign page so customer dashboard can
-    // deep-link the "Sign now" button on `sent` contracts.
-    const tokensByContract = new Map();
-    if (rows.length > 0 && await dbi.schema.hasTable('contract_action_tokens')) {
-      const tokens = await dbi('contract_action_tokens')
-        .whereIn('contract_id', rows.map((r) => r.id))
-        .whereNull('used_at')
-        .where('expires_at', '>', new Date())
-        .select('contract_id', 'token');
-      for (const tk of tokens) tokensByContract.set(tk.contract_id, tk.token);
-    }
+    // Whether each contract can still be signed. The list used to carry the
+    // live signing token for the dashboard's "Sign now" link; the portal
+    // now signs through POST /contracts/:id/sign with the session, so the
+    // token never leaves the server.
+    const liveTokens = await publicDocumentViews.liveContractTokens(rows.map((r) => r.id));
 
     res.json({
       contracts: rows.map((c) => ({
@@ -736,7 +725,7 @@ router.get('/contracts', customerAuth, async (req, res) => {
         // Surface flags only — no paths leaked to the customer.
         hasPdf: !!c.pdf_path,
         hasSignedPdf: !!c.signed_pdf_path,
-        responseToken: tokensByContract.get(c.id) || null,
+        canSign: c.status === 'sent' && liveTokens.has(c.id),
       })),
     });
   } catch (error) {
@@ -784,5 +773,182 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
     errorResponse(res, error, 500, 'Failed to render contract PDF');
   }
 });
+
+// ---- signing and responding from the portal ---------------------------
+// A logged-in customer reads, signs and answers here with their session.
+// The action token that the public pages use is looked up on the server and
+// handed to the same service calls, so the signature evidence and the
+// single-use bookkeeping are identical — but the token itself never reaches
+// the browser.
+
+// Load a document the customer owns, behind the same feature gate as the
+// list. Drafts and other customers' documents are a plain 404.
+async function ownedDocument(req, res, { table, featureKey, label, notFound }) {
+  if (!(await customerFeatureAllowed(req, res, featureKey, label))) return null;
+  const id = Number.parseInt(req.params.id, 10);
+  const row = Number.isInteger(id)
+    ? await db(table).where({ id, customer_account_id: req.customer.id }).first()
+    : null;
+  if (!row || row.status === 'draft') {
+    res.status(404).json({ error: notFound });
+    return null;
+  }
+  return row;
+}
+
+const CONTRACT = { table: 'contracts', featureKey: 'contracts', label: 'Contracts', notFound: 'Contract not found' };
+const QUOTE = { table: 'quotes', featureKey: 'quotes', label: 'Quotes', notFound: 'Quote not found' };
+
+function sendValidationErrors(req, res) {
+  const errors = validationResult(req);
+  if (errors.isEmpty()) return false;
+  res.status(400).json({
+    error: 'Validation failed',
+    code: 'VALIDATION_ERROR',
+    details: safeValidationErrors(errors).map((e) => ({ field: e.path || e.param, message: e.msg })),
+  });
+  return true;
+}
+
+// Operational refusals from the services (expired link, already signed,
+// ToS not accepted, ...) go back as they are; anything else is a 500.
+function sendServiceRefusal(res, err) {
+  if (!err || !err.statusCode || err.statusCode >= 500) return false;
+  res.status(err.statusCode).json({ error: err.message, code: err.code });
+  return true;
+}
+
+router.get('/contracts/:id', customerAuth, async (req, res) => {
+  try {
+    const contract = await ownedDocument(req, res, CONTRACT);
+    if (!contract) return;
+    const view = await publicDocumentViews.buildContractView(contract.id);
+    if (!view) return res.status(404).json({ error: CONTRACT.notFound });
+    const liveTokens = await publicDocumentViews.liveContractTokens([contract.id]);
+    res.json({ contract: view, canSign: contract.status === 'sent' && liveTokens.has(contract.id) });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to load contract');
+  }
+});
+
+router.post(
+  '/contracts/:id/sign',
+  customerAuth,
+  [
+    body('name').isString().isLength({ min: 1, max: 255 }),
+    body('accepted').isBoolean(),
+    body('signatureDataUrl').optional({ nullable: true }).isString(),
+  ],
+  async (req, res) => {
+    try {
+      if (sendValidationErrors(req, res)) return;
+      const contract = await ownedDocument(req, res, CONTRACT);
+      if (!contract) return;
+      const token = (await publicDocumentViews.liveContractTokens([contract.id])).get(contract.id);
+      if (contract.status !== 'sent' || !token) {
+        return res.status(409).json({ error: 'This contract cannot be signed right now.', code: 'NOT_SIGNABLE' });
+      }
+      const contractService = require('../services/contractService');
+      const result = await contractService.recordCustomerSignature({
+        token: token.token,
+        name: req.body.name,
+        signatureDataUrl: req.body.signatureDataUrl,
+        accepted: req.body.accepted === true,
+        // See utils/clientIp.js — the trusted req.ip only.
+        ip: clientIpForAudit(req),
+      });
+      res.json(result);
+    } catch (error) {
+      if (sendServiceRefusal(res, error)) return;
+      errorResponse(res, error, 500, 'Failed to sign contract');
+    }
+  },
+);
+
+router.post(
+  '/contracts/:id/upload-signed-pdf',
+  customerAuth,
+  // Setting, ownership and signability are all checked BEFORE multer, so a
+  // refused upload never writes to disk.
+  contractSignedPdfUpload.uploadSignedPdfSettingGuard,
+  async (req, res, next) => {
+    try {
+      const contract = await ownedDocument(req, res, CONTRACT);
+      if (!contract) return undefined;
+      const token = (await publicDocumentViews.liveContractTokens([contract.id])).get(contract.id);
+      if (contract.status !== 'sent' || !token) {
+        return res.status(409).json({ error: 'This contract cannot be signed right now.', code: 'NOT_SIGNABLE' });
+      }
+      req.publicTokenRow = token;
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  },
+  contractSignedPdfUpload.signedPdfUpload.single('file'),
+  async (req, res) => {
+    try {
+      await contractSignedPdfUpload.finishSignedPdfUpload(req, res);
+    } catch (error) {
+      if (sendServiceRefusal(res, error)) return;
+      errorResponse(res, error, 500, 'Failed to upload the signed contract');
+    }
+  },
+);
+
+router.get('/quotes/:id', customerAuth, async (req, res) => {
+  try {
+    const quote = await ownedDocument(req, res, QUOTE);
+    if (!quote) return;
+    const view = await publicDocumentViews.buildQuoteView(quote.id);
+    if (!view) return res.status(404).json({ error: QUOTE.notFound });
+    const usableTokens = await publicDocumentViews.usableQuoteTokens([quote.id]);
+    res.json({
+      quote: view,
+      canRespond: publicDocumentViews.quoteAcceptsResponse(quote) && usableTokens.has(quote.id),
+    });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to load quote');
+  }
+});
+
+router.post(
+  '/quotes/:id/respond',
+  customerAuth,
+  [
+    body('action').isIn(['accept', 'decline']),
+    body('tosAccepted').optional().isBoolean(),
+  ],
+  async (req, res) => {
+    try {
+      if (sendValidationErrors(req, res)) return;
+      const quote = await ownedDocument(req, res, QUOTE);
+      if (!quote) return;
+      const token = (await publicDocumentViews.usableQuoteTokens([quote.id])).get(quote.id);
+      if (!publicDocumentViews.quoteAcceptsResponse(quote) || !token) {
+        return res.status(409).json({ error: 'This quote cannot be answered right now.', code: 'NOT_RESPONDABLE' });
+      }
+      const quoteService = require('../services/quoteService');
+      const result = await quoteService.recordResponse({
+        token: token.token,
+        action: req.body.action,
+        ip: clientIpForAudit(req),
+        tosAccepted: req.body.tosAccepted === true,
+      });
+      res.json({ status: result.status, lockedAt: result.lockedAt });
+    } catch (error) {
+      if (error && error.code === 'RESPONSE_LOCKED') {
+        return res.status(423).json({
+          error: error.message,
+          code: 'RESPONSE_LOCKED',
+          currentStatus: error.currentStatus,
+          lockedAt: error.lockedAt,
+        });
+      }
+      if (sendServiceRefusal(res, error)) return;
+      errorResponse(res, error, 500, 'Failed to record the response');
+    }
+  },
+);
 
 module.exports = router;

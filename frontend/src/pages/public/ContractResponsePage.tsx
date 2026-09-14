@@ -1,6 +1,6 @@
 /**
- * Public contract response page. No authentication — the link in the
- * customer's email is the only secret.
+ * Contract response page — reached from the customer's signing email, or from
+ * the customer portal.
  *
  * Two signing paths offered side-by-side:
  *   1. In-browser: customer types their full name, optionally draws a
@@ -11,22 +11,41 @@
  *   2. Upload wet-signed PDF: customer can sign physically and upload
  *      the PDF instead. Server treats this as the authoritative copy.
  *
+ * The emailed link is a bearer secret, so on its own it no longer reveals the
+ * contract or the customer's personal data: the page first asks for a one-time
+ * code emailed to the customer (DocumentVerificationStep) and sends the
+ * resulting grant with every request. The portal renders the same view through
+ * its session-authenticated routes instead (CustomerContractSignPage), so no
+ * link token ever reaches the portal. Both are wired through a
+ * ContractDocumentAdapter.
+ *
  * Visual treatment matches QuoteResponsePage so admins get a consistent
  * customer-facing surface: branding-aware dark/light mode via
  * usePublicDarkMode, issuer logo + name header, neutral card styling.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import SignaturePad from 'signature_pad';
 import { CheckCircle, Upload, RotateCcw, Download, ShieldCheck } from 'lucide-react';
 import { Loading } from '../../components/common';
+import { DocumentVerificationStep } from '../../components/public/DocumentVerificationStep';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import {
   publicContractsService,
   type ContractBlockSection,
+  type PublicContractShell,
+  type PublicContractView,
 } from '../../services/contracts.service';
+import {
+  clearDocumentGrant,
+  isVerificationRequired,
+  readDocumentGrant,
+  storeDocumentGrant,
+  type DocumentAccessGrant,
+  type DocumentVerificationSent,
+} from '../../utils/documentAccess';
 
 /**
  * Maximum width of the exported signature PNG. The on-screen canvas
@@ -74,9 +93,35 @@ const SECTION_LABELS: Record<ContractBlockSection, { en: string; de: string }> =
   closing: { en: 'Closing', de: 'Schlussbestimmungen' },
 };
 
-export const ContractResponsePage: React.FC = () => {
+export interface ContractSignPayload {
+  name: string;
+  signatureDataUrl: string | null;
+  accepted: true;
+}
+
+/** Where the view reads and writes its contract: a public link or the portal. */
+export interface ContractDocumentAdapter {
+  /** Query key for the contract; must change when access changes. */
+  queryKey: readonly unknown[];
+  load: () => Promise<{ contract: PublicContractView | PublicContractShell }>;
+  sign: (payload: ContractSignPayload) => Promise<unknown>;
+  uploadSignedPdf: (file: File) => Promise<unknown>;
+  /** Blob URL of the most authoritative PDF. */
+  pdfUrl: () => Promise<string>;
+  /** Public links only: email a code, exchange it for a grant, drop the grant. */
+  verification?: {
+    requestCode: () => Promise<DocumentVerificationSent>;
+    confirmCode: (code: string) => Promise<DocumentAccessGrant>;
+    onVerified: (access: DocumentAccessGrant) => void;
+    onAccessLost: () => void;
+  };
+}
+
+const isShell = (c: PublicContractView | PublicContractShell): c is PublicContractShell =>
+  c.verificationRequired === true;
+
+export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }> = ({ adapter }) => {
   const { t, i18n } = useTranslation();
-  const { token } = useParams<{ token: string }>();
   const queryClient = useQueryClient();
   // Honour branding dark/light mode the same way QuoteResponsePage
   // does — without this the page renders in light regardless of admin
@@ -88,17 +133,22 @@ export const ContractResponsePage: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const padRef = useRef<SignaturePad | null>(null);
 
+  // Form state lives here, above the verification branch, so a grant that
+  // runs out mid-visit sends the customer back to the code step without
+  // throwing away what they typed.
   const [name, setName] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [verificationNotice, setVerificationNotice] = useState<string | null>(null);
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['public-contract', token],
-    queryFn: () => publicContractsService.get(token as string),
-    enabled: !!token,
+    queryKey: adapter.queryKey,
+    queryFn: adapter.load,
     retry: false,
   });
+
+  const contract = data && !isShell(data.contract) ? data.contract : null;
 
   // Switch UI locale to the contract's language for a consistent
   // customer experience (matches QuoteResponsePage).
@@ -138,6 +188,16 @@ export const ContractResponsePage: React.FC = () => {
     };
   }, [data]); // re-run if the contract loads after the canvas mounts
 
+  /** Handle a failed action; returns true when it was a lost grant. */
+  function handleAccessError(err: unknown): boolean {
+    if (!adapter.verification || !isVerificationRequired(err)) return false;
+    setError(null);
+    setVerificationNotice(t('documentVerification.sessionExpired',
+      "For your security, please confirm it's you again.") as string);
+    adapter.verification.onAccessLost();
+    return true;
+  }
+
   const signMutation = useMutation({
     mutationFn: async () => {
       const pad = padRef.current;
@@ -154,7 +214,7 @@ export const ContractResponsePage: React.FC = () => {
       const signatureDataUrl = (pad && canvas && !pad.isEmpty())
         ? downscaleSignature(pad, canvas)
         : null;
-      return publicContractsService.sign(token as string, {
+      return adapter.sign({
         name: name.trim(),
         signatureDataUrl,
         accepted: true,
@@ -162,19 +222,25 @@ export const ContractResponsePage: React.FC = () => {
     },
     onSuccess: () => {
       setError(null);
-      queryClient.invalidateQueries({ queryKey: ['public-contract', token] });
+      queryClient.invalidateQueries({ queryKey: adapter.queryKey });
     },
-    onError: (err: any) => setError(err?.response?.data?.error || 'Failed to sign'),
+    onError: (err: any) => {
+      if (handleAccessError(err)) return;
+      setError(err?.response?.data?.error || 'Failed to sign');
+    },
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async (file: File) => publicContractsService.uploadSignedPdf(token as string, file),
+    mutationFn: async (file: File) => adapter.uploadSignedPdf(file),
     onSuccess: () => {
       setError(null);
       setUploadFile(null);
-      queryClient.invalidateQueries({ queryKey: ['public-contract', token] });
+      queryClient.invalidateQueries({ queryKey: adapter.queryKey });
     },
-    onError: (err: any) => setError(err?.response?.data?.error || 'Upload failed'),
+    onError: (err: any) => {
+      if (handleAccessError(err)) return;
+      setError(err?.response?.data?.error || 'Upload failed');
+    },
   });
 
   function handleSign(e: React.FormEvent) {
@@ -190,13 +256,31 @@ export const ContractResponsePage: React.FC = () => {
     // Client-side enforcement of the admin's "require drawn signature"
     // toggle. The server re-checks; this just gives a clearer error
     // before the round-trip.
-    if (data?.contract.requireDrawnSignature && (!padRef.current || padRef.current.isEmpty())) {
+    if (contract?.requireDrawnSignature && (!padRef.current || padRef.current.isEmpty())) {
       setError(t('publicContract.errorSignatureRequired',
         'A drawn signature is required for this contract.') as string);
       return;
     }
     setError(null);
     signMutation.mutate();
+  }
+
+  // The PDF needs the access grant (or the portal session), so it is fetched
+  // as a blob rather than linked. The window opens synchronously so the
+  // popup blocker accepts the click as the user gesture.
+  async function handleDownload() {
+    const w = window.open('about:blank', '_blank');
+    if (!w) {
+      setError(t('publicContract.popupBlocked', 'Allow pop-ups for this site to download the PDF.') as string);
+      return;
+    }
+    try {
+      w.location.href = await adapter.pdfUrl();
+    } catch (err: any) {
+      w.close();
+      if (handleAccessError(err)) return;
+      setError(t('publicContract.downloadError', 'Download failed') as string);
+    }
   }
 
   if (isLoading) {
@@ -207,18 +291,37 @@ export const ContractResponsePage: React.FC = () => {
     );
   }
 
-  if (isError || !data) {
-    return (
-      <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex items-center justify-center p-6">
-        <div className="max-w-md text-center">
-          <h1 className="text-2xl font-bold mb-2 text-neutral-900 dark:text-neutral-100">
-            {t('publicContract.notFoundTitle', 'Contract not available')}
-          </h1>
-          <p className="text-neutral-600 dark:text-neutral-400">
-            {t('publicContract.notFoundBody', 'This signing link is invalid or expired. Please contact the sender.')}
-          </p>
-        </div>
+  const notAvailable = (
+    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 flex items-center justify-center p-6">
+      <div className="max-w-md text-center">
+        <h1 className="text-2xl font-bold mb-2 text-neutral-900 dark:text-neutral-100">
+          {t('publicContract.notFoundTitle', 'Contract not available')}
+        </h1>
+        <p className="text-neutral-600 dark:text-neutral-400">
+          {t('publicContract.notFoundBody', 'This signing link is invalid or expired. Please contact the sender.')}
+        </p>
       </div>
+    </div>
+  );
+
+  if (isError || !data) return notAvailable;
+
+  if (isShell(data.contract)) {
+    if (!adapter.verification) return notAvailable;
+    const { verification } = adapter;
+    return (
+      <DocumentVerificationStep
+        issuer={data.contract.issuer}
+        emailHint={data.contract.emailHint}
+        isDark={isDark}
+        notice={verificationNotice}
+        requestCode={verification.requestCode}
+        confirmCode={verification.confirmCode}
+        onVerified={(access) => {
+          setVerificationNotice(null);
+          verification.onVerified(access);
+        }}
+      />
     );
   }
 
@@ -323,22 +426,21 @@ export const ContractResponsePage: React.FC = () => {
                 )}
               </div>
 
-              {/* Download button — issue #2. Streams whatever is the
-                  most authoritative copy on disk (signed_pdf_path when
-                  present, otherwise pdf_path). Sync-opens about:blank
-                  pre-fetch so the popup-blocker accepts the gesture. */}
+              {/* Download button. Streams whatever is the most
+                  authoritative copy on disk (signed_pdf_path when
+                  present, otherwise pdf_path). */}
               <div className="text-center mb-5">
-                <a
-                  href={`/api/public/contracts/${token}/pdf`}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={handleDownload}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-accent-dark text-white text-sm hover:opacity-90"
                 >
                   <Download className="w-4 h-4" />
                   {c.hasSignedPdf
                     ? t('publicContract.downloadSigned', 'Download signed PDF')
                     : t('publicContract.download', 'Download PDF')}
-                </a>
+                </button>
+                {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
               </div>
 
               {/* Audit confirmation — issue #4. Surfaces every piece
@@ -405,10 +507,11 @@ export const ContractResponsePage: React.FC = () => {
 
               <form onSubmit={handleSign} className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label htmlFor="contract-signer-name" className="block text-sm font-medium mb-1">
                     {t('publicContract.nameField', 'Your full name')}
                   </label>
                   <input
+                    id="contract-signer-name"
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -506,4 +609,43 @@ export const ContractResponsePage: React.FC = () => {
       </div>
     </div>
   );
+};
+
+/** Public route `/contract/:token`: the emailed link, gated by the one-time code. */
+export const ContractResponsePage: React.FC = () => {
+  const { token = '' } = useParams<{ token: string }>();
+  const [grant, setGrant] = useState<string | null>(() => (token ? readDocumentGrant('contract', token) : null));
+  // Bumped whenever access changes so the contract is fetched again with (or
+  // without) the grant. The grant itself stays out of the query cache key.
+  const [accessVersion, setAccessVersion] = useState(0);
+
+  const adapter = useMemo<ContractDocumentAdapter>(() => ({
+    queryKey: ['public-contract', token, accessVersion],
+    load: async () => {
+      const result = await publicContractsService.get(token, grant);
+      // The server answered with the verification shell although we sent a
+      // grant: it expired or was revoked, so don't offer it again.
+      if (grant && isShell(result.contract)) clearDocumentGrant('contract', token);
+      return result;
+    },
+    sign: (payload) => publicContractsService.sign(token, payload, grant),
+    uploadSignedPdf: (file) => publicContractsService.uploadSignedPdf(token, file, grant),
+    pdfUrl: () => publicContractsService.pdfUrl(token, grant),
+    verification: {
+      requestCode: () => publicContractsService.requestVerification(token),
+      confirmCode: (code) => publicContractsService.confirmVerification(token, code),
+      onVerified: (access) => {
+        storeDocumentGrant('contract', token, access);
+        setGrant(access.grant);
+        setAccessVersion((v) => v + 1);
+      },
+      onAccessLost: () => {
+        clearDocumentGrant('contract', token);
+        setGrant(null);
+        setAccessVersion((v) => v + 1);
+      },
+    },
+  }), [token, grant, accessVersion]);
+
+  return <ContractResponseView adapter={adapter} />;
 };

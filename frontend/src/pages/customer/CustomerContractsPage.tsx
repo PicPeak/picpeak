@@ -2,14 +2,16 @@
  * Customer-side Contracts list. Read-only view of every contract the
  * photographer has sent. Mirrors CustomerQuotesPage in shape:
  *   - status filter + sort
- *   - "Open & sign" link on `sent` rows (deep-link to the public page)
+ *   - "Open & sign" link on signable rows, to the portal signing page (the
+ *     portal never handles the emailed signing token)
  *   - "Download PDF" on any non-cancelled row — prefers the signed PDF
  *     when present, otherwise the system-rendered copy
  */
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { ScrollText, ExternalLink, Download } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ScrollText, PenLine, Download } from 'lucide-react';
 import { customerService, type CustomerContract } from '../../services/customer.service';
 import { Card, Loading } from '../../components/common';
 import { toast } from 'react-toastify';
@@ -207,16 +209,14 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
         </p>
       </div>
       <div className="flex items-center gap-2">
-        {c.status === 'sent' && c.responseToken && (
-          <a
-            href={`/contract/${c.responseToken}`}
-            target="_blank"
-            rel="noreferrer"
+        {c.canSign && (
+          <Link
+            to={`/customer/contracts/${c.id}/sign`}
             className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm bg-accent-dark text-white hover:opacity-90"
           >
-            <ExternalLink className="w-4 h-4" />
+            <PenLine className="w-4 h-4" />
             {t('customer.contracts.openSign', 'Open & sign')}
-          </a>
+          </Link>
         )}
         {(c.hasPdf || c.hasSignedPdf) && (
           <button
