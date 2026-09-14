@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.132.2-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.1-beta.0...v3.132.2-beta.0) (2026-09-14)
+
+
+### Bug Fixes
+
+* **api:** stop the roles fallback selecting the column that triggered it ([#1436](https://github.com/PicPeak/picpeak/issues/1436)) ([e861306](https://github.com/PicPeak/picpeak/commit/e861306e47abfe86ea2b8c64cefcae08364d091d))
+* **auth:** keep must_change_password in the roles-join fallback ([#1434](https://github.com/PicPeak/picpeak/issues/1434)) ([ced21fb](https://github.com/PicPeak/picpeak/commit/ced21fb13e8a3b81b22436b92dc4dab793d033be))
+
 ## [3.132.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.0-beta.0...v3.132.1-beta.0) (2026-09-14)
 
 
