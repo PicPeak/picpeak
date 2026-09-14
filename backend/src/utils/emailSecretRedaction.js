@@ -98,6 +98,19 @@ function redactRenderedHtml(html, secrets) {
   }).join('');
 }
 
+// Contract and quote emails link to `/contract/<64 hex>` and `/quote/<64 hex>`,
+// and that path segment is the link's bearer token. The archived body keeps it
+// for as long as the row lives, and the Messages pane and the project cockpit
+// serve that body to admins who hold no contract or quote permission. Only the
+// token is masked, so the preview still shows that the email carried a link.
+const DOCUMENT_LINK_TOKEN_RE = /(\/(?:contracts?|quotes?)\/)[a-f0-9]{64}(?![a-f0-9])/gi;
+
+/** A copy of an email body with document-link tokens masked. */
+function redactDocumentLinks(html) {
+  if (!html) return html;
+  return String(html).replace(DOCUMENT_LINK_TOKEN_RE, `$1${MASK}`);
+}
+
 /** Parse a stored email_data column leniently (string or already-parsed). */
 function parseEmailData(raw) {
   if (!raw) return {};
@@ -129,4 +142,4 @@ function replaceMaskedSecrets(emailData, sentinel = '{{password_security_message
 }
 
 module.exports = {
-  replaceMaskedSecrets, MASK, isSecretKey, secretValues, redactEmailData, redactRenderedHtml, parseEmailData };
+  replaceMaskedSecrets, MASK, isSecretKey, secretValues, redactEmailData, redactRenderedHtml, redactDocumentLinks, parseEmailData };

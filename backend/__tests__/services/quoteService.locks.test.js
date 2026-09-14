@@ -192,7 +192,10 @@ describe('quoteService — quote status transition backstop', () => {
   beforeEach(() => resetChains());
 
   const respond = (quote, action = 'accept') => {
-    pickChainFor('quote_action_tokens')._firstValue = { id: 7, quote_id: quote.id, expires_at: null };
+    // A live token: recordResponse refuses one without an expiry.
+    pickChainFor('quote_action_tokens')._firstValue = {
+      id: 7, quote_id: quote.id, expires_at: new Date(Date.now() + 86400000).toISOString(),
+    };
     pickChainFor('quotes')._firstValue = quote;
     return quoteService.recordResponse({ token: 'tok', action, ip: '127.0.0.1' });
   };
