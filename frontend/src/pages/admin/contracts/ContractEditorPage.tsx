@@ -88,13 +88,22 @@ export const ContractEditorPage: React.FC = () => {
   // isPending only flips on the next render, so two clicks in the same tick
   // would both get past the disabled button and send two requests.
   const submittingRef = useRef(false);
+  // Counts create attempts. A save records the draft it found only while it
+  // is still the current attempt.
+  const attemptRef = useRef(0);
+  // Set when a save failed without proof that nothing was written (no
+  // response, or a 5xx). A later refusal does not undo that: the earlier
+  // request may still have committed.
+  const outcomeUncertainRef = useRef(false);
   // A draft an earlier attempt may have stored belongs to the customer picked
   // then. Picking another customer starts a new attempt, so a retry can never
   // replay that draft and write this customer's contract into it.
   useEffect(() => {
     if (isEdit) return;
+    attemptRef.current += 1;
     idempotencyKeyRef.current = newIdempotencyKey();
     replayedDraftIdRef.current = null;
+    outcomeUncertainRef.current = false;
   }, [customerAccountId, isEdit]);
 
   // Prefill the customer when opened as "new contract for this customer"
@@ -257,7 +266,10 @@ export const ContractEditorPage: React.FC = () => {
   }
 
   const createMutation = useMutation({
-    mutationFn: async (): Promise<number> => {
+    // `attempt` is the create attempt this save belongs to; a customer change
+    // while it is in flight starts a new one, and the stale save must not
+    // leave its draft behind for the new attempt to update.
+    mutationFn: async (attempt: number): Promise<number> => {
       if (!customerAccountId) throw new Error('Pick a customer first');
       const fields = {
         language,
@@ -278,7 +290,8 @@ export const ContractEditorPage: React.FC = () => {
           blockId: b.blockId, included: b.included, position: b.position,
         })),
       };
-      if (replayedDraftIdRef.current === null) {
+      let draftId = replayedDraftIdRef.current;
+      if (draftId === null) {
         const created = await contractsService.create(
           { customerAccountId, ...fields },
           { idempotencyKey: idempotencyKeyRef.current },
@@ -288,19 +301,27 @@ export const ContractEditorPage: React.FC = () => {
         // was then: anything edited since the lost response is not in it.
         // Apply the current form before leaving the editor, and remember the
         // draft so a failure here is retried as an update, not a new create.
-        replayedDraftIdRef.current = created.contract.id;
+        // The replay also settles whether the earlier attempt committed.
+        draftId = created.contract.id;
+        if (attemptRef.current === attempt) {
+          replayedDraftIdRef.current = draftId;
+          outcomeUncertainRef.current = false;
+        }
       }
-      await contractsService.update(replayedDraftIdRef.current, fields);
-      return replayedDraftIdRef.current;
+      await contractsService.update(draftId, fields);
+      return draftId;
     },
     onSuccess: (createdId) => {
       toast.success(t('contracts.editor.createdToast', 'Contract created.') as string);
       navigate(`/admin/clients/contracts/${createdId}`);
     },
-    onError: (err: unknown) => {
+    onError: (err: unknown, attempt) => {
       const view = describeSaveError(err);
       // A key another admin already used can never succeed; start a fresh one.
       if (view.code === 'IDEMPOTENCY_KEY_CONFLICT') idempotencyKeyRef.current = newIdempotencyKey();
+      if (attempt === attemptRef.current && (view.kind === 'unconfirmed' || view.kind === 'server')) {
+        outcomeUncertainRef.current = true;
+      }
       setSaveError(view);
     },
     onSettled: () => { submittingRef.current = false; },
@@ -330,7 +351,11 @@ export const ContractEditorPage: React.FC = () => {
       toast.success(t('contracts.editor.savedToast', 'Contract saved.') as string);
       navigate(`/admin/clients/contracts/${numericId}`);
     },
-    onError: (err: unknown) => { setSaveError(describeSaveError(err)); },
+    onError: (err: unknown) => {
+      const view = describeSaveError(err);
+      if (view.kind === 'unconfirmed' || view.kind === 'server') outcomeUncertainRef.current = true;
+      setSaveError(view);
+    },
     onSettled: () => { submittingRef.current = false; },
   });
 
@@ -341,7 +366,7 @@ export const ContractEditorPage: React.FC = () => {
     submittingRef.current = true;
     setSaveError(null);
     if (isEdit) updateMutation.mutate();
-    else createMutation.mutate();
+    else createMutation.mutate(attemptRef.current);
   }
 
   // Localised label + corrective action for a field the server rejected.
@@ -392,12 +417,16 @@ export const ContractEditorPage: React.FC = () => {
   function savedStateSentence(view: SaveErrorView): string {
     // A retry already found the draft an earlier attempt created; what failed
     // is applying the latest edits to it.
-    if (!isEdit && replayedDraftIdRef.current !== null) {
-      return t('contracts.editor.errors.createdChangesNotSaved', 'The draft was saved, but your latest changes were not. Saving again applies them.') as string;
-    }
     // A 5xx can arrive after the write committed, so it proves no more than a
-    // lost response does.
-    if (view.kind === 'unconfirmed' || view.kind === 'server') {
+    // lost response does, and a later refusal does not undo an earlier
+    // uncertain attempt.
+    const uncertain = view.kind === 'unconfirmed' || view.kind === 'server' || outcomeUncertainRef.current;
+    if (!isEdit && replayedDraftIdRef.current !== null) {
+      return uncertain
+        ? t('contracts.editor.errors.createdChangesUnconfirmed', 'The draft was saved, but we could not confirm whether your latest changes were. Saving again is safe.') as string
+        : t('contracts.editor.errors.createdChangesNotSaved', 'The draft was saved, but your latest changes were not. Saving again applies them.') as string;
+    }
+    if (uncertain) {
       return isEdit
         ? t('contracts.editor.errors.updateUnconfirmed', 'We could not confirm whether your changes were saved. Saving again is safe.') as string
         : t('contracts.editor.errors.createUnconfirmed', 'We could not confirm whether the draft was saved. Saving again is safe — it will not create a second draft.') as string;

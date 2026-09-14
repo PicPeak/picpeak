@@ -9,8 +9,11 @@
  * two concurrent requests with the same key.
  *
  * Additive and idempotent: adds a nullable column and its unique index, each
- * guarded, so it is safe to re-run. Existing contracts keep NULL, and NULLs
- * never collide under a unique index on SQLite or Postgres.
+ * guarded on its own, so it is safe to re-run. SQLite runs this without a
+ * transaction, so a run interrupted after the column was added must still get
+ * the index on the next run; without it concurrent retries could each create
+ * a draft. Existing contracts keep NULL, and NULLs never collide under a
+ * unique index on SQLite or Postgres.
  */
 const INDEX_NAME = 'contracts_create_idempotency_key_unique';
 
@@ -19,16 +22,16 @@ exports.up = async function (knex) {
   if (!(await knex.schema.hasColumn('contracts', 'create_idempotency_key'))) {
     await knex.schema.alterTable('contracts', (t) => {
       t.string('create_idempotency_key', 128).nullable();
-      t.unique(['create_idempotency_key'], { indexName: INDEX_NAME });
     });
   }
+  await knex.raw(`CREATE UNIQUE INDEX IF NOT EXISTS ${INDEX_NAME} ON contracts (create_idempotency_key)`);
 };
 
 exports.down = async function (knex) {
   if (!(await knex.schema.hasTable('contracts'))) return;
+  await knex.raw(`DROP INDEX IF EXISTS ${INDEX_NAME}`);
   if (await knex.schema.hasColumn('contracts', 'create_idempotency_key')) {
     await knex.schema.alterTable('contracts', (t) => {
-      t.dropUnique(['create_idempotency_key'], INDEX_NAME);
       t.dropColumn('create_idempotency_key');
     });
   }
