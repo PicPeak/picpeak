@@ -258,8 +258,20 @@ export const contractsService = {
     return data.data || data;
   },
 
-  async create(payload: ContractCreatePayload): Promise<{ contract: ContractDetail }> {
-    const { data } = await api.post('/admin/contracts', payload);
+  /**
+   * `idempotencyKey` makes a retry safe: the server answers a key it has
+   * already seen with the draft that key created (`replayed: true`) instead
+   * of creating a second one. Reuse the key until a create succeeds.
+   */
+  async create(
+    payload: ContractCreatePayload,
+    options: { idempotencyKey?: string } = {},
+  ): Promise<{ contract: ContractDetail; replayed?: boolean }> {
+    const { data } = await api.post(
+      '/admin/contracts',
+      payload,
+      options.idempotencyKey ? { headers: { 'Idempotency-Key': options.idempotencyKey } } : undefined,
+    );
     return data.data || data;
   },
 
