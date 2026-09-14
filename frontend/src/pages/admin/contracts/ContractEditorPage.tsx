@@ -216,9 +216,9 @@ export const ContractEditorPage: React.FC = () => {
         issueDate,
         validUntil: validUntil || undefined,
         projectId: projectId ?? null,
-      });
-      // Apply block toggles + ordering as an update right after create.
-      await contractsService.update(created.contract.id, {
+        // Sent with the create so the draft and its block selection commit
+        // together. A follow-up update could fail after the draft existed,
+        // and saving again then created a second one (issue 1447).
         blocks: blocks.map((b) => ({
           blockId: b.blockId, included: b.included, position: b.position,
         })),
@@ -509,10 +509,10 @@ export const ContractEditorPage: React.FC = () => {
       {/* Disclaimer banner */}
       <div className="mb-4 p-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-sm text-amber-900 dark:text-amber-200">
         <p className="font-medium mb-1">
-          {t('contracts.editor.disclaimerTitle', 'Lawyer review required')}
+          {t('contracts.editor.disclaimerTitle', 'Legal review recommended')}
         </p>
         <p className="text-xs">
-          {t('contracts.editor.disclaimerBody', 'The seeded block bodies are EXAMPLES ONLY — written by the maintainer, not by a lawyer. Have your own lawyer review every block you include before sending the contract. See https://docs.picpeak.app/features/crm/disclaimers.')}
+          {t('contracts.editor.disclaimerBody', 'The seeded block texts are examples written by the maintainer, not by a lawyer. Before you send a contract, have the blocks you include reviewed for your jurisdiction and use case — you remain responsible for its content. This does not stop you saving a draft. See https://docs.picpeak.app/features/crm/disclaimers.')}
         </p>
         <p className="text-xs mt-2 pt-2 border-t border-amber-200/60 dark:border-amber-800/60">
           {t('contracts.editor.schriftformWarning',

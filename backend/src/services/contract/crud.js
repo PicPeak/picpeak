@@ -170,6 +170,13 @@ async function createContract(payload, adminId) {
   // actually has them; older dev installs that haven't re-migrated
   // simply skip these fields (contract still saves successfully).
   const hasEventCols = await hasColumnCached('contracts', 'event_name');
+  // Migration 121 — optional link to a Project Overview project. Resolved
+  // here, never inside the transaction: hasColumnCached reads the schema
+  // through the global db, which on the single-connection SQLite pool waits
+  // for the connection the transaction holds. The editor always sends
+  // projectId, so every create stalled on the 60s acquire timeout and
+  // failed with a generic error (issue 1447).
+  const hasProjectCol = payload.projectId !== undefined && await hasColumnCached('contracts', 'project_id');
 
   // Resolve the audit actor BEFORE the transaction — adminActor reads
   // admin_users via the global db, which inside the trx would grab a
@@ -205,8 +212,7 @@ async function createContract(payload, adminId) {
       row.event_time_start = payload.eventTimeStart || null;
       row.event_time_end = payload.eventTimeEnd || null;
     }
-    // Migration 121 — optional link to a Project Overview project.
-    if (payload.projectId !== undefined && await hasColumnCached('contracts', 'project_id')) {
+    if (hasProjectCol) {
       row.project_id = payload.projectId || null;
     }
     const inserted = await trx('contracts').insert(row).returning('id');
@@ -215,33 +221,41 @@ async function createContract(payload, adminId) {
     }
     const contractId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
-    // Seed with every active system block, toggled on. Per-section
-    // position = display_order from the source block.
-    //
-    // D.3 — batched insert. Previously this loop fired one INSERT per
-    // block (12+ round-trips inside the transaction on a fresh contract).
-    // Batched into a single `.insert(rows)` since the row count is
-    // bounded (system block count) and the inserts are independent.
-    const systemBlocks = await trx('contract_blocks')
-      .where({ is_system: true, is_active: true })
-      .orderBy(['section', 'display_order']);
-    const sectionCounters = {};
-    const inclusionRows = systemBlocks.map((block) => {
-      sectionCounters[block.section] = (sectionCounters[block.section] || 0) + 1;
-      return {
-        contract_id: contractId,
-        block_id: block.id,
-        section: block.section,
-        position: sectionCounters[block.section],
-        body_text_snapshot: null,
-        body_text_de_snapshot: null,
-        included: true,
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
-    });
-    if (inclusionRows.length > 0) {
-      await trx('contract_block_inclusions').insert(inclusionRows);
+    if (Array.isArray(payload.blocks)) {
+      // The editor sends the admin's block selection with the create, so the
+      // draft and its inclusions commit together. It used to follow up with a
+      // separate update, which could fail after the draft was committed
+      // (issue 1447).
+      await writeInclusions(trx, contractId, payload.blocks);
+    } else {
+      // Seed with every active system block, toggled on. Per-section
+      // position = display_order from the source block.
+      //
+      // D.3 — batched insert. Previously this loop fired one INSERT per
+      // block (12+ round-trips inside the transaction on a fresh contract).
+      // Batched into a single `.insert(rows)` since the row count is
+      // bounded (system block count) and the inserts are independent.
+      const systemBlocks = await trx('contract_blocks')
+        .where({ is_system: true, is_active: true })
+        .orderBy(['section', 'display_order']);
+      const sectionCounters = {};
+      const inclusionRows = systemBlocks.map((block) => {
+        sectionCounters[block.section] = (sectionCounters[block.section] || 0) + 1;
+        return {
+          contract_id: contractId,
+          block_id: block.id,
+          section: block.section,
+          position: sectionCounters[block.section],
+          body_text_snapshot: null,
+          body_text_de_snapshot: null,
+          included: true,
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+      });
+      if (inclusionRows.length > 0) {
+        await trx('contract_block_inclusions').insert(inclusionRows);
+      }
     }
 
     try {
@@ -253,6 +267,51 @@ async function createContract(payload, adminId) {
     logger.info('Contract created', { adminId, contractId, contractNumber });
     return contractId;
   });
+}
+
+/**
+ * Write a contract's inclusion rows from a `{ blockId, included, position }`
+ * list, inside the caller's transaction. Shared by createContract and
+ * updateContract. Unknown block ids are skipped, and each row's section comes
+ * from the block itself, never from the caller.
+ */
+async function writeInclusions(trx, contractId, blocks) {
+  // Recompute per-section position so we don't trust caller order
+  // for ordering integrity; caller controls only the section
+  // sequence via the order of items in blocks.
+  //
+  // Previously this loop did one SELECT per block to look up its
+  // section. On a contract with 12 included blocks that's 12
+  // round-trips inside the transaction — pure N+1. Batch the
+  // lookup into a single WHERE…IN, build a Map, and read it in
+  // the loop. The insert itself stays sequential because the
+  // editor's payload size is bounded (<30 blocks in practice) and
+  // a single batch insert would lose row-by-row insert ordering
+  // guarantees we don't actually need.
+  const blockIds = [
+    ...new Set(blocks.map((e) => e.blockId).filter((id) => Number.isFinite(id))),
+  ];
+  const blocksFound = blockIds.length > 0
+    ? await trx('contract_blocks').whereIn('id', blockIds).select('id', 'section')
+    : [];
+  const sectionByBlockId = new Map(blocksFound.map((b) => [b.id, b.section]));
+  const sectionCounters = {};
+  for (const entry of blocks) {
+    const section = sectionByBlockId.get(entry.blockId);
+    if (!section) continue;
+    sectionCounters[section] = (sectionCounters[section] || 0) + 1;
+    await trx('contract_block_inclusions').insert({
+      contract_id: contractId,
+      block_id: entry.blockId,
+      section,
+      position: ensureInt(entry.position) || sectionCounters[section],
+      body_text_snapshot: null,
+      body_text_de_snapshot: null,
+      included: entry.included === false ? false : true,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+  }
 }
 
 /**
@@ -276,6 +335,9 @@ async function updateContract(id, payload, adminId) {
   }
 
   const hasEventCols = await hasColumnCached('contracts', 'event_name');
+  // Outside the transaction for the same reason as in createContract: inside
+  // it, this schema read deadlocks the single-connection SQLite pool.
+  const hasProjectCol = 'projectId' in payload && await hasColumnCached('contracts', 'project_id');
 
   // Resolve the audit actor BEFORE the transaction — see createContract.
   const actor = await adminActor(adminId);
@@ -305,7 +367,7 @@ async function updateContract(id, payload, adminId) {
       if (api in payload) updates[col] = payload[api] || null;
     }
     // Migration 121 — optional Project Overview link.
-    if ('projectId' in payload && await hasColumnCached('contracts', 'project_id')) {
+    if (hasProjectCol) {
       updates.project_id = payload.projectId || null;
     }
     await trx('contracts').where({ id }).update(updates);
@@ -321,42 +383,7 @@ async function updateContract(id, payload, adminId) {
     // send a partial update — current frontend always sends full list.)
     if (Array.isArray(payload.blocks)) {
       await trx('contract_block_inclusions').where({ contract_id: id }).del();
-      // Recompute per-section position so we don't trust caller order
-      // for ordering integrity; caller controls only the section
-      // sequence via the order of items in payload.blocks.
-      //
-      // Previously this loop did one SELECT per block to look up its
-      // section. On a contract with 12 included blocks that's 12
-      // round-trips inside the transaction — pure N+1. Batch the
-      // lookup into a single WHERE…IN, build a Map, and read it in
-      // the loop. The insert itself stays sequential because the
-      // editor's payload size is bounded (<30 blocks in practice) and
-      // a single batch insert would lose row-by-row insert ordering
-      // guarantees we don't actually need.
-      const blockIds = [
-        ...new Set(payload.blocks.map((e) => e.blockId).filter((id) => Number.isFinite(id))),
-      ];
-      const blocksFound = blockIds.length > 0
-        ? await trx('contract_blocks').whereIn('id', blockIds).select('id', 'section')
-        : [];
-      const sectionByBlockId = new Map(blocksFound.map((b) => [b.id, b.section]));
-      const sectionCounters = {};
-      for (const entry of payload.blocks) {
-        const section = sectionByBlockId.get(entry.blockId);
-        if (!section) continue;
-        sectionCounters[section] = (sectionCounters[section] || 0) + 1;
-        await trx('contract_block_inclusions').insert({
-          contract_id: id,
-          block_id: entry.blockId,
-          section,
-          position: ensureInt(entry.position) || sectionCounters[section],
-          body_text_snapshot: null,
-          body_text_de_snapshot: null,
-          included: entry.included === false ? false : true,
-          created_at: new Date(),
-          updated_at: new Date(),
-        });
-      }
+      await writeInclusions(trx, id, payload.blocks);
     }
 
     try {

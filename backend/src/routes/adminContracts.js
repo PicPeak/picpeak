@@ -339,6 +339,10 @@ router.post(
     body('outroText').optional({ nullable: true }).isString(),
     body('issueDate').optional({ nullable: true }).isISO8601(),
     body('validUntil').optional({ nullable: true }).isISO8601(),
+    body('blocks').optional().isArray(),
+    body('blocks.*.blockId').optional().isInt({ min: 1 }),
+    body('blocks.*.included').optional().isBoolean(),
+    body('blocks.*.position').optional().isInt({ min: 0 }),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);

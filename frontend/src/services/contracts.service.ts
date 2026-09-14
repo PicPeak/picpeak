@@ -198,6 +198,9 @@ export interface ContractCreatePayload {
   validUntil?: string;
   /** Migration 121 — optional link to a Project Overview project. */
   projectId?: number | null;
+  /** Initial inclusions, written in the same transaction as the contract.
+   *  Omit to seed every active system block toggled on. */
+  blocks?: Array<{ blockId: number; included?: boolean; position?: number }>;
 }
 
 export interface ContractUpdatePayload {
