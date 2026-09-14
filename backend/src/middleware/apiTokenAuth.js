@@ -89,11 +89,20 @@ async function apiTokenAuth(req, res, next) {
       // not become a free privilege upgrade. Rethrow → outer catch → 500.
       if (!isMissingRolesSchema(joinError)) throw joinError;
       logger.debug('Roles table not available in apiTokenAuth', { error: joinError.message });
+      // No role_id in the projection. isMissingRolesSchema() treats
+      // "no such column: admin_users.role_id" as a legitimate fallback state
+      // (dbErrors.js:44, the post-054/pre-057 window), and selecting the very
+      // column whose absence sent us here throws again — straight out to the
+      // outer catch as a 500. sessionAccessService's fallback omits it for the
+      // same reason and nulls the field afterwards.
       admin = await db('admin_users')
         .where({ id: row.created_by, is_active: formatBoolean(true) })
-        .select('id', 'username', 'email', 'role_id')
+        .select('id', 'username', 'email')
         .first();
-      if (admin) admin.role_name = 'super_admin'; // upgrade-path parity with adminAuth
+      if (admin) {
+        admin.role_id = null;
+        admin.role_name = 'super_admin'; // upgrade-path parity with adminAuth
+      }
     }
     if (!admin) {
       return res.status(401).json({ error: 'Token owner unavailable', code: 'OWNER_INACTIVE' });
