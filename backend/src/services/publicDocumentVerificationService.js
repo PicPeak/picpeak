@@ -223,9 +223,11 @@ async function sendCode({ kind, tokenRow, recipientEmail, documentNumber, issuer
     logger.warn('Public document verification email failed', { kind, tokenId: tokenRow.id, err: err.message });
     throw new AppError('The verification email could not be sent. Please try again later.', 503, 'EMAIL_UNAVAILABLE');
   }
+  // Only codes reserved before this one: a send that was slow enough for a
+  // newer code to go out in the meantime must not retire that newer code.
   await db(TABLE)
     .where({ document_kind: kind, action_token_id: tokenRow.id })
-    .whereNot({ id: reservation.codeId })
+    .where('id', '<', reservation.codeId)
     .whereNull('consumed_at')
     .update({ consumed_at: new Date().toISOString() });
   logger.info('Public document verification code sent', { kind, tokenId: tokenRow.id });
@@ -270,7 +272,14 @@ async function confirmCode(kind, tokenId, submitted) {
     }
     return { ok: false, reason: 'invalid', attemptsRemaining: MAX_ATTEMPTS - used };
   }
-  await consume();
+  // Redeem only if no parallel request with the same code got there first:
+  // each of them claimed an attempt and passed the compare, but the code is
+  // single-use and only one of them may get a grant for it.
+  const redeemed = await db(TABLE)
+    .where({ id: live.id })
+    .whereNull('consumed_at')
+    .update({ consumed_at: new Date().toISOString() });
+  if (!redeemed) return { ok: false, reason: 'expired' };
   return { ok: true };
 }
 
