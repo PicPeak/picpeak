@@ -522,6 +522,17 @@ function singleFlight(key, fn, { force = false } = {}) {
 }
 
 /**
+ * Whether a photo row is a video.
+ *
+ * Both columns are checked because `media_type` was only backfilled for rows
+ * created after the video support landed; older rows carry nothing but the
+ * mime type.
+ */
+function isVideoPhoto(photo) {
+  return photo.media_type === 'video' || String(photo.mime_type || '').startsWith('video/');
+}
+
+/**
  * Regenerate thumbnail if it's broken or missing.
  *
  * Works for both managed photos (stored via the storage backend, possibly
@@ -556,7 +567,16 @@ async function regenerateThumbnail(photo) {
   const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
 
   let newThumbnailPath;
-  if (isExternal) {
+  if (isVideoPhoto(photo)) {
+    // A video's thumbnail is a poster frame, not a Sharp resize of the stored
+    // file (#1414). Without this branch the generic path below hands the mp4
+    // to Sharp, which throws, so every video whose row reached here with no
+    // usable thumbnail_path — uploaded before the upload pipeline learned to
+    // fall back to a placeholder, or with its rendition since lost — stayed
+    // thumbnail-less forever, however many times it was viewed or the admin
+    // pressed regenerate.
+    newThumbnailPath = await regenerateVideoThumbnail(event, photo, isExternal);
+  } else if (isExternal) {
     // External: source is on a local mount path. No withLocalCopy needed
     // (storage-backend abstraction doesn't apply — this is a direct fs
     // read). Use a per-photo unique outputBasename so two events both
@@ -601,6 +621,53 @@ async function regenerateThumbnail(photo) {
   }
 
   return null;
+}
+
+/**
+ * Rebuild a video's thumbnail from the source video.
+ *
+ * Same contract as the image branch of regenerateThumbnail: return the new
+ * storage key, or null when nothing could be produced. processUploadedVideo
+ * is the same routine the upload pipeline uses, so a regenerated thumbnail is
+ * byte-for-byte the one a fresh upload of that file would have got — a real
+ * poster frame, degrading to the ffmpeg-free SVG placeholder when ffmpeg
+ * cannot read the file, and throwing only when even that fails.
+ *
+ * The key mirrors the upload pipeline's (`thumbnails/thumb_<name>.jpg`) so a
+ * regeneration overwrites the previous rendition instead of orphaning it. The
+ * external branch keeps regenerateThumbnail's `ext<id>_` prefix, which is what
+ * stops two events that reference the same NAS basename from clobbering each
+ * other's thumbnail.
+ */
+async function regenerateVideoThumbnail(event, photo, isExternal) {
+  const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
+  const { processUploadedVideo } = require('./videoProcessor');
+
+  const sourceBasename = path.basename(
+    (isExternal ? (photo.external_relpath || photo.filename) : photo.filename) || `video-${photo.id}`
+  );
+  const outputBasename = isExternal ? `ext${photo.id}_${sourceBasename}` : sourceBasename;
+  const thumbnailKey = path.posix.join('thumbnails', `thumb_${outputBasename.replace(/\.[^.]+$/, '.jpg')}`);
+
+  const generate = async (localPath) => {
+    const result = await processUploadedVideo(localPath, thumbnailKey);
+    return result?.thumbnailKey || null;
+  };
+
+  try {
+    if (isExternal) {
+      // Direct fs read off the mount, exactly like the external image branch.
+      const localPath = resolvePhotoFilePath(event, photo);
+      logger.info(`Ensuring thumbnail for external video ${photo.id} from ${localPath}`);
+      return await generate(localPath);
+    }
+    const sourceKey = resolvePhotoStorageKey(event, photo);
+    logger.info(`Ensuring thumbnail for video ${photo.id} from key: ${sourceKey}`);
+    return await withLocalCopy(sourceKey, generate);
+  } catch (e) {
+    logger.error(`Failed to regenerate thumbnail for video ${photo.id}: ${e.message}`);
+    return null;
+  }
 }
 
 async function generateVideoPlaceholder(originalFilename, options = {}) {
@@ -1135,7 +1202,7 @@ async function ensureThumbnailAtWidth(photo, width) {
   // hand the video itself to Sharp — after withLocalCopy has downloaded the
   // whole thing on an S3 backend. Nothing caches that failure, so a crawler
   // walking ?w= over a gallery of videos repeats the download every request.
-  if (photo.media_type === 'video' || String(photo.mime_type || '').startsWith('video/')) {
+  if (isVideoPhoto(photo)) {
     return ensureThumbnail(photo);
   }
 

@@ -488,7 +488,16 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
         // The lightbox renders it when `use_original_filenames` is on.
         original_filename: photo.original_filename || null,
         url: photoUrl,
-        thumbnail_url: photo.thumbnail_path ? `/api/gallery/${slug}/thumbnail/${photo.id}${wmQuery}` : null,
+        // Videos are offered the thumbnail route even with no thumbnail_path
+        // recorded yet (#1414). The route regenerates lazily, and for a video
+        // it now produces a poster frame or the SVG placeholder rather than
+        // failing — whereas a null here makes every grid layout fall back to
+        // `thumbnail_url || url` and render the ORIGINAL VIDEO into an <img>,
+        // which is both a broken tile and a full download of the file. Images
+        // keep the old behaviour: for them the original is a usable fallback.
+        thumbnail_url: (photo.thumbnail_path || isVideo)
+          ? `/api/gallery/${slug}/thumbnail/${photo.id}${wmQuery}`
+          : null,
         // Hero-optimized image URL (1920x1080) for full-width hero sections
         hero_url: `/api/gallery/${slug}/hero/${photo.id}${wmQuery}`,
         // Lightbox preview URL (#492). Only emitted when the admin
