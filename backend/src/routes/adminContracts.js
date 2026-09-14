@@ -494,7 +494,10 @@ router.post(
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const ip = req.ip || req.headers['x-forwarded-for'] || null;
+    // Only the address Express resolved through `trust proxy`
+    // (utils/clientIp.js). The raw X-Forwarded-For fallback let any caller
+    // write an arbitrary address into the countersignature evidence.
+    const ip = require('../utils/clientIp').clientIpForAudit(req);
     const result = await contractService.recordAdminCountersignature(
       parseInt(req.params.id, 10),
       { name: req.body.name, ip, signatureDataUrl: req.body.signatureDataUrl },
