@@ -36,7 +36,7 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, async (
     // Import multer and photo processing
     const multer = require('multer');
     const { getAllowedMimeTypes, getMaxFilesPerUpload, getMaxFileSizeBytes, DEFAULT_MAX_FILE_SIZE_MB } = require('../../services/uploadSettings');
-    const { validateFileType } = require('../../utils/fileSecurityUtils');
+    const { validateFileType, normalizeUploadMimeType } = require('../../utils/fileSecurityUtils');
 
     // Resolve allowed MIME types from settings
     let allowedMimeTypes;
@@ -85,6 +85,9 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, async (
         fieldArrayIndexLimit: 0
       },
       fileFilter: (req, file, cb) => {
+        // Assigned, not just compared: multer copies this object into
+        // req.files, so processing stores the canonical type.
+        file.mimetype = normalizeUploadMimeType(file.originalname, file.mimetype);
         if (validateFileType(file.originalname, file.mimetype, allowedMimeTypes)) {
           cb(null, true);
         } else {

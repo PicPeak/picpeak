@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { categoriesService } from '../../services/categories.service';
 import { settingsService } from '../../services/settings.service';
 import { useTranslation } from 'react-i18next';
-import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel } from '../../utils/fileTypes';
+import { extensionsToMimeTypes, extensionsToAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
 import { useUploadProgress } from '../../hooks/useUploadProgress';
 import { photosService } from '../../services/photos.service';
 
@@ -148,7 +148,7 @@ export const PhotoUpload: React.FC<PhotoUploadProps> = ({ eventId, onUploadCompl
   // the browser's default "open the file in a new tab" behaviour.
   const addFiles = (incoming: File[]) => {
     const imageFiles = incoming.filter((file) => {
-      if (!allowedMimeTypes.includes(file.type)) return false;
+      if (!allowedMimeTypes.includes(normalizeFileMimeType(file.name, file.type))) return false;
       // Pre-flight size check, mirroring the guest uploader: without it the
       // admin streams the whole oversized file before the backend 400s it.
       const limitMb = sizeLimitMbFor(file);
