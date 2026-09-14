@@ -28,7 +28,17 @@ class GalleryAccessService {
     }
     const session = grant.session;
     if (grant.kind === 'admin') {
-      const account = await sessions.admin(session);
+      // includeProfile so must_change_password comes back. adminAuth gates the
+      // whole admin API on it (middleware/auth.js:52), but the gallery preview
+      // never passes through adminAuth - it authorizes here - so without this
+      // an admin issued a temporary password was locked out of the admin API
+      // and could still list, view and download gallery photos through
+      // ?admin_preview=1. The flag exists to force a rotation; a path that
+      // ignores it makes the rotation optional.
+      const account = await sessions.admin(session, { includeProfile: true });
+      if (account.must_change_password) {
+        throw new AppError('Password change required before continuing', 403, 'MUST_CHANGE_PASSWORD');
+      }
       const principal = { id: account.id, roleName: account.role_name };
       if (!canAccessEvent(principal, event)
         || !await userHasAllPermissions(account.id, ['events.view', 'photos.view'])) {
