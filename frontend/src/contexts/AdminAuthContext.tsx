@@ -60,6 +60,10 @@ export const AdminAuthProvider: React.FC<AdminAuthProviderProps> = ({ children }
           // session payload. Server truth also refreshes stale local copies.
           if (response.data.adminUser) {
             setUser(response.data.adminUser);
+            // Only login() used to set this, so a flagged admin arriving on a
+            // fresh page load (a reload, or the gallery preview's notice
+            // link) got no password-change dialog and a 403 on every call.
+            setMustChangePassword(!!response.data.adminUser.mustChangePassword);
             sessionStorage.setItem('admin_user', JSON.stringify(response.data.adminUser));
           }
         } else {
