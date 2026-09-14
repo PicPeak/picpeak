@@ -21,22 +21,6 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-// ALLOWED_MEDIA_TYPES in fileSecurityUtils.js only defines image/video
-// entries, so the route's real fileFilter (validateFileType(..., ['application/pdf']))
-// rejects every PDF upload with "Only PDF files are allowed" — a
-// separate, pre-existing bug unrelated to the path-traversal fix under
-// test here (also present in publicContracts.js, which is why neither
-// suite exercises a successful upload). Stub validateFileType so this
-// suite can drive the full route, including the filename-callback fix,
-// end-to-end.
-jest.mock('../../src/utils/fileSecurityUtils', () => {
-  const actual = jest.requireActual('../../src/utils/fileSecurityUtils');
-  return {
-    ...actual,
-    validateFileType: (filename, mimetype, allowedTypes) => allowedTypes.includes(mimetype),
-  };
-});
-
 process.env.NODE_ENV = 'test';
 process.env.TEST_DATABASE_PATH = path.join(
   fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-contracts-signed-pdf-')), 'db.sqlite'
