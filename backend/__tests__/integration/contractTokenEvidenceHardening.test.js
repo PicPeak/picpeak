@@ -327,6 +327,32 @@ describe('signature evidence under concurrent requests', () => {
   });
 });
 
+describe('customer signature stamping', () => {
+  it('does not record its PDF over a re-stamp that replaced the customer image before the stamp read the contract', async () => {
+    const { id, token } = await sentContract('Restamp before customer stamp');
+    const replacement = await pngDataUrl({ r: 0, g: 120, b: 200 });
+    const recorder = recordStamps();
+    mockBeforeContractRead = {
+      contractId: id,
+      run: () => contractService.restampSignatures(id, { customerSignatureDataUrl: replacement }, adminId),
+    };
+    try {
+      await contractService.recordCustomerSignature({
+        token, name: 'Maria Meier', accepted: true, ip: '198.51.100.16', signatureDataUrl: SIGNATURE_DATA_URL,
+      });
+    } finally {
+      mockBeforeContractRead = null;
+      recorder.restore();
+    }
+
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.signed_pdf_path).toBeTruthy();
+    // The PDF on record shows the image the contract references.
+    expect(recorder.stampsOf(contract.signed_pdf_sha256).map((stamp) => stamp.png))
+      .toEqual([contract.signed_customer_signature_path]);
+  });
+});
+
 describe('countersignature stamping', () => {
   it('sends no fully-signed emails without a recorded PDF carrying both signatures, and leaves them to Re-send', async () => {
     const { id, token } = await sentContract('Countersign during restamp');
