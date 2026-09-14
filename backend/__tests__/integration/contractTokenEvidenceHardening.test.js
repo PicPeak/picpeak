@@ -22,6 +22,24 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 jest.setTimeout(120000);
 
+// Runs once before the next getContractById for that contract, which the
+// countersignature calls right after its status update.
+let mockBeforeContractRead = null;
+jest.mock('../../src/services/contract/crud', () => {
+  const actual = jest.requireActual('../../src/services/contract/crud');
+  return {
+    ...actual,
+    getContractById: async (id, ...rest) => {
+      const hook = mockBeforeContractRead;
+      if (hook && Number(id) === hook.contractId) {
+        mockBeforeContractRead = null;
+        await hook.run();
+      }
+      return actual.getContractById(id, ...rest);
+    },
+  };
+});
+
 // 1x1 transparent PNG — smallest valid signature pad output.
 const SIGNATURE_DATA_URL = 'data:image/png;base64,'
   + 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
@@ -326,6 +344,31 @@ describe('countersignature stamping', () => {
     expect(contract.status).toBe('fully_signed');
     expect(contract.signed_pdf_render_failed_at).toBeTruthy();
     expect(contract.signed_pdf_path).toBe(customerStamped);
+  });
+
+  it('does not replace a wet-signed upload that landed right after the countersignature took the status', async () => {
+    const { id, token } = await sentContract('Upload before countersign stamp');
+    await contractService.recordCustomerSignature({
+      token, name: 'Maria Meier', accepted: true, ip: '198.51.100.14', signatureDataUrl: SIGNATURE_DATA_URL,
+    });
+    const uploadDir = path.join(process.env.STORAGE_PATH, 'uploads', 'contracts', 'signed');
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const wet = path.join(uploadDir, `wet-countersign-${Date.now()}.pdf`);
+    fs.writeFileSync(wet, '%PDF-1.4 authoritative wet-signed copy');
+
+    mockBeforeContractRead = { contractId: id, run: () => contractService.attachSignedPdfUpload(id, wet, 'customer') };
+    try {
+      await contractService.recordAdminCountersignature(
+        id, { name: 'Admin', ip: '203.0.113.32', signatureDataUrl: SIGNATURE_DATA_URL }, adminId,
+      );
+    } finally {
+      mockBeforeContractRead = null;
+    }
+
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.status).toBe('fully_signed');
+    expect(contract.signed_admin_name).toBe('Admin');
+    expect(contract.signed_pdf_path).toBe(wet);
   });
 });
 
