@@ -165,4 +165,34 @@ describe('ContractResponsePage verification gate', () => {
     expect(screen.queryByText('kim@example.com')).not.toBeInTheDocument();
     expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
   });
+
+  it('returns to the verification step when the PDF download says the grant is no longer valid', async () => {
+    seedGrant();
+    const signed = { ...fullContract, status: 'fully_signed', canSign: false };
+    // A blob request gets its JSON error body as a Blob.
+    get.mockImplementation(async (url, config) => {
+      if (String(url).endsWith('/pdf')) {
+        throw Object.assign(new Error('Request failed with status code 401'), {
+          response: {
+            status: 401,
+            data: new Blob([JSON.stringify({ code: 'VERIFICATION_REQUIRED' })], { type: 'application/json' }),
+          },
+        });
+      }
+      return { data: { contract: headersOf(config)?.['X-Document-Access'] ? signed : shell } };
+    });
+    const popup = { location: { href: '' }, close: vi.fn() };
+    const open = vi.spyOn(window, 'open').mockReturnValue(popup as unknown as Window);
+    try {
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Download PDF' }));
+
+      expect(await screen.findByText("For your security, please confirm it's you again.")).toBeInTheDocument();
+      expect(window.sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+      expect(popup.close).toHaveBeenCalled();
+    } finally {
+      open.mockRestore();
+    }
+  });
 });

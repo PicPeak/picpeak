@@ -91,6 +91,10 @@ export const DocumentVerificationStep: React.FC<DocumentVerificationStepProps> =
           const seconds = Math.max(1, Number(body.retryAfterSeconds) || 60);
           setWaitSeconds(seconds);
           setError(rateLimitedMessage(seconds));
+          // A code already went out for this link, maybe before a reload
+          // reset this page. Let the visitor enter it instead of leaving them
+          // in front of a disabled button.
+          setSent(true);
           break;
         }
         case 'NO_RECIPIENT_EMAIL':

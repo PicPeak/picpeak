@@ -139,8 +139,10 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle maintenance mode (503)
-    if (error.response?.status === 503) {
+    // Handle maintenance mode (503). A 503 that names its own cause (the
+    // verification email could not be sent) is the asking page's to show,
+    // not a reason to swap the whole app for the maintenance screen.
+    if (error.response?.status === 503 && error.response?.data?.code !== 'EMAIL_UNAVAILABLE') {
       const isAdminRoute = error.config?.url?.includes('/admin');
       
       // Only trigger maintenance mode for non-admin routes or unauthenticated admin routes

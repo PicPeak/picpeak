@@ -104,6 +104,18 @@ describe('DocumentVerificationStep', () => {
     expect(screen.getByRole('button', { name: /send a new code in 45 s/i })).toBeDisabled();
   });
 
+  it('lets the visitor enter a code that already went out when a new one is rate limited, as after a reload', async () => {
+    const props = renderStep({
+      requestCode: vi.fn().mockRejectedValue(refusal(429, { code: 'VERIFICATION_RATE_LIMITED', retryAfterSeconds: 45 })),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /send code/i }));
+    fireEvent.change(await screen.findByLabelText('6-digit code'), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /^confirm$/i }));
+
+    await waitFor(() => expect(props.onVerified).toHaveBeenCalledWith({ grant: 'grant-1', expiresInSeconds: 900 }));
+  });
+
   it('tells the visitor to contact the sender when there is no address to send to', async () => {
     renderStep({ requestCode: vi.fn().mockRejectedValue(refusal(409, { code: 'NO_RECIPIENT_EMAIL' })) });
 

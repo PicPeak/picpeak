@@ -24,7 +24,12 @@ export const CustomerQuoteRespondPage: React.FC = () => {
 
   const adapter = useMemo<QuoteDocumentAdapter>(() => ({
     queryKey: ['customer-quote', quoteId],
-    load: async () => ({ quote: (await customerService.getQuote(quoteId)).quote }),
+    // The portal's flag also knows whether a usable response link is left;
+    // the shared view's own flag only looks at the quote status.
+    load: async () => {
+      const { quote, canRespond } = await customerService.getQuote(quoteId);
+      return { quote: { ...quote, canRespond } };
+    },
     respond: (action, options) => customerService.respondToQuote(quoteId, action, options),
   }), [quoteId]);
 

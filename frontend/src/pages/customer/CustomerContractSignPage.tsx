@@ -24,7 +24,12 @@ export const CustomerContractSignPage: React.FC = () => {
 
   const adapter = useMemo<ContractDocumentAdapter>(() => ({
     queryKey: ['customer-contract', contractId],
-    load: async () => ({ contract: (await customerService.getContract(contractId)).contract }),
+    // The portal's flag also knows whether a live signing link is left; the
+    // shared view's own flag only looks at the contract status.
+    load: async () => {
+      const { contract, canSign } = await customerService.getContract(contractId);
+      return { contract: { ...contract, canSign } };
+    },
     sign: (payload) => customerService.signContract(contractId, payload),
     uploadSignedPdf: (file) => customerService.uploadSignedContractPdf(contractId, file),
     pdfUrl: () => customerService.contractPdfUrl(contractId),

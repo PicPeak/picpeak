@@ -170,6 +170,24 @@ describe('customer portal contract and quote links', () => {
     expect(publicSign).not.toHaveBeenCalled();
   });
 
+  it('offers no signing form when the portal says the contract can no longer be signed', async () => {
+    // The shared view says `canSign: true` from the status alone; the portal
+    // also knows the signing link has expired.
+    customer.getContract.mockResolvedValue({ contract: fullContract, canSign: false });
+    renderAt('/customer/contracts/5/sign', '/customer/contracts/:id/sign', <CustomerContractSignPage />);
+
+    expect(await screen.findByText('This contract can no longer be signed online. Please contact the sender.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign contract' })).not.toBeInTheDocument();
+  });
+
+  it('offers no answer buttons when the portal says the quote can no longer be answered', async () => {
+    customer.getQuote.mockResolvedValue({ quote: fullQuote, canRespond: false });
+    renderAt('/customer/quotes/9/respond', '/customer/quotes/:id/respond', <CustomerQuoteRespondPage />);
+
+    expect(await screen.findByText('This quote can no longer be responded to via this link.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Accept quote' })).not.toBeInTheDocument();
+  });
+
   it('responds to a quote through the portal session, not the public link service', async () => {
     customer.getQuote.mockResolvedValue({ quote: fullQuote, canRespond: true });
     customer.respondToQuote.mockResolvedValue({ status: 'accepted', lockedAt: '2026-09-14T10:15:00Z' });
