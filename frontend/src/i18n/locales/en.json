@@ -1128,6 +1128,8 @@
     "noPhotosFound": "No photos found",
     "failedToLoad": "Failed to load photos",
     "tryAgain": "Try Again",
+    "passwordChangeRequired": "Change your password in the admin area before previewing this gallery.",
+    "goToAdminArea": "Go to admin area",
     "loading": "Loading gallery...",
     "expiredOn": "This gallery expired on {{date}}.",
     "downloadBefore": "Download your photos before they're no longer available.",

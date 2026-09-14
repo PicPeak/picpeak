@@ -9,6 +9,8 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '../common';
 import { GallerySkeleton } from './GallerySkeleton';
+import { PasswordChangeRequiredNotice } from './PasswordChangeRequiredNotice';
+import { isPasswordChangeRequired } from '../../utils/passwordChangeRequired';
 import { useGalleryAuth, useTheme } from '../../contexts';
 import { useGalleryPhotos, useDownloadAllPhotos } from '../../hooks/useGallery';
 import { PhotoGridWithLayouts } from './PhotoGridWithLayouts';
@@ -911,7 +913,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       logout();
       return null;
     }
-    
+
+    if (isPasswordChangeRequired(error)) {
+      return <PasswordChangeRequiredNotice />;
+    }
+
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center">
         <div className="text-center">

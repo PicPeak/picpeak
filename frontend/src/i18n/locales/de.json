@@ -1631,6 +1631,8 @@
     "noPhotosFound": "Keine Fotos gefunden",
     "failedToLoad": "Fotos konnten nicht geladen werden",
     "tryAgain": "Erneut versuchen",
+    "passwordChangeRequired": "Ändern Sie Ihr Passwort im Admin-Bereich, bevor Sie diese Galerie in der Vorschau ansehen.",
+    "goToAdminArea": "Zum Admin-Bereich",
     "loading": "Galerie wird geladen...",
     "expiredOn": "Diese Galerie ist am {{date}} abgelaufen.",
     "downloadBefore": "Laden Sie Ihre Fotos herunter, bevor sie nicht mehr verfügbar sind.",

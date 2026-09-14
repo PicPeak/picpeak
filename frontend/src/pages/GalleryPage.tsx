@@ -11,12 +11,14 @@ import { useGalleryAuth, useTheme } from '../contexts';
 import { useGalleryInfo } from '../hooks/useGallery';
 import { GalleryView } from '../components/gallery';
 import { GallerySkeleton } from '../components/gallery/GallerySkeleton';
+import { PasswordChangeRequiredNotice } from '../components/gallery/PasswordChangeRequiredNotice';
 import { analyticsService } from '../services/analytics.service';
 import { galleryService } from '../services';
 import { GALLERY_THEME_PRESETS } from '../types/theme.types';
 import { buildResourceUrl } from '../utils/url';
 import { isGalleryPublic, normalizeRequirePassword } from '../utils/accessControl';
 import { detectInAppBrowser } from '../utils/inAppBrowser';
+import { isPasswordChangeRequired } from '../utils/passwordChangeRequired';
 
 export const GalleryPage: React.FC = () => {
   const { slug: rawSlug, token: rawToken } = useParams<{ slug: string; token?: string }>();
@@ -59,6 +61,7 @@ export const GalleryPage: React.FC = () => {
     Boolean(rawSlug && !rawToken && /^[0-9a-fA-F]{32}$/.test(rawSlug))
   );
   const [identifierError, setIdentifierError] = useState<string | null>(null);
+  const [identifierNeedsPasswordChange, setIdentifierNeedsPasswordChange] = useState(false);
   const lastResolvedIdentifier = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -97,6 +100,7 @@ export const GalleryPage: React.FC = () => {
           setResolvedToken(undefined);
           const message = error?.response?.data?.error || 'Unable to resolve gallery link';
           setIdentifierError(message);
+          setIdentifierNeedsPasswordChange(isPasswordChangeRequired(error));
         })
         .finally(() => {
           if (!cancelled) {
@@ -316,6 +320,16 @@ export const GalleryPage: React.FC = () => {
   // instead of three different full-page interstitials (#321).
   if (isLoadingInfo) {
     return <GallerySkeleton />;
+  }
+
+  // An admin preview refused only because the admin still has to rotate a
+  // temporary password. /resolve and /info report it as 403
+  // MUST_CHANGE_PASSWORD, and "gallery not found" would be untrue.
+  if (
+    (identifierNeedsPasswordChange && identifierError && !resolvedSlug && !isResolvingIdentifier) ||
+    isPasswordChangeRequired(infoError)
+  ) {
+    return <PasswordChangeRequiredNotice />;
   }
 
   // Gallery missing / archived / expired-link / unresolvable identifier all

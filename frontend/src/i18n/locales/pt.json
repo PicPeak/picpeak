@@ -246,6 +246,8 @@
     "noPhotosFound": "Nenhuma foto encontrada",
     "failedToLoad": "Falha ao carregar fotos",
     "tryAgain": "Tentar Novamente",
+    "passwordChangeRequired": "Altere sua senha na área de administração antes de pré-visualizar esta galeria.",
+    "goToAdminArea": "Ir para a área de administração",
     "loading": "Carregando galeria...",
     "expiredOn": "Esta galeria expirou em {{date}}.",
     "downloadBefore": "Baixe suas fotos antes que fiquem indisponíveis.",

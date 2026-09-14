@@ -243,6 +243,8 @@
     "noPhotosFound": "Geen foto's gevonden",
     "failedToLoad": "Kan foto's niet laden",
     "tryAgain": "Opnieuw proberen",
+    "passwordChangeRequired": "Wijzig uw wachtwoord in het beheergedeelte voordat u deze galerij bekijkt.",
+    "goToAdminArea": "Naar het beheergedeelte",
     "loading": "Galerij laden...",
     "expiredOn": "Deze galerij is verlopen op {{date}}.",
     "downloadBefore": "Download uw foto's voordat ze niet meer beschikbaar zijn.",
