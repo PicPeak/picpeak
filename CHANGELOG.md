@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.132.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.0-beta.0...v3.132.1-beta.0) (2026-09-14)
+
+
+### Bug Fixes
+
+* **archives:** stop restore from dropping videos and rewriting the row ([#1425](https://github.com/PicPeak/picpeak/issues/1425)) ([d37c0c8](https://github.com/PicPeak/picpeak/commit/d37c0c8eadc4cd15e587b228df79fb3d862a08b2))
+
 ## [3.132.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.131.8-beta.0...v3.132.0-beta.0) (2026-09-13)
 
 
