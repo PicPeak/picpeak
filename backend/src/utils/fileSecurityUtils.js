@@ -156,7 +156,10 @@ const ALLOWED_MEDIA_TYPES = {
 // refuses a PDF.
 const ALLOWED_DOCUMENT_TYPES = {
   'application/pdf': {
-    extensions: ['.pdf']
+    extensions: ['.pdf'],
+    magicNumbers: [
+      { offset: 0, bytes: [0x25, 0x50, 0x44, 0x46, 0x2D] } // "%PDF-"
+    ]
   }
 };
 
@@ -193,7 +196,7 @@ function validateFileType(filename, mimetype, allowedTypes) {
  */
 async function validateFileContent(filePath, expectedMimeType) {
   try {
-    const typeConfig = ALLOWED_MEDIA_TYPES[expectedMimeType];
+    const typeConfig = ALLOWED_MEDIA_TYPES[expectedMimeType] || ALLOWED_DOCUMENT_TYPES[expectedMimeType];
     if (!typeConfig) {
       return false;
     }

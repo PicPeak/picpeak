@@ -33,7 +33,7 @@ const { body, header, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
-const { validateFileType } = require('../utils/fileSecurityUtils');
+const { validateFileType, validateFileContent } = require('../utils/fileSecurityUtils');
 const contractService = require('../services/contractService');
 const contractBlocksService = require('../services/contractBlocksService');
 const { db } = require('../database/db');
@@ -544,6 +544,12 @@ router.post(
     validateRequest(req);
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded', code: 'NO_FILE' });
+    }
+    // The filter above only saw the reported type and the file name. The upload
+    // becomes the authoritative signed contract, so its bytes must be a PDF.
+    if (!(await validateFileContent(req.file.path, 'application/pdf'))) {
+      await fs.promises.unlink(req.file.path).catch(() => {});
+      return res.status(400).json({ error: 'The uploaded file is not a PDF.', code: 'INVALID_PDF' });
     }
     const result = await contractService.attachSignedPdfUpload(
       parseInt(req.params.id, 10),
