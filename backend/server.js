@@ -158,6 +158,10 @@ if (enableHsts) {
 
 app.use(cookieParser());
 
+// First, so every later middleware, route and the error handler can put the
+// same id in their logs and responses.
+app.use(require('./src/middleware/requestId'));
+
 app.use((req, res, next) => {
   if (req.headers.authorization) {
     return next();
@@ -244,7 +248,10 @@ const corsOptions = {
   // off a 429 to wait out the rate-limit window before retrying a thumbnail
   // fetch; without it a split-origin deployment would spend its retry budget
   // inside the window and leave the tile blank after the limit had lifted.
-  exposedHeaders: ['Content-Disposition', 'Retry-After'],
+  //
+  // X-Request-Id carries the correlation id (middleware/requestId.js) that an
+  // admin can quote from an error message.
+  exposedHeaders: ['Content-Disposition', 'Retry-After', 'X-Request-Id'],
 };
 
 // Only attach CORS to API endpoints, not static assets

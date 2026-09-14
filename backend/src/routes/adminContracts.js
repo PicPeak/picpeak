@@ -28,7 +28,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { assertContractPdfPath } = require('../utils/safePath');
-const { body, param, query } = require('express-validator');
+const { body, header, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
@@ -343,12 +343,32 @@ router.post(
     body('blocks.*.blockId').optional().isInt({ min: 1 }),
     body('blocks.*.included').optional().isBoolean(),
     body('blocks.*.position').optional().isInt({ min: 0 }),
+    // The editor sends one key per save and reuses it on retry (issue 1447).
+    header('Idempotency-Key').optional()
+      .matches(/^[A-Za-z0-9_-]{8,128}$/)
+      .withMessage('Idempotency-Key must be 8-128 letters, digits, "-" or "_"'),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const id = await contractService.createContract(req.body, req.admin?.id);
+    const { id, replayed } = await contractService.createContractIdempotent(
+      req.body, req.admin?.id, req.get('Idempotency-Key') || null,
+    );
+    // One line per successful create, keyed by outcome, so log monitoring can
+    // count created drafts and idempotent replays separately. Failures are
+    // logged by the error handler with the same requestId and an errorCode
+    // (VALIDATION_ERROR, IDEMPOTENCY_KEY_CONFLICT, ...) or errorClass.
+    require('../utils/logger').info('contract_create', {
+      outcome: replayed ? 'replayed' : 'created',
+      contractId: id,
+      adminId: req.admin?.id,
+      requestId: req.id,
+    });
     const data = await contractService.getContractById(id);
-    return successResponse(res, { contract: transformContract(data.contract, data.inclusions) }, 201);
+    return successResponse(
+      res,
+      { contract: transformContract(data.contract, data.inclusions), ...(replayed && { replayed: true }) },
+      replayed ? 200 : 201,
+    );
   }),
 );
 

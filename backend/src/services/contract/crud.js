@@ -7,6 +7,7 @@ const logger = require('../../utils/logger');
 const { getAppSetting } = require('../../utils/appSettings');
 const { AppError } = require('../../utils/errors');
 const { hasColumnCached } = require('../../utils/schemaCache');
+const { isUniqueViolation } = require('../../utils/dbErrors');
 const businessProfileService = require('../businessProfileService');
 const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { ensureInt } = require('../../utils/numericHelpers');
@@ -148,7 +149,7 @@ async function getContractById(id) {
  * those explicitly so a runaway block library doesn't pollute every
  * new contract.
  */
-async function createContract(payload, adminId) {
+async function createContract(payload, adminId, { idempotencyKey = null } = {}) {
   // Self-heal: ensure runtime-seeded system blocks (e.g. the
   // quote_line_items_table added after migration 131 was deployed)
   // exist before we copy active system blocks into the new contract's
@@ -177,6 +178,8 @@ async function createContract(payload, adminId) {
   // projectId, so every create stalled on the 60s acquire timeout and
   // failed with a generic error (issue 1447).
   const hasProjectCol = payload.projectId !== undefined && await hasColumnCached('contracts', 'project_id');
+  // Migration 214 — resolved before the transaction for the same reason.
+  const hasKeyCol = Boolean(idempotencyKey) && await hasColumnCached('contracts', 'create_idempotency_key');
 
   // Resolve the audit actor BEFORE the transaction — adminActor reads
   // admin_users via the global db, which inside the trx would grab a
@@ -214,6 +217,9 @@ async function createContract(payload, adminId) {
     }
     if (hasProjectCol) {
       row.project_id = payload.projectId || null;
+    }
+    if (hasKeyCol) {
+      row.create_idempotency_key = idempotencyKey;
     }
     const inserted = await trx('contracts').insert(row).returning('id');
     if (row.project_id && row.deal_uuid) {
@@ -267,6 +273,46 @@ async function createContract(payload, adminId) {
     logger.info('Contract created', { adminId, contractId, contractNumber });
     return contractId;
   });
+}
+
+/**
+ * Create a draft once per idempotency key (issue 1447). The editor sends the
+ * same key on every retry of one save, so a retry after a lost response, a
+ * timeout or a double submit gets the draft that key already created instead
+ * of a second one. A key another admin already used is refused rather than
+ * handing over their draft.
+ *
+ * Without a key (or on a schema without migration 214) this is createContract.
+ * Returns `{ id, replayed }`.
+ */
+async function createContractIdempotent(payload, adminId, idempotencyKey) {
+  if (!idempotencyKey || !(await hasColumnCached('contracts', 'create_idempotency_key'))) {
+    return { id: await createContract(payload, adminId), replayed: false };
+  }
+  const findEarlier = async () => {
+    const existing = await db('contracts')
+      .where({ create_idempotency_key: idempotencyKey })
+      .select('id', 'created_by_admin_id')
+      .first();
+    if (!existing) return null;
+    if (Number(existing.created_by_admin_id) !== Number(adminId)) {
+      throw new AppError('This request key was already used for a different draft.', 409, 'IDEMPOTENCY_KEY_CONFLICT');
+    }
+    return { id: existing.id, replayed: true };
+  };
+
+  const earlier = await findEarlier();
+  if (earlier) return earlier;
+  try {
+    return { id: await createContract(payload, adminId, { idempotencyKey }), replayed: false };
+  } catch (error) {
+    // Two requests with the same key both missed the lookup; the unique index
+    // let one insert through. Answer the other with that draft.
+    if (!isUniqueViolation(error)) throw error;
+    const winner = await findEarlier();
+    if (winner) return winner;
+    throw error;
+  }
 }
 
 /**
@@ -416,6 +462,7 @@ async function cancelContract(id, adminId) {
 }
 
 module.exports = {
+  createContractIdempotent,
   listContracts,
   getContractById,
   createContract,

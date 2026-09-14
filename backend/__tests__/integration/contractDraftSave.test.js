@@ -154,4 +154,101 @@ describe('contract draft save (issue 1447)', () => {
     expect(await countRows('contracts')).toBe(contractsBefore);
     expect(await countRows('contract_block_inclusions')).toBe(inclusionsBefore);
   }, WITHIN);
+
+  describe('retries and duplicate submits', () => {
+    const key = () => `edit-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+    const createWithKey = (idempotencyKey, bearer = token) => request(app)
+      .post('/api/admin/contracts')
+      .set('Authorization', `Bearer ${bearer}`)
+      .set('Idempotency-Key', idempotencyKey)
+      .send(editorCreatePayload([]));
+
+    it('returns the same draft when a save is retried with its key (lost response)', async () => {
+      const idempotencyKey = key();
+      const before = await countRows('contracts');
+
+      const first = await createWithKey(idempotencyKey);
+      const retry = await createWithKey(idempotencyKey);
+
+      expect(first.status).toBe(201);
+      expect(retry.status).toBe(200);
+      expect(retry.body.replayed).toBe(true);
+      expect(retry.body.contract.id).toBe(first.body.contract.id);
+      expect(await countRows('contracts')).toBe(before + 1);
+    }, WITHIN);
+
+    it('creates one draft when the same save arrives twice at once (double click)', async () => {
+      const idempotencyKey = key();
+      const before = await countRows('contracts');
+
+      const [a, b] = await Promise.all([createWithKey(idempotencyKey), createWithKey(idempotencyKey)]);
+
+      expect([a.status, b.status].sort()).toEqual([200, 201]);
+      expect(a.body.contract.id).toBe(b.body.contract.id);
+      expect(await countRows('contracts')).toBe(before + 1);
+    }, WITHIN);
+
+    it('refuses a key another admin already used instead of returning their draft', async () => {
+      const idempotencyKey = key();
+      expect((await createWithKey(idempotencyKey)).status).toBe(201);
+
+      const [otherId] = await db('admin_users').insert({
+        username: 'second-admin', email: 'second@example.com', password_hash: 'x',
+        must_change_password: false, created_at: new Date().toISOString(),
+      }).returning('id').then((r) => [r[0]?.id ?? r[0]]);
+      await assignAdminRole(db, otherId);
+
+      const res = await createWithKey(idempotencyKey, mintAdminToken(otherId));
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('IDEMPOTENCY_KEY_CONFLICT');
+    }, WITHIN);
+
+    it('rejects a malformed key as a validation error', async () => {
+      const res = await createWithKey('bad key!');
+
+      expect(res.status).toBe(400);
+      expect(res.body.details.map((d) => d.field.toLowerCase())).toContain('idempotency-key');
+    }, WITHIN);
+  });
+
+  it('names the invalid field in a validation error', async () => {
+    const res = await auth(request(app).post('/api/admin/contracts'))
+      .send({ ...editorCreatePayload([]), eventDate: 'not-a-date' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.details).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'eventDate' })]));
+  }, WITHIN);
+
+  it('gives an unexpected failure a request id that matches the header and the log', async () => {
+    const express = require('express');
+    const logger = require('../../src/utils/logger');
+    const withRequestId = express();
+    withRequestId.use(express.json());
+    withRequestId.use(require('../../src/middleware/requestId'));
+    withRequestId.use('/api/admin/contracts', require('../../src/routes/adminContracts'));
+    withRequestId.use(require('../../src/middleware/errorHandler').errorHandler);
+
+    const realInfo = logger.info;
+    const infoSpy = jest.spyOn(logger, 'info').mockImplementation((message, ...args) => {
+      if (message === 'Contract created') throw new Error('simulated database failure');
+      return realInfo.call(logger, message, ...args);
+    });
+    const errorSpy = jest.spyOn(logger, 'error');
+    let res;
+    try {
+      res = await request(withRequestId).post('/api/admin/contracts')
+        .set('Authorization', `Bearer ${token}`)
+        .send(editorCreatePayload([]));
+    } finally {
+      infoSpy.mockRestore();
+    }
+
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'An unexpected error occurred', code: 'INTERNAL_ERROR', requestId: res.headers['x-request-id'] });
+    expect(res.body.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    const logged = errorSpy.mock.calls.find(([message]) => message === 'Unhandled error');
+    errorSpy.mockRestore();
+    expect(logged[1]).toEqual(expect.objectContaining({ requestId: res.body.requestId, errorClass: 'Error' }));
+  }, WITHIN);
 });
