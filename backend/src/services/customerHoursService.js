@@ -228,6 +228,12 @@ async function createEntry(customerId, payload, adminId) {
   // (The monthly/billing paths additionally route through createInvoice, whose
   // OWN internal logActivity still runs in-trx — that shared root limitation is
   // tracked in feedback_sqlite_global_write_in_transaction.)
+  //
+  // The project_id column check has the same problem: hasColumnCached reads
+  // the schema through the global db, so a cold lookup inside the transaction
+  // waits on the connection the transaction holds. Resolve it here.
+  const hasProjectCol = payload.projectId !== undefined
+    && await hasColumnCached('customer_hour_entries', 'project_id');
   let logInfo = null;
   const result = await db.transaction(async (trx) => {
     const row = {
@@ -247,7 +253,7 @@ async function createEntry(customerId, payload, adminId) {
     // at most one customer, so reject booking hours onto a project owned by a
     // DIFFERENT customer (defence-in-depth behind the customer-scoped picker).
     // Unassigned projects (customer_account_id null) are allowed for anyone.
-    if (payload.projectId !== undefined && await hasColumnCached('customer_hour_entries', 'project_id')) {
+    if (hasProjectCol) {
       const projectId = payload.projectId || null;
       if (projectId && await trx.schema.hasTable('projects')) {
         const project = await trx('projects').where({ id: projectId }).select('customer_account_id').first();

@@ -700,6 +700,18 @@ async function updateQuote(id, payload, adminId) {
     );
   }
 
+  // Resolve schema-drift column checks BEFORE the transaction, as createQuote
+  // does: a cold hasColumnCached lookup goes through the global db, and inside
+  // the trx it waits on the single-connection SQLite pool for the connection
+  // the trx holds. The quote editor sends projectId, so the save stalled for
+  // the 60s acquire timeout and failed.
+  const has = (field, column) => Object.prototype.hasOwnProperty.call(payload, field)
+    && hasColumnCached('quotes', column);
+  const hasProjectId = await has('projectId', 'project_id');
+  const hasVatCode = await has('vatCode', 'vat_code');
+  const hasEventType = await has('eventType', 'event_type');
+  const hasBookingWorkflowId = await has('bookingWorkflowId', 'booking_workflow_id');
+
   return await db.transaction(async (trx) => {
     const updates = {
       updated_at: new Date(),
@@ -748,19 +760,19 @@ async function updateQuote(id, payload, adminId) {
           : null;
     }
     // Migration 121 — optional Project Overview link.
-    if (Object.prototype.hasOwnProperty.call(payload, 'projectId') && await hasColumnCached('quotes', 'project_id')) {
+    if (hasProjectId) {
       updates.project_id = payload.projectId || null;
     }
     // Migration 130 — VAT code snapshot.
-    if (Object.prototype.hasOwnProperty.call(payload, 'vatCode') && await hasColumnCached('quotes', 'vat_code')) {
+    if (hasVatCode) {
       updates.vat_code = payload.vatCode ? String(payload.vatCode).slice(0, 16) : null;
     }
     // Migration 146 — event type.
-    if (Object.prototype.hasOwnProperty.call(payload, 'eventType') && await hasColumnCached('quotes', 'event_type')) {
+    if (hasEventType) {
       updates.event_type = payload.eventType ? String(payload.eventType).slice(0, 64) : null;
     }
     // Migration 147 — selected booking workflow.
-    if (Object.prototype.hasOwnProperty.call(payload, 'bookingWorkflowId') && await hasColumnCached('quotes', 'booking_workflow_id')) {
+    if (hasBookingWorkflowId) {
       updates.booking_workflow_id = payload.bookingWorkflowId || null;
     }
     await trx('quotes').where({ id }).update(updates);
@@ -794,7 +806,10 @@ async function updateQuote(id, payload, adminId) {
     }
 
     try {
-      await logActivity('quote_updated', { quoteId: id }, null, `admin:${adminId}`);
+      // Pass trx: through the global db this insert waits on the single-
+      // connection SQLite pool for the connection this transaction holds,
+      // stalling every save for the 60s acquire timeout and losing the row.
+      await logActivity('quote_updated', { quoteId: id }, null, `admin:${adminId}`, trx);
     } catch (_) { /* non-fatal */ }
   });
 }
