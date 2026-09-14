@@ -1236,7 +1236,10 @@ async function recordResponse({ token, action, ip, tosAccepted }) {
   if (!tokenRow) {
     throw new AppError('Token not found', 404);
   }
-  if (tokenRow.expires_at && new Date(tokenRow.expires_at).getTime() < Date.now()) {
+  // A token without an expiry is refused, not treated as permanent: the
+  // column is NOT NULL and the route guard already refuses one, so this only
+  // matters for a caller that reaches the service another way.
+  if (!tokenRow.expires_at || new Date(tokenRow.expires_at).getTime() < Date.now()) {
     throw new AppError('Token expired', 410);
   }
 

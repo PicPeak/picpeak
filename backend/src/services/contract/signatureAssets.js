@@ -104,7 +104,11 @@ async function persistSignatureImage(contract, role, dataUrl) {
   // never overwrites an earlier capture — forensic preservation.
   // Per role, the contract row's signed_*_signature_path always
   // points at the most recent; older files stay alongside.
-  const filePath = path.join(root, `${role}-${Date.now()}.${ext}`);
+  // The random suffix keeps two captures in the same millisecond apart:
+  // concurrent signing requests wrote one file, and the request that lost
+  // the compare-and-set then deleted the winner's signature image with its
+  // own cleanup.
+  const filePath = path.join(root, `${role}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`);
   fs.writeFileSync(filePath, Buffer.from(match[2], 'base64'));
   return filePath;
 }

@@ -81,13 +81,15 @@ async function sendContract(id, adminId) {
   // hash write; the send still succeeds.
   const hasPdfSha = await hasColumnCached('contracts', 'pdf_sha256');
 
+  let tokenId = null;
   await db.transaction(async (trx) => {
-    await trx('contract_action_tokens').insert({
+    const insertedToken = await trx('contract_action_tokens').insert({
       contract_id: id,
       token,
       expires_at: expiresAt,
       created_at: new Date(),
-    });
+    }).returning('id');
+    tokenId = typeof insertedToken[0] === 'object' ? insertedToken[0].id : insertedToken[0];
     const updates = {
       status: 'sent',
       sent_at: new Date(),
@@ -121,7 +123,9 @@ async function sendContract(id, adminId) {
   });
 
   try {
-    await logActivity('contract_sent', { contractId: id, token }, null, await adminActor(adminId));
+    // The token row id, never the token: activity metadata is served to the
+    // notifications feed and the audit trail, and the token opens the link.
+    await logActivity('contract_sent', { contractId: id, tokenId }, null, await adminActor(adminId));
   } catch (_) { /* logging is best-effort */ }
 
   await emitContractEvent(contract, 'sent');

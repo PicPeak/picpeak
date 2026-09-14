@@ -15,7 +15,7 @@ const emailWebhookTransport = require('../services/emailWebhookTransport');
 const businessProfileService = require('../services/businessProfileService');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const logger = require('../utils/logger');
-const { parseEmailData, secretValues, redactRenderedHtml } = require('../utils/emailSecretRedaction');
+const { parseEmailData, secretValues, redactRenderedHtml, redactDocumentLinks } = require('../utils/emailSecretRedaction');
 const router = express.Router();
 
 // Get email configuration
@@ -798,7 +798,8 @@ router.get('/queue/:id', adminAuth, messagingGate, requirePermission('email.view
     // gallery password / client PIN in their variables and body. Redact on
     // read from the same rule, so the pane never serves a password.
     const data = parseEmailData(row.email_data);
-    const renderedHtml = redactRenderedHtml(row.rendered_html || null, secretValues(data));
+    // Document links carry the customer's contract or quote token as well.
+    const renderedHtml = redactDocumentLinks(redactRenderedHtml(row.rendered_html || null, secretValues(data)));
     try {
       if (data.cc) cc = Array.isArray(data.cc) ? data.cc.join(', ') : String(data.cc);
       if (Array.isArray(data.attachments)) {

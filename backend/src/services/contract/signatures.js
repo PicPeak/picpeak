@@ -49,7 +49,10 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
   }
   const tokenRow = await db('contract_action_tokens').where({ token }).first();
   if (!tokenRow) throw new AppError('Token not found', 404);
-  if (tokenRow.expires_at && new Date(tokenRow.expires_at).getTime() < Date.now()) {
+  // A token without an expiry is refused, not treated as permanent: the
+  // column is NOT NULL and the route guard already refuses one, so this only
+  // matters for a caller that reaches the service another way.
+  if (!tokenRow.expires_at || new Date(tokenRow.expires_at).getTime() < Date.now()) {
     throw new AppError('This signing link has expired', 410);
   }
   if (tokenRow.used_at) {
@@ -74,7 +77,12 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
   const persistedIp = await maybeStoreIp(ip);
   try {
     await db.transaction(async (trx) => {
-      await trx('contracts').where({ id: contract.id }).update({
+      // Compare-and-set on the state the checks above read. Two requests
+      // with the same link can both get past those checks, and the later
+      // unconditional write replaced the first signer's name, IP and
+      // signature image on a contract that was already signed. The loser
+      // throws, the transaction rolls back and its PNG is removed below.
+      const signed = await trx('contracts').where({ id: contract.id, status: 'sent' }).update({
         status: 'signed_by_customer',
         signed_by_customer_at: now,
         signed_customer_name: String(name).trim(),
@@ -82,11 +90,16 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
         signed_customer_signature_path: signaturePath,
         updated_at: now,
       });
-      await trx('contract_action_tokens').where({ id: tokenRow.id }).update({
-        used_at: now,
-        used_action: 'signed_by_customer',
-        used_ip: persistedIp,
-      });
+      const consumed = signed
+        ? await trx('contract_action_tokens').where({ id: tokenRow.id }).whereNull('used_at').update({
+          used_at: now,
+          used_action: 'signed_by_customer',
+          used_ip: persistedIp,
+        })
+        : 0;
+      if (!signed || !consumed) {
+        throw new AppError('This contract has already been signed', 410, 'TOKEN_ALREADY_USED');
+      }
     });
   } catch (txErr) {
     // C.7 — clean up the orphan signature PNG we wrote before the
@@ -146,7 +159,18 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
       updates.signed_pdf_render_failed_at = null;
       updates.signed_pdf_render_error = null;
     }
-    await db('contracts').where({ id: contract.id }).update(updates);
+    // Recorded only if nothing newer landed while the stamp rendered: a
+    // countersignature or a wet-signed upload in that window is the
+    // authoritative PDF, and this write used to replace it with the
+    // customer-only stamp. The stamped file stays on disk either way.
+    const stampQuery = db('contracts').where({ id: contract.id, status: 'signed_by_customer' });
+    const stampApplied = await (refreshed.contract.signed_pdf_path
+      ? stampQuery.where({ signed_pdf_path: refreshed.contract.signed_pdf_path })
+      : stampQuery.whereNull('signed_pdf_path')
+    ).update(updates);
+    if (!stampApplied) {
+      logger.info('Customer-signed PDF superseded before it was recorded', { contractId: contract.id });
+    }
   } catch (err) {
     // Signature recorded; PDF re-render is best-effort. The admin can
     // re-render manually from the detail page if this fails. Logged as
@@ -195,7 +219,9 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
   }
 
   try {
-    await logActivity('contract_signed_by_customer', { contractId: contract.id, token }, null, customerPublicActor());
+    // The token row id, never the token: activity metadata is served to the
+    // notifications feed and the audit trail, and the token opens the link.
+    await logActivity('contract_signed_by_customer', { contractId: contract.id, tokenId: tokenRow.id }, null, customerPublicActor());
   } catch (_) { /* logging is best-effort */ }
 
   return { status: 'signed_by_customer', signedAt: now };
@@ -230,7 +256,10 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
   const newStatus = contract.status === 'signed_by_customer' ? 'fully_signed' : 'signed_by_admin';
   const persistedAdminIp = await maybeStoreIp(ip);
   try {
-    await db('contracts').where({ id: contract.id }).update({
+    // Compare-and-set on the status read above: two countersignatures, or a
+    // countersignature racing an upload, used to both write and the later
+    // one replaced the evidence. The loser throws and its PNG is removed.
+    const applied = await db('contracts').where({ id: contract.id, status: contract.status }).update({
       status: newStatus,
       signed_by_admin_at: now,
       signed_admin_name: String(name).trim(),
@@ -238,6 +267,9 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
       signed_admin_signature_path: signaturePath,
       updated_at: now,
     });
+    if (!applied) {
+      throw new AppError('The contract changed while it was being counter-signed. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
+    }
   } catch (updateErr) {
     // C.7 — clean up the orphan signature PNG if the contract row
     // update threw. Best-effort; log on cleanup failure and re-throw
@@ -295,7 +327,18 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
       updates.signed_pdf_render_failed_at = null;
       updates.signed_pdf_render_error = null;
     }
-    await db('contracts').where({ id: contract.id }).update(updates);
+    // Recorded only if the PDF this stamp was built on is still the current
+    // one; a wet-signed upload in the meantime stays authoritative.
+    const stampQuery = db('contracts').where({ id: contract.id, status: newStatus });
+    const stampApplied = await (refreshed.contract.signed_pdf_path
+      ? stampQuery.where({ signed_pdf_path: refreshed.contract.signed_pdf_path })
+      : stampQuery.whereNull('signed_pdf_path')
+    ).update(updates);
+    if (!stampApplied) {
+      logger.info('Counter-signed PDF superseded before it was recorded', { contractId: contract.id });
+      signedPath = null;
+      signedSha256 = null;
+    }
   } catch (err) {
     logger.error('Failed to stamp contract PDF after admin signature', {
       contractId: contract.id,
@@ -460,7 +503,17 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole) {
   if (uploaderRole === 'admin' && !contract.signed_by_admin_at) {
     updates.signed_by_admin_at = now;
   }
-  await db('contracts').where({ id: contractId }).update(updates);
+  // Compare-and-set on the status read above: a signature or another upload
+  // landing in between must not have its evidence replaced by this file.
+  const applied = await db('contracts').where({ id: contractId, status: contract.status }).update(updates);
+  if (!applied) {
+    try {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } catch (cleanupErr) {
+      logger.warn('Orphan signed PDF upload cleanup failed', { path: filePath, message: cleanupErr.message });
+    }
+    throw new AppError('The contract changed while the signed PDF was uploading. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
+  }
 
   // attachSignedPdfUpload always transitions to fully_signed (see
   // updates.status above), so the dual-party send fires here too —

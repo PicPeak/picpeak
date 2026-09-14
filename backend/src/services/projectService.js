@@ -16,6 +16,7 @@
 const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { redactDocumentLinks } = require('../utils/emailSecretRedaction');
 
 function transformProject(p) {
   if (!p) return null;
@@ -699,7 +700,8 @@ async function getEmailPreview(emailId) {
   if (!row) throw new AppError('Email not found', 404);
 
   if (row.rendered_html) {
-    return { id: row.id, recipient: row.recipient_email, type: row.email_type, status: row.status, available: true, exact: true, html: row.rendered_html };
+    // Document links in the body carry the customer's contract or quote token.
+    return { id: row.id, recipient: row.recipient_email, type: row.email_type, status: row.status, available: true, exact: true, html: redactDocumentLinks(row.rendered_html) };
   }
 
   // Fallback: re-render from the current template + stored variables.
@@ -719,7 +721,7 @@ async function getEmailPreview(emailId) {
     status: row.status,
     available: !!html,
     exact: false,
-    html,
+    html: redactDocumentLinks(html),
   };
 }
 
