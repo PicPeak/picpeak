@@ -5,6 +5,26 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.132.1](https://github.com/PicPeak/picpeak/compare/v3.46.13...v3.132.1) (2026-09-14)
+
+
+### Features
+
+* **admin:** upload single files above the batch cap through the chunked API ([#1431](https://github.com/PicPeak/picpeak/issues/1431)) ([c448572](https://github.com/PicPeak/picpeak/commit/c44857259ca97677dcb68776488a0980841f4f74))
+
+
+### Bug Fixes
+
+* **archives:** stop restore from dropping videos and rewriting the row ([#1425](https://github.com/PicPeak/picpeak/issues/1425)) ([d37c0c8](https://github.com/PicPeak/picpeak/commit/d37c0c8eadc4cd15e587b228df79fb3d862a08b2))
+* **auth:** keep must_change_password in the roles-join fallback ([cca2185](https://github.com/PicPeak/picpeak/commit/cca21855b2c6eb442762fa7201a2001e8e1b6c15))
+* **frontend:** allow blob: in the CSP media-src directive ([#1427](https://github.com/PicPeak/picpeak/issues/1427)) ([7d7ed04](https://github.com/PicPeak/picpeak/commit/7d7ed043de44df4921bf1af1fc1e5ab941f7675d))
+* **gallery:** keep the video controls reachable while paused, and go fullscreen on iOS ([#1426](https://github.com/PicPeak/picpeak/issues/1426)) ([03bc520](https://github.com/PicPeak/picpeak/commit/03bc5207c198cfde3dafb8743fb4a125a65e0dd5))
+
+
+### Miscellaneous
+
+* release 3.132.1 ([d51107c](https://github.com/PicPeak/picpeak/commit/d51107c6be9b139f210cd1874dd18787ae15a0e5))
+
 ## [3.46.13](https://github.com/PicPeak/picpeak/compare/v3.46.12...v3.46.13) (2026-09-11)
 
 
