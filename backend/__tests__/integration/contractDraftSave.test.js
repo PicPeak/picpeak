@@ -204,6 +204,26 @@ describe('contract draft save (issue 1447)', () => {
       expect(res.body.code).toBe('IDEMPOTENCY_KEY_CONFLICT');
     }, WITHIN);
 
+    it('refuses a key reused for a different customer instead of returning the first draft', async () => {
+      // The editor would otherwise apply the second customer's contract to the
+      // first customer's draft, and an update cannot move it back.
+      const idempotencyKey = key();
+      expect((await createWithKey(idempotencyKey)).status).toBe(201);
+      const [otherCustomerId] = await db('customer_accounts').insert({
+        email: 'other-customer@example.com', display_name: 'Other Customer', password_hash: 'x',
+        preferred_language: 'de', is_active: 1, created_at: new Date().toISOString(),
+      }).returning('id').then((r) => [r[0]?.id ?? r[0]]);
+      const before = await countRows('contracts');
+
+      const res = await auth(request(app).post('/api/admin/contracts'))
+        .set('Idempotency-Key', idempotencyKey)
+        .send({ ...editorCreatePayload([]), customerAccountId: otherCustomerId });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('IDEMPOTENCY_KEY_CONFLICT');
+      expect(await countRows('contracts')).toBe(before);
+    }, WITHIN);
+
     it('rejects a malformed key as a validation error', async () => {
       const res = await createWithKey('bad key!');
 

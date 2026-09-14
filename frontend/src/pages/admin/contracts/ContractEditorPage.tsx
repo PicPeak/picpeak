@@ -88,6 +88,14 @@ export const ContractEditorPage: React.FC = () => {
   // isPending only flips on the next render, so two clicks in the same tick
   // would both get past the disabled button and send two requests.
   const submittingRef = useRef(false);
+  // A draft an earlier attempt may have stored belongs to the customer picked
+  // then. Picking another customer starts a new attempt, so a retry can never
+  // replay that draft and write this customer's contract into it.
+  useEffect(() => {
+    if (isEdit) return;
+    idempotencyKeyRef.current = newIdempotencyKey();
+    replayedDraftIdRef.current = null;
+  }, [customerAccountId, isEdit]);
 
   // Prefill the customer when opened as "new contract for this customer"
   // (?customerAccountId=42), e.g. from the Messages view. New contracts only;
@@ -387,7 +395,9 @@ export const ContractEditorPage: React.FC = () => {
     if (!isEdit && replayedDraftIdRef.current !== null) {
       return t('contracts.editor.errors.createdChangesNotSaved', 'The draft was saved, but your latest changes were not. Saving again applies them.') as string;
     }
-    if (view.kind === 'unconfirmed') {
+    // A 5xx can arrive after the write committed, so it proves no more than a
+    // lost response does.
+    if (view.kind === 'unconfirmed' || view.kind === 'server') {
       return isEdit
         ? t('contracts.editor.errors.updateUnconfirmed', 'We could not confirm whether your changes were saved. Saving again is safe.') as string
         : t('contracts.editor.errors.createUnconfirmed', 'We could not confirm whether the draft was saved. Saving again is safe — it will not create a second draft.') as string;
