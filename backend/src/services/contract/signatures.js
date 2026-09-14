@@ -315,10 +315,13 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
     if (!refreshed.contract.pdf_path || !fs.existsSync(refreshed.contract.pdf_path)) {
       throw new Error(`Unsigned PDF missing on disk at ${refreshed.contract.pdf_path}`);
     }
-    const { buffer: stampedBuffer } = await pdfStampService.stampSignatures(
-      fs.readFileSync(refreshed.contract.pdf_path),
-      buildSignatureStamps(refreshed.contract),
-    );
+    // One stamp at a time rather than stampSignatures, which skips a stamp
+    // that fails: a counter-signed PDF missing a signature must fail the
+    // render and leave the recovery marker, not be recorded as done.
+    let stampedBuffer = fs.readFileSync(refreshed.contract.pdf_path);
+    for (const stamp of buildSignatureStamps(refreshed.contract)) {
+      stampedBuffer = await pdfStampService.stampSignature({ pdfBuffer: stampedBuffer, ...stamp });
+    }
     const suffix = newStatus === 'fully_signed' ? 'fully-signed' : 'signed-by-admin';
     const persisted = await persistContractPdf(refreshed.contract, stampedBuffer, suffix);
     signedPath = persisted.filePath;
@@ -764,16 +767,17 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
   if (adminSignatureDataUrl) {
     updates.signed_admin_signature_path = await persistSignatureImage(contract, 'admin', adminSignatureDataUrl);
   }
-  // Compare-and-set on the status and on each image column this run
-  // replaces. Two admins re-stamping at once, or a countersignature landing
-  // in between, used to both write and the later image silently replaced
-  // the earlier one. The loser removes the images it just saved.
-  let restampQuery = db('contracts').where({ id: contract.id, status: contract.status });
-  for (const column of ['signed_customer_signature_path', 'signed_admin_signature_path']) {
-    if (!(column in updates)) continue;
-    restampQuery = contract[column] ? restampQuery.where(column, contract[column]) : restampQuery.whereNull(column);
-  }
-  const restampApplied = await restampQuery.update(updates);
+  // Compare-and-set on the status, the PDF and the images this run read.
+  // Two admins re-stamping at once, or a countersignature landing in
+  // between, used to both write and the later image silently replaced the
+  // earlier one. A PDF recorded since the read was built from the images
+  // this run would replace, and this run's own PDF could not be recorded
+  // over it, so the images and the PDF on record would disagree. The loser
+  // removes the images it just saved.
+  const restampApplied = await whereSignedPdfInputsUnchanged(
+    db('contracts').where({ id: contract.id, status: contract.status }),
+    contract,
+  ).update(updates);
   if (!restampApplied) {
     for (const column of ['signed_customer_signature_path', 'signed_admin_signature_path']) {
       const saved = updates[column];

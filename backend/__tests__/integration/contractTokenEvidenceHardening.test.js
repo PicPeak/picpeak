@@ -309,6 +309,26 @@ describe('signature evidence under concurrent requests', () => {
   });
 });
 
+describe('countersignature stamping', () => {
+  it('marks the render failed instead of recording a PDF without the countersignature', async () => {
+    const { id, token } = await sentContract('Unstampable countersign');
+    await contractService.recordCustomerSignature({
+      token, name: 'Maria Meier', accepted: true, ip: '198.51.100.13', signatureDataUrl: SIGNATURE_DATA_URL,
+    });
+    const customerStamped = (await db('contracts').where({ id }).first()).signed_pdf_path;
+
+    // Valid base64 in a PNG data URL, but not an image the PDF can embed.
+    await contractService.recordAdminCountersignature(
+      id, { name: 'Admin', ip: '203.0.113.31', signatureDataUrl: 'data:image/png;base64,YmFk' }, adminId,
+    );
+
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.status).toBe('fully_signed');
+    expect(contract.signed_pdf_render_failed_at).toBeTruthy();
+    expect(contract.signed_pdf_path).toBe(customerStamped);
+  });
+});
+
 describe('admin PDF repair actions under concurrent requests', () => {
   async function customerSigned(title) {
     const { id, token } = await sentContract(title);
@@ -404,6 +424,40 @@ describe('admin PDF repair actions under concurrent requests', () => {
     expect(a.superseded).toBe(true);
     expect(b.superseded).toBeUndefined();
     expect(await restampLogsFor(id)).toHaveLength(2);
+  });
+
+  it('does not let a re-stamp replace the image behind a PDF recorded after it read the contract', async () => {
+    const id = await customerSigned('Restamp after record');
+    const imageA = await pngDataUrl({ r: 0, g: 160, b: 0 });
+    const imageB = await pngDataUrl({ r: 160, g: 0, b: 160 });
+    // Warm the column checks so A records its PDF in the same few ticks it
+    // takes B to read the contract, without a schema query in between.
+    const { hasColumnCached } = require('../../src/utils/schemaCache');
+    for (const column of ['signed_pdf_is_wet_upload', 'signed_pdf_sha256', 'signed_pdf_render_failed_at']) {
+      await hasColumnCached('contracts', column);
+    }
+    const recorder = recordStamps();
+    let bRun;
+    recorder.many.mockImplementationOnce(async (buffer, stamps) => {
+      const out = await recorder.recordMany(buffer, stamps);
+      // B reads the contract before A records this PDF, and replaces the
+      // image after.
+      bRun = contractService.restampSignatures(id, { customerSignatureDataUrl: imageB }, adminId);
+      bRun.catch(() => {});
+      return out;
+    });
+    let b;
+    try {
+      await contractService.restampSignatures(id, { customerSignatureDataUrl: imageA }, adminId);
+      b = await Promise.allSettled([bRun]).then(([settled]) => settled);
+    } finally {
+      recorder.restore();
+    }
+
+    const contract = await db('contracts').where({ id }).first();
+    expect(recorder.stampsOf(contract.signed_pdf_sha256).map((stamp) => stamp.png))
+      .toEqual([contract.signed_customer_signature_path]);
+    if (b.status === 'rejected') expect(b.reason.code).toBe('CONTRACT_STATE_CHANGED');
   });
 
   it('refuses a re-send whose rebuilt PDF was overtaken, and mails nothing', async () => {
