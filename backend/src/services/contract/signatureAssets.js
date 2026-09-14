@@ -48,10 +48,13 @@ async function persistContractPdf(contract, buffer, suffix = '') {
   // Always append a millisecond timestamp to the filename so writes
   // never overwrite an earlier version on disk. Forensic preservation.
   // Example filenames:
-  //   C-2026-0001_2026-05-19T1830-22-413.pdf                  (unsigned)
-  //   C-2026-0001_signed-by-customer_2026-05-19T1845-10-002.pdf
-  //   C-2026-0001_fully-signed_2026-05-19T1912-44-877.pdf
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  //   C-2026-0001_2026-05-19T1830-22-413-9f3a1c.pdf                  (unsigned)
+  //   C-2026-0001_signed-by-customer_2026-05-19T1845-10-002-04be7d.pdf
+  //   C-2026-0001_fully-signed_2026-05-19T1912-44-877-c21f90.pdf
+  // The random part keeps two renders in the same millisecond apart: two
+  // concurrent stamps of one contract wrote one file, so the PDF on record
+  // could hold the other request's signatures.
+  const stamp = `${new Date().toISOString().replace(/[:.]/g, '-')}-${crypto.randomBytes(3).toString('hex')}`;
   const fileName = suffix
     ? `${contract.contract_number}_${suffix}_${stamp}.pdf`
     : `${contract.contract_number}_${stamp}.pdf`;
@@ -118,9 +121,10 @@ async function persistSignatureImage(contract, role, dataUrl) {
  * single contract row. Customer first, admin second — provenance
  * order matches the visual order on the signature page.
  *
- * Used by the recovery paths (rerenderAndResend, restampSignatures).
- * The hot path (recordCustomerSignature / recordAdminCountersignature)
- * stamps incrementally so it constructs the stamp inline.
+ * Used by the countersignature and the recovery paths
+ * (recordAdminCountersignature, rerenderAndResend, restampSignatures).
+ * The customer signature is always the first stamp, so
+ * recordCustomerSignature constructs it inline.
  */
 function buildSignatureStamps(contract) {
   const locale = contract.language || 'de';

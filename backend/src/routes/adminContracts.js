@@ -25,6 +25,7 @@
 const express = require('express');
 const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
 const { assertContractPdfPath } = require('../utils/safePath');
@@ -71,7 +72,10 @@ const signedPdfStorage = multer.diskStorage({
       return cb(new Error('Invalid contract id'));
     }
     const ext = path.extname(file.originalname) || '.pdf';
-    cb(null, `contract-${contractId}-${Date.now()}${ext}`);
+    // The random part keeps two uploads in the same millisecond apart. They
+    // shared one file, and the request that lost the compare-and-set in
+    // attachSignedPdfUpload then deleted the winner's PDF with its cleanup.
+    cb(null, `contract-${contractId}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
   },
 });
 
