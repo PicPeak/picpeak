@@ -95,37 +95,42 @@ async function markPaid(id, { amountMinor, paidAt, paymentMethod, reference, not
     }
     await trx('invoices').where({ id }).update(update);
 
+    // Pass trx: through the global db this insert waits on the single-
+    // connection SQLite pool for the connection this transaction holds.
     try { await logActivity(isFull ? 'invoice_paid' : 'invoice_partial_payment',
       { invoiceId: id, amountMinor: amount, totalPaidMinor: total },
-      invoice.event_id || null, `admin:${adminId}`); } catch (_) { /* non-fatal */ }
-
-    // Migration 127 — admin payment-received notification. Fires only
-    // on the transition into 'paid' so admins don't get duplicate
-    // emails when additional payment-log rows are recorded after the
-    // invoice already cleared (rare but possible — e.g. late-fee
-    // top-up). Queued after the transaction so a failed email never
-    // rolls back a recorded payment. Carried Skonto context lets the
-    // template show the discount line conditionally.
-    if (isFull && invoice.status !== 'paid') {
-      try {
-        await queueInvoicePaidAdminNotification({
-          invoice,
-          paidTotalMinor: total,
-          paymentMethod: paymentMethod || invoice.payment_method || null,
-          paymentReference: reference || invoice.payment_reference || null,
-          paidAt: paidAt ? new Date(paidAt) : new Date(),
-          skontoApplied: skontoFlag,
-          skontoAmountMinor: skontoAmountMinor || 0,
-        });
-      } catch (err) {
-        // Notification is best-effort — don't surface a 500 to the
-        // admin when the recorded payment itself succeeded.
-        logger.warn('invoice_paid admin notification failed to queue', { invoiceId: id, err: err.message });
-      }
-    }
+      invoice.event_id || null, `admin:${adminId}`, trx); } catch (_) { /* non-fatal */ }
 
     return { paidTotalMinor: total, status: isFull ? 'paid' : invoice.status };
   });
+
+  // Migration 127 — admin payment-received notification. Fires only
+  // on the transition into 'paid' so admins don't get duplicate
+  // emails when additional payment-log rows are recorded after the
+  // invoice already cleared (rare but possible — e.g. late-fee
+  // top-up). Queued after the transaction so a failed email never
+  // rolls back a recorded payment. It used to run inside it despite
+  // this comment, and its global-db reads and email_queue insert then
+  // stalled on SQLite's single connection until the notification was
+  // dropped. Carried Skonto context lets the template show the
+  // discount line conditionally.
+  if (markResult.status === 'paid' && invoice.status !== 'paid') {
+    try {
+      await queueInvoicePaidAdminNotification({
+        invoice,
+        paidTotalMinor: markResult.paidTotalMinor,
+        paymentMethod: paymentMethod || invoice.payment_method || null,
+        paymentReference: reference || invoice.payment_reference || null,
+        paidAt: paidAt ? new Date(paidAt) : new Date(),
+        skontoApplied: skontoFlag,
+        skontoAmountMinor: skontoAmountMinor || 0,
+      });
+    } catch (err) {
+      // Notification is best-effort — don't surface a 500 to the
+      // admin when the recorded payment itself succeeded.
+      logger.warn('invoice_paid admin notification failed to queue', { invoiceId: id, err: err.message });
+    }
+  }
 
   // Fire invoice.paid for the workflow engine ONLY on the transition into
   // 'paid' (mirrors the admin-notification guard above). After the commit so a
