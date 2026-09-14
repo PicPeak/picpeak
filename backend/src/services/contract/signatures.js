@@ -176,9 +176,12 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
     // countersignature, a wet-signed upload or a re-stamp in that window is
     // the authoritative PDF, and this write used to replace it with the
     // customer-only stamp. The stamped file stays on disk either way.
+    // Compared against the image this stamp used, not the one read back:
+    // a re-stamp replacing it before that read would otherwise have this
+    // PDF, showing the replaced image, recorded over its own.
     const stampApplied = await whereSignedPdfInputsUnchanged(
       db('contracts').where({ id: contract.id, status: 'signed_by_customer' }),
-      refreshed.contract,
+      { ...refreshed.contract, signed_customer_signature_path: signaturePath },
     ).update(updates);
     if (!stampApplied) {
       logger.info('Customer-signed PDF superseded before it was recorded', { contractId: contract.id });
