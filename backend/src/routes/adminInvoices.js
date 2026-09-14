@@ -27,6 +27,7 @@ const fs = require('fs').promises;
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
+const { renumberLineItemPositions } = require('../utils/lineItemPositions');
 const { getStoragePath } = require('../config/storage');
 const invoiceService = require('../services/invoiceService');
 const expenseService = require('../services/expenseService');
@@ -324,7 +325,10 @@ function mapPayloadToService(body) {
     if (Object.prototype.hasOwnProperty.call(body, api)) out[svc] = body[api];
   }
   if (Array.isArray(body.lineItems)) {
-    out.lineItems = body.lineItems.map((li, idx) => ({
+    // Same contract as the quotes route: the editor's `position` is a stable
+    // row id, so the payload's array order is the display order and is what
+    // gets stored (#1452).
+    out.lineItems = renumberLineItemPositions(body.lineItems.map((li, idx) => ({
       position: li.position == null ? idx + 1 : li.position,
       quantity: li.quantity,
       description: li.description,
@@ -334,7 +338,7 @@ function mapPayloadToService(body) {
       // quotes so the editor's payload shape is identical for both.
       parent_position: li.parentPosition == null || li.parentPosition === '' ? null : Number(li.parentPosition),
       details_text: li.detailsText == null ? null : String(li.detailsText),
-    }));
+    })));
   }
   return out;
 }

@@ -32,6 +32,7 @@ const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
+const { renumberLineItemPositions } = require('../utils/lineItemPositions');
 const quoteService = require('../services/quoteService');
 const { db } = require('../database/db');
 
@@ -236,7 +237,10 @@ function mapPayloadToService(body) {
     if (Object.prototype.hasOwnProperty.call(body, api)) out[svc] = body[api];
   }
   if (Array.isArray(body.lineItems)) {
-    out.lineItems = body.lineItems.map((li, idx) => ({
+    // The editor keeps `position` as a stable row id, so the array order is
+    // the order the user arranged. Renumber it before the service stores it,
+    // or a reorder is lost on save (#1452).
+    out.lineItems = renumberLineItemPositions(body.lineItems.map((li, idx) => ({
       position: li.position == null ? idx + 1 : li.position,
       quantity: li.quantity,
       description: li.description,
@@ -248,7 +252,7 @@ function mapPayloadToService(body) {
       // the parents.
       parent_position: li.parentPosition == null || li.parentPosition === '' ? null : Number(li.parentPosition),
       details_text: li.detailsText == null ? null : String(li.detailsText),
-    }));
+    })));
   }
   return out;
 }
