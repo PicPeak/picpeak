@@ -7476,7 +7476,8 @@
     "uploadHint": "Unterschreiben Sie den ausgedruckten Vertrag von Hand, scannen Sie ihn ein und laden Sie das PDF hier hoch.",
     "uploadButton": "Unterschriebenes PDF hochladen",
     "downloadError": "Download fehlgeschlagen",
-    "popupBlocked": "Bitte erlauben Sie Pop-ups für diese Seite, um das PDF herunterzuladen."
+    "popupBlocked": "Bitte erlauben Sie Pop-ups für diese Seite, um das PDF herunterzuladen.",
+    "notSignable": "Dieser Vertrag kann nicht mehr online unterschrieben werden. Bitte wenden Sie sich an den Absender."
   },
   "crmOverview": {
     "title": "CRM-Übersicht",

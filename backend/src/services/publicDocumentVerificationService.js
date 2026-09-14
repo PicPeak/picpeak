@@ -79,8 +79,10 @@ function hasValidGrant(req, kind, tokenRow, token) {
   }
 }
 
-async function codeRows(kind, tokenId) {
-  return db(TABLE).where({ document_kind: kind, action_token_id: tokenId });
+const ACTION_TOKEN_TABLES = { contract: 'contract_action_tokens', quote: 'quote_action_tokens' };
+
+async function codeRows(kind, tokenId, conn = db) {
+  return conn(TABLE).where({ document_kind: kind, action_token_id: tokenId });
 }
 
 /**
@@ -88,9 +90,9 @@ async function codeRows(kind, tokenId) {
  * minute and five per hour per link: enough for a lost or slow email, not
  * enough to turn the endpoint into a mail cannon aimed at the customer.
  */
-async function secondsUntilNextSend(kind, tokenId) {
+async function secondsUntilNextSend(kind, tokenId, conn = db) {
   const now = Date.now();
-  const sentAt = (await codeRows(kind, tokenId))
+  const sentAt = (await codeRows(kind, tokenId, conn))
     .map((row) => toTimestamp(row.created_at))
     .filter((t) => Number.isFinite(t));
   if (sentAt.length === 0) return 0;
@@ -177,38 +179,57 @@ async function sendCodeEmail({ to, code, kind, documentNumber, issuerName, langu
 }
 
 /**
- * Create a code for this token and email it. Earlier unconsumed codes for the
- * same token stop working. The row is written only after the email went out,
- * so a failed send neither leaves a live code nobody received nor counts
- * against the resend throttle.
+ * Create a code for this token and email it, unless the resend throttle says
+ * to wait. Returns `{ retryAfterSeconds }`, which is 0 when a code went out.
+ *
+ * The throttle check and the new code row share one transaction that holds
+ * the link's token row, so parallel requests for one link see each other.
+ * Checking first and writing the row only after the email let a burst all pass
+ * the check and each send an email. The row is therefore written before the
+ * email and removed again if sending fails: a failed send neither leaves a
+ * live code nobody received nor counts against the throttle. Earlier codes
+ * for the link stop working once the new one went out.
  */
 async function sendCode({ kind, tokenRow, recipientEmail, documentNumber, issuerName, language }) {
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
   const codeHash = await bcrypt.hash(code, 10);
+  const reservation = await db.transaction(async (trx) => {
+    // SQLite runs one transaction at a time; Postgres needs the row lock.
+    if (trx.client.config.client === 'pg') {
+      await trx(ACTION_TOKEN_TABLES[kind]).where({ id: tokenRow.id }).forUpdate().first();
+    }
+    const retryAfterSeconds = await secondsUntilNextSend(kind, tokenRow.id, trx);
+    if (retryAfterSeconds > 0) return { retryAfterSeconds };
+    const [inserted] = await trx(TABLE).insert({
+      document_kind: kind,
+      action_token_id: tokenRow.id,
+      code_hash: codeHash,
+      attempts: 0,
+      expires_at: new Date(Date.now() + CODE_TTL_MS).toISOString(),
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    return { retryAfterSeconds: 0, codeId: inserted?.id ?? inserted };
+  });
+  if (reservation.retryAfterSeconds > 0) return { retryAfterSeconds: reservation.retryAfterSeconds };
+
   try {
     await module.exports.sendCodeEmail({
       to: recipientEmail, code, kind, documentNumber, issuerName, language,
     });
   } catch (err) {
+    await db(TABLE).where({ id: reservation.codeId }).del();
     // No address and no code in the log line: the token id is enough to
     // correlate, and both of those would be exactly what this step protects.
     logger.warn('Public document verification email failed', { kind, tokenId: tokenRow.id, err: err.message });
     throw new AppError('The verification email could not be sent. Please try again later.', 503, 'EMAIL_UNAVAILABLE');
   }
-  const nowIso = new Date().toISOString();
   await db(TABLE)
     .where({ document_kind: kind, action_token_id: tokenRow.id })
+    .whereNot({ id: reservation.codeId })
     .whereNull('consumed_at')
-    .update({ consumed_at: nowIso });
-  await db(TABLE).insert({
-    document_kind: kind,
-    action_token_id: tokenRow.id,
-    code_hash: codeHash,
-    attempts: 0,
-    expires_at: new Date(Date.now() + CODE_TTL_MS).toISOString(),
-    created_at: nowIso,
-  });
+    .update({ consumed_at: new Date().toISOString() });
   logger.info('Public document verification code sent', { kind, tokenId: tokenRow.id });
+  return { retryAfterSeconds: 0 };
 }
 
 /**

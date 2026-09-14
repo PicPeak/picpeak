@@ -63,7 +63,24 @@ function mountVerification(router, { kind, tableName, loadTarget }) {
           code: 'NO_RECIPIENT_EMAIL',
         });
       }
-      const wait = await verification.secondsUntilNextSend(kind, tokenRow.id);
+      let wait;
+      try {
+        ({ retryAfterSeconds: wait } = await verification.sendCode({
+          kind,
+          tokenRow,
+          recipientEmail: target.recipientEmail,
+          documentNumber: target.documentNumber,
+          issuerName: target.issuerName,
+          language: target.language,
+        }));
+      } catch (err) {
+        if (err.code === 'EMAIL_UNAVAILABLE') {
+          return res.status(503).json({ error: err.message, code: err.code });
+        }
+        throw err;
+      }
+      // The throttle is checked inside sendCode, together with writing the
+      // new code, so parallel requests cannot all get past it.
       if (wait > 0) {
         res.set('Retry-After', String(wait));
         return res.status(429).json({
@@ -71,21 +88,6 @@ function mountVerification(router, { kind, tableName, loadTarget }) {
           code: 'VERIFICATION_RATE_LIMITED',
           retryAfterSeconds: wait,
         });
-      }
-      try {
-        await verification.sendCode({
-          kind,
-          tokenRow,
-          recipientEmail: target.recipientEmail,
-          documentNumber: target.documentNumber,
-          issuerName: target.issuerName,
-          language: target.language,
-        });
-      } catch (err) {
-        if (err.code === 'EMAIL_UNAVAILABLE') {
-          return res.status(503).json({ error: err.message, code: err.code });
-        }
-        throw err;
       }
       return res.status(202).json({
         sent: true,

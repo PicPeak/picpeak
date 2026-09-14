@@ -499,6 +499,10 @@ export const ContractResponseView: React.FC<{ adapter: ContractDocumentAdapter }
                 </dl>
               </details>
             </div>
+          ) : !c.canSign ? (
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              {t('publicContract.notSignable', 'This contract can no longer be signed online. Please contact the sender.')}
+            </p>
           ) : (
             <>
               <h2 className="text-lg font-semibold mb-3">

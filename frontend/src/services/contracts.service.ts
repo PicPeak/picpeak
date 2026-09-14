@@ -5,7 +5,12 @@
  * responses for PDFs via URL.createObjectURL.
  */
 import { api } from '../config/api';
-import { documentAccessHeaders, type DocumentAccessGrant, type DocumentVerificationSent } from '../utils/documentAccess';
+import {
+  decodeBlobErrorBody,
+  documentAccessHeaders,
+  type DocumentAccessGrant,
+  type DocumentVerificationSent,
+} from '../utils/documentAccess';
 
 /** One leg of the integrity-check response (unsigned or signed PDF).
  *  `expected` is the stored SHA-256 column value; `actual` is freshly
@@ -506,10 +511,16 @@ export const publicContractsService = {
 
   /** Blob URL of the PDF; it needs the grant header, so it can't be a plain link. */
   async pdfUrl(token: string, grant?: string | null): Promise<string> {
-    const res = await api.get(`/public/contracts/${token}/pdf`, {
-      responseType: 'blob',
-      headers: documentAccessHeaders(grant),
-    });
-    return URL.createObjectURL(res.data);
+    try {
+      const res = await api.get(`/public/contracts/${token}/pdf`, {
+        responseType: 'blob',
+        headers: documentAccessHeaders(grant),
+      });
+      return URL.createObjectURL(res.data);
+    } catch (err) {
+      // So the page can tell a grant that ran out from any other failure.
+      await decodeBlobErrorBody(err);
+      throw err;
+    }
   },
 };

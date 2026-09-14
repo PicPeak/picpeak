@@ -7475,7 +7475,8 @@
     "uploadHint": "Sign the printed contract by hand, scan it, and upload the PDF here.",
     "uploadButton": "Upload signed PDF",
     "downloadError": "Download failed",
-    "popupBlocked": "Allow pop-ups for this site to download the PDF."
+    "popupBlocked": "Allow pop-ups for this site to download the PDF.",
+    "notSignable": "This contract can no longer be signed online. Please contact the sender."
   },
   "crmOverview": {
     "title": "CRM overview",

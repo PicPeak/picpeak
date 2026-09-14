@@ -76,6 +76,31 @@ export function documentAccessHeaders(grant?: string | null): Record<string, str
   return grant ? { [DOCUMENT_ACCESS_HEADER]: grant } : undefined;
 }
 
+const readBlobText = (blob: Blob): Promise<string> => (typeof blob.text === 'function'
+  ? blob.text()
+  : new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  }));
+
+/**
+ * A request made with `responseType: 'blob'` gets its error body as a Blob
+ * too, so `isVerificationRequired` cannot read the code in it. Swap a small
+ * JSON error body for the parsed object; anything else stays as it is.
+ */
+export async function decodeBlobErrorBody(err: unknown): Promise<void> {
+  const response = (err as { response?: { data?: unknown } } | null)?.response;
+  const body = response?.data;
+  if (!response || typeof Blob === 'undefined' || !(body instanceof Blob) || body.size > 64 * 1024) return;
+  try {
+    response.data = JSON.parse(await readBlobText(body));
+  } catch {
+    // Not JSON: leave the body alone.
+  }
+}
+
 /** True when the server refused a document request for want of a valid grant. */
 export function isVerificationRequired(err: unknown): boolean {
   const response = (err as { response?: { status?: number; data?: { code?: unknown } } } | null)?.response;
