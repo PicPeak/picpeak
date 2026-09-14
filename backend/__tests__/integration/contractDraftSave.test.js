@@ -155,6 +155,24 @@ describe('contract draft save (issue 1447)', () => {
     expect(await countRows('contract_block_inclusions')).toBe(inclusionsBefore);
   }, WITHIN);
 
+  it('adds the unique key index when migration 214 re-runs after stopping once the column existed', async () => {
+    // SQLite runs migrations without a transaction, so the column can exist
+    // without its index. Without the index two concurrent retries with one
+    // key could each create a draft.
+    const migration = require('../../migrations/core/214_contracts_create_idempotency_key');
+    await db.raw('DROP INDEX IF EXISTS contracts_create_idempotency_key_unique');
+    await migration.up(db);
+
+    const a = await auth(request(app).post('/api/admin/contracts')).send(editorCreatePayload([]));
+    const b = await auth(request(app).post('/api/admin/contracts')).send(editorCreatePayload([]));
+    const sharedKey = `rerun-${Date.now()}`;
+    await db('contracts').where({ id: a.body.contract.id }).update({ create_idempotency_key: sharedKey });
+
+    await expect(
+      db('contracts').where({ id: b.body.contract.id }).update({ create_idempotency_key: sharedKey }),
+    ).rejects.toThrow();
+  }, WITHIN);
+
   describe('retries and duplicate submits', () => {
     const key = () => `edit-${Math.random().toString(36).slice(2)}-${Date.now()}`;
     const createWithKey = (idempotencyKey, bearer = token) => request(app)

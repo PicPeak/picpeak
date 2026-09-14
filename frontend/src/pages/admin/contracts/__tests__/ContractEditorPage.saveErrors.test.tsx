@@ -244,6 +244,51 @@ describe('ContractEditorPage save failures (issue 1447)', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it('does not reuse a replayed draft when the customer changed while that save was in flight', async () => {
+    let resolveReplay: (v: unknown) => void = () => {};
+    create
+      .mockRejectedValueOnce(networkError())
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveReplay = resolve; }))
+      .mockResolvedValueOnce({ contract: { id: 9 } });
+    update.mockRejectedValueOnce(httpError(500, { error: 'An unexpected error occurred', code: 'INTERNAL_ERROR' }));
+    const button = renderEditor();
+    fireEvent.click(button);
+    await screen.findByRole('alert');
+
+    fireEvent.click(await screen.findByRole('button', { name: /create draft/i }));
+    await screen.findByRole('button', { name: /saving/i });
+    fireEvent.click(screen.getByText('pick other customer'));
+    resolveReplay({ contract: { id: 7 }, replayed: true });
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    await screen.findByRole('button', { name: /create draft/i });
+
+    fireEvent.click(screen.getByRole('button', { name: /create draft/i }));
+
+    await screen.findByText('contract detail 9');
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(create.mock.calls[2][0]).toEqual(expect.objectContaining({ customerAccountId: 4 }));
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a draft unconfirmed when a later attempt is refused', async () => {
+    // The first request may have committed; the refusal of the second says
+    // nothing about it.
+    create
+      .mockRejectedValueOnce(networkError())
+      .mockRejectedValueOnce(httpError(400, {
+        error: 'Validation failed', code: 'VALIDATION_ERROR', details: [{ field: 'title', message: 'Invalid value' }],
+      }));
+    const button = renderEditor();
+    fireEvent.click(button);
+    await screen.findByRole('alert');
+
+    fireEvent.click(await screen.findByRole('button', { name: /create draft/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Contract title: Keep it to 255 characters or fewer'));
+    expect(screen.getByRole('alert')).toHaveTextContent('We could not confirm whether the draft was saved.');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('The draft was not saved.');
+  });
+
   it('says the draft exists when applying the latest changes to it fails, and saves again as an update', async () => {
     create
       .mockRejectedValueOnce(networkError())
@@ -256,7 +301,8 @@ describe('ContractEditorPage save failures (issue 1447)', () => {
     await screen.findByRole('alert');
     fireEvent.click(await screen.findByRole('button', { name: /create draft/i }));
 
-    const alert = await screen.findByText(/The draft was saved, but your latest changes were not/);
+    // A 5xx on the update may have come after it committed.
+    const alert = await screen.findByText(/The draft was saved, but we could not confirm whether your latest changes were/);
     expect(alert).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Reference ID: req-upd');
 

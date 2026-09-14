@@ -7168,6 +7168,7 @@
         "updateNotSaved": "Your changes were not saved.",
         "createUnconfirmed": "We could not confirm whether the draft was saved. Saving again is safe — it will not create a second draft.",
         "createdChangesNotSaved": "The draft was saved, but your latest changes were not. Saving again applies them.",
+        "createdChangesUnconfirmed": "The draft was saved, but we could not confirm whether your latest changes were. Saving again is safe.",
         "updateUnconfirmed": "We could not confirm whether your changes were saved. Saving again is safe.",
         "fieldsHeading": "Please check the following:",
         "unexpected": "An unexpected error occurred on the server.",

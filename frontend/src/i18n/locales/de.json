@@ -7169,6 +7169,7 @@
         "updateNotSaved": "Ihre Änderungen wurden nicht gespeichert.",
         "createUnconfirmed": "Wir konnten nicht bestätigen, ob der Entwurf gespeichert wurde. Erneutes Speichern ist sicher — es wird kein zweiter Entwurf angelegt.",
         "createdChangesNotSaved": "Der Entwurf wurde gespeichert, Ihre letzten Änderungen jedoch nicht. Speichern Sie erneut, um sie zu übernehmen.",
+        "createdChangesUnconfirmed": "Der Entwurf wurde gespeichert, wir konnten aber nicht bestätigen, ob Ihre letzten Änderungen übernommen wurden. Erneutes Speichern ist sicher.",
         "updateUnconfirmed": "Wir konnten nicht bestätigen, ob Ihre Änderungen gespeichert wurden. Erneutes Speichern ist sicher.",
         "fieldsHeading": "Bitte prüfen Sie folgende Angaben:",
         "unexpected": "Auf dem Server ist ein unerwarteter Fehler aufgetreten.",
