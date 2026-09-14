@@ -77,4 +77,20 @@ describe('public document verification under a burst of guesses', () => {
     expect(late.status).toBe(410);
     expect(late.body.code).toBe('VERIFICATION_CODE_EXPIRED');
   });
+
+  it('redeems a correct code once, however many requests submit it together', async () => {
+    const token = await createPublicToken(db, 'contract_action_tokens', { contract_id: contractId });
+    sent.length = 0;
+    expect((await request(app).post(`/api/public/contracts/${token}/verification`)).status).toBe(202);
+    const { code } = sent[0];
+
+    const results = await Promise.all(Array.from({ length: 5 }, () => request(app)
+      .post(`/api/public/contracts/${token}/verification/confirm`)
+      .send({ code })));
+
+    expect(results.filter((res) => res.status === 200)).toHaveLength(1);
+    for (const res of results.filter((r) => r.status !== 200)) {
+      expect(res.body.code).toMatch(/^VERIFICATION_/);
+    }
+  });
 });

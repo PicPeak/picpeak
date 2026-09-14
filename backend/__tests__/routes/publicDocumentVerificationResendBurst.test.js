@@ -72,4 +72,35 @@ describe('public document verification under a burst of send requests', () => {
     const { n } = await db('public_document_verification_codes').count({ n: '*' }).first();
     expect(Number(n)).toBe(1);
   });
+
+  it('does not let a slow earlier send retire a newer code', async () => {
+    const token = await createPublicToken(db, 'contract_action_tokens', { contract_id: contractId });
+    const tokenRow = await db('contract_action_tokens').where({ token }).first();
+    const args = {
+      kind: 'contract', tokenRow, recipientEmail: 'k@example.com',
+      documentNumber: 'K-RESEND-0001', issuerName: null, language: 'en',
+    };
+    const codes = () => db('public_document_verification_codes').where({ action_token_id: tokenRow.id }).orderBy('id');
+
+    let releaseFirst;
+    verification.sendCodeEmail.mockImplementationOnce(() => new Promise((resolve) => { releaseFirst = resolve; }));
+    const first = verification.sendCode(args);
+    let reserved = [];
+    for (let i = 0; i < 200 && reserved.length === 0; i += 1) {
+      reserved = await codes();
+      if (reserved.length === 0) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    // The first email is still on its way when the resend interval is over.
+    await db('public_document_verification_codes').where({ id: reserved[0].id })
+      .update({ created_at: new Date(Date.now() - 2 * 60 * 1000).toISOString() });
+
+    verification.sendCodeEmail.mockImplementationOnce(async () => {});
+    expect(await verification.sendCode(args)).toEqual({ retryAfterSeconds: 0 });
+    releaseFirst();
+    expect(await first).toEqual({ retryAfterSeconds: 0 });
+
+    const [older, newer] = await codes();
+    expect(older.consumed_at).toBeTruthy();
+    expect(newer.consumed_at).toBeNull();
+  });
 });
