@@ -655,7 +655,18 @@ async function rerenderAndResend(contractId, adminId) {
       updates.signed_pdf_render_failed_at = null;
       updates.signed_pdf_render_error = null;
     }
-    await db('contracts').where({ id: contract.id }).update(updates);
+    // Compare-and-set on the PDF this run read. A re-stamp or a wet-signed
+    // upload landing while the stamp rendered is the newer authoritative
+    // copy; overwriting it would also mail both parties the stale file.
+    // Refuse before any email is queued so the admin can retry.
+    const rerenderQuery = db('contracts').where({ id: contract.id, status: 'fully_signed' });
+    const rerenderApplied = await (contract.signed_pdf_path
+      ? rerenderQuery.where({ signed_pdf_path: contract.signed_pdf_path })
+      : rerenderQuery.whereNull('signed_pdf_path')
+    ).update(updates);
+    if (!rerenderApplied) {
+      throw new AppError('The contract changed while the signed PDF was being rebuilt. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
+    }
   }
 
   // Resend the dual-party email with the now-guaranteed attachment.
@@ -747,7 +758,28 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
   if (adminSignatureDataUrl) {
     updates.signed_admin_signature_path = await persistSignatureImage(contract, 'admin', adminSignatureDataUrl);
   }
-  await db('contracts').where({ id: contract.id }).update(updates);
+  // Compare-and-set on the status and on each image column this run
+  // replaces. Two admins re-stamping at once, or a countersignature landing
+  // in between, used to both write and the later image silently replaced
+  // the earlier one. The loser removes the images it just saved.
+  let restampQuery = db('contracts').where({ id: contract.id, status: contract.status });
+  for (const column of ['signed_customer_signature_path', 'signed_admin_signature_path']) {
+    if (!(column in updates)) continue;
+    restampQuery = contract[column] ? restampQuery.where(column, contract[column]) : restampQuery.whereNull(column);
+  }
+  const restampApplied = await restampQuery.update(updates);
+  if (!restampApplied) {
+    for (const column of ['signed_customer_signature_path', 'signed_admin_signature_path']) {
+      const saved = updates[column];
+      if (!saved) continue;
+      try {
+        if (fs.existsSync(saved)) fs.unlinkSync(saved);
+      } catch (cleanupErr) {
+        logger.warn('Orphan re-stamp signature cleanup failed', { path: saved, message: cleanupErr.message });
+      }
+    }
+    throw new AppError('The contract changed while the signatures were being re-stamped. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
+  }
 
   // Re-stamp signature images onto the immutable unsigned pdf_path
   // using pdf-lib (NOT a full re-render). This is the recovery path
@@ -794,7 +826,23 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
       updates.signed_pdf_render_failed_at = null;
       updates.signed_pdf_render_error = null;
     }
-    await db('contracts').where({ id: contract.id }).update(updates);
+    // Recorded only if the PDF this stamp was built on is still current: a
+    // wet-signed upload or another stamp landing while it rendered stays the
+    // authoritative copy. The stamped file stays on disk for the audit trail.
+    const pdfQuery = db('contracts').where({ id: contract.id, status: refreshed.contract.status });
+    const pdfApplied = await (refreshed.contract.signed_pdf_path
+      ? pdfQuery.where({ signed_pdf_path: refreshed.contract.signed_pdf_path })
+      : pdfQuery.whereNull('signed_pdf_path')
+    ).update(updates);
+    if (!pdfApplied) {
+      logger.info('Re-stamped PDF superseded before it was recorded', { contractId: contract.id });
+      const current = await db('contracts').where({ id: contract.id }).first();
+      return {
+        signedPdfPath: current?.signed_pdf_path || null,
+        stamped: { customer: !!customerSignatureDataUrl, admin: !!adminSignatureDataUrl },
+        superseded: true,
+      };
+    }
   }
 
   try {
