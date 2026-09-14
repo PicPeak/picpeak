@@ -113,9 +113,9 @@ Two visible side effects on first boot, both verified against a real v3.46.13 da
 * add opt-in product usage and feedback integration (#1110) ([b53e5d9](https://github.com/PicPeak/picpeak/commit/b53e5d9))
 * expand opt-in capability coverage with versioned consent ([a738259](https://github.com/PicPeak/picpeak/commit/a738259))
 
-### Bug Fixes new to stable (213)
+### Bug Fixes (206)
 
-Fixes already shipped in 3.45.x / 3.46.x patches are not repeated here.
+New to the stable channel with this release.
 
 **Galleries & guest experience**
 
@@ -130,7 +130,6 @@ Fixes already shipped in 3.45.x / 3.46.x patches are not repeated here.
 * **feedback:** name the camera original in the exports, not just the stored file (#1224) (#1228) ([4f684eb](https://github.com/PicPeak/picpeak/commit/4f684eb))
 * **gallery:** a missing thumbnail tier must not take the backend down (#1128) ([f735d26](https://github.com/PicPeak/picpeak/commit/f735d26))
 * **gallery:** block password form in Instagram in-app browser and unmask login errors (#863) ([323dcae](https://github.com/PicPeak/picpeak/commit/323dcae))
-* **gallery:** bound and reclaim storage reads in the remaining zip builders (#1410) ([70f5a8c](https://github.com/PicPeak/picpeak/commit/70f5a8c))
 * **gallery:** bound concurrent image fetches and abort them on unmount (#1287) ([4afe7a6](https://github.com/PicPeak/picpeak/commit/4afe7a6))
 * **gallery:** cap how many cached zips rebuild at once in the background (#1418) ([98d2560](https://github.com/PicPeak/picpeak/commit/98d2560))
 * **gallery:** clear the guest identity on gallery logout ([28f1495](https://github.com/PicPeak/picpeak/commit/28f1495))
@@ -138,7 +137,6 @@ Fixes already shipped in 3.45.x / 3.46.x patches are not repeated here.
 * **gallery:** don't close the lightbox when clicking beside the photo (#883) (#890) ([34c2992](https://github.com/PicPeak/picpeak/commit/34c2992))
 * **gallery:** follow the input in use, not the device's primary pointer ([0b6b8fb](https://github.com/PicPeak/picpeak/commit/0b6b8fb))
 * **gallery:** give the Grid layout a lazy-loading pre-load band (#1287) ([b1e5287](https://github.com/PicPeak/picpeak/commit/b1e5287))
-* **gallery:** guest filters respect show_feedback_to_guests, and marks survive a mid-write clear (#1147) ([00b20b2](https://github.com/PicPeak/picpeak/commit/00b20b2))
 * **gallery:** honor canvas settings in the Premium lightbox ([9edce85](https://github.com/PicPeak/picpeak/commit/9edce85))
 * **gallery:** keep canvas rendering in the lightbox, render tiles as <img> ([c75839d](https://github.com/PicPeak/picpeak/commit/c75839d))
 * **gallery:** keep the lightbox toolbar from masking the photo (#888) (#892) ([ec66cd2](https://github.com/PicPeak/picpeak/commit/ec66cd2))
@@ -172,7 +170,6 @@ Fixes already shipped in 3.45.x / 3.46.x patches are not repeated here.
 * **guests:** surface duplicate guest registrations, and stop making so many (#1210) (#1216) ([5c85e0c](https://github.com/PicPeak/picpeak/commit/5c85e0c))
 * **images:** backfill orientation for libraries that predate the fix (#1199) ([edef4d7](https://github.com/PicPeak/picpeak/commit/edef4d7))
 * **images:** probe and clean up preview tiers under the extension the encoder actually wrote (#1355) ([acb25a9](https://github.com/PicPeak/picpeak/commit/acb25a9))
-* **images:** respect EXIF orientation in thumbnails, heroes and previews (#1194) ([c18f54e](https://github.com/PicPeak/picpeak/commit/c18f54e))
 * **images:** single-flight lazy rendition generation and keep the old rendition during replacement (#1350) ([c97341e](https://github.com/PicPeak/picpeak/commit/c97341e))
 * **photos:** emit visibility and processing_status from the list mapper ([fe5ac91](https://github.com/PicPeak/picpeak/commit/fe5ac91))
 * **photos:** treat category_id 0 as uncategorized instead of storing it ([3f6c81a](https://github.com/PicPeak/picpeak/commit/3f6c81a))
@@ -206,16 +203,15 @@ Fixes already shipped in 3.45.x / 3.46.x patches are not repeated here.
 
 **Admin, auth & permissions**
 
-* **auth:** keep must_change_password in the roles-join fallback ([cca2185](https://github.com/PicPeak/picpeak/commit/cca21855))
 * **admin:** code-review follow-ups on #910/#916 (MIME resolver + expiry reactivity) (#921) ([252475f](https://github.com/PicPeak/picpeak/commit/252475f))
 * **admin:** gate the dimension repair as system maintenance (#1182) ([3991dc3](https://github.com/PicPeak/picpeak/commit/3991dc3))
 * **admin:** interpolate activity and notification message values ([78b1ddd](https://github.com/PicPeak/picpeak/commit/78b1ddd))
 * **admin:** portal the update-available modal to document.body ([ac50f0b](https://github.com/PicPeak/picpeak/commit/ac50f0b))
 * **auth:** issuer-tag the oversize SSO logout marker (#798) (#1010) ([a607cea](https://github.com/PicPeak/picpeak/commit/a607cea))
+* **auth:** keep must_change_password in the roles-join fallback ([cca2185](https://github.com/PicPeak/picpeak/commit/cca2185))
 * **event-types:** harden setup window + catalog validation (codex review) ([f8ba669](https://github.com/PicPeak/picpeak/commit/f8ba669))
 * **event-types:** un-hardcode event type dependencies in v1 API and CRM (#800) ([5da1c3a](https://github.com/PicPeak/picpeak/commit/5da1c3a))
 * **events:** add archive_size to the immutable column deny-set ([57dd084](https://github.com/PicPeak/picpeak/commit/57dd084))
-* **events:** apply the gallery password policy to publish and send-later (#1253) ([6938bad](https://github.com/PicPeak/picpeak/commit/6938bad))
 * **events:** drop non-canonical keys from the event update before any check runs (#1346) ([810801a](https://github.com/PicPeak/picpeak/commit/810801a))
 * **events:** guard create-event submit against re-entrant submissions ([c19e944](https://github.com/PicPeak/picpeak/commit/c19e944))
 * **events:** honour ?tab=, show a load error, and stop lying about uploads ([504a8b6](https://github.com/PicPeak/picpeak/commit/504a8b6))
@@ -239,15 +235,13 @@ Fixes already shipped in 3.45.x / 3.46.x patches are not repeated here.
 * **security:** apply image-security defaults on every creation path ([ab6c33d](https://github.com/PicPeak/picpeak/commit/ab6c33d))
 * **security:** apply per-IP rate limiting to credential endpoints ([50e8ed6](https://github.com/PicPeak/picpeak/commit/50e8ed6))
 * **security:** apply the Image-security defaults instead of storing them (#1296) ([8ca3610](https://github.com/PicPeak/picpeak/commit/8ca3610))
-* **security:** bound inbound-mail resources, redact secrets from logs (GHSA-2qf9, pgmp, r794) (#959) ([1b4e5fe](https://github.com/PicPeak/picpeak/commit/1b4e5fe))
 * **security:** check for an escaped identifier before consuming the escape ([b6dc099](https://github.com/PicPeak/picpeak/commit/b6dc099))
 * **security:** chunked-upload init checks the size cap before the type allow-list ([0ac006b](https://github.com/PicPeak/picpeak/commit/0ac006b))
+* **security:** close four middleware gaps around the API edge ([839bf4e](https://github.com/PicPeak/picpeak/commit/839bf4e))
 * **security:** close the case-sensitivity bypass in the API rate limiter ([a929aff](https://github.com/PicPeak/picpeak/commit/a929aff))
 * **security:** close the remaining image-security default gaps ([19c518a](https://github.com/PicPeak/picpeak/commit/19c518a))
 * **security:** close two CSS url() bypasses the sanitizer dedup exposed ([1cf8274](https://github.com/PicPeak/picpeak/commit/1cf8274))
 * **security:** decode settings at the API boundary and honour the transaction ([0e560eb](https://github.com/PicPeak/picpeak/commit/0e560eb))
-* **security:** enforce project ownership on project + project-email routes (GHSA-wrg5, GHSA-93x4) (#960) ([7c0c0a5](https://github.com/PicPeak/picpeak/commit/7c0c0a5))
-* **security:** escape brand tokens, block tracker redirects, trim logo diagnostic (GHSA-j347, mw76, 29vm) (#961) ([164129b](https://github.com/PicPeak/picpeak/commit/164129b))
 * **security:** let cors() own Access-Control-Allow-Origin on protected images (#1118) ([0077623](https://github.com/PicPeak/picpeak/commit/0077623))
 * **security:** make the CSS sanitizer's remote-URL block actually block ([a7d0972](https://github.com/PicPeak/picpeak/commit/a7d0972))
 * **security:** mask backup credentials on read + unblock MFA login during maintenance ([07f2c90](https://github.com/PicPeak/picpeak/commit/07f2c90))
@@ -257,10 +251,8 @@ Fixes already shipped in 3.45.x / 3.46.x patches are not repeated here.
 * **security:** re-check inline CSS after template substitution ([027afb6](https://github.com/PicPeak/picpeak/commit/027afb6))
 * **security:** reject array values for every field on the event update ([933f2d8](https://github.com/PicPeak/picpeak/commit/933f2d8))
 * **security:** reject array values on the event update route too ([8f3436f](https://github.com/PicPeak/picpeak/commit/8f3436f))
-* **security:** scope dashboard stats/analytics/activity to the caller's events (GHSA-c2jj, gqx7, jhcf) (#958) ([da855cf](https://github.com/PicPeak/picpeak/commit/da855cf))
 * **security:** stop a gallery viewer's own image fetches spending the anonymous budget ([7b2dd3f](https://github.com/PicPeak/picpeak/commit/7b2dd3f))
 * **security:** strip control characters before scanning CSS for url() ([99f54a3](https://github.com/PicPeak/picpeak/commit/99f54a3))
-* **security:** unauth share_token leak (HIGH) + restore path-traversal, logo file-read, branding path keys (#946) ([9050aff](https://github.com/PicPeak/picpeak/commit/9050aff))
 * **security:** use CSS whitespace, not JavaScript's, in the url() reader ([4196e83](https://github.com/PicPeak/picpeak/commit/4196e83))
 * **security:** validate CSS urls last, after every pass that moves text ([1151e96](https://github.com/PicPeak/picpeak/commit/1151e96))
 
@@ -316,13 +308,14 @@ Fixes already shipped in 3.45.x / 3.46.x patches are not repeated here.
 
 **Backup, storage & deployment**
 
-* **archives:** stop restore from dropping videos and rewriting the row ([d37c0c8](https://github.com/PicPeak/picpeak/commit/d37c0c8e))
 * **analytics:** send Umami page views through track(), not the removed trackView() ([ac01b73](https://github.com/PicPeak/picpeak/commit/ac01b73))
 * **analytics:** serve self-hosted trackers same-origin so CSP stops blocking ([3468550](https://github.com/PicPeak/picpeak/commit/3468550))
 * **analytics:** warn about the CSP allowlist on every tracker provider ([3489610](https://github.com/PicPeak/picpeak/commit/3489610))
 * **archives:** restore categories for original-filename archives on main too (#1252) ([a35d2ba](https://github.com/PicPeak/picpeak/commit/a35d2ba))
 * **archives:** run search, filter and sort server-side ([fc7cb22](https://github.com/PicPeak/picpeak/commit/fc7cb22))
 * **archives:** sort and total on real archive sizes, escape LIKE wildcards ([da6e34d](https://github.com/PicPeak/picpeak/commit/da6e34d))
+* **archives:** stop restore from dropping videos and rewriting the row (#1425) ([d37c0c8](https://github.com/PicPeak/picpeak/commit/d37c0c8))
+* **storage:** write business documents under STORAGE_PATH, not the cwd (#1070) ([f22999a](https://github.com/PicPeak/picpeak/commit/f22999a))
 
 **Other**
 
@@ -353,6 +346,119 @@ Fixes already shipped in 3.45.x / 3.46.x patches are not repeated here.
 * **watcher:** stop re-importing a photo whose file was replaced (#1226) (#1237) ([6ca8baa](https://github.com/PicPeak/picpeak/commit/6ca8baa))
 * **webhooks:** write delivery timestamps as ISO strings ([c5c5a6b](https://github.com/PicPeak/picpeak/commit/c5c5a6b))
 * **workflows:** restore the once-per-process seed guard ([a7d45dd](https://github.com/PicPeak/picpeak/commit/a7d45dd))
+
+### Also included (91)
+
+These shipped to stable earlier as 3.45.x / 3.46.x patches and are listed under those headings too. Repeated here so this entry is a complete inventory of the release — if you are coming from v3.46.13 you already have them.
+
+**Galleries & guest experience**
+
+* **external-media:** one row per external file per event (#1162) (#1167) ([06da1b9](https://github.com/PicPeak/picpeak/commit/06da1b9))
+* **external-media:** store external paths from the media root (#1163) (#1168) ([a7b74bc](https://github.com/PicPeak/picpeak/commit/a7b74bc))
+* **feedback:** persist guest feedback settings, unshadow the guest route (#1030) (#1031) ([89dc962](https://github.com/PicPeak/picpeak/commit/89dc962))
+* **gallery:** a guest's own hidden feedback is hidden from them too (#1150) (#1153) ([2c81888](https://github.com/PicPeak/picpeak/commit/2c81888))
+* **gallery:** bound and reclaim storage reads in the remaining zip builders (#1410) ([70f5a8c](https://github.com/PicPeak/picpeak/commit/70f5a8c))
+* **gallery:** coerce SQLite 0/1 booleans in the guest surface (#1028) (#1034) ([34ee311](https://github.com/PicPeak/picpeak/commit/34ee311))
+* **gallery:** give masonry tiles their real shape back (#1130, #1131) ([87115b2](https://github.com/PicPeak/picpeak/commit/87115b2))
+* **gallery:** guest filters respect show_feedback_to_guests, and marks survive a mid-write clear (#1147) ([00b20b2](https://github.com/PicPeak/picpeak/commit/00b20b2))
+* **gallery:** keep videos playable under enhanced and maximum protection (#1404) ([1080388](https://github.com/PicPeak/picpeak/commit/1080388))
+* **gallery:** let an admin preview a draft through its short share URL (#1405) ([f92d4bb](https://github.com/PicPeak/picpeak/commit/f92d4bb))
+* **gallery:** no Logout button on galleries that don't require a password (#1149) (#1152) ([e4a8be8](https://github.com/PicPeak/picpeak/commit/e4a8be8))
+* **gallery:** stop the lightbox loading originals to display a photo (#1166) (#1169) ([77953c1](https://github.com/PicPeak/picpeak/commit/77953c1))
+* **images:** fence the capture-date backfill on the file it read (#1201) (#1204) ([cec8eff](https://github.com/PicPeak/picpeak/commit/cec8eff))
+* **images:** respect EXIF orientation in thumbnails, heroes and previews (#1194) ([c18f54e](https://github.com/PicPeak/picpeak/commit/c18f54e))
+* **preview:** generate lightbox previews for external/reference photos (#1078) (#1079) ([af7970b](https://github.com/PicPeak/picpeak/commit/af7970b))
+* **previews:** preserve alpha and animation in the preview tier (#1171) ([1366d6d](https://github.com/PicPeak/picpeak/commit/1366d6d))
+* **slideshow:** stop "no crop" fit letterboxing a pre-cropped frame (#1015) (#1018) ([75bfad2](https://github.com/PicPeak/picpeak/commit/75bfad2))
+* **ui:** stop iOS Safari zooming in on 14px form fields (#1113) ([d241919](https://github.com/PicPeak/picpeak/commit/d241919))
+* **upload:** let Android guests reach the camera without breaking video (#1244) ([66989d7](https://github.com/PicPeak/picpeak/commit/66989d7))
+* **uploads:** prevent cross-photo contamination from filename collisions and non-atomic writes (#931) (#933) ([defeae9](https://github.com/PicPeak/picpeak/commit/defeae9))
+* **video:** try metadata extraction and thumbnail generation independently (#1371) ([a2bf1f6](https://github.com/PicPeak/picpeak/commit/a2bf1f6))
+
+**Admin, auth & permissions**
+
+* **admin:** expose view/download counters in the admin photos list (#895 follow-up) (#914) ([aca3c8e](https://github.com/PicPeak/picpeak/commit/aca3c8e))
+* **admin:** keep header-style tiles from overflowing their cards (#1422) ([7cd7654](https://github.com/PicPeak/picpeak/commit/7cd7654))
+* **admin:** make "Storage used" report storage used (#1164) (#1170) ([849a580](https://github.com/PicPeak/picpeak/commit/849a580))
+* **admin:** move the maintenance sweeps' run state into the database (#1181) (#1184) ([05e23ef](https://github.com/PicPeak/picpeak/commit/05e23ef))
+* **admin:** serve videos with their real MIME type in the admin photo view (#908) (#910) ([67c56c5](https://github.com/PicPeak/picpeak/commit/67c56c5))
+* **admin:** stop marking events expired up to 24h early (#909) (#916) ([487f55f](https://github.com/PicPeak/picpeak/commit/487f55f))
+* **admin:** the "Uncategorized" photo filter returns every photo (#1211) (#1214) ([a490b64](https://github.com/PicPeak/picpeak/commit/a490b64))
+* **auth:** fail closed when the adminAuth roles join errors (#974) ([6699855](https://github.com/PicPeak/picpeak/commit/6699855))
+* **auth:** treat zxcvbn suggestions as advice, not blocking errors (#1050) ([4f352de](https://github.com/PicPeak/picpeak/commit/4f352de))
+* **events:** accept hero_logo_visible: null on create/update (#822) ([b97b130](https://github.com/PicPeak/picpeak/commit/b97b130))
+* **events:** apply the gallery password policy to publish and send-later (#1253) ([6938bad](https://github.com/PicPeak/picpeak/commit/6938bad))
+* **events:** delete stored objects when cascading an event delete (#1051) ([202c553](https://github.com/PicPeak/picpeak/commit/202c553))
+* **events:** make event_date/expires_at nullable on SQLite (#1029) (#1035) ([671c4db](https://github.com/PicPeak/picpeak/commit/671c4db))
+* **setup:** require Node 22.12 for sanitize-html ([e06d0b4](https://github.com/PicPeak/picpeak/commit/e06d0b4))
+
+**Security & hardening**
+
+* **security:** authz/ownership gaps (token binding, auth revocation, feedback/customer ownership, token logging) (#950) ([c2ce12c](https://github.com/PicPeak/picpeak/commit/c2ce12c))
+* **security:** backup/restore hardening — public-dir DB dump, restore path allowlist, gunzip bound, manifest keying (#956) ([0d4c308](https://github.com/PicPeak/picpeak/commit/0d4c308))
+* **security:** block guest access to hidden/client-only photos across bulk + secure routes (#939) ([8a87c92](https://github.com/PicPeak/picpeak/commit/8a87c92))
+* **security:** bound inbound-mail resources, redact secrets from logs (GHSA-2qf9, pgmp, r794) (#959) ([1b4e5fe](https://github.com/PicPeak/picpeak/commit/1b4e5fe))
+* **security:** bound password input before zxcvbn, and drop the legacy media mounts ([14cd5ea](https://github.com/PicPeak/picpeak/commit/14cd5ea))
+* **security:** bump backend deps to close all 14 open Trivy code-scanning alerts (#869) ([38b8d47](https://github.com/PicPeak/picpeak/commit/38b8d47))
+* **security:** bump sanitize-html to 2.17.5 (CVE-2026-53606) (#937) ([fe615c8](https://github.com/PicPeak/picpeak/commit/fe615c8))
+* **security:** bump sanitize-html to 2.17.7 ([6583178](https://github.com/PicPeak/picpeak/commit/6583178))
+* **security:** close 5 Trivy alerts — postcss/tar bumps + drop npm from the runtime image (#878) ([08be2b8](https://github.com/PicPeak/picpeak/commit/08be2b8))
+* **security:** close GHSA-g94x (cross-gallery photo read) + GHSA-pv6w (admin DB export) (#924) ([03087c7](https://github.com/PicPeak/picpeak/commit/03087c7))
+* **security:** close authorization/ownership gaps (token scope, mass-assignment, category hero, project docs) (#943) ([82d6871](https://github.com/PicPeak/picpeak/commit/82d6871))
+* **security:** contain logo, favicon and PDF-logo unlinks to their upload directories ([3e46530](https://github.com/PicPeak/picpeak/commit/3e46530))
+* **security:** enforce event ownership on the v1 API surface (GHSA-9697) (#957) ([e2ce95e](https://github.com/PicPeak/picpeak/commit/e2ce95e))
+* **security:** enforce project ownership on project + project-email routes (GHSA-wrg5, GHSA-93x4) (#960) ([7c0c0a5](https://github.com/PicPeak/picpeak/commit/7c0c0a5))
+* **security:** enforce the strength-endpoint validators, and stop the generator spinning ([054cd6f](https://github.com/PicPeak/picpeak/commit/054cd6f))
+* **security:** escape brand tokens, block tracker redirects, trim logo diagnostic (GHSA-j347, mw76, 29vm) (#961) ([164129b](https://github.com/PicPeak/picpeak/commit/164129b))
+* **security:** harden .picpeak restore operator-preservation (GHSA-qxfx follow-up) ([38fd41a](https://github.com/PicPeak/picpeak/commit/38fd41a))
+* **security:** harden four smaller gallery and contract paths, drop the unmounted photo auth middleware ([835312e](https://github.com/PicPeak/picpeak/commit/835312e))
+* **security:** neutralize spreadsheet formulas in all CSV/export cell-writers (CSV injection cluster) (#948) ([8f91c2c](https://github.com/PicPeak/picpeak/commit/8f91c2c))
+* **security:** never serve a photo under its stored MIME, and stop trusting the chunked-upload type ([063977d](https://github.com/PicPeak/picpeak/commit/063977d))
+* **security:** preserve current admin on .picpeak restore (GHSA-qxfx-4493-4v8f) ([348894e](https://github.com/PicPeak/picpeak/commit/348894e))
+* **security:** read the password-complexity key the settings UI writes (#843) ([8060fed](https://github.com/PicPeak/picpeak/commit/8060fed))
+* **security:** redact gallery share tokens from analytics tracking (GHSA-7m6c) (#952) ([1c8f7d5](https://github.com/PicPeak/picpeak/commit/1c8f7d5))
+* **security:** reject ZIP-slip entries in archive/backup restore (GHSA-jfhw-fj23-fx6x) ([9cd6b08](https://github.com/PicPeak/picpeak/commit/9cd6b08))
+* **security:** remove unguarded legacy /api/events router (GHSA-4j34-x562-5vfq) ([6cd546e](https://github.com/PicPeak/picpeak/commit/6cd546e))
+* **security:** resolve DNS before vetting external hostnames (SSRF cluster) (#941) ([b700569](https://github.com/PicPeak/picpeak/commit/b700569))
+* **security:** sanitize chunked-upload filename (GHSA-pc72-jf53-w28j) ([31bc01c](https://github.com/PicPeak/picpeak/commit/31bc01c))
+* **security:** scope dashboard stats/analytics/activity to the caller's events (GHSA-c2jj, gqx7, jhcf) (#958) ([da855cf](https://github.com/PicPeak/picpeak/commit/da855cf))
+* **security:** share-login must not bypass gallery password (GHSA-9hmx-68vc-qpqw) ([7dace04](https://github.com/PicPeak/picpeak/commit/7dace04))
+* **security:** stop reflecting submitted passwords in validation errors ([903e471](https://github.com/PicPeak/picpeak/commit/903e471))
+* **security:** stop reflecting submitted values in validation errors everywhere, cap credential lengths, close the login timing oracle ([40a8a98](https://github.com/PicPeak/picpeak/commit/40a8a98))
+* **security:** unauth share_token leak (HIGH) + restore path-traversal, logo file-read, branding path keys (#946) ([9050aff](https://github.com/PicPeak/picpeak/commit/9050aff))
+* **security:** verify the signature before writing a token to the revocation list ([0ca0e4a](https://github.com/PicPeak/picpeak/commit/0ca0e4a))
+* **security:** vet the destination project when linking a deal (#991) ([0c8ad6b](https://github.com/PicPeak/picpeak/commit/0c8ad6b))
+
+**Business modules — flagged off by default**
+
+* **projects:** stop the cockpit offering email controls the API rejects (#976) ([67592fc](https://github.com/PicPeak/picpeak/commit/67592fc))
+
+**Backup, storage & deployment**
+
+* **analytics:** make per-photo view/download counters actually count (#895) (#904) ([78116e2](https://github.com/PicPeak/picpeak/commit/78116e2))
+* **archives:** take the restored category from the manifest (#1240) ([0d340f4](https://github.com/PicPeak/picpeak/commit/0d340f4))
+* **backup:** honor the configured database-backup destination path (#1366) ([15cd5ed](https://github.com/PicPeak/picpeak/commit/15cd5ed))
+* **backup:** make backup settings actually apply (#871) (#874) ([a2e7234](https://github.com/PicPeak/picpeak/commit/a2e7234))
+* **docker:** default NODE_ENV=production so non-compose deploys don't fall back to SQLite (#1038) (#1039) ([6de30e5](https://github.com/PicPeak/picpeak/commit/6de30e5))
+* **storage:** add S3 client timeouts so a dropped connection can't wedge uploads (#1049) ([3600231](https://github.com/PicPeak/picpeak/commit/3600231))
+
+**Other**
+
+* **backend:** bump sharp, nodemailer, multer, js-yaml, joi for security fixes (#1374) ([f6b81fa](https://github.com/PicPeak/picpeak/commit/f6b81fa))
+* **backend:** contain and sanitize the SQLite restore source path (#1384) ([316bcbd](https://github.com/PicPeak/picpeak/commit/316bcbd))
+* **backend:** enforce event ownership on short URL deletion (#1379) ([e290207](https://github.com/PicPeak/picpeak/commit/e290207))
+* **backend:** reject a replayed TOTP code within its validity window (#1389) ([cdde937](https://github.com/PicPeak/picpeak/commit/cdde937))
+* **backend:** require actor to hold every permission of a role they grant (#1378) ([59ea83c](https://github.com/PicPeak/picpeak/commit/59ea83c))
+* **backend:** shorten payment-check token TTL and notify admin on use (#1385) ([e324791](https://github.com/PicPeak/picpeak/commit/e324791))
+* **backend:** use the strong password generator for resets and enforce must_change_password (#1387) ([b798d8e](https://github.com/PicPeak/picpeak/commit/b798d8e))
+* **backend:** validate business-profile logo uploads by content, not filename (#1381) ([abc9601](https://github.com/PicPeak/picpeak/commit/abc9601))
+* **backend:** validate event id before using it in the logo storage filename (#1382) ([38b0e1d](https://github.com/PicPeak/picpeak/commit/38b0e1d))
+* **backend:** validate the S3 endpoint host before the restore download (#1383) ([ec03089](https://github.com/PicPeak/picpeak/commit/ec03089))
+* **deps:** bump ip-address, brace-expansion and postcss for open CVEs (#987) ([6c03fea](https://github.com/PicPeak/picpeak/commit/6c03fea))
+* **deps:** bump nanoid and js-yaml out of two HIGH advisories (#1013) ([e3830cd](https://github.com/PicPeak/picpeak/commit/e3830cd))
+* **pdf:** RFC 6266-encode Content-Disposition on quote/invoice PDFs (#1024) (#1055) ([3a11e6e](https://github.com/PicPeak/picpeak/commit/3a11e6e))
+* **scripts:** regenerate-thumbnails resolves external sources through ensureThumbnail (#1148) (#1151) ([b581267](https://github.com/PicPeak/picpeak/commit/b581267))
+* **update:** target docker-compose.production.yml in dashboard update steps ([51a505e](https://github.com/PicPeak/picpeak/commit/51a505e))
 
 
 ## [3.46.13](https://github.com/PicPeak/picpeak/compare/v3.46.12...v3.46.13) (2026-09-11)
