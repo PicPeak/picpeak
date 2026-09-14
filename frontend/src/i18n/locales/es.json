@@ -255,6 +255,8 @@
     "noPhotosFound": "No se encontraron fotos",
     "failedToLoad": "Error al cargar las fotos",
     "tryAgain": "Intentar de nuevo",
+    "passwordChangeRequired": "Cambia tu contraseña en el área de administración antes de previsualizar esta galería.",
+    "goToAdminArea": "Ir al área de administración",
     "loading": "Cargando galería...",
     "expiredOn": "Esta galería expiró el {{date}}.",
     "expiresIn": "La galería expira en {{count}} día",

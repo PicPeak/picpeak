@@ -243,6 +243,8 @@
     "noPhotosFound": "Ni najdenih fotografij",
     "failedToLoad": "Fotografij ni bilo mogoče naložiti",
     "tryAgain": "Poskusi znova",
+    "passwordChangeRequired": "Pred predogledom te galerije spremenite geslo v skrbniškem območju.",
+    "goToAdminArea": "Pojdi v skrbniško območje",
     "loading": "Nalaganje galerije...",
     "expiredOn": "Ta galerija je potekla dne {{date}}.",
     "downloadBefore": "Prenesite fotografije, preden ne bodo več na voljo.",
