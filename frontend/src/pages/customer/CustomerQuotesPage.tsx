@@ -1,9 +1,9 @@
 /**
  * Customer-side Quotes list. Read-only view of every quote the
- * photographer has sent this customer. Open links straight back to
- * the public quote response page when the quote is still in the
- * accept/decline window — saves the customer from digging through
- * email to find the original link.
+ * photographer has sent this customer. Quotes still in the
+ * accept/decline window link to the portal response page, which answers
+ * through the portal session, so the portal never handles the emailed
+ * response token.
  *
  * Adds client-side sort + status filter controls (newest, oldest,
  * price ↑/↓; status: all / sent / accepted / declined / expired /
@@ -12,6 +12,7 @@
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { FileText, ExternalLink, Download } from 'lucide-react';
 import { customerService, type CustomerQuote } from '../../services/customer.service';
 import { Card, Loading } from '../../components/common';
@@ -194,13 +195,10 @@ function FilterSortBar<S extends string>({
 
 const QuoteRow: React.FC<{ q: CustomerQuote }> = ({ q }) => {
   const { t } = useTranslation();
-  // Open the public response page when the quote is still actionable.
-  // Once locked (responded_at + 15 min) or converted/expired the page
-  // becomes a read-only view of the locked state.
-  const canRespond = q.status === 'sent' || (
-    !!q.respondedAt && !!q.responseLockedAt && new Date(q.responseLockedAt).getTime() > Date.now()
-  );
-  const linkHref = q.responseToken ? `/quote/${q.responseToken}` : null;
+  // The server decides whether the quote is still actionable; the response
+  // page is the portal's own route, answered through the portal session.
+  const canRespond = q.canRespond;
+  const linkHref = canRespond ? `/customer/quotes/${q.id}/respond` : null;
 
   const handleDownloadPdf = async (e: React.MouseEvent) => {
     // Don't bubble to the row-wide link wrapper.
@@ -267,10 +265,9 @@ const QuoteRow: React.FC<{ q: CustomerQuote }> = ({ q }) => {
   return (
     <li>
       {linkHref ? (
-        <a href={linkHref} target={canRespond ? '_blank' : '_self'} rel="noopener noreferrer"
-          className="block hover:bg-neutral-50 dark:hover:bg-neutral-800">
+        <Link to={linkHref} className="block hover:bg-neutral-50 dark:hover:bg-neutral-800">
           {body}
-        </a>
+        </Link>
       ) : body}
     </li>
   );

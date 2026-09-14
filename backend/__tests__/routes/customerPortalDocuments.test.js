@@ -1,0 +1,201 @@
+/**
+ * Signing contracts and answering quotes from the customer portal.
+ *
+ * The portal's contract and quote lists used to include the live action
+ * token so the dashboard could link to the public page. That put a bearer
+ * secret — usable with no login — into every portal response. The portal
+ * now signs and answers through session-authenticated routes, and the token
+ * stays on the server.
+ *
+ * Pins:
+ *   - no action token (or anything shaped like one) in any list or detail
+ *   - canSign / canRespond reflect whether the document can still be acted on
+ *   - another customer's document and drafts are a 404
+ *   - signing, uploading and answering work with only the session
+ */
+
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
+
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-portal-docs-test-'));
+process.env.NODE_ENV = 'test';
+process.env.TEST_DATABASE_PATH = path.join(tmpDir, 'db.sqlite');
+process.env.STORAGE_PATH = path.join(tmpDir, 'storage');
+fs.mkdirSync(process.env.STORAGE_PATH, { recursive: true });
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'crm-route-test-secret';
+
+const express = require('express');
+const cookieParser = require('cookie-parser');
+const request = require('supertest');
+const jwt = require('jsonwebtoken');
+const { bootCrmDb, seedMinimal, createPublicToken } = require('../integration/helpers/crmDb');
+
+const TOKEN_SHAPE = /[a-f0-9]{64}/i;
+
+describe('customer portal contracts and quotes', () => {
+  let db;
+  let cleanup;
+  let app;
+  let customerId;
+  let otherCustomerId;
+  let cookie;
+  let signable;
+  let signableToken;
+  let unsignable;
+  let draft;
+  let othersContract;
+  let quote;
+  let quoteToken;
+  let othersQuote;
+
+  const nowIso = () => new Date().toISOString();
+  const insertId = async (table, row) => {
+    const inserted = await db(table).insert(row).returning('id');
+    return inserted[0]?.id ?? inserted[0];
+  };
+  const contract = (owner, status, number) => insertId('contracts', {
+    contract_number: number, customer_account_id: owner, title: `Contract ${number}`, status,
+    language: 'de', issue_date: nowIso().slice(0, 10), created_at: nowIso(),
+  });
+  const quoteRow = (owner, status, number) => insertId('quotes', {
+    quote_number: number, customer_account_id: owner, currency: 'CHF', status, language: 'de',
+    issue_date: nowIso().slice(0, 10), net_amount_minor: 10000, vat_amount_minor: 0,
+    total_amount_minor: 10000, created_at: nowIso(),
+  });
+
+  beforeAll(async () => {
+    ({ db, cleanup } = await bootCrmDb());
+    ({ customerId } = await seedMinimal(db));
+    otherCustomerId = await insertId('customer_accounts', {
+      email: 'other@example.com', display_name: 'Other', password_hash: 'x', is_active: 1, created_at: nowIso(),
+    });
+    await db('customer_accounts').whereIn('id', [customerId, otherCustomerId])
+      .update({ feature_contracts: true, feature_quotes: true });
+    const flag = await db('feature_flags').where({ key: 'contracts' }).first();
+    if (flag) await db('feature_flags').where({ key: 'contracts' }).update({ value: true });
+    else await db('feature_flags').insert({ key: 'contracts', value: true });
+    // The global quotes switch for the customer surface is seeded off.
+    const quotesSwitch = await db('app_settings').where({ setting_key: 'customer_feature_quotes_enabled' }).first();
+    if (quotesSwitch) {
+      await db('app_settings').where({ setting_key: 'customer_feature_quotes_enabled' }).update({ setting_value: 'true' });
+    } else {
+      await db('app_settings').insert({
+        setting_key: 'customer_feature_quotes_enabled', setting_value: 'true', setting_type: 'customer_surface',
+      });
+    }
+
+    signable = await contract(customerId, 'sent', 'K-P-1');
+    signableToken = await createPublicToken(db, 'contract_action_tokens', { contract_id: signable });
+    unsignable = await contract(customerId, 'sent', 'K-P-2'); // sent, but no live token
+    draft = await contract(customerId, 'draft', 'K-P-3');
+    othersContract = await contract(otherCustomerId, 'sent', 'K-P-4');
+    await createPublicToken(db, 'contract_action_tokens', { contract_id: othersContract });
+
+    quote = await quoteRow(customerId, 'sent', 'Q-P-1');
+    quoteToken = await createPublicToken(db, 'quote_action_tokens', { quote_id: quote });
+    othersQuote = await quoteRow(otherCustomerId, 'sent', 'Q-P-2');
+    await createPublicToken(db, 'quote_action_tokens', { quote_id: othersQuote });
+
+    const session = jwt.sign(
+      { type: 'customer', customerId, iat: Math.floor(Date.now() / 1000) - 5 },
+      process.env.JWT_SECRET,
+      { algorithm: 'HS256', issuer: 'picpeak-auth', expiresIn: '1h' },
+    );
+    cookie = `customer_token=${session}`;
+
+    app = express();
+    app.use(express.json());
+    app.use(cookieParser());
+    app.use('/api/customer', require('../../src/routes/customer'));
+    app.use(require('../../src/middleware/errorHandler').errorHandler);
+  }, 120000);
+
+  afterAll(async () => { if (cleanup) await cleanup(); });
+
+  const get = (url) => request(app).get(url).set('Cookie', cookie);
+  const post = (url) => request(app).post(url).set('Cookie', cookie);
+
+  it('lists contracts without any signing token, with canSign', async () => {
+    const res = await get('/api/customer/contracts');
+
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toMatch(TOKEN_SHAPE);
+    const byNumber = Object.fromEntries(res.body.contracts.map((c) => [c.contractNumber, c]));
+    expect(byNumber['K-P-1']).not.toHaveProperty('responseToken');
+    expect(byNumber['K-P-1'].canSign).toBe(true);
+    expect(byNumber['K-P-2'].canSign).toBe(false);
+    expect(byNumber['K-P-3']).toBeUndefined();
+  });
+
+  it('lists quotes without any response token, with canRespond', async () => {
+    const res = await get('/api/customer/quotes');
+
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toMatch(TOKEN_SHAPE);
+    const q = res.body.quotes.find((row) => row.quoteNumber === 'Q-P-1');
+    expect(q).not.toHaveProperty('responseToken');
+    expect(q.canRespond).toBe(true);
+  });
+
+  it('shows a contract the customer owns, without its token', async () => {
+    const res = await get(`/api/customer/contracts/${signable}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.canSign).toBe(true);
+    expect(res.body.contract.contractNumber).toBe('K-P-1');
+    expect(JSON.stringify(res.body)).not.toMatch(TOKEN_SHAPE);
+  });
+
+  it('answers 404 for a document owned by another customer and for a draft', async () => {
+    expect((await get(`/api/customer/contracts/${othersContract}`)).status).toBe(404);
+    expect((await get(`/api/customer/contracts/${draft}`)).status).toBe(404);
+    expect((await post(`/api/customer/contracts/${othersContract}/sign`).send({ name: 'X', accepted: true })).status).toBe(404);
+    expect((await get(`/api/customer/quotes/${othersQuote}`)).status).toBe(404);
+  });
+
+  it('refuses an upload for a contract that cannot be signed, before writing the file', async () => {
+    const uploadDir = path.join(process.env.STORAGE_PATH, 'uploads/contracts/signed');
+    const before = fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir).length : 0;
+
+    const res = await post(`/api/customer/contracts/${unsignable}/upload-signed-pdf`)
+      .attach('file', Buffer.from('%PDF-1.4 signed'), 'signed.pdf');
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('NOT_SIGNABLE');
+    const after = fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir).length : 0;
+    expect(after).toBe(before);
+  });
+
+  it('signs with the session alone and spends the server-side token', async () => {
+    const res = await post(`/api/customer/contracts/${signable}/sign`).send({ name: 'Test Customer', accepted: true });
+
+    expect(res.status).toBe(200);
+    expect((await db('contracts').where({ id: signable }).first()).status).toBe('signed_by_customer');
+    expect((await db('contract_action_tokens').where({ token: signableToken }).first()).used_at).not.toBeNull();
+
+    const again = await post(`/api/customer/contracts/${signable}/sign`).send({ name: 'Test Customer', accepted: true });
+    expect(again.status).toBe(409);
+    expect(again.body.code).toBe('NOT_SIGNABLE');
+  });
+
+  it('rejects an incomplete signature as a validation error', async () => {
+    const res = await post(`/api/customer/contracts/${unsignable}/sign`).send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('answers a quote with the session alone', async () => {
+    const detail = await get(`/api/customer/quotes/${quote}`);
+    expect(detail.status).toBe(200);
+    expect(detail.body.canRespond).toBe(true);
+    expect(JSON.stringify(detail.body)).not.toMatch(TOKEN_SHAPE);
+
+    const res = await post(`/api/customer/quotes/${quote}/respond`).send({ action: 'accept' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('accepted');
+    expect((await db('quote_action_tokens').where({ token: quoteToken }).first()).used_at).not.toBeNull();
+  });
+});

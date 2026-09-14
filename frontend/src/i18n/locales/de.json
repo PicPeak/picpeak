@@ -5305,7 +5305,8 @@
       "noEventName": "—",
       "openToRespond": "Öffnen zum Antworten",
       "viewPdf": "PDF anzeigen",
-      "popupBlocked": "Erlaube Pop-ups für diese Seite, um das Angebots-PDF anzuzeigen."
+      "popupBlocked": "Erlaube Pop-ups für diese Seite, um das Angebots-PDF anzuzeigen.",
+      "backToList": "Zurück zu den Angeboten"
     },
     "bills": {
       "title": "Rechnungen",
@@ -5424,7 +5425,8 @@
       "counterSigned": "Gegengezeichnet",
       "openSign": "Öffnen & unterschreiben",
       "downloadSigned": "Unterschriebenes PDF herunterladen",
-      "download": "PDF herunterladen"
+      "download": "PDF herunterladen",
+      "backToList": "Zurück zu den Verträgen"
     }
   },
   "customers": {
@@ -7472,7 +7474,9 @@
     "submit": "Vertrag unterschreiben",
     "uploadAlternative": "Oder ein handschriftlich unterschriebenes PDF hochladen",
     "uploadHint": "Unterschreiben Sie den ausgedruckten Vertrag von Hand, scannen Sie ihn ein und laden Sie das PDF hier hoch.",
-    "uploadButton": "Unterschriebenes PDF hochladen"
+    "uploadButton": "Unterschriebenes PDF hochladen",
+    "downloadError": "Download fehlgeschlagen",
+    "popupBlocked": "Bitte erlauben Sie Pop-ups für diese Seite, um das PDF herunterzuladen."
   },
   "crmOverview": {
     "title": "CRM-Übersicht",
@@ -7595,6 +7599,32 @@
       "body": "{{count}} Personen auf einmal von einer Domain anzuschreiben, die sonst nur Transaktionsmails versendet, lässt Spamfilter aufmerksam werden. Anbieter können den gesamten Versand drosseln, als Spam einstufen oder blockieren — und ein schlechter Lauf beeinträchtigt auch die Zustellung Ihrer Galerie-E-Mails.",
       "advice": "Stellen Sie sicher, dass SPF, DKIM und DMARC für Ihre Versanddomain eingerichtet sind, senden Sie sich zuerst einen Test, und teilen Sie eine erste Kampagne nach Möglichkeit in mehrere kleinere Sendungen auf.",
       "duration": "Bei {{rate}}/Minute dauert dies etwa {{minutes}} Minuten. Die Versand-Warteschlange wird geteilt: Während der Kampagne können andere E-Mails — Galerie-Einladungen, Passwort-Zurücksetzungen — dahinter verzögert werden."
+    }
+  },
+  "documentVerification": {
+    "title": "Bestätigen Sie, dass Sie es sind",
+    "explanation": "Zum Schutz Ihrer persönlichen Daten bestätigen Sie bitte, dass Sie es sind. Wir senden einen 6-stelligen Code an {{email}}.",
+    "explanationNoHint": "Zum Schutz Ihrer persönlichen Daten bestätigen Sie bitte, dass Sie es sind. Wir senden einen 6-stelligen Code an die Adresse, an die dieser Link geschickt wurde.",
+    "sendCode": "Code senden",
+    "sending": "Wird gesendet…",
+    "codeSent": "Wir haben einen Code an {{email}} gesendet.",
+    "codeSentNoHint": "Wir haben Ihnen einen Code per E-Mail gesendet.",
+    "codeLabel": "6-stelliger Code",
+    "confirm": "Bestätigen",
+    "confirming": "Wird geprüft…",
+    "resend": "Neuen Code senden",
+    "resendIn": "Neuen Code senden in {{seconds}} s",
+    "sessionExpired": "Zu Ihrer Sicherheit bestätigen Sie bitte erneut, dass Sie es sind.",
+    "errors": {
+      "invalid": "Dieser Code ist nicht korrekt. Noch {{count}} Versuche.",
+      "invalidNoCount": "Dieser Code ist nicht korrekt.",
+      "expired": "Dieser Code ist abgelaufen. Bitte fordern Sie einen neuen Code an.",
+      "tooManyAttempts": "Zu viele falsche Versuche. Bitte fordern Sie einen neuen Code an.",
+      "rateLimited": "Bitte warten Sie {{seconds}} Sekunden, bevor Sie einen neuen Code anfordern.",
+      "noRecipientEmail": "Es ist keine E-Mail-Adresse hinterlegt, an die ein Code gesendet werden kann. Bitte wenden Sie sich an den Absender.",
+      "emailUnavailable": "Der Code konnte gerade nicht gesendet werden. Bitte versuchen Sie es später erneut oder wenden Sie sich an den Absender.",
+      "codeFormat": "Geben Sie den 6-stelligen Code aus der E-Mail ein.",
+      "generic": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut."
     }
   }
 }

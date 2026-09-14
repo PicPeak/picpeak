@@ -3,6 +3,7 @@
  * /api/public/quotes/:token for the customer-facing accept/decline page.
  */
 import { api } from '../config/api';
+import { documentAccessHeaders, type DocumentAccessGrant, type DocumentVerificationSent } from '../utils/documentAccess';
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'expired' | 'converted';
 export type QuoteSort =
@@ -355,6 +356,8 @@ export const quotesService = {
 // -------------------------------------------------------------------
 
 export interface PublicQuoteView {
+  /** The full view is only served to a verified visitor (or the portal). */
+  verificationRequired?: false;
   quoteNumber: string;
   status: QuoteStatus;
   language: string;
@@ -410,20 +413,51 @@ export interface PublicQuoteView {
   } | null;
 }
 
+/**
+ * What the emailed link returns before the visitor has confirmed the one-time
+ * code: the issuer's branding and a masked recipient address, nothing about
+ * the customer or the quote.
+ */
+export interface PublicQuoteShell {
+  verificationRequired: true;
+  language: string;
+  emailHint: string | null;
+  issuer: {
+    companyName: string | null;
+    logoUrl?: string | null;
+    logoUrlDark?: string | null;
+  } | null;
+}
+
+/**
+ * Public response link. Every request after verification carries the access
+ * grant from confirmVerification as the X-Document-Access header.
+ */
 export const publicQuotesService = {
-  async get(token: string): Promise<{ quote: PublicQuoteView }> {
-    const { data } = await api.get(`/public/quotes/${token}`);
+  async get(token: string, grant?: string | null): Promise<{ quote: PublicQuoteView | PublicQuoteShell }> {
+    const { data } = await api.get(`/public/quotes/${token}`, { headers: documentAccessHeaders(grant) });
+    return data.data || data;
+  },
+  /** Email a one-time code to the customer's address on file. */
+  async requestVerification(token: string): Promise<DocumentVerificationSent> {
+    const { data } = await api.post(`/public/quotes/${token}/verification`);
+    return data.data || data;
+  },
+  /** Exchange the emailed code for a short-lived access grant. */
+  async confirmVerification(token: string, code: string): Promise<DocumentAccessGrant> {
+    const { data } = await api.post(`/public/quotes/${token}/verification/confirm`, { code });
     return data.data || data;
   },
   async respond(
     token: string,
     action: 'accept' | 'decline',
     options: { tosAccepted?: boolean } = {},
+    grant?: string | null,
   ): Promise<{ status: QuoteStatus; lockedAt: string }> {
     const { data } = await api.post(`/public/quotes/${token}/respond`, {
       action,
       tosAccepted: options.tosAccepted,
-    });
+    }, { headers: documentAccessHeaders(grant) });
     return data.data || data;
   },
 };
