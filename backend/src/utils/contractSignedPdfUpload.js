@@ -9,6 +9,7 @@
  */
 
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
 const { validateFileType } = require('./fileSecurityUtils');
@@ -27,9 +28,12 @@ const signedPdfUpload = multer({
     },
     // Named by contract id, not by the token: the filename ends up in the
     // contracts row and admin views, which are no place for a bearer secret.
+    // The random part keeps two uploads in the same millisecond apart. They
+    // shared one file, and the request that lost the compare-and-set in
+    // attachSignedPdfUpload then deleted the winner's PDF with its cleanup.
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname) || '.pdf';
-      cb(null, `contract-${Number(req.publicTokenRow?.contract_id) || 'unknown'}-${Date.now()}${ext}`);
+      cb(null, `contract-${Number(req.publicTokenRow?.contract_id) || 'unknown'}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
     },
   }),
   // CVE-2026-82333: single unnamed `file` field only — no legitimate

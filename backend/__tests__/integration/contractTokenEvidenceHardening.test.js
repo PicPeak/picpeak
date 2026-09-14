@@ -9,10 +9,13 @@
  *    each read the contract state, then wrote unconditionally. Requests
  *    arriving together all passed the checks and the later write replaced the
  *    earlier evidence. The writes are now compare-and-set, and a late PDF stamp
- *    no longer replaces a newer authoritative PDF.
+ *    no longer replaces a newer authoritative PDF or one built from newer
+ *    signature images. The countersignature stamps every signature from the
+ *    unsigned PDF, so it no longer loses a customer stamp still rendering.
  *  - A token without an expiry was treated as valid forever by the services.
  */
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
@@ -61,6 +64,49 @@ const signaturePngs = () => filesUnder(process.env.STORAGE_PATH, '.png')
   .filter((file) => file.includes(`${path.sep}signatures${path.sep}`) || /signature/i.test(path.basename(file)));
 
 const metadataOf = (row) => (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata);
+
+const restampLogsFor = async (contractId) => (await db('activity_logs').where({ activity_type: 'contract_signatures_restamped' }))
+  .map(metadataOf)
+  .filter((meta) => meta.contractId === contractId);
+
+async function pngDataUrl(background) {
+  const sharp = require('sharp');
+  const png = await sharp({ create: { width: 4, height: 4, channels: 4, background: { ...background, alpha: 1 } } })
+    .png().toBuffer();
+  return `data:image/png;base64,${png.toString('base64')}`;
+}
+
+// Follows which signature images went into each stamped PDF, keyed by the
+// PDF's SHA-256 (the value the services store in signed_pdf_sha256).
+function recordStamps() {
+  const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
+  const bySha = new Map();
+  const realOne = pdfStampService.stampSignature;
+  const realMany = pdfStampService.stampSignatures;
+  const recordOne = async (args) => {
+    const out = await realOne.call(pdfStampService, args);
+    bySha.set(sha256(out), [...(bySha.get(sha256(args.pdfBuffer)) || []), { role: args.role, png: args.signaturePngPath }]);
+    return out;
+  };
+  const recordMany = async (buffer, stamps) => {
+    const out = await realMany.call(pdfStampService, buffer, stamps);
+    bySha.set(out.sha256, [
+      ...(bySha.get(sha256(buffer)) || []),
+      ...stamps.map((stamp) => ({ role: stamp.role, png: stamp.signaturePngPath })),
+    ]);
+    return out;
+  };
+  const one = jest.spyOn(pdfStampService, 'stampSignature').mockImplementation(recordOne);
+  const many = jest.spyOn(pdfStampService, 'stampSignatures').mockImplementation(recordMany);
+  return {
+    one,
+    many,
+    recordOne,
+    recordMany,
+    stampsOf: (sha) => bySha.get(sha) || [],
+    restore: () => { one.mockRestore(); many.mockRestore(); },
+  };
+}
 
 beforeAll(async () => {
   ({ db, cleanup, tmpDir } = await bootCrmDb());
@@ -234,6 +280,33 @@ describe('signature evidence under concurrent requests', () => {
     expect(contract.status).toBe('fully_signed');
     expect(contract.signed_pdf_path).toBe(wet);
   });
+
+  it('keeps the customer signature in the fully-signed PDF when the countersignature lands while the customer stamp renders', async () => {
+    const { id, token } = await sentContract('Countersign during stamp');
+    const recorder = recordStamps();
+    recorder.one.mockImplementationOnce(async (args) => {
+      // The admin countersigns before the customer's stamp is on record; the
+      // customer stamp is then discarded because the status moved on.
+      await contractService.recordAdminCountersignature(
+        id, { name: 'Admin', ip: '203.0.113.30', signatureDataUrl: SIGNATURE_DATA_URL }, adminId,
+      );
+      return recorder.recordOne(args);
+    });
+    try {
+      await contractService.recordCustomerSignature({
+        token, name: 'Maria Meier', accepted: true, ip: '198.51.100.12', signatureDataUrl: SIGNATURE_DATA_URL,
+      });
+    } finally {
+      recorder.restore();
+    }
+
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.status).toBe('fully_signed');
+    expect(recorder.stampsOf(contract.signed_pdf_sha256)).toEqual([
+      { role: 'customer', png: contract.signed_customer_signature_path },
+      { role: 'admin', png: contract.signed_admin_signature_path },
+    ]);
+  });
 });
 
 describe('admin PDF repair actions under concurrent requests', () => {
@@ -285,6 +358,52 @@ describe('admin PDF repair actions under concurrent requests', () => {
     expect(contract.signed_pdf_path).toBe(wet);
     expect(result.superseded).toBe(true);
     expect(result.signedPdfPath).toBe(wet);
+    // The image was replaced even though the PDF was not, so the audit trail
+    // still records the re-stamp.
+    expect(await restampLogsFor(id)).toEqual([expect.objectContaining({ superseded: true })]);
+  });
+
+  it('does not record a re-stamp whose signature image another re-stamp replaced while it rendered', async () => {
+    const id = await customerSigned('Overlapping restamps');
+    const imageA = await pngDataUrl({ r: 200, g: 0, b: 0 });
+    const imageB = await pngDataUrl({ r: 0, g: 0, b: 200 });
+    const recorder = recordStamps();
+    let bRun;
+    let markBRendering;
+    const bRendering = new Promise((resolve) => { markBRendering = resolve; });
+    let releaseB;
+    const aFinished = new Promise((resolve) => { releaseB = resolve; });
+    recorder.many
+      .mockImplementationOnce(async (buffer, stamps) => {
+        // Re-stamp B starts after A replaced the image, while A renders.
+        bRun = contractService.restampSignatures(id, { customerSignatureDataUrl: imageB }, adminId);
+        await Promise.race([bRendering, bRun]);
+        return recorder.recordMany(buffer, stamps);
+      })
+      .mockImplementationOnce(async (buffer, stamps) => {
+        markBRendering();
+        // B is still rendering when A finishes.
+        await aFinished;
+        return recorder.recordMany(buffer, stamps);
+      });
+    let a;
+    let b;
+    try {
+      a = await contractService.restampSignatures(id, { customerSignatureDataUrl: imageA }, adminId);
+      releaseB();
+      b = await bRun;
+    } finally {
+      releaseB();
+      recorder.restore();
+    }
+
+    const contract = await db('contracts').where({ id }).first();
+    // The PDF on record carries the image the contract references.
+    expect(recorder.stampsOf(contract.signed_pdf_sha256).map((stamp) => stamp.png))
+      .toEqual([contract.signed_customer_signature_path]);
+    expect(a.superseded).toBe(true);
+    expect(b.superseded).toBeUndefined();
+    expect(await restampLogsFor(id)).toHaveLength(2);
   });
 
   it('refuses a re-send whose rebuilt PDF was overtaken, and mails nothing', async () => {
