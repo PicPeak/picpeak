@@ -45,8 +45,9 @@ const EXTENSION_TO_MIME = {
   'heif': 'image/heif',
   // Camera RAW / Apple ProRAW. Not sharp-decodable directly — the processing
   // pipeline extracts the embedded JPEG preview (exiftool) for thumbnails/
-  // display, keeping the original for download. Browsers send DNG as
-  // image/x-adobe-dng, image/tiff, or an empty type, so accept the common set.
+  // display, keeping the original for download. Browsers also report a DNG as
+  // image/dng, image/tiff, or no type at all; the upload filters map those onto
+  // this entry via normalizeUploadMimeType() (utils/fileSecurityUtils.js).
   'dng': 'image/x-adobe-dng',
 };
 

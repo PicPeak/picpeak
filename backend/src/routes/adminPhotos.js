@@ -93,7 +93,7 @@ const storage = multer.diskStorage({
   }
 });
 
-const { validateFileType, createFileUploadValidator } = require('../utils/fileSecurityUtils');
+const { validateFileType, createFileUploadValidator, normalizeUploadMimeType } = require('../utils/fileSecurityUtils');
 
 // Create a multer instance that uses dynamically resolved allowed MIME types.
 // The allowed types are fetched from the database once per request (before multer
@@ -122,6 +122,9 @@ const createUpload = (maxFileSizeBytes) => multer({
   fileFilter: (req, file, cb) => {
     // req.allowedMimeTypes is populated by the middleware that runs before multer
     const allowedMimeTypes = req.allowedMimeTypes || ['image/jpeg', 'image/png', 'image/webp'];
+    // Assigned, not just compared: multer copies this object into req.files,
+    // so the content validator and the stored mime_type see the canonical type.
+    file.mimetype = normalizeUploadMimeType(file.originalname, file.mimetype);
 
     if (validateFileType(file.originalname, file.mimetype, allowedMimeTypes)) {
       return cb(null, true);

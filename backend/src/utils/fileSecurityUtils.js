@@ -98,20 +98,20 @@ const ALLOWED_IMAGE_TYPES = {
     ]
   },
   // Camera RAW / Apple ProRAW (#821). DNG is a TIFF container, so it carries the
-  // TIFF magic (little-endian "II*\0" or big-endian "MM\0*"). The pipeline can't
-  // sharp-decode it directly — it extracts the embedded JPEG preview (exiftool)
-  // for thumbnails/display while storing the original for download. Only reached
-  // when an admin adds `dng` to the allowed types AND the browser reports the
-  // DNG MIME (Chrome does; browsers that send an empty type won't get this far).
+  // TIFF magic. The pipeline can't sharp-decode it directly — it extracts the
+  // embedded JPEG preview (exiftool) for thumbnails/display while storing the
+  // original for download. Browsers disagree on the MIME they report for a DNG;
+  // normalizeUploadMimeType() maps the variants onto this entry.
   'image/x-adobe-dng': {
     extensions: ['.dng'],
-    // Single entry: the magic check is `.every`, so listing both endianness
-    // variants would require BOTH to match (impossible). DNG is TIFF; Apple
-    // ProRAW and virtually all camera DNGs are little-endian ("II*\0"). A rare
-    // big-endian DNG would fail this check and be rejected — acceptable, since
-    // the embedded-preview extraction validates the real content downstream.
-    magicNumbers: [
-      { offset: 0, bytes: [0x49, 0x49, 0x2A, 0x00] } // little-endian TIFF (II*\0)
+    // TIFF comes in both byte orders and both occur in the wild. This used to
+    // accept only little-endian on the belief that Apple ProRAW is, but an
+    // iPhone 15 Pro Max ProRAW file opens "MM\0*" then "APPLEDNG": big-endian.
+    // Every such file was rejected on admin upload (issue 821). Alternatives
+    // because the checks in one set must ALL match.
+    magicNumberAlternatives: [
+      [{ offset: 0, bytes: [0x49, 0x49, 0x2A, 0x00] }], // little-endian TIFF (II*\0)
+      [{ offset: 0, bytes: [0x4D, 0x4D, 0x00, 0x2A] }] // big-endian TIFF (MM\0*)
     ]
   }
 };
@@ -188,8 +188,13 @@ async function validateFileContent(filePath, expectedMimeType) {
       return false;
     }
 
+    // Either one signature set, all of which must match, or several
+    // alternative sets of which one must match in full.
+    const signatureSets = typeConfig.magicNumberAlternatives
+      || (typeConfig.magicNumbers && [typeConfig.magicNumbers]);
+
     // Skip validation for file types without magic numbers (like SVG)
-    if (!typeConfig.magicNumbers) {
+    if (!signatureSets) {
       return true;
     }
 
@@ -200,14 +205,15 @@ async function validateFileContent(filePath, expectedMimeType) {
     await fileHandle.close();
 
     // Check magic numbers
-    return typeConfig.magicNumbers.every(magic => {
+    const matches = (magic) => {
       for (let i = 0; i < magic.bytes.length; i++) {
         if (buffer[magic.offset + i] !== magic.bytes[i]) {
           return false;
         }
       }
       return true;
-    });
+    };
+    return signatureSets.some((set) => set.every(matches));
   } catch (error) {
     logger.error('Error validating file content:', error);
     return false;
@@ -294,9 +300,32 @@ function createFileUploadValidator(options = {}) {
   };
 }
 
+// What browsers report for a .dng besides image/x-adobe-dng. It comes from the
+// OS type table, so it varies (image/dng, image/tiff), and a machine without a
+// RAW codec reports nothing, which multer delivers as application/octet-stream.
+const DNG_MIME_ALIASES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
+
+/**
+ * The MIME type to validate an upload against. A browser-reported MIME is a
+ * name, not evidence, so mapping these variants onto the canonical DNG entry
+ * admits nothing new: the extension still has to be allowed, and routes that
+ * inspect content still check the TIFF signature.
+ * @param {string} filename - The original filename
+ * @param {string} mimetype - The MIME type the client reported
+ * @returns {string} - The canonical MIME type, or `mimetype` unchanged
+ */
+function normalizeUploadMimeType(filename, mimetype) {
+  const ext = path.extname(filename || '').toLowerCase();
+  if (ext === '.dng' && DNG_MIME_ALIASES.has(mimetype || '')) {
+    return 'image/x-adobe-dng';
+  }
+  return mimetype;
+}
+
 module.exports = {
   safePathJoin,
   isPathSafe,
+  normalizeUploadMimeType,
   validateFileType,
   validateFileContent,
   createFileUploadValidator,

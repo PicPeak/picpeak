@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { Button } from '../common';
 import { api } from '../../config/api';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
-import { extensionsToMimeTypes, buildUploadAcceptString, extensionsToLabel } from '../../utils/fileTypes';
+import { extensionsToMimeTypes, buildUploadAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -75,7 +75,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   // Shared filter pipeline for both <input> change and drag-and-drop (#504).
   const addFiles = (incoming: File[]) => {
     const validFiles = incoming.filter((file) => {
-      if (!allowedMimeTypes.includes(file.type)) {
+      if (!allowedMimeTypes.includes(normalizeFileMimeType(file.name, file.type))) {
         toast.error(`Invalid file type: ${file.name}`);
         return false;
       }

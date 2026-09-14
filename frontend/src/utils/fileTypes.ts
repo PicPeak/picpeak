@@ -44,12 +44,35 @@ export function extensionsToMimeTypes(extString?: string | null): string[] {
   return Array.from(mimeSet);
 }
 
+// Extensions that also go into `accept` by name. A file chooser matches accept
+// MIME types against the operating system's own type table, and macOS, iOS and
+// Windows do not map .dng to image/x-adobe-dng, so the MIME type alone hid
+// every DNG from the chooser (issue 821).
+const ACCEPT_BY_EXTENSION = new Set(['dng']);
+
 /**
  * Convert a comma-separated extension string to an HTML `accept` attribute
- * value, e.g. "image/jpeg,image/png,video/mp4".
+ * value, e.g. "image/jpeg,image/png,video/mp4" (plus ".dng" when DNG is on).
  */
 export function extensionsToAcceptString(extString?: string | null): string {
-  return extensionsToMimeTypes(extString).join(',');
+  const mimeTypes = extensionsToMimeTypes(extString);
+  const byName = Array.from(ACCEPT_BY_EXTENSION)
+    .filter((ext) => mimeTypes.includes(EXTENSION_TO_MIME[ext]))
+    .map((ext) => `.${ext}`);
+  return [...mimeTypes, ...byName].join(',');
+}
+
+// What browsers report for a .dng besides image/x-adobe-dng: which one depends
+// on the OS type table, and a machine without a RAW codec reports nothing.
+const DNG_TYPE_ALIASES = new Set(['', 'application/octet-stream', 'image/dng', 'image/x-dng', 'image/tiff']);
+
+/**
+ * The MIME type to validate a picked file against. Mirrors the backend's
+ * normalizeUploadMimeType, which the server applies before its own checks.
+ */
+export function normalizeFileMimeType(name: string, type: string): string {
+  if (/\.dng$/i.test(name) && DNG_TYPE_ALIASES.has(type)) return EXTENSION_TO_MIME.dng;
+  return type;
 }
 
 /**
