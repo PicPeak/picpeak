@@ -16,9 +16,10 @@
  * sessionAccessService's fallback omits role_id and nulls it afterwards
  * (sessionAccessService.js:53-58); this brings apiTokenAuth in line.
  *
- * The db mock therefore REJECTS a projection naming role_id when the roles
- * join is not in play, which is what the real driver does when the column is
- * missing. A mock that answers every select regardless cannot see this bug.
+ * The db mock (helpers/projectingDb.js) therefore treats the fixture row's keys
+ * as the schema: a fallback projection naming role_id rejects, which is what
+ * the real driver does when the column is missing. A mock that answers every
+ * select regardless cannot see this bug.
  */
 
 const crypto = require('crypto');
@@ -32,37 +33,20 @@ const mockTokenRow = {
   id: 3, name: 'ci', scopes: JSON.stringify(['read']),
   created_by: 9, revoked_at: null, expires_at: null, hashed_token: HASHED,
 };
+// Models the post-054/pre-057 window: `roles` exists, admin_users.role_id
+// does not — so the row has no role_id, and a projection naming it rejects.
 const mockAdminRow = { id: 9, username: 'owner', email: 'o@example.com' };
 
-// Models the post-054/pre-057 window: `roles` exists, admin_users.role_id
-// does not. Any query naming role_id fails, join or not.
+// The join names admin_users.role_id in its ON clause, so it fails the same way.
 const missingRoleId = () => Object.assign(
   new Error('select ... - SQLITE_ERROR: no such column: admin_users.role_id'),
   { code: 'SQLITE_ERROR' },
 );
 
 jest.mock('../../src/database/db', () => ({
-  db: (table) => ({
-    _table: table,
-    _joined: false,
-    _cols: [],
-    leftJoin() { this._joined = true; return this; },
-    where() { return this; },
-    update() { return Promise.resolve(1); },
-    catch() { return Promise.resolve(1); },
-    select(...cols) { this._cols = cols.flat(); return this; },
-    first() {
-      if (this._table === 'api_tokens') return Promise.resolve({ ...mockTokenRow });
-      if (this._cols.some((c) => String(c).includes('role_id'))) {
-        return Promise.reject(missingRoleId());
-      }
-      const out = {};
-      for (const col of this._cols) {
-        const bare = String(col).split(' as ').pop().split('.').pop();
-        if (bare in mockAdminRow) out[bare] = mockAdminRow[bare];
-      }
-      return Promise.resolve(out);
-    },
+  db: require('../helpers/projectingDb').projectingDb(({ table, joined }) => {
+    if (table === 'api_tokens') return mockTokenRow;
+    return joined ? missingRoleId() : mockAdminRow;
   }),
 }));
 

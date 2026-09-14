@@ -12,9 +12,8 @@
  * under the same commit subject, but only stable's implementation still had the
  * field, which is why a subject-level parity audit missed it.
  *
- * Unlike adminAuthRoleFallback.test.js, the db mock here HONOURS the
- * projection — a mock that returns the whole row regardless of `select()`
- * cannot see this bug at all.
+ * The db mock (helpers/projectingDb.js) HONOURS the projection — a mock that
+ * returns the whole row regardless of `select()` cannot see this bug at all.
  */
 
 const jwt = require('jsonwebtoken');
@@ -23,35 +22,19 @@ jest.mock('../../src/utils/tokenRevocation', () => ({ isTokenRevoked: jest.fn().
 jest.mock('../../src/utils/sessionCutoff', () => ({ isTokenBeforeCutoff: jest.fn().mockResolvedValue(false) }));
 jest.mock('../../src/utils/logger', () => ({ warn: jest.fn(), error: jest.fn(), debug: jest.fn(), info: jest.fn() }));
 
+// A pre-054 admin_users row: no roles table, so no role columns either.
 const mockAdminRow = {
   id: 11,
   username: 'must-change',
   email: 'mc@example.com',
   password_changed_at: null,
   must_change_password: 1,
-  role_id: null,
-  role_name: null,
 };
 
 jest.mock('../../src/database/db', () => ({
-  db: () => ({
-    _joined: false,
-    _cols: [],
-    leftJoin() { this._joined = true; return this; },
-    where() { return this; },
-    select(...cols) { this._cols = cols.flat(); return this; },
-    first() {
-      if (this._joined) return Promise.reject(new Error('SQLITE_ERROR: no such table: roles'));
-      // Honour the projection, the way a real driver would. An alias like
-      // `admin_users.must_change_password` resolves to its bare column name.
-      const out = {};
-      for (const col of this._cols) {
-        const bare = String(col).split(' as ').pop().split('.').pop();
-        if (bare in mockAdminRow) out[bare] = mockAdminRow[bare];
-      }
-      return Promise.resolve(out);
-    },
-  }),
+  db: require('../helpers/projectingDb').projectingDb(({ joined }) => (joined
+    ? new Error('SQLITE_ERROR: no such table: roles')
+    : mockAdminRow)),
 }));
 
 const { adminAuth } = require('../../src/middleware/auth');

@@ -15,19 +15,27 @@ const jwt = require('jsonwebtoken');
 
 process.env.JWT_SECRET = 'hardening-batch2-secret';
 
-const fake = { maintenance: 'true', revoked: false, beforeCutoff: false, admin: { id: 1, password_changed_at: null } };
+// The joined admin_users + roles row the preview's account lookup reads.
+const adminRow = (extra = {}) => ({
+  id: 1, username: 'admin', email: 'admin@example.com', password_changed_at: null,
+  must_change_password: false, role_id: null, role_name: null, ...extra,
+});
+const mockFake = { maintenance: 'true', revoked: false, beforeCutoff: false, admin: adminRow() };
 
 jest.mock('../../src/database/db', () => {
+  // admin_users goes through helpers/projectingDb.js so the account lookup only
+  // gets back the columns it selects; the other tables keep the plain stub.
+  const adminUsers = require('../helpers/projectingDb').projectingDb(() => mockFake.admin);
   const db = jest.fn((table) => {
+    if (table === 'admin_users') return adminUsers(table);
     const q = {
       leftJoin: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       first: jest.fn(async () => {
         if (table === 'app_settings') {
-          return { setting_key: 'general_maintenance_mode', setting_value: fake.maintenance };
+          return { setting_key: 'general_maintenance_mode', setting_value: mockFake.maintenance };
         }
-        if (table === 'admin_users') return fake.admin;
         if (table === 'events') return { id: 1, slug: 'preview', created_by: 1, is_active: 1 };
         return null;
       }),
@@ -38,8 +46,8 @@ jest.mock('../../src/database/db', () => {
 });
 jest.mock('../../src/middleware/permissions', () => ({ userHasAllPermissions: jest.fn().mockResolvedValue(true) }));
 jest.mock('../../src/utils/logger', () => ({ error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() }));
-jest.mock('../../src/utils/tokenRevocation', () => ({ isTokenRevoked: jest.fn(async () => fake.revoked) }));
-jest.mock('../../src/utils/sessionCutoff', () => ({ isTokenBeforeCutoff: jest.fn(async () => fake.beforeCutoff) }));
+jest.mock('../../src/utils/tokenRevocation', () => ({ isTokenRevoked: jest.fn(async () => mockFake.revoked) }));
+jest.mock('../../src/utils/sessionCutoff', () => ({ isTokenBeforeCutoff: jest.fn(async () => mockFake.beforeCutoff) }));
 jest.mock('../../src/utils/frontendUrl', () => ({ getFrontendBaseUrlSync: () => 'https://photos.example.com' }));
 
 const { maintenanceMiddleware, clearMaintenanceCache } = require('../../src/middleware/maintenance');
@@ -79,7 +87,7 @@ describe('general rate limiter skip', () => {
 
 describe('admin preview requires a live admin session', () => {
   const req = (token) => ({ params: { slug: 'preview' }, query: { admin_preview: '1' }, cookies: { admin_token: token }, headers: {} });
-  beforeEach(() => { fake.revoked = false; fake.beforeCutoff = false; fake.admin = { id: 1, password_changed_at: null }; });
+  beforeEach(() => { mockFake.revoked = false; mockFake.beforeCutoff = false; mockFake.admin = adminRow(); });
 
   it('passes for a live session and sets req.isAdminPreview', async () => {
     const r = req(adminToken());
@@ -88,21 +96,21 @@ describe('admin preview requires a live admin session', () => {
     expect(r.isAdminPreview).toBe(true);
   });
   it('fails for a revoked token', async () => {
-    fake.revoked = true;
+    mockFake.revoked = true;
     const r = req(adminToken());
     expect(await verifyAdminPreview(r)).toBe(false);
     expect(r.isAdminPreview).toBeUndefined();
   });
   it('fails after the restore cutoff', async () => {
-    fake.beforeCutoff = true;
+    mockFake.beforeCutoff = true;
     expect(await verifyAdminPreview(req(adminToken()))).toBe(false);
   });
   it('fails for a deactivated or deleted admin', async () => {
-    fake.admin = null;
+    mockFake.admin = null;
     expect(await verifyAdminPreview(req(adminToken()))).toBe(false);
   });
   it('fails for a token minted before the last password change', async () => {
-    fake.admin = { id: 1, password_changed_at: new Date((iat + 5) * 1000).toISOString() };
+    mockFake.admin = adminRow({ password_changed_at: new Date((iat + 5) * 1000).toISOString() });
     expect(await verifyAdminPreview(req(adminToken()))).toBe(false);
   });
 });

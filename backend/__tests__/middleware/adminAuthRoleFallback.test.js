@@ -19,21 +19,16 @@ jest.mock('../../src/utils/logger', () => ({ warn: jest.fn(), error: jest.fn(), 
 
 // The joined query throws whatever the test stages; the role-less fallback
 // query (no .leftJoin) always succeeds, which is what made the original bug
-// reachable — it is the cheaper single-table read.
+// reachable — it is the cheaper single-table read. Both go through
+// helpers/projectingDb.js, so each only gets back the columns it selects.
 // `mock`-prefixed so jest's module-factory hoisting allows the reference.
 let mockJoinError = null;
-const mockAdminRow = { id: 7, username: 'scoped', email: 's@example.com', password_changed_at: null };
+const mockAdminRow = { id: 7, username: 'scoped', email: 's@example.com', password_changed_at: null, must_change_password: false };
 
 jest.mock('../../src/database/db', () => ({
-  db: () => ({
-    _joined: false,
-    leftJoin() { this._joined = true; return this; },
-    where() { return this; },
-    select() { return this; },
-    first() {
-      if (this._joined && mockJoinError) return Promise.reject(mockJoinError);
-      return Promise.resolve({ ...mockAdminRow });
-    },
+  db: require('../helpers/projectingDb').projectingDb(({ joined }) => {
+    if (!joined) return mockAdminRow;
+    return mockJoinError || { ...mockAdminRow, role_id: 2, role_name: 'editor', role_display_name: 'Editor' };
   }),
 }));
 
