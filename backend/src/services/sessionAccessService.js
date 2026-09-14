@@ -42,18 +42,25 @@ class SessionAccessService {
         .where({ 'admin_users.id': session.id, 'admin_users.is_active': formatBoolean(true) })
         .select('admin_users.id', 'admin_users.username', 'admin_users.email',
           'admin_users.password_changed_at', 'roles.id as role_id', 'roles.name as role_name',
-          ...(includeProfile ? ['admin_users.must_change_password', 'roles.display_name as role_display_name'] : []))
+          // Always projected, never behind includeProfile: it is a security
+          // flag, not profile decoration. Gating it meant a caller that forgot
+          // to ask silently read `undefined` and skipped the gate - which is
+          // exactly how the roles-join fallback and the gallery preview each
+          // ended up bypassing it. The column is self-healed at boot
+          // (database/db.js:384) and the backend refuses to serve a
+          // half-migrated schema, so it is always there to select.
+          'admin_users.must_change_password',
+          ...(includeProfile ? ['roles.display_name as role_display_name'] : []))
         .first();
     } catch (error) {
       if (!isMissingRolesSchema(error)) throw error;
-      // Mirror the joined projection's optional columns: adminAuth reads
-      // must_change_password off this account to gate every request, so
-      // dropping it here turns the 403 into a silent pass on exactly the
-      // upgrade-window installs this fallback exists for.
+      // Same projection as the joined query for everything that is not a
+      // roles column: adminAuth reads must_change_password off this account to
+      // gate every request, so dropping it here turned the 403 into a silent
+      // pass on exactly the upgrade-window installs this fallback exists for.
       account = await db('admin_users')
         .where({ id: session.id, is_active: formatBoolean(true) })
-        .select('id', 'username', 'email', 'password_changed_at',
-          ...(includeProfile ? ['must_change_password'] : [])).first();
+        .select('id', 'username', 'email', 'password_changed_at', 'must_change_password').first();
       if (account) Object.assign(account, { role_id: null, role_name: 'super_admin' });
     }
     if (!account) throw new AppError('Invalid token', 401, 'ADMIN_NOT_FOUND');

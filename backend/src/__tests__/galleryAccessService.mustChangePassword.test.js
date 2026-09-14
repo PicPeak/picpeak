@@ -9,10 +9,16 @@
  * metadata}.js all accept the admin grant. The flag exists to force a rotation,
  * and a path that ignores it makes the rotation optional.
  *
- * Two halves to the fix, and the test pins both: the call now asks for
- * includeProfile (without it sessionAccessService does not select the column at
- * all, so the gate would read undefined and pass), and the flag is then
- * enforced.
+ * The flag is projected unconditionally by sessionAccessService, so this path
+ * deliberately does NOT pass includeProfile - that would also pull in
+ * roles.display_name and make the query fail, and fall back to a fabricated
+ * super_admin, on a schema missing only that column.
+ *
+ * That contract lives in two places, so it is pinned in two places: the
+ * projection itself is covered by
+ * __tests__/middleware/adminAuthRoleFallbackMustChangePassword.test.js, whose
+ * db mock honours select(); this file covers the enforcement, and asserts the
+ * call does not opt into the profile.
  *
  * Same mocking shape as verifyGalleryAccess.customerRevoke.test.js — every
  * collaborator stubbed so this stays a fast unit test.
@@ -54,17 +60,15 @@ function grantFor() {
 describe('admin gallery preview honours must_change_password', () => {
   beforeEach(() => {
     mockAdminSpy.mockReset();
-    // Model sessionAccessService: the column only comes back when asked for.
-    mockAdminSpy.mockImplementation((_session, opts = {}) => Promise.resolve(
-      opts.includeProfile
-        ? { ...adminAccount }
-        : { id: adminAccount.id, username: adminAccount.username, role_name: adminAccount.role_name },
-    ));
+    // Model sessionAccessService's real contract: the flag is projected
+    // unconditionally, so it comes back whether or not options are passed.
+    mockAdminSpy.mockImplementation(() => Promise.resolve({ ...adminAccount }));
   });
 
-  it('asks for the profile, so the flag is actually available to check', async () => {
+  it('does not opt into the profile, which would add a roles.display_name dependency', async () => {
     await access.authorize(EVENT, grantFor());
-    expect(mockAdminSpy).toHaveBeenCalledWith(expect.anything(), { includeProfile: true });
+    const [, opts] = mockAdminSpy.mock.calls[0];
+    expect(opts?.includeProfile).toBeFalsy();
   });
 
   it('denies a flagged admin with MUST_CHANGE_PASSWORD', async () => {
