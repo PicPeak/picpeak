@@ -236,6 +236,82 @@ describe('signature evidence under concurrent requests', () => {
   });
 });
 
+describe('admin PDF repair actions under concurrent requests', () => {
+  async function customerSigned(title) {
+    const { id, token } = await sentContract(title);
+    await contractService.recordCustomerSignature({ token, name: 'Maria Meier', accepted: true, ip: '198.51.100.20' });
+    return id;
+  }
+
+  it('lets one of two simultaneous re-stamps through and removes the loser\'s image', async () => {
+    const id = await customerSigned('Race restamp');
+    const pngsBefore = signaturePngs().length;
+
+    const results = await Promise.allSettled([1, 2].map(() => (
+      contractService.restampSignatures(id, { customerSignatureDataUrl: SIGNATURE_DATA_URL }, adminId)
+    )));
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason.code).toBe('CONTRACT_STATE_CHANGED');
+    const contract = await db('contracts').where({ id }).first();
+    expect(fs.existsSync(contract.signed_customer_signature_path)).toBe(true);
+    expect(signaturePngs().length).toBe(pngsBefore + 1);
+  });
+
+  it('does not let a late re-stamp replace a wet-signed upload that landed meanwhile', async () => {
+    const id = await customerSigned('Late restamp');
+    const uploadDir = path.join(process.env.STORAGE_PATH, 'uploads', 'contracts', 'signed');
+    fs.mkdirSync(uploadDir, { recursive: true });
+    const wet = path.join(uploadDir, `wet-restamp-${Date.now()}.pdf`);
+    fs.writeFileSync(wet, '%PDF-1.4 authoritative wet-signed copy');
+
+    const realStamp = pdfStampService.stampSignatures;
+    const spy = jest.spyOn(pdfStampService, 'stampSignatures').mockImplementationOnce(async (...args) => {
+      // The admin uploads the wet-signed copy while the re-stamp renders.
+      await contractService.attachSignedPdfUpload(id, wet, 'admin');
+      return realStamp.apply(pdfStampService, args);
+    });
+    let result;
+    try {
+      result = await contractService.restampSignatures(id, { customerSignatureDataUrl: SIGNATURE_DATA_URL }, adminId);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.signed_pdf_path).toBe(wet);
+    expect(result.superseded).toBe(true);
+    expect(result.signedPdfPath).toBe(wet);
+  });
+
+  it('refuses a re-send whose rebuilt PDF was overtaken, and mails nothing', async () => {
+    const id = await customerSigned('Race resend');
+    await contractService.recordAdminCountersignature(id, { name: 'Admin', ip: '203.0.113.20' }, adminId);
+    const signedBefore = (await db('contracts').where({ id }).first()).signed_pdf_path;
+    const mailsBefore = (await db('email_queue').where({ email_type: 'contract_fully_signed' })).length;
+
+    const realStamp = pdfStampService.stampSignatures;
+    const spy = jest.spyOn(pdfStampService, 'stampSignatures').mockImplementationOnce(async (...args) => {
+      // Another admin re-stamps while the re-send rebuilds the PDF.
+      await contractService.restampSignatures(id, { adminSignatureDataUrl: SIGNATURE_DATA_URL }, adminId);
+      return realStamp.apply(pdfStampService, args);
+    });
+    try {
+      await expect(contractService.rerenderAndResend(id, adminId))
+        .rejects.toMatchObject({ statusCode: 409, code: 'CONTRACT_STATE_CHANGED' });
+    } finally {
+      spy.mockRestore();
+    }
+
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.signed_pdf_path).not.toBe(signedBefore);
+    expect((await db('email_queue').where({ email_type: 'contract_fully_signed' })).length).toBe(mailsBefore);
+  });
+});
+
 describe('tokens without an expiry', () => {
   // Postgres rejects an empty timestamp and the column is NOT NULL, so a
   // missing expiry can only be staged on SQLite.
