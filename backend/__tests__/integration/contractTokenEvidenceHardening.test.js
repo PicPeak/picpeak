@@ -328,6 +328,72 @@ describe('signature evidence under concurrent requests', () => {
 });
 
 describe('countersignature stamping', () => {
+  it('sends no fully-signed emails without a recorded PDF carrying both signatures, and leaves them to Re-send', async () => {
+    const { id, token } = await sentContract('Countersign during restamp');
+    await contractService.recordCustomerSignature({
+      token, name: 'Maria Meier', accepted: true, ip: '198.51.100.15', signatureDataUrl: SIGNATURE_DATA_URL,
+    });
+    const { contract_number: contractNumber, signed_pdf_path: customerOnly } = await db('contracts').where({ id }).first();
+    const fullySignedMails = async () => (await db('email_queue').where({ email_type: 'contract_fully_signed' }))
+      .map((row) => (typeof row.email_data === 'string' ? JSON.parse(row.email_data) : row.email_data))
+      .filter((data) => data.contract_number === contractNumber);
+
+    const realStamp = pdfStampService.stampSignature;
+    const realStamps = pdfStampService.stampSignatures;
+    let restampRun;
+    let markRestampRendering;
+    const restampRendering = new Promise((resolve) => { markRestampRendering = resolve; });
+    let releaseRestamp;
+    const restampReleased = new Promise((resolve) => { releaseRestamp = resolve; });
+    const many = jest.spyOn(pdfStampService, 'stampSignatures').mockImplementationOnce(async (...args) => {
+      markRestampRendering();
+      await restampReleased;
+      return realStamps.apply(pdfStampService, args);
+    });
+    const one = jest.spyOn(pdfStampService, 'stampSignature').mockImplementationOnce(async (args) => {
+      // Another admin re-stamps the customer signature while the
+      // countersignature renders; the re-stamp's PDF is still rendering when
+      // the countersignature's stamp is refused.
+      restampRun = contractService.restampSignatures(id, { customerSignatureDataUrl: SIGNATURE_DATA_URL }, adminId);
+      restampRun.catch(() => {});
+      await Promise.race([restampRendering, restampRun]);
+      return realStamp.call(pdfStampService, args);
+    });
+    try {
+      await contractService.recordAdminCountersignature(
+        id, { name: 'Admin', ip: '203.0.113.33', signatureDataUrl: SIGNATURE_DATA_URL }, adminId,
+      );
+      const deferred = await db('contracts').where({ id }).first();
+      expect(deferred.status).toBe('fully_signed');
+      expect(deferred.signed_pdf_render_failed_at).toBeTruthy();
+      expect(await fullySignedMails()).toHaveLength(0);
+
+      releaseRestamp();
+      await restampRun;
+    } finally {
+      releaseRestamp();
+      one.mockRestore();
+      many.mockRestore();
+    }
+
+    // The re-stamp recorded its PDF but sends nothing, so the marker stays
+    // until the admin re-sends.
+    const restamped = await db('contracts').where({ id }).first();
+    expect(restamped.signed_pdf_path).not.toBe(customerOnly);
+    expect(restamped.signed_pdf_render_failed_at).toBeTruthy();
+    expect(await fullySignedMails()).toHaveLength(0);
+
+    await contractService.rerenderAndResend(id, adminId);
+    const resent = await db('contracts').where({ id }).first();
+    expect(resent.signed_pdf_render_failed_at).toBeFalsy();
+    const mails = await fullySignedMails();
+    expect(mails.length).toBeGreaterThan(0);
+    for (const mail of mails) {
+      expect(mail.attachments.find((a) => a.filename === `${contractNumber}-signed.pdf`).contentPath)
+        .toBe(resent.signed_pdf_path);
+    }
+  });
+
   it('marks the render failed instead of recording a PDF without the countersignature', async () => {
     const { id, token } = await sentContract('Unstampable countersign');
     await contractService.recordCustomerSignature({

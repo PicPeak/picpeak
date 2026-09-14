@@ -308,6 +308,7 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
   const refreshed = await getContractById(contract.id);
   let signedPath = null;
   let signedSha256 = null;
+  let stampSuperseded = false;
   try {
     if (!signaturePath) {
       throw new Error('Admin signature image missing; cannot stamp the counter-signed PDF');
@@ -353,6 +354,7 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
       logger.info('Counter-signed PDF superseded before it was recorded', { contractId: contract.id });
       signedPath = null;
       signedSha256 = null;
+      stampSuperseded = true;
     }
   } catch (err) {
     logger.error('Failed to stamp contract PDF after admin signature', {
@@ -385,19 +387,46 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
   // greeting + name. The admin BCC is delivered as "to the issuer"
   // so it lands in the same inbox the contract_sent email originated
   // from.
-  if (newStatus === 'fully_signed') {
+  //
+  // The emails only ever carry a PDF with both signatures: this stamp once it
+  // is recorded, or a newer authoritative PDF that superseded it (a
+  // wet-signed upload, or a re-stamp or re-send recorded after the read
+  // above, both built from a row that already holds this countersignature).
+  // They used to fall back to whatever PDF was on record, which can be the
+  // customer-only copy while a re-stamp is still rendering. Otherwise the
+  // emails wait: the recovery marker sends the admin to "Re-send signed
+  // PDF", which re-stamps and sends them. A stamp that failed outright has
+  // set that marker already.
+  let fullySignedAttachment = signedPath;
+  if (newStatus === 'fully_signed' && stampSuperseded) {
+    const current = await db('contracts').where({ id: contract.id }).first();
+    const currentIsWetUpload = current?.signed_pdf_is_wet_upload === true || current?.signed_pdf_is_wet_upload === 1;
+    if (current?.status === 'fully_signed' && current.signed_pdf_path
+      && (currentIsWetUpload || current.signed_pdf_path !== refreshed.contract.signed_pdf_path)) {
+      fullySignedAttachment = current.signed_pdf_path;
+    } else {
+      try {
+        if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
+          await db('contracts').where({ id: contract.id }).update({
+            signed_pdf_render_failed_at: new Date(),
+            signed_pdf_render_error: 'The counter-signed PDF was replaced by a concurrent change before it was recorded, so the fully-signed emails were not sent. Re-send the signed PDF once that change has finished.',
+            updated_at: new Date(),
+          });
+        }
+      } catch (markErr) {
+        logger.error('Failed to record signed_pdf_render_failed marker (admin sign superseded)', {
+          contractId: contract.id, message: markErr.message,
+        });
+      }
+    }
+  }
+  if (newStatus === 'fully_signed' && !fullySignedAttachment) {
+    logger.warn('Fully-signed emails not sent: no recorded PDF carries both signatures yet', { contractId: contract.id });
+  }
+  if (newStatus === 'fully_signed' && fullySignedAttachment) {
     try {
-      // Pick the best available PDF as the attachment, in priority
-      // order: this counter-sign's freshly-rendered signed copy →
-      // the customer-only signed copy we wrote earlier → the
-      // original unsigned PDF. Falling all the way through to no
-      // attachment is acceptable; the email still goes out with the
-      // contract number so the customer knows it's binding.
       const refetched = await db('contracts').where({ id: contract.id }).first();
-      const attachmentPath = signedPath
-        || refetched?.signed_pdf_path
-        || refetched?.pdf_path
-        || null;
+      const attachmentPath = fullySignedAttachment;
 
       const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
       const profile = (await businessProfileService.getProfile()).profile || {};
@@ -839,8 +868,11 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
       updated_at: new Date(),
     };
     if (hasSignedPdfSha) updates.signed_pdf_sha256 = signedSha256;
-    // Migration 136 — restamp is a recovery path; clear the marker.
-    if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
+    // Migration 136 — restamp is a recovery path; clear the marker. Not on a
+    // fully-signed contract: there the marker can also stand for
+    // fully-signed emails never sent, which only "Re-send signed PDF" sends,
+    // and that clears it.
+    if (contract.status !== 'fully_signed' && await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
       updates.signed_pdf_render_failed_at = null;
       updates.signed_pdf_render_error = null;
     }
