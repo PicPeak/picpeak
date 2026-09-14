@@ -338,10 +338,17 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
     }
     // Recorded only if the row still holds what this stamp was built from; a
     // wet-signed upload or a re-stamp in the meantime stays authoritative.
-    const stampApplied = await whereSignedPdfInputsUnchanged(
+    let stampQuery = whereSignedPdfInputsUnchanged(
       db('contracts').where({ id: contract.id, status: newStatus }),
       refreshed.contract,
-    ).update(updates);
+    );
+    // An upload that landed between the status update and the read above is
+    // already in refreshed, so the PDF check alone would let this stamp,
+    // rebuilt from the unsigned PDF, replace the uploaded document.
+    if (await hasColumnCached('contracts', 'signed_pdf_is_wet_upload')) {
+      stampQuery = stampQuery.where((q) => q.whereNull('signed_pdf_is_wet_upload').orWhere('signed_pdf_is_wet_upload', false));
+    }
+    const stampApplied = await stampQuery.update(updates);
     if (!stampApplied) {
       logger.info('Counter-signed PDF superseded before it was recorded', { contractId: contract.id });
       signedPath = null;
