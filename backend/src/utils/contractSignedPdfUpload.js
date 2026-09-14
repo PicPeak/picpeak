@@ -12,7 +12,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
 const multer = require('multer');
-const { validateFileType } = require('./fileSecurityUtils');
+const { validateFileType, validateFileContent } = require('./fileSecurityUtils');
 const { getAppSetting } = require('./appSettings');
 const { clientIpForAudit } = require('./clientIp');
 const { db } = require('../database/db');
@@ -66,6 +66,13 @@ async function finishSignedPdfUpload(req, res) {
   const tokenRow = req.publicTokenRow;
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded', code: 'NO_FILE' });
+  }
+  // The filter only saw the reported type and the file name. The upload
+  // becomes the authoritative signed contract, so its bytes must be a PDF.
+  // Checked before the token is spent, so the customer can retry.
+  if (!(await validateFileContent(req.file.path, 'application/pdf'))) {
+    await fs.promises.unlink(req.file.path).catch(() => {});
+    return res.status(400).json({ error: 'The uploaded file is not a PDF.', code: 'INVALID_PDF' });
   }
   const contractService = require('../services/contractService');
   const result = await contractService.attachSignedPdfUpload(tokenRow.contract_id, req.file.path, 'customer');

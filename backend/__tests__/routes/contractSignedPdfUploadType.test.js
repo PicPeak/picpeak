@@ -57,6 +57,13 @@ describe('signed-contract PDF uploads accept PDF files', () => {
     return inserted[0]?.id ?? inserted[0];
   }
 
+  // The customer link needs the emailed-code grant before multer runs.
+  const verification = require('../../src/services/publicDocumentVerificationService');
+  const grantFor = async (linkToken) => {
+    const tokenRow = await db('contract_action_tokens').where({ token: linkToken }).first();
+    return verification.issueGrant('contract', tokenRow, linkToken);
+  };
+
   const adminUpload = (id) => request(adminApp)
     .post(`/api/admin/contracts/${id}/upload-signed-pdf`)
     .set('Authorization', `Bearer ${token}`);
@@ -78,6 +85,7 @@ describe('signed-contract PDF uploads accept PDF files', () => {
 
     const res = await request(publicApp)
       .post(`/api/public/contracts/${linkToken}/upload-signed-pdf`)
+      .set('X-Document-Access', await grantFor(linkToken))
       .attach('file', PDF, { filename: 'signed.pdf', contentType: 'application/pdf' });
 
     expect(res.status).toBe(200);
@@ -101,11 +109,47 @@ describe('signed-contract PDF uploads accept PDF files', () => {
 
     const res = await request(publicApp)
       .post(`/api/public/contracts/${linkToken}/upload-signed-pdf`)
+      .set('X-Document-Access', await grantFor(linkToken))
       .attach('file', PDF, { filename: 'signed.exe', contentType: 'application/pdf' });
 
     expect(res.status).toBeGreaterThanOrEqual(400);
     expect(res.body.error).toMatch(/only pdf files are allowed/i);
     expect((await db('contracts').where({ id }).first()).status).toBe('sent');
+  });
+
+  // The filter only sees the reported type and the name, so a file claiming
+  // to be a PDF is checked for the "%PDF-" signature once it is on disk.
+  const signedDir = () => path.join(require('../../src/config/storage').getStoragePath(), 'uploads/contracts/signed');
+  const signedFiles = () => { try { return fs.readdirSync(signedDir()); } catch { return []; } };
+
+  it('refuses non-PDF bytes sent as a PDF on the admin upload and removes the file', async () => {
+    const id = await insertContract();
+    const before = signedFiles();
+
+    const res = await adminUpload(id).attach('file', PNG, { filename: 'signed.pdf', contentType: 'application/pdf' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_PDF');
+    expect((await db('contracts').where({ id }).first()).status).toBe('sent');
+    expect(signedFiles()).toEqual(before);
+  });
+
+  it('refuses non-PDF bytes sent as a PDF on the customer link upload, leaving the link usable', async () => {
+    const id = await insertContract();
+    const linkToken = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+    const before = signedFiles();
+
+    const res = await request(publicApp)
+      .post(`/api/public/contracts/${linkToken}/upload-signed-pdf`)
+      .set('X-Document-Access', await grantFor(linkToken))
+      .attach('file', PNG, { filename: 'signed.pdf', contentType: 'application/pdf' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_PDF');
+    expect((await db('contracts').where({ id }).first()).status).toBe('sent');
+    expect(signedFiles()).toEqual(before);
+    const tokenRow = await db('contract_action_tokens').where({ contract_id: id }).first();
+    expect(tokenRow.used_at).toBeNull();
   });
 
   it('keeps PDFs out of the photo and media uploads', () => {

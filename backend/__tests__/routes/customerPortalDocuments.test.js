@@ -167,6 +167,23 @@ describe('customer portal contracts and quotes', () => {
     expect(after).toBe(before);
   });
 
+  it('refuses a portal upload whose bytes are not a PDF, keeping the token and writing no file', async () => {
+    const id = await contract(customerId, 'sent', 'K-P-5');
+    const linkToken = await createPublicToken(db, 'contract_action_tokens', { contract_id: id });
+    const uploadDir = path.join(process.env.STORAGE_PATH, 'uploads/contracts/signed');
+    const before = fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir).length : 0;
+
+    const res = await post(`/api/customer/contracts/${id}/upload-signed-pdf`)
+      .attach('file', Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]), { filename: 'signed.pdf', contentType: 'application/pdf' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('INVALID_PDF');
+    expect((await db('contracts').where({ id }).first()).status).toBe('sent');
+    expect((await db('contract_action_tokens').where({ token: linkToken }).first()).used_at).toBeNull();
+    const after = fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir).length : 0;
+    expect(after).toBe(before);
+  });
+
   it('signs with the session alone and spends the server-side token', async () => {
     const res = await post(`/api/customer/contracts/${signable}/sign`).send({ name: 'Test Customer', accepted: true });
 
