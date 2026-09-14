@@ -50,9 +50,18 @@ vi.mock('../../../../components/admin/CustomerPicker', async () => {
   const { createElement } = await vi.importActual<typeof import('react')>('react');
   return {
     CustomerPicker: ({ onSelect }: { onSelect: (c: unknown) => void }) => createElement(
-      'button',
-      { type: 'button', onClick: () => onSelect({ id: 3, email: 'kunde@example.com' }) },
-      'pick customer',
+      'div',
+      null,
+      createElement(
+        'button',
+        { type: 'button', onClick: () => onSelect({ id: 3, email: 'kunde@example.com' }) },
+        'pick customer',
+      ),
+      createElement(
+        'button',
+        { type: 'button', onClick: () => onSelect({ id: 4, email: 'andere@example.com' }) },
+        'pick other customer',
+      ),
     ),
   };
 });
@@ -159,14 +168,17 @@ describe('ContractEditorPage save failures (issue 1447)', () => {
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
 
-  it('gives a reference id for a server fault without claiming a draft exists', async () => {
+  it('gives a reference id for a server fault without claiming whether the draft was saved', async () => {
+    // A 5xx can arrive after the write committed (the read-back failed, or a
+    // proxy timed out), so it is no proof that nothing was saved.
     create.mockRejectedValueOnce(httpError(500, { error: 'An unexpected error occurred', code: 'INTERNAL_ERROR', requestId: 'req-500' }));
     const button = renderEditor();
 
     fireEvent.click(button);
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('The draft was not saved.');
+    expect(alert).toHaveTextContent('We could not confirm whether the draft was saved.');
+    expect(alert).not.toHaveTextContent('The draft was not saved.');
     expect(alert).toHaveTextContent('Reference ID: req-500');
   });
 
@@ -210,6 +222,26 @@ describe('ContractEditorPage save failures (issue 1447)', () => {
     expect(update).toHaveBeenCalledTimes(1);
     expect(update.mock.calls[0][0]).toBe(7);
     expect(update.mock.calls[0][1]).toEqual(expect.objectContaining({ title: 'Hochzeit Meier' }));
+  });
+
+  it('starts a new create when the customer is changed after a lost response', async () => {
+    // Retrying with the same key would replay the first customer's draft and
+    // write the second customer's contract into it.
+    create
+      .mockRejectedValueOnce(networkError())
+      .mockResolvedValueOnce({ contract: { id: 9 } });
+    const button = renderEditor();
+    fireEvent.click(button);
+    await screen.findByRole('alert');
+
+    fireEvent.click(screen.getByText('pick other customer'));
+    fireEvent.click(await screen.findByRole('button', { name: /create draft/i }));
+
+    await screen.findByText('contract detail 9');
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1][0]).toEqual(expect.objectContaining({ customerAccountId: 4 }));
+    expect(create.mock.calls[1][1]?.idempotencyKey).not.toBe(create.mock.calls[0][1]?.idempotencyKey);
+    expect(update).not.toHaveBeenCalled();
   });
 
   it('says the draft exists when applying the latest changes to it fails, and saves again as an update', async () => {

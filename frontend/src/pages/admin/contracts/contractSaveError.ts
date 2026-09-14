@@ -3,11 +3,11 @@
  *
  * The editor used to toast whatever text came back, so an admin could not tell
  * a validation problem from a server fault, and could not tell whether a draft
- * had been created. What matters for that sentence is whether the request
- * reached the server at all: a response of any status means the save was
- * refused and nothing was written, while no response (network drop, timeout)
- * means the draft may exist. The idempotency key makes retrying that last case
- * safe.
+ * had been created. A 4xx means the save was refused and nothing was written.
+ * A 5xx does not prove that: the routes read the contract back after the write
+ * committed, and a proxy can time out after the commit too. So a 5xx, like no
+ * response at all, leaves the outcome unconfirmed, and the idempotency key
+ * makes retrying it safe.
  */
 
 export type SaveErrorKind =

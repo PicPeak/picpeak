@@ -292,10 +292,14 @@ async function createContractIdempotent(payload, adminId, idempotencyKey) {
   const findEarlier = async () => {
     const existing = await db('contracts')
       .where({ create_idempotency_key: idempotencyKey })
-      .select('id', 'created_by_admin_id')
+      .select('id', 'created_by_admin_id', 'customer_account_id')
       .first();
     if (!existing) return null;
-    if (Number(existing.created_by_admin_id) !== Number(adminId)) {
+    // A replay answers with the earlier draft as-is, and an update cannot move
+    // a contract to another customer. A key reused for a different customer
+    // would have the caller write that customer's contract into this draft.
+    if (Number(existing.created_by_admin_id) !== Number(adminId)
+      || Number(existing.customer_account_id) !== Number(payload.customerAccountId)) {
       throw new AppError('This request key was already used for a different draft.', 409, 'IDEMPOTENCY_KEY_CONFLICT');
     }
     return { id: existing.id, replayed: true };
