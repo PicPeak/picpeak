@@ -7,8 +7,10 @@
  * a flagged admin gets 403 MUST_CHANGE_PASSWORD on everything except the
  * routes they need to clear the flag (change-password) or leave (logout).
  *
- * Mirrors the mocking shape of adminAuthRoleFallback.test.js — a stub `db`
- * chain, no real SQLite needed, so this stays a fast unit test.
+ * The `db` stub is helpers/projectingDb.js, so only the selected columns come
+ * back: a lookup that stops projecting must_change_password fails here. With
+ * a no-op select() it passed regardless. No real SQLite needed, so this stays
+ * a fast unit test.
  */
 
 const jwt = require('jsonwebtoken');
@@ -18,15 +20,14 @@ jest.mock('../../src/utils/sessionCutoff', () => ({ isTokenBeforeCutoff: jest.fn
 jest.mock('../../src/utils/logger', () => ({ warn: jest.fn(), error: jest.fn(), debug: jest.fn(), info: jest.fn() }));
 
 let mockMustChangePassword = false;
-const mockAdminRow = { id: 7, username: 'scoped', email: 's@example.com', password_changed_at: null, role_id: 1, role_name: 'editor' };
+// A joined admin_users + roles row (roles table present).
+const mockAdminRow = {
+  id: 7, username: 'scoped', email: 's@example.com', password_changed_at: null,
+  role_id: 1, role_name: 'editor', role_display_name: 'Editor',
+};
 
 jest.mock('../../src/database/db', () => ({
-  db: () => ({
-    leftJoin() { return this; },
-    where() { return this; },
-    select() { return this; },
-    first: () => Promise.resolve({ ...mockAdminRow, must_change_password: mockMustChangePassword }),
-  }),
+  db: require('../helpers/projectingDb').projectingDb(() => ({ ...mockAdminRow, must_change_password: mockMustChangePassword })),
 }));
 
 const { adminAuth } = require('../../src/middleware/auth');
