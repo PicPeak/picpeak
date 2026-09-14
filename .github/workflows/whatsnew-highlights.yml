@@ -45,6 +45,10 @@ jobs:
     # any continue-on-error can save it.
     env:
       GH_REPO: ${{ github.repository }}
+      # Above this many "### Features" lines the release is a beta -> stable
+      # promote, not an ordinary release, and the highlights are written by
+      # hand instead. See the "Oversized release" step for why.
+      MAX_FEATURES: 25
     steps:
       - name: Extract Features from the published release
         id: feat
@@ -61,9 +65,16 @@ jobs:
           BODY=$(gh release view "$TAG" --json body -q .body)
           FEATURES=$(printf '%s\n' "$BODY" | awk '/^#{2,4} +Features/{f=1;next} /^#{1,4} +\S/{f=0} f')
           { echo "features<<EOF"; printf '%s\n' "$FEATURES"; echo EOF; } >> "$GITHUB_OUTPUT"
+          # How many features are we asking the model to choose from? A normal
+          # beta release has a handful; a beta -> stable promote has dozens, and
+          # that is the case this guard exists for (see MAX_FEATURES below).
+          # "* " / "- " with the space: a bold group label like **Galleries**
+          # also starts with an asterisk and must not inflate the count.
+          COUNT=$(printf '%s\n' "$FEATURES" | grep -c '^\* \|^- ' || true)
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
 
       - name: Summarize with GitHub Models
-        if: ${{ steps.feat.outputs.features != '' }}
+        if: ${{ steps.feat.outputs.features != '' && fromJSON(steps.feat.outputs.count || '0') <= fromJSON(env.MAX_FEATURES) }}
         id: ai
         continue-on-error: true   # Models may be disabled/unavailable for the org; fall back deterministically below
         uses: actions/ai-inference@v1
@@ -78,7 +89,7 @@ jobs:
           prompt: ${{ steps.feat.outputs.features }}
 
       - name: Inject the What's New block
-        if: ${{ steps.feat.outputs.features != '' }}
+        if: ${{ steps.feat.outputs.features != '' && fromJSON(steps.feat.outputs.count || '0') <= fromJSON(env.MAX_FEATURES) }}
         continue-on-error: true   # never let highlights break a release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -96,3 +107,44 @@ jobs:
           # Idempotent: strip any prior block before re-injecting.
           BODY=$(printf '%s' "$BODY" | perl -0pe 's/<!--\s*whatsnew\s*-->.*?<!--\s*\/whatsnew\s*-->\n*//is')
           gh release edit "$TAG" --notes "$(printf '<!-- whatsnew -->\n%s\n<!-- /whatsnew -->\n\n%s' "$BULLETS" "$BODY")"
+
+      - name: Oversized release — highlights must be written by hand
+        if: ${{ steps.feat.outputs.features != '' && fromJSON(steps.feat.outputs.count || '0') > fromJSON(env.MAX_FEATURES) }}
+        env:
+          TAG: ${{ inputs.tag }}
+          COUNT: ${{ steps.feat.outputs.count }}
+        run: |
+          # Deliberately does NOT inject a block. Asking a small model to pick 8
+          # of N features works while N is small and degrades badly as it grows:
+          # on v3.132.1 (63 features) it chose category ordering and the CMS
+          # editor toolbar, and missed face recognition, PicTransfer, OIDC SSO
+          # and granular permissions entirely.
+          #
+          # That block is not decoration. The admin dashboard renders it in the
+          # update banner next to an "Update Now" button that pulls the image
+          # and recreates the container, so on exactly the releases with the
+          # most to say - and the most upgrade risk - it was the least accurate.
+          # No block is better than a misleading one: parseWhatsNew() falls back
+          # to the raw Features list, which is at least not a curated-looking
+          # summary that quietly omits the headline features.
+          {
+            echo "## What's New highlights skipped for \`$TAG\`"
+            echo
+            echo "The release lists **$COUNT features**, above the \`MAX_FEATURES\` threshold of ${{ env.MAX_FEATURES }}."
+            echo "This is the shape of a beta → stable promote, where an auto-picked 8-of-$COUNT is"
+            echo "reliably worse than a hand-written list."
+            echo
+            echo "**Write the block by hand** and prepend it to the release notes:"
+            echo
+            echo '```'
+            echo '<!-- whatsnew -->'
+            echo
+            echo '- Lead with anything that makes the upgrade risky or irreversible'
+            echo '- Then the headline features, at most 8 bullets total'
+            echo
+            echo '<!-- /whatsnew -->'
+            echo '```'
+            echo
+            echo "Avoid em dashes inside a bullet: \`cleanBullet()\` (backend/src/utils/whatsNew.js)"
+            echo "strips a trailing \"— clause\", which silently truncates the bullet in the banner."
+          } >> "$GITHUB_STEP_SUMMARY"
