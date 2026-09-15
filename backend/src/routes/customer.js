@@ -193,6 +193,11 @@ router.get('/events/:slug/access-token', [
     // customerAuth already verified this token; its iat (and jti, if any) is
     // the portal session's revocation key, so logging out ends this token too.
     const portalSession = jwt.decode(req.token) || {};
+    // Never outlive the portal session: its revocation row is cleaned up at
+    // its own exp, after which a longer-lived gallery token would work again.
+    const portalSecondsLeft = Number.isFinite(portalSession.exp)
+      ? portalSession.exp - Math.floor(Date.now() / 1000) : GALLERY_TOKEN_TTL_SECONDS;
+    const galleryTtlSeconds = Math.max(1, Math.min(GALLERY_TOKEN_TTL_SECONDS, portalSecondsLeft));
     // Same shape as /api/auth/gallery/verify — keep them in sync so the
     // gallery middleware (verifyGalleryAccess) doesn't need a code change.
     const token = jwt.sign({
@@ -210,7 +215,7 @@ router.get('/events/:slug/access-token', [
       via: 'customer',
       customerId: req.customer.id,
     }, process.env.JWT_SECRET, {
-      expiresIn: GALLERY_TOKEN_TTL_SECONDS,
+      expiresIn: galleryTtlSeconds,
       issuer: 'picpeak-auth',
     });
 

@@ -188,6 +188,13 @@ async function isSessionExpired(token, decoded) {
   return (now - tokenIssuedAt) > timeout;
 }
 
+// Record activity for a token on a path sessionTimeoutMiddleware does not
+// cover (the gallery admin preview), so browsing there keeps the session
+// alive the same way admin API requests do.
+function touchSession(token) {
+  if (token) sessions.set(token, Date.now());
+}
+
 // Function to end a session
 function endSession(token) {
   sessions.delete(token);
@@ -211,6 +218,7 @@ module.exports = {
   dispose: () => { clearInterval(cleanupTimer); sessions.clear(); cachedTimeout = null; cacheExpiry = 0; },
   sessionTimeoutMiddleware,
   isSessionExpired,
+  touchSession,
   endSession,
   getActiveSessions
 };

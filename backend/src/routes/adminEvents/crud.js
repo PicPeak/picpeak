@@ -1160,6 +1160,9 @@ module.exports = (router) => {
         'archive_size',
         // Server-managed timestamps
         'download_zip_generated_at', 'archived_at', 'revealed_at', 'event_reminder_sent_at',
+        // Credential-change cutoffs: clearing one would revive the sessions
+        // the password change ended.
+        'gallery_password_changed_at', 'client_password_changed_at',
         // Lifecycle — governed by dedicated permission-gated routes
         // (events.archive/restore, publish, activate/deactivate), not events.edit.
         'is_archived', 'is_draft', 'is_active',

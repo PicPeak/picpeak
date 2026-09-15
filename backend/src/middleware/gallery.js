@@ -3,7 +3,7 @@ const { db, withRetry } = require('../database/db');
 const { getGalleryTokenFromRequest } = require('../utils/tokenUtils');
 const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
-const { isSessionExpired } = require('./sessionTimeout');
+const { isSessionExpired, touchSession } = require('./sessionTimeout');
 const access = require('../services/galleryAccessService');
 
 // Cookie first: a coexisting gallery Bearer must not shadow an admin preview.
@@ -64,6 +64,9 @@ async function verifyAdminPreview(req, event) {
     if (!event) return false;
     const grant = access.grant(event, 'admin', decoded);
     await access.authorize(event, grant);
+    // An authorized preview is activity, so the timeout above stays an idle
+    // timeout rather than a fixed preview lifetime.
+    touchSession(token);
     attachAccess(req, event, grant);
     return true;
   } catch (error) {

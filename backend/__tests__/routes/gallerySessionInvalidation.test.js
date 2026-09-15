@@ -40,6 +40,13 @@ beforeAll(async () => {
     password_hash: 'unused', share_link: `/gallery/${slug}`, created_by: adminId,
   });
   await db('event_customer_assignments').insert({ event_id: eventId, customer_account_id: customerId });
+  // Pin the idle timeout the preview cases rely on (the default is 60 minutes).
+  const timeoutSetting = { setting_key: 'security_session_timeout_minutes', setting_value: '60' };
+  if (await db('app_settings').where({ setting_key: timeoutSetting.setting_key }).first()) {
+    await db('app_settings').where({ setting_key: timeoutSetting.setting_key }).update({ setting_value: '60' });
+  } else {
+    await db('app_settings').insert({ ...timeoutSetting, setting_type: 'security' });
+  }
   app = express(); app.use(express.json()); app.use(cookieParser());
   app.use('/api/admin/events', require('../../src/routes/adminEvents'));
   app.use('/api/gallery', require('../../src/routes/gallery'));
@@ -80,6 +87,22 @@ describe('rotating a gallery credential', () => {
     expect((await listWith(slideshow)).status).toBe(200);
   });
 
+  it('does not let an event update clear the cutoff and revive the ended sessions', async () => {
+    const guest = galleryToken();
+    const client = galleryToken({ accessLevel: 'client' });
+    const auth = `Bearer ${mintAdminToken(adminId)}`;
+    expect((await request(app).post(`/api/admin/events/${eventId}/reset-password`).set('Authorization', auth)
+      .send({ sendEmail: false })).status).toBe(200);
+    expect((await request(app).put(`/api/admin/events/${eventId}`).set('Authorization', auth)
+      .send({ client_password: 'Client-Rotation-2027!' })).status).toBe(200);
+
+    await request(app).put(`/api/admin/events/${eventId}`).set('Authorization', auth)
+      .send({ gallery_password_changed_at: null, client_password_changed_at: null });
+
+    expect((await listWith(guest)).status).toBe(401);
+    expect((await listWith(client)).status).toBe(401);
+  });
+
   it('ends client sessions when the client password changes, not guest sessions', async () => {
     const guest = galleryToken();
     const client = galleryToken({ accessLevel: 'client' });
@@ -115,6 +138,17 @@ describe('logging out of the customer portal', () => {
     expect(refused.status).toBe(401);
     expect(refused.body.code).toBe('TOKEN_REVOKED');
   });
+
+  it('never mints a gallery token that outlives the portal session', async () => {
+    // The portal session's revocation row is removed at its own exp; a gallery
+    // token living past that would work again after logout.
+    const portalSession = jwt.sign({ type: 'customer', customerId }, process.env.JWT_SECRET,
+      { issuer: 'picpeak-auth', expiresIn: 120 });
+    const minted = await request(app).get(`/api/customer/events/${slug}/access-token`)
+      .set('Cookie', `customer_token=${portalSession}`);
+    expect(minted.status).toBe(200);
+    expect(jwt.decode(minted.body.token).exp).toBeLessThanOrEqual(jwt.decode(portalSession).exp);
+  });
 });
 
 describe('admin preview', () => {
@@ -130,5 +164,22 @@ describe('admin preview', () => {
     expect((await preview(mintAdminToken(adminId))).status).toBe(200);
     // "Remember me" opts out of the idle timeout here too.
     expect((await preview(adminToken({ iat: Math.floor(Date.now() / 1000) - 3 * 3600, rememberMe: true }))).status).toBe(200);
+  });
+
+  it('counts preview requests as activity, so the timeout is idle time, not a fixed lifetime', async () => {
+    const start = Date.now();
+    let clock = start;
+    const now = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    try {
+      const bearer = adminToken({ iat: Math.floor(start / 1000) });
+      expect((await preview(bearer)).status).toBe(200);
+      clock = start + 50 * 60 * 1000;
+      expect((await preview(bearer)).status).toBe(200);
+      // 70 minutes after login, but only 20 after the last preview request.
+      clock = start + 70 * 60 * 1000;
+      expect((await preview(bearer)).status).toBe(200);
+    } finally {
+      now.mockRestore();
+    }
   });
 });
