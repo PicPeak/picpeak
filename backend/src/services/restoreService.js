@@ -856,9 +856,14 @@ class RestoreService {
     }
 
     const [, bucket, prefix] = s3PathMatch;
+    // testConnection() only vets the endpoint hostname once; the SDK would
+    // resolve it again for every download below. Pin the client to the
+    // validated address, as downloadFileFromS3 does.
+    const pinnedAgents = await this.pinnedS3Agents(options.s3Config);
     const s3Client = new S3StorageAdapter({
       ...options.s3Config,
-      bucket
+      bucket,
+      ...pinnedAgents
     });
 
     const localPath = path.join(this.tempDir, 'restore-download');
@@ -1720,6 +1725,43 @@ END $$;`
   }
 
   /**
+   * Pinned http/https agents for an S3 client, built from the endpoint's
+   * validated addresses. Every restore download from S3 goes through this.
+   *
+   * SSRF guard: an admin-configured S3 endpoint could point at a
+   * private/internal or cloud-metadata address for unauthenticated egress
+   * via the server, so the endpoint is resolved and vetted first.
+   * Prod-only, matching S3StorageAdapter's own gate (dev points at
+   * localhost MinIO deliberately). No custom endpoint (default AWS) means
+   * nothing to pin.
+   *
+   * A boolean isHostAllowed() preflight is check-then-connect: the AWS
+   * SDK re-resolves the endpoint hostname on its own when it actually
+   * connects, so a DNS-rebinding attacker (or an infra rebinding
+   * condition) could answer the preflight lookup with a public address
+   * and the SDK's own later lookup with a private/metadata one.
+   * validateExternalUrlAsync's resolved addresses get pinned into the
+   * S3Client's requestHandler via pinnedRequestOptions — the same
+   * primitive webhookDeliveryWorker.js/emailWebhookTransport.js use for
+   * outbound HTTP — so the connection can only land on an address that
+   * was actually vetted.
+   */
+  async pinnedS3Agents(s3Config) {
+    if (process.env.NODE_ENV !== 'production' || !s3Config || !s3Config.endpoint) return {};
+    const { validateExternalUrlAsync } = require('../utils/networkValidation');
+    const { pinnedRequestOptions } = require('../utils/pinnedRequest');
+    const endpointUrl = /^https?:\/\//.test(s3Config.endpoint)
+      ? s3Config.endpoint
+      : `https://${s3Config.endpoint}`;
+    const urlCheck = await validateExternalUrlAsync(endpointUrl);
+    if (!urlCheck.valid) {
+      throw new Error('S3 endpoint resolves to a private or internal network address');
+    }
+    const { httpAgent, httpsAgent } = pinnedRequestOptions(urlCheck);
+    return { httpAgent, httpsAgent };
+  }
+
+  /**
    * Download file from S3
    */
   async downloadFileFromS3(s3Url, localPath, s3Config) {
@@ -1728,38 +1770,10 @@ END $$;`
       throw new Error('Invalid S3 URL format');
     }
 
-    // SSRF guard: this method calls S3StorageAdapter.download() directly
-    // rather than going through testConnection(), so it must re-run the same
-    // DNS-resolving host check testConnection() applies — otherwise an
-    // admin-configured S3 endpoint could point at a private/internal or
-    // cloud-metadata address for unauthenticated egress via the server.
-    // Prod-only, matching S3StorageAdapter's own gate (dev points at
-    // localhost MinIO deliberately).
-    //
-    // A boolean isHostAllowed() preflight is check-then-connect: the AWS
-    // SDK re-resolves the endpoint hostname on its own when it actually
-    // connects, so a DNS-rebinding attacker (or an infra rebinding
-    // condition) could answer the preflight lookup with a public address
-    // and the SDK's own later lookup with a private/metadata one.
-    // validateExternalUrlAsync's resolved addresses get pinned into the
-    // S3Client's requestHandler via pinnedRequestOptions — the same
-    // primitive webhookDeliveryWorker.js/emailWebhookTransport.js use for
-    // outbound HTTP — so the connection can only land on an address that
-    // was actually vetted.
-    let pinnedAgents = {};
-    if (process.env.NODE_ENV === 'production' && s3Config && s3Config.endpoint) {
-      const { validateExternalUrlAsync } = require('../utils/networkValidation');
-      const { pinnedRequestOptions } = require('../utils/pinnedRequest');
-      const endpointUrl = /^https?:\/\//.test(s3Config.endpoint)
-        ? s3Config.endpoint
-        : `https://${s3Config.endpoint}`;
-      const urlCheck = await validateExternalUrlAsync(endpointUrl);
-      if (!urlCheck.valid) {
-        throw new Error('S3 endpoint resolves to a private or internal network address');
-      }
-      const { httpAgent, httpsAgent } = pinnedRequestOptions(urlCheck);
-      pinnedAgents = { httpAgent, httpsAgent };
-    }
+    // This method calls S3StorageAdapter.download() directly rather than
+    // going through testConnection(), so it depends entirely on the vetted,
+    // pinned agents.
+    const pinnedAgents = await this.pinnedS3Agents(s3Config);
 
     const [, bucket, key] = s3PathMatch;
     const s3Client = new S3StorageAdapter({
