@@ -187,6 +187,30 @@ describe('business profile — logo upload content/extension validation', () => 
     expect(profileOf(await get()).logoPath).toBe(uploadedPath);
   });
 
+  it('rejects logoPath on PUT naming a pdf-logo file that is not an image', async () => {
+    const before = profileOf(await get()).logoPath;
+
+    for (const logoPath of ['/uploads/logos/pdf-logo-1700000000000.html', '/uploads/logos/pdf-logo-1700000000000.js']) {
+      const res = await put({ logoPath });
+      expect(res.status).toBe(400);
+    }
+
+    expect(profileOf(await get()).logoPath).toBe(before);
+  });
+
+  it('removes a non-image pdf-logo file left from an older upload when a new logo replaces it', async () => {
+    const logosDir = path.join(process.env.STORAGE_PATH, 'uploads', 'logos');
+    fs.mkdirSync(logosDir, { recursive: true });
+    const legacy = path.join(logosDir, 'pdf-logo-1600000000000.html');
+    fs.writeFileSync(legacy, '<script>alert(1)</script>');
+    await db('business_profile').where({ id: 1 }).update({ logo_path: '/uploads/logos/pdf-logo-1600000000000.html' });
+
+    const res = await uploadLogo(REAL_PNG_BYTES, 'new.png', 'image/png');
+
+    expect(res.status).toBe(200);
+    expect(fs.existsSync(legacy)).toBe(false);
+  });
+
   it('still allows clearing logoPath with an empty string', async () => {
     const res = await put({ logoPath: '' });
     expect(res.status).toBe(200);

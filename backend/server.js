@@ -603,8 +603,11 @@ process.env.EXTERNAL_MEDIA_ROOT = process.env.EXTERNAL_MEDIA_ROOT || '/external-
 // signed contract PDFs (uploads/contracts/signed) and client transfer files
 // (uploads/transfers/<id>) -- both reachable by anyone who learned or guessed
 // a filename. Those are served by their own authorised routes.
-app.use('/uploads/logos', setCorsHeaders, secureStatic(path.join(storagePath, 'uploads/logos')));
-app.use('/uploads/favicons', setCorsHeaders, secureStatic(path.join(storagePath, 'uploads/favicons')));
+// Both trees only ever hold uploaded images; anything else (a script or
+// HTML file an older upload kept its extension for) is not served.
+const { isPublicUploadImage } = require('./src/utils/safePath');
+app.use('/uploads/logos', setCorsHeaders, secureStatic(path.join(storagePath, 'uploads/logos'), { onlyServe: isPublicUploadImage }));
+app.use('/uploads/favicons', setCorsHeaders, secureStatic(path.join(storagePath, 'uploads/favicons'), { onlyServe: isPublicUploadImage }));
 
 // Static file serving for self-hosted webfonts (public — gallery visitors
 // load these via @font-face). Replaces the previous Google Fonts CDN
@@ -779,7 +782,7 @@ app.get(
         const uploadsRoot = path.resolve(path.join(storagePath, 'uploads'));
         const resolved = path.resolve(path.join(uploadsRoot, rel));
         const servableRoots = ['favicons', 'logos'].map((d) => path.join(uploadsRoot, d) + path.sep);
-        if (servableRoots.some((root) => resolved.startsWith(root)) && fs.existsSync(resolved)) {
+        if (servableRoots.some((root) => resolved.startsWith(root)) && isPublicUploadImage(resolved) && fs.existsSync(resolved)) {
           // This route streams the file directly, bypassing the secureStatic
           // middleware — so re-apply its SVG hardening here. An admin-uploaded
           // SVG favicon could contain <script>; served at the top-level

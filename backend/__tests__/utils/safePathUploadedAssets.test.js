@@ -8,7 +8,7 @@
  * helpers below only ever name a flat leaf inside the fixed directory.
  */
 const path = require('path');
-const { uploadedAssetPath, uploadedPdfLogoPath } = require('../../src/utils/safePath');
+const { uploadedAssetPath, uploadedPdfLogoPath, isPublicUploadImage } = require('../../src/utils/safePath');
 
 const root = '/srv/picpeak/storage';
 
@@ -55,5 +55,34 @@ describe('uploadedPdfLogoPath', () => {
     null,
   ])('refuses %p', (value) => {
     expect(uploadedPdfLogoPath(value, root)).toBeNull();
+  });
+
+  it.each([
+    '/uploads/logos/pdf-logo-1.png',
+    '/uploads/logos/pdf-logo-1.jpg',
+    '/uploads/logos/pdf-logo-1.JPEG',
+    '/uploads/logos/pdf-logo-1.svg',
+  ])('accepts the image %p when only images are allowed', (value) => {
+    expect(uploadedPdfLogoPath(value, root, { imageOnly: true })).not.toBeNull();
+  });
+
+  it.each([
+    '/uploads/logos/pdf-logo-1.html',
+    '/uploads/logos/pdf-logo-1.js',
+    '/uploads/logos/pdf-logo-1.svgz',
+    '/uploads/logos/pdf-logo-1.pdf',
+  ])('refuses the non-image %p when only images are allowed, but still names it for cleanup', (value) => {
+    expect(uploadedPdfLogoPath(value, root, { imageOnly: true })).toBeNull();
+    expect(uploadedPdfLogoPath(value, root)).not.toBeNull();
+  });
+});
+
+describe('isPublicUploadImage', () => {
+  it.each(['a.png', 'a.JPG', 'a.jpeg', 'a.gif', 'a.webp', 'a.svg', 'fav.ico'])('allows %p', (name) => {
+    expect(isPublicUploadImage(name)).toBe(true);
+  });
+
+  it.each(['a.html', 'a.js', 'a.svgz', 'a.pdf', 'noext', '', null])('refuses %p', (name) => {
+    expect(isPublicUploadImage(name)).toBe(false);
   });
 });
