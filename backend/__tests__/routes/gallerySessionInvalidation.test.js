@@ -103,6 +103,37 @@ describe('rotating a gallery credential', () => {
     expect(refused.body.code).toBe('GALLERY_PASSWORD_CHANGED');
   });
 
+  it('keeps guest sessions when "Send gallery email" resends the current password', async () => {
+    const auth = `Bearer ${mintAdminToken(adminId)}`;
+    const current = 'Gallery-Resend-Same-2026!';
+    expect((await request(app).post(`/api/admin/events/${eventId}/send-gallery-email`).set('Authorization', auth)
+      .send({ password: current })).status).toBe(200);
+    await db('events').where({ id: eventId }).update({ gallery_password_changed_at: null });
+    const guest = galleryToken();
+    expect((await listWith(guest)).status).toBe(200);
+
+    const resent = await request(app).post(`/api/admin/events/${eventId}/send-gallery-email`).set('Authorization', auth)
+      .send({ password: current });
+    expect(resent.status).toBe(200);
+
+    expect((await listWith(guest)).status).toBe(200);
+    expect((await db('events').where({ id: eventId }).first()).gallery_password_changed_at).toBeNull();
+  });
+
+  it('keeps sessions when an event edit resubmits the current gallery and client passwords', async () => {
+    const auth = `Bearer ${mintAdminToken(adminId)}`;
+    const body = { password: 'Gallery-Edit-Same-2026!', client_password: 'Client-Edit-Same-2026!' };
+    expect((await request(app).put(`/api/admin/events/${eventId}`).set('Authorization', auth).send(body)).status).toBe(200);
+    await db('events').where({ id: eventId }).update({ gallery_password_changed_at: null, client_password_changed_at: null });
+    const guest = galleryToken();
+    const client = galleryToken({ accessLevel: 'client' });
+
+    expect((await request(app).put(`/api/admin/events/${eventId}`).set('Authorization', auth).send(body)).status).toBe(200);
+
+    expect((await listWith(guest)).status).toBe(200);
+    expect((await listWith(client)).status).toBe(200);
+  });
+
   it('does not let an event update clear the cutoff and revive the ended sessions', async () => {
     const guest = galleryToken();
     const client = galleryToken({ accessLevel: 'client' });

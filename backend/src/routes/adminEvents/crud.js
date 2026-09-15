@@ -27,7 +27,7 @@ const { hasColumnCached } = require('../../utils/schemaCache');
 const { requireEventOwnership } = require('../../middleware/ownership');
 
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../../utils/galleryPasswordVault');
-const { credentialChangeColumns } = require('../../utils/galleryCredentialCutoff');
+const { credentialChangeColumns, sameAsStored } = require('../../utils/galleryCredentialCutoff');
 
 const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const downloadZipService = require('../../services/downloadZipService');
@@ -562,11 +562,15 @@ module.exports = (router) => {
         const policyError = await checkGalleryPasswordPolicy(password, event.event_name);
         if (policyError) return res.status(400).json(policyError);
 
+        // Re-entering the current password is not a change: keep the hash and
+        // the sessions opened with it. A new password ends those sessions.
+        const passwordUnchanged = await sameAsStored(password, event.password_hash);
         await db('events').where('id', id).update({
-          password_hash: await bcrypt.hash(password, getBcryptRounds()),
+          ...(passwordUnchanged ? {} : {
+            password_hash: await bcrypt.hash(password, getBcryptRounds()),
+            ...(await credentialChangeColumns('gallery')),
+          }),
           ...(await galleryPasswordColumns({ password })),
-          // Guests who got in with the previous password must log in again.
-          ...(await credentialChangeColumns('gallery')),
         });
         await dropCopiesIfStorageOff(id);
       }
@@ -665,8 +669,11 @@ module.exports = (router) => {
         const policyError = await checkGalleryPasswordPolicy(password, event.event_name);
         if (policyError) return res.status(400).json(policyError);
 
-        publishUpdates.password_hash = await bcrypt.hash(password, getBcryptRounds());
-        Object.assign(publishUpdates, await galleryPasswordColumns({ password }), await credentialChangeColumns('gallery'));
+        if (!(await sameAsStored(password, event.password_hash))) {
+          publishUpdates.password_hash = await bcrypt.hash(password, getBcryptRounds());
+          Object.assign(publishUpdates, await credentialChangeColumns('gallery'));
+        }
+        Object.assign(publishUpdates, await galleryPasswordColumns({ password }));
       }
       await db('events').where('id', id).update(publishUpdates);
       if (publishUpdates.password_hash) await dropCopiesIfStorageOff(id);
@@ -1319,7 +1326,6 @@ module.exports = (router) => {
       if (Object.prototype.hasOwnProperty.call(updates, 'client_password') && updates.client_password) {
         updates.client_password_hash = await bcrypt.hash(updates.client_password, getBcryptRounds());
         recoverable.clientPassword = updates.client_password;
-        credentialChanges.add('client');
         delete updates.client_password;
       } else {
         delete updates.client_password;
@@ -1389,14 +1395,26 @@ module.exports = (router) => {
 
       const currentRequirePassword = parseBooleanInput(event.require_password, true);
 
+      // Resubmitting the current client password is not a change: keep the hash
+      // and the client sessions opened with it.
+      if (updates.client_password_hash) {
+        if (await sameAsStored(recoverable.clientPassword, event.client_password_hash)) {
+          delete updates.client_password_hash;
+        } else {
+          credentialChanges.add('client');
+        }
+      }
+
       if (hasRequirePasswordUpdate && requirePasswordUpdate === true && !currentRequirePassword && !newPasswordPlain) {
         return res.status(400).json({ error: 'Password must be provided when enabling password requirement.' });
       }
 
       if (newPasswordPlain) {
-        updates.password_hash = await bcrypt.hash(newPasswordPlain, getBcryptRounds());
         recoverable.password = newPasswordPlain;
-        credentialChanges.add('gallery');
+        if (!(await sameAsStored(newPasswordPlain, event.password_hash))) {
+          updates.password_hash = await bcrypt.hash(newPasswordPlain, getBcryptRounds());
+          credentialChanges.add('gallery');
+        }
       } else if (hasRequirePasswordUpdate && requirePasswordUpdate === false && currentRequirePassword) {
         updates.password_hash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), getBcryptRounds());
         recoverable.password = null;
@@ -1535,7 +1553,9 @@ module.exports = (router) => {
       // Handle client access fields (#172)
       if (Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled')) {
         updates.client_access_enabled = formatBoolean(updates.client_access_enabled);
-        if (!parseBooleanInput(updates.client_access_enabled, false)) credentialChanges.add('client');
+        if (!parseBooleanInput(updates.client_access_enabled, false) && parseBooleanInput(event.client_access_enabled, false)) {
+          credentialChanges.add('client');
+        }
         // Auto-generate client share token when first enabling
         if (parseBooleanInput(updates.client_access_enabled, false) && !event.client_share_token && !updates.client_share_token) {
           updates.client_share_token = crypto.randomBytes(32).toString('hex');
