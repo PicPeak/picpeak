@@ -5,6 +5,28 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.132.6-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.5-beta.0...v3.132.6-beta.0) (2026-09-15)
+
+
+### Bug Fixes
+
+* **admin:** limit events, archives and event records to what each role may act on ([#1483](https://github.com/PicPeak/picpeak/issues/1483)) ([e5157ba](https://github.com/PicPeak/picpeak/commit/e5157baeb0ad28bff61731eaefd0aa145d6fb3f9))
+* **backend:** enforce single-use and cap limits under concurrent requests ([#1486](https://github.com/PicPeak/picpeak/issues/1486)) ([8db8b8e](https://github.com/PicPeak/picpeak/commit/8db8b8e203d6def6e1d84e60e85538dbf4d2ac99))
+* **backup:** pin every restore download from S3 to the validated endpoint address ([#1477](https://github.com/PicPeak/picpeak/issues/1477)) ([8ec559f](https://github.com/PicPeak/picpeak/commit/8ec559fbf762921d4efe70e3d23087ab7d647af7))
+* **backup:** verify restore dumps, bound imports and keep secrets apart ([#1491](https://github.com/PicPeak/picpeak/issues/1491)) ([9f0e815](https://github.com/PicPeak/picpeak/commit/9f0e81503e8d3091c5d6bcae9b3efdb6a93f32eb))
+* **backup:** write the database dump where the backend can reach it ([#1502](https://github.com/PicPeak/picpeak/issues/1502)) ([acdced6](https://github.com/PicPeak/picpeak/commit/acdced685840caceb902cfef0886e943506d398e))
+* **email:** keep mail passwords and account links out of reach of other servers and readers ([#1485](https://github.com/PicPeak/picpeak/issues/1485)) ([89beb01](https://github.com/PicPeak/picpeak/commit/89beb01f969b80dbc00b55e20ff79086dc0e618d))
+* **frontend:** keep custom head HTML out of the admin UI, drop dead feedback limits ([#1489](https://github.com/PicPeak/picpeak/issues/1489)) ([c95d207](https://github.com/PicPeak/picpeak/commit/c95d2070979d5a7f17a8d9ae57f2932e4a3831c9))
+* **gallery:** end gallery sessions when their password, portal session or admin idle time ends ([#1497](https://github.com/PicPeak/picpeak/issues/1497)) ([4791c88](https://github.com/PicPeak/picpeak/commit/4791c886cae424cd080e7cb87c6c44ccc12f2701))
+* **gallery:** enforce category downloads, hidden-photo feedback and photo caps for guests ([#1495](https://github.com/PicPeak/picpeak/issues/1495)) ([dfc8ade](https://github.com/PicPeak/picpeak/commit/dfc8ade545d2c5a0081346cb226a4b9f149e36d2))
+* **permissions:** keep SSO role mappings, backup destinations and restores within the actor's own power ([#1493](https://github.com/PicPeak/picpeak/issues/1493)) ([8c9d933](https://github.com/PicPeak/picpeak/commit/8c9d933e1db25ff5fc20b9329fda9cf71c015c27))
+* **uploads:** serve and accept only image files from the public logo trees ([#1478](https://github.com/PicPeak/picpeak/issues/1478)) ([3a7a85c](https://github.com/PicPeak/picpeak/commit/3a7a85c2808eaaacda077d728d2b590b32a878bd))
+
+
+### Documentation
+
+* **security:** mark the 3.46.x stable line as end of life ([#1481](https://github.com/PicPeak/picpeak/issues/1481)) ([34cc9e3](https://github.com/PicPeak/picpeak/commit/34cc9e3503ab9267edae944f25cbdbd633a48bc7))
+
 ## [3.132.5-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.4-beta.0...v3.132.5-beta.0) (2026-09-15)
 
 
