@@ -166,6 +166,23 @@ describe('admin preview', () => {
     expect((await preview(adminToken({ iat: Math.floor(Date.now() / 1000) - 3 * 3600, rememberMe: true }))).status).toBe(200);
   });
 
+  it('refuses an idled-out admin who may not open the gallery as forbidden, not as a timeout', async () => {
+    // A timeout answer before authorization would tell another owner's draft
+    // apart from a gallery that does not exist.
+    const [row] = await db('admin_users').insert({
+      username: 'foreign-idle', email: 'foreign-idle@example.test', password_hash: 'unused', is_active: 1,
+    }).returning('id');
+    const foreignId = row.id ?? row;
+    await assignAdminRole(db, foreignId, 'viewer');
+    const idleForeign = jwt.sign({ type: 'admin', id: foreignId, iat: Math.floor(Date.now() / 1000) - 3 * 3600 },
+      process.env.JWT_SECRET, { issuer: 'picpeak-auth', expiresIn: '30d' });
+
+    const refused = await preview(idleForeign);
+
+    expect(refused.body.code).not.toBe('SESSION_TIMEOUT');
+    expect(refused.body.code).toBe('FORBIDDEN');
+  });
+
   it('counts preview requests as activity, so the timeout is idle time, not a fixed lifetime', async () => {
     const start = Date.now();
     let clock = start;
