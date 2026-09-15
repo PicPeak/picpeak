@@ -1,4 +1,4 @@
-const { secretValues, redactEmailData, redactRenderedHtml, replaceMaskedSecrets, isSecretKey } = require('../utils/emailSecretRedaction');
+const { secretValues, redactEmailData, redactRenderedHtml, replaceMaskedSecrets, isSecretKey, redactRecoveryLinks, redactRecoveryLinksInData, hasMaskedRecoveryLink } = require('../utils/emailSecretRedaction');
 const nodemailer = require('nodemailer');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
@@ -1248,6 +1248,18 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         // the template say "not shown" instead of mailing the mask.
         emailData = replaceMaskedSecrets(emailData);
 
+        // An invitation or password-reset link is scrubbed once its mail is
+        // out, so a re-queued copy would mail a dead link. Refuse it here, the
+        // one place every requeue path passes, instead of sending it.
+        if (hasMaskedRecoveryLink(emailData)) {
+          await db('email_queue').where('id', email.id).update({
+            status: 'failed',
+            error_message: 'This invitation or password-reset email cannot be sent again: its link is not kept after sending. Send a new invitation or password reset instead.',
+          });
+          result.failed += 1;
+          continue;
+        }
+
         // Language is resolved from emailData.eventId (event.language is the top
         // priority). queueEmail injects it, but direct email_queue inserts (e.g.
         // the gallery-publish notification) only set the event_id COLUMN — so
@@ -1299,11 +1311,13 @@ async function processEmailQueue({ ignoreSchedule = false, limit = 10, onlyId = 
         // in the clear. Gallery passwords and client PINs are bcrypt-hashed
         // everywhere else; without this the archive kept them readable for
         // the life of the event, and the Messages pane served them back.
+        // Invitation and password-reset links go too: their token sets the
+        // account's password, and the archive has no use for it.
         const secrets = secretValues(emailData);
-        sentUpdate.email_data = JSON.stringify(redactEmailData(emailData));
+        sentUpdate.email_data = JSON.stringify(redactRecoveryLinksInData(redactEmailData(emailData)));
         try {
           if (sendResult && sendResult.html && await hasColumnCached('email_queue', 'rendered_html')) {
-            sentUpdate.rendered_html = redactRenderedHtml(sendResult.html, secrets);
+            sentUpdate.rendered_html = redactRecoveryLinks(redactRenderedHtml(sendResult.html, secrets));
           }
         } catch (_) { /* best-effort — never block the send on the preview */ }
         await db('email_queue')

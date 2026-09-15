@@ -20,7 +20,21 @@ const { body, query, validationResult } = require('express-validator');
 const { safeValidationErrors } = require('../utils/routeHelpers');
 const { db, logActivity } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
+
+// Delivery payloads carry the gallery share link of the event. settings.view
+// can read the delivery log, but only settings.integrations — the permission
+// that manages webhooks and can replay a delivery — sees those links.
+const SHARE_LINK_KEYS = new Set(['share_token', 'share_url', 'share_link', 'client_share_token']);
+function maskShareLinks(value) {
+  if (Array.isArray(value)) return value.map(maskShareLinks);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [key, inner] of Object.entries(value)) {
+    out[key] = SHARE_LINK_KEYS.has(key) && inner != null ? '••••••' : maskShareLinks(inner);
+  }
+  return out;
+}
 // Migration 174: webhooks are an integration surface. Mutations require the
 // dedicated `settings.integrations` perm (split out of the old catch-all
 // `settings.edit`); reads allow either the general `settings.view` or the
@@ -342,9 +356,12 @@ router.get(
         .where({ id: req.params.deliveryId, webhook_id: req.params.id })
         .first();
       if (!row) return res.status(404).json({ error: 'Delivery not found' });
+      const payload = typeof row.payload === 'string' ? safeJson(row.payload, row.payload) : row.payload;
+      const mayManage = req.admin?.roleName === 'super_admin'
+        || await userHasAnyPermission(req.admin.id, ['settings.integrations']);
       res.json({
         ...row,
-        payload: typeof row.payload === 'string' ? safeJson(row.payload, row.payload) : row.payload,
+        payload: mayManage ? payload : maskShareLinks(payload),
       });
     } catch (err) {
       logger.error('delivery detail failed', { error: err.message });
