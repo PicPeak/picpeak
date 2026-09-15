@@ -76,6 +76,25 @@ describe('guest recovery code attempts under concurrent requests', () => {
     expect(results.filter((r) => r.ok)).toHaveLength(1);
   });
 
+  it('accepts the right code on the last attempt even when an excess request arrives at the same time', async () => {
+    // One request claims attempt five and is still comparing when a second
+    // one finds no attempt left; the second must not kill the first.
+    const email = 'last-attempt@example.com';
+    const code = await guestRecovery.createCode(eventId, email);
+    const wrong = code === '000000' ? '111111' : '000000';
+    for (let i = 0; i < guestRecovery.MAX_ATTEMPTS - 1; i += 1) {
+      expect((await guestRecovery.verifyCode(eventId, email, wrong)).reason).toBe('wrong_code');
+    }
+
+    const results = await Promise.all([
+      guestRecovery.verifyCode(eventId, email, code),
+      guestRecovery.verifyCode(eventId, email, code),
+    ]);
+
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.find((r) => !r.ok).reason).toBe('too_many_attempts');
+  });
+
   it('still accepts the right code after fewer wrong guesses than the limit', async () => {
     const email = 'patient@example.com';
     const code = await guestRecovery.createCode(eventId, email);
