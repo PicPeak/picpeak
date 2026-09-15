@@ -8,6 +8,7 @@ const feedbackService = require('../services/feedbackService');
 const feedbackModeration = require('../services/feedbackModeration');
 const { db, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
+const { isPhotoHiddenFromViewer } = require('../utils/photoVisibility');
 const {
   validatePhotoId,
   validateFeedbackSubmission,
@@ -80,7 +81,9 @@ router.get('/:slug/photos/:photoId/feedback',
         .where({ id: photoId, event_id: event.id })
         .first();
       
-      if (!photo) {
+      // A client-hidden photo does not exist for a viewer who cannot see it:
+      // no reading its comments and counts, no adding to them.
+      if (!photo || isPhotoHiddenFromViewer(photo, req.accessLevel)) {
         return res.status(404).json({ error: 'Photo not found' });
       }
       
@@ -121,31 +124,37 @@ router.get('/:slug/photos/:photoId/feedback',
       const visibleFeedback = settings.show_feedback_to_guests ? allFeedback : 
         allFeedback.filter(f => f.is_mine);
       
+      // Every aggregate is other guests' feedback, so all of them are gated
+      // on show_feedback_to_guests — the photo list already hides like_count
+      // this way. The viewer's own choices stay in my_feedback below.
+      const shareAggregates = Boolean(settings.show_feedback_to_guests);
       res.json({
         feedback: visibleFeedback,
         summary: {
-          average_rating: photo.average_rating || 0,
-          total_ratings: await db('photo_feedback')
-            .where({ photo_id: photoId, feedback_type: 'rating', is_hidden: false })
-            .count('id as count')
-            .first()
-            .then(r => r.count),
-          like_count: photo.like_count || 0,
-          favorite_count: photo.favorite_count || 0,
-          // Gated like the per-emoji map below — aggregate reaction data is
-          // a new surface, kept fully hidden while sharing is off.
-          reaction_count: settings.show_feedback_to_guests ? (photo.reaction_count || 0) : 0,
-          color_label_count: settings.show_feedback_to_guests ? (photo.color_label_count || 0) : 0,
-          comment_count: await db('photo_feedback')
-            .where({ 
-              photo_id: photoId, 
-              feedback_type: 'comment', 
-              is_approved: true,
-              is_hidden: false 
-            })
-            .count('id as count')
-            .first()
-            .then(r => r.count)
+          average_rating: shareAggregates ? (photo.average_rating || 0) : 0,
+          total_ratings: shareAggregates
+            ? await db('photo_feedback')
+              .where({ photo_id: photoId, feedback_type: 'rating', is_hidden: false })
+              .count('id as count')
+              .first()
+              .then(r => r.count)
+            : 0,
+          like_count: shareAggregates ? (photo.like_count || 0) : 0,
+          favorite_count: shareAggregates ? (photo.favorite_count || 0) : 0,
+          reaction_count: shareAggregates ? (photo.reaction_count || 0) : 0,
+          color_label_count: shareAggregates ? (photo.color_label_count || 0) : 0,
+          comment_count: shareAggregates
+            ? await db('photo_feedback')
+              .where({
+                photo_id: photoId,
+                feedback_type: 'comment',
+                is_approved: true,
+                is_hidden: false
+              })
+              .count('id as count')
+              .first()
+              .then(r => r.count)
+            : 0
         },
         // Per-emoji tallies for the reaction bar (#839). Gated on
         // show_feedback_to_guests: with sharing off a guest sees only their
@@ -239,7 +248,9 @@ router.post('/:slug/photos/:photoId/feedback',
         .where({ id: photoId, event_id: event.id })
         .first();
 
-      if (!photo) {
+      // A client-hidden photo does not exist for a viewer who cannot see it:
+      // no reading its comments and counts, no adding to them.
+      if (!photo || isPhotoHiddenFromViewer(photo, req.accessLevel)) {
         return res.status(404).json({ error: 'Photo not found' });
       }
 
@@ -403,6 +414,8 @@ router.get('/:slug/feedback-summary',
       const guestSummary = {
         stats: summary.stats,
         top_rated: summary.photos
+          // No filenames or ratings of photos this viewer cannot see.
+          .filter(p => !isPhotoHiddenFromViewer(p, req.accessLevel))
           .filter(p => p.average_rating > 0)
           .slice(0, 5)
           .map(p => ({
