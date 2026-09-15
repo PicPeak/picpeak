@@ -315,7 +315,7 @@ async function initializeDatabase() {
       table.increments('id').primary();
       table.integer('event_id').references('id').inTable('events');
       table.string('ip_address');
-      table.string('user_agent');
+      table.text('user_agent'); // in-app browser UAs exceed 255 (#1501)
       table.string('action'); // 'view', 'download', 'login_success', 'login_fail'
       table.string('photo_id');
       table.datetime('timestamp').defaultTo(db.fn.now());
