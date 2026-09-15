@@ -618,6 +618,47 @@ describe('admin PDF repair actions under concurrent requests', () => {
     expect(contract.signed_pdf_path).not.toBe(signedBefore);
     expect((await db('email_queue').where({ email_type: 'contract_fully_signed' })).length).toBe(mailsBefore);
   });
+
+  async function fullySignedWithImages(title) {
+    const { id, token } = await sentContract(title);
+    await contractService.recordCustomerSignature({
+      token, name: 'Maria Meier', accepted: true, ip: '198.51.100.21', signatureDataUrl: SIGNATURE_DATA_URL,
+    });
+    await contractService.recordAdminCountersignature(
+      id, { name: 'Admin', ip: '203.0.113.21', signatureDataUrl: SIGNATURE_DATA_URL }, adminId,
+    );
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.signed_pdf_render_failed_at).toBeFalsy();
+    return contract;
+  }
+
+  it('refuses a re-stamp whose signature cannot be stamped and records no PDF', async () => {
+    // A countersignature takes a PDF a re-stamp recorded after it as the fully
+    // signed copy to mail, so an incomplete re-stamp must never be recorded.
+    const before = await fullySignedWithImages('Unstampable restamp');
+
+    await expect(contractService.restampSignatures(
+      before.id, { adminSignatureDataUrl: 'data:image/png;base64,YmFk' }, adminId,
+    )).rejects.toMatchObject({ statusCode: 422, code: 'SIGNATURE_STAMP_FAILED' });
+
+    const contract = await db('contracts').where({ id: before.id }).first();
+    expect(contract.signed_pdf_path).toBe(before.signed_pdf_path);
+    expect(contract.signed_pdf_render_failed_at).toBeTruthy();
+    expect(await restampLogsFor(before.id)).toEqual([expect.objectContaining({ stampFailed: ['admin'] })]);
+  });
+
+  it('refuses a re-send when a signature on record cannot be stamped, and mails nothing', async () => {
+    const before = await fullySignedWithImages('Unstampable resend');
+    fs.writeFileSync(before.signed_admin_signature_path, 'not an image');
+    const mailsBefore = (await db('email_queue').where({ email_type: 'contract_fully_signed' })).length;
+
+    await expect(contractService.rerenderAndResend(before.id, adminId))
+      .rejects.toMatchObject({ statusCode: 422, code: 'SIGNATURE_STAMP_FAILED' });
+
+    const contract = await db('contracts').where({ id: before.id }).first();
+    expect(contract.signed_pdf_path).toBe(before.signed_pdf_path);
+    expect((await db('email_queue').where({ email_type: 'contract_fully_signed' })).length).toBe(mailsBefore);
+  });
 });
 
 describe('tokens without an expiry', () => {
