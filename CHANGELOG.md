@@ -5,6 +5,19 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.132.4-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.3-beta.0...v3.132.4-beta.0) (2026-09-15)
+
+
+### Bug Fixes
+
+* **contracts:** keep signing tokens out of admin views and make signature writes atomic ([#1469](https://github.com/PicPeak/picpeak/issues/1469)) ([72367ff](https://github.com/PicPeak/picpeak/commit/72367ffa6ed3cc5570bc2ad32288237a6c0ab173))
+* **contracts:** make saving a contract draft work and fail safely ([#1460](https://github.com/PicPeak/picpeak/issues/1460)) ([16c15ca](https://github.com/PicPeak/picpeak/commit/16c15cacc3dcdd097c434ac558763cbd95d515f1))
+* **crm:** stop quote saves, hour entries and payments stalling on SQLite ([#1462](https://github.com/PicPeak/picpeak/issues/1462)) ([82bea56](https://github.com/PicPeak/picpeak/commit/82bea560d2f998bd9f608ff452159a342a5f639d))
+* **crm:** verify the customer before a contract or quote link shows or acts on their data ([#1465](https://github.com/PicPeak/picpeak/issues/1465)) ([5c1f0da](https://github.com/PicPeak/picpeak/commit/5c1f0da51ed37594dba93d6c09a3788859a39d45))
+* **gallery:** tell an admin preview blocked on a password change what to do ([#1454](https://github.com/PicPeak/picpeak/issues/1454)) ([d7c2c58](https://github.com/PicPeak/picpeak/commit/d7c2c5814a46ef3243f55413bca67cad87f0b4fe))
+* **images:** resolve the protected-image client address through trust proxy ([#1467](https://github.com/PicPeak/picpeak/issues/1467)) ([6159fc2](https://github.com/PicPeak/picpeak/commit/6159fc2aa92aa715896d58bcd424ac39e9c06dc2))
+* **uploads:** accept iPhone DNGs in both byte orders and under any reported type ([#1458](https://github.com/PicPeak/picpeak/issues/1458)) ([3c59c84](https://github.com/PicPeak/picpeak/commit/3c59c84dd68b0752b0ef4499b1c07e4555b4ae43))
+
 ## [3.132.3-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.2-beta.0...v3.132.3-beta.0) (2026-09-14)
 
 
