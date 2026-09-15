@@ -360,7 +360,10 @@ async function processUploadedPhotos(files, eventId, uploadedBy = 'admin', categ
  */
 async function queueFilesForProcessing(files, options = {}) {
   const crypto = require('crypto');
-  const { eventId, photoType = 'individual', categoryId = null, uploadId: providedUploadId } = options;
+  const { countEventPhotos, insertPhotoWithinCap, photoCapError } = require('./photoCap');
+  const {
+    eventId, photoType = 'individual', categoryId = null, uploadId: providedUploadId, photoCap = null,
+  } = options;
   const uploadId = providedUploadId || crypto.randomBytes(16).toString('hex');
 
   const event = await db('events').where({ id: eventId }).first();
@@ -387,11 +390,20 @@ async function queueFilesForProcessing(files, options = {}) {
   const finalDestPathRel = path.posix.join('events/active', event.slug);
   const categoryName = photoType === 'collage' ? 'collages' : 'individual';
 
+  // Once the cap is hit, the rest of the batch is refused without storing it.
+  let capReached = false;
+  const capRefusal = () => Object.assign(new Error(photoCapError(photoCap).error), { code: 'PHOTO_CAP_REACHED' });
+
   for (const file of fileList) {
     const tempPath = file?.path || file?.filepath || file?.tempFilePath;
+    let storedKey = null;
     try {
       if (!tempPath) {
         throw new Error('Uploaded file is missing a temporary path');
+      }
+      if (photoCap && (capReached || (await countEventPhotos(eventId)) >= photoCap)) {
+        capReached = true;
+        throw capRefusal();
       }
       const tempStats = await fs.stat(tempPath);
       if (tempStats.size === 0) {
@@ -409,6 +421,7 @@ async function queueFilesForProcessing(files, options = {}) {
       // Move to storage first so the file is at its recorded path by the
       // time the worker picks up the row.
       await storage.putFromFile(finalKey, tempPath, { contentType: file.mimetype });
+      storedKey = finalKey;
       await fs.unlink(tempPath).catch(() => {});
 
       const stat = await storage.stat(finalKey);
@@ -416,23 +429,27 @@ async function queueFilesForProcessing(files, options = {}) {
         throw new Error(`Size mismatch after upload: expected ${tempStats.size}, got ${stat ? stat.size : 'null'}`);
       }
 
-      const inserted = await db('photos')
-        .insert({
-          event_id: parseInt(eventId, 10),
-          filename: newFilename,
-          original_filename: file.originalname,
-          path: relativePath,
-          thumbnail_path: null,
-          type: photoType,
-          category_id: categoryId,
-          size_bytes: tempStats.size,
-          captured_at: null,
-          media_type: isVideo ? 'video' : 'image',
-          mime_type: file.mimetype,
-          processing_status: 'pending',
-          upload_id: uploadId,
-        })
-        .returning('id');
+      // The count above is only a fast path; this insert is the binding
+      // check, so parallel uploads cannot overshoot the cap together.
+      const inserted = await insertPhotoWithinCap({
+        event_id: parseInt(eventId, 10),
+        filename: newFilename,
+        original_filename: file.originalname,
+        path: relativePath,
+        thumbnail_path: null,
+        type: photoType,
+        category_id: categoryId,
+        size_bytes: tempStats.size,
+        captured_at: null,
+        media_type: isVideo ? 'video' : 'image',
+        mime_type: file.mimetype,
+        processing_status: 'pending',
+        upload_id: uploadId,
+      }, photoCap);
+      if (!inserted) {
+        capReached = true;
+        throw capRefusal();
+      }
       const photoId = inserted[0]?.id || inserted[0];
 
       queued.push({
@@ -442,7 +459,15 @@ async function queueFilesForProcessing(files, options = {}) {
         category_id: categoryId,
       });
     } catch (err) {
-      errors.push({ filename: file?.originalname || 'unknown', error: err.message });
+      // An object with no photo row is invisible to every listing and every
+      // cleanup, so a failure after the upload removes what it stored.
+      if (storedKey) await storage.delete(storedKey).catch(() => {});
+      if (tempPath) await fs.unlink(tempPath).catch(() => {});
+      errors.push({
+        filename: file?.originalname || 'unknown',
+        error: err.message,
+        ...(err.code === 'PHOTO_CAP_REACHED' ? { code: err.code, limit: photoCap } : {}),
+      });
     }
   }
 

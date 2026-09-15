@@ -148,8 +148,18 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     // under. One request per file means one id per file; the gallery polls
     // them together to know when the background worker is done (B7).
     const uploadIds: string[] = [];
+    // Set when the photo limit stopped the batch; its own message already
+    // explains every file that was not sent.
+    let stoppedAtPhotoCap = false;
 
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
+      // The gallery's photo limit refuses this file and every one after it:
+      // one message, and no requests that can only be refused.
+      const stopAtPhotoCap = (limit?: number) => {
+        stoppedAtPhotoCap = true;
+        failedCount += files.length - index;
+        toast.error(t('upload.photoCapReached', { limit }));
+      };
       const formData = new FormData();
       formData.append('photos', file);
       if (categoryId) {
@@ -160,7 +170,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         const response = await api.post<{
           upload_id?: string;
           count?: number;
-          errors?: Array<{ filename?: string; error?: string }>;
+          errors?: Array<{ filename?: string; error?: string; code?: string; limit?: number }>;
         }>(`/gallery/${eventId}/upload`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
@@ -191,8 +201,13 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         // the guest-side twin of QA P4-B.05 / 7.05.
         const queuedCount = response.data?.count;
         if (typeof queuedCount === 'number' && queuedCount === 0) {
+          const firstError = response.data?.errors?.[0];
+          if (firstError?.code === 'PHOTO_CAP_REACHED') {
+            stopAtPhotoCap(firstError.limit);
+            break;
+          }
           failedCount++;
-          const reason = response.data?.errors?.[0]?.error || t('upload.someFilesFailed');
+          const reason = firstError?.error || t('upload.someFilesFailed');
           toast.error(`${file.name}: ${reason}`);
           continue;
         }
@@ -204,6 +219,10 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         }
         successCount++;
       } catch (error: any) {
+        if (error.response?.data?.code === 'PHOTO_CAP_REACHED') {
+          stopAtPhotoCap(error.response.data.limit);
+          break;
+        }
         // Upload error handled - user notified via UI
         failedCount++;
         
@@ -220,7 +239,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
       onUploadComplete(uploadIds);
     }
     
-    if (failedCount > 0) {
+    if (failedCount > 0 && !stoppedAtPhotoCap) {
       toast.error(`${failedCount} ${t('upload.someFilesFailed')}`);
     }
 
