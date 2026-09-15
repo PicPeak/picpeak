@@ -48,6 +48,35 @@ describe('custom head HTML and the admin UI', () => {
     expect(injected()).toBe(0);
   });
 
+  it('treats a doubled leading slash as the admin UI when navigating', () => {
+    // pushState reads '//admin/...' as a protocol-relative URL, so this
+    // variant is only reachable here through the router's pathname.
+    window.history.pushState({}, '', '/gallery/summer-party');
+    const service = freshService();
+    service.initialize({ provider: 'custom', customHeadHtml: HTML });
+
+    service.handleRouteChange('//admin/dashboard');
+
+    expect(service.reloadPage).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['/ADMIN/login'],
+    ['/Admin'],
+    ['/%61dmin/login'],
+  ])('treats %s as the admin UI, as the router does', (variant) => {
+    window.history.pushState({}, '', variant);
+    const service = freshService();
+    service.initialize({ provider: 'custom', customHeadHtml: HTML });
+    expect(injected()).toBe(0);
+
+    const afterPublic = freshService();
+    window.history.pushState({}, '', '/gallery/summer-party');
+    afterPublic.initialize({ provider: 'custom', customHeadHtml: HTML });
+    afterPublic.handleRouteChange(variant);
+    expect(afterPublic.reloadPage).toHaveBeenCalledTimes(1);
+  });
+
   it('runs the deferred HTML once a public route is shown', () => {
     window.history.pushState({}, '', '/admin/login');
     const service = freshService();

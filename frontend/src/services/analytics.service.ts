@@ -89,8 +89,19 @@ declare global {
   }
 }
 
-// The admin UI, including its login page.
-const isAdminPath = (pathname: string) => pathname === '/admin' || pathname.startsWith('/admin/');
+// The admin UI, including its login page. Matched the way the router matches
+// routes: case-insensitively, on the percent-decoded path, so `/ADMIN` or
+// `/%61dmin` counts too. A path that cannot be decoded counts as admin.
+const isAdminPath = (pathname: string) => {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return true;
+  }
+  const normalized = decoded.toLowerCase().replace(/\/{2,}/g, '/');
+  return normalized === '/admin' || normalized.startsWith('/admin/');
+};
 
 class AnalyticsService {
   private initialized = false;
