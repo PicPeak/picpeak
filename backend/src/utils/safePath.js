@@ -202,13 +202,33 @@ function uploadedAssetPath(url, kind, storageRoot) {
  * `pdf-logo-1./../../../<anything>` -- or any absolute path containing the
  * marker -- delete arbitrary files. Only a flat `pdf-logo-<n>.<ext>` leaf
  * inside uploads/logos is ever named.
+ *
+ * With `imageOnly`, only the image extensions the upload route writes are
+ * accepted: that is the check for a logo_path an admin sets. Cleanup keeps
+ * the default, so a non-image `pdf-logo-*` file written before the upload
+ * derived its extension from the MIME type is still removed on replace.
  */
-function uploadedPdfLogoPath(logoPath, storageRoot) {
+const PDF_LOGO_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.svg'];
+
+function uploadedPdfLogoPath(logoPath, storageRoot, { imageOnly = false } = {}) {
   if (!logoPath || typeof logoPath !== 'string') return null;
   const normalized = logoPath.replace(/^\/+/, '');
   const match = /^uploads\/logos\/(pdf-logo-\d+\.[A-Za-z0-9]+)$/.exec(normalized);
   if (!match) return null;
+  if (imageOnly && !PDF_LOGO_IMAGE_EXTENSIONS.includes(path.extname(match[1]).toLowerCase())) return null;
   return path.join(storageRoot, 'uploads', 'logos', match[1]);
+}
+
+/**
+ * Extensions the public /uploads/logos and /uploads/favicons trees serve.
+ * Every upload route that writes there accepts only these image types, but
+ * older versions kept the client's extension, so a file named .html or .js
+ * can still be on disk from before. It is not served from the app origin.
+ */
+const PUBLIC_UPLOAD_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico'];
+
+function isPublicUploadImage(filePath) {
+  return PUBLIC_UPLOAD_IMAGE_EXTENSIONS.includes(path.extname(String(filePath || '')).toLowerCase());
 }
 
 module.exports = {
@@ -217,4 +237,6 @@ module.exports = {
   assertZipEntriesWithin,
   uploadedAssetPath,
   uploadedPdfLogoPath,
+  isPublicUploadImage,
+  PUBLIC_UPLOAD_IMAGE_EXTENSIONS,
 };

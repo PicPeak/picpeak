@@ -475,7 +475,9 @@ router.put(
     // cleanup path already trusts to name a file this route wrote.
     body('logoPath').optional({ values: 'falsy' }).isString().isLength({ max: 512 })
       .custom((value) => {
-        if (!uploadedPdfLogoPath(value, getStoragePath())) {
+        // Image extensions only: a pdf-logo-* file with any other extension
+        // can only predate the MIME-derived extension, and is not a logo.
+        if (!uploadedPdfLogoPath(value, getStoragePath(), { imageOnly: true })) {
           throw new Error('logoPath must be a path produced by the logo upload endpoint');
         }
         return true;

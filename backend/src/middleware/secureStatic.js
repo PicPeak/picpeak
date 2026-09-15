@@ -16,6 +16,12 @@ function secureStatic(basePath, options = {}) {
     // Get the requested file path - remove leading slash for validation
     const requestedPath = req.path.startsWith('/') ? req.path.substring(1) : req.path;
     
+    // Trees that only hold images (options.onlyServe) refuse anything else,
+    // e.g. a script or HTML file an older upload left behind.
+    if (typeof options.onlyServe === 'function' && !options.onlyServe(requestedPath)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
     // Validate the path doesn't contain dangerous patterns
     if (!isPathSafe(requestedPath)) {
       logger.warn(`Potential path traversal attempt blocked: ${requestedPath}`);
@@ -28,8 +34,9 @@ function secureStatic(basePath, options = {}) {
       safePathJoin(normalizedBase, requestedPath);
       
       // If validation passes, use express.static
+      const { onlyServe: _onlyServe, ...staticOptions } = options;
       const staticMiddleware = express.static(normalizedBase, {
-        ...options,
+        ...staticOptions,
         // Disable directory listing for security
         index: false,
         // Don't allow dotfiles
