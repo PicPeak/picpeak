@@ -1,22 +1,14 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { adminApiToken, publishEvent, waitForPhotosProcessed } from './_helpers/admin';
+import { passGalleryPasswordPrompt } from './_helpers/gallery';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
 const GALLERY_PASSWORD = process.env.GALLERY_PASSWORD || 'PlaywrightGallery123!';
 
 async function ensureGalleryWithPhotos(page) {
-  const loginResponse = await page.request.post('/api/auth/admin/login', {
-    data: {
-      username: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
-    },
-    failOnStatusCode: false,
-  });
-  expect(loginResponse.ok()).toBeTruthy();
-  const { token } = await loginResponse.json();
-  expect(token).toBeTruthy();
+  const token = await adminApiToken(page.request);
 
   const eventName = `Playwright MCP ${Date.now()}`;
   const eventDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -56,6 +48,7 @@ async function ensureGalleryWithPhotos(page) {
   expect(createResponse.ok()).toBeTruthy();
   const createdEvent = await createResponse.json();
   expect(createdEvent?.id).toBeTruthy();
+  await publishEvent(page.request, token, createdEvent.id);
 
   const imagePaths = ['img1.png', 'img2.png'].map((file) =>
     path.join(process.cwd(), 'test-assets', file)
@@ -82,6 +75,7 @@ async function ensureGalleryWithPhotos(page) {
     );
     expect(uploadResponse.ok()).toBeTruthy();
   }
+  await waitForPhotosProcessed(page.request, token, createdEvent.id);
 
   return {
     shareLink: createdEvent.share_link,
@@ -98,16 +92,7 @@ test.describe('Gallery grid tile quick actions', () => {
     await gallery.waitForLoadState('domcontentloaded');
     await gallery.waitForURL(/\/gallery\//);
 
-    const passwordField = gallery.getByPlaceholder(/gallery password/i).first();
-    if (await passwordField.count()) {
-      await passwordField.fill(GALLERY_PASSWORD);
-      try {
-        await gallery.getByRole('button', { name: /View Gallery/i }).click({ noWaitAfter: true, timeout: 5000 });
-      } catch {
-        // Auto-auth via share token may have already navigated to gallery view
-      }
-      await gallery.waitForLoadState('networkidle');
-    }
+    await passGalleryPasswordPrompt(gallery, GALLERY_PASSWORD);
 
     // Ensure grid tiles rendered
     const tiles = gallery.locator('.relative.group');

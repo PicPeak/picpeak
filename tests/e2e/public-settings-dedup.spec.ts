@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { adminApiToken, publishEvent } from './_helpers/admin';
 
 /**
  * Verifies the dedup work for issue #325 — every consumer of /public/settings
@@ -60,14 +61,7 @@ test.describe('public settings dedup (#325)', () => {
 
   test('public gallery login page fires /public/settings at most once', async ({ page, request }) => {
     // Set up an event so the gallery page doesn't bail out with a 404.
-    const adminLogin = await request.post('/api/auth/admin/login', {
-      data: { username: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-    });
-    if (!adminLogin.ok()) {
-      test.skip(true, 'Admin login unavailable — skipping gallery dedup check');
-      return;
-    }
-    const { token } = await adminLogin.json();
+    const token = await adminApiToken(request);
 
     const eventResponse = await request.post('/api/admin/events', {
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -89,6 +83,7 @@ test.describe('public settings dedup (#325)', () => {
       return;
     }
     const event = await eventResponse.json();
+    await publishEvent(request, token, event.id);
     const slug: string = event?.event?.slug ?? event?.slug;
     expect(slug).toBeTruthy();
 

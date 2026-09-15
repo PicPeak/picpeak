@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import crypto from 'crypto';
+import { adminApiToken, publishEvent } from './_helpers/admin';
 
 /**
  * Full end-to-end roundtrip for outbound webhooks (#327):
@@ -79,11 +80,8 @@ test.describe('Webhooks roundtrip (#327)', () => {
 
     await clearReceiver();
 
-    // 0. Admin login (cookie auth)
-    const login = await request.post('/api/auth/admin/login', {
-      data: { username: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-    });
-    expect(login.ok(), `login failed: ${login.status()}`).toBeTruthy();
+    // 0. Admin login (cookie auth; the token is needed for the publish call)
+    const token = await adminApiToken(request);
 
     // 1. Create webhook
     const webhookRes = await request.post('/api/admin/webhooks', {
@@ -100,7 +98,7 @@ test.describe('Webhooks roundtrip (#327)', () => {
     const secret: string = webhookBody.secret;
     expect(secret).toMatch(/^whsec_/);
 
-    // 2. Trigger event.published (create with is_draft=false)
+    // 2. Trigger event.published: events are created as drafts, publishing fires it
     const eventRes = await request.post('/api/admin/events', {
       headers: { 'Content-Type': 'application/json' },
       data: {
@@ -114,12 +112,12 @@ test.describe('Webhooks roundtrip (#327)', () => {
         admin_email: ADMIN_EMAIL,
         password: GALLERY_PASSWORD,
         expiration_days: 30,
-        is_draft: false,
       },
     });
     expect(eventRes.ok(), `event create failed: ${eventRes.status()}`).toBeTruthy();
     const eventBody = await eventRes.json();
     const eventId: number = eventBody.id;
+    await publishEvent(request, token, eventId);
 
     // 3. Wait for delivery + assert HMAC. Filter by BOTH event id AND
     // delivery id matching THIS webhook so any stale subscription from a
@@ -198,7 +196,7 @@ test.describe('Webhooks roundtrip (#327)', () => {
     const disableRes = await request.put(`/api/admin/webhooks/${webhookId}`, { data: { active: false } });
     expect(disableRes.ok()).toBeTruthy();
 
-    await request.post('/api/admin/events', {
+    const skipRes = await request.post('/api/admin/events', {
       headers: { 'Content-Type': 'application/json' },
       data: {
         event_type: 'wedding',
@@ -211,9 +209,10 @@ test.describe('Webhooks roundtrip (#327)', () => {
         admin_email: ADMIN_EMAIL,
         password: GALLERY_PASSWORD,
         expiration_days: 30,
-        is_draft: false,
       },
     });
+    expect(skipRes.ok(), `event create failed: ${skipRes.status()}`).toBeTruthy();
+    await publishEvent(request, token, (await skipRes.json()).id);
     // Give the worker a generous poll window, then assert the receiver is empty.
     await new Promise((r) => setTimeout(r, 7000));
     const finalEntries = await readReceiver();
