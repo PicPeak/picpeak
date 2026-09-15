@@ -246,7 +246,10 @@ describe('archive restore restores categories (flat archives included)', () => {
     const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
     expect(res.status).toBe(200);
 
-    expect(await categoryOf('DSC_4242.jpg')).toBe('Drohne');
+    // The row carries the internal name; the original lives in
+    // original_filename, and the file goes back under the internal name.
+    expect(await categoryOf('stored_9f8e7d.jpg')).toBe('Drohne');
+    expect(await db('photos').where('filename', 'DSC_4242.jpg').first()).toBeFalsy();
   });
 
   it('prefers the event-scoped category when a global shares its name', async () => {
@@ -290,7 +293,7 @@ describe('archive restore restores categories (flat archives included)', () => {
     const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
     expect(res.status).toBe(200);
 
-    expect(await categoryOf('od_dr_DSC_5.jpg')).toBe('Strand');
+    expect(await categoryOf('stored_abc.jpg')).toBe('Strand');
   });
 
   it('ignores a legacy event-owned row when falling back to globals', async () => {

@@ -334,6 +334,60 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     expect(rows['renamed-kept.jpg']).toMatchObject({ credit_name: 'Anna Real', credit_source: 'manual', uploader_guest_id: anna });
   });
 
+  it('puts an original-name entry back under its canonical key and keeps the retained row', async () => {
+    // With general_use_original_filenames_for_downloads on at archive time,
+    // archiveService names the entry after the original filename but keeps
+    // the photo row, whose path names the internal file. Restoring the
+    // entry under the name the zip gave it leaves that row pointing at an
+    // object the archive deleted, and the lookup by entry basename misses
+    // the row and inserts a second one.
+    const slug = 'original-name-event';
+    const archiveRelPath = await writeArchive('original-name.zip', {
+      'individual/DSC_0001.jpg': BYTES,
+      'photos_manifest.json': manifestOf([
+        { filename: 'ev_001.jpg', original_filename: 'DSC_0001.jpg', type: 'individual' },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, slug);
+    const canonicalKey = `events/active/${slug}/individual/ev_001.jpg`;
+    await db('photos').insert({
+      event_id: eventId,
+      filename: 'ev_001.jpg',
+      original_filename: 'DSC_0001.jpg',
+      path: canonicalKey,
+      type: 'individual',
+      size_bytes: BYTES.length,
+    });
+
+    await restore(eventId);
+
+    const rows = await db('photos').where('event_id', eventId);
+    expect(rows.map((r) => r.filename)).toEqual(['ev_001.jpg']);
+    await expect(fs.promises.access(path.join(storagePath, canonicalKey))).resolves.toBeUndefined();
+    await expect(fs.promises.access(path.join(storagePath, `events/active/${slug}/individual/DSC_0001.jpg`)))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('rebuilds a missing row under the canonical name when the entry carries the original', async () => {
+    const slug = 'original-name-norow-event';
+    const archiveRelPath = await writeArchive('original-name-norow.zip', {
+      'individual/DSC_0002.jpg': BYTES,
+      'photos_manifest.json': manifestOf([
+        { filename: 'ev_002.jpg', original_filename: 'DSC_0002.jpg', type: 'individual' },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, slug);
+
+    await restore(eventId);
+
+    const photo = await db('photos').where('event_id', eventId).first();
+    expect(photo).toMatchObject({
+      filename: 'ev_002.jpg',
+      original_filename: 'DSC_0002.jpg',
+      path: `events/active/${slug}/individual/ev_002.jpg`,
+    });
+  });
+
   it('keeps the original upload time rather than stamping the restore time', async () => {
     const uploadedAt = '2026-06-27T10:30:00.000Z';
     const archiveRelPath = await writeArchive('uploadedat.zip', {

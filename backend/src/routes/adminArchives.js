@@ -526,21 +526,28 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       const stagingFile = path.join(tmpDir, 'entry');
       for (const entry of entries) {
         if (entry.isDirectory) continue;
-        const storageKey = path.posix.join(eventPrefix, entry.name);
-        await zip.extract(entry, stagingFile);
-        await storage.putFromFile(storageKey, stagingFile);
-        await fs.rm(stagingFile, { force: true });
-
-        const filename = path.basename(entry.name);
+        const entryName = path.basename(entry.name);
+        const dirPath = path.dirname(entry.name);
         // The manifest names every photo the event held, so an entry it claims
         // is a photo whatever its extension. The extension set only has to
         // carry pre-manifest archives, and it keeps the metadata files the
         // archive writer adds alongside the photos out of the photos table.
-        const manifestEntry = manifestByFilename.get(filename);
+        const manifestEntry = manifestByFilename.get(entryName);
+        // With general_use_original_filenames_for_downloads on at archive
+        // time the entry is named after the ORIGINAL filename, while the
+        // photo row archiveEvent kept still names the internal file in its
+        // path. The manifest row is the bridge: its filename is the internal
+        // one, so the file goes back under that name and the retained row
+        // resolves again. Restoring under the zip's name left that row
+        // pointing at a deleted object and inserted a second row beside it.
+        const filename = manifestEntry?.filename || entryName;
+        const storageKey = path.posix.join(eventPrefix, dirPath, filename);
+        await zip.extract(entry, stagingFile);
+        await storage.putFromFile(storageKey, stagingFile);
+        await fs.rm(stagingFile, { force: true });
+
         const extension = path.extname(filename).toLowerCase();
         if (!manifestEntry && !RESTORABLE_EXTENSIONS.has(extension)) continue;
-
-        const dirPath = path.dirname(entry.name);
 
         // The manifest is the only faithful source for the category, and
         // it is authoritative INCLUDING when it says "none". A manifest
