@@ -1,0 +1,134 @@
+/**
+ * Real routes + migrated SQLite: gallery sessions end when what they were
+ * opened with ends.
+ *
+ * - Changing the gallery password (or the client password) only rewrote the
+ *   stored hash, so a guest who got in with the old one kept access for the
+ *   rest of the 24-hour token.
+ * - A gallery token minted from the customer portal carried its own jti and
+ *   never looked at the portal session, so logging out of the portal did not
+ *   end it.
+ * - The admin preview skipped the idle timeout, which sessionTimeoutMiddleware
+ *   only enforces under /api/admin.
+ */
+const { bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken } = require('../integration/helpers/crmDb');
+const request = require('supertest');
+const express = require('express');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+
+process.env.JWT_SECRET = 'gallery-session-invalidation-secret-at-least-32-chars';
+
+let db, cleanup, app, adminId, customerId;
+const eventId = 71001, slug = 'session-invalidation';
+const photos = `/api/gallery/${slug}/photos`;
+
+const galleryToken = (claims = {}) => jwt.sign({
+  type: 'gallery', eventId, eventSlug: slug, jti: crypto.randomUUID(),
+  iat: Math.floor(Date.now() / 1000) - 60, ...claims,
+}, process.env.JWT_SECRET, { issuer: 'picpeak-auth', expiresIn: '1h' });
+const listWith = (bearer) => request(app).get(photos).set('Authorization', `Bearer ${bearer}`);
+
+beforeAll(async () => {
+  ({ db, cleanup } = await bootCrmDb());
+  ({ adminId, customerId } = await seedMinimal(db));
+  await assignAdminRole(db, adminId);
+  await db('events').insert({
+    id: eventId, slug, event_type: 'wedding', event_name: 'Session invalidation',
+    event_date: '2026-01-01', host_email: 'h@example.test', admin_email: 'a@example.test',
+    password_hash: 'unused', share_link: `/gallery/${slug}`, created_by: adminId,
+  });
+  await db('event_customer_assignments').insert({ event_id: eventId, customer_account_id: customerId });
+  app = express(); app.use(express.json()); app.use(cookieParser());
+  app.use('/api/admin/events', require('../../src/routes/adminEvents'));
+  app.use('/api/gallery', require('../../src/routes/gallery'));
+  app.use('/api/customer/auth', require('../../src/routes/customerAuth'));
+  app.use('/api/customer', require('../../src/routes/customer'));
+}, 120000);
+
+beforeEach(async () => {
+  await db('events').where({ id: eventId }).update({
+    is_active: 1, is_archived: 0, is_draft: 0, require_password: 1, client_access_enabled: 1,
+    expires_at: new Date(Date.now() + 86400000).toISOString(),
+    gallery_password_changed_at: null, client_password_changed_at: null,
+  });
+});
+
+afterAll(async () => { if (cleanup) await cleanup(); });
+
+describe('rotating a gallery credential', () => {
+  it('ends guest sessions opened with the old gallery password and keeps the others', async () => {
+    const guest = galleryToken();
+    const client = galleryToken({ accessLevel: 'client' });
+    const portal = galleryToken({ via: 'customer', customerId });
+    const slideshow = galleryToken({ accessLevel: 'slideshow' });
+    expect((await listWith(guest)).status).toBe(200);
+
+    const reset = await request(app).post(`/api/admin/events/${eventId}/reset-password`)
+      .set('Authorization', `Bearer ${mintAdminToken(adminId)}`).send({ sendEmail: false });
+    expect(reset.status).toBe(200);
+
+    const refused = await listWith(guest);
+    expect(refused.status).toBe(401);
+    expect(refused.body.code).toBe('GALLERY_PASSWORD_CHANGED');
+    // A session opened after the change, and sessions not opened with the
+    // gallery password, keep working.
+    expect((await listWith(galleryToken({ iat: Math.floor(Date.now() / 1000) + 1 }))).status).toBe(200);
+    expect((await listWith(client)).status).toBe(200);
+    expect((await listWith(portal)).status).toBe(200);
+    expect((await listWith(slideshow)).status).toBe(200);
+  });
+
+  it('ends client sessions when the client password changes, not guest sessions', async () => {
+    const guest = galleryToken();
+    const client = galleryToken({ accessLevel: 'client' });
+    expect((await listWith(client)).status).toBe(200);
+
+    const update = await request(app).put(`/api/admin/events/${eventId}`)
+      .set('Authorization', `Bearer ${mintAdminToken(adminId)}`)
+      .send({ client_password: 'Client-Rotation-2026!' });
+    expect(update.status).toBe(200);
+
+    const refused = await listWith(client);
+    expect(refused.status).toBe(401);
+    expect(refused.body.code).toBe('GALLERY_PASSWORD_CHANGED');
+    expect((await listWith(guest)).status).toBe(200);
+  });
+});
+
+describe('logging out of the customer portal', () => {
+  it('ends the gallery token the portal minted for that session', async () => {
+    const portalSession = jwt.sign({
+      type: 'customer', customerId, iat: Math.floor(Date.now() / 1000) - 5,
+    }, process.env.JWT_SECRET, { issuer: 'picpeak-auth', expiresIn: '1h' });
+    const cookie = `customer_token=${portalSession}`;
+
+    const minted = await request(app).get(`/api/customer/events/${slug}/access-token`).set('Cookie', cookie);
+    expect(minted.status).toBe(200);
+    const galleryBearer = minted.body.token;
+    expect((await listWith(galleryBearer)).status).toBe(200);
+
+    expect((await request(app).post('/api/customer/auth/logout').set('Cookie', cookie)).status).toBe(200);
+
+    const refused = await listWith(galleryBearer);
+    expect(refused.status).toBe(401);
+    expect(refused.body.code).toBe('TOKEN_REVOKED');
+  });
+});
+
+describe('admin preview', () => {
+  const preview = (bearer) => request(app).get(`${photos}?admin_preview=1`).set('Authorization', `Bearer ${bearer}`);
+  const adminToken = (claims) => jwt.sign({ type: 'admin', id: adminId, username: 'admin', ...claims },
+    process.env.JWT_SECRET, { issuer: 'picpeak-auth', expiresIn: '30d' });
+
+  it('refuses an admin session that has idled out, as the admin API does', async () => {
+    const idle = await preview(adminToken({ iat: Math.floor(Date.now() / 1000) - 3 * 3600 }));
+    expect(idle.status).toBe(401);
+    expect(idle.body.code).toBe('SESSION_TIMEOUT');
+
+    expect((await preview(mintAdminToken(adminId))).status).toBe(200);
+    // "Remember me" opts out of the idle timeout here too.
+    expect((await preview(adminToken({ iat: Math.floor(Date.now() / 1000) - 3 * 3600, rememberMe: true }))).status).toBe(200);
+  });
+});

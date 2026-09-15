@@ -27,6 +27,7 @@ const { hasColumnCached } = require('../../utils/schemaCache');
 const { requireEventOwnership } = require('../../middleware/ownership');
 
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../../utils/galleryPasswordVault');
+const { credentialChangeColumns } = require('../../utils/galleryCredentialCutoff');
 
 const { getFrontendBaseUrl, getAbsoluteFrontendUrl } = require('../../utils/frontendUrl');
 const downloadZipService = require('../../services/downloadZipService');
@@ -1308,15 +1309,19 @@ module.exports = (router) => {
       // Plaintexts to remember after the row is written (#1271); each key is
       // only set when this request changed that password.
       const recoverable = {};
+      // Credentials this request changed; sessions opened with the old one end.
+      const credentialChanges = new Set();
       if (Object.prototype.hasOwnProperty.call(updates, 'client_password') && updates.client_password) {
         updates.client_password_hash = await bcrypt.hash(updates.client_password, getBcryptRounds());
         recoverable.clientPassword = updates.client_password;
+        credentialChanges.add('client');
         delete updates.client_password;
       } else {
         delete updates.client_password;
       }
       if (updates.regenerate_client_token) {
         updates.client_share_token = crypto.randomBytes(32).toString('hex');
+        credentialChanges.add('client');
       }
       delete updates.regenerate_client_token;
 
@@ -1386,6 +1391,7 @@ module.exports = (router) => {
       if (newPasswordPlain) {
         updates.password_hash = await bcrypt.hash(newPasswordPlain, getBcryptRounds());
         recoverable.password = newPasswordPlain;
+        credentialChanges.add('gallery');
       } else if (hasRequirePasswordUpdate && requirePasswordUpdate === false && currentRequirePassword) {
         updates.password_hash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), getBcryptRounds());
         recoverable.password = null;
@@ -1524,6 +1530,7 @@ module.exports = (router) => {
       // Handle client access fields (#172)
       if (Object.prototype.hasOwnProperty.call(updates, 'client_access_enabled')) {
         updates.client_access_enabled = formatBoolean(updates.client_access_enabled);
+        if (!parseBooleanInput(updates.client_access_enabled, false)) credentialChanges.add('client');
         // Auto-generate client share token when first enabling
         if (parseBooleanInput(updates.client_access_enabled, false) && !event.client_share_token && !updates.client_share_token) {
           updates.client_share_token = crypto.randomBytes(32).toString('hex');
@@ -1535,6 +1542,7 @@ module.exports = (router) => {
       // which would surface as a 500 for an otherwise-valid no-op request
       // (e.g. a body of only protected fields). (codex review.)
       if (Object.keys(recoverable).length > 0) Object.assign(updates, await galleryPasswordColumns(recoverable));
+      if (credentialChanges.size > 0) Object.assign(updates, await credentialChangeColumns(...credentialChanges));
       if (Object.keys(updates).length > 0) {
         await db('events')
           .where('id', id)
