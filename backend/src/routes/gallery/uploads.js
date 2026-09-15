@@ -6,6 +6,8 @@ const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/ga
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const logger = require('../../utils/logger');
 const { errorResponse } = require('../../utils/routeHelpers');
+const { photoCapOf, isPhotoCapReached, photoCapError } = require('../../services/photoCap');
+const categoryScope = require('../../utils/categoryScope');
 
 router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, async (req, res) => {
   try {
@@ -19,6 +21,13 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, async (
     // Check if user uploads are allowed
     if (!req.event.allow_user_uploads) {
       return res.status(403).json({ error: 'User uploads are not allowed for this event' });
+    }
+
+    // The event's photo cap applies to guests too. Refused here before multer
+    // writes anything, and checked again as each photo row is inserted.
+    const photoCap = photoCapOf(req.event);
+    if (photoCap && await isPhotoCapReached(req.event)) {
+      return res.status(409).json(photoCapError(photoCap));
     }
 
     // Ensure temp upload directory exists
@@ -114,21 +123,53 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, async (
       }
 
       const { queueFilesForProcessing } = require('../../services/photoProcessor');
-      const rawCategory = req.body.category_id || req.event.upload_category_id || null;
-      const numericCategoryId = (() => {
-        if (rawCategory === null || rawCategory === undefined) return null;
-        const n = parseInt(rawCategory, 10);
-        return Number.isFinite(n) ? n : null;
-      })();
+      const removeTempFiles = () => Promise.all(
+        req.files.map((file) => fs.promises.unlink(file.path).catch(() => {}))
+      );
+      // A category must belong to this event or be global, the same rule the
+      // admin and v1 uploads apply. A category the guest sends outside that
+      // scope is refused; an event default that no longer resolves is dropped.
+      // Ids are integer columns: anything beyond that range cannot name a
+      // category, and passing it on would make Postgres reject the lookup.
+      const MAX_CATEGORY_ID = 2147483647;
+      const parseCategoryId = (raw) => {
+        const n = parseInt(raw, 10);
+        return Number.isInteger(n) && n > 0 && n <= MAX_CATEGORY_ID ? n : null;
+      };
 
       try {
+        let numericCategoryId = null;
+        const rawRequestedCategory = req.body.category_id;
+        const requestedCategoryId = parseCategoryId(rawRequestedCategory);
+        const requestedSomething = rawRequestedCategory !== undefined && rawRequestedCategory !== null
+          && String(rawRequestedCategory).trim() !== '' && Number.isFinite(parseInt(rawRequestedCategory, 10));
+        if (requestedSomething) {
+          if (!requestedCategoryId || !(await categoryScope.findScopedCategory(eventId, requestedCategoryId))) {
+            await removeTempFiles();
+            return res.status(400).json(categoryScope.outOfScopeCategoryError(rawRequestedCategory));
+          }
+          numericCategoryId = requestedCategoryId;
+        } else {
+          const defaultCategoryId = parseCategoryId(req.event.upload_category_id);
+          if (defaultCategoryId && await categoryScope.findScopedCategory(eventId, defaultCategoryId)) {
+            numericCategoryId = defaultCategoryId;
+          }
+        }
+
         // Queue files as 'pending' — the background worker will process
         // thumbnails / EXIF / dimensions off the request thread (#357).
         const result = await queueFilesForProcessing(req.files, {
           eventId,
           photoType: 'individual',
           categoryId: numericCategoryId,
+          photoCap,
         });
+
+        // Every file refused for the cap: say so as a refusal, not a 202.
+        if (result.photos.length === 0 && result.errors.length > 0
+          && result.errors.every((e) => e.code === 'PHOTO_CAP_REACHED')) {
+          return res.status(409).json(photoCapError(photoCap));
+        }
 
         res.status(202).json({
           message: 'Photos queued for processing',
@@ -139,6 +180,9 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, async (
           errors: result.errors.length > 0 ? result.errors : undefined,
         });
       } catch (processError) {
+        // Multer does not await this callback, so every failure has to end
+        // here: nothing may escape as an unhandled rejection.
+        await removeTempFiles();
         errorResponse(res, processError, 500, 'Failed to process photos');
       }
     });

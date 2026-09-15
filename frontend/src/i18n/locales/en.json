@@ -816,6 +816,7 @@
     "tooManyFiles": "Maximum {{limit}} files can be uploaded at once",
     "limitInfo": "{{selected}} of {{limit}} files selected ({{remaining}} remaining)",
     "limitReached": "Upload limit reached ({{limit}} files per batch)",
+    "photoCapReached": "This gallery has reached its photo limit ({{limit}} photos). No more photos can be uploaded.",
     "replacedFiles_one": "{{count}} photo replaced",
     "replacedFiles_other": "{{count}} photos replaced",
     "uploadingChunks_one": "{{count}} chunk uploading",
