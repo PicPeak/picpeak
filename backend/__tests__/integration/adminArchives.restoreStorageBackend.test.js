@@ -23,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const zlib = require('zlib');
+const { Readable } = require('stream');
 const express = require('express');
 const request = require('supertest');
 
@@ -281,6 +282,47 @@ describe('archive routes read and write through the storage backend', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('application/zip');
     expect(Buffer.compare(res.body, bytes)).toBe(0);
+  });
+
+  it('answers 500, not a dead process, when the download stream fails before its first byte', async () => {
+    const { key } = await putArchive('broken-stream-event', { 'individual/a.jpg': BYTES });
+    const eventId = await seedArchivedEvent(key, 'broken-stream-event');
+
+    // What an S3 body that drops after GetObject, or a local file unlinked
+    // between stat and open, looks like: the stream errors on a later tick,
+    // outside any try/catch in the route.
+    const get = storage.get;
+    storage.get = async () => new Readable({
+      read() { process.nextTick(() => this.destroy(new Error('connection reset'))); },
+    });
+    try {
+      const res = await request(app).get(`/admin/archives/${eventId}/download`);
+      expect(res.status).toBe(500);
+      expect(res.body).toEqual({ error: 'Failed to serve file' });
+    } finally {
+      storage.get = get;
+    }
+  });
+
+  it('keeps the event row when the backend refuses to delete the zip', async () => {
+    const { key } = await putArchive('stuck-delete-event', { 'individual/a.jpg': BYTES });
+    const eventId = await seedArchivedEvent(key, 'stuck-delete-event');
+
+    const del = storage.delete;
+    storage.delete = async () => { throw new Error('AccessDenied'); };
+    try {
+      const res = await request(app).delete(`/admin/archives/${eventId}`);
+      expect(res.status).toBe(500);
+    } finally {
+      storage.delete = del;
+    }
+
+    // The row is the only reference to the zip; dropping it would strand
+    // the object in the bucket with nothing left to retry from.
+    const event = await db('events').where('id', eventId).first();
+    expect(event).toBeDefined();
+    expect(Boolean(event.is_archived)).toBe(true);
+    expect(await storage.exists(key)).toBe(true);
   });
 
   it('deletes the zip from the backend on permanent delete', async () => {

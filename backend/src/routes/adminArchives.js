@@ -19,6 +19,7 @@ const { ALLOWED_MEDIA_TYPES, ALLOWED_VIDEO_TYPES } = require('../utils/fileSecur
 const { toIso } = require('../utils/dateNormalize');
 const { clearGuestCredits } = require('../services/photoCredit');
 const { getStorage } = require('../services/storage');
+const { pipeStreamToResponse } = require('../utils/streamResponse');
 const router = express.Router();
 
 /**
@@ -717,9 +718,10 @@ router.get('/:id/download', adminAuth, requirePermission('archives.download'), r
     res.setHeader('Content-Length', stats.size);
     res.setHeader('Content-Disposition', `attachment; filename="${archive.slug}.zip"`);
 
-    // Stream the file
-    const fileStream = await storage.get(archive.archive_path);
-    fileStream.pipe(res);
+    // Stream the file. The helper owns the error path: a local read stream
+    // opens lazily and an S3 body can drop mid-transfer, and either error
+    // with no listener would take the process down.
+    pipeStreamToResponse(await storage.get(archive.archive_path), res, { context: 'archive' });
 
     // Log download
     await db('activity_logs').insert({
@@ -750,12 +752,11 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
 
     // Delete archive file if exists. Through the storage backend: on an S3
     // deployment the local path never had it, so the zip outlived the event.
+    // Not caught: delete() already treats a missing object as done, so an
+    // error here is the backend refusing, and dropping the event row anyway
+    // would leave the zip in the bucket with nothing left to retry from.
     if (archive.archive_path) {
-      try {
-        await getStorage().delete(archive.archive_path);
-      } catch (error) {
-        logger.error('Failed to delete archive file:', error);
-      }
+      await getStorage().delete(archive.archive_path);
     }
 
     // Delete thumbnails for this event
