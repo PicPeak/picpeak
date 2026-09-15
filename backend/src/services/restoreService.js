@@ -75,6 +75,42 @@ function assertSafeSqlitePath(p) {
   }
 }
 
+// The manifest records the SHA-256 of the database dump file it points at
+// (database.checksum, taken after compression). Per-file checksums were
+// verified on download and restore, but the dump itself never was, so a dump
+// swapped or truncated in the backup store was still replayed as SQL. A keyed
+// manifest covers this checksum, which makes the check meaningful against a
+// tampered store. Manifests written before the checksum existed carry none:
+// they restore with a warning, or are refused when the operator requires keyed
+// manifests (BACKUP_MANIFEST_REQUIRE_KEYED), since there is nothing to verify.
+async function verifyDatabaseDumpChecksum(dumpPath, expectedChecksum, warn = () => {}) {
+  const expected = typeof expectedChecksum === 'string' ? expectedChecksum.trim().toLowerCase() : '';
+  if (!expected) {
+    if (/^(1|true|yes)$/i.test(String(process.env.BACKUP_MANIFEST_REQUIRE_KEYED || ''))) {
+      throw new Error(
+        'The backup manifest records no checksum for the database dump, so it cannot be verified. ' +
+        'Refusing to restore because BACKUP_MANIFEST_REQUIRE_KEYED is set.'
+      );
+    }
+    warn('Backup manifest records no database dump checksum; the dump was restored without verification');
+    return { verified: false };
+  }
+  const actual = await new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    createReadStream(dumpPath)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('end', () => resolve(hash.digest('hex')))
+      .on('error', reject);
+  });
+  if (actual !== expected) {
+    throw new Error(
+      'The database dump does not match the checksum recorded in the backup manifest. ' +
+      'The file was changed or damaged after the backup was taken; refusing to restore it.'
+    );
+  }
+  return { verified: true };
+}
+
 // GHSA-xfvx: the layered candidate resolution for `manifest.database.backup_file`
 // (see performDatabaseRestore), factored out so the containment rule can be
 // pinned directly in tests without exercising the surrounding DB-swap/spawn
@@ -1080,6 +1116,13 @@ class RestoreService {
       );
     }
 
+    // Before anything is decompressed or replayed: the dump must be the one
+    // the manifest describes.
+    await verifyDatabaseDumpChecksum(
+      dbBackupPath, manifest.database.checksum, (msg) => this.log('warn', msg)
+    );
+    this.log('info', 'Database dump checksum checked against the manifest');
+
     // Decompress if needed
     let restoreFile = dbBackupPath;
     if (dbBackupPath.endsWith('.gz')) {
@@ -1948,5 +1991,6 @@ module.exports = {
     assertSafeSqlitePath,
     pathEscapes,
     resolveContainedDbBackupCandidates,
+    verifyDatabaseDumpChecksum,
   },
 };

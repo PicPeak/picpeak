@@ -28,8 +28,18 @@ services:
         # so a non-root reader must be able to read them. The volume is private to
         # these containers and never host-exposed.
         chmod 644 /run/secrets/jwt_secret /run/secrets/db_password /run/secrets/redis_password
+        # Postgres and Redis each mount a volume holding only their own password,
+        # so neither can read jwt_secret (the backend's token signing key).
+        # Refreshed from picpeak-secrets on every run, which also fills them on
+        # an existing install the first time this version starts.
+        mkdir -p /run/db-secret /run/redis-secret
+        cp /run/secrets/db_password /run/db-secret/db_password
+        cp /run/secrets/redis_password /run/redis-secret/redis_password
+        chmod 644 /run/db-secret/db_password /run/redis-secret/redis_password
     volumes:
       - picpeak-secrets:/run/secrets
+      - picpeak-db-secret:/run/db-secret
+      - picpeak-redis-secret:/run/redis-secret
     restart: "no"
 
   backend:
@@ -146,7 +156,7 @@ services:
       - TZ=${TZ:-UTC}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - picpeak-secrets:/run/secrets:ro
+      - picpeak-db-secret:/run/secrets:ro
     depends_on:
       secrets-init:
         condition: service_completed_successfully
@@ -169,7 +179,7 @@ services:
     command: sh -c 'exec redis-server --appendonly yes --requirepass "$$(cat /run/secrets/redis_password)"'
     volumes:
       - redis-data:/data
-      - picpeak-secrets:/run/secrets:ro
+      - picpeak-redis-secret:/run/secrets:ro
     depends_on:
       secrets-init:
         condition: service_completed_successfully
@@ -280,6 +290,13 @@ volumes:
   # Auto-generated machine secrets (jwt/db/redis). Keep it — deleting it orphans
   # the DB password from the Postgres volume.
   picpeak-secrets:
+    driver: local
+  # Copies of db_password and redis_password for the postgres and redis
+  # containers alone. secrets-init rebuilds them from picpeak-secrets, so they
+  # need no backup.
+  picpeak-db-secret:
+    driver: local
+  picpeak-redis-secret:
     driver: local
 
 networks:
