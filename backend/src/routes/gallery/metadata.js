@@ -58,11 +58,14 @@ async function resolveDraftForAdminPreview(req, identifier) {
 // an admin whose only problem is a pending password rotation: they landed on
 // the gallery-not-found page with no hint that the admin area was waiting for
 // them. That refusal is about the account, not the gallery, so it is reported
-// as the 403 MUST_CHANGE_PASSWORD adminAuth would answer. Every other refusal
-// (FORBIDDEN, a revoked session) still reads as not found, so a scoped admin
-// learns nothing new about a draft they cannot open.
+// as the 403 MUST_CHANGE_PASSWORD adminAuth would answer. An admin session
+// that idled out is the same kind of refusal (401 SESSION_TIMEOUT), and the
+// preview offers to sign in again. Every other refusal (FORBIDDEN, a revoked
+// session) still reads as not found, so a scoped admin learns nothing new
+// about a draft they cannot open.
+const ACCOUNT_REFUSAL_CODES = new Set(['MUST_CHANGE_PASSWORD', 'SESSION_TIMEOUT']);
 function throwIfPasswordChangeRequired(req) {
-  if (req.adminPreviewDenied?.code === 'MUST_CHANGE_PASSWORD') throw req.adminPreviewDenied;
+  if (ACCOUNT_REFUSAL_CODES.has(req.adminPreviewDenied?.code)) throw req.adminPreviewDenied;
 }
 
 router.get('/resolve/:identifier', handleAsync(async (req, res) => {
@@ -219,8 +222,9 @@ router.get('/:slug/info', async (req, res) => {
     const adminPreview = await verifyAdminPreview(req, event);
     // See throwIfPasswordChangeRequired. This route answers its refusals inline
     // rather than through the error handler, so it does the same here.
-    if (req.adminPreviewDenied?.code === 'MUST_CHANGE_PASSWORD') {
-      return res.status(403).json({ error: req.adminPreviewDenied.message, code: req.adminPreviewDenied.code });
+    if (ACCOUNT_REFUSAL_CODES.has(req.adminPreviewDenied?.code)) {
+      return res.status(req.adminPreviewDenied.statusCode)
+        .json({ error: req.adminPreviewDenied.message, code: req.adminPreviewDenied.code });
     }
     // Check if event is a draft (allow admin preview)
     if (event.is_draft && !adminPreview) {

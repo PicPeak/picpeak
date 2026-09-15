@@ -18,7 +18,7 @@ import { GALLERY_THEME_PRESETS } from '../types/theme.types';
 import { buildResourceUrl } from '../utils/url';
 import { isGalleryPublic, normalizeRequirePassword } from '../utils/accessControl';
 import { detectInAppBrowser } from '../utils/inAppBrowser';
-import { isPasswordChangeRequired } from '../utils/passwordChangeRequired';
+import { isAdminSessionExpired, isPasswordChangeRequired } from '../utils/passwordChangeRequired';
 
 export const GalleryPage: React.FC = () => {
   const { slug: rawSlug, token: rawToken } = useParams<{ slug: string; token?: string }>();
@@ -62,6 +62,7 @@ export const GalleryPage: React.FC = () => {
   );
   const [identifierError, setIdentifierError] = useState<string | null>(null);
   const [identifierNeedsPasswordChange, setIdentifierNeedsPasswordChange] = useState(false);
+  const [identifierAdminSessionExpired, setIdentifierAdminSessionExpired] = useState(false);
   const lastResolvedIdentifier = React.useRef<string | null>(null);
 
   React.useEffect(() => {
@@ -101,6 +102,7 @@ export const GalleryPage: React.FC = () => {
           const message = error?.response?.data?.error || 'Unable to resolve gallery link';
           setIdentifierError(message);
           setIdentifierNeedsPasswordChange(isPasswordChangeRequired(error));
+          setIdentifierAdminSessionExpired(isAdminSessionExpired(error));
         })
         .finally(() => {
           if (!cancelled) {
@@ -330,6 +332,15 @@ export const GalleryPage: React.FC = () => {
     isPasswordChangeRequired(infoError)
   ) {
     return <PasswordChangeRequiredNotice />;
+  }
+
+  // An admin preview refused because the admin session idled out (401
+  // SESSION_TIMEOUT). Signing in again is the way back, not a guest login.
+  if (
+    (identifierAdminSessionExpired && identifierError && !resolvedSlug && !isResolvingIdentifier) ||
+    (isAdminPreview && isAdminSessionExpired(infoError))
+  ) {
+    return <PasswordChangeRequiredNotice reason="session" />;
   }
 
   // Gallery missing / archived / expired-link / unresolvable identifier all

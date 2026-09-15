@@ -90,6 +90,25 @@ describe('gallery metadata routes report a pending password change on admin prev
     expect(res.body.code).toBe('MUST_CHANGE_PASSWORD');
   });
 
+  it.each(routes)('%s answers 401 SESSION_TIMEOUT for an idled-out admin instead of 404', async (_route, send) => {
+    mockDenial = new AppError('Session expired', 401, 'SESSION_TIMEOUT');
+
+    const res = await send();
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('SESSION_TIMEOUT');
+  });
+
+  it('/info answers 401 SESSION_TIMEOUT for a published gallery rather than the guest view', async () => {
+    mockDenial = new AppError('Session expired', 401, 'SESSION_TIMEOUT');
+    mockEvent = publishedEvent;
+
+    const res = await request(app).get('/gallery/draft-gallery/info?admin_preview=1');
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('SESSION_TIMEOUT');
+  });
+
   it.each(routes)('%s still reads as not found for any other refusal', async (_route, send) => {
     mockDenial = new AppError('Access denied', 403, 'FORBIDDEN');
 
