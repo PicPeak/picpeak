@@ -69,9 +69,6 @@ export interface FeedbackSettings {
   require_name_email: boolean;
   moderate_comments: boolean;
   show_feedback_to_guests: boolean;
-  enable_rate_limiting: boolean;
-  rate_limit_window_minutes?: number;
-  rate_limit_max_requests?: number;
   identity_mode?: IdentityMode;
   // Per-guest caps (#655). null or 0 = unlimited (preserves current
   // behaviour for installs that haven't enabled the cap). Positive

@@ -73,9 +73,6 @@ interface FormData {
     moderate_comments: boolean;
     show_feedback_to_guests: boolean;
     identity_mode?: 'simple' | 'guest' | 'shared';
-    enable_rate_limiting: boolean;
-    rate_limit_window_minutes?: number;
-    rate_limit_max_requests?: number;
   };
   // Client access (#172)
   client_access_enabled: boolean;
@@ -151,9 +148,6 @@ export const CreateEventPage: React.FC = () => {
       moderate_comments: true,
       show_feedback_to_guests: true,
       identity_mode: 'simple',
-      enable_rate_limiting: true,
-      rate_limit_window_minutes: 15,
-      rate_limit_max_requests: 10,
     },
     client_access_enabled: false,
     client_password: '',

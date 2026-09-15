@@ -89,8 +89,15 @@ declare global {
   }
 }
 
+// The admin UI, including its login page.
+const isAdminPath = (pathname: string) => pathname === '/admin' || pathname.startsWith('/admin/');
+
 class AnalyticsService {
   private initialized = false;
+  private customHeadHtml = '';
+  private customHeadInjected = false;
+  // Overridable in tests: jsdom cannot reload.
+  reloadPage = () => { window.location.reload(); };
   private provider: TrackerProvider = 'none';
   private websiteId: string | null = null;
 
@@ -154,30 +161,11 @@ class AnalyticsService {
       }
       document.head.appendChild(script);
     } else if (config.provider === 'custom') {
-      // The admin-pasted HTML is sanitised server-side (see
-      // backend `customScriptSanitiser.js`). We render it via a wrapper
-      // <div> and move each child node into <head> so <script> tags
-      // execute. Using innerHTML on a <head> directly is also fine
-      // here — the child nodes get parsed and inserted in order.
-      const html = (config.customHeadHtml || '').trim();
-      if (html) {
-        const container = document.createElement('div');
-        container.innerHTML = html;
-        // Re-create <script> elements so the browser actually evaluates
-        // them — assigning innerHTML to a parent inserts the nodes but
-        // doesn't trigger script execution per the HTML spec.
-        Array.from(container.childNodes).forEach((node) => {
-          if (node.nodeName === 'SCRIPT') {
-            const orig = node as HTMLScriptElement;
-            const fresh = document.createElement('script');
-            Array.from(orig.attributes).forEach((attr) => fresh.setAttribute(attr.name, attr.value));
-            if (orig.textContent) fresh.textContent = orig.textContent;
-            document.head.appendChild(fresh);
-          } else {
-            document.head.appendChild(node);
-          }
-        });
-      }
+      this.customHeadHtml = (config.customHeadHtml || '').trim();
+      // Scripts pasted here run with the privileges of whoever is signed in on
+      // this origin, so they are kept out of the admin UI. A visit that starts
+      // on an admin route defers them until a public route is shown.
+      if (!isAdminPath(window.location.pathname)) this.injectCustomHead();
     }
 
     this.provider = config.provider;
@@ -216,6 +204,46 @@ class AnalyticsService {
     } catch {
       return url.split('?')[0];
     }
+  }
+
+  /**
+   * Keep the custom head HTML out of the admin UI across in-app navigation:
+   * run it once a public route is shown, and reload into a clean document when
+   * the admin UI is entered after it already ran in this page.
+   */
+  handleRouteChange(pathname: string) {
+    if (this.provider !== 'custom' || !this.customHeadHtml) return;
+    if (isAdminPath(pathname)) {
+      if (this.customHeadInjected) this.reloadPage();
+      return;
+    }
+    this.injectCustomHead();
+  }
+
+  private injectCustomHead() {
+    if (this.customHeadInjected || !this.customHeadHtml) return;
+    this.customHeadInjected = true;
+    // The admin-pasted HTML is sanitised server-side (see
+    // backend `customScriptSanitiser.js`). We render it via a wrapper
+    // <div> and move each child node into <head> so <script> tags
+    // execute. Using innerHTML on a <head> directly is also fine
+    // here — the child nodes get parsed and inserted in order.
+    const container = document.createElement('div');
+    container.innerHTML = this.customHeadHtml;
+    // Re-create <script> elements so the browser actually evaluates
+    // them — assigning innerHTML to a parent inserts the nodes but
+    // doesn't trigger script execution per the HTML spec.
+    Array.from(container.childNodes).forEach((node) => {
+      if (node.nodeName === 'SCRIPT') {
+        const orig = node as HTMLScriptElement;
+        const fresh = document.createElement('script');
+        Array.from(orig.attributes).forEach((attr) => fresh.setAttribute(attr.name, attr.value));
+        if (orig.textContent) fresh.textContent = orig.textContent;
+        document.head.appendChild(fresh);
+      } else {
+        document.head.appendChild(node);
+      }
+    });
   }
 
   trackPageView(url?: string, referrer?: string) {
@@ -297,6 +325,7 @@ export const useAnalytics = () => {
   const location = useLocation();
 
   useEffect(() => {
+    analyticsService.handleRouteChange(location.pathname);
     // Track page views on route change
     analyticsService.trackPageView(location.pathname + location.search);
   }, [location]);
