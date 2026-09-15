@@ -565,6 +565,8 @@ module.exports = (router) => {
         await db('events').where('id', id).update({
           password_hash: await bcrypt.hash(password, getBcryptRounds()),
           ...(await galleryPasswordColumns({ password })),
+          // Guests who got in with the previous password must log in again.
+          ...(await credentialChangeColumns('gallery')),
         });
         await dropCopiesIfStorageOff(id);
       }
@@ -664,7 +666,7 @@ module.exports = (router) => {
         if (policyError) return res.status(400).json(policyError);
 
         publishUpdates.password_hash = await bcrypt.hash(password, getBcryptRounds());
-        Object.assign(publishUpdates, await galleryPasswordColumns({ password }));
+        Object.assign(publishUpdates, await galleryPasswordColumns({ password }), await credentialChangeColumns('gallery'));
       }
       await db('events').where('id', id).update(publishUpdates);
       if (publishUpdates.password_hash) await dropCopiesIfStorageOff(id);
