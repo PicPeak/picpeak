@@ -971,5 +971,6 @@ module.exports = {
   startScheduledBackups,
   stopScheduledBackups,
   isUnderPubliclyServableRoot,
+  resolveDatabaseBackupDestination,
   DatabaseBackupService // Export class for testing
 };
