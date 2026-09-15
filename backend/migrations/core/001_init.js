@@ -91,19 +91,24 @@ Generated on: ${new Date().toISOString()}
       try {
         // Try to create directory and write file
         await fs.mkdir(dataDir, { recursive: true });
-        await fs.writeFile(setupInfoPath, setupInfo, 'utf8');
+        // Owner-only: the file holds the admin password. writeFile's mode only
+        // applies when it creates the file, so tighten an existing one too.
+        await fs.writeFile(setupInfoPath, setupInfo, { encoding: 'utf8', mode: 0o600 });
+        await fs.chmod(setupInfoPath, 0o600);
         console.log(`📁 Credentials also saved to: data/ADMIN_CREDENTIALS.txt`);
       } catch (error) {
-        // If we can't write the file, that's okay - credentials are shown in console
+        // If we can't write the file, that's okay - the password is the
+        // ADMIN_PASSWORD the operator set, which is never logged.
         console.log('⚠️  Could not save credentials to file (permission denied)');
-        console.log('   Please copy the credentials shown above');
+        console.log('   Log in with the ADMIN_PASSWORD from your environment');
       }
       
       console.log('\n========================================');
       console.log('✅ Admin user created successfully!');
       console.log('========================================');
       console.log(`Email: ${adminEmail}`);
-      console.log(`Password: ${generatedPassword}`);
+      // Never log the password: container logs are often collected and kept.
+      console.log('Password: the ADMIN_PASSWORD from your environment');
       console.log('\n⚠️  IMPORTANT:');
       console.log('1. Save these credentials securely');
       console.log('2. Please change the password after first login');

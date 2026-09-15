@@ -32,8 +32,18 @@ services:
         # so a non-root reader must be able to read them. The volume is private to
         # these containers and never host-exposed.
         chmod 644 /run/secrets/jwt_secret /run/secrets/db_password /run/secrets/redis_password
+        # Postgres and Redis each mount a volume holding only their own password,
+        # so neither can read jwt_secret (the backend's token signing key).
+        # Refreshed from picpeak-secrets on every run, which also fills them on
+        # an existing install the first time this version starts.
+        mkdir -p /run/db-secret /run/redis-secret
+        cp /run/secrets/db_password /run/db-secret/db_password
+        cp /run/secrets/redis_password /run/redis-secret/redis_password
+        chmod 644 /run/db-secret/db_password /run/redis-secret/redis_password
     volumes:
       - picpeak-secrets:/run/secrets
+      - picpeak-db-secret:/run/db-secret
+      - picpeak-redis-secret:/run/redis-secret
     restart: "no"
 
   postgres:
@@ -42,12 +52,13 @@ services:
     userns_mode: "host"
     environment:
       POSTGRES_USER: ${DB_USER:-picpeak}
-      # Reads the generated (or .env-seeded) password from the shared secrets volume.
+      # Reads the generated (or .env-seeded) password from picpeak-db-secret,
+      # which holds only this password.
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
       POSTGRES_DB: ${DB_NAME:-picpeak}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - picpeak-secrets:/run/secrets:ro
+      - picpeak-db-secret:/run/secrets:ro
     depends_on:
       secrets-init:
         condition: service_completed_successfully
@@ -70,11 +81,12 @@ services:
     image: redis:7-alpine
     container_name: picpeak-redis
     userns_mode: "host"
-    # Reads the generated (or .env-seeded) password from the shared secrets volume.
-    command: sh -c 'exec redis-server --requirepass "$$(cat /run/secrets/redis_password)"'
+    # Reads the generated (or .env-seeded) password from picpeak-redis-secret,
+    # which holds only this password.
+    command: sh -c 'exec redis-server --requirepass "$(cat /run/secrets/redis_password)"'
     volumes:
       - redis-data:/data
-      - picpeak-secrets:/run/secrets:ro
+      - picpeak-redis-secret:/run/secrets:ro
     depends_on:
       secrets-init:
         condition: service_completed_successfully
@@ -253,6 +265,13 @@ volumes:
   # redis_password). Keep it — deleting it orphans the DB password from the
   # Postgres volume. Back it up alongside postgres-data.
   picpeak-secrets:
+    driver: local
+  # Copies of db_password and redis_password for the postgres and redis
+  # containers alone. secrets-init rebuilds them from picpeak-secrets, so they
+  # need no backup.
+  picpeak-db-secret:
+    driver: local
+  picpeak-redis-secret:
     driver: local
 
 networks:

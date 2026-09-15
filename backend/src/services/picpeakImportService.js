@@ -41,9 +41,76 @@ function migrationOrder(name) {
   return m ? parseInt(m[1], 10) : -1;
 }
 
+// What an uploaded .picpeak may expand to. The upload itself is capped by
+// multer, but a small archive can declare entries that inflate far beyond it,
+// and extraction used to write every entry to the temp dir unchecked. The
+// sizes come from the archive's directory; node-stream-zip verifies each
+// entry's inflated length against them while extracting, so they cannot be
+// understated. Defaults are generous (a full backup includes every photo);
+// the free-space check below is what actually protects the disk.
+const DEFAULT_MAX_ENTRIES = 2000000;
+const DEFAULT_MAX_EXPANDED_BYTES = 1024 * 1024 * 1024 * 1024; // 1 TiB
+const DEFAULT_MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
+
+function positiveEnvNumber(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function archiveLimitError(message, statusCode) {
+  const err = new Error(message);
+  err.statusCode = statusCode;
+  return err;
+}
+
+/**
+ * Refuse an archive whose entry count or total expanded size exceeds the
+ * configured caps, or that would not fit into the free space of the directory
+ * it is about to be extracted to.
+ */
+async function assertArchiveWithinLimits(entries, extractDir) {
+  const maxEntries = positiveEnvNumber('PICPEAK_IMPORT_MAX_ENTRIES', DEFAULT_MAX_ENTRIES);
+  const maxBytes = positiveEnvNumber('PICPEAK_IMPORT_MAX_EXPANDED_BYTES', DEFAULT_MAX_EXPANDED_BYTES);
+  let count = 0;
+  let total = 0;
+  for (const entry of entries || []) {
+    if (!entry || entry.isDirectory) continue;
+    count += 1;
+    total += Number(entry.size) || 0;
+  }
+  if (count > maxEntries) {
+    throw archiveLimitError(
+      `The backup contains ${count} files, more than the limit of ${maxEntries} (PICPEAK_IMPORT_MAX_ENTRIES).`,
+      413,
+    );
+  }
+  if (total > maxBytes) {
+    throw archiveLimitError(
+      `The backup expands to ${total} bytes, more than the limit of ${maxBytes} (PICPEAK_IMPORT_MAX_EXPANDED_BYTES).`,
+      413,
+    );
+  }
+  if (typeof fsp.statfs === 'function') {
+    const stats = await fsp.statfs(extractDir);
+    const available = Number(stats.bavail) * Number(stats.bsize);
+    if (Number.isFinite(available) && total > available) {
+      throw archiveLimitError(
+        `The backup expands to ${total} bytes, but only ${available} bytes are free for extracting it.`,
+        507,
+      );
+    }
+  }
+  return { entries: count, expandedBytes: total };
+}
+
 async function readManifestFromZip(picpeakPath) {
   const zip = new StreamZip.async({ file: picpeakPath });
   try {
+    const maxManifestBytes = positiveEnvNumber('PICPEAK_IMPORT_MAX_MANIFEST_BYTES', DEFAULT_MAX_MANIFEST_BYTES);
+    const entry = await zip.entry('manifest.json');
+    if (entry && Number(entry.size) > maxManifestBytes) {
+      throw archiveLimitError('The backup manifest is too large to be a PicPeak manifest.', 400);
+    }
     return JSON.parse((await zip.entryData('manifest.json')).toString('utf8'));
   } finally {
     await zip.close();
@@ -508,7 +575,9 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
       // Reject ZIP-slip entries before extracting — a crafted .picpeak could
       // otherwise write outside the staging dir via `../` entry names
       // (same class as GHSA-jfhw-fj23-fx6x).
-      assertZipEntriesWithin(Object.values(await zip.entries()), staging);
+      const entries = Object.values(await zip.entries());
+      assertZipEntriesWithin(entries, staging);
+      await assertArchiveWithinLimits(entries, staging);
       await zip.extract(null, staging);
     } finally {
       await zip.close();
@@ -630,6 +699,7 @@ module.exports = {
   importFromPicpeak,
   readManifestFromZip,
   validateManifest,
+  assertArchiveWithinLimits,
   // exported for testing — the cross-engine coercion (#1038)
   epochToIso,
   coerceForTargetEngine,
