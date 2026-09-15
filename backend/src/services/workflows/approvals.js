@@ -81,16 +81,29 @@ async function createApproval(ctx) {
 
 registry.registerAction('gate_setup', createApproval);
 
+/** The answer for a request that lost the race to another decision. */
+async function alreadyDecided(approvalId) {
+  const current = await db('workflow_approvals').where({ id: approvalId }).first('status');
+  return { ok: true, already: true, status: current ? current.status : null };
+}
+
 async function finalizeApproval(approval, decision, actorPatch) {
   if (!approval) return { ok: false, reason: 'not_found' };
   if (approval.status !== 'pending') return { ok: true, already: true, status: approval.status };
   if (approval.expires_at && new Date(approval.expires_at).getTime() < Date.now()) {
-    await db('workflow_approvals').where({ id: approval.id }).update({ status: 'expired' });
+    const expired = await db('workflow_approvals').where({ id: approval.id, status: 'pending' })
+      .update({ status: 'expired' });
+    if (!expired) return alreadyDecided(approval.id);
     return { ok: false, reason: 'expired' };
   }
   const status = decision === 'confirm' ? 'confirmed' : 'denied';
-  await db('workflow_approvals').where({ id: approval.id })
+  // Compare-and-set on the pending status read above. The emailed link, the
+  // inbox and a double click can all act at once; without the condition two
+  // requests both passed the check and both resumed the run, so confirm and
+  // deny could each run their branch (or one branch run twice).
+  const decided = await db('workflow_approvals').where({ id: approval.id, status: 'pending' })
     .update({ status, acted_at: db.fn.now(), ...actorPatch });
+  if (!decided) return alreadyDecided(approval.id);
   // Resume down the matching edge (handles 'confirm' | 'deny').
   await engine.resumeRun(approval.run_id, { decisionHandle: decision });
   return { ok: true, status };

@@ -253,7 +253,13 @@ async function resumeRun(runId, { decisionHandle = null } = {}) {
     e = outEdge(edges, run.current_node, null);
   }
   const nextKey = e ? e.to_node : null;
-  await db('workflow_runs').where({ id: runId }).update({ status: 'running', current_node: nextKey, wake_at: null, updated_at: db.fn.now() });
+  // Claim the run: only one caller moves a waiting run on. The scheduler and a
+  // gate decision, or two decisions, could otherwise both read 'waiting' and
+  // both advance it.
+  const claimed = await db('workflow_runs')
+    .where({ id: runId, status: 'waiting', current_node: run.current_node })
+    .update({ status: 'running', current_node: nextKey, wake_at: null, updated_at: db.fn.now() });
+  if (!claimed) return;
   if (!nextKey) { await finishRun(runId); return; }
   await advanceRun(runId);
 }
