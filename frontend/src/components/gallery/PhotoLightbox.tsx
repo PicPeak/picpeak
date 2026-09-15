@@ -1043,7 +1043,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                     <Star className={`w-5 h-5 ${myRating >= i ? 'text-yellow-400 fill-yellow-400' : 'text-white/70'}`} />
                   </button>
                 ))}
-                <span className="text-white/90 text-xs ml-2 select-none">{avgRating.toFixed(1)} ({totalRatings})</span>
+                {/* The average is other guests' ratings: shown only when the
+                    event shares feedback with guests, like the like count. */}
+                {feedbackSettings?.show_feedback_to_guests && (
+                  <span className="text-white/90 text-xs ml-2 select-none">{avgRating.toFixed(1)} ({totalRatings})</span>
+                )}
               </div>
             )}
             

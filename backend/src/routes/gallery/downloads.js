@@ -390,9 +390,9 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
 // grab the zip showed 0 per-photo downloads forever. Used by the
 // pre-generated-zip branches only: it mirrors downloadZipService._build,
 // which zips EVERY event photo with no per-category allow_downloads
-// filter — the counter has to reflect what actually shipped. (That the
-// prebuilt zip ignores per-category download opt-outs is a separate,
-// pre-existing issue.) Known approximation: _build skips entries whose
+// filter — the counter has to reflect what actually shipped. (Because of
+// that, the route only serves the prebuilt zip when no photo sits in a
+// category with downloads turned off.) Known approximation: _build skips entries whose
 // WATERMARK step fails and still publishes the zip; counting those
 // would need a persisted archive manifest, which isn't worth it for
 // that tail case. Fire-and-forget at the call sites: counters must
@@ -427,7 +427,20 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       .where({ event_id: req.event.id, visibility: 'hidden' })
       .first()
       .then(Boolean);
-    const zipInfo = (isClient || eventHasHidden)
+    // The prebuilt archive holds every photo, but a category can turn its
+    // downloads off, and the stream below leaves those photos out. Guests get
+    // the cache only when no photo sits in such a category; otherwise the
+    // prebuilt zip would hand them exactly the photos they may not download.
+    const eventHasDownloadRestrictedPhotos = (isClient || eventHasHidden)
+      ? false
+      : await db('photos')
+        .join('photo_categories', 'photos.category_id', 'photo_categories.id')
+        .where('photos.event_id', req.event.id)
+        .where('photo_categories.allow_downloads', false)
+        .first('photos.id')
+        .then(Boolean);
+    const streamOnly = isClient || eventHasHidden || eventHasDownloadRestrictedPhotos;
+    const zipInfo = streamOnly
       ? null
       : await downloadZipService.getZipInfo(req.event.id);
     if (zipInfo) {
@@ -465,7 +478,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // download of an event with no hidden photos. Client bypasses and
     // hidden-photo events always stream, so rebuilding the guest archive on
     // those requests is wasted I/O (codex review).
-    if (!isClient && !eventHasHidden) {
+    if (!streamOnly) {
       downloadZipService.generateZip(req.event.id).catch(err =>
         logger.warn('Background zip generation failed', { eventId: req.event.id, error: err.message })
       );
