@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { spawnAsync, spawnToFile } = require('../utils/safeExec');
 const zlib = require('zlib');
 const { pipeline } = require('stream/promises');
-const { createReadStream, createWriteStream, realpathSync } = require('fs');
+const { createReadStream, createWriteStream, realpathSync, constants: fsConstants } = require('fs');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
 const logger = require('../utils/logger');
@@ -30,6 +30,56 @@ const FACE_TABLES = ['photo_faces', 'event_people', 'event_people_merge_dismissa
 
 function getStoragePath() {
   return process.env.STORAGE_PATH || path.join(__dirname, '../../../storage');
+}
+
+// The historical default, also what migration 030 seeds into
+// database_backup_destination_path. It only exists when something is mounted
+// there: docker-compose.yml mounts ./backup and the all-in-one image symlinks
+// it to /data/backup, but docker-compose.production.yml mounts nothing, and
+// the non-root backend cannot create /backup under a root-owned /.
+const LEGACY_DESTINATION = '/backup/database';
+
+async function canWriteLegacyDestination() {
+  for (const dir of [LEGACY_DESTINATION, path.dirname(LEGACY_DESTINATION)]) {
+    try {
+      await fs.access(dir, fsConstants.W_OK);
+      return true;
+    } catch (error) {
+      // Missing: try the parent. Present but not writable: not usable.
+      if (error.code !== 'ENOENT') return false;
+    }
+  }
+  return false;
+}
+
+async function readFileBackupDestination() {
+  const row = await db('app_settings').where({ setting_key: 'backup_destination_path' }).first();
+  if (!row || row.setting_value == null) return null;
+  let value = row.setting_value;
+  try { value = JSON.parse(value); } catch (_) { /* stored unquoted */ }
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Where a database dump goes when the caller did not pass a destination.
+ *
+ * A customised database_backup_destination_path wins. Unset, empty or still
+ * the seeded /backup/database, the dump stays at /backup/database only where
+ * that location is usable; otherwise it goes under the file-backup
+ * destination (<backup_destination_path>/database, or
+ * <storage>/backups/database), where the file backup that follows the inline
+ * dump writes anyway. Before, every install without a /backup mount failed
+ * with "EACCES: permission denied, mkdir '/backup'" no matter which backup
+ * destination was configured (issue 1365).
+ */
+async function resolveDatabaseBackupDestination(config) {
+  const configured = typeof config.database_backup_destination_path === 'string'
+    ? config.database_backup_destination_path.trim()
+    : '';
+  if (configured && path.resolve(configured) !== LEGACY_DESTINATION) return configured;
+  if (await canWriteLegacyDestination()) return LEGACY_DESTINATION;
+  const fileBackupDestination = await readFileBackupDestination();
+  return path.join(fileBackupDestination || path.join(getStoragePath(), 'backups'), 'database');
 }
 
 // Public, unauthenticated static mounts (server.js) that must never become a
@@ -450,21 +500,21 @@ class DatabaseBackupService {
       // names used internally below — map them explicitly rather than
       // spreading `config` straight into the destructure, which silently
       // matched nothing and always fell through to the hardcoded
-      // defaults (notably `/backup/database`, regardless of what was
-      // configured).
+      // defaults. The destination comes from
+      // resolveDatabaseBackupDestination unless a caller passed one.
       const config = await this.getBackupConfig();
       const {
-        destinationPath = '/backup/database',
+        destinationPath: requestedDestination,
         compress = true,
         validateIntegrity = true,
         includeChecksums = true
       } = {
-        destinationPath: config.database_backup_destination_path,
         compress: config.database_backup_compress,
         validateIntegrity: config.database_backup_validate_integrity,
         includeChecksums: config.database_backup_include_checksums,
         ...options
       };
+      const destinationPath = requestedDestination || await resolveDatabaseBackupDestination(config);
       
       if (isUnderPubliclyServableRoot(destinationPath)) {
         throw new Error(
@@ -472,8 +522,16 @@ class DatabaseBackupService {
         );
       }
 
-      // Create backup directory
-      await fs.mkdir(destinationPath, { recursive: true });
+      // Create backup directory. A bare "EACCES ... mkdir '/backup'" did not
+      // say which path or setting was involved.
+      try {
+        await fs.mkdir(destinationPath, { recursive: true });
+      } catch (mkdirError) {
+        throw new Error(
+          `Cannot create the database backup directory ${destinationPath}: ${mkdirError.code || mkdirError.message}. ` +
+          'Set database_backup_destination_path to a directory the backend can write to, or mount a writable volume at that path.'
+        );
+      }
       
       // Generate backup filename
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -609,7 +667,7 @@ class DatabaseBackupService {
       };
       
     } catch (error) {
-      logger.error('Database backup failed:', error);
+      logger.error(`Database backup failed: ${error.message}`, { stack: error.stack });
       
       // Update backup run record
       if (backupRun) {
