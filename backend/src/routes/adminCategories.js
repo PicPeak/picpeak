@@ -8,10 +8,30 @@ const { formatBoolean } = require('../utils/dbCompat');
 const { parseBooleanInput } = require('../utils/parsers');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { requireEventOwnership } = require('../middleware/ownership');
+const { requireEventOwnership, canAccessEvent } = require('../middleware/ownership');
 const { getEventCategoriesOrdered } = require('../utils/categoryOrder');
 const logger = require('../utils/logger');
 const router = express.Router();
+
+/**
+ * A per-event category belongs to its event, so creating, editing or deleting
+ * one needs access to that event: the rule requireEventOwnership applies.
+ * Global categories are shared and stay on settings.edit alone. Answers the
+ * refusal itself and returns true when the caller may not continue.
+ */
+async function refuseForeignCategoryEvent(req, res, eventId) {
+  if (eventId === null || eventId === undefined) return false;
+  const event = await db('events').where('id', eventId).first();
+  if (!event) {
+    res.status(404).json({ error: 'Event not found' });
+    return true;
+  }
+  if (!canAccessEvent(req.admin, event)) {
+    res.status(403).json({ error: 'Access denied' });
+    return true;
+  }
+  return false;
+}
 
 // Get all global categories
 router.get('/global', adminAuth, requirePermission('settings.view'), async (req, res) => {
@@ -60,6 +80,7 @@ router.post('/', adminAuth, requirePermission('settings.edit'), [
     }
     
     const { name, slug, is_global = true, event_id = null, is_folder = false } = req.body;
+    if (!is_global && await refuseForeignCategoryEvent(req, res, event_id)) return;
     
     // Generate slug if not provided
     const categorySlug = slug || name
@@ -157,6 +178,7 @@ router.put('/:id', adminAuth, requirePermission('settings.edit'), [
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
+    if (await refuseForeignCategoryEvent(req, res, category.event_id)) return;
 
     const updateData = {
       name,
@@ -238,6 +260,7 @@ router.put('/:id/hero', adminAuth, requirePermission('settings.edit'), [
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
+    if (await refuseForeignCategoryEvent(req, res, category.event_id)) return;
 
     // If hero_photo_id is provided, verify the photo actually belongs to
     // THIS category — checking existence alone let an admin point a
@@ -282,6 +305,7 @@ router.delete('/:id', adminAuth, requirePermission('settings.edit'), async (req,
     if (!category) {
       return res.status(404).json({ error: 'Category not found' });
     }
+    if (await refuseForeignCategoryEvent(req, res, category.event_id)) return;
     
     // Check if category has photos
     const photoCount = await db('photos').where('category_id', id).count('id as count').first();

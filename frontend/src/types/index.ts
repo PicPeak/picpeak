@@ -76,6 +76,9 @@ export interface Event {
   // Client access (#172)
   client_access_enabled?: boolean;
   client_share_token?: string;
+  // Set when the API withheld the gallery links because the admin sees this
+  // event but cannot act on it (another owner's gallery).
+  share_secrets_hidden?: boolean;
   // Live Slideshow / "Diashow" (migration 138). Token-only fullscreen kiosk
   // link minted on demand; null token = disabled. Settings drive the running
   // projector and can be changed live.

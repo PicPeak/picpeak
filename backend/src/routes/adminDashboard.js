@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
+const { seesAllEvents } = require('../middleware/ownership');
 const { sanitizeDays } = require('../utils/sqlSecurity');
 const { formatBoolean } = require('../utils/dbCompat');
 const { resolveAdapter } = require('../services/trackers');
@@ -29,22 +30,22 @@ function normaliseDateKey(value) {
  * Event ids the caller's dashboard may aggregate over, or `null` when the
  * caller is unrestricted (GHSA-c2jj / gqx7 / jhcf).
  *
- * These endpoints are gated only by `analytics.view`, which the `editor` role
- * holds — yet the events *list* restricts editors to their own rows
- * (adminEvents/crud.js: `roleName === 'editor'` → `created_by = admin.id`).
- * The dashboard therefore reported instance-wide totals, and the analytics
- * endpoint returned other admins' gallery names and slugs, to a role that
- * cannot see those events anywhere else.
+ * These endpoints are gated only by `analytics.view`, which scoped roles such
+ * as `editor` hold — yet the events *list* restricts those roles to their own
+ * events plus ownerless ones (ownership.scopeEventsListQuery). The dashboard
+ * therefore reported instance-wide totals, and the analytics endpoint returned
+ * other admins' gallery names and slugs, to a role that cannot see those
+ * events anywhere else.
  *
- * Scoped on `editor` specifically to mirror the events list exactly, so the
- * `admin` role's dashboard is unchanged. (`filterOwnedEventIds` uses the
- * broader `!== super_admin` rule; the two conventions disagree in this
- * codebase and matching the list is the no-regression choice.)
+ * Scoped with seesAllEvents to mirror the events list exactly, so the
+ * super_admin and `admin` dashboards stay instance-wide.
  *
  * @returns {Promise<number[]|null>} ids to restrict to, or null for no limit
  */
 function isScopedAdmin(admin) {
-  return admin?.roleName === 'editor';
+  // Mirrors the events list: every role except super_admin and admin is
+  // limited to its own events plus ownerless ones.
+  return !seesAllEvents(admin);
 }
 
 /**
@@ -58,7 +59,8 @@ function isScopedAdmin(admin) {
  */
 function applyEventScope(query, admin, column) {
   if (!isScopedAdmin(admin)) return query;
-  return query.whereIn(column, db('events').select('id').where('created_by', admin.id));
+  return query.whereIn(column, db('events').select('id')
+    .where((q) => q.whereNull('created_by').orWhere('created_by', admin.id)));
 }
 
 // Get dashboard statistics
