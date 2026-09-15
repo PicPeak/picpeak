@@ -101,6 +101,7 @@ describe('backup destinations, restores and portable import are Super Admin only
       backup_destination_type: 'local',
       backup_destination_path: '/srv/backups',
       backup_retention_days: 30,
+      backup_include_database: true,
     });
   });
 
@@ -127,6 +128,16 @@ describe('backup destinations, restores and portable import are Super Admin only
     const res = await putConfig(adminToken, { backup_include_database: true });
 
     expect(res.status).toBe(403);
+    expect(await storedSetting('backup_include_database')).toBe(false);
+  });
+
+  it('refuses database-inclusion values that are not true or false', async () => {
+    // "0" would compare as off but read as on when the backup runs.
+    await setBackupSettings({ backup_destination_type: 'local', backup_destination_path: '/srv/backups', backup_include_database: false });
+
+    const res = await putConfig(adminToken, { backup_include_database: '0' });
+
+    expect(res.status).toBe(400);
     expect(await storedSetting('backup_include_database')).toBe(false);
   });
 
