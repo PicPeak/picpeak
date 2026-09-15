@@ -129,11 +129,12 @@ async function verifyCode(eventId, email, submittedCode) {
     .andWhere('attempts', '<', MAX_ATTEMPTS)
     .increment('attempts', 1);
   if (!claimed) {
-    const burned = await db('guest_verification_codes')
-      .where('id', row.id)
-      .whereNull('consumed_at')
-      .update({ consumed_at: db.fn.now() });
-    return { ok: false, reason: burned ? 'too_many_attempts' : 'expired_or_missing' };
+    // Do not consume the code here: a request that claimed the last allowed
+    // attempt may still be comparing, and consuming it would reject that
+    // valid guess. With no attempts left the claim can never succeed again,
+    // so the code is dead without being consumed.
+    const current = await db('guest_verification_codes').where('id', row.id).first('consumed_at');
+    return { ok: false, reason: current && !current.consumed_at ? 'too_many_attempts' : 'expired_or_missing' };
   }
 
   const matches = await bcrypt.compare(normalized, row.code_hash);
