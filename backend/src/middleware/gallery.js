@@ -53,18 +53,21 @@ async function verifyAdminPreview(req, event) {
   if (!preview) return false;
   const { token, decoded } = preview;
   try {
-    // sessionTimeoutMiddleware only guards /api/admin, so an admin session
-    // that idled out there could still preview galleries until its exp.
-    if (await isSessionExpired(token, decoded)) {
-      throw new AppError('Session expired', 401, 'SESSION_TIMEOUT');
-    }
     const slug = req.params?.slug || req.requestedSlug;
     if (!event && !slug) return false;
     event = event || await db('events').where({ slug }).select('*').first();
     if (!event) return false;
     const grant = access.grant(event, 'admin', decoded);
     await access.authorize(event, grant);
-    // An authorized preview is activity, so the timeout above stays an idle
+    // sessionTimeoutMiddleware only guards /api/admin, so an admin session
+    // that idled out there could still preview galleries until its exp.
+    // Checked after authorize: a caller who may not open this gallery (a
+    // revoked token, a scoped admin on another owner's draft) gets that
+    // refusal, which reads as not found, not a timeout that reveals the draft.
+    if (await isSessionExpired(token, decoded)) {
+      throw new AppError('Session expired', 401, 'SESSION_TIMEOUT');
+    }
+    // An authorized preview is activity, so the timeout stays an idle
     // timeout rather than a fixed preview lifetime.
     touchSession(token);
     attachAccess(req, event, grant);
