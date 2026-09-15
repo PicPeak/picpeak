@@ -1363,6 +1363,7 @@
       "testingConnection": "Teste Verbindung...",
       "saveSettings": "Konfiguration speichern",
       "savingSettings": "Speichern...",
+      "destinationSuperAdminOnly": "Nur ein Super Admin kann ändern, wo Backups gespeichert werden und ob sie die Datenbank enthalten.",
       "enableBackupHelp": "Automatisch Backups nach dem konfigurierten Zeitplan erstellen"
     },
     "history": {
@@ -1393,6 +1394,7 @@
       }
     },
     "restore": {
+      "superAdminOnly": "Das Wiederherstellen eines Backups ersetzt alle Daten dieser Instanz, einschließlich Benutzerkonten und Rollen, und ist daher nur einem Super Admin möglich.",
       "steps": {
         "selectSource": "Quelle auswählen",
         "chooseBackup": "Backup auswählen",

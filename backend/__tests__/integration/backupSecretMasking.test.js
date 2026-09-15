@@ -20,9 +20,12 @@ jest.mock('../../src/middleware/auth', () => ({
     next();
   },
 }));
+// The stub admin edits the destination credentials, which only a Super Admin
+// may change.
 jest.mock('../../src/middleware/permissions', () => ({
   requirePermission: () => (_req, _res, next) => next(),
   requireSuperAdmin: () => (_req, _res, next) => next(),
+  isSuperAdminUser: async () => true,
 }));
 
 describe('backup credential masking', () => {

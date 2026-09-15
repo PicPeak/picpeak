@@ -44,11 +44,24 @@ interface BackupFormData {
 
 interface BackupConfigurationProps {
   config?: Partial<BackupFormData>;
-  onSave: (data: BackupFormData) => void;
+  onSave: (data: Partial<BackupFormData>) => void;
   isSaving: boolean;
+  /** Where backups go and whether they include the database: Super Admin only. */
+  canManageDestination?: boolean;
 }
 
-export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config, onSave, isSaving }) => {
+// Mirrors the settings the backend limits to Super Admins.
+const isRestrictedBackupSetting = (key: string) =>
+  /^backup_(destination_|s3_|rsync_)/.test(key)
+  || key === 'backup_include_database'
+  || key === 'backup_database_inline_dump';
+
+export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({
+  config,
+  onSave,
+  isSaving,
+  canManageDestination = true,
+}) => {
   const { t } = useTranslation();
 
   const destinationTypes = [
@@ -139,7 +152,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
     const destinationType = destinationTypes.find(dt => dt.id === formData.backup_destination_type);
     const missingFields: string[] = [];
 
-    if (formData.backup_enabled && destinationType) {
+    if (canManageDestination && formData.backup_enabled && destinationType) {
       destinationType.fields.forEach(field => {
         if (!formData[field as keyof BackupFormData] && !field.includes('optional')) {
           missingFields.push(field);
@@ -161,7 +174,10 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
       return;
     }
 
-    onSave(formData);
+    // Other roles leave the destination alone, so it is not sent at all.
+    onSave(canManageDestination
+      ? formData
+      : Object.fromEntries(Object.entries(formData).filter(([key]) => !isRestrictedBackupSetting(key))));
   };
 
   const testConnection = async () => {
@@ -203,7 +219,13 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
       {/* Destination Configuration */}
       <Card className="p-6">
         <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('backup.configuration.destinationType')}</h3>
+        {!canManageDestination && (
+          <p className="mb-4 text-sm text-amber-700 dark:text-amber-300">
+            {t('backup.configuration.destinationSuperAdminOnly', 'Only a Super Admin can change where backups are stored or whether they include the database.')}
+          </p>
+        )}
 
+        <fieldset disabled={!canManageDestination} className="min-w-0 disabled:opacity-60">
         {/* Destination Type Selection */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {destinationTypes.map((type) => {
@@ -401,7 +423,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
           )}
 
           {/* Test Connection Button */}
-          {formData.backup_destination_type && (
+          {canManageDestination && formData.backup_destination_type && (
             <div className="pt-2">
               <Button
                 type="button"
@@ -425,6 +447,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
             </div>
           )}
         </div>
+        </fieldset>
       </Card>
 
       {/* Schedule Configuration */}
@@ -494,6 +517,7 @@ export const BackupConfiguration: React.FC<BackupConfigurationProps> = ({ config
               type="checkbox"
               checked={formData.backup_include_database}
               onChange={(e) => handleChange('backup_include_database', e.target.checked)}
+              disabled={!canManageDestination}
               className="h-4 w-4 text-primary focus:ring-primary border-neutral-300 dark:border-neutral-600 rounded bg-white dark:bg-neutral-700"
             />
             <div className="ml-3">

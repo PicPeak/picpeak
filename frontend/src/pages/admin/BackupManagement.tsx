@@ -36,7 +36,8 @@ export const BackupManagement: React.FC = () => {
   const { t } = useTranslation();
   // Full-instance export contains every secret, so the endpoint is
   // super_admin-only (GHSA-pv6w) — hide the card for other roles instead
-  // of showing a button that always 403s.
+  // of showing a button that always 403s. The backup destination and
+  // restores are super_admin-only too.
   const { user } = useAdminAuth();
   const isSuperAdmin = user?.role?.name === 'super_admin';
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
@@ -216,6 +217,7 @@ export const BackupManagement: React.FC = () => {
             config={backupConfig}
             onSave={(newConfig: unknown) => updateConfigMutation.mutate(newConfig)}
             isSaving={updateConfigMutation.isPending}
+            canManageDestination={isSuperAdmin}
           />
         )}
 
@@ -223,9 +225,15 @@ export const BackupManagement: React.FC = () => {
           <BackupHistory />
         )}
 
-        {activeTab === 'restore' && (
+        {activeTab === 'restore' && (isSuperAdmin ? (
           <RestoreWizard onVerifyIntegrity={() => setActiveTab('integrity')} />
-        )}
+        ) : (
+          <Card className="p-6">
+            <p className="text-sm text-neutral-700 dark:text-neutral-300">
+              {t('backup.restore.superAdminOnly', 'Restoring a backup replaces all data on this instance, user accounts and roles included, so only a Super Admin can do it.')}
+            </p>
+          </Card>
+        ))}
 
         {activeTab === 'integrity' && (
           <BackupIntegrityCard />
