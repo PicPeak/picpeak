@@ -34,7 +34,7 @@ const chunkedUpload = require('../services/chunkedUploadService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
 const downloadZipService = require('../services/downloadZipService');
 const { findReplacementCandidate, replacePhoto } = require('../services/photoReplacementService');
-const { requireEventOwnership } = require('../middleware/ownership');
+const { requireEventOwnership, canAccessEvent } = require('../middleware/ownership');
 const { getStorage } = require('../services/storage');
 const { errorResponse } = require('../utils/routeHelpers');
 const logger = require('../utils/logger');
@@ -580,12 +580,10 @@ async function loadUploadGroup(req, res) {
   }
 
   const eventId = photos[0].event_id;
-  let eventQuery = db('events').where('id', eventId);
-  if (req.admin.roleName === 'editor') {
-    eventQuery = eventQuery.where('created_by', req.admin.id);
-  }
-  const event = await eventQuery.first();
-  if (!event) {
+  // Upload status lists the event's photo filenames, so it follows the same
+  // rule as the photo routes: 404 unless the admin can act on the event.
+  const event = await db('events').where('id', eventId).first();
+  if (!event || !canAccessEvent(req.admin, event)) {
     res.status(404).json({ error: 'Event not found' });
     return null;
   }

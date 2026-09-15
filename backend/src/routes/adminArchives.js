@@ -7,7 +7,7 @@ const { slugify } = require('../utils/slug');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const StreamZip = require('node-stream-zip');
-const { requireEventOwnership } = require('../middleware/ownership');
+const { requireEventOwnership, scopeEventsListQuery } = require('../middleware/ownership');
 const { assertZipEntriesWithin } = require('../utils/safePath');
 const { escapeLikePattern, likeWithEscape } = require('../utils/sqlSecurity');
 const logger = require('../utils/logger');
@@ -49,6 +49,10 @@ router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) 
     // likeWithEscape() names that backslash in an explicit ESCAPE clause,
     // which matters because SQLite has no default escape character.
     const applyFilters = (query) => {
+      // Same visibility as the events list, so the rows, the total and the
+      // stat cards never describe another owner's archives to a role limited
+      // to its own events.
+      scopeEventsListQuery(query, req.admin, 'events.created_by');
       if (search) {
         query.whereRaw(
           likeWithEscape('LOWER(events.event_name)'),

@@ -24,7 +24,7 @@ const { parseBooleanInput } = require('../../utils/parsers');
 const eventTypeService = require('../../services/eventTypeService');
 const { normaliseEventTimeTriple } = require('../../services/eventService');
 const { hasColumnCached } = require('../../utils/schemaCache');
-const { requireEventOwnership } = require('../../middleware/ownership');
+const { requireEventOwnership, scopeEventsListQuery, withoutForeignEventSecrets } = require('../../middleware/ownership');
 
 const { galleryPasswordColumns, dropCopiesIfStorageOff } = require('../../utils/galleryPasswordVault');
 
@@ -325,10 +325,9 @@ module.exports = (router) => {
       // Build query
       let query = db('events');
 
-      // Editor role can only see their own events
-      if (req.admin.roleName === 'editor') {
-        query = query.where('created_by', req.admin.id);
-      }
+      // Roles other than super_admin and admin see their own events plus
+      // ownerless ones, the rule requireEventOwnership applies per event.
+      query = scopeEventsListQuery(query, req.admin);
 
       // Apply search filter
       if (search) {
@@ -392,7 +391,7 @@ module.exports = (router) => {
         created_at: event.created_at ? new Date(event.created_at).toISOString() : null,
         expires_at: event.expires_at ? new Date(event.expires_at).toISOString() : null,
         archived_at: event.archived_at ? new Date(event.archived_at).toISOString() : null
-      })).map(mapEventForApi);
+      })).map((event) => withoutForeignEventSecrets(mapEventForApi(event), req.admin));
 
       res.json({
         events: eventsWithCounts,
@@ -413,14 +412,9 @@ module.exports = (router) => {
     try {
       const { id } = req.params;
 
-      let query = db('events').where('id', id);
-
-      // Editor role can only see their own events
-      if (req.admin.roleName === 'editor') {
-        query = query.where('created_by', req.admin.id);
-      }
-
-      const event = await query.first();
+      // Same visibility as the list: a role limited to its own events gets a
+      // 404 for anyone else's, not a 403 that confirms the event exists.
+      const event = await scopeEventsListQuery(db('events').where('id', id), req.admin).first();
 
       if (!event) {
         return res.status(404).json({ error: 'Event not found' });
@@ -471,7 +465,7 @@ module.exports = (router) => {
         logger.warn('Failed to load customer assignments for event', { eventId: id, error: e.message });
       }
 
-      res.json(mapEventForApi({
+      res.json(withoutForeignEventSecrets(mapEventForApi({
         ...event,
         photo_count: parseInt(photoCount) || 0,
         total_size: parseInt(totalSize) || 0,
@@ -493,7 +487,7 @@ module.exports = (router) => {
           is_active: c.is_active,
           can_sign_in: c.can_sign_in,
         })),
-      }));
+      }), req.admin));
     } catch (error) {
       errorResponse(res, error, 500, 'Failed to fetch event details');
     }

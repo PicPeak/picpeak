@@ -164,6 +164,12 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
     <Card padding="md">
       <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4">{t('events.shareLink')}</h2>
 
+      {event.share_secrets_hidden ? (
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">
+          {t('events.shareLinkOwnerOnly', 'Only the gallery owner can see and share this link.')}
+        </p>
+      ) : (
+      <>
       <div className="flex items-center gap-2">
         <input
           type="text"
@@ -186,6 +192,8 @@ export const ShareLinkCard: React.FC<ShareLinkCardProps> = ({ event, setShowPass
           ? t('events.shareWithGuestsPublic', 'Anyone with this link can view the gallery. No password is required.')
           : t('events.shareWithGuests')}
       </p>
+      </>
+      )}
 
       {event.share_link && (
         <div className="mt-4 pt-4 border-t border-neutral-200 dark:border-neutral-700">

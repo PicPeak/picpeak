@@ -40,6 +40,8 @@ describe('admin thumbnail regeneration (#1129)', () => {
     }));
     jest.doMock('../../src/middleware/permissions', () => ({
       requirePermission: () => (_req, _res, next) => next(),
+      // An unscoped regeneration also checks settings.edit in the handler.
+      userHasAnyPermission: jest.fn().mockResolvedValue(true),
     }));
     // One instance, not a fresh object per call — the route and the
     // assertions have to be looking at the same mock.

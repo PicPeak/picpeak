@@ -7,6 +7,16 @@ function canAccessEvent(admin, event) {
 }
 
 /**
+ * Whether the admin's event lists and details cover every event, owned or not:
+ * super_admin, and the built-in `admin` role as the studio-wide overview.
+ * Every other role (editor, viewer, team_photographer, custom roles) sees its
+ * own events plus ownerless ones, the rule canAccessEvent applies per row.
+ */
+function seesAllEvents(admin) {
+  return admin?.roleName === 'super_admin' || admin?.roleName === 'admin';
+}
+
+/**
  * Middleware to enforce event ownership for non-super_admin users.
  * Super admins bypass the check. Other admins can only access events they created.
  */
@@ -53,6 +63,33 @@ function scopeEventsQuery(query, admin, column = 'created_by') {
     return query;
   }
   return query.where((q) => q.whereNull(column).orWhere(column, admin.id));
+}
+
+/**
+ * scopeEventsQuery for event lists (events, archives, dashboard), leaving the
+ * roles that see all events unrestricted. See seesAllEvents.
+ */
+function scopeEventsListQuery(query, admin, column = 'created_by') {
+  return seesAllEvents(admin) ? query : scopeEventsQuery(query, admin, column);
+}
+
+// Columns of an events row that open the gallery on their own: the share link
+// embeds the share token, the client token unlocks client access, the show
+// token opens the slideshow.
+const EVENT_BEARER_SECRET_COLUMNS = ['share_token', 'share_link', 'client_share_token', 'show_share_token'];
+
+/**
+ * An event payload without its gallery links when the admin cannot act on the
+ * event. A role that sees all events still reads the event, but a link that
+ * opens another owner's gallery is that owner's to hand out.
+ * `share_secrets_hidden` tells the UI why the link is missing.
+ */
+function withoutForeignEventSecrets(event, admin) {
+  if (!event || typeof event !== 'object' || canAccessEvent(admin, event)) return event;
+  const copy = { ...event };
+  for (const column of EVENT_BEARER_SECRET_COLUMNS) delete copy[column];
+  copy.share_secrets_hidden = true;
+  return copy;
 }
 
 /**
@@ -171,9 +208,13 @@ function requireProjectOwnership(req, res, next) {
 
 module.exports = {
   canAccessEvent,
+  seesAllEvents,
   requireEventOwnership,
   filterOwnedEventIds,
   scopeEventsQuery,
+  scopeEventsListQuery,
+  withoutForeignEventSecrets,
+  EVENT_BEARER_SECRET_COLUMNS,
   ownedProjectIds,
   ownedProjectsSubquery,
   requireProjectOwnership,

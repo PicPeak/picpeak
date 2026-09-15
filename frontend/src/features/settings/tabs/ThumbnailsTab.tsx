@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
 import { api } from '../../../config/api';
+import { usePermission } from '../../../hooks/usePermission';
 
 interface ThumbnailSettings {
   width: number;
@@ -47,6 +48,14 @@ export const ThumbnailsTab: React.FC = () => {
   const queryClient = useQueryClient();
   const [settings, setSettings] = useState<ThumbnailSettings>(defaultSettings);
   const [isDirty, setIsDirty] = useState(false);
+  // These settings shape every gallery's renditions, and the regenerate
+  // buttons rebuild the whole library: both need settings.edit on the server.
+  const canEdit = usePermission('settings.edit');
+  const regenerateErrorMessage = (err: unknown, fallback: string) => (
+    (err as { response?: { data?: { code?: string } } })?.response?.data?.code === 'REGENERATION_RUNNING'
+      ? t('settings.thumbnails.regenerateRunning', 'A regeneration is already running. Try again once it has finished.')
+      : fallback
+  );
 
   const { data: fetchedData, isLoading, error } = useQuery<FetchedSettings>({
     queryKey: ['thumbnail-settings'],
@@ -93,8 +102,8 @@ export const ThumbnailsTab: React.FC = () => {
     onSuccess: (data) => {
       toast.success(data.message || t('settings.thumbnails.regenerateStarted', 'Thumbnail regeneration started'));
     },
-    onError: () => {
-      toast.error(t('settings.thumbnails.regenerateError', 'Failed to start thumbnail regeneration'));
+    onError: (err) => {
+      toast.error(regenerateErrorMessage(err, t('settings.thumbnails.regenerateError', 'Failed to start thumbnail regeneration')));
     },
   });
 
@@ -110,8 +119,8 @@ export const ThumbnailsTab: React.FC = () => {
     onSuccess: (data) => {
       toast.success(data.message || t('settings.thumbnails.previewsRegenerateStarted', 'Lightbox preview regeneration started'));
     },
-    onError: () => {
-      toast.error(t('settings.thumbnails.previewsRegenerateError', 'Failed to start preview regeneration'));
+    onError: (err) => {
+      toast.error(regenerateErrorMessage(err, t('settings.thumbnails.previewsRegenerateError', 'Failed to start preview regeneration')));
     },
   });
 
@@ -166,6 +175,15 @@ export const ThumbnailsTab: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {!canEdit && (
+        <Card padding="md" className="bg-amber-50 dark:bg-amber-900/30 border-amber-200 dark:border-amber-800">
+          <div className="flex items-start gap-3 text-sm text-amber-800 dark:text-amber-200">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <p>{t('settings.thumbnails.readOnly', 'Only admins who can edit settings can change these values or regenerate the whole library.')}</p>
+          </div>
+        </Card>
+      )}
+      <fieldset disabled={!canEdit} className="space-y-6 min-w-0">
       {/* Dimensions & Quality */}
       <Card padding="md">
         <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 mb-4 flex items-center gap-2">
@@ -369,6 +387,7 @@ export const ThumbnailsTab: React.FC = () => {
           </Button>
         )}
       </div>
+      </fieldset>
     </div>
   );
 };
