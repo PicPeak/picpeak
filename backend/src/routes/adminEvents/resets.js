@@ -63,21 +63,25 @@ module.exports = (router) => {
         newPassword = generateReadablePassword();
       }
       const passwordHash = await bcrypt.hash(newPassword, getBcryptRounds());
-      const passwordUnchanged = newPassword === clientPassword && await sameAsStored(newPassword, event.password_hash);
-
-      // Update event with new password
-      await db('events')
-        .where('id', id)
-        .update({
-          ...(passwordUnchanged ? {} : { password_hash: passwordHash }),
-          // #1271 — same statement as the hash, so a concurrent reset can
-          // never leave a copy that does not match the hash next to it
-          ...(await galleryPasswordColumns({ password: newPassword })),
-          // Guests who got in with the old password must log in again. A
-          // generated password is always new; an admin-supplied one may be the
-          // current password, which is not a change.
-          ...(passwordUnchanged ? {} : await credentialChangeColumns('gallery')),
-        });
+      const copyColumns = await galleryPasswordColumns({ password: newPassword });
+      // An admin-chosen password equal to the current one is not a change; it
+      // keeps the hash only while the stored hash is still the one compared.
+      // A generated password is always new. #1271 — the copy is written in the
+      // same statement as the hash, so it can never disagree with it.
+      const keptHash = newPassword === clientPassword
+        && await sameAsStored(newPassword, event.password_hash)
+        && await db('events').where({ id, password_hash: event.password_hash })
+          .update(Object.keys(copyColumns).length ? copyColumns : { updated_at: new Date().toISOString() });
+      if (!keptHash) {
+        await db('events')
+          .where('id', id)
+          .update({
+            password_hash: passwordHash,
+            ...copyColumns,
+            // Guests who got in with the old password must log in again.
+            ...(await credentialChangeColumns('gallery')),
+          });
+      }
       await dropCopiesIfStorageOff(id);
 
       // Log activity

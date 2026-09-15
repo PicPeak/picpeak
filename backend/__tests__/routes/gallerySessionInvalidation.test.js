@@ -120,6 +120,32 @@ describe('rotating a gallery credential', () => {
     expect((await db('events').where({ id: eventId }).first()).gallery_password_changed_at).toBeNull();
   });
 
+  it('writes a resent password as a change when the stored password changed underneath', async () => {
+    // Keeping the hash is only safe while it is still the one compared; a reset
+    // landing in between must not leave the emailed password not working.
+    const bcrypt = require('bcrypt');
+    const auth = `Bearer ${mintAdminToken(adminId)}`;
+    const current = 'Gallery-Race-Current-2026!';
+    expect((await request(app).post(`/api/admin/events/${eventId}/send-gallery-email`).set('Authorization', auth)
+      .send({ password: current })).status).toBe(200);
+    const concurrentHash = await bcrypt.hash('Gallery-Race-Concurrent-2026!', 4);
+    const realCompare = bcrypt.compare;
+    const compare = jest.spyOn(bcrypt, 'compare').mockImplementationOnce(async (...args) => {
+      const result = await realCompare.apply(bcrypt, args);
+      await db('events').where({ id: eventId }).update({ password_hash: concurrentHash });
+      return result;
+    });
+    try {
+      expect((await request(app).post(`/api/admin/events/${eventId}/send-gallery-email`).set('Authorization', auth)
+        .send({ password: current })).status).toBe(200);
+    } finally {
+      compare.mockRestore();
+    }
+
+    const row = await db('events').where({ id: eventId }).first();
+    expect(await bcrypt.compare(current, row.password_hash)).toBe(true);
+  });
+
   it('keeps sessions when an event edit resubmits the current gallery and client passwords', async () => {
     const auth = `Bearer ${mintAdminToken(adminId)}`;
     const body = { password: 'Gallery-Edit-Same-2026!', client_password: 'Client-Edit-Same-2026!' };
