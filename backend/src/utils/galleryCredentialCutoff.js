@@ -6,6 +6,7 @@
  * Portal sessions (`via: 'customer'`) are bound to the customer account and
  * slideshow sessions to the slideshow link, so neither is cut off here.
  */
+const bcrypt = require('bcrypt');
 const { hasColumnCached } = require('./schemaCache');
 const { toTimestamp } = require('./dateNormalize');
 const { AppError } = require('./errors');
@@ -26,6 +27,20 @@ async function credentialChangeColumns(...kinds) {
   return columns;
 }
 
+/**
+ * Does a submitted gallery or client password equal the one already stored?
+ * Resubmitting the current password (e.g. in "Send gallery email") is not a
+ * change and must not end the sessions opened with it.
+ */
+async function sameAsStored(plain, storedHash) {
+  if (!plain || !storedHash) return false;
+  try {
+    return await bcrypt.compare(plain, storedHash);
+  } catch {
+    return false;
+  }
+}
+
 function assertGalleryCredentialCurrent(event, session) {
   if (!event || !session || session.via === 'customer' || session.accessLevel === 'slideshow') return;
   const changedAt = event[session.accessLevel === 'client' ? COLUMN.client : COLUMN.gallery];
@@ -38,4 +53,4 @@ function assertGalleryCredentialCurrent(event, session) {
   }
 }
 
-module.exports = { credentialChangeColumns, assertGalleryCredentialCurrent };
+module.exports = { credentialChangeColumns, sameAsStored, assertGalleryCredentialCurrent };

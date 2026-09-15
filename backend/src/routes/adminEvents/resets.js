@@ -8,7 +8,7 @@ const { requirePermission } = require('../../middleware/permissions');
 const bcrypt = require('bcrypt');
 const { queueEmail } = require('../../services/emailProcessor');
 const { galleryPasswordColumns, readGalleryPassword, dropCopiesIfStorageOff } = require('../../utils/galleryPasswordVault');
-const { credentialChangeColumns } = require('../../utils/galleryCredentialCutoff');
+const { credentialChangeColumns, sameAsStored } = require('../../utils/galleryCredentialCutoff');
 const { validatePasswordInContext, getBcryptRounds } = require('../../utils/passwordValidation');
 const logger = require('../../utils/logger');
 const { errorResponse } = require('../../utils/routeHelpers');
@@ -63,17 +63,20 @@ module.exports = (router) => {
         newPassword = generateReadablePassword();
       }
       const passwordHash = await bcrypt.hash(newPassword, getBcryptRounds());
+      const passwordUnchanged = newPassword === clientPassword && await sameAsStored(newPassword, event.password_hash);
 
       // Update event with new password
       await db('events')
         .where('id', id)
         .update({
-          password_hash: passwordHash,
+          ...(passwordUnchanged ? {} : { password_hash: passwordHash }),
           // #1271 — same statement as the hash, so a concurrent reset can
           // never leave a copy that does not match the hash next to it
           ...(await galleryPasswordColumns({ password: newPassword })),
-          // Guests who got in with the old password must log in again.
-          ...(await credentialChangeColumns('gallery')),
+          // Guests who got in with the old password must log in again. A
+          // generated password is always new; an admin-supplied one may be the
+          // current password, which is not a change.
+          ...(passwordUnchanged ? {} : await credentialChangeColumns('gallery')),
         });
       await dropCopiesIfStorageOff(id);
 
