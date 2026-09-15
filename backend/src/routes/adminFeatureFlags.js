@@ -115,6 +115,10 @@ const KNOWN_FLAGS = [
   // unsubscribe link on every send. Strictly opt-in: an install that never
   // turns this on never gains a route, a nav entry or a way to mass-mail.
   'newsletters',
+  // Customer documents (migration 220, #1444) — PDF exchange in the customer
+  // portal plus the Documents card on the customer record. Strictly opt-in:
+  // while off, every documents route (portal and admin) answers 403.
+  'documents',
 ];
 
 // Spec defaults for any flag missing from the DB (e.g. a row added by a
@@ -149,6 +153,7 @@ const DEFAULT_FLAGS = {
   // #1074 — off by default is the whole "zero behaviour change" guarantee.
   faces: false,
   newsletters: false,
+  documents: false,
 };
 
 async function readAllFlags() {

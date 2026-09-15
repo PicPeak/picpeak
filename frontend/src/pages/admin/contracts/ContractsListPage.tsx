@@ -24,7 +24,7 @@ import {
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 
 const STATUSES: ContractStatus[] = [
-  'draft', 'sent', 'signed_by_customer', 'signed_by_admin', 'fully_signed', 'cancelled',
+  'draft', 'sent', 'signed_by_customer', 'signed_by_admin', 'fully_signed', 'declined', 'cancelled',
 ];
 
 // "Number" sorts by creation order (newest/oldest); "Issued" sorts by
@@ -81,6 +81,12 @@ export const ContractsListPage: React.FC = () => {
           </p>
         </div>
         <div className="flex gap-2">
+          <Link to="/admin/clients/contracts/templates">
+            <Button variant="outline">{t('contracts.list.templates', 'Templates')}</Button>
+          </Link>
+          <Link to="/admin/clients/contracts/attachments">
+            <Button variant="outline">{t('contracts.list.attachments', 'Attachments')}</Button>
+          </Link>
           <Link to="/admin/clients/contracts/blocks">
             <Button variant="outline">
               <BookOpen className="w-4 h-4 mr-1" />
@@ -168,6 +174,7 @@ export const ContractsListPage: React.FC = () => {
                             c.status === 'fully_signed' ? 'bg-green-100 text-green-800'
                               : c.status === 'signed_by_customer' || c.status === 'signed_by_admin' ? 'bg-blue-100 text-blue-800'
                               : c.status === 'sent' ? 'bg-amber-100 text-amber-800'
+                              : c.status === 'declined' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
                               : c.status === 'cancelled' ? 'bg-neutral-200 text-neutral-600'
                               : 'bg-neutral-100 text-neutral-700'
                           }`}>{t(`contracts.status.${c.status}`, c.status)}</span>

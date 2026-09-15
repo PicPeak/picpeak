@@ -89,7 +89,11 @@ export type FeatureKey =
   // Newsletter campaigns (migration 199, #1264). Child of `clients` —
   // mass marketing mail to customer accounts, with per-customer opt-out
   // and an unsubscribe link on every send. Strictly opt-in.
-  | 'newsletters';
+  | 'newsletters'
+  // Customer documents (migration 220, #1444) — PDF exchange in the customer
+  // portal and the Documents card on the customer record. Strictly opt-in;
+  // the backend refuses every documents route while it is off.
+  | 'documents';
 
 export type FeatureFlags = Record<FeatureKey, boolean>;
 

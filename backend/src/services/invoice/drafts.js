@@ -6,6 +6,8 @@ const { db, logActivity } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
 const businessProfileService = require('../businessProfileService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
+const { renumberLineItemPositions } = require('../../utils/lineItemPositions');
+const { extendedLineColumns, lineItemFieldsToApi } = require('../../utils/lineItemTotals');
 const { computeMonthlyCadenceDate, getHierarchyHelpers, nextInvoiceNumber } = require('./helpers');
 
 
@@ -170,22 +172,28 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
     ? Math.max(...existing.map((li) => ensureInt(li.position))) + 1
     : 1;
 
-  const incoming = Array.isArray(payload.lineItems) ? payload.lineItems : [];
-  const newItems = incoming.map((li, idx) => {
+  // Renumber the incoming items 1..n in array order, then shift them past
+  // the draft's existing lines. Parent pointers go through the same mapping —
+  // shifting only `position` used to leave a sub-item pointing at its old
+  // parent number, i.e. at the wrong line or at none.
+  const incoming = renumberLineItemPositions(Array.isArray(payload.lineItems) ? payload.lineItems : []);
+  const offset = nextPosition - 1;
+  const newItems = incoming.map((li) => {
     const qty = ensureNumber(li.quantity, 1);
     const unit = ensureInt(li.unit_price_minor);
     const discount = ensureNumber(li.discount_percent, 0);
     const lineTotal = Math.round(Math.round(qty * unit) * (1 - discount / 100));
     const isSubItem = li.parent_position != null && li.parent_position !== '';
     return {
-      position: nextPosition + idx,
+      position: li.position + offset,
       quantity: qty,
       description: String(li.description || ''),
       unit_price_minor: unit,
       discount_percent: discount,
       line_total_minor: lineTotal,
-      parent_position: isSubItem ? ensureInt(li.parent_position) : null,
+      parent_position: isSubItem ? ensureInt(li.parent_position) + offset : null,
       details_text: li.details_text || null,
+      ...extendedLineColumns(li, { invoice: true }),
     };
   });
 
@@ -323,6 +331,7 @@ async function getMonthlyDraft(customerId) {
       lineTotalMinor: ensureInt(li.line_total_minor),
       parentPosition: li.parent_position == null ? null : ensureInt(li.parent_position),
       detailsText: li.details_text || '',
+      ...lineItemFieldsToApi(li),
     })),
   };
 }

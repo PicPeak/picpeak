@@ -7,6 +7,7 @@ const logger = require('../../utils/logger');
 const { getAppSetting } = require('../../utils/appSettings');
 const { AppError } = require('../../utils/errors');
 const { hasColumnCached } = require('../../utils/schemaCache');
+const { isUniqueViolation } = require('../../utils/dbErrors');
 const businessProfileService = require('../businessProfileService');
 const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { ensureInt } = require('../../utils/numericHelpers');
@@ -87,9 +88,14 @@ async function getContractById(id) {
   return await withRetry(async () => {
     const contract = await db('contracts')
       .leftJoin('customer_accounts', 'contracts.customer_account_id', 'customer_accounts.id')
+      // The template and version it was made from (#1445), for the badge.
+      .leftJoin('contract_templates as tpl', 'tpl.id', 'contracts.template_id')
+      .leftJoin('contract_template_versions as tplv', 'tplv.id', 'contracts.template_version_id')
       .where('contracts.id', id)
       .select(
         'contracts.*',
+        'tpl.name as template_name',
+        'tplv.version_number as template_version_number',
         'customer_accounts.email as customer_email',
         'customer_accounts.display_name as customer_display_name',
         'customer_accounts.first_name as customer_first_name',
@@ -135,7 +141,11 @@ async function getContractById(id) {
           ? ['blk.body_text_fr as block_body_text_fr'] : []),
         'blk.is_system as block_is_system',
       );
-    return { contract, inclusions };
+    // Free-text sections (#1445), in contract order.
+    const textSections = await db('contract_text_sections').where({ contract_id: id }).orderBy('position', 'asc');
+    // Attachments (#1445), in delivery order.
+    const attachments = await require('./attachments').loadContractAttachments(id);
+    return { contract, inclusions, textSections, attachments };
   });
 }
 
@@ -148,7 +158,7 @@ async function getContractById(id) {
  * those explicitly so a runaway block library doesn't pollute every
  * new contract.
  */
-async function createContract(payload, adminId) {
+async function createContract(payload, adminId, { idempotencyKey = null } = {}) {
   // Self-heal: ensure runtime-seeded system blocks (e.g. the
   // quote_line_items_table added after migration 131 was deployed)
   // exist before we copy active system blocks into the new contract's
@@ -160,6 +170,16 @@ async function createContract(payload, adminId) {
 
   const profile = (await businessProfileService.getProfile()).profile;
   const language = payload.language || customer.preferred_language || profile?.default_locale || 'de';
+
+  // Contract templates (#1445): without the editor's own block list, a new
+  // contract starts from a published template version — the one asked for,
+  // else the default. The standard template holds the active system blocks,
+  // so by default a contract contains what it always did. Resolved before
+  // the transaction (it reads through the global db).
+  const content = require('./content');
+  const version = (!Array.isArray(payload.blocks) || payload.templateVersionId)
+    ? await require('./templates').resolveVersionForNewContract(payload.templateVersionId || null)
+    : null;
   const validDays = ensureInt(await getAppSetting('crm_contracts_default_valid_days')) || 30;
   const issueDate = payload.issueDate || new Date().toISOString().slice(0, 10);
   const validUntil = payload.validUntil || new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
@@ -170,6 +190,15 @@ async function createContract(payload, adminId) {
   // actually has them; older dev installs that haven't re-migrated
   // simply skip these fields (contract still saves successfully).
   const hasEventCols = await hasColumnCached('contracts', 'event_name');
+  // Migration 121 — optional link to a Project Overview project. Resolved
+  // here, never inside the transaction: hasColumnCached reads the schema
+  // through the global db, which on the single-connection SQLite pool waits
+  // for the connection the transaction holds. The editor always sends
+  // projectId, so every create stalled on the 60s acquire timeout and
+  // failed with a generic error (issue 1447).
+  const hasProjectCol = payload.projectId !== undefined && await hasColumnCached('contracts', 'project_id');
+  // Migration 214 — resolved before the transaction for the same reason.
+  const hasKeyCol = Boolean(idempotencyKey) && await hasColumnCached('contracts', 'create_idempotency_key');
 
   // Resolve the audit actor BEFORE the transaction — adminActor reads
   // admin_users via the global db, which inside the trx would grab a
@@ -188,9 +217,11 @@ async function createContract(payload, adminId) {
       language,
       issue_date: issueDate,
       valid_until: validUntil,
-      title: payload.title || null,
-      intro_text: payload.introText || null,
-      outro_text: payload.outroText || null,
+      title: payload.title || (version && version.title) || null,
+      intro_text: payload.introText || (version ? content.pickLocale(version.intro_text, language) : '') || null,
+      outro_text: payload.outroText || (version ? content.pickLocale(version.outro_text, language) : '') || null,
+      template_id: version ? version.template_id : null,
+      template_version_id: version ? version.id : null,
       // Migration 140 — standalone contract is a deal root; mint a
       // fresh UUID. The createFromQuote path (line ~1557) sets this
       // from the source quote's deal_uuid instead.
@@ -205,9 +236,11 @@ async function createContract(payload, adminId) {
       row.event_time_start = payload.eventTimeStart || null;
       row.event_time_end = payload.eventTimeEnd || null;
     }
-    // Migration 121 — optional link to a Project Overview project.
-    if (payload.projectId !== undefined && await hasColumnCached('contracts', 'project_id')) {
+    if (hasProjectCol) {
       row.project_id = payload.projectId || null;
+    }
+    if (hasKeyCol) {
+      row.create_idempotency_key = idempotencyKey;
     }
     const inserted = await trx('contracts').insert(row).returning('id');
     if (row.project_id && row.deal_uuid) {
@@ -215,33 +248,16 @@ async function createContract(payload, adminId) {
     }
     const contractId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
-    // Seed with every active system block, toggled on. Per-section
-    // position = display_order from the source block.
-    //
-    // D.3 — batched insert. Previously this loop fired one INSERT per
-    // block (12+ round-trips inside the transaction on a fresh contract).
-    // Batched into a single `.insert(rows)` since the row count is
-    // bounded (system block count) and the inserts are independent.
-    const systemBlocks = await trx('contract_blocks')
-      .where({ is_system: true, is_active: true })
-      .orderBy(['section', 'display_order']);
-    const sectionCounters = {};
-    const inclusionRows = systemBlocks.map((block) => {
-      sectionCounters[block.section] = (sectionCounters[block.section] || 0) + 1;
-      return {
-        contract_id: contractId,
-        block_id: block.id,
-        section: block.section,
-        position: sectionCounters[block.section],
-        body_text_snapshot: null,
-        body_text_de_snapshot: null,
-        included: true,
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
-    });
-    if (inclusionRows.length > 0) {
-      await trx('contract_block_inclusions').insert(inclusionRows);
+    if (Array.isArray(payload.blocks)) {
+      // The editor sends the admin's block selection with the create, so the
+      // draft and its inclusions commit together. It used to follow up with a
+      // separate update, which could fail after the draft was committed
+      // (issue 1447).
+      await writeInclusions(trx, contractId, payload.blocks);
+      if (Array.isArray(payload.textSections)) await writeTextSections(trx, contractId, payload.textSections);
+    } else if (version) {
+      // The version's clauses, with their frozen texts and overrides.
+      await require('./templates').seedContractFromVersion(trx, contractId, version);
     }
 
     try {
@@ -253,6 +269,126 @@ async function createContract(payload, adminId) {
     logger.info('Contract created', { adminId, contractId, contractNumber });
     return contractId;
   });
+}
+
+/**
+ * Create a draft once per idempotency key (issue 1447). The editor sends the
+ * same key on every retry of one save, so a retry after a lost response, a
+ * timeout or a double submit gets the draft that key already created instead
+ * of a second one. A key another admin already used is refused rather than
+ * handing over their draft.
+ *
+ * Without a key (or on a schema without migration 214) this is createContract.
+ * Returns `{ id, replayed }`.
+ */
+async function createContractIdempotent(payload, adminId, idempotencyKey) {
+  if (!idempotencyKey || !(await hasColumnCached('contracts', 'create_idempotency_key'))) {
+    return { id: await createContract(payload, adminId), replayed: false };
+  }
+  const findEarlier = async () => {
+    const existing = await db('contracts')
+      .where({ create_idempotency_key: idempotencyKey })
+      .select('id', 'created_by_admin_id')
+      .first();
+    if (!existing) return null;
+    if (Number(existing.created_by_admin_id) !== Number(adminId)) {
+      throw new AppError('This request key was already used for a different draft.', 409, 'IDEMPOTENCY_KEY_CONFLICT');
+    }
+    return { id: existing.id, replayed: true };
+  };
+
+  const earlier = await findEarlier();
+  if (earlier) return earlier;
+  try {
+    return { id: await createContract(payload, adminId, { idempotencyKey }), replayed: false };
+  } catch (error) {
+    // Two requests with the same key both missed the lookup; the unique index
+    // let one insert through. Answer the other with that draft.
+    if (!isUniqueViolation(error)) throw error;
+    const winner = await findEarlier();
+    if (winner) return winner;
+    throw error;
+  }
+}
+
+/**
+ * Write a contract's inclusion rows from a `{ blockId, included, position }`
+ * list, inside the caller's transaction. Shared by createContract and
+ * updateContract. Unknown block ids are skipped, and each row's section comes
+ * from the block itself, never from the caller.
+ */
+async function writeInclusions(trx, contractId, blocks, previous = new Map()) {
+  const content = require('./content');
+  // Recompute per-section position so we don't trust caller order
+  // for ordering integrity; caller controls only the section
+  // sequence via the order of items in blocks.
+  //
+  // Previously this loop did one SELECT per block to look up its
+  // section. On a contract with 12 included blocks that's 12
+  // round-trips inside the transaction — pure N+1. Batch the
+  // lookup into a single WHERE…IN, build a Map, and read it in
+  // the loop. The insert itself stays sequential because the
+  // editor's payload size is bounded (<30 blocks in practice) and
+  // a single batch insert would lose row-by-row insert ordering
+  // guarantees we don't actually need.
+  const blockIds = [
+    ...new Set(blocks.map((e) => e.blockId).filter((id) => Number.isFinite(id))),
+  ];
+  const blocksFound = blockIds.length > 0
+    ? await trx('contract_blocks').whereIn('id', blockIds).select('id', 'section')
+    : [];
+  const sectionByBlockId = new Map(blocksFound.map((b) => [b.id, b.section]));
+  const sectionCounters = {};
+  for (const entry of blocks) {
+    const section = sectionByBlockId.get(entry.blockId);
+    if (!section) continue;
+    sectionCounters[section] = (sectionCounters[section] || 0) + 1;
+    // A rewrite keeps each block's frozen text and override (#1445); an
+    // override sent with the entry replaces the kept one.
+    const kept = previous.get(Number(entry.blockId)) || {};
+    const override = entry.body !== undefined
+      ? content.serializeLocaleMap(content.sanitizeLocaleMap(entry.body, 'Clause override'))
+      : (kept.body_override || null);
+    await trx('contract_block_inclusions').insert({
+      contract_id: contractId,
+      block_id: entry.blockId,
+      section,
+      position: ensureInt(entry.position) || sectionCounters[section],
+      ...content.snapshotColumns(content.inclusionSnapshot(kept)),
+      body_override: override,
+      included: entry.included === false ? false : true,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+  }
+}
+
+/**
+ * Replace a contract's free-text sections (#1445) from
+ * `{ section, position, heading, body }` entries, inside the caller's
+ * transaction. `body` is a `{ en, de, … }` map.
+ */
+async function writeTextSections(trx, contractId, sections) {
+  const content = require('./content');
+  const { ALLOWED_SECTIONS } = require('../contractBlocksService');
+  const now = new Date();
+  const rows = sections.slice(0, 100).map((entry, index) => {
+    const section = String((entry && entry.section) || '');
+    if (!ALLOWED_SECTIONS.includes(section)) {
+      throw new AppError(`Text section ${index + 1}: unknown section`, 400, 'CONTRACT_TEXT_INVALID');
+    }
+    return {
+      contract_id: contractId,
+      section,
+      position: ensureInt(entry.position) || index + 1,
+      heading: entry.heading == null ? null : (String(entry.heading).trim().slice(0, 255) || null),
+      body: content.serializeLocaleMap(content.sanitizeLocaleMap(entry.body, `Text section ${index + 1}`)),
+      created_at: now,
+      updated_at: now,
+    };
+  });
+  await trx('contract_text_sections').where({ contract_id: contractId }).del();
+  if (rows.length) await trx('contract_text_sections').insert(rows);
 }
 
 /**
@@ -274,14 +410,24 @@ async function updateContract(id, payload, adminId) {
       'CONTRACT_LOCKED',
     );
   }
+  // Optimistic lock (#1445): an editor that sends the lockVersion it loaded
+  // can't overwrite a newer save.
+  const lockVersion = ensureInt(existing.lock_version) || 1;
+  const staleEdit = () => new AppError(
+    'This contract was changed elsewhere. Reload it to see the changes.', 409, 'CONTRACT_CONFLICT',
+  );
+  if (payload.lockVersion !== undefined && ensureInt(payload.lockVersion) !== lockVersion) throw staleEdit();
 
   const hasEventCols = await hasColumnCached('contracts', 'event_name');
+  // Outside the transaction for the same reason as in createContract: inside
+  // it, this schema read deadlocks the single-connection SQLite pool.
+  const hasProjectCol = 'projectId' in payload && await hasColumnCached('contracts', 'project_id');
 
   // Resolve the audit actor BEFORE the transaction — see createContract.
   const actor = await adminActor(adminId);
 
   return await db.transaction(async (trx) => {
-    const updates = { updated_at: new Date() };
+    const updates = { updated_at: new Date(), lock_version: lockVersion + 1 };
     const map = {
       title: 'title',
       introText: 'intro_text',
@@ -305,10 +451,12 @@ async function updateContract(id, payload, adminId) {
       if (api in payload) updates[col] = payload[api] || null;
     }
     // Migration 121 — optional Project Overview link.
-    if ('projectId' in payload && await hasColumnCached('contracts', 'project_id')) {
+    if (hasProjectCol) {
       updates.project_id = payload.projectId || null;
     }
-    await trx('contracts').where({ id }).update(updates);
+    // Conditional on the lock we read: a save that landed in between wins.
+    const updatedRows = await trx('contracts').where({ id, lock_version: lockVersion }).update(updates);
+    if (!updatedRows) throw staleEdit();
 
     // Cascade across the deal lineage (linked quote / event / invoices).
     if (updates.project_id) {
@@ -320,43 +468,15 @@ async function updateContract(id, payload, adminId) {
     // (Editor's "save" sends every row; an inline "toggle" save could
     // send a partial update — current frontend always sends full list.)
     if (Array.isArray(payload.blocks)) {
+      // Keep each block's frozen text and override across the rewrite.
+      const previousRows = await trx('contract_block_inclusions').where({ contract_id: id });
+      const previous = new Map(previousRows.map((row) => [Number(row.block_id), row]));
       await trx('contract_block_inclusions').where({ contract_id: id }).del();
-      // Recompute per-section position so we don't trust caller order
-      // for ordering integrity; caller controls only the section
-      // sequence via the order of items in payload.blocks.
-      //
-      // Previously this loop did one SELECT per block to look up its
-      // section. On a contract with 12 included blocks that's 12
-      // round-trips inside the transaction — pure N+1. Batch the
-      // lookup into a single WHERE…IN, build a Map, and read it in
-      // the loop. The insert itself stays sequential because the
-      // editor's payload size is bounded (<30 blocks in practice) and
-      // a single batch insert would lose row-by-row insert ordering
-      // guarantees we don't actually need.
-      const blockIds = [
-        ...new Set(payload.blocks.map((e) => e.blockId).filter((id) => Number.isFinite(id))),
-      ];
-      const blocksFound = blockIds.length > 0
-        ? await trx('contract_blocks').whereIn('id', blockIds).select('id', 'section')
-        : [];
-      const sectionByBlockId = new Map(blocksFound.map((b) => [b.id, b.section]));
-      const sectionCounters = {};
-      for (const entry of payload.blocks) {
-        const section = sectionByBlockId.get(entry.blockId);
-        if (!section) continue;
-        sectionCounters[section] = (sectionCounters[section] || 0) + 1;
-        await trx('contract_block_inclusions').insert({
-          contract_id: id,
-          block_id: entry.blockId,
-          section,
-          position: ensureInt(entry.position) || sectionCounters[section],
-          body_text_snapshot: null,
-          body_text_de_snapshot: null,
-          included: entry.included === false ? false : true,
-          created_at: new Date(),
-          updated_at: new Date(),
-        });
-      }
+      await writeInclusions(trx, id, payload.blocks, previous);
+    }
+    if (Array.isArray(payload.textSections)) await writeTextSections(trx, id, payload.textSections);
+    if (Array.isArray(payload.attachments)) {
+      await require('./attachments').writeContractAttachments(trx, id, payload.attachments);
     }
 
     try {
@@ -382,6 +502,8 @@ async function cancelContract(id, adminId) {
   await db('contract_action_tokens').where({ contract_id: id, used_at: null }).update({
     expires_at: new Date(),
   });
+  // Signatures v2 (#1446): every signer's link and session stops working.
+  if (Number(contract.signing_version) === 2) await require('./signingV2').revokeOnCancel(id, adminId);
   try {
     await logActivity('contract_cancelled', { contractId: id }, null, await adminActor(adminId));
   } catch (_) { /* logging is best-effort */ }
@@ -389,6 +511,7 @@ async function cancelContract(id, adminId) {
 }
 
 module.exports = {
+  createContractIdempotent,
   listContracts,
   getContractById,
   createContract,

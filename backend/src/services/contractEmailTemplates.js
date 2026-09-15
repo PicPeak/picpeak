@@ -85,6 +85,50 @@ const CONTRACT_EMAIL_TEMPLATES = {
       body_text: 'Vertrag {{contract_number}} von {{signed_customer_name}} ({{customer_email}}) unterzeichnet. Öffnen: {{admin_dashboard_url}}',
     },
   },
+  // Signatures v2 (#1446): the code a signer confirms their email with, and
+  // the admin's notice when a signer declines.
+  contract_signing_code: {
+    category: 'contracts', feature_flag: 'contracts',
+    variables: ['contract_number', 'customer_name', 'code', 'ttl_minutes'],
+    en: {
+      subject: 'Your code for contract {{contract_number}}: {{code}}',
+      body_html: `<h2>Your code</h2>
+<p>Dear {{customer_name}},</p>
+<p>Enter this code to open contract {{contract_number}}:</p>
+<p style="font-size: 30px; font-weight: bold; letter-spacing: 8px; text-align: center; margin: 24px 0;">{{code}}</p>
+<p style="font-size: 13px; color: #666;">The code is valid for {{ttl_minutes}} minutes. If you didn't ask for it, you can ignore this email.</p>`,
+      body_text: 'Your code for contract {{contract_number}}: {{code}}\n\nThe code is valid for {{ttl_minutes}} minutes. If you did not ask for it, you can ignore this email.',
+    },
+    de: {
+      subject: 'Ihr Code für Vertrag {{contract_number}}: {{code}}',
+      body_html: `<h2>Ihr Code</h2>
+<p>Sehr geehrte/r {{customer_name}},</p>
+<p>mit diesem Code öffnen Sie den Vertrag {{contract_number}}:</p>
+<p style="font-size: 30px; font-weight: bold; letter-spacing: 8px; text-align: center; margin: 24px 0;">{{code}}</p>
+<p style="font-size: 13px; color: #666;">Der Code ist {{ttl_minutes}} Minuten gültig. Falls Sie ihn nicht angefordert haben, können Sie diese E-Mail ignorieren.</p>`,
+      body_text: 'Ihr Code für Vertrag {{contract_number}}: {{code}}\n\nDer Code ist {{ttl_minutes}} Minuten gültig. Falls Sie ihn nicht angefordert haben, können Sie diese E-Mail ignorieren.',
+    },
+  },
+  contract_declined_admin_notification: {
+    category: 'contracts', feature_flag: 'contracts',
+    variables: ['contract_number', 'signer_name', 'reason', 'admin_dashboard_url'],
+    en: {
+      subject: 'Contract {{contract_number}} declined by {{signer_name}}',
+      body_html: `<h2>Contract declined</h2><p>{{signer_name}} has declined contract <strong>{{contract_number}}</strong>.</p>
+{{#if reason}}<p>Reason given: {{reason}}</p>{{/if}}
+<p style="text-align: center; margin: 30px 0;"><a href="{{admin_dashboard_url}}" class="button">Open in admin</a></p>
+<p style="font-size: 13px; color: #666;">The signing links for this contract no longer work. Make a new contract if the terms need to change.</p>`,
+      body_text: 'Contract {{contract_number}} was declined by {{signer_name}}.{{#if reason}} Reason: {{reason}}{{/if}} Open: {{admin_dashboard_url}}',
+    },
+    de: {
+      subject: 'Vertrag {{contract_number}} von {{signer_name}} abgelehnt',
+      body_html: `<h2>Vertrag abgelehnt</h2><p>{{signer_name}} hat den Vertrag <strong>{{contract_number}}</strong> abgelehnt.</p>
+{{#if reason}}<p>Angegebener Grund: {{reason}}</p>{{/if}}
+<p style="text-align: center; margin: 30px 0;"><a href="{{admin_dashboard_url}}" class="button">Im Admin-Bereich öffnen</a></p>
+<p style="font-size: 13px; color: #666;">Die Links zur Unterzeichnung dieses Vertrags funktionieren nicht mehr. Erstellen Sie einen neuen Vertrag, wenn sich die Bedingungen ändern sollen.</p>`,
+      body_text: 'Vertrag {{contract_number}} wurde von {{signer_name}} abgelehnt.{{#if reason}} Grund: {{reason}}{{/if}} Öffnen: {{admin_dashboard_url}}',
+    },
+  },
 };
 
 // Cache the "all-seeded" state so the check is free after the first

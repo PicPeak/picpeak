@@ -40,7 +40,7 @@ describe('createBaseDocument', () => {
     expect(typeof doc.on).toBe('function');
     expect(typeof doc.font).toBe('function');
     expect(page.width).toBeCloseTo(595.28, 1); // portrait by default
-    expect(fonts).toEqual({ body: 'Helvetica', bold: 'Helvetica-Bold' });
+    expect(fonts).toEqual({ body: 'Helvetica', bold: 'Helvetica-Bold', italic: 'Helvetica-Oblique' });
   });
 
   it('produces a landscape document when orientation is "landscape"', () => {

@@ -22,6 +22,7 @@ import {
   ScanLine,
   Wallet,
   FolderKanban,
+  FolderOpen,
   MonitorPlay,
   Send,
   Workflow,
@@ -232,6 +233,22 @@ export const FeaturesTab: React.FC = () => {
             sidebarLabel={t('navigation.clients', 'CRM')}
             enabled={staged.customerPortal}
             onToggle={(next) => setFlag('customerPortal', next)}
+          />
+          {/* Customer documents (#1444). Lives inside the customer portal and
+              on the customer record, so it has no sidebar entry of its own. */}
+          <FeatureCard
+            icon={FolderOpen}
+            title={t('settings.features.documents.title', 'Customer documents')}
+            description={t(
+              'settings.features.documents.description',
+              'Share PDFs with a customer in their portal and receive PDFs from them. Customer uploads stay unavailable until you mark them clean on the customer record. PDF only; size and storage limits apply.',
+            )}
+            status="new"
+            statusLabel={statusLabel('new')}
+            sidebarHidden
+            sidebarHiddenLabel={sidebarHiddenLabel}
+            enabled={staged.documents}
+            onToggle={(next) => setFlag('documents', next)}
           />
           {/* Future sub-features (Calendar / Quotes / Bills / Messaging)
               slot in here as FeatureCard entries when they ship. No

@@ -15,7 +15,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import i18n from '../i18n/config';
-import { customerService, type CustomerProfile } from '../services/customer.service';
+import {
+  customerService,
+  DEFAULT_CUSTOMER_FEATURES,
+  type CustomerBranding,
+  type CustomerFeatures,
+  type CustomerProfile,
+} from '../services/customer.service';
 
 /**
  * Apply a customer's preferred language to the portal UI. The admin-set
@@ -31,17 +37,8 @@ function applyCustomerLocale(lang?: string | null) {
   i18n.changeLanguage(lang).catch(() => {});
 }
 
-export interface CustomerFeatureFlags {
-  calendar: boolean;
-  quotes: boolean;
-  bills: boolean;
-  contracts: boolean;
-}
-
-export interface CustomerBrandingFlags {
-  showLogo: boolean;
-  showCompanyName: boolean;
-}
+export type CustomerFeatureFlags = CustomerFeatures;
+export type CustomerBrandingFlags = CustomerBranding;
 
 interface CustomerAuthContextType {
   isAuthenticated: boolean;
@@ -77,7 +74,7 @@ const STORAGE_KEY = 'customer_profile';
 const FEATURES_KEY = 'customer_features';
 const BRANDING_KEY = 'customer_branding';
 
-const DEFAULT_FEATURES: CustomerFeatureFlags = { calendar: false, quotes: false, bills: false, contracts: false };
+const DEFAULT_FEATURES: CustomerFeatureFlags = DEFAULT_CUSTOMER_FEATURES;
 const DEFAULT_BRANDING: CustomerBrandingFlags = { showLogo: true, showCompanyName: true };
 
 interface ProviderProps { children: ReactNode; }

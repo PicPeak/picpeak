@@ -3,6 +3,9 @@
  * /api/public/quotes/:token for the customer-facing accept/decline page.
  */
 import { api } from '../config/api';
+import type {
+  BoundTo, LineKind, LineUnit, PriceMode, PromotionSnapshot, RateSource,
+} from '../utils/lineItemTotals';
 
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'expired' | 'converted';
 export type QuoteSort =
@@ -33,6 +36,20 @@ export interface QuoteLineItem {
    * PDF and customer view. Smaller, italic. Max 2000 chars.
    */
   detailsText?: string | null;
+  // Migration 215 (#1451).
+  lineKind?: LineKind;
+  unit?: LineUnit | null;
+  /** Optional add-on; unselected ones stay out of totals, PDF and conversion. */
+  isOptional?: boolean;
+  selected?: boolean;
+  /** 'hour' | 'day' when the price comes from a rate. */
+  priceMode?: PriceMode | null;
+  rateSource?: RateSource | null;
+  /** Quantity follows the quote-wide hours / days. */
+  boundTo?: BoundTo | null;
+  promotionSnapshot?: PromotionSnapshot | null;
+  /** Wire-only: a promotion ticked in the editor; the server resolves it. */
+  promotionId?: number | null;
 }
 
 export interface QuoteSummary {
@@ -45,6 +62,15 @@ export interface QuoteSummary {
   customerAccountId: number;
   /** Migration 121 — Project Overview link (null when unlinked). */
   projectId: number | null;
+  /** Migration 215 — quote-wide hours / days that bound lines follow. */
+  hours?: number | null;
+  days?: number | null;
+  /** The template (and version) this quote was created from, if any. */
+  sourceTemplateId?: number | null;
+  sourceTemplateVersion?: number | null;
+  /** #1451 phase 2 — the add-on choice fixed at acceptance. */
+  selectionAcceptedAt?: string | null;
+  optionalSelection?: QuoteOptionalSelection | null;
   customer: {
     email: string | null;
     displayName: string | null;
@@ -170,6 +196,14 @@ export interface LineItemPreset {
   quantityDefault: number;
   displayOrder: number;
   isActive: boolean;
+  // Migration 215 — the presets are the service catalogue.
+  unit?: LineUnit | null;
+  detailsText?: string | null;
+  category?: string | null;
+  vatCode?: string | null;
+  priceMode?: PriceMode;
+  /** Own rate for per-hour / per-day items; null = customer / default rate. */
+  pinnedRateMinor?: number | null;
 }
 
 export interface QuoteCreatePayload {
@@ -206,6 +240,9 @@ export interface QuoteCreatePayload {
   /** Migration 121 — optional link to a Project Overview project.
    *  null clears the link; undefined leaves it unchanged. */
   projectId?: number | null;
+  /** Migration 215 — quote-wide hours / days that bound lines follow. */
+  hours?: number | null;
+  days?: number | null;
   lineItems: QuoteLineItem[];
 }
 
@@ -308,13 +345,32 @@ export const quotesService = {
     return URL.createObjectURL(res.data);
   },
 
-  async listLineItemPresets(): Promise<{ presets: LineItemPreset[] }> {
-    const { data } = await api.get('/admin/quotes/presets/line-items');
+  /** The editor's picker wants active items; the catalogue page lists archived ones too. */
+  async listLineItemPresets(opts: { includeInactive?: boolean } = {}): Promise<{ presets: LineItemPreset[] }> {
+    const { data } = await api.get('/admin/quotes/presets/line-items', {
+      params: opts.includeInactive ? { includeInactive: 'true' } : undefined,
+    });
     return data.data || data;
   },
 
   async createLineItemPreset(payload: Partial<LineItemPreset> & { name: string }): Promise<{ preset: LineItemPreset }> {
     const { data } = await api.post('/admin/quotes/presets/line-items', payload);
+    return data.data || data;
+  },
+
+  async updateLineItemPreset(id: number, payload: Partial<LineItemPreset>): Promise<{ preset: LineItemPreset }> {
+    const { data } = await api.put(`/admin/quotes/presets/line-items/${id}`, payload);
+    return data.data || data;
+  },
+
+  /** Archives the item (it stays on quotes and templates that use it). */
+  async archiveLineItemPreset(id: number): Promise<void> {
+    await api.delete(`/admin/quotes/presets/line-items/${id}`);
+  },
+
+  /** Re-apply today's customer / default rates to a draft's rate-priced lines. */
+  async recalculateRates(id: number): Promise<{ quote: QuoteDetail; lineItems: QuoteLineItem[] }> {
+    const { data } = await api.post(`/admin/quotes/${id}/recalculate-rates`);
     return data.data || data;
   },
 
@@ -386,7 +442,16 @@ export interface PublicQuoteView {
     parentLineItemId: number | null;
     parentPosition: number | null;
     detailsText: string | null;
+    /** Migration 215 — discount lines and units, as on the PDF. */
+    lineKind?: LineKind;
+    unit?: LineUnit | null;
+    promotionName?: string | null;
+    /** #1451 phase 2 — an optional add-on and whether it's selected. */
+    isOptional?: boolean;
+    selected?: boolean;
   }>;
+  /** The add-on choice was fixed by the first acceptance. */
+  selectionLocked?: boolean;
   /** Terms of Service block driven by the global `crm_quotes_tos_*`
    *  settings. When `required` is true, the public page must show a
    *  checkbox the customer ticks before Accept can fire. The text +
@@ -415,15 +480,44 @@ export const publicQuotesService = {
     const { data } = await api.get(`/public/quotes/${token}`);
     return data.data || data;
   },
+  /** Totals for a choice of optional add-ons (positions), computed server-side. */
+  async totals(token: string, selected: number[]): Promise<PublicSelectionTotals> {
+    const { data } = await api.get(`/public/quotes/${token}/totals`, {
+      params: selected.length ? { selected: selected.join(',') } : {},
+    });
+    return data.data || data;
+  },
   async respond(
     token: string,
     action: 'accept' | 'decline',
-    options: { tosAccepted?: boolean } = {},
+    options: { tosAccepted?: boolean; selectedOptional?: number[]; expectedTotalMinor?: number } = {},
   ): Promise<{ status: QuoteStatus; lockedAt: string }> {
     const { data } = await api.post(`/public/quotes/${token}/respond`, {
       action,
       tosAccepted: options.tosAccepted,
+      selectedOptional: options.selectedOptional,
+      expectedTotalMinor: options.expectedTotalMinor,
     });
     return data.data || data;
   },
 };
+
+/** Server totals for an add-on choice on the public quote page (#1451 phase 2). */
+export interface PublicSelectionTotals {
+  selectedOptional: number[];
+  netAmountMinor: number;
+  vatAmountMinor: number;
+  shippingAmountMinor: number;
+  totalAmountMinor: number;
+  lines: Array<{ position: number; lineTotalMinor: number }>;
+}
+
+/** What was chosen when a quote with add-ons was accepted. */
+export interface QuoteOptionalSelection {
+  by: 'customer' | 'admin';
+  selectedOptional: number[];
+  addOns: Array<{ position: number; description: string; selected: boolean }>;
+  netAmountMinor: number;
+  vatAmountMinor: number;
+  totalAmountMinor: number;
+}

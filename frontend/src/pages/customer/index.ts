@@ -8,3 +8,5 @@ export { CustomerQuotesPage } from './CustomerQuotesPage';
 export { CustomerBillsPage } from './CustomerBillsPage';
 export { CustomerContractsPage } from './CustomerContractsPage';
 export { CustomerResetPasswordPage } from './CustomerResetPasswordPage';
+export { CustomerDocumentsPage } from './CustomerDocumentsPage';
+export { CustomerEventPage } from './CustomerEventPage';

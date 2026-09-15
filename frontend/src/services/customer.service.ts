@@ -5,6 +5,7 @@
  * the /api/customer/* surface and the customer_token cookie. Never falls
  * back to admin endpoints.
  */
+import type { AxiosProgressEvent } from 'axios';
 import { api } from '../config/api';
 
 export interface CustomerProfile {
@@ -14,6 +15,27 @@ export interface CustomerProfile {
   firstName: string | null;
   lastName: string | null;
   preferredLanguage: string;
+}
+
+/**
+ * Effective customer features (global flag AND the per-customer override),
+ * as returned by /customer/auth/login and /customer/auth/session.
+ */
+export interface CustomerFeatures {
+  calendar: boolean;
+  quotes: boolean;
+  bills: boolean;
+  contracts: boolean;
+  documents: boolean;
+}
+
+export const DEFAULT_CUSTOMER_FEATURES: CustomerFeatures = {
+  calendar: false, quotes: false, bills: false, contracts: false, documents: false,
+};
+
+export interface CustomerBranding {
+  showLogo: boolean;
+  showCompanyName: boolean;
 }
 
 /**
@@ -52,6 +74,9 @@ export interface CustomerProfilePrefill {
   country_code?: string;
 }
 
+/** Gallery state, decided by the server (#1444). */
+export type GalleryAvailability = 'active' | 'expired' | 'unavailable';
+
 export interface CustomerEvent {
   id: number;
   slug: string;
@@ -60,7 +85,8 @@ export interface CustomerEvent {
   eventDate: string | null;
   expiresAt: string | null;
   isActive: boolean;
-  assignedAt: string;
+  assignedAt: string | null;
+  availability: GalleryAvailability;
 }
 
 export interface CustomerInvitationInfo {
@@ -93,17 +119,97 @@ export interface CustomerAccessTokenResponse {
   event: { id: number; slug: string; eventName: string };
 }
 
+// ---- documents + dashboard (#1444) ----
+
+export type CustomerDocumentStatus = 'pending' | 'clean' | 'rejected';
+
+export interface CustomerDocument {
+  id: number;
+  name: string;
+  sizeBytes: number;
+  /** `you` = the customer's own upload, `studio` = shared by the photographer. */
+  uploadedBy: 'you' | 'studio';
+  status: CustomerDocumentStatus;
+  downloadable: boolean;
+  rejectionReason: string | null;
+  eventId: number | null;
+  eventName: string | null;
+  contractId: number | null;
+  createdAt: string | null;
+  sharedAt: string | null;
+}
+
+export interface CustomerDocumentLimits {
+  maxUploadBytes: number;
+  quotaBytes: number;
+  usedBytes: number;
+}
+
+export interface CustomerDashboard {
+  needsAction: {
+    quotes: Array<{
+      id: number; quoteNumber: string; eventName: string | null; validUntil: string | null;
+      sentAt: string | null; totalAmountMinor: number; currency: string;
+    }>;
+    contracts: Array<{
+      id: number; contractNumber: string; title: string | null; eventName: string | null;
+      validUntil: string | null; sentAt: string | null;
+    }>;
+    invoices: Array<{
+      id: number; invoiceNumber: string; status: string; dueDate: string | null; overdue: boolean;
+      eventName: string | null; totalAmountMinor: number; openAmountMinor: number; currency: string;
+    }>;
+  };
+  galleries: { active: CustomerEvent[]; expired: CustomerEvent[] };
+}
+
+export interface CustomerEventOverview {
+  event: CustomerEvent;
+  sections: { quotes: boolean; contracts: boolean; invoices: boolean; documents: boolean };
+  quotes: Array<{
+    id: number; quoteNumber: string; status: CustomerQuote['status']; issueDate: string | null;
+    validUntil: string | null; totalAmountMinor: number; currency: string;
+  }>;
+  contracts: Array<{
+    id: number; contractNumber: string; status: CustomerContract['status']; title: string | null;
+    issueDate: string | null; hasPdf: boolean; hasSignedPdf: boolean;
+  }>;
+  invoices: Array<{
+    id: number; kind: 'invoice' | 'storno'; invoiceNumber: string; status: CustomerInvoice['status'];
+    issueDate: string | null; dueDate: string | null; totalAmountMinor: number; paidAmountMinor: number; currency: string;
+  }>;
+  documents: CustomerDocument[];
+}
+
+export interface UploadOptions {
+  eventId?: number | null;
+  signal?: AbortSignal;
+  onProgress?: (fraction: number) => void;
+}
+
+/** Save a blob under a filename via a temporary link. */
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export const customerService = {
   // ---- auth ----
   async login(email: string, password: string, recaptchaToken?: string | null): Promise<{
     customer: CustomerProfile;
-    features: { calendar: boolean; quotes: boolean; bills: boolean; contracts: boolean };
-    branding: { showLogo: boolean; showCompanyName: boolean };
+    features: CustomerFeatures;
+    branding: CustomerBranding;
   }> {
     const response = await api.post<{
       customer: CustomerProfile;
-      features?: { calendar: boolean; quotes: boolean; bills: boolean; contracts: boolean };
-      branding?: { showLogo: boolean; showCompanyName: boolean };
+      features?: Partial<CustomerFeatures>;
+      branding?: CustomerBranding;
     }>(
       '/customer/auth/login',
       { email, password, recaptchaToken }
@@ -112,7 +218,7 @@ export const customerService = {
     // upgraded yet — defaults match CustomerAuthContext's DEFAULT_*.
     return {
       customer: response.data.customer,
-      features: response.data.features || { calendar: false, quotes: false, bills: false, contracts: false },
+      features: { ...DEFAULT_CUSTOMER_FEATURES, ...(response.data.features || {}) },
       branding: response.data.branding || { showLogo: true, showCompanyName: true },
     };
   },
@@ -145,18 +251,18 @@ export const customerService = {
    */
   async session(): Promise<{
     customer: CustomerProfile;
-    features: { calendar: boolean; quotes: boolean; bills: boolean; contracts: boolean };
-    branding: { showLogo: boolean; showCompanyName: boolean };
+    features: CustomerFeatures;
+    branding: CustomerBranding;
   } | null> {
     try {
       const response = await api.get<{
         customer: CustomerProfile;
-        features?: { calendar: boolean; quotes: boolean; bills: boolean; contracts: boolean };
-        branding?: { showLogo: boolean; showCompanyName: boolean };
+        features?: Partial<CustomerFeatures>;
+        branding?: CustomerBranding;
       }>('/customer/auth/session');
       return {
         customer: response.data.customer,
-        features: response.data.features || { calendar: false, quotes: false, bills: false, contracts: false },
+        features: { ...DEFAULT_CUSTOMER_FEATURES, ...(response.data.features || {}) },
         branding: response.data.branding || { showLogo: true, showCompanyName: true },
       };
     } catch (error: any) {
@@ -233,6 +339,20 @@ export const customerService = {
     return response.data.events;
   },
 
+  /** Needs-action items and galleries split into active / expired (#1444). */
+  async getDashboard(): Promise<CustomerDashboard> {
+    const response = await api.get<CustomerDashboard>('/customer/dashboard');
+    return response.data;
+  },
+
+  /** Everything the customer has for one event (#1444). */
+  async getEventOverview(slug: string): Promise<CustomerEventOverview> {
+    const response = await api.get<CustomerEventOverview>(
+      `/customer/events/${encodeURIComponent(slug)}/overview`
+    );
+    return response.data;
+  },
+
   /**
    * Exchange the customer JWT for a gallery JWT scoped to one event.
    * The dashboard calls this on card-click and stores the resulting
@@ -243,6 +363,33 @@ export const customerService = {
       `/customer/events/${encodeURIComponent(slug)}/access-token`
     );
     return response.data;
+  },
+
+  // ---- documents (#1444) ----
+  async listDocuments(): Promise<{ documents: CustomerDocument[]; limits: CustomerDocumentLimits }> {
+    const response = await api.get<{ documents: CustomerDocument[]; limits: CustomerDocumentLimits }>(
+      '/customer/documents'
+    );
+    return response.data;
+  },
+
+  async uploadDocument(file: File, options: UploadOptions = {}): Promise<CustomerDocument> {
+    const form = new FormData();
+    form.append('file', file);
+    if (options.eventId) form.append('eventId', String(options.eventId));
+    const response = await api.post<{ document: CustomerDocument }>('/customer/documents', form, {
+      signal: options.signal,
+      onUploadProgress: (e: AxiosProgressEvent) => {
+        if (options.onProgress && e.total) options.onProgress(e.loaded / e.total);
+      },
+    });
+    return response.data.document;
+  },
+
+  /** Downloads the document as an attachment (never opened inline). */
+  async downloadDocument(doc: Pick<CustomerDocument, 'id' | 'name'>): Promise<void> {
+    const res = await api.get(`/customer/documents/${doc.id}/download`, { responseType: 'blob' });
+    saveBlob(res.data, doc.name);
   },
 
   // ---- CRM (customer-side, read-only) ----
@@ -281,7 +428,19 @@ export const customerService = {
     const res = await api.get(`/customer/contracts/${id}/pdf`, { responseType: 'blob' });
     return URL.createObjectURL(res.data);
   },
+
+  /** Open a contract for signing: a signing session for a signatures-v2
+   *  contract (no code needed — the portal login confirms the email), or a
+   *  short-lived link for a contract sent before. */
+  async contractSigningAccess(id: number): Promise<CustomerContractSigningAccess> {
+    const response = await api.post<CustomerContractSigningAccess>(`/customer/contracts/${id}/signing-access`);
+    return response.data;
+  },
 };
+
+export type CustomerContractSigningAccess =
+  | { mode: 'session'; sessionToken: string; expiresAt: string }
+  | { mode: 'link'; token: string };
 
 export interface CustomerQuote {
   id: number;
@@ -356,7 +515,7 @@ export interface CustomerInvoice {
 export interface CustomerContract {
   id: number;
   contractNumber: string;
-  status: 'sent' | 'signed_by_customer' | 'signed_by_admin' | 'fully_signed' | 'cancelled';
+  status: 'sent' | 'signed_by_customer' | 'signed_by_admin' | 'fully_signed' | 'declined' | 'cancelled';
   language: string;
   issueDate: string;
   validUntil: string | null;
@@ -368,7 +527,4 @@ export interface CustomerContract {
   signedAdminName: string | null;
   hasPdf: boolean;
   hasSignedPdf: boolean;
-  /** Live signing-link token for `sent` contracts so the dashboard can
-   *  deep-link the public sign page when the customer lost the email. */
-  responseToken: string | null;
 }

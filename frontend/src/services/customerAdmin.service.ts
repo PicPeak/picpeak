@@ -33,10 +33,16 @@ export interface CustomerAccountSummary {
   /** Per-customer contracts override (migration 131). Defaults true —
    *  existing customers keep their Contracts tab. */
   featureContracts?: boolean;
+  /** Per-customer documents override (migration 220). Defaults true — the
+   *  global `documents` flag is the master switch. */
+  featureDocuments?: boolean;
   /** Default hourly rate in minor units (e.g. CHF 150.00 = 15000).
    *  null when admin hasn't set one — each entry then requires a
    *  per-block override. */
   hourlyRateMinor?: number | null;
+  /** Default day rate in minor units for per-day quote lines (migration
+   *  215). null falls back to the business default day rate. */
+  dayRateMinor?: number | null;
   /** Newsletter consent (migration 199, #1264). Opt-OUT: false means the
    *  customer still receives campaigns. Transactional mail — galleries,
    *  quotes, invoices — ignores this entirely. */
@@ -171,8 +177,12 @@ export const customerAdminService = {
       featureBills:    'feature_bills',
       featureHoursLogging: 'feature_hours_logging',
       featureContracts: 'feature_contracts',
+      // Per-customer documents override (migration 220).
+      featureDocuments: 'feature_documents',
       // Hour-logging default rate (migration 129).
       hourlyRateMinor: 'hourly_rate_minor',
+      // Quote day rate (migration 215).
+      dayRateMinor: 'day_rate_minor',
       // CRM billing cadence (migration 102 + 128).
       billingCadence: 'billing_cadence',
       billingCycleDay: 'billing_cycle_day',

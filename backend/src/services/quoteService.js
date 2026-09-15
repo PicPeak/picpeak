@@ -27,7 +27,6 @@
  */
 
 const crypto = require('crypto');
-const { getStoragePath } = require('../config/storage');
 const { db, withRetry, logActivity } = require('../database/db');
 const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
@@ -38,13 +37,19 @@ const { nextDocumentNumber } = require('../utils/documentSequences');
 const { resolveDefaultEventType } = require('./eventTypeService');
 const { formatShortDate } = require('../utils/dateFormatter');
 const businessProfileService = require('./businessProfileService');
+const pdfThemeService = require('./pdfThemeService');
+const documentArtifactService = require('./documentArtifactService');
 const { buildIssuerBlock, buildRecipientBlock } = require('./_renderContext');
 const pdfService = require('./pdfService');
 const emailProcessor = require('./emailProcessor');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { hasColumnCached } = require('../utils/schemaCache');
-const fs = require('fs');
-const path = require('path');
+const {
+  normalizeLineItems, countedLineItems, resolveDiscountLines, extendedLineColumns, parsePromotionSnapshot,
+  isTruthyFlag, isUnselectedOptional,
+} = require('../utils/lineItemTotals');
+const { prepareQuoteLineItems } = require('./quoteCatalogService');
+const { readStoredDocumentPdf } = require('../utils/storedDocumentPdf');
 
 // Every write to `quotes.status` goes through assertQuoteTransition below.
 //
@@ -127,7 +132,9 @@ function computeTotals(lineItems, vatRate, shippingAmountMinor = 0, options = {}
   // Phase 1: compute raw line_total_minor for every row from its own
   // qty × unit × discount. Sub-item lines are computed here too so
   // the renderer can display their individual amounts.
-  const computed = lineItems.map((li) => {
+  // normalizeLineItems applies the migration-215 rules (line kind, add-on
+  // flags inherited by sub-items, discount lines stay top-level).
+  const computed = normalizeLineItems(lineItems).map((li) => {
     const qty = ensureNumber(li.quantity, 1);
     const unit = ensureInt(li.unit_price_minor);
     const discount = Math.max(0, Math.min(100, ensureNumber(li.discount_percent, 0)));
@@ -164,9 +171,15 @@ function computeTotals(lineItems, vatRate, shippingAmountMinor = 0, options = {}
     }
   }
 
+  // Phase 2b (#1451): discount lines take their amount from the regular
+  // subtotal — percentage promotions first, then fixed, capped at the
+  // subtotal. Unselected optional add-ons don't count toward anything.
+  resolveDiscountLines(computed);
+  const counted = countedLineItems(computed);
+
   // Phase 3: net = sum of top-level line totals (resolved).
   let netMinor = 0;
-  for (const li of computed) {
+  for (const li of counted) {
     if (li.parent_position == null) netMinor += ensureInt(li.line_total_minor);
   }
 
@@ -179,7 +192,7 @@ function computeTotals(lineItems, vatRate, shippingAmountMinor = 0, options = {}
   const roundedNet = netMinor;
   let roundingAdjustmentMinor = 0;
   if (options.roundTotal) {
-    const clean = cleanNetMinor(computed, { parentKey: 'parent_position', positionKey: 'position' });
+    const clean = cleanNetMinor(counted, { parentKey: 'parent_position', positionKey: 'position' });
     roundingAdjustmentMinor = clean - roundedNet;
     netMinor = clean;
   }
@@ -518,10 +531,14 @@ async function createQuote(payload, adminId) {
   const validUntil = payload.validUntil || new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
     .toISOString().slice(0, 10);
 
-  // Authoritative totals.
+  // Authoritative totals. Rates, hours/days and promotions are resolved
+  // server-side first (#1451).
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
+  const preparedLineItems = await prepareQuoteLineItems(payload.lineItems, {
+    customerId: payload.customerAccountId, currency, hours: payload.hours, days: payload.days,
+  });
   const totals = computeTotals(
-    Array.isArray(payload.lineItems) ? payload.lineItems : [],
+    preparedLineItems,
     payload.vatRate,
     payload.shippingAmountMinor,
     { roundTotal }
@@ -569,6 +586,12 @@ async function createQuote(payload, adminId) {
       event_time_start: payload.eventTimeStart || null,
       event_time_end: payload.eventTimeEnd || null,
       expected_duration_hours: payload.expectedDurationHours == null ? null : ensureNumber(payload.expectedDurationHours),
+      // Migration 215 — quote-wide hours / days that bound lines follow,
+      // and the template this quote was created from (reporting only).
+      hours: payload.hours == null || payload.hours === '' ? null : ensureNumber(payload.hours),
+      days: payload.days == null || payload.days === '' ? null : ensureNumber(payload.days),
+      source_template_id: payload.sourceTemplateId || null,
+      source_template_version: payload.sourceTemplateVersion || null,
       payment_term_template_id: payload.paymentTermTemplateId || null,
       // Migration 124 — split payment-term picker. Editor stops writing
       // to the legacy single FK once both new ones are present; the
@@ -643,6 +666,7 @@ async function createQuote(payload, adminId) {
         line_total_minor: li.line_total_minor,
         details_text: li.details_text || null,
         parent_position: li.parent_position || null,
+        ...extendedLineColumns(li),
       }));
       validateLineItemHierarchy(rows);
       await insertLineItemsHierarchical(trx, 'quote_line_items', 'quote_id', quoteId, rows);
@@ -683,8 +707,14 @@ async function updateQuote(id, payload, adminId) {
   }
 
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
+  const preparedLineItems = await prepareQuoteLineItems(payload.lineItems, {
+    customerId: existing.customer_account_id,
+    currency: existing.currency,
+    hours: Object.prototype.hasOwnProperty.call(payload, 'hours') ? payload.hours : existing.hours,
+    days: Object.prototype.hasOwnProperty.call(payload, 'days') ? payload.days : existing.days,
+  });
   const totals = computeTotals(
-    Array.isArray(payload.lineItems) ? payload.lineItems : [],
+    preparedLineItems,
     payload.vatRate ?? existing.vat_rate,
     payload.shippingAmountMinor ?? existing.shipping_amount_minor,
     { roundTotal }
@@ -714,6 +744,11 @@ async function updateQuote(id, payload, adminId) {
       assertQuoteTransition(existing.status, 'draft');
       updates.status = 'draft';
     }
+    // An edited expired quote no longer matches the file it was sent as;
+    // drop the pointer so it renders live until it is sent again (#1451).
+    if (existing.status === 'expired') {
+      updates.pdf_path = null;
+    }
     const map = {
       eventName: 'event_name',
       eventDate: 'event_date',
@@ -732,6 +767,9 @@ async function updateQuote(id, payload, adminId) {
       businessBankAccountId: 'business_bank_account_id',
       validUntil: 'valid_until',
       language: 'language',
+      // Migration 215 — quote-wide hours / days.
+      hours: 'hours',
+      days: 'days',
     };
     for (const [api, col] of Object.entries(map)) {
       if (Object.prototype.hasOwnProperty.call(payload, api)) {
@@ -788,13 +826,17 @@ async function updateQuote(id, payload, adminId) {
         line_total_minor: li.line_total_minor,
         details_text: li.details_text || null,
         parent_position: li.parent_position || null,
+        ...extendedLineColumns(li),
       }));
       validateLineItemHierarchy(rows);
       await insertLineItemsHierarchical(trx, 'quote_line_items', 'quote_id', id, rows);
     }
 
     try {
-      await logActivity('quote_updated', { quoteId: id }, null, `admin:${adminId}`);
+      // Pass trx: through the global db this insert waits on the single-
+      // connection SQLite pool for the connection this transaction holds,
+      // stalling every save for the 60s acquire timeout and losing the row.
+      await logActivity('quote_updated', { quoteId: id }, null, `admin:${adminId}`, trx);
     } catch (_) { /* non-fatal */ }
   });
 }
@@ -807,6 +849,8 @@ async function updateQuote(id, payload, adminId) {
 async function buildRenderContext(quote, lineItems) {
   const { profile } = await businessProfileService.getProfile();
   const customer = await db('customer_accounts').where({ id: quote.customer_account_id }).first();
+  // The row keeps the raw intro / outro; {{placeholders}} resolve here (#1451).
+  const texts = await require('./quoteTemplateService').resolveQuoteTexts(quote, { customer: customer || null, profile });
   const bank = quote.business_bank_account_id
     ? await db('business_bank_accounts').where({ id: quote.business_bank_account_id }).first()
     : await businessProfileService.resolveBankAccountForCurrency(quote.currency);
@@ -862,7 +906,10 @@ async function buildRenderContext(quote, lineItems) {
   // foots with the items; the stored net may be the clean (rounded-once)
   // value, in which case the gap is shown as a "Rundung" row. For
   // legacy/unrounded quotes the two are equal ⇒ adjustment 0, no row.
-  const displayedNetMinor = lineItems.reduce(
+  // Unselected optional add-ons (and their sub-items) are left off the PDF
+  // body and out of the displayed net (#1451).
+  const visibleLineItems = countedLineItems(lineItems);
+  const displayedNetMinor = visibleLineItems.reduce(
     (s, li) => (li.parent_line_item_id == null && (li.parent_position == null || li.parent_position === '')
       ? s + ensureInt(li.line_total_minor) : s),
     0,
@@ -874,6 +921,8 @@ async function buildRenderContext(quote, lineItems) {
     currency: quote.currency,
     qrFormat: 'none', // quotes never carry a Swiss QR-bill
     dateFormat,
+    // PDF theme (#1445): font family, colours, footer, page numbers.
+    theme: await pdfThemeService.resolveTheme('quote'),
     // Issuer + recipient blocks are shared across all three doc services.
     // The quote variant opts into the two extra payment-block toggles.
     // See backend/src/services/_renderContext.js for the spec + drift
@@ -896,12 +945,17 @@ async function buildRenderContext(quote, lineItems) {
       skontoPercent,
       skontoWithinDays,
     } : null,
-    lineItems: lineItems.map((li) => ({
+    lineItems: visibleLineItems.map((li) => ({
       quantity: li.quantity,
       description: li.description,
       unitPriceMinor: li.unit_price_minor,
       discountPercent: li.discount_percent,
       lineTotalMinor: li.line_total_minor,
+      // Migration 215 — discount lines render as a labelled minus row;
+      // `unit` fills the unit column.
+      lineKind: li.line_kind || 'item',
+      unit: li.unit || null,
+      promotion: parsePromotionSnapshot(li.promotion_snapshot),
       // Migration 119 hierarchy + details — surfaced to the PDF
       // renderer so drawLineItems can indent sub-items + render
       // details_text below.
@@ -921,8 +975,8 @@ async function buildRenderContext(quote, lineItems) {
       quoteNumber: quote.quote_number,
       issueDate: quote.issue_date,
       validUntil: quote.valid_until,
-      introText: quote.intro_text,
-      outroText: quote.outro_text,
+      introText: texts.introText,
+      outroText: texts.outroText,
       totalAmountMinor: quote.total_amount_minor,
     },
   };
@@ -936,6 +990,21 @@ async function renderQuotePdfBuffer(quoteId) {
 }
 
 /**
+ * The quote PDF to show an admin or the customer. Once a quote has been
+ * sent, that is the file that went out — later template, branding or
+ * setting changes never alter it. A draft renders live.
+ */
+async function getQuotePdfBuffer(quoteId) {
+  const quote = await db('quotes').where({ id: quoteId }).first('status', 'pdf_path');
+  if (!quote) throw new AppError('Quote not found', 404);
+  if (quote.status !== 'draft') {
+    const stored = readStoredDocumentPdf(quote.pdf_path, 'quote');
+    if (stored) return stored;
+  }
+  return renderQuotePdfBuffer(quoteId);
+}
+
+/**
  * Preview a quote PDF from an unsaved payload — never touches the DB.
  * The frontend "Preview" button on the editor calls this with the
  * current form state so the admin can validate before saving.
@@ -943,8 +1012,14 @@ async function renderQuotePdfBuffer(quoteId) {
 async function renderQuotePdfFromPayload(payload) {
   const customer = await db('customer_accounts').where({ id: payload.customerAccountId }).first();
   const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
+  const preparedLineItems = await prepareQuoteLineItems(payload.lineItems, {
+    customerId: payload.customerAccountId,
+    currency: (payload.currency || 'CHF').toUpperCase(),
+    hours: payload.hours,
+    days: payload.days,
+  });
   const totals = computeTotals(
-    Array.isArray(payload.lineItems) ? payload.lineItems : [],
+    preparedLineItems,
     payload.vatRate,
     payload.shippingAmountMinor,
     { roundTotal }
@@ -958,6 +1033,11 @@ async function renderQuotePdfFromPayload(payload) {
     valid_until: payload.validUntil,
     intro_text: payload.introText,
     outro_text: payload.outroText,
+    // What the intro / outro {{placeholders}} read.
+    event_name: payload.eventName,
+    event_date: payload.eventDate,
+    hours: payload.hours,
+    days: payload.days,
     payment_term_template_id: payload.paymentTermTemplateId,
     business_bank_account_id: payload.businessBankAccountId,
     net_amount_minor: totals.netAmountMinor,
@@ -981,6 +1061,11 @@ async function renderQuotePdfFromPayload(payload) {
     line_total_minor: li.line_total_minor,
     parent_position: li.parent_position == null || li.parent_position === '' ? null : Number(li.parent_position),
     details_text: li.details_text || null,
+    line_kind: li.line_kind,
+    unit: li.unit || null,
+    is_optional: li.is_optional,
+    selected: li.selected,
+    promotion_snapshot: li.promotion_snapshot || null,
   })));
   return await pdfService.renderQuoteToBuffer(ctx);
 }
@@ -1005,7 +1090,7 @@ async function sendQuote(id, adminId) {
   // Render PDF + persist snapshot.
   const ctx = await buildRenderContext(quote, lineItems);
   const buffer = await pdfService.renderQuoteToBuffer(ctx);
-  const pdfPath = await persistDocPdf('quote', quote, buffer);
+  const pdfPath = await persistDocPdf('quote', quote, buffer, '', { kind: 'sent', theme: ctx.theme, issuer: ctx.issuer });
 
   // Snapshot payment term so future template edits don't mutate the doc.
   // Migration 124 — prefer the two new split FKs; fall back to the legacy
@@ -1039,6 +1124,9 @@ async function sendQuote(id, adminId) {
       sent_at: new Date(),
       pdf_path: pdfPath,
       payment_term_snapshot: paymentTermSnapshot ? JSON.stringify(paymentTermSnapshot) : null,
+      // A (re)sent quote is a new offer: the customer chooses add-ons afresh.
+      optional_selection_snapshot: null,
+      selection_accepted_at: null,
       updated_at: new Date(),
     });
   });
@@ -1096,17 +1184,218 @@ function formatMajor(minor, currency, locale, issuerCountryCode) {
 }
 
 /**
- * Persist a rendered PDF under storage/business-docs/quote/<YEAR>/<NUMBER>.pdf
+ * Persist a rendered PDF under storage/business-docs/quote/<YEAR>/<NUMBER><suffix>.pdf
+ * and record it in generated_documents (#1445). `suffix` keeps a later
+ * version (e.g. '-accepted') next to the sent file; `meta` carries the kind
+ * and the theme / issuer it was rendered with.
  */
-async function persistDocPdf(type, doc, buffer) {
+async function persistDocPdf(type, doc, buffer, suffix = '', meta = {}) {
   const number = doc.quote_number || doc.invoice_number;
   if (!number) return null;
   const year = (doc.issue_date ? new Date(doc.issue_date) : new Date()).getFullYear();
-  const root = path.join(getStoragePath(), 'business-docs', type, String(year));
-  fs.mkdirSync(root, { recursive: true });
-  const filePath = path.join(root, `${number}.pdf`);
-  fs.writeFileSync(filePath, buffer);
-  return filePath;
+  const stored = await documentArtifactService.persist({
+    docType: type,
+    docId: doc.id,
+    kind: meta.kind || (suffix ? 'accepted' : 'sent'),
+    buffer,
+    fileName: `${number}${suffix}.pdf`,
+    year,
+    theme: meta.theme,
+    issuer: meta.issuer,
+  });
+  return stored.path;
+}
+
+// ---------------------------------------------------------------------
+// Optional add-ons chosen when a quote is accepted (#1451 phase 2)
+// ---------------------------------------------------------------------
+
+/** A quote's lines with `parent_position`, the shape getQuoteById returns. */
+async function loadQuoteLinesWithParentPosition(quoteId) {
+  return db('quote_line_items as li')
+    .leftJoin('quote_line_items as parent', 'parent.id', 'li.parent_line_item_id')
+    .where('li.quote_id', quoteId)
+    .orderBy('li.position', 'asc')
+    .select('li.*', 'parent.position as parent_position');
+}
+
+const isTopLevelRow = (li) => li.parent_position == null || li.parent_position === '';
+const topPositionOf = (li) => ensureInt(isTopLevelRow(li) ? li.position : li.parent_position);
+
+/** Positions of the top-level optional add-ons a quote offers. */
+function offeredOptionalPositions(lineItems) {
+  return lineItems
+    .filter((li) => isTopLevelRow(li) && li.line_kind !== 'discount' && isTruthyFlag(li.is_optional))
+    .map((li) => ensureInt(li.position));
+}
+
+/** The offered add-ons that are currently selected, in position order. */
+function currentOptionalSelection(lineItems) {
+  const offered = new Set(offeredOptionalPositions(lineItems));
+  return lineItems
+    .filter((li) => isTopLevelRow(li) && offered.has(ensureInt(li.position)) && !isUnselectedOptional(li))
+    .map((li) => ensureInt(li.position))
+    .sort((a, b) => a - b);
+}
+
+/**
+ * The lines with `selected` set from a choice of add-on positions; sub-items
+ * follow their parent. Anything that isn't an offered add-on is refused, so
+ * a choice can only switch optional lines on or off.
+ */
+function applyOptionalSelection(lineItems, selectedPositions) {
+  const offered = new Set(offeredOptionalPositions(lineItems));
+  const chosen = new Set();
+  for (const value of selectedPositions || []) {
+    const position = ensureInt(value);
+    if (!offered.has(position)) {
+      throw new AppError('Only optional add-ons can be chosen', 400, 'INVALID_SELECTION');
+    }
+    chosen.add(position);
+  }
+  return {
+    chosen: [...chosen].sort((a, b) => a - b),
+    lines: lineItems.map((li) => (offered.has(topPositionOf(li))
+      ? { ...li, selected: chosen.has(topPositionOf(li)) }
+      : li)),
+  };
+}
+
+/** Totals for an add-on choice — the same computeTotals a save runs. */
+async function totalsForSelection(quote, lineItems, selectedPositions) {
+  const { chosen, lines } = applyOptionalSelection(lineItems, selectedPositions);
+  const roundTotal = (await getAppSetting('crm_invoice_round_total', false)) === true;
+  const totals = computeTotals(lines, quote.vat_rate, quote.shipping_amount_minor, { roundTotal });
+  return { chosen, totals };
+}
+
+/**
+ * Live totals for the public quote page while the customer ticks add-ons.
+ * Read-only: the same calculation runs again, authoritatively, on accept.
+ */
+async function previewOptionalSelection(quoteId, selectedPositions) {
+  const quote = await db('quotes').where({ id: quoteId }).first();
+  if (!quote) throw new AppError('Quote not found', 404);
+  const lineItems = await loadQuoteLinesWithParentPosition(quoteId);
+  const { chosen, totals } = await totalsForSelection(quote, lineItems, selectedPositions);
+  return {
+    selectedOptional: chosen,
+    netAmountMinor: totals.netAmountMinor,
+    vatAmountMinor: totals.vatAmountMinor,
+    shippingAmountMinor: totals.shippingAmountMinor,
+    totalAmountMinor: totals.totalAmountMinor,
+    // Discount lines follow the subtotal, so their amounts move with the choice.
+    lines: totals.lineItems.map((li) => ({
+      position: ensureInt(li.position),
+      lineTotalMinor: ensureInt(li.line_total_minor),
+    })),
+  };
+}
+
+function selectionSnapshot(lineItems, chosen, totals, by) {
+  const offered = new Set(offeredOptionalPositions(lineItems));
+  const chosenSet = new Set(chosen);
+  return {
+    by,
+    selectedOptional: chosen,
+    addOns: lineItems
+      .filter((li) => isTopLevelRow(li) && offered.has(ensureInt(li.position)))
+      .map((li) => ({
+        position: ensureInt(li.position),
+        description: li.description,
+        selected: chosenSet.has(ensureInt(li.position)),
+      })),
+    netAmountMinor: totals.netAmountMinor,
+    vatAmountMinor: totals.vatAmountMinor,
+    totalAmountMinor: totals.totalAmountMinor,
+  };
+}
+
+/**
+ * Store an accepted add-on choice: the line flags, the recomputed discount
+ * amounts and quote totals, and a snapshot of what was chosen. The stored
+ * PDF pointer is cleared — the sent file shows the offer, not the choice —
+ * until storeAcceptedQuotePdf writes the accepted version.
+ */
+async function writeAcceptedSelection(trx, quote, lineItems, { chosen, totals }, by, at) {
+  const offered = new Set(offeredOptionalPositions(lineItems));
+  const chosenSet = new Set(chosen);
+  const on = [];
+  const off = [];
+  for (const li of lineItems) {
+    const top = topPositionOf(li);
+    if (!offered.has(top)) continue;
+    (chosenSet.has(top) ? on : off).push(li.id);
+  }
+  if (on.length) await trx('quote_line_items').whereIn('id', on).update({ selected: formatBoolean(true) });
+  if (off.length) await trx('quote_line_items').whereIn('id', off).update({ selected: formatBoolean(false) });
+  for (const li of totals.lineItems) {
+    if (li.line_kind !== 'discount' || li.id == null) continue;
+    await trx('quote_line_items').where({ id: li.id }).update({
+      unit_price_minor: ensureInt(li.unit_price_minor),
+      line_total_minor: ensureInt(li.line_total_minor),
+    });
+  }
+  await trx('quotes').where({ id: quote.id }).update({
+    net_amount_minor: totals.netAmountMinor,
+    vat_amount_minor: totals.vatAmountMinor,
+    total_amount_minor: totals.totalAmountMinor,
+    optional_selection_snapshot: JSON.stringify(selectionSnapshot(lineItems, chosen, totals, by)),
+    selection_accepted_at: at,
+    pdf_path: null,
+  });
+}
+
+/** Render and keep the accepted version of a quote; the sent file stays as it was. */
+async function storeAcceptedQuotePdf(quoteId) {
+  try {
+    const data = await getQuoteById(quoteId);
+    const ctx = await buildRenderContext(data.quote, data.lineItems);
+    const buffer = await pdfService.renderQuoteToBuffer(ctx);
+    const pdfPath = await persistDocPdf('quote', data.quote, buffer, '-accepted',
+      { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer });
+    await db('quotes').where({ id: quoteId }).update({ pdf_path: pdfPath });
+  } catch (err) {
+    // pdf_path is already cleared, so the quote renders live — with the
+    // chosen add-ons — until a file is stored.
+    logger.warn('Could not store the accepted quote PDF', { quoteId, error: err.message });
+  }
+}
+
+/**
+ * The add-on choice a customer's acceptance carries, checked against the
+ * total their page showed. Returns null when the quote offers no add-ons, or
+ * when the choice was already made: it is fixed from the first acceptance
+ * on, and switching back to "accept" inside the response window keeps it.
+ */
+async function resolveCustomerSelection(quote, { selectedOptional, expectedTotalMinor }) {
+  const lineItems = await loadQuoteLinesWithParentPosition(quote.id);
+  if (offeredOptionalPositions(lineItems).length === 0) return null;
+  if (quote.selection_accepted_at) {
+    if (Array.isArray(selectedOptional)) {
+      const asked = [...new Set(selectedOptional.map(ensureInt))].sort((a, b) => a - b);
+      if (asked.join(',') !== currentOptionalSelection(lineItems).join(',')) {
+        throw new AppError(
+          'The add-ons were fixed when this quote was first accepted. Ask for a revised quote to change them.',
+          409,
+          'SELECTION_LOCKED',
+        );
+      }
+    }
+    return null;
+  }
+  const selection = await totalsForSelection(
+    quote, lineItems, Array.isArray(selectedOptional) ? selectedOptional : currentOptionalSelection(lineItems),
+  );
+  if (expectedTotalMinor == null) {
+    throw new AppError('Confirm the total before accepting', 400, 'TOTAL_REQUIRED');
+  }
+  if (ensureInt(expectedTotalMinor) !== selection.totals.totalAmountMinor) {
+    const err = new AppError('The total has changed. Check it and accept again.', 409, 'TOTAL_MISMATCH');
+    err.totalAmountMinor = selection.totals.totalAmountMinor;
+    throw err;
+  }
+  return { lineItems, ...selection };
 }
 
 /**
@@ -1213,7 +1502,7 @@ async function finalizeQuoteResponses(limit = 200) {
   return emitted;
 }
 
-async function recordResponse({ token, action, ip, tosAccepted }) {
+async function recordResponse({ token, action, ip, tosAccepted, selectedOptional, expectedTotalMinor }) {
   if (!['accept', 'decline'].includes(action)) {
     throw new AppError('Invalid action', 400);
   }
@@ -1267,6 +1556,10 @@ async function recordResponse({ token, action, ip, tosAccepted }) {
   const respondedAt = quote.responded_at || now;
   const responseLockedAt = new Date(new Date(respondedAt).getTime() + windowMinutes * 60 * 1000);
   assertQuoteTransition(quote.status, newStatus);
+  // Optional add-ons (#1451 phase 2), checked before anything is written.
+  const selection = isAccept
+    ? await resolveCustomerSelection(quote, { selectedOptional, expectedTotalMinor })
+    : null;
 
   await db.transaction(async (trx) => {
     const updates = {
@@ -1286,12 +1579,17 @@ async function recordResponse({ token, action, ip, tosAccepted }) {
       updates.tos_text_snapshot = tosText || null;
     }
     await trx('quotes').where({ id: quote.id }).update(updates);
+    if (selection) {
+      await writeAcceptedSelection(trx, quote, selection.lineItems, selection, 'customer', now);
+    }
     await trx('quote_action_tokens').where({ id: tokenRow.id }).update({
       used_at: now,
       used_action: newStatus,
       used_ip: ip || null,
     });
   });
+
+  if (selection) await storeAcceptedQuotePdf(quote.id);
 
   try {
     // Raw bearer token must not reach the activity log (GHSA-prch).
@@ -1353,6 +1651,14 @@ async function adminAcceptQuote(id, adminId) {
     updated_at: now,
   });
 
+  // Record which add-ons the acceptance covers (#1451 phase 2): the choice
+  // as the admin set it in the editor.
+  const acceptedLines = await loadQuoteLinesWithParentPosition(id);
+  if (offeredOptionalPositions(acceptedLines).length > 0) {
+    const selection = await totalsForSelection(quote, acceptedLines, currentOptionalSelection(acceptedLines));
+    await db.transaction((trx) => writeAcceptedSelection(trx, quote, acceptedLines, selection, 'admin', now));
+  }
+
   try {
     await logActivity('quote_accepted_by_admin', { quoteId: id }, null, `admin:${adminId}`);
   } catch (_) { /* non-fatal */ }
@@ -1372,7 +1678,12 @@ async function adminAcceptQuote(id, adminId) {
       const buffer = await pdfService.renderQuoteToBuffer(ctx);
       // Persist PDF snapshot under the same convention sendQuote uses
       // — keeps every issued PDF on disk for the audit trail.
-      const pdfPath = await persistDocPdf('quote', fresh, buffer);
+      // Kept next to the sent file rather than over it (#1451).
+      const pdfPath = await persistDocPdf('quote', fresh, buffer, '-accepted',
+        { kind: 'accepted', theme: ctx.theme, issuer: ctx.issuer });
+      // Record it like sendQuote does: the accepted quote opens as this
+      // file from now on instead of re-rendering (#1451).
+      await db('quotes').where({ id }).update({ pdf_path: pdfPath });
 
       const formatMoney = (minor, currency, locale) =>
         new Intl.NumberFormat(locale === 'de' ? 'de-CH' : 'en-GB', {
@@ -1553,7 +1864,8 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
       customer,
       currency: quote.currency,
       language: quote.language,
-      lineItems,
+      // Unselected optional add-ons never reach an invoice (#1451).
+      lineItems: countedLineItems(lineItems),
       totals: {
         net: quote.net_amount_minor,
         vatRate: quote.vat_rate,
@@ -1755,7 +2067,8 @@ async function convertToEvent(quoteId, adminId, options = {}) {
         customer,
         currency: quote.currency,
         language: quote.language,
-        lineItems,
+        // Unselected optional add-ons never reach an invoice (#1451).
+        lineItems: countedLineItems(lineItems),
         totals: {
           net: quote.net_amount_minor,
           vatRate: quote.vat_rate,
@@ -1804,6 +2117,38 @@ async function convertToEvent(quoteId, adminId, options = {}) {
   return result;
 }
 
+/**
+ * Re-apply the current customer / business hour and day rates to the lines
+ * whose price came from a rate (#1451). Drafts only: a sent quote keeps the
+ * prices the customer saw. Lines with a pinned catalogue rate or a typed
+ * price are left alone.
+ */
+async function recalculateRates(id, adminId) {
+  const data = await getQuoteById(id);
+  if (!data) throw new AppError('Quote not found', 404);
+  if (data.quote.status !== 'draft') {
+    throw new AppError('Only draft quotes can pick up new rates', 409, 'QUOTE_NOT_DRAFT');
+  }
+  const lineItems = data.lineItems.map((li) => ({
+    position: li.position,
+    quantity: li.quantity,
+    description: li.description,
+    unit_price_minor: li.unit_price_minor,
+    discount_percent: li.discount_percent,
+    parent_position: li.parent_position == null ? null : li.parent_position,
+    details_text: li.details_text || null,
+    line_kind: li.line_kind,
+    unit: li.unit,
+    is_optional: li.is_optional,
+    selected: li.selected,
+    price_mode: li.price_mode,
+    rate_source: li.rate_source === 'customer' || li.rate_source === 'default' ? 'auto' : li.rate_source,
+    bound_to: li.bound_to,
+    promotion_snapshot: li.promotion_snapshot,
+  }));
+  await updateQuote(id, { lineItems }, adminId);
+}
+
 async function duplicateQuote(id, adminId) {
   const { quote, lineItems } = (await getQuoteById(id)) || {};
   if (!quote) throw new AppError('Quote not found', 404);
@@ -1827,12 +2172,27 @@ async function duplicateQuote(id, adminId) {
     internalNotes: quote.internal_notes,
     ccPdfEmail: quote.cc_pdf_email,
     businessBankAccountId: quote.business_bank_account_id,
+    hours: quote.hours,
+    days: quote.days,
+    // Full line shape: sub-items, notes and the migration-215 fields used to
+    // be dropped here (and this is what the prepare_quote workflow action
+    // copies). Stored rates stay as they are — nothing is re-resolved.
     lineItems: lineItems.map((li) => ({
       position: li.position,
       quantity: li.quantity,
       description: li.description,
       unit_price_minor: li.unit_price_minor,
       discount_percent: li.discount_percent,
+      parent_position: li.parent_position == null ? null : li.parent_position,
+      details_text: li.details_text || null,
+      line_kind: li.line_kind,
+      unit: li.unit,
+      is_optional: li.is_optional,
+      selected: li.selected,
+      price_mode: li.price_mode,
+      rate_source: li.rate_source,
+      bound_to: li.bound_to,
+      promotion_snapshot: li.promotion_snapshot,
     })),
   }, adminId);
 }
@@ -1841,10 +2201,32 @@ async function duplicateQuote(id, adminId) {
 // Presets (line items + payment terms)
 // ---------------------------------------------------------------------
 
-async function listLineItemPresets() {
-  return await db('quote_line_item_presets')
-    .where({ is_active: formatBoolean(true) })
-    .orderBy('display_order', 'asc').orderBy('id', 'asc');
+// The editor's preset picker wants active rows only; the catalogue admin
+// page lists inactive (archived) ones too.
+async function listLineItemPresets({ includeInactive = false } = {}) {
+  const query = db('quote_line_item_presets');
+  if (!includeInactive) query.where({ is_active: formatBoolean(true) });
+  return await query.orderBy('display_order', 'asc').orderBy('id', 'asc');
+}
+
+const PRESET_PRICE_MODES = ['fixed', 'hour', 'day'];
+
+// Migration 215 — service-catalogue columns on the presets table.
+function presetCatalogueColumns(payload) {
+  const out = {};
+  if (payload.unit !== undefined) out.unit = payload.unit || null;
+  if (payload.details_text !== undefined) out.details_text = payload.details_text || null;
+  if (payload.category !== undefined) out.category = payload.category ? String(payload.category).slice(0, 64) : null;
+  if (payload.vat_code !== undefined) out.vat_code = payload.vat_code ? String(payload.vat_code).slice(0, 16) : null;
+  if (payload.price_mode !== undefined) {
+    out.price_mode = PRESET_PRICE_MODES.includes(payload.price_mode) ? payload.price_mode : 'fixed';
+  }
+  if (payload.pinned_rate_minor !== undefined) {
+    out.pinned_rate_minor = payload.pinned_rate_minor == null || payload.pinned_rate_minor === ''
+      ? null
+      : ensureInt(payload.pinned_rate_minor);
+  }
+  return out;
 }
 
 async function createLineItemPreset(payload) {
@@ -1856,6 +2238,7 @@ async function createLineItemPreset(payload) {
     quantity_default: ensureNumber(payload.quantity_default, 1),
     display_order: ensureInt(payload.display_order),
     is_active: formatBoolean(true),
+    ...presetCatalogueColumns(payload),
     created_at: new Date(),
     updated_at: new Date(),
   };
@@ -1871,11 +2254,14 @@ async function updateLineItemPreset(id, payload) {
     display_order: 'display_order', is_active: 'is_active',
   };
   const updates = { updated_at: new Date() };
+  // Only fields the request actually sent: the route always passes every key,
+  // and `Boolean(undefined)` used to archive the item on any partial edit.
   for (const [api, col] of Object.entries(map)) {
-    if (Object.prototype.hasOwnProperty.call(payload, api)) {
+    if (payload[api] !== undefined) {
       updates[col] = col === 'is_active' ? formatBoolean(Boolean(payload[api])) : payload[api];
     }
   }
+  Object.assign(updates, presetCatalogueColumns(payload));
   await db('quote_line_item_presets').where({ id }).update(updates);
   return await db('quote_line_item_presets').where({ id }).first();
 }
@@ -2138,7 +2524,10 @@ module.exports = {
   updateQuote,
   sendQuote,
   duplicateQuote,
+  recalculateRates,
+  getQuotePdfBuffer,
   recordResponse,
+  previewOptionalSelection,
   adminAcceptQuote,
   adminDeclineQuote,
   finalizeQuoteResponses,
@@ -2171,6 +2560,9 @@ module.exports = {
   // Internals exposed for tests + invoiceService re-use.
   _internal: {
     computeTotals,
+    // Shared with quoteTemplateService so {{hourly_rate}} reads exactly like
+    // the amounts in the quote email.
+    formatMajor,
     ensureCustomerFeatureEnabled,
     nextQuoteNumber,
     persistDocPdf,

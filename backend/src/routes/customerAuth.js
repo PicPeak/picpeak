@@ -147,7 +147,7 @@ router.post('/login', [
     // CustomerAuthProvider mount (e.g. after the user navigates to a
     // gallery and back). Mirroring the /session resolution keeps the
     // frontend on a single source of truth.
-    let features = { calendar: false, quotes: false, bills: false };
+    let features = { calendar: false, quotes: false, bills: false, hoursLogging: false, contracts: false, documents: false };
     let branding = { showLogo: true, showCompanyName: true };
     try {
       features = await customerAccountsService.getEffectiveFeaturesForCustomer(customer);
@@ -204,7 +204,7 @@ router.get('/session', customerAuth, async (req, res) => {
   // the correct sidebar without an extra round-trip on every navigation.
   // Failure here is non-fatal — the customer should still be able to see
   // their galleries even if the settings table is briefly unavailable.
-  let features = { calendar: false, quotes: false, bills: false };
+  let features = { calendar: false, quotes: false, bills: false, hoursLogging: false, contracts: false, documents: false };
   let branding = { showLogo: true, showCompanyName: true };
   try {
     features = await customerAccountsService.getEffectiveFeaturesForCustomer(req.customer.id);

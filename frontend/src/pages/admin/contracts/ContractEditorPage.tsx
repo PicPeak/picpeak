@@ -11,7 +11,7 @@
  * Sent contracts can't be edited (locked at the service layer); admin
  * cancels + creates a fresh one for amendments.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -26,6 +26,12 @@ import {
 import { CustomerPicker } from '../../../components/admin/CustomerPicker';
 import { ProjectSelect } from '../../../components/admin/ProjectSelect';
 import { customerAdminService } from '../../../services/customerAdmin.service';
+import { describeSaveError, newIdempotencyKey, type SaveErrorView } from './contractSaveError';
+import { contractTemplatesService } from '../../../services/contractTemplates.service';
+import { AttachmentListEditor, type AttachmentRow } from '../../../components/admin/AttachmentListEditor';
+import { SignersEditorCard } from './SignersEditorCard';
+
+const CRM_DISCLAIMER_URL = 'https://docs.picpeak.app/features/crm/disclaimers';
 
 interface BlockRow {
   blockId: number;
@@ -68,6 +74,32 @@ export const ContractEditorPage: React.FC = () => {
   const [validUntil, setValidUntil] = useState('');
   const [projectId, setProjectId] = useState<number | null>(null);
   const [blocks, setBlocks] = useState<BlockRow[]>([]);
+  // Contract templates (#1445): a new contract starts from a published
+  // template (the default one preselected) or, with "none", from the blocks
+  // picked below. `null` until the template list has loaded.
+  const [templateChoice, setTemplateChoice] = useState<number | 'none' | null>(null);
+  // Optimistic lock for edits: the version this page loaded.
+  const [lockVersion, setLockVersion] = useState<number | null>(null);
+  // Attachments (#1445), in delivery order. Edits only: a new contract gets
+  // its template version's attachments.
+  const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
+
+  // Why the last save failed, shown inline instead of a toast that vanished
+  // before the admin could read which field was wrong or whether a draft now
+  // existed (issue 1447).
+  const [saveError, setSaveError] = useState<SaveErrorView | null>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
+  // One key per attempt to create this draft, kept across retries until a
+  // create succeeds. When a response is lost after the server committed, the
+  // retry carries the same key and gets the existing draft back instead of a
+  // second one.
+  const idempotencyKeyRef = useRef<string>(newIdempotencyKey());
+  // Set once a retry turned out to be a replay: that draft exists, so further
+  // saves from this page update it instead of creating one.
+  const replayedDraftIdRef = useRef<number | null>(null);
+  // isPending only flips on the next render, so two clicks in the same tick
+  // would both get past the disabled button and send two requests.
+  const submittingRef = useRef(false);
 
   // Prefill the customer when opened as "new contract for this customer"
   // (?customerAccountId=42), e.g. from the Messages view. New contracts only;
@@ -107,6 +139,30 @@ export const ContractEditorPage: React.FC = () => {
     queryFn: () => contractsService.listBlocks({ includeInactive: false }),
   });
 
+  const { data: templateList, isError: templatesFailed } = useQuery({
+    queryKey: ['contract-templates'],
+    queryFn: () => contractTemplatesService.list(),
+    enabled: !isEdit,
+  });
+  const usableTemplates = useMemo(
+    () => (templateList?.templates || []).filter((tpl) => tpl.status !== 'archived' && tpl.currentVersionId),
+    [templateList],
+  );
+  useEffect(() => {
+    if (isEdit || templateChoice !== null) return;
+    // Without the list (it failed to load) the block picker below still works.
+    if (templatesFailed) {
+      setTemplateChoice('none');
+      return;
+    }
+    if (!templateList) return;
+    const preferred = usableTemplates.find((tpl) => tpl.isDefault) || usableTemplates[0];
+    setTemplateChoice(preferred ? preferred.id : 'none');
+  }, [isEdit, templateChoice, templateList, templatesFailed, usableTemplates]);
+  const chosenTemplate = typeof templateChoice === 'number'
+    ? usableTemplates.find((tpl) => tpl.id === templateChoice) || null
+    : null;
+
   // Customer search moved into <CustomerPicker> (C.5).
 
   // Hydrate state from server when the existing contract loads.
@@ -137,6 +193,10 @@ export const ContractEditorPage: React.FC = () => {
     setIssueDate(c.issueDate);
     setValidUntil(c.validUntil || '');
     setProjectId(c.projectId ?? null);
+    setLockVersion(c.lockVersion ?? null);
+    setAttachments((c.attachments || []).map((a) => ({
+      attachmentId: a.attachmentId, delivery: a.delivery, name: a.name, pages: a.pages, bytes: a.bytes, isActive: a.isActive,
+    })));
     setBlocks((c.inclusions || []).map((inc) => ({
       blockId: inc.blockId,
       section: inc.section,
@@ -166,6 +226,34 @@ export const ContractEditorPage: React.FC = () => {
     }));
     setBlocks(rows);
   }, [blockLibrary, isEdit, blocks.length]);
+
+  // An edit answers the error the admin is looking at, so the summary goes
+  // away rather than pointing at a field that has since changed. Compared by
+  // value against the form as it was when the error appeared: state that is
+  // re-set to the same content in the background (the block library seeding
+  // `blocks` after a load) must not wipe the summary before anyone read it.
+  const formSnapshot = JSON.stringify([customerAccountId, title, eventName, eventDate, eventTimeStart,
+    eventTimeEnd, introText, outroText, language, issueDate, validUntil, projectId, blocks, attachments]);
+  const errorFormSnapshotRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!saveError) {
+      errorFormSnapshotRef.current = null;
+      return;
+    }
+    if (errorFormSnapshotRef.current === null) {
+      errorFormSnapshotRef.current = formSnapshot;
+      return;
+    }
+    if (errorFormSnapshotRef.current !== formSnapshot) setSaveError(null);
+  }, [saveError, formSnapshot]);
+
+  // Move focus to the summary so keyboard and screen-reader users land on it;
+  // role="alert" announces it.
+  useEffect(() => {
+    if (!saveError || !summaryRef.current) return;
+    summaryRef.current.focus();
+    summaryRef.current.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  }, [saveError]);
 
   const blocksBySection: Record<ContractBlockSection, BlockRow[]> = useMemo(() => {
     const out: Record<ContractBlockSection, BlockRow[]> = {
@@ -201,10 +289,9 @@ export const ContractEditorPage: React.FC = () => {
   }
 
   const createMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<number> => {
       if (!customerAccountId) throw new Error('Pick a customer first');
-      const created = await contractsService.create({
-        customerAccountId,
+      const fields = {
         language,
         title: title || null,
         eventName: eventName || null,
@@ -216,26 +303,45 @@ export const ContractEditorPage: React.FC = () => {
         issueDate,
         validUntil: validUntil || undefined,
         projectId: projectId ?? null,
-      });
-      // Apply block toggles + ordering as an update right after create.
-      await contractsService.update(created.contract.id, {
-        blocks: blocks.map((b) => ({
-          blockId: b.blockId, included: b.included, position: b.position,
-        })),
-      });
-      return created.contract;
-    },
-    onSuccess: (created) => {
-      toast.success(t('contracts.editor.createdToast', 'Contract created.') as string);
-      navigate(`/admin/clients/contracts/${created.id}`);
-    },
-    onError: (err: any) => {
-      if (err?.response?.data?.code === 'PROJECT_CUSTOMER_MISMATCH') {
-        toast.error(t('projects.error.customerMismatch', 'That project belongs to a different customer than this entry.') as string);
-        return;
+        // From a template, the server writes the version's clauses (#1445).
+        // Otherwise the block selection is sent with the create so the draft
+        // and its blocks commit together: a follow-up update could fail after
+        // the draft existed, and saving again then created a second one
+        // (issue 1447).
+        ...(chosenTemplate
+          ? { templateVersionId: chosenTemplate.currentVersionId as number }
+          : {
+            blocks: blocks.map((b) => ({
+              blockId: b.blockId, included: b.included, position: b.position,
+            })),
+          }),
+      };
+      if (replayedDraftIdRef.current === null) {
+        const created = await contractsService.create(
+          { customerAccountId, ...fields },
+          { idempotencyKey: idempotencyKeyRef.current },
+        );
+        if (!created.replayed) return created.contract.id;
+        // A replay is the draft an earlier, unconfirmed attempt stored, as it
+        // was then: anything edited since the lost response is not in it.
+        // Apply the current form before leaving the editor, and remember the
+        // draft so a failure here is retried as an update, not a new create.
+        replayedDraftIdRef.current = created.contract.id;
       }
-      toast.error(err?.response?.data?.error || err?.message || t('contracts.editor.saveError', 'Save failed') as string);
+      await contractsService.update(replayedDraftIdRef.current, fields);
+      return replayedDraftIdRef.current;
     },
+    onSuccess: (createdId) => {
+      toast.success(t('contracts.editor.createdToast', 'Contract created.') as string);
+      navigate(`/admin/clients/contracts/${createdId}`);
+    },
+    onError: (err: unknown) => {
+      const view = describeSaveError(err);
+      // A key another admin already used can never succeed; start a fresh one.
+      if (view.code === 'IDEMPOTENCY_KEY_CONFLICT') idempotencyKeyRef.current = newIdempotencyKey();
+      setSaveError(view);
+    },
+    onSettled: () => { submittingRef.current = false; },
   });
 
   const updateMutation = useMutation({
@@ -256,20 +362,119 @@ export const ContractEditorPage: React.FC = () => {
         blocks: blocks.map((b) => ({
           blockId: b.blockId, included: b.included, position: b.position,
         })),
+        lockVersion: lockVersion ?? undefined,
+        attachments: attachments.map((a) => ({ attachmentId: a.attachmentId, delivery: a.delivery })),
       });
     },
     onSuccess: () => {
       toast.success(t('contracts.editor.savedToast', 'Contract saved.') as string);
       navigate(`/admin/clients/contracts/${numericId}`);
     },
-    onError: (err: any) => {
-      if (err?.response?.data?.code === 'PROJECT_CUSTOMER_MISMATCH') {
-        toast.error(t('projects.error.customerMismatch', 'That project belongs to a different customer than this entry.') as string);
-        return;
-      }
-      toast.error(err?.response?.data?.error || err?.message || t('contracts.editor.saveError', 'Save failed') as string);
-    },
+    onError: (err: unknown) => { setSaveError(describeSaveError(err)); },
+    onSettled: () => { submittingRef.current = false; },
   });
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
+  function handleSave() {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSaveError(null);
+    if (isEdit) updateMutation.mutate();
+    else createMutation.mutate();
+  }
+
+  // Localised label + corrective action for a field the server rejected.
+  // The server's own message is technical English ("Invalid value"), so it is
+  // never shown.
+  function fieldProblem(field: string): { label: string; message: string } {
+    const tooLong = t('contracts.editor.errors.tooLong', 'Keep it to 255 characters or fewer') as string;
+    const invalidDate = t('contracts.editor.errors.invalidDate', 'Enter a valid date') as string;
+    const invalidTime = t('contracts.editor.errors.invalidTime', 'Enter a time as HH:MM') as string;
+    const invalidText = t('contracts.editor.errors.invalidText', 'Check this text') as string;
+    switch (field) {
+      case 'customerAccountId':
+        return { label: t('contracts.editor.customer', 'Customer') as string, message: t('contracts.editor.errors.customerRequired', 'Pick a customer') as string };
+      case 'title':
+        return { label: t('contracts.editor.titleField', 'Contract title') as string, message: tooLong };
+      case 'eventName':
+        return { label: t('contracts.editor.eventName', 'Event name') as string, message: tooLong };
+      case 'issueDate':
+        return { label: t('contracts.editor.issueDate', 'Issue date') as string, message: invalidDate };
+      case 'validUntil':
+        return { label: t('contracts.editor.validUntil', 'Sign by (optional)') as string, message: invalidDate };
+      case 'eventDate':
+        return { label: t('contracts.editor.eventDate', 'Event date') as string, message: invalidDate };
+      case 'eventTimeStart':
+        return { label: t('contracts.editor.eventTimeStart', 'Start') as string, message: invalidTime };
+      case 'eventTimeEnd':
+        return { label: t('contracts.editor.eventTimeEnd', 'End') as string, message: invalidTime };
+      case 'language':
+        return { label: t('contracts.editor.language', 'Language') as string, message: t('contracts.editor.errors.invalidLanguage', 'Pick a language') as string };
+      case 'introText':
+        return { label: t('contracts.editor.intro', 'Intro text (optional)') as string, message: invalidText };
+      case 'outroText':
+        return { label: t('contracts.editor.outro', 'Closing text (optional)') as string, message: invalidText };
+      case 'blocks':
+        return { label: t('contracts.editor.errors.blocksLabel', 'Blocks') as string, message: t('contracts.editor.errors.checkBlocks', 'Check the block selection') as string };
+      case 'Idempotency-Key':
+        return { label: t('contracts.editor.errors.requestLabel', 'Request') as string, message: t('contracts.editor.errors.reloadAndRetry', 'Reload the page and try again') as string };
+      default:
+        return { label: field, message: t('contracts.editor.errors.checkValue', 'Check this value') as string };
+    }
+  }
+
+  function fieldError(field: string): string | undefined {
+    if (saveError?.kind !== 'validation' || !saveError.fields.includes(field)) return undefined;
+    return fieldProblem(field).message;
+  }
+
+  function savedStateSentence(view: SaveErrorView): string {
+    // A retry already found the draft an earlier attempt created; what failed
+    // is applying the latest edits to it.
+    if (!isEdit && replayedDraftIdRef.current !== null) {
+      return t('contracts.editor.errors.createdChangesNotSaved', 'The draft was saved, but your latest changes were not. Saving again applies them.') as string;
+    }
+    if (view.kind === 'unconfirmed') {
+      return isEdit
+        ? t('contracts.editor.errors.updateUnconfirmed', 'We could not confirm whether your changes were saved. Saving again is safe.') as string
+        : t('contracts.editor.errors.createUnconfirmed', 'We could not confirm whether the draft was saved. Saving again is safe — it will not create a second draft.') as string;
+    }
+    return isEdit
+      ? t('contracts.editor.errors.updateNotSaved', 'Your changes were not saved.') as string
+      : t('contracts.editor.errors.createNotSaved', 'The draft was not saved.') as string;
+  }
+
+  function saveErrorDetail(view: SaveErrorView): React.ReactNode {
+    switch (view.kind) {
+      case 'validation':
+        return (
+          <>
+            <p className="mt-2">{t('contracts.editor.errors.fieldsHeading', 'Please check the following:')}</p>
+            <ul className="list-disc ml-5 mt-1">
+              {view.fields.map((field) => {
+                const { label, message } = fieldProblem(field);
+                return <li key={field}>{`${label}: ${message}`}</li>;
+              })}
+            </ul>
+          </>
+        );
+      case 'server':
+        return <p className="mt-1">{t('contracts.editor.errors.unexpected', 'An unexpected error occurred on the server.')}</p>;
+      case 'rejected':
+        return (
+          <p className="mt-1">
+            {view.code === 'PROJECT_CUSTOMER_MISMATCH'
+              ? t('projects.error.customerMismatch', 'That project belongs to a different customer than this entry.')
+              : (view.message || t('contracts.editor.saveError', 'Save failed'))}
+          </p>
+        );
+      case 'local':
+        return <p className="mt-1">{view.message || t('contracts.editor.saveError', 'Save failed')}</p>;
+      default:
+        return null;
+    }
+  }
 
   async function handlePreview() {
     // For new contracts, we'd need to create first to preview; keep it
@@ -311,6 +516,10 @@ export const ContractEditorPage: React.FC = () => {
     );
   }
 
+  const fieldErrorClass = 'mt-1 text-sm text-red-600 dark:text-red-400';
+  const textareaClass = (invalid: boolean) =>
+    `w-full px-3 py-2 rounded-md border ${invalid ? 'border-red-500' : 'border-neutral-300 dark:border-neutral-600'} bg-white dark:bg-neutral-800 text-sm`;
+
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
@@ -333,18 +542,35 @@ export const ContractEditorPage: React.FC = () => {
           </Button>
         )}
         <Button
-          onClick={() => isEdit ? updateMutation.mutate() : createMutation.mutate()}
-          disabled={
-            (createMutation.isPending || updateMutation.isPending)
-            || (!isEdit && !customerAccountId)
-          }
+          onClick={handleSave}
+          disabled={isSaving || (!isEdit && !customerAccountId)}
+          aria-busy={isSaving}
         >
           <Save className="w-4 h-4 mr-1" />
-          {isEdit
-            ? t('contracts.editor.save', 'Save')
-            : t('contracts.editor.create', 'Create draft')}
+          {isSaving
+            ? t('contracts.editor.saving', 'Saving…')
+            : isEdit
+              ? t('contracts.editor.save', 'Save')
+              : t('contracts.editor.create', 'Create draft')}
         </Button>
       </div>
+
+      {saveError && (
+        <div
+          ref={summaryRef}
+          role="alert"
+          tabIndex={-1}
+          className="mb-4 p-3 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 text-sm text-red-900 dark:text-red-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+        >
+          <p className="font-medium">{savedStateSentence(saveError)}</p>
+          {saveErrorDetail(saveError)}
+          {saveError.requestId && (
+            <p className="mt-2 text-xs">
+              {`${t('contracts.editor.errors.referenceId', 'Reference ID')}: ${saveError.requestId}`}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Scalars */}
       <Card padding="lg" className="mb-4">
@@ -382,6 +608,36 @@ export const ContractEditorPage: React.FC = () => {
               onClear={() => { setCustomerAccountId(null); setCustomerLabel(''); setCustomerIsPassive(false); }}
               searchPlaceholder={t('contracts.editor.searchCustomer', 'Search by email…') as string}
             />
+            {fieldError('customerAccountId') && (
+              <p className={fieldErrorClass}>{fieldError('customerAccountId')}</p>
+            )}
+          </div>
+        )}
+
+        {!isEdit && (
+          <div className="mb-4">
+            <label htmlFor="contract-template-choice" className="block text-sm font-medium mb-1">
+              {t('contracts.editor.template', 'Start from template')}
+            </label>
+            <select
+              id="contract-template-choice"
+              value={templateChoice ?? ''}
+              onChange={(e) => setTemplateChoice(e.target.value === 'none' ? 'none' : Number(e.target.value))}
+              className={textareaClass(false)}
+            >
+              {templateChoice === null && <option value="">…</option>}
+              {usableTemplates.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {tpl.name}{tpl.isDefault ? ` (${t('contracts.templates.default', 'Default')})` : ''}
+                </option>
+              ))}
+              <option value="none">{t('contracts.editor.templateNone', 'No template — pick the clauses below')}</option>
+            </select>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+              {chosenTemplate
+                ? t('contracts.editor.templateHint', 'The contract starts with this template\'s clauses and texts. You can adjust them once it\'s created.')
+                : t('contracts.editor.templateNoneHint', 'Pick the clauses yourself below.')}
+            </p>
           </div>
         )}
 
@@ -405,6 +661,7 @@ export const ContractEditorPage: React.FC = () => {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={t('contracts.editor.titlePlaceholder', 'e.g. Wedding contract Doe / Müller') as string}
+              error={fieldError('title')}
             />
           </div>
           <div>
@@ -414,23 +671,28 @@ export const ContractEditorPage: React.FC = () => {
             <select
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
-              className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+              aria-invalid={fieldError('language') ? 'true' : undefined}
+              aria-describedby={fieldError('language') ? 'contract-language-error' : undefined}
+              className={textareaClass(Boolean(fieldError('language')))}
             >
               <option value="de">Deutsch</option>
               <option value="en">English</option>
             </select>
+            {fieldError('language') && (
+              <p id="contract-language-error" className={fieldErrorClass}>{fieldError('language')}</p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">
               {t('contracts.editor.issueDate', 'Issue date')}
             </label>
-            <LocalizedDateInput value={issueDate} onChange={setIssueDate} />
+            <LocalizedDateInput value={issueDate} onChange={setIssueDate} error={fieldError('issueDate')} />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">
               {t('contracts.editor.validUntil', 'Sign by (optional)')}
             </label>
-            <LocalizedDateInput value={validUntil} onChange={setValidUntil} />
+            <LocalizedDateInput value={validUntil} onChange={setValidUntil} error={fieldError('validUntil')} />
           </div>
         </div>
 
@@ -457,13 +719,14 @@ export const ContractEditorPage: React.FC = () => {
                 onChange={(e) => setEventName(e.target.value)}
                 placeholder={t('contracts.editor.eventNamePlaceholder',
                   'e.g. Wedding Doe / Müller') as string}
+                error={fieldError('eventName')}
               />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">
                 {t('contracts.editor.eventDate', 'Event date')}
               </label>
-              <LocalizedDateInput value={eventDate} onChange={setEventDate} />
+              <LocalizedDateInput value={eventDate} onChange={setEventDate} error={fieldError('eventDate')} />
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -471,12 +734,18 @@ export const ContractEditorPage: React.FC = () => {
                   {t('contracts.editor.eventTimeStart', 'Start')}
                 </label>
                 <TimeField value={eventTimeStart} onChange={setEventTimeStart} />
+                {fieldError('eventTimeStart') && (
+                  <p className={fieldErrorClass}>{fieldError('eventTimeStart')}</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
                   {t('contracts.editor.eventTimeEnd', 'End')}
                 </label>
                 <TimeField value={eventTimeEnd} onChange={setEventTimeEnd} />
+                {fieldError('eventTimeEnd') && (
+                  <p className={fieldErrorClass}>{fieldError('eventTimeEnd')}</p>
+                )}
               </div>
             </div>
           </div>
@@ -490,8 +759,13 @@ export const ContractEditorPage: React.FC = () => {
             value={introText}
             onChange={(e) => setIntroText(e.target.value)}
             rows={3}
-            className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+            aria-invalid={fieldError('introText') ? 'true' : undefined}
+            aria-describedby={fieldError('introText') ? 'contract-intro-error' : undefined}
+            className={textareaClass(Boolean(fieldError('introText')))}
           />
+          {fieldError('introText') && (
+            <p id="contract-intro-error" className={fieldErrorClass}>{fieldError('introText')}</p>
+          )}
         </div>
         <div className="mt-3">
           <label className="block text-sm font-medium mb-1">
@@ -501,18 +775,32 @@ export const ContractEditorPage: React.FC = () => {
             value={outroText}
             onChange={(e) => setOutroText(e.target.value)}
             rows={2}
-            className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
+            aria-invalid={fieldError('outroText') ? 'true' : undefined}
+            aria-describedby={fieldError('outroText') ? 'contract-outro-error' : undefined}
+            className={textareaClass(Boolean(fieldError('outroText')))}
           />
+          {fieldError('outroText') && (
+            <p id="contract-outro-error" className={fieldErrorClass}>{fieldError('outroText')}</p>
+          )}
         </div>
       </Card>
 
       {/* Disclaimer banner */}
       <div className="mb-4 p-3 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-sm text-amber-900 dark:text-amber-200">
         <p className="font-medium mb-1">
-          {t('contracts.editor.disclaimerTitle', 'Lawyer review required')}
+          {t('contracts.editor.disclaimerTitle', 'Legal review recommended')}
         </p>
         <p className="text-xs">
-          {t('contracts.editor.disclaimerBody', 'The seeded block bodies are EXAMPLES ONLY — written by the maintainer, not by a lawyer. Have your own lawyer review every block you include before sending the contract. See https://docs.picpeak.app/features/crm/disclaimers.')}
+          {t('contracts.editor.disclaimerBody', 'The seeded block texts are examples written by the maintainer, not by a lawyer. Before you send a contract, have the blocks you include reviewed for your jurisdiction and use case — you remain responsible for its content. This does not stop you saving a draft.')}
+          {' '}
+          <a
+            href={CRM_DISCLAIMER_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline font-medium"
+          >
+            {t('contracts.editor.disclaimerLink', 'Read the CRM disclaimer')}
+          </a>
         </p>
         <p className="text-xs mt-2 pt-2 border-t border-amber-200/60 dark:border-amber-800/60">
           {t('contracts.editor.schriftformWarning',
@@ -520,8 +808,11 @@ export const ContractEditorPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Block accordions */}
-      {CONTRACT_SECTIONS.map((section) => (
+      {fieldError('blocks') && (
+        <p className={`${fieldErrorClass} mb-3`}>{fieldError('blocks')}</p>
+      )}
+
+      {(isEdit || templateChoice === 'none') && CONTRACT_SECTIONS.map((section) => (
         <Card key={section} padding="lg" className="mb-3">
           <h2 className="text-lg font-semibold mb-2">
             {t(`contracts.sections.${section}`, section)}
@@ -574,6 +865,36 @@ export const ContractEditorPage: React.FC = () => {
           )}
         </Card>
       ))}
+
+      {isEdit && (
+        <Card padding="lg" className="mb-3">
+          <h2 className="text-lg font-semibold mb-2">{t('contracts.attachments.heading', 'Attachments')}</h2>
+          <AttachmentListEditor idPrefix="contract-attachment" value={attachments} onChange={setAttachments} />
+        </Card>
+      )}
+
+      {isEdit && numericId !== null && (
+        <SignersEditorCard contractId={numericId} customerName={customerLabel || null} />
+      )}
+
+      {isEdit && (existing?.contract.textSections || []).length > 0 && (
+        <Card padding="lg" className="mb-3">
+          <h2 className="text-lg font-semibold mb-2">{t('contracts.editor.textSections', 'Free-text sections')}</h2>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
+            {t('contracts.editor.textSectionsHint', 'These come from the template and stay as they are when you save.')}
+          </p>
+          <ul className="space-y-2">
+            {(existing?.contract.textSections || []).map((s) => (
+              <li key={s.id} className="p-2 rounded border border-neutral-200 dark:border-neutral-700">
+                <p className="text-sm font-medium">{s.heading || t(`contracts.sections.${s.section}`, s.section)}</p>
+                <p className="text-xs text-neutral-600 dark:text-neutral-400 whitespace-pre-line line-clamp-3">
+                  {s.body[language as keyof typeof s.body] || s.body.en || s.body.de || ''}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </div>
   );
 };

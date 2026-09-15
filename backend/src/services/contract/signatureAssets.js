@@ -8,6 +8,7 @@ const path = require('path');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
 const pdfStampService = require('../pdfStampService');
+const documentArtifactService = require('../documentArtifactService');
 
 
 /**
@@ -40,11 +41,9 @@ function sha256OfFile(filePath) {
  * recent one; earlier versions remain available for forensic
  * comparison.
  */
-async function persistContractPdf(contract, buffer, suffix = '') {
+async function persistContractPdf(contract, buffer, suffix = '', meta = {}) {
   if (!contract.contract_number) return { filePath: null, sha256: null };
   const year = (contract.issue_date ? new Date(contract.issue_date) : new Date()).getFullYear();
-  const root = path.join(getStoragePath(), 'business-docs', 'contract', String(year));
-  fs.mkdirSync(root, { recursive: true });
   // Always append a millisecond timestamp to the filename so writes
   // never overwrite an earlier version on disk. Forensic preservation.
   // Example filenames:
@@ -55,9 +54,22 @@ async function persistContractPdf(contract, buffer, suffix = '') {
   const fileName = suffix
     ? `${contract.contract_number}_${suffix}_${stamp}.pdf`
     : `${contract.contract_number}_${stamp}.pdf`;
-  const filePath = path.join(root, fileName);
-  fs.writeFileSync(filePath, buffer);
-  return { filePath, sha256: sha256OfBuffer(buffer) };
+  // Written and recorded in generated_documents (#1445).
+  const stored = await documentArtifactService.persist({
+    docType: 'contract',
+    docId: contract.id,
+    kind: meta.kind || (suffix ? 'signed' : 'unsigned'),
+    buffer,
+    fileName,
+    year,
+    theme: meta.theme,
+    issuer: meta.issuer,
+    manifest: meta.manifest,
+    templateVersionId: meta.templateVersionId,
+    // Inside a transaction the record has to go through it (SQLite has one writer).
+    conn: meta.conn,
+  });
+  return { filePath: stored.path, sha256: stored.sha256 };
 }
 
 // Maximum decoded signature image size. Defends against a customer
@@ -194,12 +206,17 @@ async function persistAuditCertificate(contract) {
   try {
     const { buffer } = await pdfStampService.renderAuditCertificate(ctx);
     const year = (contract.issue_date ? new Date(contract.issue_date) : new Date()).getFullYear();
-    const root = path.join(getStoragePath(), 'business-docs', 'contract', String(year));
-    fs.mkdirSync(root, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filePath = path.join(root, `${contract.contract_number}_audit_${stamp}.pdf`);
-    fs.writeFileSync(filePath, buffer);
-    return filePath;
+    // Recorded with its sha256 like every other generated PDF (#1445).
+    const stored = await documentArtifactService.persist({
+      docType: 'contract',
+      docId: contract.id,
+      kind: 'audit',
+      buffer,
+      fileName: `${contract.contract_number}_audit_${stamp}.pdf`,
+      year,
+    });
+    return stored.path;
   } catch (err) {
     logger.error('Failed to render audit certificate', {
       contractId: contract.id,

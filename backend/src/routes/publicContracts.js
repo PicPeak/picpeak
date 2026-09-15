@@ -24,15 +24,8 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const { validateFileType } = require('../utils/fileSecurityUtils');
 const contractService = require('../services/contractService');
 const { getAppSetting } = require('../utils/appSettings');
+const { buildPublicView } = require('../services/contract/publicView');
 
-// Normalise a Settings → Branding logo value (absolute URL, /-rooted path,
-// or bare `uploads/...` filename) into a URL the public page can load.
-function normalizeBrandingLogoUrl(raw) {
-  const value = (raw && String(raw).trim()) || null;
-  if (!value) return null;
-  if (value.startsWith('/') || /^https?:\/\//i.test(value)) return value;
-  return `/uploads/${value.replace(/^uploads\//, '')}`;
-}
 const { clientIpForAudit } = require('../utils/clientIp');
 const { loadActionToken, preMulterTokenGuard } = require('../utils/publicTokenGuards');
 const { db } = require('../database/db');
@@ -72,99 +65,6 @@ const signedPdfUpload = multer({
   },
 });
 
-/**
- * Public-safe projection of the contract. We deliberately omit:
- *   - intro/outro text remain visible (customer-facing by design)
- *   - admin notes (none on contracts today)
- *   - admin IP + signature paths (signed_*_path is admin-only)
- *
- * The IP / signature image paths are NEVER exposed publicly even after
- * signing — they're audit evidence.
- */
-function publicContractView(contract, inclusions, customer, profile, locale, brandingLogoUrl, brandingLogoUrlDark) {
-  const orderedSections = ['basics', 'scope', 'privacy', 'commercial', 'nda', 'closing'];
-  const blocksBySection = {};
-  for (const s of orderedSections) blocksBySection[s] = [];
-  for (const inc of inclusions) {
-    if (!(inc.included === true || inc.included === 1 || inc.included === '1')) continue;
-    const bodyEn = inc.body_text_snapshot || inc.block_body_text || '';
-    const bodyDe = inc.body_text_de_snapshot || inc.block_body_text_de || '';
-    // 1) Strip the leading `**Title**\n` line — the block.name is
-    //    already rendered above as a bold sub-heading, so a bold
-    //    first line in the body would duplicate it.
-    // 2) Strip remaining `**bold**` inline markers — the React sign
-    //    page renders body as plain `whitespace-pre-line` text and
-    //    has no inline-bold UI. The PDF path keeps them as bold
-    //    runs via pdfService.renderBodyMarkdown.
-    const body = (locale === 'de' ? (bodyDe || bodyEn) : (bodyEn || bodyDe))
-      .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, '')
-      .replace(/\*\*([^*]+)\*\*/g, '$1');
-    if (!blocksBySection[inc.section]) continue;
-    blocksBySection[inc.section].push({
-      blockId: inc.block_id,
-      section: inc.section,
-      position: inc.position,
-      name: inc.block_name,
-      body,
-    });
-  }
-  const sections = orderedSections
-    .map((s) => ({ section: s, blocks: blocksBySection[s] }))
-    .filter((s) => s.blocks.length > 0);
-
-  return {
-    contractNumber: contract.contract_number,
-    status: contract.status,
-    language: contract.language,
-    issueDate: contract.issue_date,
-    validUntil: contract.valid_until,
-    title: contract.title,
-    introText: contract.intro_text,
-    outroText: contract.outro_text,
-    sentAt: contract.sent_at,
-    signedByCustomerAt: contract.signed_by_customer_at,
-    signedByAdminAt: contract.signed_by_admin_at,
-    signedCustomerName: contract.signed_customer_name,
-    signedAdminName: contract.signed_admin_name,
-    // The customer's own IP is fine to surface back — it's THEIR
-    // identifier on the audit trail. The admin's IP is NOT exposed
-    // publicly: it's a counter-party's identifier (operator's office /
-    // home network) and shouldn't reach the customer's browser via
-    // a token-only-secret endpoint. Admin sees their own IP on the
-    // admin detail page; customer doesn't need it.
-    signedCustomerIp: contract.signed_customer_ip || null,
-    // signed_pdf_path itself is admin-only; we just flag presence so
-    // the public page can show a "wet-signed copy attached" hint.
-    hasSignedPdf: !!contract.signed_pdf_path,
-    // SHA-256 of the on-disk PDFs — surfaced so the customer can
-    // re-hash their downloaded copy and confirm it matches what
-    // we issued. Audit-trail evidence #1 from the maintainer plan.
-    pdfSha256: contract.pdf_sha256 || null,
-    signedPdfSha256: contract.signed_pdf_sha256 || null,
-    canSign: contract.status === 'sent',
-    sections,
-    recipient: customer ? {
-      displayName: customer.display_name || [customer.first_name, customer.last_name].filter(Boolean).join(' '),
-      companyName: customer.company_name,
-      email: customer.email,
-    } : null,
-    issuer: profile ? {
-      companyName: profile.company_name,
-      addressLine1: profile.address_line1,
-      postalCode: profile.postal_code,
-      city: profile.city,
-      email: profile.email,
-      website: profile.website,
-      // Light + dark branding logos (Settings → Branding), so the public
-      // sign page renders the logo that reads in its resolved colour mode.
-      // Mirrors publicQuotes — the print-only business_profile.logo_path is
-      // intentionally NOT used here.
-      logoUrl: normalizeBrandingLogoUrl(brandingLogoUrl),
-      logoUrlDark: normalizeBrandingLogoUrl(brandingLogoUrlDark),
-    } : null,
-  };
-}
-
 router.get(
   '/:token',
   previewLimiter,
@@ -176,30 +76,35 @@ router.get(
       token: req.params.token,
     });
     if (!tokenRow) return;
-    const data = await contractService.getContractById(tokenRow.contract_id);
-    if (!data) return res.status(404).json({ error: 'Contract not found' });
-    const customer = await db('customer_accounts').where({ id: data.contract.customer_account_id }).first();
-    const profile = await db('business_profile').where({ id: 1 }).first();
-    // Surface the admin-tunable behaviour toggles on the view so the
-    // React page can hide the upload-PDF section when disabled and
-    // enforce the drawn-signature requirement client-side. The server
-    // re-enforces both, so client tampering only changes the UX.
-    const allowPdfUpload = (await getAppSetting('crm_contracts_allow_pdf_upload')) !== false;
-    const requireDrawnSignature = (await getAppSetting('crm_contracts_require_drawn_signature')) === true;
-    const brandingLogoUrl = await getAppSetting('branding_logo_url', null);
-    const brandingLogoUrlDark = await getAppSetting('branding_logo_url_dark', null);
-    const view = publicContractView(
-      data.contract,
-      data.inclusions,
-      customer,
-      profile,
-      data.contract.language || 'de',
-      brandingLogoUrl,
-      brandingLogoUrlDark,
-    );
-    view.allowPdfUpload = allowPdfUpload;
-    view.requireDrawnSignature = requireDrawnSignature;
+    const view = await buildPublicView(tokenRow.contract_id);
     return successResponse(res, { contract: view });
+  }),
+);
+
+// One of the contract's attachments (#1445), for the customer holding the
+// signing link. The attachment must belong to this contract, and its bytes
+// must still match what the contract recorded.
+router.get(
+  '/:token/attachments/:attachmentId',
+  previewLimiter,
+  [
+    param('token').isString().isLength({ min: 64, max: 64 }).matches(/^[a-f0-9]+$/i),
+    param('attachmentId').isInt({ min: 1 }).toInt(),
+  ],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const tokenRow = await loadActionToken(req, res, {
+      tableName: 'contract_action_tokens',
+      token: req.params.token,
+    });
+    if (!tokenRow) return;
+    const attachments = require('../services/contract/attachments');
+    const file = await attachments.openContractAttachment(tokenRow.contract_id, req.params.attachmentId);
+    const { buildContentDisposition } = require('../utils/filenameSanitizer');
+    res.set('Referrer-Policy', 'no-referrer');
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', buildContentDisposition(attachments.downloadName(file.name), 'attachment'));
+    return res.send(file.buffer);
   }),
 );
 

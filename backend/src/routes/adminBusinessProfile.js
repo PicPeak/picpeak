@@ -169,6 +169,8 @@ function transformProfile(p) {
     // null = no global default; the hours page then requires a per-
     // customer or per-entry rate.
     defaultHourlyRateMinor: p.default_hourly_rate_minor == null ? null : Number(p.default_hourly_rate_minor),
+    // Install-wide fallback day rate (migration 215), minor units.
+    defaultDayRateMinor: p.default_day_rate_minor == null ? null : Number(p.default_day_rate_minor),
     defaultCurrency: p.default_currency || 'CHF',
     defaultLocale: p.default_locale || 'de',
     defaultQrFormat: p.default_qr_format || 'none',
@@ -463,6 +465,7 @@ router.put(
     // legitimate 0 (which we treat as "explicitly free"), so use the
     // nullable form and let the service coerce.
     body('defaultHourlyRateMinor').optional({ nullable: true }).isInt({ min: 0 }),
+    body('defaultDayRateMinor').optional({ nullable: true }).isInt({ min: 0 }),
     body('defaultCurrency').optional({ values: 'falsy' }).isString().isLength({ min: 3, max: 3 }),
     body('defaultLocale').optional({ values: 'falsy' }).isString().isLength({ max: 8 }),
     body('defaultQrFormat').optional({ values: 'falsy' }).isIn(['swiss', 'epc', 'none']),
@@ -537,6 +540,7 @@ router.put(
       vatLabel: 'vat_label',
       vatRateDefault: 'vat_rate_default',
       defaultHourlyRateMinor: 'default_hourly_rate_minor',
+      defaultDayRateMinor: 'default_day_rate_minor',
       defaultCurrency: 'default_currency',
       defaultLocale: 'default_locale',
       defaultQrFormat: 'default_qr_format',

@@ -33,12 +33,17 @@ import {
 } from '../../../services/contracts.service';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useMutationWithToast } from '../../../hooks';
+import { formatAttachmentSize } from '../../../services/documentAttachments.service';
+import { PermissionGate } from '../../../components/admin/PermissionGate';
+import { SignaturePadField, type SignaturePadHandle } from '../../../components/contracts/SignaturePadField';
+import { SigningOverviewCard } from './SigningOverviewCard';
 
 function statusBadgeClass(status: ContractStatus): string {
   return status === 'fully_signed'         ? 'bg-green-100 text-green-800'
     : status === 'signed_by_customer'      ? 'bg-blue-100 text-blue-800'
     : status === 'signed_by_admin'         ? 'bg-blue-100 text-blue-800'
     : status === 'sent'                    ? 'bg-amber-100 text-amber-800'
+    : status === 'declined'                ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
     : status === 'cancelled'               ? 'bg-neutral-200 text-neutral-600'
     :                                        'bg-neutral-100 text-neutral-700';
 }
@@ -59,10 +64,11 @@ export const ContractDetailPage: React.FC = () => {
   const formatDateTime = (v: string | null | undefined) => v ? fmtDateTime(v) : '—';
   const numericId = id ? parseInt(id, 10) : null;
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const countersignCanvasRef = useRef<HTMLCanvasElement>(null);
-  const countersignPadRef = useRef<SignaturePad | null>(null);
+  const countersignPadRef = useRef<SignaturePadHandle>(null);
 
   const [countersignName, setCountersignName] = useState('');
+  // Signatures v2: counter-sign with a drawn signature or the typed name.
+  const [countersignMode, setCountersignMode] = useState<'drawn' | 'typed'>('drawn');
 
   const { data, isLoading } = useQuery({
     queryKey: ['contract', numericId],
@@ -91,17 +97,28 @@ export const ContractDetailPage: React.FC = () => {
     select: (res) => res?.invoices?.filter((i) => i.sourceContractId === numericId) || [],
   });
 
+  // Signers and the signing log (#1446). `version` tells a signatures-v2
+  // contract (one link per signer, signing log) from one sent before, whose
+  // cards stay as they were. Until it's known, neither set shows.
+  const signersQuery = useQuery({
+    queryKey: ['contract-signers', numericId],
+    queryFn: () => contractsService.signers(numericId as number),
+    enabled: numericId !== null,
+  });
+  const isV2 = signersQuery.data?.version === 2;
+  const legacySigning = signersQuery.isSuccess ? !isV2 : signersQuery.isError;
+
   const sendMutation = useMutationWithToast({
     mutationFn: () => contractsService.send(numericId as number),
     successMessage: t('contracts.detail.sentToast', 'Contract sent.') as string,
-    invalidateKeys: [['contract', numericId]],
+    invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
     errorMessage: t('contracts.detail.sendError', 'Send failed') as string,
   });
 
   const cancelMutation = useMutationWithToast({
     mutationFn: () => contractsService.cancel(numericId as number),
     successMessage: t('contracts.detail.cancelledToast', 'Contract cancelled.') as string,
-    invalidateKeys: [['contract', numericId]],
+    invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
     errorMessage: t('contracts.detail.cancelError', 'Cancel failed') as string,
   });
 
@@ -109,16 +126,25 @@ export const ContractDetailPage: React.FC = () => {
     mutationFn: () => {
       // Capture the canvas signature (if drawn) at submit time so we
       // send a fresh data URL, not a stale one from an earlier mount.
-      const pad = countersignPadRef.current;
-      const signatureDataUrl = pad && !pad.isEmpty() ? pad.toDataURL('image/png') : null;
+      const signatureDataUrl = countersignPadRef.current?.toDataUrl() ?? null;
+      if (isV2) {
+        if (countersignMode === 'drawn' && !signatureDataUrl) {
+          throw new Error(t('contracts.detail.countersignDrawRequired', 'Draw your signature, or switch to typing your name.') as string);
+        }
+        return contractsService.countersign(numericId as number, countersignMode === 'drawn'
+          ? { name: countersignName, signatureDataUrl, mode: 'drawn' }
+          : { name: countersignName, mode: 'typed' });
+      }
       return contractsService.countersign(numericId as number, {
         name: countersignName,
         signatureDataUrl,
       });
     },
     successMessage: t('contracts.detail.countersignedToast', 'Counter-signed.') as string,
-    invalidateKeys: [['contract', numericId]],
-    errorMessage: t('contracts.detail.countersignError', 'Counter-sign failed') as string,
+    invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
+    errorMessage: (err: any) => (err?.response?.data?.code === 'CUSTOMERS_PENDING'
+      ? t('contracts.detail.countersignCustomersPending', 'Every customer has to sign before you counter-sign.') as string
+      : err?.response?.data?.error || err?.message || t('contracts.detail.countersignError', 'Counter-sign failed') as string),
     onSuccess: () => {
       setCountersignName('');
       countersignPadRef.current?.clear();
@@ -128,7 +154,7 @@ export const ContractDetailPage: React.FC = () => {
   const uploadMutation = useMutationWithToast({
     mutationFn: (file: File) => contractsService.uploadSignedPdf(numericId as number, file),
     successMessage: t('contracts.detail.uploadedToast', 'Signed PDF uploaded.') as string,
-    invalidateKeys: [['contract', numericId]],
+    invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
     errorMessage: t('contracts.detail.uploadError', 'Upload failed') as string,
   });
 
@@ -233,6 +259,11 @@ export const ContractDetailPage: React.FC = () => {
           <ScrollText className="w-6 h-6" />
           <span className="font-mono text-base">{c.contractNumber}</span>
           {c.title && <span className="text-base text-neutral-600 dark:text-neutral-400">— {c.title}</span>}
+          {c.templateName && (
+            <span className="text-xs font-normal text-neutral-600 dark:text-neutral-400">
+              {t('contracts.detail.fromTemplate', 'Template: {{name}} · v{{version}}', { name: c.templateName, version: c.templateVersion ?? '' })}
+            </span>
+          )}
         </h1>
         <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${statusBadgeClass(c.status)}`}>
           {t(`contracts.status.${c.status}`, c.status)}
@@ -490,8 +521,14 @@ export const ContractDetailPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* Signature evidence */}
-      {(c.signedByCustomerAt || c.signedByAdminAt) && (
+      {/* Signatures v2: every signer, the signing log, the evidence. */}
+      {isV2 && signersQuery.data && numericId !== null && (
+        <SigningOverviewCard contractId={numericId} contractStatus={c.status} overview={signersQuery.data} />
+      )}
+
+      {/* Signature evidence — contracts sent before v2 (the Signers card
+          above covers v2). */}
+      {legacySigning && (c.signedByCustomerAt || c.signedByAdminAt) && (
         <Card padding="lg" className="mb-4">
           <h2 className="font-semibold mb-2">{t('contracts.detail.signatures', 'Signatures')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
@@ -541,14 +578,16 @@ export const ContractDetailPage: React.FC = () => {
           drawn signature (signature_pad) so the rendered PDF carries
           both signatures, not just typed labels. */}
       {c.status === 'signed_by_customer' && !c.signedByAdminAt && (
-        <CountersignCard
-          name={countersignName}
-          setName={setCountersignName}
-          canvasRef={countersignCanvasRef}
-          padRef={countersignPadRef}
-          onSubmit={() => countersignMutation.mutate()}
-          pending={countersignMutation.isPending}
-        />
+        <PermissionGate permission="contracts.manage">
+          <CountersignCard
+            name={countersignName}
+            setName={setCountersignName}
+            padRef={countersignPadRef}
+            onSubmit={() => countersignMutation.mutate()}
+            pending={countersignMutation.isPending}
+            modeChoice={isV2 ? { mode: countersignMode, setMode: setCountersignMode } : null}
+          />
+        </PermissionGate>
       )}
 
       {/* Re-stamp signatures card. Available on any already-signed
@@ -557,7 +596,8 @@ export const ContractDetailPage: React.FC = () => {
           their behalf and re-render the PDF. Names + timestamps + IPs
           stay untouched — this is purely a "the canvas glitched, here
           is the image we should have captured" recovery. */}
-      {(c.status === 'signed_by_customer' || c.status === 'signed_by_admin' || c.status === 'fully_signed')
+      {legacySigning
+        && (c.status === 'signed_by_customer' || c.status === 'signed_by_admin' || c.status === 'fully_signed')
         && (!c.signedCustomerSignaturePath || !c.signedAdminSignaturePath) && (
         <RestampSignaturesCard
           contract={c}
@@ -608,12 +648,32 @@ export const ContractDetailPage: React.FC = () => {
         )}
       </Card>
 
+      {(c.attachments || []).length > 0 && (
+        <Card padding="lg" className="mt-4">
+          <h2 className="font-semibold mb-2">{t('contracts.attachments.heading', 'Attachments')}</h2>
+          <ul className="space-y-1 text-sm">
+            {(c.attachments || []).map((a) => (
+              <li key={a.attachmentId} className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-neutral-900 dark:text-neutral-100">{a.name}</span>
+                <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                  {a.delivery === 'merged'
+                    ? t('contracts.attachments.merged', 'In the contract PDF')
+                    : t('contracts.attachments.separate', 'Separate file')}
+                  {' · '}{t('contracts.attachments.pages', '{{count}} pages', { count: a.pages })} · {formatAttachmentSize(a.bytes)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       {/* Audit trail (issue #5 from the maintainer plan) — a
           chronological timeline of every event recorded on this
           contract, sourced from activity_logs. Shows up below the
           included blocks at the bottom of the page so it doesn't
           dominate the layout but is always reachable. */}
       {numericId && <IntegrityCheckCard contractId={numericId} />}
+      {numericId && <GeneratedDocumentsCard contractId={numericId} />}
       {numericId && <AuditTrailCard contractId={numericId} />}
     </div>
   );
@@ -746,6 +806,52 @@ const IntegrityCheckCard: React.FC<{ contractId: number }> = ({ contractId }) =>
  * actor + a human-readable label per activity_type. Hashes / token
  * fragments etc. are surfaced in monospace so they're auditor-friendly.
  */
+/**
+ * Every PDF generated for the contract (#1445) — sent for signature,
+ * signed, audit certificate — with its checksum, so a copy can be re-hashed
+ * and compared.
+ */
+const GeneratedDocumentsCard: React.FC<{ contractId: number }> = ({ contractId }) => {
+  const { t } = useTranslation();
+  const { formatDateTime: fmtDateTime } = useLocalizedDate();
+  const { data } = useQuery({
+    queryKey: ['contract-documents', contractId],
+    queryFn: () => contractsService.documents(contractId),
+  });
+  const documents = data?.documents || [];
+  return (
+    <Card padding="lg" className="mt-4">
+      <h3 className="text-lg font-semibold mb-1">{t('contracts.detail.documents', 'Generated documents')}</h3>
+      <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-3">
+        {t('contracts.detail.documentsHelp', 'Every PDF made for this contract, with its checksum. Re-hash a copy to confirm it matches.')}
+      </p>
+      {documents.length === 0 ? (
+        <p className="text-sm text-neutral-600 dark:text-neutral-400">{t('contracts.detail.documentsEmpty', 'No PDFs generated yet.')}</p>
+      ) : (
+        <ul className="divide-y divide-neutral-200 dark:divide-neutral-700 text-sm">
+          {documents.map((d) => (
+            <li key={d.id} className="py-2 flex flex-wrap items-center gap-3">
+              <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                {t(`contracts.detail.documentKind.${d.kind}`, d.kind)}
+              </span>
+              <span className="text-neutral-600 dark:text-neutral-400">{fmtDateTime(d.generatedAt)}</span>
+              {d.pages != null && (
+                <span className="text-neutral-600 dark:text-neutral-400">
+                  {t('contracts.detail.documentPages', 'Pages: {{count}}', { count: d.pages })}
+                </span>
+              )}
+              <span className="text-neutral-600 dark:text-neutral-400">{Math.max(1, Math.round(d.bytes / 1024))} KB</span>
+              <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400 break-all" title={d.sha256}>
+                {d.sha256.slice(0, 16)}…
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+};
+
 const AuditTrailCard: React.FC<{ contractId: number }> = ({ contractId }) => {
   const { t } = useTranslation();
   // formatDateTime honors `general_date_format` + `general_time_format`
@@ -836,44 +942,18 @@ const AuditTrailCard: React.FC<{ contractId: number }> = ({ contractId }) => {
 interface CountersignProps {
   name: string;
   setName: (v: string) => void;
-  canvasRef: React.RefObject<HTMLCanvasElement>;
-  padRef: React.MutableRefObject<SignaturePad | null>;
+  padRef: React.RefObject<SignaturePadHandle>;
   onSubmit: () => void;
   pending: boolean;
+  /** Signatures v2: a choice between a drawn signature and the typed name. */
+  modeChoice?: { mode: 'drawn' | 'typed'; setMode: (mode: 'drawn' | 'typed') => void } | null;
 }
 
 const CountersignCard: React.FC<CountersignProps> = ({
-  name, setName, canvasRef, padRef, onSubmit, pending,
+  name, setName, padRef, onSubmit, pending, modeChoice,
 }) => {
   const { t } = useTranslation();
-
-  // Initialise signature_pad once the canvas mounts. Same HiDPI
-  // resize-on-mount trick the public sign page uses so strokes are
-  // sharp on retina displays.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const resize = () => {
-      const ratio = Math.max(window.devicePixelRatio || 1, 1);
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width * ratio;
-      canvas.height = rect.height * ratio;
-      const ctx = canvas.getContext('2d');
-      ctx?.scale(ratio, ratio);
-      padRef.current?.clear();
-    };
-    padRef.current = new SignaturePad(canvas, {
-      penColor: '#111',
-      backgroundColor: 'rgba(255, 255, 255, 0)',
-    });
-    resize();
-    window.addEventListener('resize', resize);
-    return () => {
-      window.removeEventListener('resize', resize);
-      padRef.current?.off();
-      padRef.current = null;
-    };
-  }, [canvasRef, padRef]);
+  const drawn = !modeChoice || modeChoice.mode === 'drawn';
 
   return (
     <Card padding="lg" className="mb-4">
@@ -881,8 +961,10 @@ const CountersignCard: React.FC<CountersignProps> = ({
         {t('contracts.detail.countersignTitle', 'Counter-sign to make it binding')}
       </h2>
       <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-3">
-        {t('contracts.detail.countersignHelp',
-          'Type your name AND draw your signature below — both are stamped onto the re-rendered PDF. IP and timestamp are recorded for audit.')}
+        {modeChoice
+          ? t('contracts.detail.countersignHelpV2', 'Every customer has signed. Your signature goes into the issuer\'s field on the PDF, and the signing certificate is issued once you sign.')
+          : t('contracts.detail.countersignHelp',
+            'Type your name AND draw your signature below — both are stamped onto the re-rendered PDF. IP and timestamp are recorded for audit.')}
       </p>
       <div className="space-y-3">
         <input
@@ -892,25 +974,38 @@ const CountersignCard: React.FC<CountersignProps> = ({
           placeholder={t('contracts.detail.signedNamePlaceholder', 'Your full name') as string}
           className="w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-sm"
         />
-        <div>
-          <label className="block text-xs text-neutral-600 dark:text-neutral-400 mb-1">
-            {t('contracts.detail.countersignSignaturePrompt', 'Draw your signature')}
-          </label>
-          <canvas
-            ref={canvasRef}
-            className="w-full h-32 bg-white rounded border border-neutral-300 dark:border-neutral-600 touch-none"
-          />
-          <div className="mt-1 flex justify-end">
-            <button
-              type="button"
-              onClick={() => padRef.current?.clear()}
-              className="text-xs text-neutral-600 dark:text-neutral-400 hover:underline inline-flex items-center gap-1"
-            >
-              <RotateCcw className="w-3 h-3" />
-              {t('contracts.detail.clearSignature', 'Clear')}
-            </button>
+        {modeChoice && (
+          <div role="radiogroup" aria-label={t('contracts.detail.countersignModeLabel', 'How do you want to sign?') as string} className="flex gap-4 text-sm text-neutral-800 dark:text-neutral-200">
+            {(['drawn', 'typed'] as const).map((value) => (
+              <label key={value} className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="countersign-mode"
+                  checked={modeChoice.mode === value}
+                  onChange={() => modeChoice.setMode(value)}
+                />
+                {value === 'drawn'
+                  ? t('contracts.detail.countersignModeDrawn', 'Draw my signature')
+                  : t('contracts.detail.countersignModeTyped', 'Use my typed name')}
+              </label>
+            ))}
           </div>
-        </div>
+        )}
+        {drawn ? (
+          <div>
+            <label className="block text-xs text-neutral-600 dark:text-neutral-400 mb-1">
+              {t('contracts.detail.countersignSignaturePrompt', 'Draw your signature')}
+            </label>
+            <SignaturePadField
+              ref={padRef}
+              label={t('contracts.detail.countersignSignaturePrompt', 'Draw your signature') as string}
+            />
+          </div>
+        ) : (
+          <p className="text-xs text-neutral-600 dark:text-neutral-400">
+            {t('contracts.detail.countersignTypedHint', 'Your name, as typed above, is placed in the signature field.')}
+          </p>
+        )}
         <div className="flex justify-end">
           <Button
             onClick={onSubmit}

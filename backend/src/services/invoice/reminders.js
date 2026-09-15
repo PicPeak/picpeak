@@ -2,7 +2,6 @@
 // module-level overview. Do not add behavior here without updating the entry re-exports.
 
 const { db, logActivity } = require('../../database/db');
-const { getStoragePath } = require('../../config/storage');
 const { getAppSetting } = require('../../utils/appSettings');
 const { AppError } = require('../../utils/errors');
 const { formatShortDate } = require('../../utils/dateFormatter');
@@ -131,12 +130,18 @@ async function applyReminder(invoice, lineItems, level, adminId) {
   ctx.totals.lateFeeAmountMinor = lateFeeGross;
   const buffer = await pdfService.renderInvoiceToBuffer(ctx);
   const fs = require('fs');
-  const path = require('path');
-  const year = new Date(fresh.issue_date).getFullYear();
-  const root = path.join(getStoragePath(), 'business-docs', 'mahnung', String(year));
-  fs.mkdirSync(root, { recursive: true });
-  const mahnungPath = path.join(root, `${fresh.invoice_number}_mahnung_L${level}.pdf`);
-  fs.writeFileSync(mahnungPath, buffer);
+  // Stored under business-docs/mahnung as before, and recorded (#1445).
+  const { path: mahnungPath } = await require('../documentArtifactService').persist({
+    docType: 'invoice',
+    docId: fresh.id,
+    kind: 'reminder',
+    folder: 'mahnung',
+    buffer,
+    fileName: `${fresh.invoice_number}_mahnung_L${level}.pdf`,
+    year: new Date(fresh.issue_date).getFullYear(),
+    theme: ctx.theme,
+    issuer: ctx.issuer,
+  });
 
   // days_overdue floors at 1 (a "0 days overdue" reminder reads as broken).
   const rawDaysOverdue = Math.floor((Date.now() - new Date(invoice.due_date).getTime()) / 86400000);

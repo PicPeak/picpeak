@@ -76,6 +76,8 @@ export const DEFAULT_FLAGS: FeatureFlags = {
   // install that never turns this on never gains a nav entry or a way to
   // mass-mail its customers.
   newsletters: false,
+  // Customer documents (migration 220, #1444). Off by default.
+  documents: false,
 };
 
 export const FEATURE_FLAGS_QUERY_KEY = ['feature-flags'] as const;

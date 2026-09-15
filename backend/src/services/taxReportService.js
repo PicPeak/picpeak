@@ -771,6 +771,8 @@ async function renderTaxReportPdf({ from, to, currency, locale, scope } = {}) {
   const { doc, page, fonts } = pdfService.createBaseDocument({
     orientation: 'landscape',
     issuer: renderCtx.issuer,
+    // The default PDF theme's font family (#1445).
+    theme: await require('./pdfThemeService').resolveTheme('default'),
     info: {
       Title: `${t(useLocale, 'tax_title')} ${report.period.from}–${report.period.to}`,
       Author: renderCtx.issuer.companyName || 'picpeak',

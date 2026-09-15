@@ -22,6 +22,9 @@ export { WebhookDeliveriesPage } from './WebhookDeliveriesPage';
 export { QuotesListPage } from './quotes/QuotesListPage';
 export { QuoteEditorPage } from './quotes/QuoteEditorPage';
 export { QuoteDetailPage } from './quotes/QuoteDetailPage';
+// Quote catalogue + templates (#1451).
+export { QuoteCatalogPage } from './quotes/catalog/QuoteCatalogPage';
+export { QuoteTemplateEditorPage } from './quotes/catalog/QuoteTemplateEditorPage';
 export { BillsListPage } from './bills/BillsListPage';
 export { BillEditorPage } from './bills/BillEditorPage';
 export { BillDetailPage } from './bills/BillDetailPage';

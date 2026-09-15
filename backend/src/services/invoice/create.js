@@ -8,6 +8,7 @@ const { cleanNetMinor } = require('../../utils/invoiceRounding');
 const { AppError } = require('../../utils/errors');
 const businessProfileService = require('../businessProfileService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
+const { extendedLineColumns } = require('../../utils/lineItemTotals');
 const { hasColumnCached } = require('../../utils/schemaCache');
 const { computeDueDate, computeScheduledSendAt, ensureCustomerCanBill, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
 const { appendToMonthlyDraft } = require('./drafts');
@@ -50,8 +51,11 @@ async function createInvoice(payload, adminId, trx = db) {
   // (e.g. the accumulator itself, or future test fixtures).
   if ((customer.billing_cadence === 'monthly' || customer.billing_cadence === 'manual')
       && !payload._skipMonthlyRouting) {
-    const draft = await appendToMonthlyDraft(payload, customer, adminId, trx);
-    return { invoiceIds: draft?.id ? [draft.id] : [] };
+    const draftId = await appendToMonthlyDraft(payload, customer, adminId, trx);
+    // appendToMonthlyDraft returns the draft's id itself (not a row). Reading
+    // `.id` off it always produced an empty list, so the admin route 500'd
+    // on invoiceIds[0] for every monthly / manual customer.
+    return { invoiceIds: draftId ? [draftId] : [] };
   }
 
   // Route reads through the caller's trx (no-op when trx === db) — see #851.
@@ -100,6 +104,8 @@ async function createInvoice(payload, adminId, trx = db) {
       line_total_minor: lineTotal,
       parent_position: isSubItem ? ensureInt(li.parent_position) : null,
       details_text: li.details_text || null,
+      // Migration 215 — line kind, unit, rate + promotion carry over.
+      ...extendedLineColumns(li, { invoice: true }),
     };
   });
   // Apply the migration-119 hierarchy resolver: rewrites parent
@@ -343,7 +349,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
   // below is bypassed; the quote's payment timing is irrelevant once
   // items flow into the monthly accumulator.
   if (customer && customer.billing_cadence === 'monthly') {
-    const draft = await appendToMonthlyDraft({
+    const draftId = await appendToMonthlyDraft({
       customerAccountId: customer.id,
       lineItems: (lineItems || []).map((li) => ({
         position: li.position,
@@ -353,10 +359,14 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
         description: li.description,
         parent_position: li.parent_position,
         details_text: li.details_text,
+        ...extendedLineColumns(li, { invoice: true }),
       })),
       vatRate: totals?.vatRate,
     }, customer, adminId, trx);
-    return { invoiceIds: draft?.id ? [draft.id] : [] };
+    // appendToMonthlyDraft returns the draft's id itself (not a row). Reading
+    // `.id` off it always produced an empty list, so the admin route 500'd
+    // on invoiceIds[0] for every monthly / manual customer.
+    return { invoiceIds: draftId ? [draftId] : [] };
   }
 
   // netDays drives the due-date offset on every scheduled invoice
@@ -522,6 +532,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
         line_total_minor: ensureInt(li.line_total_minor),
         parent_position: li.parent_position == null ? null : ensureInt(li.parent_position),
         details_text: li.details_text || null,
+        ...extendedLineColumns(li, { invoice: true }),
       }));
       const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
       validateLineItemHierarchy(cloned);

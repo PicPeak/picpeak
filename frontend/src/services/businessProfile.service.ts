@@ -39,6 +39,9 @@ export interface BusinessProfile {
    *  override and the per-customer default. null = no global default;
    *  the hours page then requires a per-customer or per-entry rate. */
   defaultHourlyRateMinor: number | null;
+  /** Install-wide fallback day rate in MINOR units (migration 215) for
+   *  per-day quote lines when the customer has no own day rate. */
+  defaultDayRateMinor: number | null;
   defaultCurrency: string;
   defaultLocale: string;
   defaultQrFormat: QrFormat;

@@ -31,6 +31,8 @@ import {
   QuotesListPage,
   QuoteEditorPage,
   QuoteDetailPage,
+  QuoteCatalogPage,
+  QuoteTemplateEditorPage,
   BillsListPage,
   BillEditorPage,
   BillDetailPage,
@@ -49,7 +51,7 @@ import { HoursLoggingPage } from './pages/admin/clients/HoursLoggingPage';
 const CalendarPage = lazy(() => import('./pages/admin/clients/CalendarPage').then((m) => ({ default: m.CalendarPage })));
 const MessagesPage = lazy(() => import('./pages/admin/messages/MessagesPage').then((m) => ({ default: m.MessagesPage })));
 import { QuoteResponsePage } from './pages/public/QuoteResponsePage';
-import { ContractResponsePage } from './pages/public/ContractResponsePage';
+import { ContractResponsePage, ContractSigningSessionPage } from './pages/public/ContractResponsePage';
 import { ProjectsListPage } from './pages/admin/projects/ProjectsListPage';
 import { ProjectCockpitPage } from './pages/admin/projects/ProjectCockpitPage';
 import { WorkflowsListPage } from './pages/admin/workflows/WorkflowsListPage';
@@ -59,6 +61,9 @@ import { ContractsListPage } from './pages/admin/contracts/ContractsListPage';
 import { ContractEditorPage } from './pages/admin/contracts/ContractEditorPage';
 import { ContractDetailPage } from './pages/admin/contracts/ContractDetailPage';
 import { BlockLibraryPage } from './pages/admin/contracts/BlockLibraryPage';
+import { ContractTemplatesPage } from './pages/admin/contracts/ContractTemplatesPage';
+import { ContractTemplateEditorPage } from './pages/admin/contracts/ContractTemplateEditorPage';
+import { ContractAttachmentsPage } from './pages/admin/contracts/ContractAttachmentsPage';
 import { PaymentCheckPage } from './pages/public/PaymentCheckPage';
 import { AcceptInvitePage } from './pages/public/AcceptInvitePage';
 import { TransfersPage } from './pages/admin/transfers/TransfersPage';
@@ -75,6 +80,8 @@ import {
   CustomerBillsPage,
   CustomerContractsPage,
   CustomerResetPasswordPage,
+  CustomerDocumentsPage,
+  CustomerEventPage,
 } from './pages/customer';
 import { CustomerAuthProvider } from './contexts/CustomerAuthContext';
 import { AdminLayout, AdminAuthWrapper } from './components/admin';
@@ -289,6 +296,9 @@ function App() {
                           {/* Quotes (CRM) — gated by `quotes`. */}
                           <Route element={<RequireFeature flag="quotes" />}>
                             <Route path="quotes" element={<QuotesListPage />} />
+                            {/* Catalogue + templates (#1451). Static segments outrank quotes/:id. */}
+                            <Route path="quotes/catalog" element={<QuoteCatalogPage />} />
+                            <Route path="quotes/catalog/templates/:id" element={<QuoteTemplateEditorPage />} />
                             <Route path="quotes/new" element={<QuoteEditorPage />} />
                             <Route path="quotes/:id" element={<QuoteDetailPage />} />
                             <Route path="quotes/:id/edit" element={<QuoteEditorPage />} />
@@ -314,6 +324,9 @@ function App() {
                             <Route path="contracts" element={<ContractsListPage />} />
                             <Route path="contracts/new" element={<ContractEditorPage />} />
                             <Route path="contracts/blocks" element={<BlockLibraryPage />} />
+                            <Route path="contracts/templates" element={<ContractTemplatesPage />} />
+                            <Route path="contracts/templates/:id" element={<ContractTemplateEditorPage />} />
+                            <Route path="contracts/attachments" element={<ContractAttachmentsPage />} />
                             <Route path="contracts/:id" element={<ContractDetailPage />} />
                             <Route path="contracts/:id/edit" element={<ContractEditorPage />} />
                           </Route>
@@ -431,6 +444,10 @@ function App() {
                   {/* Public quote accept/decline page (CRM). Token-only,
                       no auth required. */}
                   <Route path="/quote/:token" element={<QuoteResponsePage />} />
+                  {/* Contract signing. The static /contract/signing (a session
+                      opened from the customer portal) is listed first and,
+                      being static, always outranks /contract/:token. */}
+                  <Route path="/contract/signing" element={<ContractSigningSessionPage />} />
                   <Route path="/contract/:token" element={<ContractResponsePage />} />
 
                   {/* Admin payment-check page (CRM) — token only,
@@ -474,6 +491,8 @@ function App() {
                           <Route path="quotes" element={<CustomerQuotesPage />} />
                           <Route path="contracts" element={<CustomerContractsPage />} />
                           <Route path="bills" element={<CustomerBillsPage />} />
+                          <Route path="documents" element={<CustomerDocumentsPage />} />
+                          <Route path="events/:slug" element={<CustomerEventPage />} />
                           <Route path="profile" element={<CustomerProfilePage />} />
                         </Route>
 

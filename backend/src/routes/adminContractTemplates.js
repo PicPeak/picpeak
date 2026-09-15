@@ -1,0 +1,149 @@
+'use strict';
+
+/**
+ * Admin → contract templates (#1445). Mounted at /api/admin/contract-templates.
+ *
+ *   GET    /                               every template, with draft and default flags
+ *   POST   /                               create (an empty draft)
+ *   GET    /:id                            template, draft, published version, history
+ *   GET    /:id/versions/:version          one version with its clauses
+ *   PUT    /:id/draft                      save the draft (needs lockVersion)
+ *   POST   /:id/publish                    publish the draft (needs lockVersion)
+ *   POST   /:id/versions/:version/draft    a new draft from an earlier version (needs lockVersion)
+ *   POST   /:id/duplicate                  copy into a new template
+ *   POST   /:id/archive, /:id/restore
+ *   POST   /:id/default                    new contracts start from this template
+ *   POST   /:id/preview                    a sample PDF of the draft or a version
+ *
+ * adminAuth → the `contracts` feature flag → contracts.view to read and
+ * preview, contracts.templates.manage for everything that changes a
+ * template. Templates are install-wide, like the clause library, so there
+ * is no per-admin ownership to check.
+ */
+
+const express = require('express');
+const { body, param } = require('express-validator');
+const { adminAuth } = require('../middleware/auth');
+const { requirePermission } = require('../middleware/permissions');
+const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
+const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
+const { buildContentDisposition } = require('../utils/filenameSanitizer');
+const templates = require('../services/contract/templates');
+
+const router = express.Router();
+router.use(adminAuth);
+router.use(requireFeatureFlag('contracts', 'CONTRACTS_DISABLED'));
+
+const VIEW = requirePermission('contracts.view');
+const MANAGE = requirePermission('contracts.templates.manage');
+const idParam = param('id').isInt({ min: 1 }).toInt();
+const versionParam = param('version').isInt({ min: 1 }).toInt();
+const lockBody = body('lockVersion').isInt({ min: 1 }).toInt();
+const metaBody = [
+  body('description').optional({ nullable: true }).isString().isLength({ max: 2000 }),
+  body('useCase').optional({ nullable: true }).isString().isLength({ max: 64 }),
+];
+
+router.get('/', VIEW, handleAsync(async (req, res) => (
+  successResponse(res, { templates: await templates.listTemplates() })
+)));
+
+router.post(
+  '/',
+  MANAGE,
+  [body('name').isString().trim().isLength({ min: 1, max: 128 }), ...metaBody],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const id = await templates.createTemplate(req.body, req.admin?.id);
+    return successResponse(res, await templates.getTemplate(id), 201);
+  })
+);
+
+router.get('/:id', VIEW, [idParam], handleAsync(async (req, res) => {
+  validateRequest(req);
+  return successResponse(res, await templates.getTemplate(req.params.id));
+}));
+
+router.get('/:id/versions/:version', VIEW, [idParam, versionParam], handleAsync(async (req, res) => {
+  validateRequest(req);
+  return successResponse(res, { version: await templates.getVersion(req.params.id, req.params.version) });
+}));
+
+router.put(
+  '/:id/draft',
+  MANAGE,
+  [
+    idParam,
+    lockBody,
+    body('name').optional().isString().trim().isLength({ min: 1, max: 128 }),
+    ...metaBody,
+    body('title').optional({ nullable: true }).isString().isLength({ max: 255 }),
+    body('introText').optional({ nullable: true }).isObject(),
+    body('outroText').optional({ nullable: true }).isObject(),
+    body('items').optional().isArray({ max: 200 }),
+    body('items.*.kind').optional().isIn(['block', 'text']),
+    body('items.*.blockId').optional({ nullable: true }).isInt({ min: 1 }),
+    body('items.*.section').optional({ nullable: true }).isString().isLength({ max: 32 }),
+    body('items.*.heading').optional({ nullable: true }).isString().isLength({ max: 255 }),
+    body('items.*.body').optional({ nullable: true }).isObject(),
+    body('attachments').optional().isArray({ max: 20 }),
+    body('attachments.*.attachmentId').optional().isInt({ min: 1 }),
+    body('attachments.*.delivery').optional().isIn(['merged', 'separate']),
+  ],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    return successResponse(res, await templates.saveDraft(req.params.id, req.body, req.admin?.id));
+  })
+);
+
+router.post('/:id/publish', MANAGE, [idParam, lockBody], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const published = await templates.publishTemplate(req.params.id, req.body, req.admin?.id);
+  return successResponse(res, { ...published, ...(await templates.getTemplate(req.params.id)) });
+}));
+
+router.post('/:id/versions/:version/draft', MANAGE, [idParam, versionParam, lockBody], handleAsync(async (req, res) => {
+  validateRequest(req);
+  return successResponse(res, await templates.draftFromVersion(req.params.id, req.params.version, req.body, req.admin?.id));
+}));
+
+router.post(
+  '/:id/duplicate',
+  MANAGE,
+  [idParam, body('name').optional().isString().trim().isLength({ min: 1, max: 128 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const id = await templates.duplicateTemplate(req.params.id, req.body, req.admin?.id);
+    return successResponse(res, await templates.getTemplate(id), 201);
+  })
+);
+
+router.post('/:id/archive', MANAGE, [idParam], handleAsync(async (req, res) => {
+  validateRequest(req);
+  return successResponse(res, await templates.archiveTemplate(req.params.id, req.admin?.id));
+}));
+
+router.post('/:id/restore', MANAGE, [idParam], handleAsync(async (req, res) => {
+  validateRequest(req);
+  return successResponse(res, await templates.restoreTemplate(req.params.id, req.admin?.id));
+}));
+
+router.post('/:id/default', MANAGE, [idParam], handleAsync(async (req, res) => {
+  validateRequest(req);
+  return successResponse(res, await templates.setDefaultTemplate(req.params.id, req.admin?.id));
+}));
+
+router.post(
+  '/:id/preview',
+  VIEW,
+  [idParam, body('version').optional({ nullable: true }).isInt({ min: 1 }).toInt()],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const buffer = await templates.renderTemplatePreview(req.params.id, { version: req.body.version || null });
+    res.set('Content-Type', 'application/pdf');
+    res.set('Content-Disposition', buildContentDisposition(`contract-template-${req.params.id}-preview.pdf`, 'inline'));
+    return res.send(buffer);
+  })
+);
+
+module.exports = router;

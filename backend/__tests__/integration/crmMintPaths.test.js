@@ -132,7 +132,11 @@ async function seedCustomerSignedContract() {
   // status UPDATE skipped the customer's signature asset and stamped
   // PDF, so countersign exercised its unsigned-PDF fallback and a
   // regression dropping the customer's signature would stay green.
-  const { token } = await contractService.sendContract(id, adminId);
+  await contractService.sendContract(id, adminId);
+  // This suite pins the single-link flow, which contracts sent before
+  // signatures v2 (#1446) keep: turn the fresh send into one of those.
+  await db('contracts').where({ id }).update({ signing_version: null });
+  const token = await require('./helpers/crmDb').createPublicToken(db, 'contract_action_tokens', { contract_id: id });
   await contractService.recordCustomerSignature({
     token,
     name: 'Custo Mer',

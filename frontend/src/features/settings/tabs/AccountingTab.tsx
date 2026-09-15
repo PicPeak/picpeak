@@ -34,6 +34,7 @@ export const AccountingTab: React.FC = () => {
   const [kmMajor, setKmMajor] = useState<number>(NaN);
   const [perDiemMajor, setPerDiemMajor] = useState<number>(NaN);
   const [hourlyMajor, setHourlyMajor] = useState<number>(NaN);
+  const [dayMajor, setDayMajor] = useState<number>(NaN);
   const [requireProof, setRequireProof] = useState(false);
   const [rebillAttachProof, setRebillAttachProof] = useState(false);
   const [rebillProofNameFormat, setRebillProofNameFormat] = useState('');
@@ -58,6 +59,7 @@ export const AccountingTab: React.FC = () => {
     if (profileSnap?.profile) {
       setVatLabel(profileSnap.profile.vatLabel || '');
       setHourlyMajor(profileSnap.profile.defaultHourlyRateMinor != null ? profileSnap.profile.defaultHourlyRateMinor / 100 : NaN);
+      setDayMajor(profileSnap.profile.defaultDayRateMinor != null ? profileSnap.profile.defaultDayRateMinor / 100 : NaN);
     }
   }, [profileSnap]);
 
@@ -81,6 +83,7 @@ export const AccountingTab: React.FC = () => {
       await businessProfileService.update({
         vatLabel: vatLabel || '',
         defaultHourlyRateMinor: Number.isFinite(hourlyMajor) ? Math.max(0, Math.round(hourlyMajor * 100)) : null,
+        defaultDayRateMinor: Number.isFinite(dayMajor) ? Math.max(0, Math.round(dayMajor * 100)) : null,
       });
     },
     onSuccess: () => {
@@ -117,6 +120,11 @@ export const AccountingTab: React.FC = () => {
           <label className={labelCls}>{t('settings.accounting.profileFields.hourlyRate', 'Default hourly rate')}</label>
           <DecimalInput value={hourlyMajor} onChange={setHourlyMajor} fractionDigits={2} className={inputCls} placeholder={t('settings.accounting.profileFields.hourlyRatePlaceholder', 'e.g. 120.00') as string} />
           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('settings.accounting.profileFields.hourlyRateHint', 'Billing fallback used when a customer has no own rate (hours logging). In {{currency}}, major units. Leave blank to require a per-customer or per-entry rate.', { currency })}</p>
+        </div>
+        <div>
+          <label className={labelCls}>{t('settings.accounting.profileFields.dayRate', 'Default day rate')}</label>
+          <DecimalInput value={dayMajor} onChange={setDayMajor} fractionDigits={2} className={inputCls} placeholder={t('settings.accounting.profileFields.dayRatePlaceholder', 'e.g. 1200.00') as string} />
+          <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{t('settings.accounting.profileFields.dayRateHint', 'Used by per-day quote lines when a customer has no own day rate. In {{currency}}, major units.', { currency })}</p>
         </div>
         <label className="flex items-center gap-2 text-sm text-neutral-800 dark:text-neutral-200">
           <input type="checkbox" checked={requireProof} onChange={(e) => setRequireProof(e.target.checked)} className="rounded border-neutral-300" />

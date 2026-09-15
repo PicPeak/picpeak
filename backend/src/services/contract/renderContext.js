@@ -7,7 +7,10 @@ const { formatShortDate } = require('../../utils/dateFormatter');
 const businessProfileService = require('../businessProfileService');
 const { buildIssuerBlock, buildRecipientBlock } = require('../_renderContext');
 const { ensureInt } = require('../../utils/numericHelpers');
+const { countedLineItems } = require('../../utils/lineItemTotals');
 const { SECTIONS_ORDER } = require('./helpers');
+const { canonicalSha256 } = require('../../utils/canonicalJson');
+const content = require('./content');
 
 
 /**
@@ -105,6 +108,130 @@ async function buildPlaceholderContext(contract, customer) {
 // Render-context builder + PDF helpers
 // ---------------------------------------------------------------------
 
+const isIncluded = (row) => row.included === true || row.included === 1 || row.included === '1';
+
+/**
+ * A contract's clauses in reading order, each with its texts by language
+ * (#1445):
+ *   - a contract made from a template follows the template's order —
+ *     positions run 1..n across the whole contract;
+ *   - a contract from before templates keeps the fixed section order, then
+ *     each block's position within its section.
+ * A block reads its frozen text when it has any (a template's snapshot, or
+ * what was frozen at send), else the live library text; a per-contract
+ * override wins over either, language by language.
+ */
+function orderedClauses(contract, inclusions, textSections = []) {
+  const clauses = [
+    ...inclusions.filter(isIncluded).map((row) => {
+      const frozen = content.inclusionSnapshot(row);
+      const base = Object.keys(frozen).length ? frozen : content.blockBodies(row, 'block_');
+      return {
+        kind: 'block',
+        blockId: row.block_id || null,
+        section: row.section,
+        position: ensureInt(row.position),
+        slug: row.block_slug || null,
+        name: row.block_name || null,
+        body: content.mergeLocaleMaps(base, row.body_override),
+      };
+    }),
+    ...textSections.map((row) => ({
+      kind: 'text',
+      blockId: null,
+      section: row.section,
+      position: ensureInt(row.position),
+      slug: null,
+      name: row.heading || null,
+      body: content.parseLocaleMap(row.body),
+    })),
+  ];
+  if (contract.template_version_id) return clauses.sort((a, b) => a.position - b.position);
+  const rank = (section) => {
+    const i = SECTIONS_ORDER.indexOf(section);
+    return i === -1 ? SECTIONS_ORDER.length : i;
+  };
+  return clauses.sort((a, b) => rank(a.section) - rank(b.section) || a.position - b.position);
+}
+
+/** Consecutive clauses of one section share a heading, as the renderer expects. */
+function groupSections(clauses, render) {
+  const sections = [];
+  for (const clause of clauses) {
+    const last = sections[sections.length - 1];
+    const block = render(clause);
+    if (last && last.section === clause.section) last.blocks.push(block);
+    else sections.push({ section: clause.section, blocks: [block] });
+  }
+  return sections;
+}
+
+function parseContentSnapshot(value) {
+  if (!value) return null;
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return parsed && Array.isArray(parsed.clauses) ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * What a contract says at the moment it's sent (#1445): its clauses in
+ * reading order with their texts in every language, the title, intro and
+ * outro, and the placeholder values of that moment. sendContract stores it
+ * with its sha256; from then on the PDF, the signing page and any re-render
+ * read this instead of live data, whatever changes later in the library,
+ * the template or the customer record.
+ */
+async function buildContentSnapshot(contract, inclusions, textSections = []) {
+  const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
+  const snapshot = {
+    format: 1,
+    title: contract.title || '',
+    introText: contract.intro_text || '',
+    outroText: contract.outro_text || '',
+    placeholders: await buildPlaceholderContext(contract, customer),
+    clauses: orderedClauses(contract, inclusions, textSections),
+  };
+  return { snapshot, sha256: canonicalSha256(snapshot) };
+}
+
+/**
+ * The title, intro, outro and sections a contract shows in a language,
+ * placeholders filled in: from the sent snapshot when there is one, else
+ * from the live draft. Shared by the PDF and the customer's signing page.
+ */
+async function resolveDisplayContent(contract, inclusions, textSections, locale, { customer } = {}) {
+  const snapshot = parseContentSnapshot(contract.rendered_content);
+  const placeholders = snapshot
+    ? snapshot.placeholders
+    : await buildPlaceholderContext(contract, customer !== undefined
+      ? customer
+      : await db('customer_accounts').where({ id: contract.customer_account_id }).first());
+  const clauses = snapshot ? snapshot.clauses : orderedClauses(contract, inclusions, textSections || []);
+  const intro = snapshot ? snapshot.introText : contract.intro_text;
+  const outro = snapshot ? snapshot.outroText : contract.outro_text;
+  return {
+    title: snapshot ? snapshot.title : (contract.title || ''),
+    introText: intro ? renderTemplatedBody(intro, placeholders) : null,
+    outroText: outro ? renderTemplatedBody(outro, placeholders) : null,
+    // Placeholders filled in, then a leading `**Title**` line dropped: the
+    // clause name is already printed as its heading. Inline `**bold**`
+    // stays for the PDF (the signing page strips it).
+    sections: groupSections(clauses, (clause) => ({
+      blockId: clause.blockId,
+      position: clause.position,
+      kind: clause.kind,
+      slug: clause.slug,
+      name: clause.name,
+      section: clause.section,
+      body: renderTemplatedBody(content.pickLocale(clause.body, locale), placeholders)
+        .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, ''),
+    })),
+  };
+}
+
 /**
  * Build the data shape pdfService.renderContractToBuffer expects.
  * Sections are emitted in canonical SECTIONS_ORDER; blocks within a
@@ -116,10 +243,9 @@ async function buildPlaceholderContext(contract, customer) {
  * Before send (preview from editor) the live `contract_blocks.body_text`
  * is used so the admin can iterate on block bodies and see the result.
  */
-async function buildRenderContext(contract, inclusions) {
+async function buildRenderContext(contract, inclusions, textSections = []) {
   const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
   const profile = (await businessProfileService.getProfile()).profile || {};
-  const placeholders = await buildPlaceholderContext(contract, customer);
 
   // Pull source-quote line items when this contract was generated from a
   // quote. Surfaced on the render context so the renderer can draw a real
@@ -135,67 +261,21 @@ async function buildRenderContext(contract, inclusions) {
     if (srcQuote) {
       quoteCurrency = srcQuote.currency;
       quoteNumber = srcQuote.quote_number;
-      quoteLineItems = await db('quote_line_items as li')
+      // Unselected optional add-ons aren't part of the deal (#1451).
+      quoteLineItems = countedLineItems(await db('quote_line_items as li')
         .leftJoin('quote_line_items as parent', 'parent.id', 'li.parent_line_item_id')
         .where('li.quote_id', contract.source_quote_id)
         .orderBy('li.position', 'asc')
-        .select('li.*', 'parent.position as parent_position');
+        .select('li.*', 'parent.position as parent_position'));
     }
   }
 
   const locale = contract.language || customer?.preferred_language || profile.default_locale || 'de';
 
-  // Group inclusions by section + render each block body.
-  const blocksBySection = {};
-  for (const section of SECTIONS_ORDER) blocksBySection[section] = [];
-  const sortedInclusions = [...inclusions]
-    .filter((row) => row.included === true || row.included === 1 || row.included === '1')
-    .sort((a, b) => {
-      const sa = SECTIONS_ORDER.indexOf(a.section);
-      const sb = SECTIONS_ORDER.indexOf(b.section);
-      if (sa !== sb) return sa - sb;
-      return (a.position || 0) - (b.position || 0);
-    });
-
-  for (const row of sortedInclusions) {
-    if (!blocksBySection[row.section]) continue;
-    // The inclusion row carries the JOINED block columns aliased with
-    // a `block_` prefix (see getContractById). Pre-send drafts have
-    // null snapshots, so fall through to the live block body.
-    // Migration 131 added ru/pt/nl/fr columns. The body resolver
-    // picks the locale-matching column first, falls back through
-    // DE → EN, so an admin can stage translations one locale at a
-    // time without breaking contracts in other languages.
-    const bodyEn = row.body_text_snapshot || row.block_body_text || '';
-    const bodyDe = row.body_text_de_snapshot || row.block_body_text_de || '';
-    const bodyRu = row.block_body_text_ru || '';
-    const bodyPt = row.block_body_text_pt || '';
-    const bodyNl = row.block_body_text_nl || '';
-    const bodyFr = row.block_body_text_fr || '';
-    const localeBody = ({
-      de: bodyDe,
-      ru: bodyRu,
-      pt: bodyPt,
-      nl: bodyNl,
-      fr: bodyFr,
-    })[locale] || '';
-    const sourceBody = localeBody || bodyEn || bodyDe;
-    // Substitute placeholders, then strip any leading `**Title**\n`
-    // line — the block's `name` field is already rendered as a bold
-    // sub-heading by the PDF/public layouts, so a bold first line in
-    // the body produces a duplicated title. Inline `**bold**` markers
-    // elsewhere in the body are preserved (the PDF renders them as
-    // actual bold via renderBodyMarkdown; the public route strips
-    // them since the React page has no inline-bold UI).
-    const rendered = renderTemplatedBody(sourceBody, placeholders)
-      .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, '');
-    blocksBySection[row.section].push({
-      slug: row.block_slug || null,
-      name: row.block_name,
-      section: row.section,
-      body: rendered,
-    });
-  }
+  // Clauses in reading order with placeholders filled in — from the sent
+  // snapshot once there is one (#1445), else live. The locale picks each
+  // clause's text in that language, then English, then German.
+  const display = await resolveDisplayContent(contract, inclusions, textSections, locale, { customer });
 
   // Use the same robust logo resolver quote/invoice use — checks
   // business_profile.logo_path → app_settings.branding_logo_path →
@@ -215,6 +295,8 @@ async function buildRenderContext(contract, inclusions) {
   return {
     locale,
     dateFormat,
+    // PDF theme (#1445): font family, colours, footer, folding marks.
+    theme: await require('../pdfThemeService').resolveTheme('contract'),
     // Mirror the quote/invoice issuer shape EXACTLY so drawIssuerBlock
     // honours the same business-profile toggles (pdf_show_logo,
     // pdf_show_company_name, pdf_logo_height, pdf_company_name_inline,
@@ -228,16 +310,13 @@ async function buildRenderContext(contract, inclusions) {
     recipient: buildRecipientBlock(profile, customer),
     doc: {
       contractNumber: contract.contract_number,
-      title: contract.title || '',
+      title: display.title,
       issueDate: contract.issue_date,
       validUntil: contract.valid_until,
-      introText: contract.intro_text ? renderTemplatedBody(contract.intro_text, placeholders) : null,
-      outroText: contract.outro_text ? renderTemplatedBody(contract.outro_text, placeholders) : null,
+      introText: display.introText,
+      outroText: display.outroText,
     },
-    // Blocks grouped + ordered by canonical section order.
-    sections: SECTIONS_ORDER
-      .map((section) => ({ section, blocks: blocksBySection[section] }))
-      .filter((s) => s.blocks.length > 0),
+    sections: display.sections,
     // Source-quote line items, surfaced at the top level so the PDF
     // renderer can draw a formatted table where the
     // `quote_line_items_table` system block is included. Empty array
@@ -279,4 +358,7 @@ module.exports = {
   renderTemplatedBody,
   buildPlaceholderContext,
   buildRenderContext,
+  buildContentSnapshot,
+  resolveDisplayContent,
+  orderedClauses,
 };

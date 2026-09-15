@@ -699,6 +699,20 @@
       "lastRun": "Letzter Durchlauf {{when}}",
       "neverRan": "Seit dem Start dieser Instanz nicht gelaufen.",
       "lastResult": "{{sent}} gesendet, {{failed}} fehlgeschlagen"
+    },
+    "customerDocuments": {
+      "title": "Kundendokumente",
+      "counts": "{{pending}} warten auf Prüfung, {{rejected}} abgelehnt.",
+      "hint": "Kunden-Uploads bleiben für den Kunden gesperrt, bis sie im Kundendatensatz als unbedenklich markiert sind. Abgelehnte Dateien werden nach Ablauf der Aufbewahrungsfrist gelöscht."
+    },
+    "evidenceKey": {
+      "title": "Schlüssel für Signaturnachweise",
+      "env": "Gesetzt über PICPEAK_EVIDENCE_KEY.",
+      "file": "Gespeichert in business-docs/keys/evidence.key, das in jedem Backup enthalten ist.",
+      "none": "Noch nicht erstellt. Er wird bei der ersten Unterschrift erstellt.",
+      "unreadable": "Die Schlüsseldatei kann nicht gelesen werden. Stellen Sie sie aus einem Backup wieder her, sonst lassen sich gespeicherte Signaturnachweise nicht entschlüsseln.",
+      "id": "Schlüssel-ID {{id}}",
+      "hint": "IP-Adressen und Browser der Unterzeichnenden werden mit diesem Schlüssel verschlüsselt gespeichert. Ohne ihn lassen sich diese Nachweise nicht lesen; Unterschriften und PDFs bleiben gültig."
     }
   },
   "common": {
@@ -2971,6 +2985,10 @@
         "title": "Personen in Galerien",
         "description": "Gruppiert die Fotos jeder Galerie nach den abgebildeten Personen, damit Gäste sich mit zwei Tipps selbst finden und nur ihre eigenen Fotos herunterladen. Läuft vollständig auf Ihrem eigenen Server in einem separaten, optionalen Container — es werden keine Daten übermittelt. Erkannte Gesichter sind personenbezogene Daten; die Funktion bleibt daher aus, bis Sie sie zusätzlich pro Galerie aktivieren.",
         "lockedSingleContainer": "Im All-in-One-Image nicht verfügbar. Die Gesichtserkennung benötigt einen separaten ML-Container und konkurriert mit der Bildverarbeitung um dieselbe CPU und denselben Arbeitsspeicher, was die gesamte Installation verlangsamen würde."
+      },
+      "documents": {
+        "title": "Kundendokumente",
+        "description": "PDFs mit einem Kunden in seinem Portal teilen und PDFs von ihm empfangen. Kunden-Uploads bleiben gesperrt, bis Sie sie im Kundendatensatz als unbedenklich markieren. Nur PDF; es gelten Grössen- und Speicherlimits."
       }
     },
     "customerSurface": {
@@ -3015,7 +3033,10 @@
         "vatLabelHint": "Wird als Bezeichnung der MwSt-Zeile auf Rechnungs-/Angebots-PDFs gedruckt. Leer lassen, um die Standardbezeichnung der Dokumentsprache zu verwenden.",
         "hourlyRate": "Standard-Stundensatz",
         "hourlyRatePlaceholder": "z. B. 120.00",
-        "hourlyRateHint": "Verrechnungs-Fallback, wenn ein Kunde keinen eigenen Satz hat (Stundenerfassung). In {{currency}}, in Hauptwährungseinheiten. Leer lassen, um einen Satz pro Kunde oder pro Eintrag zu verlangen."
+        "hourlyRateHint": "Verrechnungs-Fallback, wenn ein Kunde keinen eigenen Satz hat (Stundenerfassung). In {{currency}}, in Hauptwährungseinheiten. Leer lassen, um einen Satz pro Kunde oder pro Eintrag zu verlangen.",
+        "dayRate": "Standard-Tagessatz",
+        "dayRateHint": "Für Angebotspositionen pro Tag, wenn der Kunde keinen eigenen Tagessatz hat. In {{currency}}.",
+        "dayRatePlaceholder": "z. B. 1200.00"
       },
       "rebillAttachProof": "Lieferantenbeleg bei Weiterverrechnungen standardmäßig anhängen",
       "rebillAttachProofHint": "Wenn eine erfasste Lieferantenrechnung weiterverrechnet oder durchlaufend berechnet wird, wird ihr gespeichertes PDF der Rechnungs-E-Mail als separater Beleg beigefügt. Dies ist die Voreinstellung — eine kundenspezifische Einstellung und eine Auswahl pro Datei im Senden-Dialog können sie jederzeit ändern.",
@@ -3507,6 +3528,57 @@
       "title": "Soziale Medien",
       "help": "Hinterlegen Sie URLs, um Social-Media-Symbole in der Galerie-Fußzeile anzuzeigen. Lassen Sie ein Feld leer, um das jeweilige Symbol auszublenden.",
       "whatsappHelp": "Eine wa.me-URL oder eine Telefonnummer mit Ländervorwahl (wird umgewandelt)."
+    },
+    "pdfTheme": {
+      "title": "PDF-Design",
+      "description": "Farben, Schrift, Fußzeile und Seitenzahlen für Angebote, Rechnungen und Verträge. Leere Felder übernehmen die Werte von „Alle Dokumente“, danach aus Ihrem Unternehmensprofil.",
+      "scopeLabel": "Dokumentart",
+      "scope": {
+        "default": "Alle Dokumente",
+        "quote": "Angebote",
+        "invoice": "Rechnungen",
+        "contract": "Verträge"
+      },
+      "colors": "Farben",
+      "color": {
+        "text": "Text",
+        "accent": "Titel und Überschriften",
+        "muted": "Nebentext",
+        "subtle": "Fußzeile und Seitenzahlen",
+        "rule": "Linien"
+      },
+      "inherited": "Übernommen",
+      "inherit": "Übernehmen ({{value}})",
+      "reset": "Zurücksetzen",
+      "titleSize": "Titelgröße",
+      "font": "Schrift",
+      "pageNumbers": "Seitenzahlen",
+      "pageNumbersOption": {
+        "bottom-right": "Unten rechts",
+        "bottom-center": "Unten mittig",
+        "none": "Keine"
+      },
+      "foldingMarks": "Falzmarken",
+      "foldingOption": {
+        "none": "Keine",
+        "half": "Halbfalz",
+        "third": "Drittelfalz (DIN 5008)",
+        "both": "Halb- und Drittelfalz"
+      },
+      "footer": "Fußzeile",
+      "footerMode": {
+        "address": "Geschäftsadresse",
+        "custom": "Eigener Text",
+        "none": "Keine Fußzeile"
+      },
+      "footerText": "Fußzeilentext",
+      "marginsNote": "Die Ränder folgen dem Briefformat nach DIN 5008 und lassen sich nicht anpassen.",
+      "preview": "PDF-Vorschau",
+      "resetScope": "Auf übernommene Werte zurücksetzen",
+      "save": "Design speichern",
+      "saved": "PDF-Design gespeichert",
+      "saveFailed": "Das PDF-Design konnte nicht gespeichert werden",
+      "previewFailed": "Die Vorschau konnte nicht erstellt werden"
     }
   },
   "admin": {
@@ -5274,7 +5346,22 @@
       "sortNewest": "Neueste zuerst",
       "sortOldest": "Älteste zuerst",
       "sortName": "Nach Name",
-      "open": "Öffnen"
+      "open": "Öffnen",
+      "needsAction": "Braucht Ihre Aufmerksamkeit",
+      "quoteAwaiting": "Angebot {{number}} wartet auf Ihre Antwort",
+      "validUntil": "Gültig bis {{date}}",
+      "viewQuote": "Angebot ansehen",
+      "contractAwaiting": "Vertrag {{number}} wartet auf Ihre Unterschrift",
+      "viewContract": "Vertrag ansehen",
+      "invoiceOverdue": "Rechnung {{number}} ist überfällig",
+      "invoiceDue": "Rechnung {{number}} ist fällig am {{date}}",
+      "openAmount": "Offen: {{amount}}",
+      "viewInvoice": "Rechnung ansehen",
+      "details": "Details",
+      "detailsAria": "Details zu {{name}}",
+      "notAvailable": "Noch nicht verfügbar",
+      "expiredTitle": "Abgelaufene Galerien",
+      "expiredHint": "Diese Galerien sind abgelaufen und lassen sich nicht mehr öffnen. Wenden Sie sich an Ihren Fotografen, wenn Sie die Fotos noch brauchen."
     },
     "layout": {
       "greeting": "Hallo, {{name}}"
@@ -5287,7 +5374,8 @@
       "profile": "Profil",
       "soon": "Bald",
       "new": "Neu",
-      "contracts": "Verträge"
+      "contracts": "Verträge",
+      "documents": "Dokumente"
     },
     "comingSoon": {
       "tag": "Demnächst"
@@ -5424,7 +5512,69 @@
       "counterSigned": "Gegengezeichnet",
       "openSign": "Öffnen & unterschreiben",
       "downloadSigned": "Unterschriebenes PDF herunterladen",
-      "download": "PDF herunterladen"
+      "download": "PDF herunterladen",
+      "notSigner": "Sie sind nicht als unterzeichnende Person dieses Vertrags eingetragen. Verwenden Sie stattdessen den Link aus der E-Mail zum Unterschreiben.",
+      "notSignable": "Dieser Vertrag wartet nicht mehr auf Ihre Unterschrift. Laden Sie die Seite neu, um den aktuellen Stand zu sehen.",
+      "signError": "Der Vertrag konnte nicht zum Unterschreiben geöffnet werden. Versuchen Sie es gleich noch einmal.",
+      "declinedHint": "Dieser Vertrag wurde abgelehnt und kann nicht mehr unterschrieben werden.",
+      "opening": "Wird geöffnet…",
+      "sign": "Unterschreiben"
+    },
+    "documents": {
+      "title": "Dokumente",
+      "subtitle": "Dateien, die Ihr Fotograf mit Ihnen geteilt hat, und PDFs, die Sie ihm geschickt haben.",
+      "disabled": "Dokumente sind für Ihr Konto nicht verfügbar.",
+      "loadError": "Ihre Dokumente konnten nicht geladen werden.",
+      "uploadTitle": "Dokument senden",
+      "uploadHint": "Nur PDF, bis {{size}} pro Datei. {{used}} von {{quota}} belegt.",
+      "uploadHintShort": "Nur PDF.",
+      "fileLabel": "PDF-Datei",
+      "eventLabel": "Event (optional)",
+      "noEvent": "Kein Event",
+      "cancel": "Abbrechen",
+      "retry": "Erneut versuchen",
+      "upload": "Hochladen",
+      "progress": "Upload-Fortschritt",
+      "uploaded": "{{name}} ist angekommen. Die Datei steht zur Verfügung, sobald Ihr Fotograf sie geprüft hat.",
+      "cancelled": "Upload von {{name}} abgebrochen.",
+      "empty": "Noch keine Dokumente.",
+      "fromYou": "Von Ihnen hochgeladen",
+      "fromStudio": "Von Ihrem Fotografen geteilt",
+      "pendingHint": "Ihr Fotograf prüft jeden Upload, bevor er verfügbar wird.",
+      "rejectedWithReason": "Nicht angenommen: {{reason}}",
+      "rejectedHint": "Ihr Fotograf hat diese Datei nicht angenommen. Fragen Sie nach, wenn Ihnen der Grund unklar ist.",
+      "download": "Herunterladen",
+      "downloadAria": "{{name}} herunterladen",
+      "status": {
+        "available": "Verfügbar",
+        "pending": "Wird geprüft",
+        "rejected": "Abgelehnt"
+      },
+      "errors": {
+        "notPdf": "{{name}} ist kein PDF. Es können nur PDF-Dokumente hochgeladen werden.",
+        "encrypted": "{{name}} ist passwortgeschützt. Entfernen Sie das Passwort und laden Sie die Datei erneut hoch.",
+        "tooLarge": "{{name}} ist grösser als {{size}}. Laden Sie eine kleinere Datei hoch.",
+        "quota": "Für {{name}} ist nicht genug Platz. Bitten Sie Ihren Fotografen, ältere Dokumente zu entfernen.",
+        "rateLimited": "Zu viele Uploads in kurzer Zeit. Warten Sie ein paar Minuten und versuchen Sie {{name}} dann erneut.",
+        "generic": "{{name}} konnte nicht hochgeladen werden. Bitte versuchen Sie es erneut.",
+        "stillPending": "{{name}} wird noch geprüft.",
+        "gone": "{{name}} ist nicht mehr mit Ihnen geteilt.",
+        "purged": "{{name}} wurde entfernt.",
+        "download": "{{name}} konnte nicht heruntergeladen werden. Bitte versuchen Sie es erneut."
+      }
+    },
+    "event": {
+      "notFound": "Dieses Event wurde nicht gefunden, oder Sie haben keinen Zugriff mehr darauf.",
+      "back": "Zurück zu Ihren Galerien",
+      "gallery": "Galerie",
+      "openGallery": "Galerie öffnen",
+      "galleryExpired": "Diese Galerie ist am {{date}} abgelaufen und lässt sich nicht mehr öffnen. Wenden Sie sich an Ihren Fotografen, wenn Sie die Fotos noch brauchen.",
+      "galleryUnavailable": "Diese Galerie ist noch nicht verfügbar.",
+      "popupBlocked": "Erlauben Sie Pop-ups für diese Seite, um das PDF zu öffnen.",
+      "pdfError": "Das PDF konnte nicht geöffnet werden. Bitte versuchen Sie es erneut.",
+      "pdf": "PDF",
+      "dueOn": "Fällig am {{date}}",
+      "nothingElse": "Zu diesem Event gibt es noch keine Dokumente."
     }
   },
   "customers": {
@@ -5434,7 +5584,9 @@
       "hourlyRateHint": "Haupteinheiten (z. B. 150.00 für {{currency}} 150). Leer lassen, um pro Eintrag einen Satz zu verlangen.",
       "marketingOptOut": "Vom Newsletter abgemeldet",
       "marketingOptOutHelp": "Wenn aktiv, wird dieser Kunde von jeder Newsletter-Kampagne übersprungen. E-Mails zu Galerien, Offerten und Rechnungen sind nicht betroffen.",
-      "marketingOptOutSince": "Seit {{date}}"
+      "marketingOptOutSince": "Seit {{date}}",
+      "dayRate": "Standard-Tagessatz",
+      "dayRateHint": "Für Angebotspositionen pro Tag. In {{currency}}. Leer lassen, um den Standard-Tagessatz aus Einstellungen → Buchhaltung zu verwenden."
     },
     "hours": {
       "section": "Stunden",
@@ -5711,6 +5863,53 @@
     "invitePending": {
       "badge": "Einladung offen",
       "hint": "Für diese Adresse ist ein Einladungslink offen und noch nicht angenommen. Das ist kein Beleg dafür, dass die E-Mail angekommen ist — prüfen Sie den Systemzustand, falls der Kunde nichts erhalten hat."
+    },
+    "documents": {
+      "title": "Dokumente",
+      "hint": "PDFs, die mit diesem Kunden in seinem Portal geteilt sind, und die Dateien, die er Ihnen geschickt hat. Ein Kunden-Upload bleibt für ihn gesperrt, bis Sie ihn als unbedenklich markieren.",
+      "usage": "Kunden-Uploads: {{used}} von {{quota}}.",
+      "fileLabel": "PDF zum Teilen",
+      "eventLabel": "Event",
+      "contractLabel": "Vertrag",
+      "noLink": "Keine",
+      "shareNow": "Mit dem Kunden teilen",
+      "upload": "Hochladen",
+      "uploaded": "{{name}} hochgeladen.",
+      "actionError": "Das hat nicht geklappt. Bitte erneut versuchen.",
+      "deleteTitle": "Dokument löschen?",
+      "deleteBody": "{{name}} verschwindet sofort aus dem Portal des Kunden. Die Datei selbst wird nach Ablauf der Aufbewahrungsfrist entfernt.",
+      "delete": "Löschen",
+      "deleted": "Dokument gelöscht.",
+      "status": {
+        "pending": "Wartet auf Prüfung",
+        "clean": "Unbedenklich",
+        "rejected": "Abgelehnt"
+      },
+      "shared": "Geteilt",
+      "notShared": "Nicht geteilt",
+      "fromCustomer": "Vom Kunden hochgeladen",
+      "fromAdmin": "Hochgeladen von {{name}}",
+      "anAdmin": "einem Admin",
+      "viewed": "Vom Kunden {{times}}× heruntergeladen, zuletzt {{date}}",
+      "notViewed": "Vom Kunden noch nicht heruntergeladen",
+      "rejectedNote": "Angegebener Grund: {{note}}",
+      "download": "Herunterladen",
+      "downloadStarted": "Download gestartet.",
+      "markClean": "Als unbedenklich markieren",
+      "markedClean": "Als unbedenklich markiert.",
+      "reject": "Ablehnen",
+      "rejectPlaceholder": "Grund, wird dem Kunden angezeigt (optional)",
+      "confirmReject": "Datei ablehnen",
+      "rejectedToast": "Abgelehnt.",
+      "unshare": "Nicht mehr teilen",
+      "unsharedToast": "Nicht mehr geteilt.",
+      "share": "Teilen",
+      "sharedToast": "Mit dem Kunden geteilt.",
+      "link": "Verknüpfen",
+      "saveLinks": "Verknüpfungen speichern",
+      "linkSaved": "Verknüpfungen gespeichert.",
+      "empty": "Noch keine Dokumente.",
+      "loadError": "Dokumente konnten nicht geladen werden."
     }
   },
   "clients": {
@@ -6391,7 +6590,11 @@
       "bookingWorkflow": "Buchungs-Workflow (bei Annahme)",
       "bookingWorkflowNone": "— Keiner —",
       "bookingWorkflowDisabled": "(deaktiviert)",
-      "bookingWorkflowHint": "Der Ablauf, der startet, wenn der Kunde annimmt. Auf „Keiner“ lassen, um keinen Buchungsablauf auszuführen. Der Ablauf muss aktiviert sein, damit er ausgelöst wird."
+      "bookingWorkflowHint": "Der Ablauf, der startet, wenn der Kunde annimmt. Auf „Keiner“ lassen, um keinen Buchungsablauf auszuführen. Der Ablauf muss aktiviert sein, damit er ausgelöst wird.",
+      "days": "Tage",
+      "daysHint": "Positionen, die den Tagen des Angebots folgen, übernehmen diese Menge.",
+      "hours": "Stunden",
+      "hoursHint": "Positionen, die den Stunden des Angebots folgen, übernehmen diese Menge."
     },
     "responseWindowOpen": "Offen bis {{at}}",
     "section": {
@@ -6447,7 +6650,146 @@
     "pagination_one": "Seite {{page}} von {{total}} · {{count}} Angebot",
     "pagination_other": "Seite {{page}} von {{total}} · {{count}} Angebote",
     "convertedToInvoiceToast_one": "{{count}} Rechnung aus diesem Angebot erstellt",
-    "convertedToInvoiceToast_other": "{{count}} Rechnungen aus diesem Angebot erstellt"
+    "convertedToInvoiceToast_other": "{{count}} Rechnungen aus diesem Angebot erstellt",
+    "catalog": {
+      "addItem": "Leistung hinzufügen",
+      "archive": "Archivieren",
+      "archived": "Archiviert",
+      "boundTo": "Menge",
+      "boundToNone": "Feste Menge",
+      "emptyPackages": "Noch keine Pakete.",
+      "emptyPromotions": "Noch keine Aktionen.",
+      "emptyServices": "Noch keine Leistungen.",
+      "emptyTemplates": "Noch keine Vorlagen.",
+      "emptyTextBlocks": "Noch keine Textbausteine.",
+      "field": {
+        "amount": "Betrag",
+        "body": "Text",
+        "category": "Kategorie",
+        "description": "Beschreibung",
+        "detailsText": "Notiz unter der Position",
+        "kind": "Art",
+        "language": "Sprache",
+        "name": "Name",
+        "percent": "Prozent",
+        "pinnedRate": "Eigener Satz (optional)",
+        "pinnedRateHint": "Leer lassen, um den Satz des Kunden oder den Standardsatz aus Einstellungen → Buchhaltung zu verwenden.",
+        "priceMode": "Preis",
+        "promotionType": "Art",
+        "quantityDefault": "Standardmenge",
+        "unitPrice": "Einzelpreis",
+        "validFrom": "Gültig ab",
+        "validUntil": "Gültig bis"
+      },
+      "newPackage": "Neues Paket",
+      "newPromotion": "Neue Aktion",
+      "newService": "Neue Leistung",
+      "newTextBlock": "Neuer Textbaustein",
+      "packageItem": "Leistung",
+      "packageItems": "Leistungen",
+      "packagesIntro": "Ein Paket mit einer Leistung zeigt den Preis auf der Paketzeile; bei mehreren Leistungen behält jede ihren Preis und die Paketzeile zeigt die Summe.",
+      "perDay": "pro Tag",
+      "perHour": "pro Stunde",
+      "placeholdersHint": "Platzhalter:",
+      "priceMode": {
+        "day": "Pro Tag (Satz)",
+        "fixed": "Fixpreis",
+        "hour": "Pro Stunde (Satz)"
+      },
+      "promotionType": {
+        "fixed": "Fester Betrag",
+        "percent": "Prozent"
+      },
+      "promotionsIntro": "Werden im Angebotseditor angekreuzt. Prozente gelten zuerst, dann feste Beträge, vor der MwSt. — nie mehr als die Zwischensumme.",
+      "rateFromChain": "Kunden- / Standardsatz",
+      "restore": "Wiederherstellen",
+      "savedToast": "Gespeichert.",
+      "servicesIntro": "Leistungen mit Fixpreis oder pro Stunde / Tag. Sie stehen im Angebotseditor und in Paketen zur Auswahl.",
+      "tab": {
+        "packages": "Pakete",
+        "promotions": "Aktionen",
+        "services": "Leistungen",
+        "templates": "Vorlagen",
+        "textBlocks": "Textbausteine"
+      },
+      "templatesIntro": "Eine Vorlage füllt ein neues Angebot aus. Beim Veröffentlichen wird eine Version eingefroren – spätere Katalogänderungen verändern bestehende Angebote nie.",
+      "textBlockKind": {
+        "closing": "Schluss",
+        "intro": "Einleitung",
+        "note": "Hinweis",
+        "scope": "Leistungsumfang",
+        "terms": "Bedingungen"
+      },
+      "textBlocksIntro": "Wiederverwendbare Texte für Einleitung und Schluss des Angebots. Platzhalter werden beim Speichern des Angebots ausgefüllt.",
+      "title": "Katalog & Vorlagen",
+      "promotionAmountHint": "Der Betrag, der abgezogen wird, z. B. 300 für −300.",
+      "promotionPercentHint": "Der Prozentsatz, der abgezogen wird, z. B. 10 für −10 %.",
+      "noEndDateHint": "Leer lassen für unbegrenzte Gültigkeit.",
+      "noEndDate": "Unbegrenzt gültig",
+      "validFromNoEnd": "Ab {{date}}, unbegrenzt",
+      "validUntilOnly": "Bis",
+      "examplesHint": "Archivierte Einträge mit „Beispiel: …“ zeigen, wie jeder Teil funktioniert. Bearbeiten Sie einen und stellen Sie ihn wieder her, um ihn zu verwenden."
+    },
+    "promotions": {
+      "panelHint": "Prozente gelten zuerst, dann feste Beträge – nie mehr als die Zwischensumme.",
+      "panelTitle": "Rabatte"
+    },
+    "ratesRecalculatedToast": "Sätze auf die heutigen Werte aktualisiert.",
+    "recalculateRates": "Mit aktuellen Sätzen neu berechnen",
+    "recalculateRatesConfirm": "Heutige Sätze auf diesen Entwurf anwenden? Ungespeicherte Änderungen auf dieser Seite gehen verloren.",
+    "templates": {
+      "addItem": "Katalogleistung",
+      "addLine": "Eigene Position",
+      "addPackage": "Paket",
+      "archiveConfirm": "Diese Vorlage archivieren? Bestehende Angebote sind nicht betroffen.",
+      "blankQuote": "Leeres Angebot",
+      "createFromTemplate": "Angebot erstellen",
+      "defaults": "Standardwerte für neue Angebote",
+      "details": "Details",
+      "hoursHint": "Leer lassen, um die Stunden der Vorlage zu verwenden.",
+      "newPrompt": "Name der neuen Vorlage",
+      "newTemplate": "Neue Vorlage",
+      "noneYet": "Noch keine veröffentlichten Vorlagen – diese werden unter Katalog & Vorlagen angelegt.",
+      "pickLabel": "Starten mit",
+      "promotions": "Vorausgewählte Rabatte",
+      "publish": "Veröffentlichen",
+      "publishedToast": "Als Version {{version}} veröffentlicht.",
+      "saveAsPrompt": "Name der neuen Vorlage",
+      "saveAsTemplate": "Als Vorlage speichern",
+      "saveDraft": "Entwurf speichern",
+      "savedFromQuoteToast": "Vorlage als Entwurf erstellt.",
+      "savedToast": "Vorlage gespeichert.",
+      "section": {
+        "item": "Katalogleistung",
+        "line": "Eigene Position",
+        "package": "Paket"
+      },
+      "sections": "Positionen",
+      "skippedPromotions": "Nicht angewendet (heute nicht gültig): {{names}}",
+      "startBlank": "Leer beginnen",
+      "status": {
+        "archived": "Archiviert",
+        "draft": "Entwurf",
+        "published": "Veröffentlicht"
+      },
+      "textFromBlock": "Textbaustein",
+      "textNone": "Keiner",
+      "textOwn": "Eigener Text",
+      "texts": "Einleitung und Schluss",
+      "validityDays": "Gültig für (Tage)",
+      "versions": "Veröffentlichte Versionen"
+    },
+    "textBlocks": {
+      "insert": "Textbaustein einfügen…"
+    },
+    "selection": {
+      "title": "Zusatzleistungen bei Annahme",
+      "byCustomer": "Vom Kunden gewählt am {{date}}",
+      "byAdmin": "Bei Ihrer Annahme festgehalten am {{date}}",
+      "none": "Keine Zusatzleistungen gewählt",
+      "chosen": "Gewählt",
+      "notChosen": "Nicht gewählt"
+    }
   },
   "crm": {
     "lineItems": {
@@ -6471,7 +6813,42 @@
       "detailsFilled": "Details",
       "detailsPlaceholder": "Optionale Notizen — Kleingedrucktes, Paketinhalte, Bedingungen…",
       "autoTotaledHint": "Summe automatisch aus den Unterpositionen berechnet",
-      "autoTotaledNote": "= Σ Unterpositionen"
+      "autoTotaledNote": "= Σ Unterpositionen",
+      "discountLine": "Rabatt",
+      "discountPercentHint": "{{percent}} % der Zwischensumme",
+      "followsDays": "Folgt den Tagen des Angebots",
+      "followsHours": "Folgt den Stunden des Angebots",
+      "included": "Enthalten",
+      "insertPackage": "Paket einfügen…",
+      "notIncluded": "nicht enthalten",
+      "optional": "Optionale Zusatzleistung",
+      "optionalIncluded": "(optional, enthalten)",
+      "optionalNotIncluded": "(optional, nicht enthalten)",
+      "rateSource": {
+        "auto": "Satz wird beim Speichern übernommen",
+        "customer": "Kundensatz",
+        "default": "Standardsatz",
+        "item": "Eigener Satz der Leistung"
+      },
+      "remove": "Entfernen",
+      "unitLabel": "Einheit",
+      "unitNone": "—",
+      "unitOption": {
+        "day": "Tag",
+        "flat": "Pauschal",
+        "hour": "Stunde",
+        "km": "km",
+        "piece": "Stück"
+      },
+      "unitShort": {
+        "day": "Tg.",
+        "flat": "pauschal",
+        "hour": "Std.",
+        "km": "km",
+        "piece": "Stk."
+      },
+      "useDayRate": "Tagessatz verwenden",
+      "useHourlyRate": "Stundensatz verwenden"
     },
     "customerPicker": {
       "search": "Kunde nach E-Mail oder Firma suchen…"
@@ -6946,7 +7323,16 @@
     "tosCheckbox": "Ich habe die Allgemeinen Geschäftsbedingungen gelesen und akzeptiere sie.",
     "tosLink": "Vollständige AGB lesen",
     "preselectAcceptHint": "Sie sind dem Link „Annehmen“ aus der E-Mail gefolgt — klicken Sie zur Bestätigung auf die Schaltfläche unten.",
-    "preselectDeclineHint": "Sie sind dem Link „Ablehnen“ aus der E-Mail gefolgt — klicken Sie zur Bestätigung auf die Schaltfläche unten."
+    "preselectDeclineHint": "Sie sind dem Link „Ablehnen“ aus der E-Mail gefolgt — klicken Sie zur Bestätigung auf die Schaltfläche unten.",
+    "addons": {
+      "hint": "Wählen Sie die gewünschten Zusatzleistungen aus. Der Gesamtbetrag passt sich dabei an.",
+      "optional": "Optional",
+      "included": "Enthalten",
+      "notChosen": "Nicht gewählt",
+      "updating": "Gesamtbetrag wird aktualisiert…",
+      "totalChanged": "Der Gesamtbetrag beträgt jetzt {{total}}. Bitte prüfen Sie ihn und nehmen Sie das Angebot erneut an.",
+      "locked": "Die Zusatzleistungen wurden bei der Annahme festgelegt. Bitte kontaktieren Sie uns für ein angepasstes Angebot."
+    }
   },
   "reminderTemplates": {
     "title": "Erinnerungs-E-Mails vor dem Anlass",
@@ -7052,7 +7438,8 @@
       "signed_by_customer": "Kunde unterzeichnet",
       "signed_by_admin": "Gegengezeichnet",
       "fully_signed": "Beidseitig unterzeichnet",
-      "cancelled": "Storniert"
+      "cancelled": "Storniert",
+      "declined": "Abgelehnt"
     },
     "list": {
       "new": "Neuer Vertrag",
@@ -7068,7 +7455,9 @@
       },
       "pagination": "Seite {{page}} von {{total}} · {{count}} Verträge",
       "pagination_one": "Seite {{page}} von {{total}} · {{count}} Vertrag",
-      "pagination_other": "Seite {{page}} von {{total}} · {{count}} Verträge"
+      "pagination_other": "Seite {{page}} von {{total}} · {{count}} Verträge",
+      "templates": "Vorlagen",
+      "attachments": "Anhänge"
     },
     "detail": {
       "previewPdf": "PDF-Vorschau",
@@ -7152,7 +7541,25 @@
       "uploadSigned": "Signiertes PDF hochladen",
       "uploadedToast": "Signiertes PDF hochgeladen.",
       "convertedToInvoiceToast_one": "{{count}} Rechnung aus diesem Vertrag erstellt",
-      "convertedToInvoiceToast_other": "{{count}} Rechnungen aus diesem Vertrag erstellt"
+      "convertedToInvoiceToast_other": "{{count}} Rechnungen aus diesem Vertrag erstellt",
+      "fromTemplate": "Vorlage: {{name}} · v{{version}}",
+      "documents": "Erstellte Dokumente",
+      "documentsHelp": "Jedes für diesen Vertrag erstellte PDF mit Prüfsumme. Berechnen Sie die Prüfsumme einer Kopie neu, um sie abzugleichen.",
+      "documentsEmpty": "Noch keine PDFs erstellt.",
+      "documentPages": "Seiten: {{count}}",
+      "documentKind": {
+        "unsigned": "Zur Unterschrift gesendet",
+        "signed": "Unterschrieben",
+        "audit": "Prüfzertifikat",
+        "wet_upload": "Hochgeladene unterschriebene Kopie"
+      },
+      "countersignDrawRequired": "Zeichnen Sie Ihre Unterschrift, oder verwenden Sie stattdessen Ihren eingegebenen Namen.",
+      "countersignCustomersPending": "Alle Personen auf Kundenseite müssen unterschreiben, bevor Sie gegenzeichnen können.",
+      "countersignHelpV2": "Alle auf Kundenseite haben unterschrieben. Ihre Unterschrift wird in das Feld des Ausstellers im PDF eingesetzt; nach Ihrer Unterschrift wird das Signaturzertifikat ausgestellt.",
+      "countersignModeLabel": "Wie möchten Sie unterschreiben?",
+      "countersignModeDrawn": "Unterschrift zeichnen",
+      "countersignModeTyped": "Eingegebenen Namen verwenden",
+      "countersignTypedHint": "Ihr oben eingegebener Name wird in das Unterschriftsfeld eingesetzt."
     },
     "editor": {
       "back": "Zurück zur Liste",
@@ -7160,8 +7567,31 @@
       "create": "Entwurf erstellen",
       "createdToast": "Vertrag erstellt.",
       "customer": "Kunde",
-      "disclaimerBody": "Die vorausgefüllten Baustein-Texte sind NUR BEISPIELE — vom Maintainer verfasst, nicht von einem Anwalt. Lassen Sie jeden verwendeten Baustein von Ihrem eigenen Anwalt prüfen, bevor Sie den Vertrag versenden. Siehe https://docs.picpeak.app/features/crm/disclaimers.",
-      "disclaimerTitle": "Anwaltliche Prüfung erforderlich",
+      "disclaimerBody": "Die vorausgefüllten Baustein-Texte sind Beispiele des Maintainers, nicht von einem Anwalt verfasst. Lassen Sie die verwendeten Bausteine vor dem Versand für Ihre Rechtsordnung und Ihren Einsatzzweck prüfen — für den Inhalt des Vertrags bleiben Sie verantwortlich. Einen Entwurf können Sie trotzdem jederzeit speichern.",
+      "disclaimerTitle": "Anwaltliche Prüfung empfohlen",
+      "saving": "Wird gespeichert…",
+      "disclaimerLink": "CRM-Haftungshinweis lesen",
+      "errors": {
+        "createNotSaved": "Der Entwurf wurde nicht gespeichert.",
+        "updateNotSaved": "Ihre Änderungen wurden nicht gespeichert.",
+        "createUnconfirmed": "Wir konnten nicht bestätigen, ob der Entwurf gespeichert wurde. Erneutes Speichern ist sicher — es wird kein zweiter Entwurf angelegt.",
+        "createdChangesNotSaved": "Der Entwurf wurde gespeichert, Ihre letzten Änderungen jedoch nicht. Speichern Sie erneut, um sie zu übernehmen.",
+        "updateUnconfirmed": "Wir konnten nicht bestätigen, ob Ihre Änderungen gespeichert wurden. Erneutes Speichern ist sicher.",
+        "fieldsHeading": "Bitte prüfen Sie folgende Angaben:",
+        "unexpected": "Auf dem Server ist ein unerwarteter Fehler aufgetreten.",
+        "referenceId": "Referenz-ID",
+        "customerRequired": "Wählen Sie einen Kunden aus",
+        "tooLong": "Höchstens 255 Zeichen",
+        "invalidDate": "Geben Sie ein gültiges Datum ein",
+        "invalidTime": "Geben Sie eine Uhrzeit im Format HH:MM ein",
+        "invalidLanguage": "Wählen Sie eine Sprache aus",
+        "invalidText": "Prüfen Sie diesen Text",
+        "blocksLabel": "Bausteine",
+        "checkBlocks": "Prüfen Sie die Bausteinauswahl",
+        "requestLabel": "Anfrage",
+        "reloadAndRetry": "Laden Sie die Seite neu und versuchen Sie es erneut",
+        "checkValue": "Prüfen Sie diesen Wert"
+      },
       "eventDate": "Anlassdatum",
       "eventHelp": "Wird auf den Vertrag übernommen und an jeden daraus erzeugten Anlass / jede Rechnung weitergegeben. Setzen Sie dies, damit Kundenportal und Mahn-E-Mails die richtige Bezeichnung \"Hochzeit Doe / Müller\" anzeigen.",
       "eventName": "Anlassname",
@@ -7196,13 +7626,20 @@
       "titleField": "Vertragstitel",
       "titleNew": "Neuer Vertrag",
       "titlePlaceholder": "z. B. Hochzeitsvertrag Doe / Müller",
-      "validUntil": "Unterzeichnen bis (optional)"
+      "validUntil": "Unterzeichnen bis (optional)",
+      "template": "Mit Vorlage beginnen",
+      "templateNone": "Ohne Vorlage — Klauseln unten auswählen",
+      "templateHint": "Der Vertrag beginnt mit den Klauseln und Texten dieser Vorlage. Nach dem Erstellen können Sie sie anpassen.",
+      "templateNoneHint": "Wählen Sie die Klauseln unten selbst aus.",
+      "textSections": "Freitext-Abschnitte",
+      "textSectionsHint": "Diese stammen aus der Vorlage und bleiben beim Speichern unverändert."
     },
     "blocks": {
       "back": "Zurück zu den Verträgen",
       "title": "Vertragsbaustein-Bibliothek",
       "hideInactive": "Inaktive ausblenden",
       "disclaimerTitle": "Nur Beispiele — lassen Sie sie von Ihrem Anwalt prüfen",
+      "disclaimerLink": "CRM-Haftungshinweis lesen",
       "disclaimerBody": "Die mitgelieferten „System“-Bausteine stammen vom picpeak-Maintainer, nicht von einem Anwalt. Sie sind ausschließlich als Ausgangspunkt gedacht — lassen Sie jeden Baustein, den Sie versenden wollen, von Ihrem eigenen Anwalt prüfen und anpassen. Änderungen an System-Bausteinen bleiben erhalten; ersetzen Sie den mitgelieferten Text einfach durch die anwaltlich geprüfte Fassung.",
       "sidebarHeading": "Bausteine",
       "new": "Neuer Baustein",
@@ -7234,6 +7671,223 @@
         "calloutTitle": "Automatisch erzeugte Tabelle folgt auf den Text",
         "calloutBody": "Wenn dieser Baustein in einem aus einem Angebot erstellten Vertrag enthalten ist, fügt das PDF direkt nach dem obigen Text eine echte Tabelle mit den Positionen des Ausgangsangebots ein (Nr., Beschreibung, Menge, Einzelpreis, Gesamt). Unterpositionen werden eingerückt mit einem ↳ dargestellt. Verträge ohne Ausgangsangebot lassen die Tabelle weg und zeigen nur den Text.",
         "previewExample": "Beispielausgabe:"
+      }
+    },
+    "templates": {
+      "title": "Vertragsvorlagen",
+      "intro": "Eine Vorlage legt fest, mit welchen Klauseln, in welcher Reihenfolge und mit welchem Wortlaut ein neuer Vertrag beginnt. Beim Veröffentlichen wird eine Version eingefroren; ein Vertrag behält die Version, aus der er erstellt wurde.",
+      "back": "Zurück zu den Verträgen",
+      "backToTemplates": "Zurück zu den Vorlagen",
+      "newName": "Name der neuen Vorlage",
+      "create": "Vorlage erstellen",
+      "empty": "Noch keine Vorlagen.",
+      "standard": "Mitgeliefert",
+      "default": "Voreingestellt",
+      "status": {
+        "draft": "Entwurf",
+        "published": "Veröffentlicht · v{{version}}",
+        "archived": "Archiviert"
+      },
+      "unpublished": "Unveröffentlichte Änderungen",
+      "open": "Öffnen",
+      "duplicate": "Duplizieren",
+      "copyName": "{{name}} (Kopie)",
+      "duplicated": "Vorlage dupliziert",
+      "makeDefault": "Als Voreinstellung verwenden",
+      "defaultSet": "Neue Verträge beginnen jetzt mit dieser Vorlage",
+      "archive": "Archivieren",
+      "archivedToast": "Vorlage archiviert",
+      "restore": "Wiederherstellen",
+      "restored": "Vorlage wiederhergestellt",
+      "actionFailed": "Das hat nicht geklappt. Bitte versuchen Sie es erneut.",
+      "languages": "Sprachen",
+      "systemNotice": "Die mitgelieferte Vorlage lässt sich nicht bearbeiten. Duplizieren Sie sie, um eine eigene Fassung anzulegen.",
+      "conflict": "Jemand anderes hat diese Vorlage gespeichert, während Sie sie bearbeitet haben. Laden Sie neu, um diese Fassung zu sehen — Ihre Änderungen seit dem Laden gehen dabei verloren.",
+      "reload": "Neu laden",
+      "details": "Angaben",
+      "name": "Name",
+      "useCase": "Einsatzzweck",
+      "description": "Beschreibung",
+      "docTitle": "Vertragstitel",
+      "introText": "Einleitung",
+      "outroText": "Schlusstext",
+      "placeholders": "Verfügbare Platzhalter:",
+      "clauses": "Klauseln",
+      "noClauses": "Noch keine Klauseln. Fügen Sie Klauseln aus der Bibliothek oder freien Text hinzu.",
+      "clause": "Klausel",
+      "freeText": "Freier Text",
+      "untitled": "Ohne Überschrift",
+      "customised": "angepasst",
+      "archivedBlock": "In der Bibliothek archiviert",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten",
+      "showText": "Text",
+      "hideText": "Text ausblenden",
+      "remove": "Entfernen",
+      "section": "Abschnitt",
+      "heading": "Überschrift",
+      "overrideLabel": "Text in dieser Vorlage (leer lassen, um den Text aus der Klauselbibliothek zu verwenden)",
+      "body": "Text",
+      "pickClause": "Klausel aus der Bibliothek",
+      "addClause": "Klausel hinzufügen",
+      "addFreeText": "Freien Text hinzufügen",
+      "preview": "PDF-Vorschau",
+      "saveDraft": "Entwurf speichern",
+      "publish": "Veröffentlichen",
+      "saved": "Entwurf gespeichert",
+      "published": "Version {{version}} veröffentlicht",
+      "saveFailed": "Der Entwurf konnte nicht gespeichert werden.",
+      "publishFailed": "Die Vorlage konnte nicht veröffentlicht werden.",
+      "previewFailed": "Die Vorschau konnte nicht erstellt werden.",
+      "versions": "Versionen",
+      "noVersions": "Noch nicht veröffentlicht.",
+      "versionCurrent": "Aktuell",
+      "versionEarlier": "Früher",
+      "draftFromVersion": "Neuer Entwurf aus dieser Version",
+      "draftFromVersionConfirm": "Den aktuellen Entwurf durch eine Kopie von Version {{version}} ersetzen?",
+      "draftCreated": "Entwurf aus Version {{version}} erstellt"
+    },
+    "attachments": {
+      "heading": "Anhänge",
+      "title": "Vertragsanhänge",
+      "intro": "PDFs, die mit Verträgen verschickt werden – AGB, Datenschutzhinweise, ein Anhang. Fügen Sie sie einer Vorlage oder einem einzelnen Vertrag hinzu, im Vertrags-PDF oder als eigene Datei.",
+      "none": "Keine Anhänge.",
+      "empty": "Noch keine Anhänge.",
+      "pages": "{{count}} Seiten",
+      "archived": "Archiviert",
+      "archivedInLibrary": "In der Bibliothek archiviert",
+      "delivery": "Zustellung",
+      "merged": "Im Vertrags-PDF",
+      "separate": "Eigene Datei",
+      "mergedHint": "Anhänge im Vertrags-PDF stehen nach den Klauseln, vor der Unterschriftenseite.",
+      "pick": "Anhang aus der Bibliothek",
+      "add": "Anhang hinzufügen",
+      "manageLibrary": "Bibliothek verwalten",
+      "file": "PDF (bis 20 MB)",
+      "name": "Name",
+      "description": "Beschreibung (optional)",
+      "upload": "Hochladen",
+      "uploaded": "Anhang hinzugefügt",
+      "alreadyThere": "Diese Datei ist bereits als „{{name}}“ in der Bibliothek.",
+      "uploadFailed": "Die Datei konnte nicht hochgeladen werden.",
+      "open": "Öffnen",
+      "errors": {
+        "tooLarge": "Die Datei ist größer als 20 MB.",
+        "notPdf": "Diese Datei ist kein PDF.",
+        "encrypted": "Das PDF ist passwortgeschützt. Speichern Sie es ohne Passwort und laden Sie es erneut hoch.",
+        "malformed": "Das PDF kann nicht gelesen werden. Exportieren Sie es erneut aus dem Original und laden Sie das hoch.",
+        "activeContent": "Das PDF enthält Skripte, Formularfelder oder eingebettete Dateien. Drucken Sie es in ein neues PDF („Als PDF sichern“) und laden Sie das hoch.",
+        "empty": "Das PDF hat keine Seiten.",
+        "tooManyPages": "Das PDF hat mehr als 100 Seiten."
+      }
+    },
+    "signers": {
+      "errors": {
+        "none": "Fügen Sie mindestens eine unterzeichnende Person hinzu.",
+        "nameRequired": "Person {{number}}: Geben Sie einen Namen ein.",
+        "emailInvalid": "Person {{number}}: Geben Sie eine gültige E-Mail-Adresse ein.",
+        "emailDuplicate": "Person {{number}}: Jede unterzeichnende Person braucht eine eigene E-Mail-Adresse.",
+        "notDraft": "Der Vertrag wurde bereits versendet, die Unterzeichnenden können nicht mehr geändert werden.",
+        "invalid": "Prüfen Sie Namen und E-Mail-Adressen: Jede unterzeichnende Person braucht einen Namen und eine eigene, gültige E-Mail-Adresse.",
+        "generic": "Die Unterzeichnenden konnten nicht gespeichert werden. Versuchen Sie es erneut."
+      },
+      "saved": "Unterzeichnende gespeichert.",
+      "issuerYou": "Sie (Aussteller)",
+      "empty": "Noch keine Unterzeichnenden hinzugefügt – standardmäßig unterschreibt der Kunde des Vertrags ({{name}}).",
+      "emptyNoName": "Noch keine Unterzeichnenden hinzugefügt – standardmäßig unterschreibt der Kunde des Vertrags.",
+      "issuerRow": "Unterschreibt zuletzt, auf dieser Seite",
+      "title": "Unterzeichnende",
+      "unsaved": "Nicht gespeicherte Änderungen",
+      "hint": "Wird getrennt vom Vertrag gespeichert. Die Unterzeichnenden können geändert werden, bis der Vertrag versendet ist.",
+      "loadError": "Die Unterzeichnenden konnten nicht geladen werden. Laden Sie die Seite neu, um es erneut zu versuchen.",
+      "nameOf": "Name von Person {{number}}",
+      "nameLabel": "Name",
+      "emailOf": "E-Mail von Person {{number}}",
+      "emailLabel": "E-Mail",
+      "remove": "Person {{number}} entfernen",
+      "onlyListedHint": "Nur die hier aufgeführten Personen unterschreiben. Fügen Sie auch den Kunden hinzu, wenn er unterschreiben soll.",
+      "add": "Person hinzufügen",
+      "max": "Sie können bis zu {{max}} Personen hinzufügen.",
+      "orderLabel": "Reihenfolge",
+      "orderParallel": "Alle gleichzeitig",
+      "orderSequential": "Nacheinander",
+      "orderParallelHint": "Alle erhalten ihren Link, sobald Sie den Vertrag versenden.",
+      "orderSequentialHint": "Die Personen erhalten ihren Link in der angegebenen Reihenfolge, jeweils sobald die vorherige unterschrieben hat.",
+      "saving": "Wird gespeichert…",
+      "save": "Unterzeichnende speichern",
+      "resent": "Ein neuer Link wurde an {{email}} gesendet.",
+      "resendNotDue": "Diese Person kann jetzt keinen neuen Link erhalten: Sie ist noch nicht an der Reihe oder hat bereits unterschrieben.",
+      "resendNotSignable": "Links können nur erneut gesendet werden, solange der Vertrag zur Unterschrift versendet ist.",
+      "resendError": "Der Link konnte nicht erneut gesendet werden. Versuchen Sie es erneut.",
+      "status": {
+        "signed": "Unterschrieben",
+        "declined": "Abgelehnt",
+        "invited": "Link gesendet",
+        "issuerPending": "Zeichnet zuletzt gegen",
+        "pending": "Noch nicht eingeladen"
+      },
+      "via": {
+        "otp": "E-Mail mit Code bestätigt",
+        "portal": "Im Kundenportal angemeldet",
+        "admin": "Hier gegengezeichnet"
+      },
+      "countersignLater": "Sie zeichnen hier gegen, sobald alle Personen auf Kundenseite unterschrieben haben.",
+      "role": {
+        "issuer": "Aussteller",
+        "customer": "Kunde"
+      },
+      "invitedAt": "Link gesendet am {{date}}",
+      "signedAt": "Unterschrieben am {{date}}",
+      "mode": {
+        "drawn": "Gezeichnete Unterschrift",
+        "typed": "Eingegebener Name"
+      },
+      "declinedAt": "Abgelehnt am {{date}}",
+      "resendConfirm": "{{name}} einen neuen Link zum Unterschreiben senden? Der bisherige Link funktioniert dann nicht mehr.",
+      "resend": "Link erneut senden",
+      "log": {
+        "title": "Signaturprotokoll",
+        "chainOk": "Kette intakt",
+        "chainCount": "Geprüfte Einträge: {{count}}",
+        "chainBroken": "Kette unterbrochen bei #{{seq}}",
+        "help": "Jeder Schritt der Unterzeichnung in zeitlicher Reihenfolge. Jeder Eintrag ist mit dem vorherigen verkettet, sodass eine Änderung an einem Eintrag bei der Prüfung auffällt.",
+        "empty": "Noch keine Einträge.",
+        "type": {
+          "sent": "Zur Unterschrift versendet",
+          "invited": "Link gesendet",
+          "invitation_resent": "Link erneut gesendet",
+          "code_sent": "Code per E-Mail gesendet",
+          "verified": "E-Mail bestätigt",
+          "signed": "Unterschrieben",
+          "declined": "Abgelehnt",
+          "countersigned": "Gegengezeichnet",
+          "completed": "Abgeschlossen",
+          "wet_upload": "Unterschriebenes PDF hochgeladen",
+          "revoked": "Links zurückgezogen"
+        },
+        "actor": {
+          "admin": "Admin",
+          "signer": "Unterzeichnende Person",
+          "system": "System"
+        },
+        "reason": {
+          "missing_event": "Ein Eintrag fehlt.",
+          "broken_link": "Ein Eintrag ist nicht mit dem vorherigen verknüpft.",
+          "altered_event": "Ein Eintrag wurde nachträglich verändert.",
+          "head_mismatch": "Der letzte Eintrag stimmt nicht mit dem gespeicherten Ende der Kette überein."
+        }
+      },
+      "evidence": {
+        "hide": "Nachweise ausblenden",
+        "show": "Nachweise anzeigen",
+        "note": "Zeigt die für jede Person erfasste IP-Adresse, den Browser und den Ablehnungsgrund. Jedes Öffnen wird im Aktivitätsprotokoll festgehalten.",
+        "error": "Die Nachweise konnten nicht geladen werden. Versuchen Sie es erneut.",
+        "empty": "Noch nichts erfasst.",
+        "ip": "IP-Adresse",
+        "userAgent": "Browser",
+        "declineReason": "Ablehnungsgrund",
+        "signatureSha": "SHA-256 des Unterschriftsbilds",
+        "documentSha": "SHA-256 des unterschriebenen Dokuments"
       }
     }
   },
@@ -7472,7 +8126,12 @@
     "submit": "Vertrag unterschreiben",
     "uploadAlternative": "Oder ein handschriftlich unterschriebenes PDF hochladen",
     "uploadHint": "Unterschreiben Sie den ausgedruckten Vertrag von Hand, scannen Sie ihn ein und laden Sie das PDF hier hoch.",
-    "uploadButton": "Unterschriebenes PDF hochladen"
+    "uploadButton": "Unterschriebenes PDF hochladen",
+    "attachments": {
+      "title": "Anhänge",
+      "download": "Herunterladen",
+      "inPdf": "Teil des Vertrags-PDFs"
+    }
   },
   "crmOverview": {
     "title": "CRM-Übersicht",
@@ -7595,6 +8254,123 @@
       "body": "{{count}} Personen auf einmal von einer Domain anzuschreiben, die sonst nur Transaktionsmails versendet, lässt Spamfilter aufmerksam werden. Anbieter können den gesamten Versand drosseln, als Spam einstufen oder blockieren — und ein schlechter Lauf beeinträchtigt auch die Zustellung Ihrer Galerie-E-Mails.",
       "advice": "Stellen Sie sicher, dass SPF, DKIM und DMARC für Ihre Versanddomain eingerichtet sind, senden Sie sich zuerst einen Test, und teilen Sie eine erste Kampagne nach Möglichkeit in mehrere kleinere Sendungen auf.",
       "duration": "Bei {{rate}}/Minute dauert dies etwa {{minutes}} Minuten. Die Versand-Warteschlange wird geteilt: Während der Kampagne können andere E-Mails — Galerie-Einladungen, Passwort-Zurücksetzungen — dahinter verzögert werden."
+    }
+  },
+  "contractSigning": {
+    "gone": {
+      "revokedTitle": "Dieser Link funktioniert nicht mehr",
+      "revokedBody": "Es wurde ein neuerer Link verschickt, oder der Vertrag kann nicht mehr unterschrieben werden. Verwenden Sie den Link aus der neuesten E-Mail oder wenden Sie sich an den Absender.",
+      "expiredTitle": "Dieser Link ist abgelaufen",
+      "expiredBody": "Bitten Sie den Absender, Ihnen einen neuen Link zum Unterschreiben zu senden.",
+      "withdrawnTitle": "Dieser Vertrag wurde zurückgezogen",
+      "withdrawnBody": "Der Absender hat diesen Vertrag zurückgezogen, daher kann er nicht mehr unterschrieben werden. Bei Fragen wenden Sie sich bitte an den Absender."
+    },
+    "loadError": {
+      "title": "Diese Seite konnte nicht geladen werden",
+      "body": "Prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.",
+      "retry": "Erneut versuchen"
+    },
+    "portal": {
+      "endedTitle": "Ihre Sitzung zum Unterschreiben ist abgelaufen",
+      "endedBody": "Öffnen Sie den Vertrag erneut über Ihr Kundenportal, um fortzufahren.",
+      "backToContracts": "Zu Ihren Verträgen"
+    },
+    "verify": {
+      "heading": "Vertrag {{number}}",
+      "from": "{{company}} bittet Sie, diesen Vertrag zu unterschreiben."
+    },
+    "sessionEnded": "Ihre Sitzung zum Unterschreiben ist abgelaufen. Bestätigen Sie Ihre E-Mail-Adresse erneut, um fortzufahren.",
+    "documents": {
+      "downloadError": "Die Datei konnte nicht heruntergeladen werden. Versuchen Sie es gleich noch einmal.",
+      "title": "Dokumente",
+      "downloading": "Wird vorbereitet…",
+      "downloadPdf": "Vertrag herunterladen (PDF)"
+    },
+    "upload": {
+      "doneTitle": "Vielen Dank – Ihr unterschriebenes PDF wurde hochgeladen.",
+      "doneBody": "Sie können diese Seite jetzt schließen.",
+      "errors": {
+        "disabled": "Das Hochladen eines unterschriebenen PDFs ist für diesen Vertrag deaktiviert. Bitte unterschreiben Sie direkt im Browser.",
+        "generic": "Das Hochladen ist fehlgeschlagen. Stellen Sie sicher, dass die Datei ein PDF unter 10 MB ist, und versuchen Sie es erneut."
+      }
+    },
+    "declined": {
+      "title": "Sie haben diesen Vertrag abgelehnt",
+      "body": "Der Absender wurde informiert. Falls das ein Versehen war, wenden Sie sich an den Absender – er kann Ihnen einen neuen Vertrag senden.",
+      "otherTitle": "Dieser Vertrag wurde abgelehnt",
+      "otherBody": "Eine andere Person hat ihn abgelehnt, daher kann er nicht mehr unterschrieben werden."
+    },
+    "waiting": {
+      "title": "Sie sind noch nicht an der Reihe",
+      "body": "Die Personen vor Ihnen unterschreiben zuerst. Wir benachrichtigen Sie per E-Mail, sobald Sie an der Reihe sind."
+    },
+    "notSignable": {
+      "title": "Dieser Vertrag wartet nicht auf Ihre Unterschrift",
+      "body": "Im Moment gibt es für Sie nichts zu unterschreiben. Wenden Sie sich an den Absender, falls Sie eine Unterschrift erwartet haben."
+    },
+    "signers": {
+      "title": "Wer unterschreibt",
+      "sequential": "Es wird nacheinander in dieser Reihenfolge unterschrieben.",
+      "parallel": "Alle können gleichzeitig unterschreiben.",
+      "issuer": "Zeichnet zuletzt gegen",
+      "status": {
+        "signed": "Unterschrieben",
+        "declined": "Abgelehnt",
+        "pending": "Noch nicht unterschrieben"
+      }
+    },
+    "result": {
+      "complete": "Alle haben unterschrieben – der Vertrag ist vollständig.",
+      "issuerNext": "Alle haben unterschrieben. Der Vertrag wird jetzt gegengezeichnet, und Sie erhalten das endgültige PDF per E-Mail.",
+      "othersPending": "Der Vertrag ist vollständig, sobald alle unterschrieben haben. Wir senden Ihnen dann das endgültige PDF per E-Mail.",
+      "title": "Vielen Dank – Sie haben den Vertrag unterschrieben.",
+      "signedAt": "Unterschrieben am {{date}}"
+    },
+    "sign": {
+      "errors": {
+        "notYourTurn": "Zuerst muss eine andere Person unterschreiben. Wir benachrichtigen Sie per E-Mail, sobald Sie an der Reihe sind.",
+        "notSignable": "Dieser Vertrag kann nicht mehr unterschrieben werden – er wurde möglicherweise zurückgezogen oder abgelehnt. Bei Fragen wenden Sie sich an den Absender.",
+        "drawOrType": "Zeichnen Sie Ihre Unterschrift in das Feld, oder geben Sie stattdessen Ihren Namen ein.",
+        "tooLarge": "Ihre gezeichnete Unterschrift ist zu groß zum Speichern. Löschen Sie sie und zeichnen Sie sie erneut.",
+        "generic": "Ihre Unterschrift konnte nicht gespeichert werden. Versuchen Sie es erneut; falls es weiterhin nicht klappt, wenden Sie sich an den Absender."
+      },
+      "modeLabel": "Wie möchten Sie unterschreiben?",
+      "modeDrawn": "Zeichnen",
+      "modeTyped": "Namen eingeben",
+      "typedHint": "Ihr oben eingegebener Name wird in Ihr Unterschriftsfeld eingesetzt.",
+      "submitting": "Wird unterschrieben…"
+    },
+    "otp": {
+      "errors": {
+        "network": "Der Server ist nicht erreichbar. Prüfen Sie Ihre Internetverbindung und versuchen Sie es erneut.",
+        "wrong": "Dieser Code ist nicht korrekt. Prüfen Sie die neueste E-Mail und geben Sie die sechs Ziffern erneut ein.",
+        "expired": "Dieser Code ist abgelaufen oder wurde bereits verwendet. Fordern Sie einen neuen Code an.",
+        "locked": "Zu viele falsche Versuche für diesen Code. Fordern Sie einen neuen Code an.",
+        "rateLimited": "Sie haben in der letzten Stunde mehrere Codes angefordert. Verwenden Sie den neuesten Code aus Ihrer E-Mail, oder versuchen Sie es in einer Stunde erneut.",
+        "tooManyRequests": "Zu viele Versuche von dieser Verbindung. Warten Sie einige Minuten und versuchen Sie es dann erneut.",
+        "generic": "Etwas ist schiefgelaufen. Versuchen Sie es erneut; falls es weiterhin auftritt, wenden Sie sich an den Absender.",
+        "format": "Geben Sie den sechsstelligen Code aus der E-Mail ein."
+      },
+      "title": "E-Mail-Adresse bestätigen",
+      "intro": "Bevor Sie den Vertrag lesen und unterschreiben können, senden wir einen sechsstelligen Code an {{email}}.",
+      "sending": "Wird gesendet…",
+      "send": "Code senden",
+      "sent": "Wir haben einen Code an {{email}} gesendet. Die Zustellung kann bis zu einer Minute dauern; der Code ist {{minutes}} Minuten gültig.",
+      "codeLabel": "Sechsstelliger Code",
+      "verifying": "Wird geprüft…",
+      "verify": "Code bestätigen",
+      "resend": "Neuen Code senden"
+    },
+    "decline": {
+      "error": "Der Vertrag konnte nicht abgelehnt werden. Versuchen Sie es erneut; falls es weiterhin nicht klappt, wenden Sie sich an den Absender.",
+      "open": "Vertrag ablehnen",
+      "confirmTitle": "Diesen Vertrag ablehnen?",
+      "confirmBody": "Der Absender wird informiert, dass Sie abgelehnt haben, und niemand kann diesen Vertrag mehr unterschreiben. Das lässt sich nicht rückgängig machen.",
+      "reasonLabel": "Grund (optional)",
+      "reasonHint": "Wird dem Absender mitgeteilt.",
+      "keep": "Nicht ablehnen",
+      "declining": "Wird abgelehnt…",
+      "confirm": "Vertrag ablehnen"
     }
   }
 }

@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import {
   Calendar,
   FileText,
+  FolderOpen,
   Image as ImageIcon,
   LogOut,
   Menu,
@@ -46,7 +47,7 @@ interface NavItem {
    * Galleries + Profile are always visible; Calendar/Quotes/Bills are
    * gated.
    */
-  feature?: 'calendar' | 'quotes' | 'bills' | 'contracts';
+  feature?: 'calendar' | 'quotes' | 'bills' | 'contracts' | 'documents';
 }
 
 const NAV: NavItem[] = [
@@ -55,6 +56,7 @@ const NAV: NavItem[] = [
   { to: '/customer/quotes', labelKey: 'customer.nav.quotes', fallback: 'Quotes', icon: FileText, feature: 'quotes' },
   { to: '/customer/contracts', labelKey: 'customer.nav.contracts', fallback: 'Contracts', icon: ScrollText, feature: 'contracts' },
   { to: '/customer/bills', labelKey: 'customer.nav.bills', fallback: 'Invoices', icon: Receipt, feature: 'bills' },
+  { to: '/customer/documents', labelKey: 'customer.nav.documents', fallback: 'Documents', icon: FolderOpen, feature: 'documents' },
   { to: '/customer/profile', labelKey: 'customer.nav.profile', fallback: 'Profile', icon: UserIcon },
 ];
 
@@ -104,7 +106,11 @@ export const CustomerLayout: React.FC = () => {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/customer/login" replace />;
+    // Keep the requested page so a deep link (e.g. from an email) survives
+    // the login. The login page only follows it back into /customer/*, and
+    // the target page re-checks access after login.
+    const returnTo = `${location.pathname}${location.search}`;
+    return <Navigate to={`/customer/login?returnTo=${encodeURIComponent(returnTo)}`} replace />;
   }
 
   const greetingName = customer?.displayName

@@ -511,7 +511,9 @@ async function listCustomers({ search } = {}) {
       'customer_accounts.feature_bills',
       'customer_accounts.feature_hours_logging',
       'customer_accounts.feature_contracts',
+      'customer_accounts.feature_documents',
       'customer_accounts.hourly_rate_minor',
+      'customer_accounts.day_rate_minor',
       'customer_accounts.last_login',
       'customer_accounts.created_at',
       db.raw('COUNT(event_customer_assignments.id) as event_count')
@@ -585,6 +587,8 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     // Per-customer contracts override (migration 131). Defaults TRUE so
     // existing customers keep their Contracts tab.
     'feature_contracts',
+    // Per-customer documents override (migration 220). Defaults TRUE.
+    'feature_documents',
     // CRM billing cadence (migration 102). 'per_event' (default) keeps
     // each invoice firing on its own schedule; monthly/quarterly snap
     // every scheduled invoice to billing_cycle_day of the next period.
@@ -592,6 +596,9 @@ async function updateCustomer(id, updates, updatedByAdminId) {
     // Hour-logging default rate (migration 129). Minor units; null
     // means admin must enter a per-entry override on every entry.
     'hourly_rate_minor',
+    // Default day rate for per-day quote lines (migration 215). Minor
+    // units; null falls back to the business default.
+    'day_rate_minor',
     // Per-customer Skonto opt-out (migration 112). Boolean, coerced
     // via formatBoolean below for SQLite compatibility.
     'skonto_disabled',
@@ -617,6 +624,7 @@ async function updateCustomer(id, updates, updatedByAdminId) {
         f === 'feature_calendar' || f === 'feature_quotes'
         || f === 'feature_bills' || f === 'feature_hours_logging'
         || f === 'feature_contracts'
+        || f === 'feature_documents'
         || f === 'skonto_disabled'
       ) {
         allowed[f] = formatBoolean(updates[f]);
@@ -647,6 +655,14 @@ async function updateCustomer(id, updates, updatedByAdminId) {
         // Default hourly rate. Null clears it (forces per-entry
         // overrides); otherwise coerce to a non-negative bigint-safe
         // integer. Anything funky → null.
+        if (updates[f] === null || updates[f] === '') {
+          allowed[f] = null;
+        } else {
+          const v = parseInt(updates[f], 10);
+          allowed[f] = Number.isFinite(v) && v >= 0 ? v : null;
+        }
+      } else if (f === 'day_rate_minor') {
+        // Default day rate — same rules as the hourly one above.
         if (updates[f] === null || updates[f] === '') {
           allowed[f] = null;
         } else {
@@ -822,7 +838,15 @@ async function eraseCustomer(id, erasedByAdminId) {
   // collide on the unique index.
   const sentinelEmail = `deleted-${id}-${crypto.randomBytes(4).toString('hex')}@deleted.invalid`;
 
+  // Portal documents (#1444): anything not linked to a contract is deleted
+  // with the account; its bytes are removed once the transaction commits.
+  // Contract-linked documents stay as part of the contractual record.
+  const customerDocumentsService = require('./customerDocumentsService');
+  let erasedDocuments = [];
+
   await db.transaction(async (trx) => {
+    erasedDocuments = await customerDocumentsService.markErasedForCustomer(id, trx);
+
     await trx('customer_accounts').where('id', id).update({
       email: sentinelEmail,
       salutation: null,
@@ -874,6 +898,8 @@ async function eraseCustomer(id, erasedByAdminId) {
         .update({ customer_account_id: null, disposition: null, status: 'unsorted', updated_at: new Date() });
     }
   });
+
+  await customerDocumentsService.purgeFiles(erasedDocuments);
 
   await logActivity('customer_erased',
     { customerId: id, originalEmail: customer.email },
@@ -1206,6 +1232,8 @@ async function listEventsForCustomer(customerId) {
       'events.event_date',
       'events.expires_at',
       'events.is_active',
+      // Needed to tell an unpublished draft from an open gallery (#1444).
+      'events.is_draft',
       'event_customer_assignments.assigned_at'
     )
     .orderBy('events.event_date', 'desc');
@@ -1350,7 +1378,7 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
     ? await db('customer_accounts').where('id', customerOrId).first()
     : customerOrId;
   if (!customer) {
-    return { calendar: false, quotes: false, bills: false, hoursLogging: false, contracts: false };
+    return { calendar: false, quotes: false, bills: false, hoursLogging: false, contracts: false, documents: false };
   }
   const globals = await getCustomerSurfaceGlobals();
   // SQLite returns booleans as 0/1; Postgres returns true/false. The
@@ -1370,12 +1398,18 @@ async function getEffectiveFeaturesForCustomer(customerOrId) {
   // keep their Contracts tab; an admin can hide it per customer.
   const contractsMaster = await db('feature_flags').where({ key: 'contracts' }).first();
   const contractsEnabled = contractsMaster ? Boolean(contractsMaster.value) : false;
+  // Documents (migration 220): global `documents` flag AND the per-customer
+  // override, which defaults TRUE like feature_contracts. A missing flag row
+  // reads as off.
+  const documentsMaster = await db('feature_flags').where({ key: 'documents' }).first();
+  const documentsEnabled = documentsMaster ? truthy(documentsMaster.value) : false;
   return {
     calendar: globals.calendarEnabled && truthy(customer.feature_calendar),
     quotes:   globals.quotesEnabled   && truthy(customer.feature_quotes),
     bills:    globals.billsEnabled    && truthy(customer.feature_bills),
     hoursLogging: hoursLoggingMaster && truthy(customer.feature_hours_logging),
     contracts: contractsEnabled && truthy(customer.feature_contracts),
+    documents: documentsEnabled && truthy(customer.feature_documents),
   };
 }
 

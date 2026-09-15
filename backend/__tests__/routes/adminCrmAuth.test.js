@@ -39,6 +39,7 @@ const {
 // require pre-seeded resource ids.
 const ROUTES = [
   { name: 'adminQuotes',          mount: '/api/admin/quotes',           loader: () => require('../../src/routes/adminQuotes'),          getPath: '/' },
+  { name: 'adminQuoteCatalog',    mount: '/api/admin/quote-catalog',    loader: () => require('../../src/routes/adminQuoteCatalog'),    getPath: '/templates' },
   { name: 'adminContracts',       mount: '/api/admin/contracts',        loader: () => require('../../src/routes/adminContracts'),       getPath: '/' },
   { name: 'adminInvoices',        mount: '/api/admin/invoices',         loader: () => require('../../src/routes/adminInvoices'),        getPath: '/' },
   { name: 'adminCalendar',        mount: '/api/admin/calendar',         loader: () => require('../../src/routes/adminCalendar'),        getPath: '/items?from=2026-01-01&to=2026-12-31' },
@@ -74,7 +75,7 @@ describe('admin CRM routes — auth + permission gate', () => {
     // first and never reach the flag check, so they're unaffected.
     // `accounting` is the master flag the tax-report route now requires
     // (tax export moved out of CRM into Accounting, independent of bills).
-    const crmFlags = ['quotes', 'bills', 'contracts', 'hoursLogging', 'calendar', 'taxReport', 'clients', 'accounting'];
+    const crmFlags = ['quotes', 'bills', 'contracts', 'hoursLogging', 'calendar', 'taxReport', 'clients', 'accounting', 'documents'];
     for (const key of crmFlags) {
       // eslint-disable-next-line no-await-in-loop
       await db('feature_flags').where({ key }).update({ value: 1 });
@@ -153,6 +154,34 @@ describe('admin CRM routes — auth + permission gate', () => {
       const res = await request(app)
         .post(`/api/admin/customers/${customerId}/trigger-monthly-bill`)
         .send({});
+      expect(res.status).toBe(401);
+    });
+  });
+
+  describe('adminCustomers — customer documents (#1444)', () => {
+    let app;
+    beforeAll(() => {
+      app = buildRouteApp('/api/admin/customers', require('../../src/routes/adminCustomers'));
+    });
+
+    it('GET /:id/documents — 401 without token', async () => {
+      const res = await request(app).get(`/api/admin/customers/${customerId}/documents`);
+      expect(res.status).toBe(401);
+    });
+
+    it('GET /:id/documents — 2xx with super-admin token', async () => {
+      const res = await request(app)
+        .get(`/api/admin/customers/${customerId}/documents`)
+        .set('Authorization', `Bearer ${superAdminToken}`);
+      expect(res.status).not.toBe(401);
+      expect(res.status).not.toBe(403);
+      expect(res.status).toBeLessThan(500);
+    });
+
+    it('POST /:id/documents/:docId/review — 401 without token', async () => {
+      const res = await request(app)
+        .post(`/api/admin/customers/${customerId}/documents/1/review`)
+        .send({ status: 'clean' });
       expect(res.status).toBe(401);
     });
   });

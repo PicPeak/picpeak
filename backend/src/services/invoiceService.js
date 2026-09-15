@@ -42,7 +42,7 @@ const {
 } = drafts;
 const { createInvoice, spawnInstallmentInvoices, scheduleInvoicesForEvent } = create;
 const { updateInstallmentPlan, validateInstallmentPlanInput } = installmentPlan;
-const { renderInvoicePdfBuffer, renderInvoicePdfFromPayload } = render;
+const { renderInvoicePdfBuffer, renderInvoicePdfFromPayload, getInvoicePdfBuffer } = render;
 const {
   sendReminder, applyReminder, resolveLateFeeNetMinor, resolveLateFeeVatRate,
   resolvePerReminderFeeMinor, resolveSkontoPercentForInvoice,
@@ -82,6 +82,7 @@ module.exports = {
   recordPaymentCheckAction,
   renderInvoicePdfBuffer,
   renderInvoicePdfFromPayload,
+  getInvoicePdfBuffer,
   runScheduledTasks,
   resolveSkontoPercentForInvoice,
   // Monthly billing accumulator (migration 128) — exposed so

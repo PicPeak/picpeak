@@ -13,8 +13,9 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { AlertCircle, RefreshCw, Trash2, CheckCircle, Clock, Mail, MailX } from 'lucide-react';
+import { AlertCircle, RefreshCw, Trash2, CheckCircle, Clock, FileCheck, KeyRound, Mail, MailX } from 'lucide-react';
 import { Button, Card, Loading } from '../../components/common';
+import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { useMutationWithToast } from '../../hooks';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { systemHealthService, type StuckEmail } from '../../services/systemHealth.service';
@@ -22,6 +23,7 @@ import { systemHealthService, type StuckEmail } from '../../services/systemHealt
 export const SystemHealthPage: React.FC = () => {
   const { t } = useTranslation();
   const { formatDateTime: fmtDateTime } = useLocalizedDate();
+  const { flags } = useFeatureFlags();
 
   const { data, isLoading } = useQuery({
     queryKey: ['system-health-failures'],
@@ -181,6 +183,66 @@ export const SystemHealthPage: React.FC = () => {
                     })}
                   </>
                 )}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Customer documents (#1444). Uploads stay unavailable to the customer
+          until someone reviews them on the customer record, so a pending
+          count here is work waiting, not an error. */}
+      {!isLoading && data?.customerDocuments
+        && (flags.documents || data.customerDocuments.pending + data.customerDocuments.rejected > 0) && (
+        <Card padding="lg" className="mb-4">
+          <div className="flex items-start gap-3">
+            <FileCheck className="w-5 h-5 mt-0.5 text-neutral-500 dark:text-neutral-400 shrink-0" />
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                {t('systemHealth.customerDocuments.title', 'Customer documents')}
+              </h2>
+              <p className="text-sm mt-0.5 text-neutral-600 dark:text-neutral-400">
+                {t('systemHealth.customerDocuments.counts', '{{pending}} awaiting review, {{rejected}} rejected.', {
+                  pending: data.customerDocuments.pending,
+                  rejected: data.customerDocuments.rejected,
+                })}
+              </p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                {t('systemHealth.customerDocuments.hint',
+                  'Customer uploads stay unavailable to them until they are marked clean on the customer record. Rejected files are deleted after the retention period.')}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Where the key for signing evidence comes from (#1446) — never the key
+          itself. Shown while contracts are on, or once a key exists. */}
+      {!isLoading && data?.evidenceKey && (flags.contracts || data.evidenceKey.source !== 'none') && (
+        <Card padding="lg" className="mb-4">
+          <div className="flex items-start gap-3">
+            <KeyRound className={`w-5 h-5 mt-0.5 shrink-0 ${data.evidenceKey.source === 'unreadable'
+              ? 'text-red-600 dark:text-red-400' : 'text-neutral-500 dark:text-neutral-400'}`} />
+            <div className="min-w-0">
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+                {t('systemHealth.evidenceKey.title', 'Signing evidence key')}
+              </h2>
+              <p className={`text-sm mt-0.5 ${data.evidenceKey.source === 'unreadable'
+                ? 'text-red-700 dark:text-red-300' : 'text-neutral-600 dark:text-neutral-400'}`}>
+                {{
+                  env: t('systemHealth.evidenceKey.env', 'Set with PICPEAK_EVIDENCE_KEY.'),
+                  file: t('systemHealth.evidenceKey.file', 'Stored in business-docs/keys/evidence.key, which is part of every backup.'),
+                  none: t('systemHealth.evidenceKey.none', 'Not created yet. It is created with the first signature.'),
+                  unreadable: t('systemHealth.evidenceKey.unreadable',
+                    'The key file can\'t be read. Restore it from a backup, otherwise stored signing evidence can\'t be decrypted.'),
+                }[data.evidenceKey.source]}
+                {data.evidenceKey.keyId && (
+                  <span className="font-mono"> · {t('systemHealth.evidenceKey.id', 'Key ID {{id}}', { id: data.evidenceKey.keyId })}</span>
+                )}
+              </p>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                {t('systemHealth.evidenceKey.hint',
+                  'Signers\' IP addresses and browsers are stored encrypted with this key. Without it that evidence can\'t be read; the signatures and PDFs stay valid.')}
               </p>
             </div>
           </div>

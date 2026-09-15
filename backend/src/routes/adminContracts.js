@@ -28,14 +28,17 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const { assertContractPdfPath } = require('../utils/safePath');
-const { body, param, query } = require('express-validator');
+const { body, header, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { validateFileType } = require('../utils/fileSecurityUtils');
 const contractService = require('../services/contractService');
 const contractBlocksService = require('../services/contractBlocksService');
+const contractContent = require('../services/contract/content');
+const contractAttachments = require('../services/contract/attachments');
 const { db } = require('../database/db');
+const { clientIpForAudit } = require('../utils/clientIp');
 
 const router = express.Router();
 
@@ -91,7 +94,7 @@ const signedPdfUpload = multer({
 // Transforms (snake_case DB → camelCase API)
 // ---------------------------------------------------------------------
 
-function transformContract(c, inclusions) {
+function transformContract(c, inclusions, textSections, attachmentRows) {
   if (!c) return null;
   return {
     id: c.id,
@@ -158,6 +161,23 @@ function transformContract(c, inclusions) {
     // service writes them through hasColumn guards).
     sourceQuoteId: c.source_quote_id || null,
     convertedEventId: c.converted_event_id || null,
+    // Contract templates (#1445).
+    templateId: c.template_id || null,
+    templateVersionId: c.template_version_id || null,
+    templateName: c.template_name || null,
+    templateVersion: c.template_version_number == null ? null : Number(c.template_version_number),
+    lockVersion: c.lock_version == null ? 1 : Number(c.lock_version),
+    renderedContentSha256: c.rendered_content_sha256 || null,
+    textSections: Array.isArray(textSections)
+      ? textSections.map((s) => ({
+        id: s.id,
+        section: s.section,
+        position: s.position,
+        heading: s.heading || null,
+        body: contractContent.parseLocaleMap(s.body),
+      }))
+      : undefined,
+    attachments: Array.isArray(attachmentRows) ? attachmentRows.map(contractAttachments.inclusionToApi) : undefined,
     createdAt: c.created_at,
     updatedAt: c.updated_at,
     inclusions: Array.isArray(inclusions)
@@ -173,10 +193,17 @@ function transformContract(c, inclusions) {
           description: inc.block_description,
           bodyText: inc.block_body_text,
           bodyTextDe: inc.block_body_text_de,
+          bodyTextRu: inc.block_body_text_ru ?? null,
+          bodyTextPt: inc.block_body_text_pt ?? null,
+          bodyTextNl: inc.block_body_text_nl ?? null,
+          bodyTextFr: inc.block_body_text_fr ?? null,
           isSystem: inc.block_is_system === true || inc.block_is_system === 1 || inc.block_is_system === '1',
         },
         bodyTextSnapshot: inc.body_text_snapshot,
         bodyTextDeSnapshot: inc.body_text_de_snapshot,
+        // #1445: every frozen language, and the per-contract override.
+        snapshot: contractContent.inclusionSnapshot(inc),
+        bodyOverride: contractContent.parseLocaleMap(inc.body_override),
       }))
       : undefined,
   };
@@ -339,12 +366,45 @@ router.post(
     body('outroText').optional({ nullable: true }).isString(),
     body('issueDate').optional({ nullable: true }).isISO8601(),
     body('validUntil').optional({ nullable: true }).isISO8601(),
+    body('blocks').optional().isArray(),
+    body('blocks.*.blockId').optional().isInt({ min: 1 }),
+    body('blocks.*.included').optional().isBoolean(),
+    body('blocks.*.position').optional().isInt({ min: 0 }),
+    // Contract templates (#1445): the version to start from, per-clause
+    // overrides and free-text sections.
+    body('templateVersionId').optional({ nullable: true }).isInt({ min: 1 }),
+    body('blocks.*.body').optional({ nullable: true }).isObject(),
+    body('textSections').optional().isArray({ max: 100 }),
+    body('textSections.*.section').optional().isString().isLength({ max: 32 }),
+    body('textSections.*.position').optional().isInt({ min: 0 }),
+    body('textSections.*.heading').optional({ nullable: true }).isString().isLength({ max: 255 }),
+    body('textSections.*.body').optional({ nullable: true }).isObject(),
+    // The editor sends one key per save and reuses it on retry (issue 1447).
+    header('Idempotency-Key').optional()
+      .matches(/^[A-Za-z0-9_-]{8,128}$/)
+      .withMessage('Idempotency-Key must be 8-128 letters, digits, "-" or "_"'),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const id = await contractService.createContract(req.body, req.admin?.id);
+    const { id, replayed } = await contractService.createContractIdempotent(
+      req.body, req.admin?.id, req.get('Idempotency-Key') || null,
+    );
+    // One line per successful create, keyed by outcome, so log monitoring can
+    // count created drafts and idempotent replays separately. Failures are
+    // logged by the error handler with the same requestId and an errorCode
+    // (VALIDATION_ERROR, IDEMPOTENCY_KEY_CONFLICT, ...) or errorClass.
+    require('../utils/logger').info('contract_create', {
+      outcome: replayed ? 'replayed' : 'created',
+      contractId: id,
+      adminId: req.admin?.id,
+      requestId: req.id,
+    });
     const data = await contractService.getContractById(id);
-    return successResponse(res, { contract: transformContract(data.contract, data.inclusions) }, 201);
+    return successResponse(
+      res,
+      { contract: transformContract(data.contract, data.inclusions, data.textSections, data.attachments), ...(replayed && { replayed: true }) },
+      replayed ? 200 : 201,
+    );
   }),
 );
 
@@ -356,7 +416,23 @@ router.get(
     validateRequest(req);
     const data = await contractService.getContractById(parseInt(req.params.id, 10));
     if (!data) return res.status(404).json({ error: 'Contract not found' });
-    return successResponse(res, { contract: transformContract(data.contract, data.inclusions) });
+    return successResponse(res, { contract: transformContract(data.contract, data.inclusions, data.textSections, data.attachments) });
+  }),
+);
+
+// The PDFs generated for this contract (#1445): unsigned, signed, audit
+// certificate — kind, sha256, size, pages, template version. No paths.
+router.get(
+  '/:id/documents',
+  requirePermission('contracts.view'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const id = parseInt(req.params.id, 10);
+    const exists = await db('contracts').where({ id }).first('id');
+    if (!exists) return res.status(404).json({ error: 'Contract not found' });
+    const documents = await require('../services/documentArtifactService').listForDocument('contract', id);
+    return successResponse(res, { documents });
   }),
 );
 
@@ -379,12 +455,23 @@ router.put(
     body('blocks.*.blockId').optional().isInt({ min: 1 }),
     body('blocks.*.included').optional().isBoolean(),
     body('blocks.*.position').optional().isInt({ min: 0 }),
+    body('blocks.*.body').optional({ nullable: true }).isObject(),
+    body('textSections').optional().isArray({ max: 100 }),
+    body('textSections.*.section').optional().isString().isLength({ max: 32 }),
+    body('textSections.*.position').optional().isInt({ min: 0 }),
+    body('textSections.*.heading').optional({ nullable: true }).isString().isLength({ max: 255 }),
+    body('textSections.*.body').optional({ nullable: true }).isObject(),
+    // Optimistic lock (#1445): the lockVersion the editor loaded.
+    body('lockVersion').optional().isInt({ min: 1 }),
+    body('attachments').optional().isArray({ max: 20 }),
+    body('attachments.*.attachmentId').optional().isInt({ min: 1 }),
+    body('attachments.*.delivery').optional().isIn(['merged', 'separate']),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
     await contractService.updateContract(parseInt(req.params.id, 10), req.body, req.admin?.id);
     const data = await contractService.getContractById(parseInt(req.params.id, 10));
-    return successResponse(res, { contract: transformContract(data.contract, data.inclusions) });
+    return successResponse(res, { contract: transformContract(data.contract, data.inclusions, data.textSections, data.attachments) });
   }),
 );
 
@@ -484,6 +571,64 @@ router.post(
   }),
 );
 
+// Signers and the signing log (#1446). Reading needs contracts.view;
+// changing the signers, sending a link again and opening the encrypted
+// evidence need contracts.manage. Signers only change on drafts.
+router.get(
+  '/:id/signers',
+  requirePermission('contracts.view'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const signingV2 = require('../services/contract/signingV2');
+    return successResponse(res, await signingV2.adminOverview(parseInt(req.params.id, 10)));
+  }),
+);
+
+router.put(
+  '/:id/signers',
+  requirePermission('contracts.manage'),
+  [
+    param('id').isInt({ min: 1 }),
+    body('order').optional().isIn(['parallel', 'sequential']),
+    body('signers').isArray({ min: 1, max: 5 }),
+    body('signers.*.name').isString().trim().isLength({ min: 1, max: 255 }),
+    body('signers.*.email').isString().trim().isEmail().isLength({ max: 255 }),
+  ],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const id = parseInt(req.params.id, 10);
+    await require('../services/contract/signers').setSigners(id, { signers: req.body.signers, order: req.body.order });
+    return successResponse(res, await require('../services/contract/signingV2').adminOverview(id));
+  }),
+);
+
+router.post(
+  '/:id/signers/:signerId/resend',
+  requirePermission('contracts.manage'),
+  [param('id').isInt({ min: 1 }), param('signerId').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const signingV2 = require('../services/contract/signingV2');
+    return successResponse(res, await signingV2.resendInvitation(
+      parseInt(req.params.id, 10), parseInt(req.params.signerId, 10), req.admin?.id,
+    ));
+  }),
+);
+
+// The encrypted evidence (IP address, user agent, a decline reason),
+// decrypted for a dispute. Every opening is written to the activity log.
+router.get(
+  '/:id/signing-evidence',
+  requirePermission('contracts.manage'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const signingV2 = require('../services/contract/signingV2');
+    return successResponse(res, { evidence: await signingV2.revealEvidence(parseInt(req.params.id, 10), req.admin?.id) });
+  }),
+);
+
 router.post(
   '/:id/countersign',
   requirePermission('contracts.manage'),
@@ -491,13 +636,18 @@ router.post(
     param('id').isInt({ min: 1 }),
     body('name').isString().isLength({ min: 1, max: 255 }),
     body('signatureDataUrl').optional({ nullable: true }).isString(),
+    body('mode').optional().isIn(['drawn', 'typed']),
   ],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const ip = req.ip || req.headers['x-forwarded-for'] || null;
+    // req.ip only (utils/clientIp): X-Forwarded-For can be set by anyone.
+    const ip = clientIpForAudit(req);
     const result = await contractService.recordAdminCountersignature(
       parseInt(req.params.id, 10),
-      { name: req.body.name, ip, signatureDataUrl: req.body.signatureDataUrl },
+      {
+        name: req.body.name, ip, userAgent: req.get('user-agent') || null,
+        signatureDataUrl: req.body.signatureDataUrl, mode: req.body.mode,
+      },
       req.admin?.id,
     );
     return successResponse(res, result);

@@ -178,11 +178,15 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
     }
   }
 
-  // Notify admin.
+  // Notify admin, at the business address (Settings → business profile).
+  // This was queued without a recipient, which the email queue refuses, so
+  // the notice never went out.
   const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
   const frontendUrl = (await getFrontendBaseUrl()) || 'http://localhost:3000';
+  const businessProfile = await db('business_profile').where({ id: 1 }).first();
   try {
-    await emailProcessor.queueEmail(null, null, 'contract_signed_admin_notification', {
+    if (!businessProfile || !businessProfile.email) throw new Error('No business email address is set');
+    await emailProcessor.queueEmail(null, businessProfile.email, 'contract_signed_admin_notification', {
       contract_number: contract.contract_number,
       customer_email: customer?.email || '',
       signed_customer_name: String(name).trim(),
@@ -206,7 +210,7 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
  * `signed_by_admin` if the customer hasn't signed yet — edge case
  * where admin signs first, e.g. issuer-side framework agreement).
  */
-async function recordAdminCountersignature(contractId, { name, ip, signatureDataUrl }, adminId) {
+async function recordAdminCountersignature(contractId, { name, ip, userAgent, signatureDataUrl, mode }, adminId) {
   // Self-heal: ensure the contract_fully_signed template exists
   // before we counter-sign. The dual-party send fires from this
   // function on the fully_signed transition; without the template
@@ -218,6 +222,13 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
   }
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
+  // Signatures v2 (#1446): only after every customer signer, into the
+  // issuer's slot, and completion issues the signing certificate.
+  if (Number(contract.signing_version) === 2) {
+    return require('./signingV2').countersign(contractId, {
+      name, signatureDataUrl, mode: mode || (signatureDataUrl ? 'drawn' : 'typed'),
+    }, { ip, userAgent, adminId });
+  }
   if (!['signed_by_customer', 'sent'].includes(contract.status)) {
     throw new AppError(`Cannot counter-sign a contract with status '${contract.status}'`, 409);
   }
@@ -461,6 +472,13 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole) {
     updates.signed_by_admin_at = now;
   }
   await db('contracts').where({ id: contractId }).update(updates);
+  // Signatures v2 (#1446): the upload goes into the event log, and every
+  // signer's link stops working.
+  if (Number(contract.signing_version) === 2) {
+    await require('./signingV2').recordWetUpload(contractId, {
+      by: uploaderRole, sha256: updates.signed_pdf_sha256 || sha256OfFile(filePath),
+    });
+  }
 
   // attachSignedPdfUpload always transitions to fully_signed (see
   // updates.status above), so the dual-party send fires here too —
@@ -677,6 +695,11 @@ async function rerenderAndResend(contractId, adminId) {
 async function restampSignatures(contractId, { customerSignatureDataUrl, adminSignatureDataUrl }, adminId) {
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
+  // Signatures v2 stamp each slot from the document's record; re-stamping is
+  // only for contracts signed before (#1446, decision #21).
+  if (Number(contract.signing_version) === 2) {
+    throw new AppError('Re-stamping is only available for contracts signed before signatures v2.', 409, 'WRONG_STATUS');
+  }
   if (!['signed_by_customer', 'signed_by_admin', 'fully_signed'].includes(contract.status)) {
     throw new AppError(
       `Cannot re-stamp signatures on a contract in status '${contract.status}'.`,

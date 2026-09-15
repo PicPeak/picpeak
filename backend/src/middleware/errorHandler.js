@@ -136,6 +136,9 @@ const errorHandler = (err, req, res, next) => {
     statusCode,
     errorCode: error.code,
     operational,
+    // Same id the client gets in the response, so a reported failure can be
+    // found in the log (middleware/requestId.js).
+    ...(req.id && { requestId: req.id }),
     ...(req.admin && { adminId: req.admin.id }),
     ...(req.gallerySlug && { gallerySlug: req.gallerySlug })
   };
@@ -147,9 +150,13 @@ const errorHandler = (err, req, res, next) => {
       message: error.message
     });
   } else {
-    // Programming errors are bugs, log at error level with stack
+    // Programming errors are bugs, log at error level with stack.
+    // errorClass is the driver/error code (e.g. SQLITE_BUSY, 42P01) or the
+    // constructor name: enough to count failures by kind without logging
+    // request content.
     logger.error('Unhandled error', {
       ...logContext,
+      errorClass: error.code || error.name,
       message: error.message,
       stack: error.stack
     });
@@ -159,7 +166,7 @@ const errorHandler = (err, req, res, next) => {
   const isDev = process.env.NODE_ENV === 'development';
   const response = isDev ? formatDevError(error) : formatProdError(error, operational);
 
-  res.status(statusCode).json(response);
+  res.status(statusCode).json(req.id ? { ...response, requestId: req.id } : response);
 };
 
 /**

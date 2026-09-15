@@ -2,7 +2,6 @@
 // module-level overview. Do not add behavior here without updating the entry re-exports.
 
 const crypto = require('crypto');
-const { getStoragePath } = require('../../config/storage');
 const { db, logActivity } = require('../../database/db');
 const logger = require('../../utils/logger');
 const { AppError } = require('../../utils/errors');
@@ -11,6 +10,7 @@ const { resolveBillingRecipients } = require('../_billingRecipients');
 const pdfService = require('../pdfService');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
+const { extendedLineColumns } = require('../../utils/lineItemTotals');
 const { computeDueDate, ensureCustomerCanBill, formatMajor, getHierarchyHelpers, nextInvoiceNumber, resolveNetDaysForRow } = require('./helpers');
 const { getInvoiceById } = require('./queries');
 const { createInvoice } = require('./create');
@@ -111,14 +111,17 @@ async function sendInvoice(id, adminId, options = {}) {
   const ctx = await buildInvoiceRenderContext(invoice, lineItems);
   const buffer = await pdfService.renderInvoiceToBuffer(ctx);
 
-  // Persist PDF snapshot.
-  const fs = require('fs');
-  const path = require('path');
-  const year = new Date(invoice.issue_date).getFullYear();
-  const root = path.join(getStoragePath(), 'business-docs', 'invoice', String(year));
-  fs.mkdirSync(root, { recursive: true });
-  const pdfPath = path.join(root, `${invoice.invoice_number}.pdf`);
-  fs.writeFileSync(pdfPath, buffer);
+  // Persist the PDF snapshot and record it in generated_documents (#1445).
+  const { path: pdfPath } = await require('../documentArtifactService').persist({
+    docType: 'invoice',
+    docId: invoice.id,
+    kind: 'sent',
+    buffer,
+    fileName: `${invoice.invoice_number}.pdf`,
+    year: new Date(invoice.issue_date).getFullYear(),
+    theme: ctx.theme,
+    issuer: ctx.issuer,
+  });
 
   const newStatus = invoice.status === 'overdue' ? 'overdue' : 'sent';
   await db('invoices').where({ id }).update({
@@ -334,6 +337,8 @@ async function createStorno(originalId, adminId, trx = db) {
       line_total_minor: ensureInt(li.line_total_minor),
       parent_position: li.parent_position == null ? null : ensureInt(li.parent_position),
       details_text: li.details_text || null,
+      // Migration 215 — a discount line stays a discount line on the Storno.
+      ...extendedLineColumns(li, { invoice: true }),
     }));
     const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
     validateLineItemHierarchy(cloned);
@@ -386,14 +391,17 @@ async function sendStorno(stornoId, adminId) {
   const ctx = await buildInvoiceRenderContext(storno, lineItems);
   const buffer = await pdfService.renderInvoiceToBuffer(ctx);
 
-  // Persist PDF snapshot alongside regular invoices.
-  const fs = require('fs');
-  const path = require('path');
-  const year = new Date(storno.issue_date).getFullYear();
-  const root = path.join(getStoragePath(), 'business-docs', 'invoice', String(year));
-  fs.mkdirSync(root, { recursive: true });
-  const pdfPath = path.join(root, `${storno.invoice_number}.pdf`);
-  fs.writeFileSync(pdfPath, buffer);
+  // Persist the PDF snapshot alongside regular invoices, recorded (#1445).
+  const { path: pdfPath } = await require('../documentArtifactService').persist({
+    docType: 'invoice',
+    docId: storno.id,
+    kind: 'storno',
+    buffer,
+    fileName: `${storno.invoice_number}.pdf`,
+    year: new Date(storno.issue_date).getFullYear(),
+    theme: ctx.theme,
+    issuer: ctx.issuer,
+  });
 
   await db('invoices').where({ id: stornoId }).update({
     status: 'sent',
@@ -505,6 +513,7 @@ async function reissueInvoice(id, adminId) {
       discount_percent: Number(li.discount_percent || 0),
       parent_position: li.parent_position == null ? null : Number(li.parent_position),
       details_text: li.details_text || null,
+      ...extendedLineColumns(li, { invoice: true }),
     }));
 
     const { invoiceIds: reissuedIds } = await createInvoice({

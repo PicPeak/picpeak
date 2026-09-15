@@ -32,6 +32,10 @@ async function createFromQuote(quoteId, adminId) {
   // quote_line_items_table block needs to be present for it to land
   // in the default inclusion list.
   await ensureSystemBlocksSeeded();
+  // Starts from the default template's published version (#1445), like a
+  // new contract; resolved before the transaction.
+  const templates = require('./templates');
+  const version = await templates.resolveVersionForNewContract(null);
 
   const quote = await db('quotes').where({ id: quoteId }).first();
   if (!quote) throw new AppError('Quote not found', 404);
@@ -88,6 +92,8 @@ async function createFromQuote(quoteId, adminId) {
       title,
       intro_text: quote.intro_text || null,
       outro_text: quote.outro_text || null,
+      template_id: version ? version.template_id : null,
+      template_version_id: version ? version.id : null,
       created_by_admin_id: adminId,
       created_at: new Date(),
       updated_at: new Date(),
@@ -112,29 +118,9 @@ async function createFromQuote(quoteId, adminId) {
     const inserted = await trx('contracts').insert(contractRow).returning('id');
     const contractId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
-    // Seed every active system block. Same shape as createContract.
-    // D.3 — batched insert (one DB round-trip vs N).
-    const systemBlocks = await trx('contract_blocks')
-      .where({ is_system: true, is_active: true })
-      .orderBy(['section', 'display_order']);
-    const sectionCounters = {};
-    const inclusionRows = systemBlocks.map((block) => {
-      sectionCounters[block.section] = (sectionCounters[block.section] || 0) + 1;
-      return {
-        contract_id: contractId,
-        block_id: block.id,
-        section: block.section,
-        position: sectionCounters[block.section],
-        body_text_snapshot: null,
-        body_text_de_snapshot: null,
-        included: true,
-        created_at: new Date(),
-        updated_at: new Date(),
-      };
-    });
-    if (inclusionRows.length > 0) {
-      await trx('contract_block_inclusions').insert(inclusionRows);
-    }
+    // The template version's clauses — the same seeding createContract
+    // uses (#1445; this used to be a second copy of the system-block loop).
+    if (version) await templates.seedContractFromVersion(trx, contractId, version);
 
     // Back-pointer so the quote detail page can deep-link to its
     // resulting contract and the convert-to-event/invoice paths know

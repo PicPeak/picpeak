@@ -6,11 +6,13 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Plus, Search } from 'lucide-react';
+import { Layers, Plus, Search } from 'lucide-react';
+import { TemplatePickerModal } from '../../../components/admin/quotes/TemplatePickerModal';
 import { quotesService, type QuoteStatus, type QuoteSort } from '../../../services/quotes.service';
 import { Button, Card, Loading, SortableHeader, useColumnSort, type SortColumnMap } from '../../../components/common';
 import { formatMoney } from '../../../components/admin/LineItemsTable';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
+import { PermissionGate } from '../../../components/admin/PermissionGate';
 
 const STATUSES: QuoteStatus[] = ['draft', 'sent', 'accepted', 'declined', 'expired', 'converted'];
 
@@ -26,6 +28,7 @@ const SORT_COLUMNS: SortColumnMap = {
 export const QuotesListPage: React.FC = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [pickerOpen, setPickerOpen] = useState(false);
   const { format: fmtDate } = useLocalizedDate();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<QuoteStatus[]>([]);
@@ -67,9 +70,15 @@ export const QuotesListPage: React.FC = () => {
             {t('quotes.subtitle', 'Send, track and convert quotes into events.')}
           </p>
         </div>
-        <Link to="/admin/clients/quotes/new">
-          <Button><Plus className="w-4 h-4 mr-1" />{t('quotes.new', 'New quote')}</Button>
-        </Link>
+        <div className="flex gap-2">
+          <Link to="/admin/clients/quotes/catalog">
+            <Button variant="outline"><Layers className="w-4 h-4 mr-1" />{t('quotes.catalog.title', 'Catalogue & templates')}</Button>
+          </Link>
+          <PermissionGate permission="quotes.manage">
+            <Button onClick={() => setPickerOpen(true)}><Plus className="w-4 h-4 mr-1" />{t('quotes.new', 'New quote')}</Button>
+          </PermissionGate>
+        </div>
+        <TemplatePickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} />
       </div>
 
       <Card padding="lg">

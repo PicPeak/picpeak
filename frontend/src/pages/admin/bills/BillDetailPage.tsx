@@ -70,8 +70,14 @@ export const BillDetailPage: React.FC = () => {
     const currency = data.invoice.currency;
     for (const li of data.lineItems) {
       const isSub = li.parentLineItemId != null || li.parentPosition != null;
-      if (!isSub) { topCount += 1; subCount = 0; } else { subCount += 1; }
+      // Discount lines (#1451) carry no number, quantity or unit price.
+      const isDiscount = li.lineKind === 'discount';
+      if (isDiscount) { /* no number */ } else if (!isSub) { topCount += 1; subCount = 0; } else { subCount += 1; }
       const priceless = isSub && (!li.unitPriceMinor || Number(li.unitPriceMinor) === 0);
+      const unitLabel = li.unit ? t(`crm.lineItems.unitShort.${li.unit}`, li.unit) : '';
+      const quantityText = isDiscount
+        ? ''
+        : li.unit === 'flat' ? unitLabel : `${Number(li.quantity)}${unitLabel ? ` ${unitLabel}` : ''}`;
       rows.push(
         <tr
           key={`row-${li.id ?? li.position}`}
@@ -79,13 +85,13 @@ export const BillDetailPage: React.FC = () => {
             isSub ? 'text-neutral-500 dark:text-neutral-400' : ''
           }`}
         >
-          <td className="py-2">{isSub ? `${topCount}.${subCount}` : topCount}</td>
-          <td className="py-2">{Number(li.quantity)}</td>
+          <td className="py-2">{isDiscount ? '' : isSub ? `${topCount}.${subCount}` : topCount}</td>
+          <td className="py-2">{quantityText}</td>
           <td className={`py-2 whitespace-pre-line ${isSub ? 'pl-6' : ''}`}>
             {isSub ? '• ' : ''}{li.description}
           </td>
           <td className="py-2 text-right tabular-nums">
-            {priceless ? '' : formatMoney(Number(li.unitPriceMinor || 0) / 100, currency)}
+            {priceless || isDiscount ? '' : formatMoneyMinor(Number(li.unitPriceMinor || 0), currency)}
           </td>
           <td className={`py-2 text-right tabular-nums ${isSub ? 'italic' : ''}`}>
             {priceless
@@ -112,7 +118,7 @@ export const BillDetailPage: React.FC = () => {
       }
     }
     return rows;
-  }, [data]);
+  }, [data, t]);
 
   if (isLoading || !data) return <Loading />;
   const inv = data.invoice;

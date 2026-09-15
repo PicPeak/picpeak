@@ -699,6 +699,20 @@
       "lastRun": "Last pass {{when}}",
       "neverRan": "Has not run since this instance started.",
       "lastResult": "{{sent}} sent, {{failed}} failed"
+    },
+    "customerDocuments": {
+      "title": "Customer documents",
+      "counts": "{{pending}} awaiting review, {{rejected}} rejected.",
+      "hint": "Customer uploads stay unavailable to them until they are marked clean on the customer record. Rejected files are deleted after the retention period."
+    },
+    "evidenceKey": {
+      "title": "Signing evidence key",
+      "env": "Set with PICPEAK_EVIDENCE_KEY.",
+      "file": "Stored in business-docs/keys/evidence.key, which is part of every backup.",
+      "none": "Not created yet. It is created with the first signature.",
+      "unreadable": "The key file can't be read. Restore it from a backup, otherwise stored signing evidence can't be decrypted.",
+      "id": "Key ID {{id}}",
+      "hint": "Signers' IP addresses and browsers are stored encrypted with this key. Without it that evidence can't be read; the signatures and PDFs stay valid."
     }
   },
   "common": {
@@ -2469,6 +2483,10 @@
         "title": "People in galleries",
         "description": "Group each gallery's photos by the people in them, so guests can find themselves in two taps and download just their own photos. Runs entirely on your own server in a separate, optional container — nothing is sent anywhere. Detected faces are personal data, so this stays off until you enable it per gallery too.",
         "lockedSingleContainer": "Not available on the all-in-one image. Face detection needs a separate ML container and competes with image processing for the same CPU and memory, which would slow the whole install down."
+      },
+      "documents": {
+        "title": "Customer documents",
+        "description": "Share PDFs with a customer in their portal and receive PDFs from them. Customer uploads stay unavailable until you mark them clean on the customer record. PDF only; size and storage limits apply."
       }
     },
     "customerSurface": {
@@ -2513,7 +2531,10 @@
         "vatLabelHint": "Printed as the VAT-line label on invoice / quote PDFs. Leave blank to use the document language default.",
         "hourlyRate": "Default hourly rate",
         "hourlyRatePlaceholder": "e.g. 120.00",
-        "hourlyRateHint": "Billing fallback used when a customer has no own rate (hours logging). In {{currency}}, major units. Leave blank to require a per-customer or per-entry rate."
+        "hourlyRateHint": "Billing fallback used when a customer has no own rate (hours logging). In {{currency}}, major units. Leave blank to require a per-customer or per-entry rate.",
+        "dayRate": "Default day rate",
+        "dayRateHint": "Used by per-day quote lines when a customer has no own day rate. In {{currency}}, major units.",
+        "dayRatePlaceholder": "e.g. 1200.00"
       },
       "rebillAttachProof": "Attach the supplier proof to re-billed invoices by default",
       "rebillAttachProofHint": "When a captured supplier invoice is re-billed or passed through, attach its stored PDF to the client-invoice email as a separate proof. This is the default — a per-customer override and a per-file choice in the Send dialog can change it each time.",
@@ -3039,6 +3060,57 @@
       "title": "Social Media",
       "help": "Add URLs to render social-media icons in the gallery footer. Leave a field empty to hide that icon.",
       "whatsappHelp": "A wa.me URL or a phone number with country code (will be converted)."
+    },
+    "pdfTheme": {
+      "title": "PDF theme",
+      "description": "Colours, font, footer and page numbers for quotes, invoices and contracts. Empty fields inherit from \"All documents\", then your business profile.",
+      "scopeLabel": "Document type",
+      "scope": {
+        "default": "All documents",
+        "quote": "Quotes",
+        "invoice": "Invoices",
+        "contract": "Contracts"
+      },
+      "colors": "Colours",
+      "color": {
+        "text": "Text",
+        "accent": "Title and headings",
+        "muted": "Secondary text",
+        "subtle": "Footer and page numbers",
+        "rule": "Lines"
+      },
+      "inherited": "Inherited",
+      "inherit": "Inherit ({{value}})",
+      "reset": "Reset",
+      "titleSize": "Title size",
+      "font": "Font",
+      "pageNumbers": "Page numbers",
+      "pageNumbersOption": {
+        "bottom-right": "Bottom right",
+        "bottom-center": "Bottom centre",
+        "none": "None"
+      },
+      "foldingMarks": "Folding marks",
+      "foldingOption": {
+        "none": "None",
+        "half": "Half fold",
+        "third": "Thirds (DIN 5008)",
+        "both": "Half and thirds"
+      },
+      "footer": "Footer",
+      "footerMode": {
+        "address": "Business address",
+        "custom": "Custom text",
+        "none": "No footer"
+      },
+      "footerText": "Footer text",
+      "marginsNote": "Margins follow the DIN 5008 letter layout and aren't adjustable.",
+      "preview": "Preview PDF",
+      "resetScope": "Reset to inherited",
+      "save": "Save theme",
+      "saved": "PDF theme saved",
+      "saveFailed": "Could not save the PDF theme",
+      "previewFailed": "Could not render the preview"
     }
   },
   "admin": {
@@ -5274,7 +5346,22 @@
       "sortNewest": "Newest first",
       "sortOldest": "Oldest first",
       "sortName": "By name",
-      "open": "Open"
+      "open": "Open",
+      "needsAction": "Needs your attention",
+      "quoteAwaiting": "Quote {{number}} is waiting for your answer",
+      "validUntil": "Valid until {{date}}",
+      "viewQuote": "View quote",
+      "contractAwaiting": "Contract {{number}} is waiting for your signature",
+      "viewContract": "View contract",
+      "invoiceOverdue": "Invoice {{number}} is overdue",
+      "invoiceDue": "Invoice {{number}} is due {{date}}",
+      "openAmount": "Open: {{amount}}",
+      "viewInvoice": "View invoice",
+      "details": "Details",
+      "detailsAria": "Details for {{name}}",
+      "notAvailable": "Not available yet",
+      "expiredTitle": "Expired galleries",
+      "expiredHint": "These galleries have expired and can no longer be opened. Contact your photographer if you still need the photos."
     },
     "layout": {
       "greeting": "Hi, {{name}}"
@@ -5287,7 +5374,8 @@
       "profile": "Profile",
       "soon": "Soon",
       "new": "New",
-      "contracts": "Contracts"
+      "contracts": "Contracts",
+      "documents": "Documents"
     },
     "comingSoon": {
       "tag": "Coming soon"
@@ -5424,7 +5512,69 @@
       "counterSigned": "Counter-signed",
       "openSign": "Open & sign",
       "downloadSigned": "Download signed PDF",
-      "download": "Download PDF"
+      "download": "Download PDF",
+      "notSigner": "You're not listed as a signer of this contract. Use the link in the signing email instead.",
+      "notSignable": "This contract is no longer waiting for your signature. Reload the page to see its current status.",
+      "signError": "The contract couldn't be opened for signing. Try again in a moment.",
+      "declinedHint": "This contract was declined and can no longer be signed.",
+      "opening": "Opening…",
+      "sign": "Sign"
+    },
+    "documents": {
+      "title": "Documents",
+      "subtitle": "Files your photographer shared with you, and PDFs you sent them.",
+      "disabled": "Documents are not available for your account.",
+      "loadError": "Could not load your documents.",
+      "uploadTitle": "Send a document",
+      "uploadHint": "PDF only, up to {{size}} per file. {{used}} of {{quota}} used.",
+      "uploadHintShort": "PDF only.",
+      "fileLabel": "PDF file",
+      "eventLabel": "Event (optional)",
+      "noEvent": "No event",
+      "cancel": "Cancel",
+      "retry": "Try again",
+      "upload": "Upload",
+      "progress": "Upload progress",
+      "uploaded": "{{name}} was received. It becomes available once your photographer has reviewed it.",
+      "cancelled": "Upload of {{name}} cancelled.",
+      "empty": "No documents yet.",
+      "fromYou": "Uploaded by you",
+      "fromStudio": "Shared by your photographer",
+      "pendingHint": "Your photographer checks every upload before it becomes available.",
+      "rejectedWithReason": "Not accepted: {{reason}}",
+      "rejectedHint": "Your photographer did not accept this file. Contact them if you are unsure why.",
+      "download": "Download",
+      "downloadAria": "Download {{name}}",
+      "status": {
+        "available": "Available",
+        "pending": "Awaiting review",
+        "rejected": "Rejected"
+      },
+      "errors": {
+        "notPdf": "{{name}} is not a PDF. Only PDF documents can be uploaded.",
+        "encrypted": "{{name}} is password-protected. Remove the password and upload it again.",
+        "tooLarge": "{{name}} is larger than {{size}}. Upload a smaller file.",
+        "quota": "There is not enough room for {{name}}. Ask your photographer to remove older documents.",
+        "rateLimited": "Too many uploads in a short time. Wait a few minutes, then try {{name}} again.",
+        "generic": "{{name}} could not be uploaded. Please try again.",
+        "stillPending": "{{name}} is still being reviewed.",
+        "gone": "{{name}} is no longer shared with you.",
+        "purged": "{{name}} has been removed.",
+        "download": "{{name}} could not be downloaded. Please try again."
+      }
+    },
+    "event": {
+      "notFound": "This event was not found, or you no longer have access to it.",
+      "back": "Back to your galleries",
+      "gallery": "Gallery",
+      "openGallery": "Open gallery",
+      "galleryExpired": "This gallery expired on {{date}} and can no longer be opened. Contact your photographer if you still need the photos.",
+      "galleryUnavailable": "This gallery is not available yet.",
+      "popupBlocked": "Allow pop-ups for this site to open the PDF.",
+      "pdfError": "The PDF could not be opened. Please try again.",
+      "pdf": "PDF",
+      "dueOn": "Due {{date}}",
+      "nothingElse": "There are no documents for this event yet."
     }
   },
   "customers": {
@@ -5434,7 +5584,9 @@
       "hourlyRateHint": "Major units (e.g. 150.00 for {{currency}} 150). Leave blank to require a per-entry override on every block.",
       "marketingOptOut": "Unsubscribed from newsletters",
       "marketingOptOutHelp": "When on, this customer is skipped by every newsletter campaign. Emails about their galleries, quotes and invoices are not affected.",
-      "marketingOptOutSince": "Since {{date}}"
+      "marketingOptOutSince": "Since {{date}}",
+      "dayRate": "Default day rate",
+      "dayRateHint": "Used by per-day quote lines. Major units ({{currency}}). Leave blank to use the default day rate from Settings → Accounting."
     },
     "hours": {
       "section": "Hours",
@@ -5711,6 +5863,53 @@
     "invitePending": {
       "badge": "Invitation pending",
       "hint": "An invitation link for this address is open and has not been accepted. That is not proof the email reached them — check System health if they say it never arrived."
+    },
+    "documents": {
+      "title": "Documents",
+      "hint": "PDFs shared with this customer in their portal, and the files they sent you. A customer upload stays unavailable to them until you mark it clean.",
+      "usage": "Customer uploads: {{used}} of {{quota}}.",
+      "fileLabel": "PDF to share",
+      "eventLabel": "Event",
+      "contractLabel": "Contract",
+      "noLink": "None",
+      "shareNow": "Share with the customer",
+      "upload": "Upload",
+      "uploaded": "{{name}} uploaded.",
+      "actionError": "That did not work. Please try again.",
+      "deleteTitle": "Delete document?",
+      "deleteBody": "{{name}} disappears from the customer's portal at once. The file itself is removed after the retention period.",
+      "delete": "Delete",
+      "deleted": "Document deleted.",
+      "status": {
+        "pending": "Awaiting review",
+        "clean": "Clean",
+        "rejected": "Rejected"
+      },
+      "shared": "Shared",
+      "notShared": "Not shared",
+      "fromCustomer": "Uploaded by the customer",
+      "fromAdmin": "Uploaded by {{name}}",
+      "anAdmin": "an admin",
+      "viewed": "Customer downloaded it {{times}}×, last {{date}}",
+      "notViewed": "Not downloaded by the customer yet",
+      "rejectedNote": "Reason given: {{note}}",
+      "download": "Download",
+      "downloadStarted": "Download started.",
+      "markClean": "Mark clean",
+      "markedClean": "Marked clean.",
+      "reject": "Reject",
+      "rejectPlaceholder": "Reason, shown to the customer (optional)",
+      "confirmReject": "Reject file",
+      "rejectedToast": "Rejected.",
+      "unshare": "Unshare",
+      "unsharedToast": "No longer shared.",
+      "share": "Share",
+      "sharedToast": "Shared with the customer.",
+      "link": "Link",
+      "saveLinks": "Save links",
+      "linkSaved": "Links saved.",
+      "empty": "No documents yet.",
+      "loadError": "Could not load documents."
     }
   },
   "clients": {
@@ -6383,7 +6582,11 @@
       "bookingWorkflow": "Booking workflow (on acceptance)",
       "bookingWorkflowNone": "— None —",
       "bookingWorkflowDisabled": "(disabled)",
-      "bookingWorkflowHint": "The flow that runs when the customer accepts. Leave as None to run no booking flow. The flow must be enabled to fire."
+      "bookingWorkflowHint": "The flow that runs when the customer accepts. Leave as None to run no booking flow. The flow must be enabled to fire.",
+      "days": "Days",
+      "daysHint": "Lines set to follow the quote days use this quantity.",
+      "hours": "Hours",
+      "hoursHint": "Lines set to follow the quote hours use this quantity."
     },
     "responseWindowOpen": "Open until {{at}}",
     "section": {
@@ -6447,7 +6650,146 @@
     "pagination_one": "Page {{page}} of {{total}} · {{count}} quotes",
     "pagination_other": "Page {{page}} of {{total}} · {{count}} quotes",
     "convertedToInvoiceToast_one": "{{count}} invoice(s) created from this quote",
-    "convertedToInvoiceToast_other": "{{count}} invoice(s) created from this quote"
+    "convertedToInvoiceToast_other": "{{count}} invoice(s) created from this quote",
+    "catalog": {
+      "addItem": "Add item",
+      "archive": "Archive",
+      "archived": "Archived",
+      "boundTo": "Quantity",
+      "boundToNone": "Fixed quantity",
+      "emptyPackages": "No packages yet.",
+      "emptyPromotions": "No promotions yet.",
+      "emptyServices": "No services yet.",
+      "emptyTemplates": "No templates yet.",
+      "emptyTextBlocks": "No text blocks yet.",
+      "field": {
+        "amount": "Amount",
+        "body": "Text",
+        "category": "Category",
+        "description": "Description",
+        "detailsText": "Notes under the line",
+        "kind": "Kind",
+        "language": "Language",
+        "name": "Name",
+        "percent": "Percent",
+        "pinnedRate": "Own rate (optional)",
+        "pinnedRateHint": "Leave blank to use the customer's rate, or the default rate from Settings → Accounting.",
+        "priceMode": "Price",
+        "promotionType": "Type",
+        "quantityDefault": "Default quantity",
+        "unitPrice": "Unit price",
+        "validFrom": "Valid from",
+        "validUntil": "Valid until"
+      },
+      "newPackage": "New package",
+      "newPromotion": "New promotion",
+      "newService": "New service",
+      "newTextBlock": "New text block",
+      "packageItem": "Item",
+      "packageItems": "Items",
+      "packagesIntro": "A package with one item shows its price on the package line; with several items, each item keeps its price and the package line shows the sum.",
+      "perDay": "per day",
+      "perHour": "per hour",
+      "placeholdersHint": "Placeholders:",
+      "priceMode": {
+        "day": "Per day (rate)",
+        "fixed": "Fixed price",
+        "hour": "Per hour (rate)"
+      },
+      "promotionType": {
+        "fixed": "Fixed amount",
+        "percent": "Percentage"
+      },
+      "promotionsIntro": "Ticked in the quote editor. Percentages apply first, then fixed amounts, before VAT — never more than the subtotal.",
+      "rateFromChain": "Customer / default rate",
+      "restore": "Restore",
+      "savedToast": "Saved.",
+      "servicesIntro": "Your services with a fixed price or priced by the hour / day. They appear in the quote editor's \"Add from preset\" list and in packages.",
+      "tab": {
+        "packages": "Packages",
+        "promotions": "Promotions",
+        "services": "Services",
+        "templates": "Templates",
+        "textBlocks": "Text blocks"
+      },
+      "templatesIntro": "A template fills in a new quote. Publishing freezes a version, so later catalogue changes never alter quotes you already created.",
+      "textBlockKind": {
+        "closing": "Closing",
+        "intro": "Intro",
+        "note": "Note",
+        "scope": "Scope",
+        "terms": "Terms"
+      },
+      "textBlocksIntro": "Reusable texts for the quote intro and outro. Placeholders are filled in when the quote is saved.",
+      "title": "Catalogue & templates",
+      "promotionAmountHint": "The amount to subtract, e.g. 300 for −300.",
+      "promotionPercentHint": "The percentage to subtract, e.g. 10 for −10 %.",
+      "noEndDateHint": "Leave empty for no end date.",
+      "noEndDate": "No end date",
+      "validFromNoEnd": "From {{date}}, no end date",
+      "validUntilOnly": "Until",
+      "examplesHint": "Archived entries named \"Example: …\" show how each part works. Edit one and restore it to use it."
+    },
+    "promotions": {
+      "panelHint": "Percentages apply first, then fixed amounts — never more than the subtotal.",
+      "panelTitle": "Discounts"
+    },
+    "ratesRecalculatedToast": "Rates updated to today's values.",
+    "recalculateRates": "Recalculate with current rates",
+    "recalculateRatesConfirm": "Apply today's rates to this draft? Unsaved changes on this page are discarded.",
+    "templates": {
+      "addItem": "Catalogue item",
+      "addLine": "Own line",
+      "addPackage": "Package",
+      "archiveConfirm": "Archive this template? Existing quotes are not affected.",
+      "blankQuote": "Blank quote",
+      "createFromTemplate": "Create quote",
+      "defaults": "Defaults for new quotes",
+      "details": "Details",
+      "hoursHint": "Leave blank to use the template's hours.",
+      "newPrompt": "Name for the new template",
+      "newTemplate": "New template",
+      "noneYet": "No published templates yet — create one under Catalogue & templates.",
+      "pickLabel": "Start from",
+      "promotions": "Pre-ticked discounts",
+      "publish": "Publish",
+      "publishedToast": "Published as version {{version}}.",
+      "saveAsPrompt": "Name for the new template",
+      "saveAsTemplate": "Save as template",
+      "saveDraft": "Save draft",
+      "savedFromQuoteToast": "Template created as a draft.",
+      "savedToast": "Template saved.",
+      "section": {
+        "item": "Catalogue item",
+        "line": "Own line",
+        "package": "Package"
+      },
+      "sections": "Lines",
+      "skippedPromotions": "Not applied (not valid today): {{names}}",
+      "startBlank": "Start blank",
+      "status": {
+        "archived": "Archived",
+        "draft": "Draft",
+        "published": "Published"
+      },
+      "textFromBlock": "Text block",
+      "textNone": "None",
+      "textOwn": "Own text",
+      "texts": "Intro and outro",
+      "validityDays": "Valid for (days)",
+      "versions": "Published versions"
+    },
+    "textBlocks": {
+      "insert": "Insert text block…"
+    },
+    "selection": {
+      "title": "Add-ons at acceptance",
+      "byCustomer": "Chosen by the customer on {{date}}",
+      "byAdmin": "Recorded when you accepted on {{date}}",
+      "none": "No add-ons chosen",
+      "chosen": "Chosen",
+      "notChosen": "Not chosen"
+    }
   },
   "crm": {
     "lineItems": {
@@ -6471,7 +6813,42 @@
       "detailsFilled": "Details",
       "detailsPlaceholder": "Optional notes — fine print, package inclusions, conditions…",
       "autoTotaledHint": "Total auto-computed from sub-items below",
-      "autoTotaledNote": "= sum of sub-items"
+      "autoTotaledNote": "= sum of sub-items",
+      "discountLine": "Discount",
+      "discountPercentHint": "{{percent}} % of the subtotal",
+      "followsDays": "Follows the quote days",
+      "followsHours": "Follows the quote hours",
+      "included": "Included",
+      "insertPackage": "Insert package…",
+      "notIncluded": "not included",
+      "optional": "Optional add-on",
+      "optionalIncluded": "(optional, included)",
+      "optionalNotIncluded": "(optional, not included)",
+      "rateSource": {
+        "auto": "Rate applied on save",
+        "customer": "Customer rate",
+        "default": "Default rate",
+        "item": "Item rate"
+      },
+      "remove": "Remove",
+      "unitLabel": "Unit",
+      "unitNone": "—",
+      "unitOption": {
+        "day": "Day",
+        "flat": "Flat rate",
+        "hour": "Hour",
+        "km": "km",
+        "piece": "Piece"
+      },
+      "unitShort": {
+        "day": "d",
+        "flat": "flat rate",
+        "hour": "h",
+        "km": "km",
+        "piece": "pcs"
+      },
+      "useDayRate": "Use day rate",
+      "useHourlyRate": "Use hourly rate"
     },
     "customerPicker": {
       "search": "Search customer by email or company…"
@@ -6945,7 +7322,16 @@
     "tosCheckbox": "I have read and accept the Terms of Service.",
     "tosLink": "Read the full Terms",
     "preselectAcceptHint": "You followed the \"Accept\" link from the email — click the button below to confirm.",
-    "preselectDeclineHint": "You followed the \"Decline\" link from the email — click the button below to confirm."
+    "preselectDeclineHint": "You followed the \"Decline\" link from the email — click the button below to confirm.",
+    "addons": {
+      "hint": "Tick the optional add-ons you would like. The total updates as you choose.",
+      "optional": "Optional",
+      "included": "Included",
+      "notChosen": "Not chosen",
+      "updating": "Updating the total…",
+      "totalChanged": "The total is now {{total}}. Please check it and accept again.",
+      "locked": "The add-ons were fixed when you accepted. Please contact us for a revised quote."
+    }
   },
   "reminderTemplates": {
     "title": "Pre-event reminder emails",
@@ -7051,7 +7437,8 @@
       "signed_by_customer": "Signed by customer",
       "signed_by_admin": "Counter-signed",
       "fully_signed": "Fully signed",
-      "cancelled": "Cancelled"
+      "cancelled": "Cancelled",
+      "declined": "Declined"
     },
     "list": {
       "new": "New contract",
@@ -7067,7 +7454,9 @@
       },
       "pagination": "Page {{page}} of {{total}} · {{count}} contracts",
       "pagination_one": "Page {{page}} of {{total}} · {{count}} contracts",
-      "pagination_other": "Page {{page}} of {{total}} · {{count}} contracts"
+      "pagination_other": "Page {{page}} of {{total}} · {{count}} contracts",
+      "templates": "Templates",
+      "attachments": "Attachments"
     },
     "detail": {
       "previewPdf": "Preview PDF",
@@ -7151,7 +7540,25 @@
       "uploadSigned": "Upload signed PDF",
       "uploadedToast": "Signed PDF uploaded.",
       "convertedToInvoiceToast_one": "{{count}} invoice(s) created from this contract",
-      "convertedToInvoiceToast_other": "{{count}} invoice(s) created from this contract"
+      "convertedToInvoiceToast_other": "{{count}} invoice(s) created from this contract",
+      "fromTemplate": "Template: {{name}} · v{{version}}",
+      "documents": "Generated documents",
+      "documentsHelp": "Every PDF made for this contract, with its checksum. Re-hash a copy to confirm it matches.",
+      "documentsEmpty": "No PDFs generated yet.",
+      "documentPages": "Pages: {{count}}",
+      "documentKind": {
+        "unsigned": "Sent for signature",
+        "signed": "Signed",
+        "audit": "Audit certificate",
+        "wet_upload": "Uploaded signed copy"
+      },
+      "countersignDrawRequired": "Draw your signature, or switch to typing your name.",
+      "countersignCustomersPending": "Every customer has to sign before you counter-sign.",
+      "countersignHelpV2": "Every customer has signed. Your signature goes into the issuer's field on the PDF, and the signing certificate is issued once you sign.",
+      "countersignModeLabel": "How do you want to sign?",
+      "countersignModeDrawn": "Draw my signature",
+      "countersignModeTyped": "Use my typed name",
+      "countersignTypedHint": "Your name, as typed above, is placed in the signature field."
     },
     "editor": {
       "back": "Back to list",
@@ -7159,8 +7566,31 @@
       "create": "Create draft",
       "createdToast": "Contract created.",
       "customer": "Customer",
-      "disclaimerBody": "The seeded block bodies are EXAMPLES ONLY — written by the maintainer, not by a lawyer. Have your own lawyer review every block you include before sending the contract. See https://docs.picpeak.app/features/crm/disclaimers.",
-      "disclaimerTitle": "Lawyer review required",
+      "disclaimerBody": "The seeded block texts are examples written by the maintainer, not by a lawyer. Before you send a contract, have the blocks you include reviewed for your jurisdiction and use case — you remain responsible for its content. This does not stop you saving a draft.",
+      "disclaimerTitle": "Legal review recommended",
+      "saving": "Saving…",
+      "disclaimerLink": "Read the CRM disclaimer",
+      "errors": {
+        "createNotSaved": "The draft was not saved.",
+        "updateNotSaved": "Your changes were not saved.",
+        "createUnconfirmed": "We could not confirm whether the draft was saved. Saving again is safe — it will not create a second draft.",
+        "createdChangesNotSaved": "The draft was saved, but your latest changes were not. Saving again applies them.",
+        "updateUnconfirmed": "We could not confirm whether your changes were saved. Saving again is safe.",
+        "fieldsHeading": "Please check the following:",
+        "unexpected": "An unexpected error occurred on the server.",
+        "referenceId": "Reference ID",
+        "customerRequired": "Pick a customer",
+        "tooLong": "Keep it to 255 characters or fewer",
+        "invalidDate": "Enter a valid date",
+        "invalidTime": "Enter a time as HH:MM",
+        "invalidLanguage": "Pick a language",
+        "invalidText": "Check this text",
+        "blocksLabel": "Blocks",
+        "checkBlocks": "Check the block selection",
+        "requestLabel": "Request",
+        "reloadAndRetry": "Reload the page and try again",
+        "checkValue": "Check this value"
+      },
       "eventDate": "Event date",
       "eventHelp": "Snapshotted onto the contract and propagated to any event / invoice generated from it. Set this so the customer portal and dunning emails show the right \"Wedding Doe / Müller\" label.",
       "eventName": "Event name",
@@ -7195,13 +7625,20 @@
       "titleField": "Contract title",
       "titleNew": "New contract",
       "titlePlaceholder": "e.g. Wedding contract Doe / Müller",
-      "validUntil": "Sign by (optional)"
+      "validUntil": "Sign by (optional)",
+      "template": "Start from template",
+      "templateNone": "No template — pick the clauses below",
+      "templateHint": "The contract starts with this template's clauses and texts. You can adjust them once it's created.",
+      "templateNoneHint": "Pick the clauses yourself below.",
+      "textSections": "Free-text sections",
+      "textSectionsHint": "These come from the template and stay as they are when you save."
     },
     "blocks": {
       "back": "Back to contracts",
       "title": "Contract block library",
       "hideInactive": "Hide inactive",
       "disclaimerTitle": "Examples only — have your lawyer review",
+      "disclaimerLink": "Read the CRM disclaimer",
       "disclaimerBody": "The seeded \"System\" blocks are written by the picpeak maintainer, not by a lawyer. They are intended as starting points only — review and adapt every block you intend to send with your own lawyer. Edits to system blocks are persisted; replace the seeded body text with the lawyer-reviewed version in place.",
       "sidebarHeading": "Blocks",
       "new": "New block",
@@ -7233,6 +7670,223 @@
         "calloutTitle": "Auto-generated table follows the body",
         "calloutBody": "When this block is included in a contract that was created from a quote, the PDF inserts a real table of the source quote's line items (#, Description, Qty, Unit, Total) immediately after the body text above. Sub-items render indented with a ↳ marker. Contracts without a source quote skip the table and render only the body.",
         "previewExample": "Example rendered output:"
+      }
+    },
+    "templates": {
+      "title": "Contract templates",
+      "intro": "A template sets the clauses a new contract starts with, their order and their wording. Publishing freezes a version; a contract keeps the version it was made from.",
+      "back": "Back to contracts",
+      "backToTemplates": "Back to templates",
+      "newName": "New template name",
+      "create": "Create template",
+      "empty": "No templates yet.",
+      "standard": "Standard",
+      "default": "Default",
+      "status": {
+        "draft": "Draft",
+        "published": "Published · v{{version}}",
+        "archived": "Archived"
+      },
+      "unpublished": "Unpublished changes",
+      "open": "Open",
+      "duplicate": "Duplicate",
+      "copyName": "{{name}} (copy)",
+      "duplicated": "Template duplicated",
+      "makeDefault": "Make default",
+      "defaultSet": "New contracts now start from this template",
+      "archive": "Archive",
+      "archivedToast": "Template archived",
+      "restore": "Restore",
+      "restored": "Template restored",
+      "actionFailed": "That didn't work. Please try again.",
+      "languages": "Languages",
+      "systemNotice": "The standard template can't be edited. Duplicate it to make a version of your own.",
+      "conflict": "Someone else saved this template while you were editing. Reload to see their version — the changes you made here since loading will be lost.",
+      "reload": "Reload",
+      "details": "Details",
+      "name": "Name",
+      "useCase": "Use case",
+      "description": "Description",
+      "docTitle": "Contract title",
+      "introText": "Intro text",
+      "outroText": "Closing text",
+      "placeholders": "Placeholders you can use:",
+      "clauses": "Clauses",
+      "noClauses": "No clauses yet. Add clauses from the library or free text.",
+      "clause": "Clause",
+      "freeText": "Free text",
+      "untitled": "Untitled",
+      "customised": "customised",
+      "archivedBlock": "Archived in the library",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "showText": "Text",
+      "hideText": "Hide text",
+      "remove": "Remove",
+      "section": "Section",
+      "heading": "Heading",
+      "overrideLabel": "Text in this template (leave empty to use the clause library's text)",
+      "body": "Text",
+      "pickClause": "Clause from the library",
+      "addClause": "Add clause",
+      "addFreeText": "Add free text",
+      "preview": "Preview PDF",
+      "saveDraft": "Save draft",
+      "publish": "Publish",
+      "saved": "Draft saved",
+      "published": "Version {{version}} published",
+      "saveFailed": "The draft could not be saved.",
+      "publishFailed": "The template could not be published.",
+      "previewFailed": "The preview could not be rendered.",
+      "versions": "Versions",
+      "noVersions": "Not published yet.",
+      "versionCurrent": "Current",
+      "versionEarlier": "Earlier",
+      "draftFromVersion": "New draft from this version",
+      "draftFromVersionConfirm": "Replace the current draft with a copy of version {{version}}?",
+      "draftCreated": "Draft created from version {{version}}"
+    },
+    "attachments": {
+      "heading": "Attachments",
+      "title": "Contract attachments",
+      "intro": "PDFs that go out with contracts — terms and conditions, a privacy notice, an appendix. Add them to a template or a single contract, either inside the contract PDF or as a separate file.",
+      "none": "No attachments.",
+      "empty": "No attachments yet.",
+      "pages": "{{count}} pages",
+      "archived": "Archived",
+      "archivedInLibrary": "Archived in the library",
+      "delivery": "Delivery",
+      "merged": "In the contract PDF",
+      "separate": "Separate file",
+      "mergedHint": "Attachments in the contract PDF come after the clauses, before the signature page.",
+      "pick": "Attachment from the library",
+      "add": "Add attachment",
+      "manageLibrary": "Manage the library",
+      "file": "PDF (up to 20 MB)",
+      "name": "Name",
+      "description": "Description (optional)",
+      "upload": "Upload",
+      "uploaded": "Attachment added",
+      "alreadyThere": "This file is already in the library as \"{{name}}\".",
+      "uploadFailed": "The file could not be uploaded.",
+      "open": "Open",
+      "errors": {
+        "tooLarge": "The file is larger than 20 MB.",
+        "notPdf": "That file isn't a PDF.",
+        "encrypted": "The PDF is password-protected. Save it without a password and upload it again.",
+        "malformed": "The PDF can't be read. Export it again from the original and upload that.",
+        "activeContent": "The PDF contains scripts, form fields or embedded files. Print it to a new PDF (\"Save as PDF\") and upload that.",
+        "empty": "The PDF has no pages.",
+        "tooManyPages": "The PDF has more than 100 pages."
+      }
+    },
+    "signers": {
+      "errors": {
+        "none": "Add at least one signer.",
+        "nameRequired": "Signer {{number}}: enter a name.",
+        "emailInvalid": "Signer {{number}}: enter a valid email address.",
+        "emailDuplicate": "Signer {{number}}: each signer needs their own email address.",
+        "notDraft": "The contract has been sent, so its signers can no longer change.",
+        "invalid": "Check the names and email addresses: each signer needs a name and their own valid email address.",
+        "generic": "The signers couldn't be saved. Try again."
+      },
+      "saved": "Signers saved.",
+      "issuerYou": "You (the issuer)",
+      "empty": "No signers added yet — the contract's customer ({{name}}) signs by default.",
+      "emptyNoName": "No signers added yet — the contract's customer signs by default.",
+      "issuerRow": "Signs last, from this page",
+      "title": "Signers",
+      "unsaved": "Unsaved changes",
+      "hint": "Saved separately from the contract. Signers can change until the contract is sent.",
+      "loadError": "The signers couldn't be loaded. Reload the page to try again.",
+      "nameOf": "Name of signer {{number}}",
+      "nameLabel": "Name",
+      "emailOf": "Email of signer {{number}}",
+      "emailLabel": "Email",
+      "remove": "Remove signer {{number}}",
+      "onlyListedHint": "Only the people listed here sign. Add the customer too if they should sign.",
+      "add": "Add signer",
+      "max": "You can add up to {{max}} signers.",
+      "orderLabel": "Signing order",
+      "orderParallel": "All at once",
+      "orderSequential": "One after the other",
+      "orderParallelHint": "Everyone gets their link when you send the contract.",
+      "orderSequentialHint": "Signers get their link in the order listed, each once the one before has signed.",
+      "saving": "Saving…",
+      "save": "Save signers",
+      "resent": "A new link was sent to {{email}}.",
+      "resendNotDue": "This signer can't get a new link now: it isn't their turn yet, or they have already signed.",
+      "resendNotSignable": "Links can only be sent again while the contract is out for signature.",
+      "resendError": "The link couldn't be sent again. Try again.",
+      "status": {
+        "signed": "Signed",
+        "declined": "Declined",
+        "invited": "Link sent",
+        "issuerPending": "Counter-signs last",
+        "pending": "Not invited yet"
+      },
+      "via": {
+        "otp": "Email confirmed with a code",
+        "portal": "Signed in to the customer portal",
+        "admin": "Counter-signed here"
+      },
+      "countersignLater": "You counter-sign here once every customer signer has signed.",
+      "role": {
+        "issuer": "Issuer",
+        "customer": "Customer"
+      },
+      "invitedAt": "Link sent {{date}}",
+      "signedAt": "Signed {{date}}",
+      "mode": {
+        "drawn": "Drawn signature",
+        "typed": "Typed name"
+      },
+      "declinedAt": "Declined {{date}}",
+      "resendConfirm": "Send {{name}} a new signing link? The previous link stops working.",
+      "resend": "Send the link again",
+      "log": {
+        "title": "Signing log",
+        "chainOk": "Chain intact",
+        "chainCount": "Entries checked: {{count}}",
+        "chainBroken": "Chain broken at #{{seq}}",
+        "help": "Every step of the signing, in order. Each entry is chained to the one before, so a change to any entry shows up in the check.",
+        "empty": "No entries yet.",
+        "type": {
+          "sent": "Sent for signature",
+          "invited": "Link sent",
+          "invitation_resent": "Link sent again",
+          "code_sent": "Code emailed",
+          "verified": "Email confirmed",
+          "signed": "Signed",
+          "declined": "Declined",
+          "countersigned": "Counter-signed",
+          "completed": "Completed",
+          "wet_upload": "Signed PDF uploaded",
+          "revoked": "Links withdrawn"
+        },
+        "actor": {
+          "admin": "Admin",
+          "signer": "Signer",
+          "system": "System"
+        },
+        "reason": {
+          "missing_event": "An entry is missing.",
+          "broken_link": "An entry doesn't link to the one before it.",
+          "altered_event": "An entry was changed after it was written.",
+          "head_mismatch": "The latest entry doesn't match the stored end of the chain."
+        }
+      },
+      "evidence": {
+        "hide": "Hide evidence",
+        "show": "Show evidence",
+        "note": "Shows the IP address, browser and decline reason recorded for each signer. Each time you open it, that is recorded in the activity log.",
+        "error": "The evidence couldn't be loaded. Try again.",
+        "empty": "Nothing recorded yet.",
+        "ip": "IP address",
+        "userAgent": "Browser",
+        "declineReason": "Decline reason",
+        "signatureSha": "Signature image SHA-256",
+        "documentSha": "Signed document SHA-256"
       }
     }
   },
@@ -7471,7 +8125,12 @@
     "submit": "Sign contract",
     "uploadAlternative": "Or upload a wet-signed PDF",
     "uploadHint": "Sign the printed contract by hand, scan it, and upload the PDF here.",
-    "uploadButton": "Upload signed PDF"
+    "uploadButton": "Upload signed PDF",
+    "attachments": {
+      "title": "Attachments",
+      "download": "Download",
+      "inPdf": "Part of the contract PDF"
+    }
   },
   "crmOverview": {
     "title": "CRM overview",
@@ -7594,6 +8253,123 @@
       "body": "Mailing {{count}} people at once from a domain that usually sends only transactional email is what makes spam filters take notice. Providers may throttle, junk or block the whole batch, and a bad run damages delivery of your gallery emails too.",
       "advice": "Confirm SPF, DKIM and DMARC are set up for your sending domain, send yourself a test first, and consider splitting a first campaign across several smaller sends.",
       "duration": "At {{rate}}/minute this takes about {{minutes}} minutes. The send queue is shared, so while it runs other email — gallery invitations, password resets — can be delayed behind it."
+    }
+  },
+  "contractSigning": {
+    "gone": {
+      "revokedTitle": "This link no longer works",
+      "revokedBody": "A newer link was sent, or the contract is no longer open for signing. Use the link in the most recent email, or contact the sender.",
+      "expiredTitle": "This link has expired",
+      "expiredBody": "Ask the sender to send you a new signing link.",
+      "withdrawnTitle": "This contract has been withdrawn",
+      "withdrawnBody": "The sender withdrew this contract, so it can no longer be signed. Contact them if you have questions."
+    },
+    "loadError": {
+      "title": "We couldn't load this page",
+      "body": "Check your connection and try again.",
+      "retry": "Try again"
+    },
+    "portal": {
+      "endedTitle": "Your signing session has ended",
+      "endedBody": "Open the contract again from your customer portal to continue.",
+      "backToContracts": "Go to your contracts"
+    },
+    "verify": {
+      "heading": "Contract {{number}}",
+      "from": "{{company}} has asked you to sign this contract."
+    },
+    "sessionEnded": "Your signing session has ended. Confirm your email again to continue.",
+    "documents": {
+      "downloadError": "The file couldn't be downloaded. Try again in a moment.",
+      "title": "Documents",
+      "downloading": "Preparing…",
+      "downloadPdf": "Download the contract (PDF)"
+    },
+    "upload": {
+      "doneTitle": "Thank you — your signed PDF was uploaded.",
+      "doneBody": "You can close this page.",
+      "errors": {
+        "disabled": "Uploading a signed PDF is switched off for this contract. Please sign in your browser instead.",
+        "generic": "The upload failed. Make sure the file is a PDF under 10 MB, then try again."
+      }
+    },
+    "declined": {
+      "title": "You declined this contract",
+      "body": "The sender has been told. If this was a mistake, contact them — they can send you a new contract.",
+      "otherTitle": "This contract was declined",
+      "otherBody": "Another signer declined it, so it can no longer be signed."
+    },
+    "waiting": {
+      "title": "It isn't your turn yet",
+      "body": "The signers before you sign first. We'll email you when it's your turn."
+    },
+    "notSignable": {
+      "title": "This contract isn't waiting for your signature",
+      "body": "There is nothing for you to sign right now. Contact the sender if you expected to sign."
+    },
+    "signers": {
+      "title": "Who signs",
+      "sequential": "Signers sign one after the other, in this order.",
+      "parallel": "Everyone can sign at the same time.",
+      "issuer": "Counter-signs last",
+      "status": {
+        "signed": "Signed",
+        "declined": "Declined",
+        "pending": "Not signed yet"
+      }
+    },
+    "result": {
+      "complete": "Everyone has signed — the contract is complete.",
+      "issuerNext": "Everyone has signed. The contract is now counter-signed, and you'll get the final PDF by email.",
+      "othersPending": "The contract is complete once everyone has signed. We'll email you the final PDF then.",
+      "title": "Thank you — you have signed the contract.",
+      "signedAt": "Signed on {{date}}"
+    },
+    "sign": {
+      "errors": {
+        "notYourTurn": "Another signer has to sign first. We'll email you when it's your turn.",
+        "notSignable": "This contract can no longer be signed — it may have been withdrawn or declined. Contact the sender if you have questions.",
+        "drawOrType": "Draw your signature in the box, or switch to typing your name.",
+        "tooLarge": "Your drawn signature is too large to save. Clear it and draw it again.",
+        "generic": "Your signature couldn't be saved. Try again; if it keeps failing, contact the sender."
+      },
+      "modeLabel": "How do you want to sign?",
+      "modeDrawn": "Draw",
+      "modeTyped": "Type my name",
+      "typedHint": "Your name, as typed above, is placed in your signature field.",
+      "submitting": "Signing…"
+    },
+    "otp": {
+      "errors": {
+        "network": "We couldn't reach the server. Check your connection and try again.",
+        "wrong": "That code isn't right. Check the latest email and enter the six digits again.",
+        "expired": "This code has expired or was already used. Send a new code.",
+        "locked": "Too many wrong tries for this code. Send a new code.",
+        "rateLimited": "You have asked for several codes in the last hour. Use the latest code from your email, or try again in an hour.",
+        "tooManyRequests": "Too many attempts from this connection. Wait a few minutes, then try again.",
+        "generic": "Something went wrong. Try again; if it keeps happening, contact the sender.",
+        "format": "Enter the six-digit code from the email."
+      },
+      "title": "Confirm your email address",
+      "intro": "Before you can read and sign the contract, we send a six-digit code to {{email}}.",
+      "sending": "Sending…",
+      "send": "Send code",
+      "sent": "We sent a code to {{email}}. It can take up to a minute to arrive and is valid for {{minutes}} minutes.",
+      "codeLabel": "Six-digit code",
+      "verifying": "Checking…",
+      "verify": "Confirm code",
+      "resend": "Send a new code"
+    },
+    "decline": {
+      "error": "The contract couldn't be declined. Try again; if it keeps failing, contact the sender.",
+      "open": "Decline the contract",
+      "confirmTitle": "Decline this contract?",
+      "confirmBody": "The sender is told that you declined, and nobody can sign this contract any more. This can't be undone.",
+      "reasonLabel": "Reason (optional)",
+      "reasonHint": "Shared with the sender.",
+      "keep": "Keep the contract",
+      "declining": "Declining…",
+      "confirm": "Decline contract"
     }
   }
 }

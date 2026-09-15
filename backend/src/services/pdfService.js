@@ -26,9 +26,11 @@
  */
 
 const PDFDocument = require('pdfkit');
-const { getStoragePath } = require('../config/storage');
 const { SwissQRBill, Table } = require('swissqrbill/pdf');
 const { t } = require('./pdf-i18n');
+const { parsePromotionSnapshot } = require('../utils/lineItemTotals');
+const pdfFonts = require('./pdf/fonts');
+const { BUILT_IN: THEME_BUILT_IN, builtInTheme } = require('./pdf/theme');
 
 // Page metrics in PDF points (1pt = 1/72in). A4 = 595.28 × 841.89.
 // 1mm = 2.834645669pt.
@@ -101,8 +103,17 @@ const ADDR_WINDOW = {
 // — bold falls back gracefully to regular.
 const FONT_BODY = 'Helvetica';
 const FONT_BOLD = 'Helvetica-Bold';
-const CUSTOM_BODY = 'crm-body';
-const CUSTOM_BOLD = 'crm-bold';
+const FONT_ITALIC = 'Helvetica-Oblique';
+
+/**
+ * A colour from the theme of the document being drawn (#1445). Renderers
+ * put the resolved theme on `doc._theme`; without one, the built-in colours
+ * apply — the values this file used to hard-code.
+ */
+function themeColor(doc, key) {
+  const colors = (doc && doc._theme && doc._theme.colors) || THEME_BUILT_IN.colors;
+  return colors[key] || THEME_BUILT_IN.colors[key];
+}
 
 /**
  * Layout constants for the contract signature page (the dedicated
@@ -135,6 +146,12 @@ const CONTRACT_SIGNATURE_LAYOUT = {
   customerX: PAGE.marginLeft,
   adminX: PAGE.marginLeft + ((PAGE.contentWidth - 20) / 2) + 20,
 };
+
+// Signature slots (#1445): two to a row; a row is the label, the box and three
+// caption lines (name, date and time, how it was signed) plus a gap. The first
+// row is exactly the two legacy boxes above.
+const SIGNATURE_ROW_HEIGHT = 160;
+const MAX_SIGNATURE_SLOTS = 6;
 
 /**
  * ISO 3166-1 alpha-2 → full country name, locale-aware. Falls back to
@@ -351,13 +368,13 @@ function drawIssuerBlock(doc, issuer, x, y, width, locale) {
   if (showName && issuer.companyName && !inlineName) {
     // Bold-title branch — the standard letterhead look. Skipped when
     // the admin opted into the inline-name variant.
-    doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(12).fillColor('#000')
+    doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(12).fillColor(themeColor(doc, 'text'))
       .text(issuer.companyName, x, y, { width, align: 'left' });
     y = doc.y + 6;
   }
 
   // ---- address block (left-aligned within the column) -----------
-  doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(8.5).fillColor('#000');
+  doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(8.5).fillColor(themeColor(doc, 'text'));
   const cityCountry = (() => {
     // Match the screenshot: "FL-9494 Schaan / Liechtenstein" on one
     // line. Fall back gracefully when fields are missing. The
@@ -453,7 +470,7 @@ function drawRecipientBlock(doc, recipient, locale) {
   // ---- recipient address ----------------------------------------
   let y = ADDR_WINDOW.addressY;
 
-  doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(11).fillColor('#000');
+  doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(11).fillColor(themeColor(doc, 'text'));
   if (recipient.companyName) {
     doc.text(recipient.companyName, x, y, { width: w });
     y = doc.y;
@@ -515,7 +532,7 @@ function drawFoldingMarks(doc, mode) {
     ys.push(210 * MM);
   }
   doc.save();
-  doc.strokeColor('#888').lineWidth(0.4);
+  doc.strokeColor(themeColor(doc, 'rule')).lineWidth(0.4);
   for (const y of ys) {
     doc.moveTo(0, y).lineTo(MARK_LEN_PT, y).stroke();
   }
@@ -523,7 +540,9 @@ function drawFoldingMarks(doc, mode) {
 }
 
 function drawTitle(doc, title, x, y) {
-  doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(20).fillColor('#000').text(title, x, y);
+  const size = (doc._theme && doc._theme.titleSize) || 20;
+  doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(size).fillColor(themeColor(doc, 'accent')).text(title, x, y);
+  doc.fillColor(themeColor(doc, 'text'));
   return doc.y + 8;
 }
 
@@ -556,7 +575,21 @@ function drawLineItems(doc, ctx) {
     total: t(locale, 'table_line_total'),
   };
 
-  const showDiscount = type === 'quote' && lineItems.some((li) => Number(li.discountPercent) > 0);
+  // One table for quotes, invoices and contracts (#1451). A contract shows
+  // its source quote's lines, so it follows the quote's discount rule.
+  const showDiscount = (type === 'quote' || type === 'contract')
+    && lineItems.some((li) => li.lineKind !== 'discount' && Number(li.discountPercent) > 0);
+  // Units (migration 215) go into the quantity cell ("8 Std."), which is
+  // widened — borrowed from the description — only when a line has one.
+  const hasUnits = lineItems.some((li) => li.unit);
+  const unitLabel = (unit) => t(locale, `unit_${unit}`);
+  const quantityText = (li) => {
+    if (!li.unit) return stripTrailingZeros(li.quantity);
+    if (li.unit === 'flat') return unitLabel('flat');
+    return `${stripTrailingZeros(li.quantity)} ${unitLabel(li.unit)}`;
+  };
+  // Comments under a line use the theme's italic face when there is one.
+  const italicFont = ctx.fonts?.italic || 'Helvetica-Oblique';
 
   // Column widths sum to PAGE.contentWidth = 515.28. swissqrbill's
   // PDFColumn carries `width` + `align` directly on each cell; there
@@ -579,8 +612,8 @@ function drawLineItems(doc, ctx) {
   // widest column, qty + numeric columns stay narrow but right-
   // aligned.
   const widths = showDiscount
-    ? [30, 225, 55, 50, 75, 80]
-    : [30, 275, 55, 70, 85];
+    ? (hasUnits ? [30, 205, 75, 50, 75, 80] : [30, 225, 55, 50, 75, 80])
+    : (hasUnits ? [30, 255, 75, 70, 85] : [30, 275, 55, 70, 85]);
 
   // Per-row padding — tight rows. 3pt top + 3pt bottom keeps each
   // line item compact, with just enough vertical breathing room
@@ -629,27 +662,37 @@ function drawLineItems(doc, ctx) {
   let topLevelCount = 0;
   const buildItemRow = (li) => {
     const isSubItem = li.parentLineItemId != null || li.parentPosition != null;
-    const posLabel = isSubItem ? '' : String(++topLevelCount);
+    // A discount line (migration 215) is a labelled minus row: no position
+    // number, no quantity or unit price — just its amount.
+    const isDiscount = li.lineKind === 'discount';
+    const posLabel = isSubItem || isDiscount ? '' : String(++topLevelCount);
     // Bullet (U+2022) is part of the WinAnsi character set that
     // PDFKit's built-in Helvetica supports, unlike the earlier "↳"
     // (U+21B3) which rendered as the font's .notdef glyph ("!3").
     // Custom TTFs registered via business_profile.pdf_font_ttf_path
     // typically include the arrow too, but the bullet is the safe
     // common-denominator that always renders.
-    const descText = isSubItem ? `\u2022 ${li.description || ''}` : (li.description || '');
+    let descText = isSubItem ? `\u2022 ${li.description || ''}` : (li.description || '');
+    if (isDiscount && li.promotion && li.promotion.type === 'percent') {
+      descText = `${descText} (${stripTrailingZeros(li.promotion.percent)} %)`;
+    }
     const subItemPriceless = isSubItem && (!li.unitPriceMinor || Number(li.unitPriceMinor) === 0);
-    const unitText = subItemPriceless ? '' : formatMinor(li.unitPriceMinor, currency, intlLocale);
+    const unitText = subItemPriceless || isDiscount ? '' : formatMinor(li.unitPriceMinor, currency, intlLocale);
+    const qtyText = isDiscount ? '' : quantityText(li);
     const displayLineTotal = lineTotalSign * Number(li.lineTotalMinor || 0);
     const lineTotalText = subItemPriceless
       ? ''
       : isSubItem
         ? `(${formatMinor(displayLineTotal, currency, intlLocale)})`
         : formatMinor(displayLineTotal, currency, intlLocale);
-    const numericColor = isSubItem ? '#666' : '#000';
+    const numericColor = isSubItem ? themeColor(doc, 'muted') : themeColor(doc, 'text');
 
     return {
       padding: ROW_PADDING,
       fontSize: ROW_FONT_SIZE,
+      // Data rows name the body font explicitly — only the header row did,
+      // so a custom PDF font could stop short of the cells.
+      fontName: ctx.fonts?.body || FONT_BODY,
       // Border is set by the caller (buildGroupRows) so the LAST row
       // of each "group" (parent + sub-items + their details_text
       // rows) carries the divider, and the rows above it leave the
@@ -660,15 +703,15 @@ function drawLineItems(doc, ctx) {
         ? [
           { text: posLabel,                                          width: widths[0], align: 'left'  },
           { text: descText,                                          width: widths[1], align: 'left',  color: numericColor },
-          { text: stripTrailingZeros(li.quantity),                   width: widths[2], align: 'right', color: numericColor },
-          { text: subItemPriceless ? '' : `${stripTrailingZeros(li.discountPercent)}%`, width: widths[3], align: 'right', color: numericColor },
+          { text: qtyText,                                           width: widths[2], align: 'right', color: numericColor },
+          { text: subItemPriceless || isDiscount ? '' : `${stripTrailingZeros(li.discountPercent)}%`, width: widths[3], align: 'right', color: numericColor },
           { text: unitText,                                          width: widths[4], align: 'right', color: numericColor },
           { text: lineTotalText,                                     width: widths[5], align: 'right', color: numericColor },
         ]
         : [
           { text: posLabel,                                          width: widths[0], align: 'left'  },
           { text: descText,                                          width: widths[1], align: 'left',  color: numericColor },
-          { text: stripTrailingZeros(li.quantity),                   width: widths[2], align: 'right', color: numericColor },
+          { text: qtyText,                                           width: widths[2], align: 'right', color: numericColor },
           { text: unitText,                                          width: widths[3], align: 'right', color: numericColor },
           { text: lineTotalText,                                     width: widths[4], align: 'right', color: numericColor },
         ],
@@ -689,7 +732,7 @@ function drawLineItems(doc, ctx) {
     columns: showDiscount
       ? [
         { text: '',   width: widths[0], align: 'left' },
-        { text,       width: widths[1], align: 'left', color: '#666', fontName: 'Helvetica-Oblique' },
+        { text,       width: widths[1], align: 'left', color: themeColor(doc, 'muted'), fontName: italicFont },
         { text: '',   width: widths[2], align: 'right' },
         { text: '',   width: widths[3], align: 'right' },
         { text: '',   width: widths[4], align: 'right' },
@@ -697,7 +740,7 @@ function drawLineItems(doc, ctx) {
       ]
       : [
         { text: '',   width: widths[0], align: 'left' },
-        { text,       width: widths[1], align: 'left', color: '#666', fontName: 'Helvetica-Oblique' },
+        { text,       width: widths[1], align: 'left', color: themeColor(doc, 'muted'), fontName: italicFont },
         { text: '',   width: widths[2], align: 'right' },
         { text: '',   width: widths[3], align: 'right' },
         { text: '',   width: widths[4], align: 'right' },
@@ -823,7 +866,7 @@ function drawTotals(doc, ctx, x, y, width) {
   // content width (from the left margin to the right edge) so it
   // visually closes off the line-items table above and the totals
   // stack below as one continuous letterhead section.
-  doc.moveTo(x, y).lineTo(right, y).strokeColor('#000').lineWidth(0.8).stroke();
+  doc.moveTo(x, y).lineTo(right, y).strokeColor(themeColor(doc, 'text')).lineWidth(0.8).stroke();
   y += 6;
 
   doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(10);
@@ -851,7 +894,7 @@ function drawTotals(doc, ctx, x, y, width) {
   if (ctx.vatNote) {
     doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(8).fillColor('#555');
     doc.text(ctx.vatNote, labelX, y, { width: right - labelX });
-    doc.fillColor('#000').fontSize(10);
+    doc.fillColor(themeColor(doc, 'text')).fontSize(10);
     y = doc.y + 4;
   }
 
@@ -882,7 +925,7 @@ function drawTotals(doc, ctx, x, y, width) {
   // Divider line above grand total — spans the right half of the
   // page only, from the label anchor to the right edge, so it sits
   // visually over the same column as "Please transfer …" below.
-  doc.moveTo(labelX, y).lineTo(right, y).strokeColor('#000').lineWidth(0.8).stroke();
+  doc.moveTo(labelX, y).lineTo(right, y).strokeColor(themeColor(doc, 'text')).lineWidth(0.8).stroke();
   y += 6;
 
   // Grand-total row uses the SAME font size as the rows above (and
@@ -954,7 +997,7 @@ function drawPaymentBlock(doc, ctx, x, y, width) {
   if (!hasLeftContent && !showIbanHere) return y;
 
   if (hasLeftContent) {
-    doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(10).fillColor('#000');
+    doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(10).fillColor(themeColor(doc, 'text'));
     doc.text(t(locale, 'payment_conditions') + ':', leftX, y, { width: colWidth });
     y = doc.y + 2;
     doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10);
@@ -989,7 +1032,7 @@ function drawPaymentBlock(doc, ctx, x, y, width) {
           `${t(locale, 'skonto_amount_label')}: ${formatCurrencyLabel(currency)} ${formatMinor(skontoTotalMinor, currency, intlLocale)}`,
           leftX, y, { width: colWidth }
         );
-        doc.fillColor('#000');
+        doc.fillColor(themeColor(doc, 'text'));
         y = doc.y + 4;
       } else {
         y += 2;
@@ -1003,7 +1046,7 @@ function drawPaymentBlock(doc, ctx, x, y, width) {
         }),
         leftX, y, { width: colWidth }
       );
-      doc.fillColor('#000');
+      doc.fillColor(themeColor(doc, 'text'));
       y = doc.y + 4;
     }
   }
@@ -1046,6 +1089,9 @@ function drawFooter(doc, issuer, locale) {
   // writing past doc.page.height - marginBottom triggers PDFKit's
   // auto-page-break (the original bug behind the mysterious empty
   // trailing pages).
+  // Theme (#1445): the address line, a custom line, or no footer at all.
+  const footer = (doc._theme && doc._theme.footer) || { mode: 'address', text: '' };
+  if (footer.mode === 'none') return;
   const lineH = 12;
   const hasFooterLine = !!issuer.footerLine;
   const reserved = hasFooterLine ? lineH * 2 + 4 : lineH;
@@ -1056,15 +1102,15 @@ function drawFooter(doc, issuer, locale) {
   const postalLeft = cc && pc ? `${cc}-${pc}` : (pc || cc);
   const postalSegment = [postalLeft, issuer.city].filter(Boolean).join(' ');
 
-  doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(8).fillColor('#888');
-  const parts = [
+  doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(8).fillColor(themeColor(doc, 'subtle'));
+  const parts = (footer.mode === 'custom' ? [footer.text] : [
     issuer.companyName,
     issuer.addressLine1,
     postalSegment,
     // Prefer the explicit country_name override (migration 107)
     // before falling back to the COUNTRY_NAMES lookup.
     issuer.countryName || countryName(issuer.countryCode, locale),
-  ].filter(Boolean);
+  ]).filter(Boolean);
   doc.text(parts.join(', '), PAGE.marginLeft, footerY, {
     width: PAGE.contentWidth, align: 'center', lineBreak: false,
   });
@@ -1075,7 +1121,7 @@ function drawFooter(doc, issuer, locale) {
   }
   // Reset fill colour so any code that runs after the footer (e.g.
   // the appendSwissQrBill page) doesn't inherit the grey.
-  doc.fillColor('#000');
+  doc.fillColor(themeColor(doc, 'text'));
 }
 
 /**
@@ -1092,6 +1138,7 @@ function appendSwissQrBill(doc, ctx) {
   if (!bank?.iban) return;
 
   doc.addPage();
+  markPaymentSlipPage(doc);
 
   // swissqrbill expects amounts in major units (CHF, not Rappen).
   const totalMajor = Number(docMeta.totalAmountMinor || 0) / 100;
@@ -1231,8 +1278,9 @@ async function appendEpcQr(doc, ctx) {
   // Fresh page so the QR doesn't fight the totals/payment layout on
   // page 1. Centered, with a caption explaining what it is.
   doc.addPage();
+  markPaymentSlipPage(doc);
   const captionTop = PAGE.marginTop + 20;
-  doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(14).fillColor('#000');
+  doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(14).fillColor(themeColor(doc, 'text'));
   doc.text(t(ctx.locale, 'epc_qr_title'), PAGE.marginLeft, captionTop, {
     width: PAGE.contentWidth, align: 'center', lineBreak: false,
   });
@@ -1257,7 +1305,7 @@ async function appendEpcQr(doc, ctx) {
   // Human-readable summary under the QR so the customer can still
   // initiate the transfer manually if their banking app can't scan.
   const summaryY = qrY + qrSize + 24;
-  doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor('#000');
+  doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor(themeColor(doc, 'text'));
   const summaryLines = [
     bank.accountHolder || issuer.companyName || '',
     bank.iban.replace(/(.{4})/g, '$1 ').trim(),
@@ -1274,6 +1322,55 @@ async function appendEpcQr(doc, ctx) {
     doc.text(line, PAGE.marginLeft, lineY, { width: PAGE.contentWidth, align: 'center' });
     lineY = doc.y + 2;
   }
+}
+
+/** Register the theme's faces; falls back to the issuer's family, then Helvetica. */
+function registerThemeFonts(doc, issuer = {}, theme = null) {
+  return pdfFonts.registerFonts(doc, {
+    pdfFontTtfPath: issuer.pdfFontTtfPath,
+    fontFamily: (theme && theme.fontFamily) || issuer.pdfFontFamily || null,
+  }) || { body: FONT_BODY, bold: FONT_BOLD, italic: FONT_ITALIC };
+}
+
+/** Remember that the page just added is a payment slip (QR-bill or EPC). */
+function markPaymentSlipPage(doc) {
+  const range = doc.bufferedPageRange();
+  if (!doc._paymentSlipPages) doc._paymentSlipPages = new Set();
+  doc._paymentSlipPages.add(range.start + range.count - 1);
+}
+
+/**
+ * "Page x of y" in each page's bottom margin, at the theme's position —
+ * except on a payment-slip page, which has its own fixed layout and isn't
+ * counted (#1445; the label used to land inside the QR-bill's payment
+ * part). `beforeStamp` runs on every numbered page first (the contract
+ * footer).
+ */
+function stampPageNumbers(doc, locale, { beforeStamp } = {}) {
+  const position = (doc._theme && doc._theme.pageNumbers) || 'bottom-right';
+  const range = doc.bufferedPageRange();
+  const slips = doc._paymentSlipPages || new Set();
+  const pages = [];
+  for (let i = range.start; i < range.start + range.count; i += 1) {
+    if (!slips.has(i)) pages.push(i);
+  }
+  pages.forEach((pageIndex, n) => {
+    doc.switchToPage(pageIndex);
+    // With the page already laid out, a bottom margin of 0 lets us write
+    // into the margin band without PDFKit starting a new page (#794).
+    doc.page.margins.bottom = 0;
+    if (beforeStamp) beforeStamp(pageIndex);
+    if (position === 'none') return;
+    doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(8).fillColor(themeColor(doc, 'subtle'));
+    const label = t(locale, 'page_of', { current: n + 1, total: pages.length });
+    const centred = position === 'bottom-center';
+    const labelW = centred ? PAGE.contentWidth : 120;
+    const labelX = centred ? PAGE.marginLeft : doc.page.width - PAGE.marginRight - labelW;
+    doc.text(label, labelX, doc.page.height - PAGE.marginBottom + 8, {
+      width: labelW, align: centred ? 'center' : 'right', lineBreak: false,
+    });
+    doc.fillColor(themeColor(doc, 'text'));
+  });
 }
 
 /**
@@ -1328,84 +1425,25 @@ function createBaseDocument(options = {}) {
   //
   // Same block is mirrored below in renderDocument so quote / invoice
   // / tax-report PDFs all resolve fonts identically.
-  doc._fonts = { body: FONT_BODY, bold: FONT_BOLD };
-  const issuer = options.issuer || {};
-  const fontRegistered = registerCustomFonts(doc, issuer);
-  if (fontRegistered) doc._fonts = fontRegistered;
+  // `options.theme` (#1445) picks the font family and colours; without it
+  // the issuer's family (or Helvetica) and the built-in colours apply.
+  doc._theme = options.theme || null;
+  doc._fonts = registerThemeFonts(doc, options.issuer || {}, options.theme || null);
 
   return { doc, page, fonts: doc._fonts };
 }
 
 /**
- * Try to register a custom font pair on the given doc per the
- * priority order documented on createBaseDocument. Returns the new
- * `{ body, bold }` logical-font-names object when a custom font is
- * applied, or `null` when we fell through to Helvetica.
+ * Register the issuer's custom font faces (legacy uploaded TTF, else the
+ * bundled family) per services/pdf/fonts.js. Returns the
+ * `{ body, bold, italic }` logical names when a custom font applies, or
+ * `null` when the document stays on Helvetica.
  *
  * Exported via _internal for unit tests.
  */
 function registerCustomFonts(doc, issuer) {
   if (!issuer || typeof issuer !== 'object') return null;
-  const path = require('path');
-  const fs = require('fs');
-
-  // Priority 1: legacy free-text path.
-  if (issuer.pdfFontTtfPath) {
-    try {
-      const raw = issuer.pdfFontTtfPath;
-      // The configured storage root first; process.cwd()/storage stays on as a
-      // legacy fallback so installs predating STORAGE_PATH keep resolving.
-      // Compose makes the two the same directory, which is why only a custom
-      // STORAGE_PATH ever exposed this — the font just silently was not found
-      // and the document fell back to the built-in face.
-      const storageRoot = getStoragePath();
-      const candidates = [
-        path.isAbsolute(raw) ? raw : null,
-        path.join(storageRoot, raw.replace(/^\/+/, '')),
-        path.join(storageRoot, 'fonts', path.basename(raw)),
-        path.join(process.cwd(), 'storage', raw.replace(/^\/+/, '')),
-        path.join(process.cwd(), 'storage', 'fonts', path.basename(raw)),
-      ].filter(Boolean);
-      const found = candidates.find((p) => { try { return fs.existsSync(p); } catch { return false; } });
-      if (found && /\.(ttf|otf)$/i.test(found)) {
-        doc.registerFont(CUSTOM_BODY, found);
-        doc.registerFont(CUSTOM_BOLD, found);
-        return { body: CUSTOM_BODY, bold: CUSTOM_BOLD };
-      }
-    } catch { /* fall through to family / Helvetica */ }
-  }
-
-  // Priority 2: bundled-fonts dropdown.
-  if (issuer.pdfFontFamily) {
-    try {
-      // Sanitise the family name aggressively — comes from user input
-      // (a saved dropdown value), so prevent path traversal even
-      // though directory names should always be plain ASCII like
-      // "Inter" or "Playfair-Display".
-      const family = String(issuer.pdfFontFamily).replace(/[^A-Za-z0-9_-]/g, '');
-      if (family) {
-        const fontsRoot = path.resolve(__dirname, '../../assets/fonts', family);
-        const bodyCandidates = ['400.ttf', '500.ttf', '600.ttf', '700.ttf'];
-        const boldCandidates = ['700.ttf', '600.ttf', '500.ttf', '400.ttf'];
-        const findFirst = (names) => {
-          for (const n of names) {
-            const full = path.join(fontsRoot, n);
-            try { if (fs.existsSync(full)) return full; } catch { /* ignore */ }
-          }
-          return null;
-        };
-        const bodyFile = findFirst(bodyCandidates);
-        const boldFile = findFirst(boldCandidates);
-        if (bodyFile && boldFile) {
-          doc.registerFont(CUSTOM_BODY, bodyFile);
-          doc.registerFont(CUSTOM_BOLD, boldFile);
-          return { body: CUSTOM_BODY, bold: CUSTOM_BOLD };
-        }
-      }
-    } catch { /* fall through to Helvetica */ }
-  }
-
-  return null;
+  return pdfFonts.registerFonts(doc, { pdfFontTtfPath: issuer.pdfFontTtfPath, fontFamily: issuer.pdfFontFamily });
 }
 
 /**
@@ -1449,6 +1487,8 @@ function renderDocument(type, context) {
               return recipient ? `${docNumber}_${recipient}` : String(docNumber);
             })(),
             Author: ctx.issuer.companyName || 'picpeak',
+            // A fixed creation date makes the same inputs give the same bytes.
+            ...(ctx.generatedAt ? { CreationDate: new Date(ctx.generatedAt) } : {}),
           },
         });
 
@@ -1463,13 +1503,11 @@ function renderDocument(type, context) {
         // read `doc._fonts` (one extra word per doc) so we don't have
         // to thread the font names through every drawing function or
         // fork the helpers per branding.
-        doc._fonts = { body: FONT_BODY, bold: FONT_BOLD };
+        // The theme (#1445) adds colours, the title size, the footer and
+        // page-number settings, and an italic face for line comments.
+        doc._theme = ctx.theme;
+        doc._fonts = registerThemeFonts(doc, ctx.issuer, ctx.theme);
         ctx.fonts = doc._fonts;
-        const registered = registerCustomFonts(doc, ctx.issuer);
-        if (registered) {
-          doc._fonts = registered;
-          ctx.fonts = registered;
-        }
 
         // ---- header layout (DIN 5008 Form B) -------------------------
         //   - recipient block in the address window (top-left,
@@ -1525,7 +1563,7 @@ function renderDocument(type, context) {
         const metaLabelW = 110; // wider than the date label so "Rechnungsnummer" fits without wrap
         const metaValueW = 110;
         if (docNumberForDisplay) {
-          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor('#000');
+          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor(themeColor(doc, 'text'));
           doc.text(`${t(ctx.locale, numberLabelKey)}:`,
             metaRight - metaValueW - metaLabelW, y,
             { width: metaLabelW, align: 'right', lineBreak: false });
@@ -1537,7 +1575,7 @@ function renderDocument(type, context) {
         // visually as a single meta block. Replaces the previous
         // drawDate() call, which lived below the title and used a
         // tighter column spec.
-        doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor('#000');
+        doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor(themeColor(doc, 'text'));
         doc.text(`${t(ctx.locale, 'date')}:`,
           metaRight - metaValueW - metaLabelW, y,
           { width: metaLabelW, align: 'right', lineBreak: false });
@@ -1565,14 +1603,14 @@ function renderDocument(type, context) {
         // it's the prominent reference on a Storno.
         if (isStorno && ctx.doc.cancelsInvoice) {
           const { number, issueDate } = ctx.doc.cancelsInvoice;
-          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor('#666');
+          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor(themeColor(doc, 'muted'));
           const datePart = issueDate ? ` ${t(ctx.locale, 'reference_dated', { date: formatDate(issueDate, ctx.dateFormat) })}` : '';
           doc.text(
             `${t(ctx.locale, 'reference_label')}: ${t(ctx.locale, 'reference_cancels')} ${t(ctx.locale, 'invoice_title')} ${number}${datePart}`,
             leftX, y, { width: PAGE.contentWidth }
           );
           y = doc.y + 6;
-          doc.fillColor('#000');
+          doc.fillColor(themeColor(doc, 'text'));
         }
 
         // Invoice → source quote cross-reference. We deliberately keep
@@ -1585,13 +1623,13 @@ function renderDocument(type, context) {
         // rendered for invoices that came from a quote; no-op for
         // standalone invoices and Storni (which don't reference quotes).
         if (type === 'invoice' && !isStorno && ctx.doc.sourceQuoteNumber) {
-          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor('#666');
+          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor(themeColor(doc, 'muted'));
           doc.text(
             `${t(ctx.locale, 'reference_label')}: ${t(ctx.locale, 'quote_title')} ${ctx.doc.sourceQuoteNumber}`,
             leftX, y, { width: PAGE.contentWidth }
           );
           y = doc.y + 6;
-          doc.fillColor('#000');
+          doc.fillColor(themeColor(doc, 'text'));
         }
         // Cancel + reissue trail (migration 114) — when this invoice
         // replaces an earlier (cancelled) one, surface "Bezug: Ersetzt
@@ -1601,14 +1639,14 @@ function renderDocument(type, context) {
         // Storni (which carry their own cancelsInvoice reference).
         if (type === 'invoice' && !isStorno && ctx.doc.replacesInvoice) {
           const { number, issueDate } = ctx.doc.replacesInvoice;
-          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor('#666');
+          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor(themeColor(doc, 'muted'));
           const datePart = issueDate ? ` ${t(ctx.locale, 'reference_dated', { date: formatDate(issueDate, ctx.dateFormat) })}` : '';
           doc.text(
             `${t(ctx.locale, 'reference_label')}: ${t(ctx.locale, 'reference_replaces')} ${t(ctx.locale, 'invoice_title')} ${number}${datePart}`,
             leftX, y, { width: PAGE.contentWidth }
           );
           y = doc.y + 6;
-          doc.fillColor('#000');
+          doc.fillColor(themeColor(doc, 'text'));
         }
 
         // ---- salutation + lead-in ------------------------------------
@@ -1618,7 +1656,7 @@ function renderDocument(type, context) {
         // dictionary ("Sehr geehrte Damen und Herren,").
         const greeting = personalSalutation(ctx.locale, ctx.recipient?.salutation, ctx.recipient?.lastName)
         || t(ctx.locale, 'salutation');
-        doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(10).fillColor('#000');
+        doc.font(doc._fonts ? doc._fonts.bold : FONT_BOLD).fontSize(10).fillColor(themeColor(doc, 'text'));
         doc.text(greeting, leftX, y, { width: PAGE.contentWidth });
         y = doc.y + 4;
         doc.font(doc._fonts ? doc._fonts.body : FONT_BODY);
@@ -1711,7 +1749,7 @@ function renderDocument(type, context) {
 
         // ---- outro text -----------------------------------------------
         if (ctx.doc.outroText) {
-          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor('#000');
+          doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(10).fillColor(themeColor(doc, 'text'));
           doc.text(ctx.doc.outroText, leftX, y, { width: PAGE.contentWidth });
           y = doc.y + 12;
         }
@@ -1730,7 +1768,7 @@ function renderDocument(type, context) {
         }
 
         // ---- folding marks (left edge) --------------------------------
-        drawFoldingMarks(doc, ctx.issuer?.foldingMarks);
+        drawFoldingMarks(doc, context.theme ? ctx.theme.foldingMarks : ctx.issuer?.foldingMarks);
 
         // ---- footer ---------------------------------------------------
         drawFooter(doc, ctx.issuer, ctx.locale);
@@ -1757,40 +1795,10 @@ function renderDocument(type, context) {
         // returns {start, count}. We switchToPage() each one, draw the
         // pagination label in the bottom-right corner, then end.
         try {
-          const range = doc.bufferedPageRange();
-          const total = range.count;
-          // Stamp on EVERY page including single-page documents. The
-          // "Page 1 of 1" label is a tamper-evidence cue for the
-          // recipient — if they receive page 1 of 3 in isolation,
-          // they know pages are missing; conversely "1 of 1" lets a
-          // single-page invoice confirm it's complete. The cost (one
-          // grey line in the bottom corner) is negligible.
-          for (let i = 0; i < total; i++) {
-            doc.switchToPage(range.start + i);
-            // Drop this page's bottom margin to 0 so writing the label INTO the
-            // margin band (below the content area the line-item table fills) can't
-            // trigger PDFKit's auto-page-break. Previously the label sat at
-            // marginBottom-12 — INSIDE the content area — so on a full multi-page
-            // invoice the table's last row overlapped the "Seite X von Y" stamp
-            // (#794). The page is already fully laid out (buffered), so zeroing the
-            // margin here is safe.
-            doc.page.margins.bottom = 0;
-            doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(8).fillColor('#888');
-            const label = t(ctx.locale, 'page_of', {
-              current: i + 1,
-              total,
-            });
-            // Bottom-right corner, INSIDE the bottom margin (below the content
-            // edge the table fills), so a full continuation page's last row can't
-            // overlap it.
-            const labelY = doc.page.height - PAGE.marginBottom + 8;
-            const labelW = 120;
-            const labelX = doc.page.width - PAGE.marginRight - labelW;
-            doc.text(label, labelX, labelY, {
-              width: labelW, align: 'right', lineBreak: false,
-            });
-            doc.fillColor('#000');
-          }
+          // Stamp on every page including single-page documents: "Page 1 of
+          // 1" tells the recipient the document is complete. The payment-slip
+          // page is left alone and not counted (#1445).
+          stampPageNumbers(doc, ctx.locale);
         } catch (err) {
           const logger = require('../utils/logger');
           logger.warn('Failed to stamp page numbers on PDF', { err: err.message });
@@ -1830,6 +1838,9 @@ function normaliseContext(type, ctx) {
     // 'YYYY-MM-DD', locale?: string }`. The service layer hydrates
     // this; defaults to DD.MM.YYYY when unset.
     dateFormat: ctx.dateFormat || { format: 'DD.MM.YYYY' },
+    // PDF theme (#1445); callers without one get the built-in look.
+    theme: ctx.theme || builtInTheme(type),
+    generatedAt: ctx.generatedAt || null,
   };
 }
 
@@ -1860,33 +1871,46 @@ async function renderInvoiceToBuffer(context) {
  *     they're stamped into the box; otherwise blank lines for handwritten
  *     wet-signing.
  */
-function renderContractToBuffer(context) {
+/**
+ * Render a contract. Resolves `{ buffer, slots }`: where each signature slot
+ * landed on the signature page (#1445), for the stamp service and the
+ * generated document's record.
+ */
+function renderContractWithSlots(context) {
+  let placedSlots = [];
   return new Promise((resolve, reject) => {
     (async () => {
       try {
         const ctx = context || {};
         const locale = ctx.locale || 'de';
+        const theme = ctx.theme || builtInTheme('contract');
+        // Settings → General date format, like quotes and invoices (#1445;
+        // contracts used to pass the locale here, which always fell back).
+        const dateFormat = ctx.dateFormat || { format: 'DD.MM.YYYY' };
+        // A footer (theme) sits in the bottom margin, so the margin grows
+        // by its height and body text never runs into it.
+        const footerReserve = theme.footer.mode === 'none' ? 0 : ((ctx.issuer || {}).footerLine ? 28 : 12);
         const doc = new PDFDocument({
           size: 'A4',
           bufferPages: true,
           margins: {
-            top: PAGE.marginTop, bottom: PAGE.marginBottom,
+            top: PAGE.marginTop, bottom: PAGE.marginBottom + footerReserve,
             left: PAGE.marginLeft, right: PAGE.marginRight,
           },
           info: {
             Title: `${ctx.doc?.contractNumber || 'Contract'}${ctx.recipient?.companyName ? '_' + ctx.recipient.companyName : ''}`,
             Author: ctx.issuer?.companyName || 'picpeak',
+            ...(ctx.generatedAt ? { CreationDate: new Date(ctx.generatedAt) } : {}),
           },
         });
 
         const chunks = [];
         doc.on('data', (c) => chunks.push(c));
-        doc.on('end', () => resolve(Buffer.concat(chunks)));
+        doc.on('end', () => resolve({ buffer: Buffer.concat(chunks), slots: placedSlots }));
         doc.on('error', reject);
 
-        doc._fonts = { body: FONT_BODY, bold: FONT_BOLD };
-        const registered = registerCustomFonts(doc, ctx.issuer || {});
-        if (registered) doc._fonts = registered;
+        doc._theme = theme;
+        doc._fonts = registerThemeFonts(doc, ctx.issuer || {}, theme);
 
         // ---- header: issuer + recipient blocks (DIN 5008) ------------
         const issuerWidth = 180;
@@ -1896,19 +1920,21 @@ function renderContractToBuffer(context) {
         const issuerEndY = drawIssuerBlock(doc, ctx.issuer || {}, issuerX, issuerY, issuerWidth, locale);
         const recipientEndY = drawRecipientBlock(doc, ctx.recipient || {}, locale);
         let y = Math.max(issuerEndY, recipientEndY, ADDR_WINDOW.top + ADDR_WINDOW.height) + 6;
+        // Folding marks on the letter page, when the contract theme has them.
+        drawFoldingMarks(doc, theme.foldingMarks);
 
         // ---- contract number + date (right-aligned) ------------------
         const docNumberForDisplay = ctx.doc?.contractNumber || '';
         const numberLabel = t(locale, 'contract_number_label');
         const dateLabel = t(locale, 'date');
-        const issueDateDisplay = formatDate(ctx.doc?.issueDate, locale);
+        const issueDateDisplay = formatDate(ctx.doc?.issueDate, dateFormat);
         const labelColumnWidth = 110;
         const valueColumnWidth = 120;
         const blockWidth = labelColumnWidth + valueColumnWidth;
         const blockRightX = PAGE.width - PAGE.marginRight;
         const blockLeftX = blockRightX - blockWidth;
 
-        doc.font(doc._fonts.body).fontSize(9).fillColor('#000');
+        doc.font(doc._fonts.body).fontSize(9).fillColor(themeColor(doc, 'text'));
         // Number row
         doc.text(numberLabel, blockLeftX, y, { width: labelColumnWidth, align: 'right' });
         doc.font(doc._fonts.bold).text(
@@ -1931,12 +1957,13 @@ function renderContractToBuffer(context) {
 
         // ---- title --------------------------------------------------
         const title = ctx.doc?.title || t(locale, 'contract_title');
-        doc.font(doc._fonts.bold).fontSize(18).fillColor('#000');
+        doc.font(doc._fonts.bold).fontSize(theme.titleSize).fillColor(themeColor(doc, 'accent'));
         doc.text(title, PAGE.marginLeft, y, { width: PAGE.contentWidth });
+        doc.fillColor(themeColor(doc, 'text'));
         y = doc.y + 10;
 
         // ---- helper: ensure space before drawing, paginate if needed.
-        const bottomLimit = PAGE.height - PAGE.marginBottom - 20;
+        const bottomLimit = PAGE.height - PAGE.marginBottom - 20 - footerReserve;
         const ensureSpace = (needed) => {
           if (y + needed > bottomLimit) {
             doc.addPage();
@@ -1971,7 +1998,7 @@ function renderContractToBuffer(context) {
 
         // ---- intro text ---------------------------------------------
         if (ctx.doc?.introText) {
-          doc.font(doc._fonts.body).fontSize(10).fillColor('#000');
+          doc.font(doc._fonts.body).fontSize(10).fillColor(themeColor(doc, 'text'));
           ensureSpace(40);
           renderBodyMarkdown(ctx.doc.introText, { width: PAGE.contentWidth, align: 'left' });
           y = doc.y + 12;
@@ -1981,14 +2008,14 @@ function renderContractToBuffer(context) {
         for (const sec of ctx.sections || []) {
           if (!sec.blocks || sec.blocks.length === 0) continue;
           ensureSpace(32);
-          doc.font(doc._fonts.bold).fontSize(13).fillColor('#000');
+          doc.font(doc._fonts.bold).fontSize(13).fillColor(themeColor(doc, 'accent'));
           doc.text(t(locale, `section_${sec.section}`), PAGE.marginLeft, y, {
             width: PAGE.contentWidth, align: 'left',
           });
           y = doc.y + 6;
           // Thin separator under the section heading.
           doc
-            .strokeColor('#888')
+            .strokeColor(themeColor(doc, 'rule'))
             .lineWidth(0.5)
             .moveTo(PAGE.marginLeft, y)
             .lineTo(PAGE.marginLeft + PAGE.contentWidth, y)
@@ -1998,13 +2025,13 @@ function renderContractToBuffer(context) {
           for (const block of sec.blocks) {
             ensureSpace(48);
             if (block.name) {
-              doc.font(doc._fonts.bold).fontSize(10).fillColor('#000');
+              doc.font(doc._fonts.bold).fontSize(10).fillColor(themeColor(doc, 'text'));
               doc.text(String(block.name), PAGE.marginLeft, y, {
                 width: PAGE.contentWidth, align: 'left',
               });
               y = doc.y + 4;
             }
-            doc.font(doc._fonts.body).fontSize(10).fillColor('#000');
+            doc.font(doc._fonts.body).fontSize(10).fillColor(themeColor(doc, 'text'));
             renderBodyMarkdown(block.body, { width: PAGE.contentWidth, align: 'left' });
             y = doc.y + 10;
             // If text rendering pushed past page bottom, PDFKit
@@ -2014,106 +2041,44 @@ function renderContractToBuffer(context) {
 
             // Special-case: when the block is the
             // `quote_line_items_table` system block AND the contract
-            // was generated from a quote, draw a real formatted line-
-            // items table immediately after the body text. Columns
-            // mirror drawLineItems (#, Qty, Description, Unit, Total)
-            // but inlined here because the contract document has no
-            // `lineItems` ctx the standalone helper expects.
+            // was generated from a quote, draw the quote's line items
+            // right after the body text — with the SAME table the quote
+            // and invoice PDFs use (#1451), so units, discount lines,
+            // comment rows and number formatting match on all three.
+            // (This used to be a hand-drawn copy with its own "\u21B3"
+            // glyph Helvetica can't render and a hard-coded de-CH.)
             if (
               block.slug === 'quote_line_items_table'
               && ctx.quoteLineItems
               && ctx.quoteLineItems.length > 0
             ) {
-              const currency = (ctx.quoteCurrency || 'CHF').toUpperCase();
-              // Column widths sum to PAGE.contentWidth (515.28). Same
-              // shape as drawLineItems' no-discount variant. The desc
-              // column is widest; numeric columns stay narrow + right-
-              // aligned.
-              const widths = [30, 275, 55, 70, 85];
-              const colX = [PAGE.marginLeft];
-              for (let i = 1; i < widths.length; i++) colX[i] = colX[i - 1] + widths[i - 1];
-              const headers = [
-                t(locale, 'table_pos'),
-                t(locale, 'table_description'),
-                t(locale, 'table_qty'),
-                t(locale, 'table_unit_price'),
-                t(locale, 'table_line_total'),
-              ];
-              const headerAligns = ['left', 'left', 'right', 'right', 'right'];
-
-              const ROW_MIN_HEIGHT = 18;
-              const PAD_X = 4;
-
-              ensureSpace(ROW_MIN_HEIGHT + 4);
-
-              // Header row — bold + bottom border.
-              doc.font(doc._fonts.bold).fontSize(10).fillColor('#000');
-              const headerStartY = y;
-              let headerMaxBottom = y;
-              for (let i = 0; i < headers.length; i++) {
-                doc.text(headers[i], colX[i] + PAD_X, y + 3, {
-                  width: widths[i] - PAD_X * 2,
-                  align: headerAligns[i],
-                });
-                if (doc.y > headerMaxBottom) headerMaxBottom = doc.y;
-              }
-              const headerBottom = Math.max(headerMaxBottom, headerStartY + ROW_MIN_HEIGHT);
-              doc.strokeColor('#000').lineWidth(1)
-                .moveTo(PAGE.marginLeft, headerBottom)
-                .lineTo(PAGE.marginLeft + PAGE.contentWidth, headerBottom)
-                .stroke();
-              y = headerBottom + 1;
-
-              // Data rows. Sub-items (parent_position != null) render
-              // with a "↳ " prefix + 8pt indent in the description
-              // column and an empty position column. Numeric values
-              // come from minor-unit BigInts via formatMinor.
-              doc.font(doc._fonts.body).fontSize(10).fillColor('#000');
-              let topLevelCount = 0;
-              for (const li of ctx.quoteLineItems) {
-                const isSub = li.parent_position != null;
-                const posLabel = isSub ? '' : String(++topLevelCount);
-                const descPrefix = isSub ? '\u21B3 ' : '';
-                const descIndent = isSub ? 8 : 0;
-                const qtyText = (() => {
-                  const q = Number(li.quantity || 0);
-                  return Number.isInteger(q) ? String(q) : String(q);
-                })();
-                const unitText = formatMinor(li.unit_price_minor, currency, 'de-CH');
-                const lineTotalText = formatMinor(li.line_total_minor, currency, 'de-CH');
-
-                const cells = [
-                  { text: posLabel, width: widths[0], align: 'left', x: colX[0] },
-                  { text: `${descPrefix}${li.description || ''}`, width: widths[1] - descIndent, align: 'left', x: colX[1] + descIndent },
-                  { text: qtyText, width: widths[2], align: 'right', x: colX[2] },
-                  { text: unitText, width: widths[3], align: 'right', x: colX[3] },
-                  { text: lineTotalText, width: widths[4], align: 'right', x: colX[4] },
-                ];
-
-                // Measure tallest cell so the row's bottom is the max
-                // of all column heights + a minimum row height.
-                ensureSpace(ROW_MIN_HEIGHT + 2);
-                const rowStartY = y;
-                let rowMaxBottom = y;
-                for (const c of cells) {
-                  doc.text(c.text, c.x + PAD_X, y + 3, {
-                    width: c.width - PAD_X * 2,
-                    align: c.align,
-                  });
-                  if (doc.y > rowMaxBottom) rowMaxBottom = doc.y;
-                }
-                const rowBottom = Math.max(rowMaxBottom, rowStartY + ROW_MIN_HEIGHT);
-                // Thin grey divider under each row.
-                doc.strokeColor('#cccccc').lineWidth(0.5)
-                  .moveTo(PAGE.marginLeft, rowBottom)
-                  .lineTo(PAGE.marginLeft + PAGE.contentWidth, rowBottom)
-                  .stroke();
-                y = rowBottom + 1;
-              }
+              ensureSpace(40);
+              doc.x = PAGE.marginLeft;
+              doc.y = y;
+              y = drawLineItems(doc, {
+                type: 'contract',
+                locale,
+                currency: (ctx.quoteCurrency || 'CHF').toUpperCase(),
+                intlLocale: localeForIntl(locale, ctx.issuer?.countryCode),
+                fonts: doc._fonts,
+                lineItems: ctx.quoteLineItems.map((li) => ({
+                  quantity: li.quantity,
+                  description: li.description,
+                  unitPriceMinor: li.unit_price_minor,
+                  discountPercent: li.discount_percent,
+                  lineTotalMinor: li.line_total_minor,
+                  parentLineItemId: li.parent_line_item_id || null,
+                  parentPosition: li.parent_position == null ? null : Number(li.parent_position),
+                  detailsText: li.details_text || null,
+                  lineKind: li.line_kind || 'item',
+                  unit: li.unit || null,
+                  promotion: parsePromotionSnapshot(li.promotion_snapshot),
+                })),
+              });
 
               y += 10;
               doc.y = y;
-              doc.fillColor('#000');
+              doc.fillColor(themeColor(doc, 'text'));
             }
           }
 
@@ -2123,7 +2088,7 @@ function renderContractToBuffer(context) {
         // ---- outro text ---------------------------------------------
         if (ctx.doc?.outroText) {
           ensureSpace(40);
-          doc.font(doc._fonts.body).fontSize(10).fillColor('#000');
+          doc.font(doc._fonts.body).fontSize(10).fillColor(themeColor(doc, 'text'));
           renderBodyMarkdown(ctx.doc.outroText, { width: PAGE.contentWidth, align: 'left' });
           y = doc.y + 16;
         }
@@ -2147,68 +2112,63 @@ function renderContractToBuffer(context) {
         const L = CONTRACT_SIGNATURE_LAYOUT;
 
         // Title row
-        doc.font(doc._fonts.bold).fontSize(16).fillColor('#000');
+        doc.font(doc._fonts.bold).fontSize(16).fillColor(themeColor(doc, 'text'));
         doc.text(t(locale, 'signature_page_title'), PAGE.marginLeft, L.titleY, {
           width: PAGE.contentWidth, align: 'left',
         });
-        doc.strokeColor('#888').lineWidth(0.5)
+        doc.strokeColor(themeColor(doc, 'rule')).lineWidth(0.5)
           .moveTo(PAGE.marginLeft, L.titleY + 22)
           .lineTo(PAGE.marginLeft + PAGE.contentWidth, L.titleY + 22)
           .stroke();
 
         // Closing prompt — generic line so unsigned doc reads coherently
-        doc.font(doc._fonts.body).fontSize(10).fillColor('#000');
+        doc.font(doc._fonts.body).fontSize(10).fillColor(themeColor(doc, 'text'));
         doc.text(t(locale, 'signature_page_prompt'), PAGE.marginLeft, L.promptY, {
           width: PAGE.contentWidth, align: 'left',
         });
 
-        // Two empty signature boxes — customer on the left, admin on
-        // the right. drawn at fixed coordinates so the stamp service
-        // can find them later by constant rather than runtime layout.
-        const drawEmptySignaturePane = (x, label, info) => {
-          doc.font(doc._fonts.bold).fontSize(10).fillColor('#000');
-          doc.text(label, x, L.paneLabelY, { width: L.boxWidth });
-          doc.strokeColor('#cccccc').lineWidth(0.5)
-            .rect(x, L.boxY, L.boxWidth, L.boxHeight)
-            .stroke();
-          // Caption labels — name + date placeholders that the
-          // stamp service overwrites with the actual values when
-          // the signature is applied. The unsigned PDF shows these
-          // as empty labels.
-          const captionY = L.boxY + L.boxHeight + 6;
-          doc.font(doc._fonts.body).fontSize(9).fillColor('#000');
-          doc.text(
-            `${t(locale, 'signed_label_name')}: ${info?.name || ''}`,
-            x, captionY, { width: L.boxWidth },
-          );
-          doc.text(
-            `${t(locale, 'signed_label_date')}: ${info?.signedAt ? formatDate(info.signedAt, locale) : ''}`,
-            x, captionY + 12, { width: L.boxWidth },
-          );
-        };
-
-        drawEmptySignaturePane(L.customerX, t(locale, 'signature_customer'), ctx.signatures?.customer);
-        drawEmptySignaturePane(L.adminX,    t(locale, 'signature_admin'),    ctx.signatures?.admin);
+        // Signature slots (#1445): one per signer, customers first and the
+        // issuer last, two to a row. Without signers the two legacy boxes sit
+        // exactly where CONTRACT_SIGNATURE_LAYOUT always put them. Where each
+        // slot landed goes back to the caller, so signatures are stamped from
+        // the document's record rather than from a constant.
+        const slotDefs = Array.isArray(ctx.signatureSlots) && ctx.signatureSlots.length
+          ? ctx.signatureSlots.slice(0, MAX_SIGNATURE_SLOTS)
+          : [
+            { key: 'customer', role: 'customer', label: t(locale, 'signature_customer'), ...(ctx.signatures?.customer || {}) },
+            { key: 'admin', role: 'issuer', label: t(locale, 'signature_admin'), ...(ctx.signatures?.admin || {}) },
+          ];
+        const { count: pageCount } = doc.bufferedPageRange();
+        placedSlots = slotDefs.map((slot, index) => {
+          const offset = Math.floor(index / 2) * SIGNATURE_ROW_HEIGHT;
+          const x = index % 2 === 0 ? L.customerX : L.adminX;
+          const boxY = L.boxY + offset;
+          doc.font(doc._fonts.bold).fontSize(10).fillColor(themeColor(doc, 'text'));
+          doc.text(slot.label || '', x, L.paneLabelY + offset, { width: L.boxWidth, lineBreak: false, ellipsis: true });
+          doc.strokeColor('#cccccc').lineWidth(0.5).rect(x, boxY, L.boxWidth, L.boxHeight).stroke();
+          // Caption labels: the name (known for invited signers) and an empty
+          // date, which the stamp service fills in when the slot is signed.
+          const captionY = boxY + L.boxHeight + 6;
+          doc.font(doc._fonts.body).fontSize(9).fillColor(themeColor(doc, 'text'));
+          doc.text(`${t(locale, 'signed_label_name')}: ${slot.name || ''}`, x, captionY,
+            { width: L.boxWidth, lineBreak: false, ellipsis: true });
+          doc.text(`${t(locale, 'signed_label_date')}: ${slot.signedAt ? formatDate(slot.signedAt, dateFormat) : ''}`,
+            x, captionY + 12, { width: L.boxWidth, lineBreak: false });
+          return {
+            key: slot.key, role: slot.role, label: slot.label || '', pageIndex: pageCount - 1,
+            x, y: boxY, width: L.boxWidth, height: L.boxHeight, captionY,
+          };
+        });
 
         // ---- page numbers ("Page 1 of N" / "Seite 1 von N") ----------
         // Same stamp the quote/invoice renderer uses (line 1680 above).
         // bufferPages:true keeps every page open for switchToPage; we
         // walk the range after all content is drawn so we know N.
         try {
-          const range = doc.bufferedPageRange();
-          const total = range.count;
-          for (let i = 0; i < total; i++) {
-            doc.switchToPage(range.start + i);
-            doc.font(doc._fonts ? doc._fonts.body : FONT_BODY).fontSize(8).fillColor('#888');
-            const label = t(locale, 'page_of', { current: i + 1, total });
-            const labelY = doc.page.height - PAGE.marginBottom - 12;
-            const labelW = 120;
-            const labelX = doc.page.width - PAGE.marginRight - labelW;
-            doc.text(label, labelX, labelY, {
-              width: labelW, align: 'right', lineBreak: false,
-            });
-            doc.fillColor('#000');
-          }
+          // The footer (when the theme has one) and the page numbers go into
+          // each page's bottom margin, clear of the body text (#1445; the
+          // numbers used to sit inside the content area and could overlap it).
+          stampPageNumbers(doc, locale, { beforeStamp: () => drawFooter(doc, ctx.issuer || {}, locale) });
         } catch (err) {
           const logger = require('../utils/logger');
           logger.warn('Failed to stamp page numbers on contract PDF', { err: err.message });
@@ -2222,10 +2182,16 @@ function renderContractToBuffer(context) {
   });
 }
 
+/** The contract PDF alone (see renderContractWithSlots). */
+async function renderContractToBuffer(context) {
+  return (await renderContractWithSlots(context)).buffer;
+}
+
 module.exports = {
   renderQuoteToBuffer,
   renderInvoiceToBuffer,
   renderContractToBuffer,
+  renderContractWithSlots,
   // Building blocks shared with other PDF features (tax report etc.) —
   // they all run through createBaseDocument so the font + orientation
   // story stays consistent.
@@ -2236,9 +2202,13 @@ module.exports = {
   // render uses to draw empty signature boxes are used to overlay
   // signature PNGs at stamping time. Single source of truth.
   CONTRACT_SIGNATURE_LAYOUT,
+  SIGNATURE_ROW_HEIGHT,
+  MAX_SIGNATURE_SLOTS,
   PAGE,
   FONT_BODY,
   FONT_BOLD,
   // Exposed for unit tests + advanced callers.
-  _internal: { formatMinor, formatDate, t, registerCustomFonts },
+  _internal: {
+    formatMinor, formatDate, t, registerCustomFonts, registerThemeFonts, drawLineItems, stampPageNumbers, themeColor,
+  },
 };

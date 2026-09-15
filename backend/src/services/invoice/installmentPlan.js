@@ -4,6 +4,7 @@
 const { logActivity } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
+const { extendedLineColumns } = require('../../utils/lineItemTotals');
 const { computeDueDate, computeScheduledSendAt, EDITABLE_INSTALLMENT_STATUSES, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
 
 
@@ -333,6 +334,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
         line_total_minor: ensureInt(li.line_total_minor),
         parent_position: li.parent_position == null ? null : ensureInt(li.parent_position),
         details_text: li.details_text || null,
+        ...extendedLineColumns(li, { invoice: true }),
       }));
       const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
       validateLineItemHierarchy(cloned);

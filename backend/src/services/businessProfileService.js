@@ -46,6 +46,9 @@ const ALLOWED_PROFILE_FIELDS = [
   // Last link in the hour-entry rate chain after the per-entry
   // override and the per-customer default.
   'default_hourly_rate_minor',
+  // Install-wide fallback day rate (migration 215), minor units — used by
+  // per-day quote lines when the customer has no own day rate.
+  'default_day_rate_minor',
   'default_currency',
   'default_locale',
   'default_qr_format',
@@ -208,6 +211,15 @@ function sanitiseProfilePayload(payload) {
     } else {
       const n = parseInt(updates.default_hourly_rate_minor, 10);
       updates.default_hourly_rate_minor = Number.isFinite(n) && n >= 0 ? n : null;
+    }
+  }
+  // Same rules for the install-wide default day rate (migration 215).
+  if (updates.default_day_rate_minor !== undefined) {
+    if (updates.default_day_rate_minor === null || updates.default_day_rate_minor === '') {
+      updates.default_day_rate_minor = null;
+    } else {
+      const n = parseInt(updates.default_day_rate_minor, 10);
+      updates.default_day_rate_minor = Number.isFinite(n) && n >= 0 ? n : null;
     }
   }
 

@@ -151,6 +151,24 @@ const ALLOWED_MEDIA_TYPES = {
 };
 
 /**
+ * Document types (#1444). Kept out of ALLOWED_MEDIA_TYPES so no image/video
+ * upload path starts accepting documents: validateFileType still requires the
+ * caller's own allowlist to name the MIME type. Only callers that already list
+ * application/pdf (signed-contract upload, PicTransfer client uploads) change —
+ * before this entry existed every PDF failed the lookup and was rejected.
+ */
+const ALLOWED_DOCUMENT_TYPES = {
+  'application/pdf': {
+    extensions: ['.pdf'],
+    magicNumbers: [
+      { offset: 0, bytes: [0x25, 0x50, 0x44, 0x46, 0x2D] } // "%PDF-"
+    ]
+  }
+};
+
+const lookupTypeConfig = (mimetype) => ALLOWED_MEDIA_TYPES[mimetype] || ALLOWED_DOCUMENT_TYPES[mimetype];
+
+/**
  * Validate file type by MIME type and extension
  * @param {string} filename - The filename
  * @param {string} mimetype - The MIME type
@@ -167,7 +185,7 @@ function validateFileType(filename, mimetype, allowedTypes) {
   const ext = path.extname(filename).toLowerCase();
 
   // Check if extension matches the MIME type
-  const typeConfig = ALLOWED_MEDIA_TYPES[mimetype];
+  const typeConfig = lookupTypeConfig(mimetype);
   if (!typeConfig || !typeConfig.extensions.includes(ext)) {
     return false;
   }
@@ -183,7 +201,7 @@ function validateFileType(filename, mimetype, allowedTypes) {
  */
 async function validateFileContent(filePath, expectedMimeType) {
   try {
-    const typeConfig = ALLOWED_MEDIA_TYPES[expectedMimeType];
+    const typeConfig = lookupTypeConfig(expectedMimeType);
     if (!typeConfig) {
       return false;
     }
@@ -302,5 +320,6 @@ module.exports = {
   createFileUploadValidator,
   ALLOWED_IMAGE_TYPES,
   ALLOWED_VIDEO_TYPES,
-  ALLOWED_MEDIA_TYPES
+  ALLOWED_MEDIA_TYPES,
+  ALLOWED_DOCUMENT_TYPES
 };

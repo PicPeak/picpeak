@@ -319,6 +319,16 @@
         "DELETE /bank-accounts/:id"
       ]
     },
+    "adminPdfThemes.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "PDF look-and-feel configuration (colours, font, footer, page numbers) and its sample preview are settings, not separate usage signals; the documents they style are covered by the billing capabilities.",
+      "route_signatures": [
+        "GET /",
+        "PUT /:scope",
+        "POST /:scope/preview"
+      ]
+    },
     "adminCalendar.js": {
       "decision": "partial",
       "signals": [
@@ -380,6 +390,7 @@
         "GET /",
         "POST /",
         "GET /:id",
+        "GET /:id/documents",
         "PUT /:id",
         "POST /:id/send",
         "POST /:id/cancel",
@@ -387,6 +398,10 @@
         "POST /:id/convert-to-invoice",
         "POST /:id/resend-signed",
         "POST /:id/restamp-signatures",
+        "GET /:id/signers",
+        "PUT /:id/signers",
+        "POST /:id/signers/:signerId/resend",
+        "GET /:id/signing-evidence",
         "POST /:id/countersign",
         "POST /:id/upload-signed-pdf",
         "GET /:id/pdf",
@@ -419,7 +434,7 @@
         "crm_combined_billing",
         "crm_monthly_billing_manual"
       ],
-      "reason": "Successful admin CRM/hour-entry/invitation operations only. No customer/account names, IDs, rates, billed hours, payment state or portal behavior. v3 adds only: crm_combined_billing, crm_monthly_billing_manual. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface.",
+      "reason": "Successful admin CRM/hour-entry/invitation operations only. No customer/account names, IDs, rates, billed hours, payment state or portal behavior. v3 adds only: crm_combined_billing, crm_monthly_billing_manual. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. Customer-document writes (v5) only count as crm: no file names, sizes, counts or review outcomes.",
       "route_signatures": [
         "GET /",
         "GET /search",
@@ -443,7 +458,15 @@
         "POST /:id/hour-entries/bill",
         "POST /:id/bill-combined",
         "POST /:id/trigger-monthly-bill",
-        "GET /:id/monthly-draft"
+        "GET /:id/monthly-draft",
+        "GET /:id/documents",
+        "POST /:id/documents",
+        "PATCH /:id/documents/:docId",
+        "POST /:id/documents/:docId/share",
+        "POST /:id/documents/:docId/unshare",
+        "POST /:id/documents/:docId/review",
+        "GET /:id/documents/:docId/download",
+        "DELETE /:id/documents/:docId"
       ]
     },
     "adminDashboard.js": {
@@ -1042,6 +1065,7 @@
         "PUT /:id",
         "POST /:id/send",
         "POST /:id/duplicate",
+        "POST /:id/recalculate-rates",
         "POST /:id/accept",
         "POST /:id/decline",
         "POST /:id/convert",
@@ -1393,7 +1417,13 @@
         "GET /quotes/:id/pdf",
         "GET /invoices/:id/pdf",
         "GET /contracts",
-        "GET /contracts/:id/pdf"
+        "POST /contracts/:id/signing-access",
+        "GET /contracts/:id/pdf",
+        "GET /dashboard",
+        "GET /events/:slug/overview",
+        "GET /documents",
+        "POST /documents",
+        "GET /documents/:id/download"
       ]
     },
     "customerAuth.js": {
@@ -1466,6 +1496,7 @@
       "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
       "route_signatures": [
         "GET /:token",
+        "GET /:token/attachments/:attachmentId",
         "POST /:token/sign",
         "POST /:token/upload-signed-pdf",
         "GET /:token/pdf"
@@ -1503,6 +1534,7 @@
       "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
       "route_signatures": [
         "GET /:token",
+        "GET /:token/totals",
         "POST /:token/respond"
       ]
     },
@@ -1659,6 +1691,88 @@
         "POST /:eventId/upload",
         "GET /:slug/uploads/status"
       ]
+    },
+    "adminQuoteCatalog.js": {
+      "decision": "partial",
+      "signals": [
+        "crm",
+        "crm_quotes",
+        "document_templates"
+      ],
+      "reason": "Admin quote catalogue and template operations only (packages, promotions, text blocks, templates, quote-from-template). No quote content, prices, customer data or text-block wording.",
+      "route_signatures": [
+        "GET /packages",
+        "POST /packages",
+        "PUT /packages/:id",
+        "DELETE /packages/:id",
+        "GET /promotions",
+        "POST /promotions",
+        "PUT /promotions/:id",
+        "DELETE /promotions/:id",
+        "GET /text-blocks",
+        "POST /text-blocks",
+        "PUT /text-blocks/:id",
+        "DELETE /text-blocks/:id",
+        "GET /templates",
+        "POST /templates",
+        "GET /templates/:id",
+        "PUT /templates/:id",
+        "DELETE /templates/:id",
+        "POST /templates/:id/publish",
+        "POST /templates/:id/quotes",
+        "POST /templates/from-quote/:quoteId"
+      ]
+    },
+    "adminContractTemplates.js": {
+      "decision": "partial",
+      "signals": [
+        "document_templates"
+      ],
+      "reason": "Admin contract template operations only (drafts, publishing, versions, default, preview). No clause wording, customer data or contract content.",
+      "route_signatures": [
+        "GET /",
+        "POST /",
+        "GET /:id",
+        "GET /:id/versions/:version",
+        "PUT /:id/draft",
+        "POST /:id/publish",
+        "POST /:id/versions/:version/draft",
+        "POST /:id/duplicate",
+        "POST /:id/archive",
+        "POST /:id/restore",
+        "POST /:id/default",
+        "POST /:id/preview"
+      ]
+    },
+    "adminDocumentAttachments.js": {
+      "decision": "partial",
+      "signals": [
+        "document_templates"
+      ],
+      "reason": "Admin attachment-library operations only (upload, archive, restore, download). No file names, contents or checksums.",
+      "route_signatures": [
+        "GET /",
+        "POST /",
+        "GET /:id/download",
+        "POST /:id/archive",
+        "POST /:id/restore"
+      ]
+    },
+    "publicContractSigning.js": {
+      "decision": "excluded",
+      "signals": [],
+      "reason": "Public/customer/gallery/visitor surface or existing optional third-party analytics proxy: no product-usage middleware, callbacks, counters or report triggers.",
+      "route_signatures": [
+        "GET /invite/:token",
+        "POST /invite/:token/code",
+        "POST /invite/:token/verify",
+        "GET /session",
+        "GET /session/pdf",
+        "GET /session/attachments/:attachmentId",
+        "POST /session/sign",
+        "POST /session/decline",
+        "POST /session/upload-signed-pdf"
+      ]
     }
   },
   "feature_flags": {
@@ -1714,6 +1828,10 @@
         "customer_portal"
       ],
       "reason": "Only effective configuration boolean; dependency rules apply, no flag values/history beyond this boolean."
+    },
+    "documents": {
+      "signals": [],
+      "reason": "Excluded: customer document exchange is not reported as its own capability; no flag value, file names, sizes or counts."
     },
     "expenses": {
       "signals": [

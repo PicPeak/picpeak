@@ -16,11 +16,11 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { publicQuotesService } from '../../services/quotes.service';
+import { publicQuotesService, type PublicSelectionTotals } from '../../services/quotes.service';
 import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { Loading } from '../../components/common';
-import { formatMoney } from '../../utils/money';
+import { formatMoneyMinor } from '../../utils/money';
 
 /**
  * Format a date string as DD.MM.YYYY (the customer-facing format used
@@ -65,23 +65,68 @@ export const QuoteResponsePage: React.FC = () => {
     if (q?.tos?.acceptedAt) setTosAccepted(true);
   }, [q?.tos?.acceptedAt]);
 
+  // Optional add-ons (#1451 phase 2). The customer ticks the ones they want
+  // and the server returns the totals for that choice. Accepting sends the
+  // choice with the total shown here; the server recalculates and refuses a
+  // total that doesn't match. The choice is fixed from the first acceptance.
+  const offeredAddOns = React.useMemo(
+    () => (q?.lineItems || []).filter((li) => li.isOptional && li.lineKind !== 'discount'
+      && li.parentLineItemId == null && li.parentPosition == null),
+    [q?.lineItems],
+  );
+  const [selection, setSelection] = useState<number[] | null>(null);
+  useEffect(() => {
+    if (selection === null && q) {
+      setSelection(offeredAddOns.filter((li) => li.selected !== false).map((li) => li.position));
+    }
+  }, [q, offeredAddOns, selection]);
+  const canChoose = !!q && offeredAddOns.length > 0 && q.canRespond && !q.selectionLocked;
+  const selectionKey = (selection || []).join(',');
+  const totalsQuery = useQuery({
+    queryKey: ['public-quote-totals', token, selectionKey],
+    queryFn: () => publicQuotesService.totals(token!, selection || []),
+    enabled: canChoose && selection !== null,
+    retry: false,
+  });
+  // Keep the last totals on screen while the next choice is calculated.
+  const [shownTotals, setShownTotals] = useState<PublicSelectionTotals | null>(null);
+  useEffect(() => {
+    if (totalsQuery.data) setShownTotals(totalsQuery.data);
+  }, [totalsQuery.data]);
+  const totalsReady = !canChoose || (!!shownTotals && !totalsQuery.isFetching);
+
   const handleRespond = React.useCallback(async (action: 'accept' | 'decline') => {
     setBusy(true);
     setError(null);
     try {
-      await publicQuotesService.respond(token!, action, { tosAccepted });
+      await publicQuotesService.respond(token!, action, {
+        tosAccepted,
+        ...(action === 'accept' && canChoose && shownTotals
+          ? { selectedOptional: shownTotals.selectedOptional, expectedTotalMinor: shownTotals.totalAmountMinor }
+          : {}),
+      });
       await refetch();
     } catch (err: any) {
-      if (err?.response?.data?.code === 'RESPONSE_LOCKED') {
+      const code = err?.response?.data?.code;
+      if (code === 'RESPONSE_LOCKED') {
         setError(t('quoteResponse.locked', 'Your response window has closed and the decision is now final.'));
-      } else if (err?.response?.data?.code === 'TOS_REQUIRED') {
+      } else if (code === 'TOS_REQUIRED') {
         setError(t('quoteResponse.tosRequiredError',
           'Please tick "I accept the Terms of Service" before accepting the quote, or click Decline to refuse.'));
+      } else if (code === 'TOTAL_MISMATCH') {
+        setError(t('quoteResponse.addons.totalChanged', 'The total is now {{total}}. Please check it and accept again.', {
+          total: formatMoneyMinor(Number(err.response.data.totalAmountMinor || 0), q?.currency || 'CHF'),
+        }));
+        await totalsQuery.refetch();
+      } else if (code === 'SELECTION_LOCKED') {
+        setError(t('quoteResponse.addons.locked',
+          'The add-ons were fixed when you accepted. Please contact us for a revised quote.'));
+        await refetch();
       } else {
         setError(err?.response?.data?.error || err.message || 'Something went wrong');
       }
     } finally { setBusy(false); }
-  }, [token, refetch, t, tosAccepted]);
+  }, [token, refetch, t, tosAccepted, canChoose, shownTotals, totalsQuery, q?.currency]);
 
   // PRE-SELECTED ACTION FROM EMAIL LINK
   //
@@ -145,6 +190,25 @@ export const QuoteResponsePage: React.FC = () => {
     ? (quote.status === 'accepted' ? 'accepted' : quote.status === 'declined' ? 'declined' : 'pending')
     : 'pending';
 
+  // While the customer chooses, lines and totals follow the server's numbers
+  // for the current choice; otherwise they are the stored ones.
+  const chosenSet = new Set(selection || []);
+  const isChosen = (position: number, selectedFlag?: boolean) => (
+    canChoose ? chosenSet.has(position) : selectedFlag !== false
+  );
+  const lineTotalOverrides = new Map<number, number>(
+    canChoose && shownTotals ? shownTotals.lines.map((l) => [l.position, l.lineTotalMinor]) : [],
+  );
+  const shown = canChoose && shownTotals ? shownTotals : quote;
+  const toggleAddOn = (position: number, on: boolean) => {
+    setError(null);
+    setSelection((prev) => {
+      const next = new Set(prev || []);
+      if (on) next.add(position); else next.delete(position);
+      return [...next].sort((a, b) => a - b);
+    });
+  };
+
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100">
       <div className="max-w-3xl mx-auto py-8 px-4">
@@ -205,6 +269,12 @@ export const QuoteResponsePage: React.FC = () => {
             <p className="whitespace-pre-line text-neutral-700 dark:text-neutral-300 mb-4">{quote.introText}</p>
           )}
 
+          {canChoose && (
+            <p className="text-sm text-neutral-600 dark:text-neutral-400">
+              {t('quoteResponse.addons.hint', 'Tick the optional add-ons you would like. The total updates as you choose.')}
+            </p>
+          )}
+
           <table className="w-full text-sm my-4">
             <thead>
               <tr className="border-b border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400">
@@ -228,26 +298,59 @@ export const QuoteResponsePage: React.FC = () => {
                 const rows: React.ReactNode[] = [];
                 for (const li of quote.lineItems) {
                   const isSub = li.parentLineItemId != null || li.parentPosition != null;
-                  if (!isSub) topCount += 1;
+                  // Discount lines (#1451) carry no number, quantity or unit price.
+                  const isDiscount = li.lineKind === 'discount';
+                  if (!isSub && !isDiscount) topCount += 1;
                   const priceless = isSub && (!li.unitPriceMinor || Number(li.unitPriceMinor) === 0);
+                  const unitLabel = li.unit ? t(`crm.lineItems.unitShort.${li.unit}`, li.unit) : '';
+                  const quantityText = isDiscount
+                    ? ''
+                    : li.unit === 'flat' ? unitLabel : `${Number(li.quantity)}${unitLabel ? ` ${unitLabel}` : ''}`;
+                  // Optional add-ons (#1451 phase 2): sub-items follow their parent.
+                  const addOnPosition = isSub ? li.parentPosition : li.position;
+                  const isAddOn = !!li.isOptional && !isDiscount;
+                  const addOnChosen = isAddOn && addOnPosition != null ? isChosen(addOnPosition, li.selected) : true;
+                  const lineTotalMinor = lineTotalOverrides.get(li.position) ?? Number(li.lineTotalMinor);
                   rows.push(
                     <tr key={`row-${li.position}`} className={`border-b border-neutral-100 dark:border-neutral-700/70 ${
                       isSub ? 'text-neutral-600 dark:text-neutral-400' : ''
-                    }`}>
-                      <td className="py-2">{isSub ? '' : topCount}</td>
+                    } ${addOnChosen ? '' : 'opacity-60'}`}>
+                      <td className="py-2">{isSub || isDiscount ? '' : topCount}</td>
                       <td className={`py-2 whitespace-pre-line ${isSub ? 'pl-6' : ''}`}>
-                        {isSub ? '• ' : ''}{li.description}
+                        {isAddOn && !isSub && canChoose ? (
+                          <label className="inline-flex items-start gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              checked={addOnChosen}
+                              disabled={busy}
+                              onChange={(e) => toggleAddOn(li.position, e.target.checked)}
+                            />
+                            <span>{li.description}</span>
+                          </label>
+                        ) : (
+                          <>{isSub ? '• ' : ''}{li.description}</>
+                        )}
+                        {isAddOn && !isSub && (
+                          <span className="ml-2 inline-block rounded px-1.5 py-0.5 text-xs bg-neutral-100 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-200">
+                            {canChoose
+                              ? t('quoteResponse.addons.optional', 'Optional')
+                              : addOnChosen
+                                ? t('quoteResponse.addons.included', 'Included')
+                                : t('quoteResponse.addons.notChosen', 'Not chosen')}
+                          </span>
+                        )}
                       </td>
-                      <td className="py-2 text-right">{Number(li.quantity)}</td>
+                      <td className="py-2 text-right">{quantityText}</td>
                       <td className="py-2 text-right tabular-nums">
-                        {priceless ? '' : formatMoney(Number(li.unitPriceMinor) / 100, quote.currency)}
+                        {priceless || isDiscount ? '' : formatMoneyMinor(Number(li.unitPriceMinor), quote.currency)}
                       </td>
                       <td className={`py-2 text-right tabular-nums ${isSub ? 'italic' : ''}`}>
                         {priceless
                           ? ''
                           : isSub
-                            ? `(${formatMoney(Number(li.lineTotalMinor) / 100, quote.currency)})`
-                            : formatMoney(Number(li.lineTotalMinor) / 100, quote.currency)}
+                            ? `(${formatMoneyMinor(lineTotalMinor, quote.currency)})`
+                            : formatMoneyMinor(lineTotalMinor, quote.currency)}
                       </td>
                     </tr>
                   );
@@ -270,13 +373,18 @@ export const QuoteResponsePage: React.FC = () => {
 
           <div className="flex flex-col items-end gap-1 text-sm border-t border-neutral-200 dark:border-neutral-700 pt-3">
             <div className="flex gap-6"><span className="text-neutral-600 dark:text-neutral-400">{t('quoteResponse.subtotal', 'Subtotal')}:</span>
-              <span className="tabular-nums w-28 text-right">{formatMoney(Number(quote.netAmountMinor) / 100, quote.currency)}</span></div>
-            {quote.vatAmountMinor > 0 && (
+              <span className="tabular-nums w-28 text-right">{formatMoneyMinor(Number(shown.netAmountMinor), quote.currency)}</span></div>
+            {shown.vatAmountMinor > 0 && (
               <div className="flex gap-6"><span className="text-neutral-600 dark:text-neutral-400">{t('quoteResponse.vat', 'VAT')} ({Number(quote.vatRate || 0).toFixed(1)}%):</span>
-                <span className="tabular-nums w-28 text-right">{formatMoney(Number(quote.vatAmountMinor) / 100, quote.currency)}</span></div>
+                <span className="tabular-nums w-28 text-right">{formatMoneyMinor(Number(shown.vatAmountMinor), quote.currency)}</span></div>
             )}
             <div className="flex gap-6 font-semibold text-base"><span>{t('quoteResponse.total', 'Total')}:</span>
-              <span className="tabular-nums w-28 text-right">{formatMoney(Number(quote.totalAmountMinor) / 100, quote.currency)}</span></div>
+              <span className="tabular-nums w-28 text-right">{formatMoneyMinor(Number(shown.totalAmountMinor), quote.currency)}</span></div>
+            {canChoose && totalsQuery.isFetching && (
+              <p className="text-xs text-neutral-500 dark:text-neutral-400" aria-live="polite">
+                {t('quoteResponse.addons.updating', 'Updating the total…')}
+              </p>
+            )}
           </div>
 
           {quote.outroText && (
@@ -373,7 +481,7 @@ export const QuoteResponsePage: React.FC = () => {
                 <div className="flex justify-center gap-3 flex-wrap">
                   <button
                     type="button"
-                    disabled={busy || (quote.tos?.required && !tosAccepted)}
+                    disabled={busy || (quote.tos?.required && !tosAccepted) || !totalsReady}
                     onClick={() => handleRespond('accept')}
                     className={`px-6 py-3 rounded-md bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-50 ${
                       preselectedAction === 'accept' ? 'ring-4 ring-green-300 dark:ring-green-700 ring-offset-2 ring-offset-white dark:ring-offset-neutral-900' : ''

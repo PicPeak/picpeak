@@ -13,7 +13,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { filterOwnedEventIds } = require('../middleware/ownership');
-const { db } = require('../database/db');
+const { db, logActivity } = require('../database/db');
 
 // Hour-entry routes are gated by the hoursLogging master so a direct API hit
 // can't read/edit/delete/bill logged hours while the feature is off (the
@@ -29,6 +29,9 @@ const customerHoursService = require('../services/customerHoursService');
 const combinedBillingService = require('../services/combinedBillingService');
 const invoiceService = require('../services/invoiceService');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
+const { NotFoundError } = require('../utils/errors');
+const customerDocumentsService = require('../services/customerDocumentsService');
+const { receivePdfUpload, discardTempFile, sendPdfAttachment } = require('../middleware/customerDocumentUpload');
 
 const router = express.Router();
 
@@ -88,7 +91,11 @@ function transformCustomer(c) {
     // Contracts override (migration 131). Opt-out: absent column (older row /
     // un-selected) reads as ON so existing customers keep the Contracts tab.
     featureContracts: c.feature_contracts === undefined ? true : (c.feature_contracts === true || c.feature_contracts === 1),
+    // Documents override (migration 220). Same opt-out reading as contracts.
+    featureDocuments: c.feature_documents === undefined ? true : (c.feature_documents === true || c.feature_documents === 1),
     hourlyRateMinor: c.hourly_rate_minor != null ? Number(c.hourly_rate_minor) : null,
+    // Migration 215 — the customer's own day rate for per-day quote lines.
+    dayRateMinor: c.day_rate_minor != null ? Number(c.day_rate_minor) : null,
     // Per-customer Skonto opt-out (migration 112). When true, none of
     // this customer's invoices qualify for an early-payment discount,
     // regardless of template / global defaults.
@@ -416,9 +423,12 @@ router.put('/:id', [
   body('feature_quotes').optional().isBoolean(),
   body('feature_bills').optional().isBoolean(),
   body('feature_contracts').optional().isBoolean(),
+  // Customer documents (migration 220).
+  body('feature_documents').optional().isBoolean(),
   // Hours logging (migration 129).
   body('feature_hours_logging').optional().isBoolean(),
   body('hourly_rate_minor').optional({ nullable: true }).isInt({ min: 0 }),
+  body('day_rate_minor').optional({ nullable: true }).isInt({ min: 0 }),
   // CRM billing cadence — see migration 102. `per_event` keeps the
   // existing per-event payment plan; monthly/quarterly snap every
   // generated invoice to billing_cycle_day of the next period.
@@ -790,6 +800,124 @@ router.get('/:id/monthly-draft', [
   validateRequest(req);
   const draft = await invoiceService.getMonthlyDraft(parseInt(req.params.id, 10));
   successResponse(res, { draft });
+}));
+
+// ---- customer documents (#1444) ------------------------------------------
+// Every route — reads included — sits behind the `documents` flag and
+// `customers.documents.manage`: the list carries customer uploads nobody has
+// reviewed yet. The service scopes every lookup by the :id customer, so a
+// document id from another customer is a 404. Links to an event or project
+// are checked against what this admin may access (filterOwnedEventIds /
+// ownedProjectIds) inside the service.
+const requireDocuments = requireFeatureFlag('documents', 'DOCUMENTS_DISABLED');
+const documentGuards = [
+  adminAuth,
+  requireDocuments,
+  requirePermission('customers.documents.manage'),
+  param('id').isInt({ min: 1 }),
+];
+const documentItemGuards = [...documentGuards, param('docId').isInt({ min: 1 })];
+const adminActor = (admin) => ({ type: 'admin', id: admin.id, name: admin.username || 'admin' });
+
+async function loadDocumentCustomer(req) {
+  validateRequest(req);
+  const customerId = parseInt(req.params.id, 10);
+  const customer = await db('customer_accounts').where({ id: customerId }).first('id');
+  if (!customer) throw new NotFoundError('Customer', customerId);
+  return customerId;
+}
+
+router.get('/:id/documents', documentGuards, handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  const documents = await customerDocumentsService.listForAdmin(customerId);
+  const limits = await customerDocumentsService.getLimits();
+  const usedBytes = await customerDocumentsService.getUsageBytes(customerId);
+  successResponse(res, { documents, limits: { ...limits, usedBytes } });
+}));
+
+// multipart: file (PDF), share?, eventId?, projectId?, contractId?
+// Admin uploads are recorded clean by the uploading admin and don't count
+// against the customer's quota; the per-file size cap applies.
+router.post('/:id/documents', documentGuards, handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  const limits = await customerDocumentsService.getLimits();
+  let file = null;
+  try {
+    file = await receivePdfUpload(req, res, { maxBytes: limits.maxUploadBytes });
+    if (!file) return res.status(400).json({ error: 'No file was uploaded', code: 'NO_FILE' });
+    const share = req.body.share === true || req.body.share === 'true' || req.body.share === '1';
+    const row = await customerDocumentsService.createDocument({
+      customerId,
+      uploaderType: 'admin',
+      uploaderId: req.admin.id,
+      file,
+      links: { eventId: req.body.eventId, projectId: req.body.projectId, contractId: req.body.contractId },
+      share,
+      admin: req.admin,
+      actor: adminActor(req.admin),
+    });
+    return successResponse(res, { document: { id: row.id, status: row.status } }, 201);
+  } finally {
+    discardTempFile(file);
+  }
+}));
+
+// Replaces all three links; send null to clear one.
+router.patch('/:id/documents/:docId', [
+  ...documentItemGuards,
+  body('eventId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('projectId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('contractId').optional({ nullable: true }).isInt({ min: 1 }),
+], handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  await customerDocumentsService.updateLinks(customerId, parseInt(req.params.docId, 10), req.body, req.admin);
+  successResponse(res, { updated: true });
+}));
+
+router.post('/:id/documents/:docId/share', documentItemGuards, handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  await customerDocumentsService.setShared(customerId, parseInt(req.params.docId, 10), true, req.admin);
+  successResponse(res, { shared: true });
+}));
+
+router.post('/:id/documents/:docId/unshare', documentItemGuards, handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  await customerDocumentsService.setShared(customerId, parseInt(req.params.docId, 10), false, req.admin);
+  successResponse(res, { shared: false });
+}));
+
+// Mark clean / reject. The note is shown to the customer on a rejected upload.
+router.post('/:id/documents/:docId/review', [
+  ...documentItemGuards,
+  body('status').isIn(['clean', 'rejected']),
+  body('note').optional({ nullable: true }).isString().isLength({ max: 500 }),
+], handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  await customerDocumentsService.review(customerId, parseInt(req.params.docId, 10), {
+    status: req.body.status,
+    note: req.body.note,
+  }, req.admin);
+  successResponse(res, { status: req.body.status });
+}));
+
+// Admins can download any non-deleted document, pending ones included —
+// reviewing the file is how it gets marked clean. Always an attachment.
+router.get('/:id/documents/:docId/download', documentItemGuards, handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  const row = await customerDocumentsService.getForAdmin(customerId, parseInt(req.params.docId, 10));
+  const stream = await customerDocumentsService.openStream(row);
+  await customerDocumentsService.recordView(row.id, 'admin', req.admin.id);
+  await logActivity('customer_document_downloaded',
+    { documentId: row.id, customerId }, row.event_id || null, adminActor(req.admin));
+  sendPdfAttachment(res, stream, row.original_name);
+}));
+
+// Soft delete: hidden from the customer and the list at once; the retention
+// sweep removes the bytes later.
+router.delete('/:id/documents/:docId', documentItemGuards, handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  await customerDocumentsService.softDelete(customerId, parseInt(req.params.docId, 10), req.admin);
+  successResponse(res, { deleted: true });
 }));
 
 module.exports = router;

@@ -11,7 +11,10 @@ import { ArrowLeft, Eye, Send, Copy, ArrowRightCircle, Edit2, Receipt, CheckCirc
 import { Button, Card, Loading } from '../../../components/common';
 import { DocumentLineageCard } from '../../../components/admin/DocumentLineageCard';
 import { quotesService } from '../../../services/quotes.service';
+import { quoteCatalogService } from '../../../services/quoteCatalog.service';
+import { PermissionGate } from '../../../components/admin/PermissionGate';
 import { formatMoney } from '../../../components/admin/LineItemsTable';
+import { formatMoneyMinor } from '../../../utils/money';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
 import { useFeatureFlags } from '../../../contexts/FeatureFlagsContext';
 import { toast } from 'react-toastify';
@@ -152,6 +155,22 @@ export const QuoteDetailPage: React.FC = () => {
     }
   };
 
+  // Save this quote's lines, texts and defaults as a new draft template (#1451).
+  const handleSaveAsTemplate = async () => {
+    const name = window.prompt(
+      t('quotes.templates.saveAsPrompt', 'Name for the new template'),
+      q.eventName || q.quoteNumber,
+    );
+    if (!name || !name.trim()) return;
+    try {
+      const { template } = await quoteCatalogService.saveQuoteAsTemplate(q.id, name.trim());
+      toast.success(t('quotes.templates.savedFromQuoteToast', 'Template created as a draft.'));
+      navigate(`/admin/clients/quotes/catalog/templates/${template.id}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || 'Save as template failed');
+    }
+  };
+
   const responseLocked = q.responseLockedAt && new Date(q.responseLockedAt).getTime() < Date.now();
   const canSend = ['draft', 'declined', 'expired'].includes(q.status);
 
@@ -176,6 +195,9 @@ export const QuoteDetailPage: React.FC = () => {
             <Edit2 className="w-4 h-4 mr-1" />{t('common.edit', 'Edit')}
           </Button>
           <Button variant="outline" onClick={handleDuplicate}><Copy className="w-4 h-4 mr-1" />{t('common.duplicate', 'Duplicate')}</Button>
+          <PermissionGate permission="quotes.manage">
+            <Button variant="outline" onClick={handleSaveAsTemplate}>{t('quotes.templates.saveAsTemplate', 'Save as template')}</Button>
+          </PermissionGate>
           {canSend && <Button onClick={handleSend}><Send className="w-4 h-4 mr-1" />{q.status === 'draft' ? t('quotes.send', 'Send') : t('quotes.resend', 'Resend')}</Button>}
           {/* Accept-on-behalf — shown while the quote is in a state
               that hasn't been responded to yet (draft / sent /
@@ -242,6 +264,32 @@ export const QuoteDetailPage: React.FC = () => {
         </div>
       </Card>
 
+      {q.optionalSelection && (
+        <Card>
+          <h3 className="font-semibold mb-2">{t('quotes.selection.title', 'Add-ons at acceptance')}</h3>
+          {q.selectionAcceptedAt && (
+            <p className="text-sm text-neutral-600 dark:text-neutral-300 mb-2">
+              {q.optionalSelection.by === 'customer'
+                ? t('quotes.selection.byCustomer', 'Chosen by the customer on {{date}}', { date: fmtDateTime(q.selectionAcceptedAt) })
+                : t('quotes.selection.byAdmin', 'Recorded when you accepted on {{date}}', { date: fmtDateTime(q.selectionAcceptedAt) })}
+            </p>
+          )}
+          {q.optionalSelection.addOns.every((a) => !a.selected) && (
+            <p className="text-sm text-neutral-600 dark:text-neutral-300 mb-2">{t('quotes.selection.none', 'No add-ons chosen')}</p>
+          )}
+          <ul className="text-sm space-y-1">
+            {q.optionalSelection.addOns.map((a) => (
+              <li key={a.position} className="flex justify-between gap-4">
+                <span className="text-neutral-900 dark:text-neutral-100">{a.description}</span>
+                <span className={a.selected ? 'text-green-700 dark:text-green-400' : 'text-neutral-500 dark:text-neutral-400'}>
+                  {a.selected ? t('quotes.selection.chosen', 'Chosen') : t('quotes.selection.notChosen', 'Not chosen')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       <Card>
         <h3 className="font-semibold mb-3">{t('quotes.section.lineItems', 'Line items')}</h3>
         <table className="w-full text-sm">
@@ -253,15 +301,37 @@ export const QuoteDetailPage: React.FC = () => {
             <th className="text-right py-2">{t('crm.lineItems.total', 'Total')}</th>
           </tr></thead>
           <tbody>
-            {data.lineItems.map((li) => (
-              <tr key={li.id} className="border-b border-neutral-100 dark:border-neutral-800">
-                <td className="py-2">{li.position}</td>
-                <td className="py-2">{Number(li.quantity)}</td>
-                <td className="py-2 whitespace-pre-line">{li.description}</td>
-                <td className="py-2 text-right tabular-nums">{formatMoney(Number(li.unitPriceMinor || 0) / 100, q.currency)}</td>
-                <td className="py-2 text-right tabular-nums">{formatMoney(Number(li.lineTotalMinor || 0) / 100, q.currency)}</td>
-              </tr>
-            ))}
+            {(() => {
+              // Top-level lines are numbered 1, 2, 3…; sub-items indent under
+              // their parent; discount lines carry no number or unit price;
+              // an unticked optional add-on is shown but greyed out (#1451).
+              let number = 0;
+              return data.lineItems.map((li) => {
+                const isSubItem = li.parentPosition != null;
+                const isDiscountLine = li.lineKind === 'discount';
+                const notIncluded = !!li.isOptional && li.selected === false;
+                if (!isSubItem && !isDiscountLine) number += 1;
+                const unitLabel = li.unit ? t(`crm.lineItems.unitShort.${li.unit}`, li.unit) : '';
+                return (
+                  <tr key={li.id} className={`border-b border-neutral-100 dark:border-neutral-800 ${notIncluded ? 'opacity-60' : ''}`}>
+                    <td className="py-2">{isSubItem || isDiscountLine ? '' : number}</td>
+                    <td className="py-2">{isDiscountLine ? '' : `${Number(li.quantity)}${unitLabel ? ` ${unitLabel}` : ''}`}</td>
+                    <td className={`py-2 whitespace-pre-line ${isSubItem ? 'pl-6' : ''}`}>
+                      {isSubItem ? '• ' : ''}{li.description}
+                      {li.isOptional && (
+                        <span className="ml-2 text-xs text-neutral-500 dark:text-neutral-400">
+                          {notIncluded
+                            ? t('crm.lineItems.optionalNotIncluded', '(optional, not included)')
+                            : t('crm.lineItems.optionalIncluded', '(optional, included)')}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 text-right tabular-nums">{isDiscountLine ? '' : formatMoneyMinor(Number(li.unitPriceMinor || 0), q.currency)}</td>
+                    <td className="py-2 text-right tabular-nums">{formatMoneyMinor(Number(li.lineTotalMinor || 0), q.currency)}</td>
+                  </tr>
+                );
+              });
+            })()}
           </tbody>
         </table>
         <div className="flex flex-col items-end gap-1 mt-4 text-sm">
