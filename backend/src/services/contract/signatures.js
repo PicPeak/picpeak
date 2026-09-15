@@ -686,8 +686,16 @@ async function rerenderAndResend(contractId, adminId) {
     }
     const originalBuffer = fs.readFileSync(refreshed.contract.pdf_path);
     const stamps = buildSignatureStamps(refreshed.contract);
-    const { buffer: stampedBuffer, sha256: signedSha256 } =
+    const { buffer: stampedBuffer, sha256: signedSha256, failed: failedStamps } =
       await pdfStampService.stampSignatures(originalBuffer, stamps);
+    // A PDF missing a signature must not be recorded, or mailed to both
+    // parties, as the fully signed contract.
+    if (failedStamps && failedStamps.length) {
+      throw new AppError(
+        `The ${failedStamps.join(' and ')} signature could not be stamped onto the PDF, so nothing was sent. Re-stamp the signatures and try again.`,
+        422, 'SIGNATURE_STAMP_FAILED',
+      );
+    }
     const persisted = await persistContractPdf(refreshed.contract, stampedBuffer, 'fully-signed');
     attachmentPath = persisted.filePath;
     const hasSignedPdfSha = await hasColumnCached('contracts', 'signed_pdf_sha256');
@@ -850,8 +858,35 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
   }
   const originalBuffer = fs.readFileSync(refreshed.contract.pdf_path);
   const stamps = buildSignatureStamps(refreshed.contract);
-  const { buffer: stampedBuffer, sha256: signedSha256 } =
+  const { buffer: stampedBuffer, sha256: signedSha256, failed: failedStamps } =
     await pdfStampService.stampSignatures(originalBuffer, stamps);
+  // A PDF missing a signature is not recorded. A countersignature takes a
+  // PDF a re-stamp recorded after it as the fully signed copy to mail, so
+  // recording an incomplete one would send it to both parties. The images
+  // were already replaced above: keep the recovery marker and the audit
+  // entry so the admin sees it and re-stamps with a usable image.
+  if (failedStamps && failedStamps.length) {
+    const message = `The ${failedStamps.join(' and ')} signature could not be stamped onto the PDF.`;
+    try {
+      if (await hasColumnCached('contracts', 'signed_pdf_render_failed_at')) {
+        await db('contracts').where({ id: contract.id }).update({
+          signed_pdf_render_failed_at: new Date(),
+          signed_pdf_render_error: message,
+          updated_at: new Date(),
+        });
+      }
+    } catch (markErr) {
+      logger.error('Failed to record signed_pdf_render_failed marker (re-stamp)', { contractId: contract.id, message: markErr.message });
+    }
+    try {
+      await logActivity('contract_signatures_restamped', {
+        contractId,
+        stamped: { customer: !!customerSignatureDataUrl, admin: !!adminSignatureDataUrl },
+        stampFailed: failedStamps,
+      }, null, await adminActor(adminId));
+    } catch (_) { /* logging is best-effort */ }
+    throw new AppError(`${message} Nothing was recorded; re-stamp with a valid image.`, 422, 'SIGNATURE_STAMP_FAILED');
+  }
   const { filePath: signedPath } = await persistContractPdf(refreshed.contract, stampedBuffer,
     contract.status === 'fully_signed' ? 'fully-signed' : 'partially-signed');
 

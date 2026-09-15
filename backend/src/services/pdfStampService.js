@@ -330,6 +330,9 @@ async function renderAuditCertificate({ contract, customer, admin, locale = 'de'
  */
 async function stampSignatures(originalPdfBuffer, stamps) {
   let buffer = originalPdfBuffer;
+  // Roles whose stamp could not be applied, so a caller that must not treat
+  // the result as fully signed can refuse it.
+  const failed = [];
   for (const stamp of stamps) {
     if (!stamp.signaturePngPath) continue;
     try {
@@ -347,9 +350,10 @@ async function stampSignatures(originalPdfBuffer, stamps) {
       });
       // Skip the failed stamp but keep going — better to produce a
       // PDF missing one signature than to lose the whole document.
+      failed.push(stamp.role);
     }
   }
-  return { buffer, sha256: sha256OfBuffer(buffer) };
+  return { buffer, sha256: sha256OfBuffer(buffer), failed };
 }
 
 module.exports = {
