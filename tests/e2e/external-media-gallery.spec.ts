@@ -1,13 +1,16 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { adminApiToken, publishEvent } from './_helpers/admin';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
 const GALLERY_PASSWORD = process.env.GALLERY_PASSWORD || 'ExternalMediaPass!1';
 
 async function createExternalGallery(page) {
-  const externalRoot = path.join(process.cwd(), 'storage', 'external-media', 'picsum-demo', 'individual');
+  // The host directory the backend sees as EXTERNAL_MEDIA_ROOT; see
+  // docker-compose.e2e.yml.
+  const mediaRoot = process.env.E2E_EXTERNAL_MEDIA_DIR || path.join(process.cwd(), '.e2e', 'external-media');
+  const externalRoot = path.join(mediaRoot, 'picsum-demo', 'individual');
   if (!fs.existsSync(externalRoot)) {
     fs.mkdirSync(externalRoot, { recursive: true });
   }
@@ -21,16 +24,7 @@ async function createExternalGallery(page) {
     }
   }
 
-  const loginResponse = await page.request.post('/api/auth/admin/login', {
-    data: {
-      username: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
-    },
-    failOnStatusCode: false,
-  });
-  expect(loginResponse.ok()).toBeTruthy();
-  const { token } = await loginResponse.json();
-  expect(token).toBeTruthy();
+  const token = await adminApiToken(page.request);
 
   const eventName = `External Media Playwright ${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const eventDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -75,6 +69,7 @@ async function createExternalGallery(page) {
   }
   const createdEvent = await createResponse.json();
   expect(createdEvent?.id).toBeTruthy();
+  await publishEvent(page.request, token, createdEvent.id);
 
   const importResponse = await page.request.post(`/api/admin/external-media/events/${createdEvent.id}/import-external`, {
     headers: {
@@ -152,14 +147,17 @@ test.describe('External media gallery behavior', () => {
 
     const firstTile = tiles.first();
     await firstTile.scrollIntoViewIfNeeded();
+    // The tile's action buttons only take pointer events while it is hovered.
+    await firstTile.hover();
     await firstTile.getByRole('button', { name: /View full size/i }).click();
 
-    await page.evaluate(() => {
-      const toggle = document.querySelector('[aria-label="Toggle feedback"]');
-      if (toggle instanceof HTMLElement) toggle.click();
-    });
-
+    // Open the feedback panel only if it is closed: toggling it blindly
+    // collapses a panel the lightbox already shows.
+    await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeVisible();
     const favoritesButtonInLightbox = page.getByRole('button', { name: /Add to favorites|Remove from favorites/ }).first();
+    if (!(await favoritesButtonInLightbox.isVisible())) {
+      await page.getByRole('button', { name: 'Toggle feedback' }).click();
+    }
     await expect(favoritesButtonInLightbox).toBeVisible();
 
     const ariaLabel = await favoritesButtonInLightbox.getAttribute('aria-label');

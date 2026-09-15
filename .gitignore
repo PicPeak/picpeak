@@ -123,6 +123,8 @@ test-images/
 test-logo*.jpg
 test-logo*.png
 test-results/
+playwright-report/
+.e2e/
 
 # Development docker compose
 docker-compose.dev.yml

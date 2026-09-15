@@ -1,0 +1,66 @@
+name: E2E
+
+# Playwright suite against the isolated stack in docker-compose.e2e.yml
+# (issue 1500). scripts/e2e.sh builds the images from the checked-out code,
+# seeds a known state on an empty database, runs Playwright and tears down.
+#
+#   - pull requests: the @smoke subset, desktop project only
+#   - nightly and on demand: every spec, both projects
+#
+# Not a required check yet. If it becomes one, keep the trigger free of a
+# `paths:` filter for the same reason install-smoke.yml gives.
+
+on:
+  pull_request:
+    branches: [main, stable]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: ${{ github.event_name == 'pull_request' && 'e2e-smoke' || 'e2e-full' }}
+    runs-on: ubuntu-latest
+    # Image builds dominate; the full suite adds roughly as much again.
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install Playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run smoke subset
+        if: github.event_name == 'pull_request'
+        run: scripts/e2e.sh --project=chromium --grep @smoke
+
+      - name: Run full suite
+        if: github.event_name != 'pull_request'
+        run: scripts/e2e.sh
+
+      - name: Upload traces and report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14

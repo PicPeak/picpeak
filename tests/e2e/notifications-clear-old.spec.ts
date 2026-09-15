@@ -1,17 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { adminApiToken } from './_helpers/admin';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
 
-test('clearing old notifications removes read entries', async ({ request }) => {
-  const loginResponse = await request.post('/api/auth/admin/login', {
-    data: {
-      username: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
-    },
-  });
-  expect(loginResponse.ok()).toBeTruthy();
-  const { token } = await loginResponse.json();
+test('clearing notifications removes read entries @smoke', async ({ request }) => {
+  const token = await adminApiToken(request);
 
   const authHeaders = {
     Authorization: `Bearer ${token}`,
@@ -77,7 +70,8 @@ test('clearing old notifications removes read entries', async ({ request }) => {
     .map((notification: any) => notification.id);
   expect(readNotificationIds.length).toBeGreaterThan(0);
 
-  const clearResponse = await request.delete('/api/admin/notifications/clear-old', {
+  // clear-old was replaced by clear-all (see backend/src/routes/adminNotifications.js).
+  const clearResponse = await request.delete('/api/admin/notifications/clear-all', {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(clearResponse.ok()).toBeTruthy();
