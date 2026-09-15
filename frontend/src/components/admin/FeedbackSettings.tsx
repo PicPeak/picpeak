@@ -22,9 +22,6 @@ interface FeedbackSettings {
   require_name_email: boolean;
   moderate_comments: boolean;
   show_feedback_to_guests: boolean;
-  enable_rate_limiting: boolean;
-  rate_limit_window_minutes?: number;
-  rate_limit_max_requests?: number;
   identity_mode?: 'simple' | 'guest' | 'shared';
   // Per-guest caps (#655). null/0 = unlimited.
   max_favorites_per_guest?: number | null;
@@ -43,16 +40,6 @@ export const FeedbackSettings: React.FC<FeedbackSettingsProps> = ({
       ...settings,
       [field]: !settings[field]
     });
-  };
-
-  const handleNumberChange = (field: keyof FeedbackSettings, value: string) => {
-    const numValue = parseInt(value, 10);
-    if (!isNaN(numValue)) {
-      onChange({
-        ...settings,
-        [field]: numValue
-      });
-    }
   };
 
   return (
@@ -510,58 +497,6 @@ export const FeedbackSettings: React.FC<FeedbackSettingsProps> = ({
               </div>
             </div>
 
-            <div className="border-t border-neutral-200 dark:border-neutral-700 pt-4" />
-
-            {/* Rate Limiting */}
-            <div className="space-y-4">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={settings.enable_rate_limiting}
-                  onChange={() => handleToggle('enable_rate_limiting')}
-                  className="w-4 h-4 text-accent bg-neutral-100 border-neutral-300 rounded focus:ring-primary-500"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
-                    {t('feedback.settings.enableRateLimiting', 'Enable Rate Limiting')}
-                  </div>
-                  <div className="text-xs text-neutral-500 dark:text-neutral-400">
-                    {t('feedback.settings.rateLimitingDesc', 'Prevent spam by limiting feedback frequency')}
-                  </div>
-                </div>
-              </label>
-
-              {settings.enable_rate_limiting && (
-                <div className="grid grid-cols-2 gap-4 ml-7">
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">
-                      {t('feedback.settings.timeWindow', 'Time Window (minutes)')}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="60"
-                      value={settings.rate_limit_window_minutes || 15}
-                      onChange={(e) => handleNumberChange('rate_limit_window_minutes', e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm border border-neutral-300 dark:border-neutral-600 rounded-md bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-primary-500 focus:border-accent-dark"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-400 mb-1">
-                      {t('feedback.settings.maxRequests', 'Max Requests')}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="100"
-                      value={settings.rate_limit_max_requests || 10}
-                      onChange={(e) => handleNumberChange('rate_limit_max_requests', e.target.value)}
-                      className="w-full px-3 py-1.5 text-sm border border-neutral-300 dark:border-neutral-600 rounded-md bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-primary-500 focus:border-accent-dark"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
           </>
         )}
       </div>

@@ -36,7 +36,6 @@ const baseSettings = {
   require_name_email: false,
   moderate_comments: false,
   show_feedback_to_guests: true,
-  enable_rate_limiting: false,
 };
 
 const renderPanel = (overrides = {}) => {

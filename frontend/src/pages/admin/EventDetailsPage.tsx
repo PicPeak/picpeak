@@ -58,9 +58,6 @@ export const EventDetailsPage: React.FC = () => {
     require_name_email: false,
     moderate_comments: true,
     show_feedback_to_guests: true,
-    enable_rate_limiting: false,
-    rate_limit_window_minutes: 15,
-    rate_limit_max_requests: 10,
   });
   // Read ?tab=… on mount, same shape as SettingsPage so both surfaces answer
   // deep links identically; an unknown value falls back to the default tab and
