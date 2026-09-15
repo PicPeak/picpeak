@@ -38,6 +38,13 @@ const flattenExtensions = (map) => new Set(
 const RESTORABLE_EXTENSIONS = flattenExtensions(ALLOWED_MEDIA_TYPES);
 const VIDEO_EXTENSIONS = flattenExtensions(ALLOWED_VIDEO_TYPES);
 
+/** A single path segment: no separator of either kind, not `.` or `..`. */
+const isBareFilename = (name) => typeof name === 'string'
+  && name.length > 0
+  && name !== '.'
+  && name !== '..'
+  && !/[\\/]/.test(name);
+
 // Get all archived events
 router.get('/', adminAuth, requirePermission('archives.view'), async (req, res) => {
   try {
@@ -286,6 +293,11 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
       // manifest the archive process writes. Older archives have no manifest;
       // we fall back to filename for those.
       const manifestByFilename = new Map();
+      // Exact match on the entry name the writer emitted, for archives that
+      // record it. Unambiguous where the basename is not: two photos sharing
+      // an original are emitted as `X.jpg` and `X_1.jpg`, and an original can
+      // equal another row's internal name.
+      const manifestByZipPath = new Map();
       // Aliases that more than one manifest row claims — see the loop below.
       const ambiguousAliases = new Set();
       try {
@@ -302,7 +314,24 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
           // result depend on manifest iteration order — the query has no
           // ORDER BY — and could delete a canonical key because some OTHER
           // row's original_filename happened to collide with it.
-          const rows = parsed.filter((m) => m && m.filename);
+          // The internal filename becomes part of the storage key the file
+          // goes back under, and posix.join folds a `..` away before either
+          // backend could refuse it. Uploads only ever write a bare leaf
+          // there, so anything else is a tampered manifest: the row is
+          // dropped and its entry restores under the name the zip gave it.
+          const rows = parsed.filter((m) => m && isBareFilename(m.filename));
+          if (rows.length !== parsed.length) {
+            logger.warn(`Photos manifest: ${parsed.length - rows.length} row(s) without a plain filename ignored`);
+          }
+
+          const zipPathCounts = new Map();
+          for (const m of rows) {
+            if (typeof m.zip_path !== 'string' || !m.zip_path) continue;
+            zipPathCounts.set(m.zip_path, (zipPathCounts.get(m.zip_path) || 0) + 1);
+          }
+          for (const m of rows) {
+            if (zipPathCounts.get(m.zip_path) === 1) manifestByZipPath.set(m.zip_path, m);
+          }
 
           // photos.filename is not unique within an event: s3AutoImporter
           // takes path.basename(entry.key) and dedupes by path, so two
@@ -347,12 +376,12 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             // with a slash or a control byte lands under a different name than
             // the manifest records. Index both, so either spelling resolves.
             //
-            // Still not total: uniquifyZipNames() appends `_1` when two photos
-            // in one event share an original name, and that suffix cannot be
-            // reconstructed from the manifest. Those few fall through to the
-            // directory, exactly as they did before this fix — no worse, just
-            // not better. Closing that needs the emitted name recorded at
-            // archive time, which is a writer change and a new archive format.
+            // Still not total for archives written before zip_path was
+            // recorded: uniquifyZipNames() appends `_1` when two photos in
+            // one event share an original name, and that suffix cannot be
+            // reconstructed from the name columns. Those few fall through to
+            // the directory. Newer archives match on zip_path first and never
+            // reach this lookup for them.
             for (const alias of [m.original_filename, sanitizeForZipEntry(m.original_filename)]) {
               if (!alias) continue;
               // An alias colliding with someone else's canonical name is
@@ -394,7 +423,9 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
             + 'photo; those fall back to the directory for their category.'
           );
         }
-        logger.info(`Loaded photos manifest: ${manifestByFilename.size} entries`);
+        logger.info(
+          `Loaded photos manifest: ${manifestByFilename.size} name entries, ${manifestByZipPath.size} zip paths`
+        );
       } catch (e) {
         if (e.code !== 'ENOENT') {
           logger.warn('Photos manifest present but unreadable; falling back to filenames', e.message);
@@ -532,7 +563,9 @@ router.post('/:id/restore', adminAuth, requirePermission('archives.restore'), re
         // is a photo whatever its extension. The extension set only has to
         // carry pre-manifest archives, and it keeps the metadata files the
         // archive writer adds alongside the photos out of the photos table.
-        const manifestEntry = manifestByFilename.get(entryName);
+        // The recorded zip path is exact; the name lookup carries archives
+        // written before it was recorded.
+        const manifestEntry = manifestByZipPath.get(entry.name) || manifestByFilename.get(entryName);
         // With general_use_original_filenames_for_downloads on at archive
         // time the entry is named after the ORIGINAL filename, while the
         // photo row archiveEvent kept still names the internal file in its

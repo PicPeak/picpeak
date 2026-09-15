@@ -32,9 +32,10 @@ async function archiveEvent(event) {
     // extracted files alone. Persisting a manifest inside the archive lets a
     // future restore round-trip recover those fields. Falls back to bare
     // filename for archives produced before this lands (see restore path).
-    let photosManifestEntry = null;
+    // Serialized further down, once the zip entry names are known.
+    let manifestRows = [];
     try {
-      const manifestRows = await db('photos')
+      manifestRows = await db('photos')
         .leftJoin('photo_categories', 'photos.category_id', 'photo_categories.id')
         .where('photos.event_id', event.id)
         .select(
@@ -60,14 +61,10 @@ async function archiveEvent(event) {
           'photos.uploader_guest_id',
           'photos.credit_visible_to_guests',
           'photo_categories.name as category_name',
+          // For resolving the row's storage key below, not written out.
+          'photos.path',
+          'photos.source_origin',
         );
-      if (manifestRows.length > 0) {
-        photosManifestEntry = {
-          name: 'photos_manifest.json',
-          buffer: Buffer.from(JSON.stringify(manifestRows, null, 2), 'utf8'),
-        };
-        logger.info(`Photos manifest prepared: ${manifestRows.length} entries`);
-      }
     } catch (error) {
       logger.error(`Error building photos manifest for event ${event.slug}:`, error);
       // Non-fatal — restore will fall back to filename as original_filename
@@ -141,6 +138,33 @@ async function archiveEvent(event) {
       return `${folder}${sanitizeForZipEntry(originalBase)}`;
     });
     const dedupedNames = uniquifyZipNames(photoNames);
+
+    // Each manifest row records the entry name its file was emitted under,
+    // so restore can match entry to row exactly. Matching on the basename
+    // cannot always: with original names on, two photos sharing an original
+    // are emitted as `X.jpg` and `X_1.jpg`, and an original can equal another
+    // row's internal name. Both are undecidable from the basename alone.
+    let photosManifestEntry = null;
+    if (manifestRows.length > 0) {
+      const zipPathByKey = new Map(photoEntries.map((entry, i) => [entry.key, dedupedNames[i]]));
+      const manifest = manifestRows.map((row) => {
+        const { path: _path, source_origin: _origin, ...fields } = row;
+        let zipPath = null;
+        try {
+          const key = resolvePhotoStorageKey(event, row);
+          if (key) zipPath = zipPathByKey.get(key) || null;
+        } catch {
+          // No managed key (empty path on a legacy row): restore falls back
+          // to the basename for this one, as it does for older archives.
+        }
+        return { ...fields, zip_path: zipPath };
+      });
+      photosManifestEntry = {
+        name: 'photos_manifest.json',
+        buffer: Buffer.from(JSON.stringify(manifest, null, 2), 'utf8'),
+      };
+      logger.info(`Photos manifest prepared: ${manifest.length} entries`);
+    }
 
     let totalBytes = 0;
     await new Promise((resolve, reject) => {

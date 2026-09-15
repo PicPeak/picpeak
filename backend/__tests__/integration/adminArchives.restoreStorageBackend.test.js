@@ -182,6 +182,13 @@ describe('archive routes read and write through the storage backend', () => {
 
   const localEventsDir = () => path.join(storagePath, 'events');
 
+  const streamToBuffer = (stream) => new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', (c) => chunks.push(c));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+
   it('restores from a zip that only the storage backend holds', async () => {
     const { key } = await putArchive('remote-event', {
       'individual/one.jpg': BYTES,
@@ -246,6 +253,36 @@ describe('archive routes read and write through the storage backend', () => {
     expect(await db('photos').where('event_id', eventId)).toEqual([]);
     const event = await db('events').where('id', eventId).first();
     expect(Boolean(event.is_archived)).toBe(true);
+  });
+
+  it('never lets a manifest filename steer the entry outside the event', async () => {
+    // The entry name passes the zip-slip guard; the manifest row it matches
+    // (by original_filename) carries a traversal in the internal filename.
+    // The storage key is built from that filename, and posix.join folds the
+    // `..` away before either backend can refuse it.
+    const LOGO = Buffer.from('the real logo');
+    await storage.put('uploads/logos/evil.svg', LOGO);
+    const { key } = await putArchive('manifest-slip', {
+      'individual/good.jpg': BYTES,
+      'photos_manifest.json': manifestOf([
+        { filename: '../../../../uploads/logos/evil.svg', original_filename: 'good.jpg', type: 'individual' },
+        { filename: 'sub/dir.jpg', original_filename: 'sub/dir.jpg', type: 'individual' },
+        { filename: '..\\..\\win.jpg', original_filename: '..\\..\\win.jpg', type: 'individual' },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(key, 'manifest-slip');
+
+    const res = await request(app).post(`/admin/archives/${eventId}/restore`).send({});
+    expect(res.status).toBe(200);
+
+    expect(Buffer.compare(await streamToBuffer(await storage.get('uploads/logos/evil.svg')), LOGO)).toBe(0);
+    expect((await storage.list('events/active/manifest-slip')).map((e) => e.key))
+      .toEqual(['events/active/manifest-slip/individual/good.jpg', 'events/active/manifest-slip/photos_manifest.json']);
+    // The row falls back to the entry name, as it does for any unmatched entry.
+    const rows = await db('photos').where('event_id', eventId);
+    expect(rows.map((r) => [r.filename, r.path])).toEqual([
+      ['good.jpg', 'events/active/manifest-slip/individual/good.jpg'],
+    ]);
   });
 
   it('answers 404 when the backend has no zip for the event', async () => {

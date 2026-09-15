@@ -388,6 +388,96 @@ describe('archive restore rebuilds the photo row faithfully', () => {
     });
   });
 
+  it('matches by the recorded zip path when two photos share an original name', async () => {
+    // Two rows with the same original: the writer emits `SHARED.jpg` and
+    // `SHARED_1.jpg`, and the alias is dropped as ambiguous. The basename
+    // alone cannot say which row is which; the zip path the writer records
+    // per row can.
+    const slug = 'shared-original-event';
+    const archiveRelPath = await writeArchive('shared-original.zip', {
+      'individual/SHARED.jpg': BYTES,
+      'individual/SHARED_1.jpg': Buffer.concat([BYTES, BYTES]),
+      'photos_manifest.json': manifestOf([
+        { filename: 'a_stored.jpg', original_filename: 'SHARED.jpg', type: 'individual', zip_path: 'individual/SHARED.jpg' },
+        { filename: 'b_stored.jpg', original_filename: 'SHARED.jpg', type: 'individual', zip_path: 'individual/SHARED_1.jpg' },
+      ]),
+    });
+    const eventId = await seedArchivedEvent(archiveRelPath, slug);
+    for (const name of ['a_stored.jpg', 'b_stored.jpg']) {
+      await db('photos').insert({
+        event_id: eventId,
+        filename: name,
+        original_filename: 'SHARED.jpg',
+        path: `events/active/${slug}/individual/${name}`,
+        type: 'individual',
+      });
+    }
+
+    await restore(eventId);
+
+    const rows = await db('photos').where('event_id', eventId).orderBy('filename');
+    expect(rows.map((r) => r.filename)).toEqual(['a_stored.jpg', 'b_stored.jpg']);
+    const dir = path.join(storagePath, 'events/active', slug, 'individual');
+    expect((await fs.promises.readdir(dir)).sort()).toEqual(['a_stored.jpg', 'b_stored.jpg']);
+    // Each file under the row it was written from, not swapped.
+    expect((await fs.promises.stat(path.join(dir, 'a_stored.jpg'))).size).toBe(BYTES.length);
+    expect((await fs.promises.stat(path.join(dir, 'b_stored.jpg'))).size).toBe(BYTES.length * 2);
+  });
+
+  it('round-trips two photos sharing an original name through the real writer', async () => {
+    // The writer records the emitted zip path; without it the previous test's
+    // manifest is a fiction. Original-name archiving on, two rows with the
+    // same original, archive, then restore into the same storage.
+    jest.doMock('../../src/services/downloadFilenameService', () => ({
+      getUseOriginalFilenames: async () => true,
+    }));
+    jest.doMock('../../src/services/emailProcessor', () => ({
+      queueEmail: async () => {},
+      getSupportEmail: async () => 'support@example.com',
+    }));
+    const { archiveEvent } = require('../../src/services/archiveService');
+
+    const slug = 'writer-round-trip';
+    const [row] = await db('events').insert({
+      slug,
+      event_type: 'wedding',
+      event_name: slug,
+      event_date: '2026-06-27',
+      host_email: 'h@example.com',
+      admin_email: null,
+      password_hash: 'x',
+      share_link: `${slug}-share`,
+      expires_at: new Date().toISOString(),
+    }).returning('id');
+    const eventId = typeof row === 'object' ? row.id : row;
+    const dir = path.join(storagePath, 'events/active', slug, 'individual');
+    await fs.promises.mkdir(dir, { recursive: true });
+    const seeded = { 'a_stored.jpg': BYTES, 'b_stored.jpg': Buffer.concat([BYTES, BYTES]) };
+    for (const [name, bytes] of Object.entries(seeded)) {
+      await fs.promises.writeFile(path.join(dir, name), bytes);
+      await db('photos').insert({
+        event_id: eventId,
+        filename: name,
+        original_filename: 'SHARED.jpg',
+        path: `events/active/${slug}/individual/${name}`,
+        type: 'individual',
+        size_bytes: bytes.length,
+      });
+    }
+
+    await archiveEvent(await db('events').where('id', eventId).first());
+    // The originals are gone (the directory itself is left behind).
+    expect(await fs.promises.readdir(dir)).toEqual([]);
+
+    await restore(eventId);
+
+    const rows = await db('photos').where('event_id', eventId).orderBy('filename');
+    expect(rows.map((r) => r.filename)).toEqual(['a_stored.jpg', 'b_stored.jpg']);
+    for (const [name, bytes] of Object.entries(seeded)) {
+      expect(Buffer.compare(await fs.promises.readFile(path.join(dir, name)), bytes)).toBe(0);
+    }
+  });
+
   it('keeps the original upload time rather than stamping the restore time', async () => {
     const uploadedAt = '2026-06-27T10:30:00.000Z';
     const archiveRelPath = await writeArchive('uploadedat.zip', {
