@@ -116,6 +116,16 @@ describe('mail passwords stay with their saved server', () => {
       expect(row.smtp_pass).toBe(SMTP_SECRET);
     });
 
+    it('treats a non-string password as keeping the stored one, so it cannot slip past the check', async () => {
+      for (const smtp_pass of [false, 0, null]) {
+        const res = await post('/config', smtpForm({ smtp_host: 'mail.attacker.example', smtp_pass }));
+        expect(res.status).toBe(400);
+      }
+      const row = await db('email_configs').first();
+      expect(row.smtp_host).toBe('smtp.example.com');
+      expect(row.smtp_pass).toBe(SMTP_SECRET);
+    });
+
     it('keeps the saved password when only other fields change, and accepts a new server with a new password', async () => {
       const same = await post('/config', smtpForm({ from_name: 'Studio Renamed', smtp_host: 'SMTP.example.com' }));
       expect(same.status).toBe(200);
@@ -137,6 +147,22 @@ describe('mail passwords stay with their saved server', () => {
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('PASSWORD_REQUIRED');
       expect((await db('email_configs').first()).imap_host).toBe('imap.example.com');
+    });
+
+    it('compares the encryption that will be saved when the field is left out', async () => {
+      // A server saved without implicit TLS stays the same server when the
+      // form omits the flag (the handler saves it as off) ...
+      await db('email_configs').update({ imap_secure: false });
+      const { imap_secure: _omit, ...withoutFlag } = imapForm();
+      const same = await post('/incoming-config', withoutFlag);
+      expect(same.status).toBe(200);
+      // ... while a TLS server whose flag is dropped would change, so the
+      // kept password is refused.
+      await db('email_configs').update({ imap_secure: true });
+      const dropped = await post('/incoming-config', withoutFlag);
+      expect(dropped.status).toBe(400);
+      expect(dropped.body.code).toBe('PASSWORD_REQUIRED');
+      expect((await db('email_configs').first()).imap_pass).toBe(IMAP_SECRET);
     });
 
     it('never logs in to a caller-chosen server with the saved password', async () => {
@@ -192,6 +218,28 @@ describe('mail passwords stay with their saved server', () => {
       const unchanged = await post('/accounts', accountForm({ label: 'Hello box' }));
       expect(unchanged.status).toBe(200);
       expect((await db('mail_accounts').where({ account_key: 'customers' }).first()).imap_pass).toBe(ACCOUNT_SECRET);
+    });
+
+    it('saves an unchanged mailbox sent back with SQLite 0/1 flags, e.g. to turn polling off', async () => {
+      await db('mail_accounts').where({ account_key: 'customers' }).update({ smtp_secure: true });
+      const saved = await db('mail_accounts').where({ account_key: 'customers' }).first();
+      const res = await post('/accounts', accountForm({
+        imap_secure: saved.imap_secure ? 1 : 0, smtp_secure: saved.smtp_secure ? 1 : 0, enabled: false,
+      }));
+      expect(res.status).toBe(200);
+      const row = await db('mail_accounts').where({ account_key: 'customers' }).first();
+      expect(Boolean(row.smtp_secure)).toBe(true);
+      expect(Boolean(row.imap_secure)).toBe(true);
+      expect(row.smtp_pass).toBe(ACCOUNT_SECRET);
+    });
+
+    it('lets the outgoing settings be cleared, dropping their password', async () => {
+      const res = await post('/accounts', accountForm({ smtp_host: '', smtp_user: '', smtp_pass: '' }));
+      expect(res.status).toBe(200);
+      const row = await db('mail_accounts').where({ account_key: 'customers' }).first();
+      expect(row.smtp_host).toBeNull();
+      expect(row.smtp_pass).toBe('');
+      expect(row.imap_pass).toBe(ACCOUNT_SECRET);
     });
   });
 });

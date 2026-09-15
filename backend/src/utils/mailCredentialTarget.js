@@ -12,8 +12,14 @@
 
 const MASKED_PASSWORD = '********';
 
+/**
+ * Whether a submitted password keeps the stored one. Anything that is not a
+ * real, non-empty string counts: the save handlers only ever store a string,
+ * so `false`, `0` or an object would otherwise keep the stored password
+ * while slipping past the target check.
+ */
 function isMaskedOrBlank(password) {
-  return password === undefined || password === null || password === '' || password === MASKED_PASSWORD;
+  return typeof password !== 'string' || password === '' || password === MASKED_PASSWORD;
 }
 
 const normHost = (host) => String(host || '').trim().toLowerCase().replace(/\.$/, '');
