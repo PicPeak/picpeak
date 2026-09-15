@@ -4,11 +4,14 @@ const { canAccessEvent } = require('../middleware/ownership');
 const { assertGalleryAvailable, requiresGalleryPassword } = require('../utils/galleryLifecycle');
 const { isTokenBeforeCutoff } = require('../utils/sessionCutoff');
 const { AppError } = require('../utils/errors');
+const { assertGalleryCredentialCurrent } = require('../utils/galleryCredentialCutoff');
 const sessions = require('./sessionAccessService');
 
 // These claims identify a session for revocation; no raw JWT, IP or password
 // enters a media URL. Only use grants from this service or a verified signature.
-const CLAIMS = ['type', 'id', 'customerId', 'eventId', 'eventSlug', 'iat', 'exp', 'jti', 'via', 'accessLevel'];
+// parentIat/parentJti identify the portal session a gallery token was minted from.
+const CLAIMS = ['type', 'id', 'customerId', 'eventId', 'eventSlug', 'iat', 'exp', 'jti', 'via', 'accessLevel',
+  'parentIat', 'parentJti'];
 
 class GalleryAccessService {
   grant(event, kind, decoded) {
@@ -54,6 +57,7 @@ class GalleryAccessService {
       if (Number(session.eventId) !== Number(event.id)) {
         throw new AppError('Token does not match requested gallery', 403, 'INVALID_GALLERY_GRANT');
       }
+      assertGalleryCredentialCurrent(event, session);
       if (session.via === 'customer') {
         await sessions.customer(session, { derived: true });
         const assignment = await db('event_customer_assignments')

@@ -73,6 +73,15 @@ class SessionAccessService {
     if (!Number.isInteger(session.customerId)) {
       throw new AppError('Invalid customer session', 401, 'CUSTOMER_NOT_FOUND');
     }
+    // A gallery token minted from the portal carries the portal session's
+    // identity, so logging out of the portal ends it too. Tokens minted before
+    // that claim existed carry none and run out on their own (24h at most).
+    if (derived && Number.isFinite(session.parentIat) && await isTokenRevoked({
+      type: 'customer', customerId: session.customerId, iat: session.parentIat,
+      ...(session.parentJti && { jti: session.parentJti }),
+    })) {
+      throw new AppError('Token has been revoked', 401, 'TOKEN_REVOKED');
+    }
     const account = await db('customer_accounts')
       .where({ id: session.customerId, is_active: formatBoolean(true) })
       .select('id', 'email', 'display_name', 'first_name', 'last_name', 'password_changed_at', 'preferred_language')

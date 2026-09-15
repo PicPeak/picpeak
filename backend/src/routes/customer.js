@@ -190,9 +190,14 @@ router.get('/events/:slug/access-token', [
     }
 
     const ipAddress = getClientIp(req);
+    // customerAuth already verified this token; its iat (and jti, if any) is
+    // the portal session's revocation key, so logging out ends this token too.
+    const portalSession = jwt.decode(req.token) || {};
     // Same shape as /api/auth/gallery/verify — keep them in sync so the
     // gallery middleware (verifyGalleryAccess) doesn't need a code change.
     const token = jwt.sign({
+      parentIat: portalSession.iat,
+      ...(portalSession.jti && { parentJti: portalSession.jti }),
       eventId: event.id,
       eventSlug: event.slug,
       type: 'gallery',
