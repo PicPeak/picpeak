@@ -2,9 +2,10 @@ import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { adminApiToken, publishEvent, waitForPhotosProcessed } from './_helpers/admin';
+import { passGalleryPasswordPrompt } from './_helpers/gallery';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
 const GALLERY_PASSWORD = process.env.GALLERY_PASSWORD || 'PlaywrightGallery123!';
 
 interface GallerySetupResult {
@@ -18,16 +19,7 @@ interface GallerySetupResult {
 }
 
 async function createGalleryWithModeratedComments(page: Page): Promise<GallerySetupResult> {
-  const loginResponse = await page.request.post('/api/auth/admin/login', {
-    data: {
-      username: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD,
-    },
-    failOnStatusCode: false,
-  });
-  expect(loginResponse.ok()).toBeTruthy();
-  const { token } = await loginResponse.json();
-  expect(token).toBeTruthy();
+  const token = await adminApiToken(page.request);
 
   const eventName = `Playwright Feedback Filter ${Date.now()}`;
   const eventDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -67,6 +59,7 @@ async function createGalleryWithModeratedComments(page: Page): Promise<GallerySe
   expect(createResponse.ok()).toBeTruthy();
   const createdEvent = await createResponse.json();
   expect(createdEvent?.id).toBeTruthy();
+  await publishEvent(page.request, token, createdEvent.id);
 
   const imagePaths = ['img1.png', 'img2.png'];
   const photoIds: number[] = [];
@@ -99,6 +92,9 @@ async function createGalleryWithModeratedComments(page: Page): Promise<GallerySe
   }
 
   expect(photoIds.length).toBeGreaterThanOrEqual(2);
+  // Guests only see processed photos, so a pending one would drop out of the
+  // photo list below along with its comment count.
+  await waitForPhotosProcessed(page.request, token, createdEvent.id);
 
   const galleryAuthResponse = await page.request.post('/api/auth/gallery/verify', {
     data: {
@@ -203,11 +199,7 @@ test.describe('Gallery feedback filter', () => {
     await page.goto(shareLink);
     await page.waitForLoadState('domcontentloaded');
 
-    const passwordField = page.getByPlaceholder(/gallery password/i).first();
-    if (await passwordField.count()) {
-      await passwordField.fill(GALLERY_PASSWORD);
-      await page.getByRole('button', { name: /View Gallery/i }).click();
-    }
+    await passGalleryPasswordPrompt(page, GALLERY_PASSWORD);
 
     await page.waitForLoadState('networkidle');
 

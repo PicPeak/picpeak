@@ -1,6 +1,8 @@
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { adminApiToken, publishEvent, waitForPhotosProcessed } from './_helpers/admin';
+import { passGalleryPasswordPrompt } from './_helpers/gallery';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
@@ -8,13 +10,7 @@ const GALLERY_PASSWORD = process.env.GALLERY_PASSWORD || 'PlaywrightGallery123!'
 
 // Helper: login and get admin token
 async function getAdminToken(page: Page): Promise<string> {
-  const loginResponse = await page.request.post('/api/auth/admin/login', {
-    data: { username: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  });
-  expect(loginResponse.ok()).toBeTruthy();
-  const { token } = await loginResponse.json();
-  expect(token).toBeTruthy();
-  return token;
+  return adminApiToken(page.request);
 }
 
 // Helper: create event with a given header_style, upload a photo, return event + share info
@@ -48,6 +44,7 @@ async function createEventWithStyle(
   });
   expect(eventResponse.ok()).toBeTruthy();
   const event = await eventResponse.json();
+  await publishEvent(page.request, token, event.id);
 
   // Upload two test images
   const imagePath = path.join(process.cwd(), 'test-assets', 'img1.png');
@@ -71,6 +68,7 @@ async function createEventWithStyle(
     },
   });
   expect(uploadResponse2.ok()).toBeTruthy();
+  await waitForPhotosProcessed(page.request, token, event.id);
 
   return { event, shareLink: event.share_link, slug: event.slug, eventName };
 }
@@ -81,24 +79,7 @@ async function openGallery(page: Page, shareLink: string) {
   await page.goto(shareLink);
   await page.waitForLoadState('domcontentloaded');
 
-  const passwordField = page.getByRole('textbox', { name: /password/i }).first();
-  if (await passwordField.count()) {
-    await passwordField.fill(GALLERY_PASSWORD);
-  } else {
-    const fallback = page.getByPlaceholder(/password/i);
-    if (await fallback.count()) {
-      await fallback.fill(GALLERY_PASSWORD);
-    }
-  }
-
-  const viewButton = page.getByRole('button', { name: /View Gallery/i });
-  if (await viewButton.count()) {
-    try {
-      await viewButton.click({ noWaitAfter: true, timeout: 2000 });
-    } catch {
-      // already navigated
-    }
-  }
+  await passGalleryPasswordPrompt(page, GALLERY_PASSWORD);
 
   const tiles = page.locator('.relative.group');
   await expect(tiles.first()).toBeVisible({ timeout: 20000 });
@@ -297,7 +278,7 @@ test.describe('Gallery preview in admin (#158 preview)', () => {
     if (await emailField.count()) {
       await emailField.fill(ADMIN_EMAIL);
       await page.getByLabel(/Password/i).fill(ADMIN_PASSWORD);
-      await page.getByRole('button', { name: /Sign In|Log in/i }).click();
+      await page.getByRole('button', { name: /^(Sign In|Log in|Anmelden)$/i }).click();
     }
     await expect(page.getByRole('heading', { name: /Dashboard/i })).toBeVisible({ timeout: 20000 });
 

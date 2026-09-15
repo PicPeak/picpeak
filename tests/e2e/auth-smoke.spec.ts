@@ -1,6 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { publishEvent, waitForPhotosProcessed } from './_helpers/admin';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
@@ -66,6 +67,7 @@ async function createEventWithPhotos(page: Page, adminToken?: string, attempt = 
     throw new Error(`Event creation failed: ${eventResponse.status()} ${message}`);
   }
   const event = await eventResponse.json();
+  await publishEvent(api, token, event.id);
 
   const imagePath = path.join(process.cwd(), 'test-assets', 'img1.png');
   const buffer = fs.readFileSync(imagePath);
@@ -83,6 +85,7 @@ async function createEventWithPhotos(page: Page, adminToken?: string, attempt = 
     },
   });
   expect(uploadResponse.ok()).toBeTruthy();
+  await waitForPhotosProcessed(api, token, event.id);
 
   return {
     event,
@@ -116,37 +119,12 @@ async function openGalleryShareLink(page: Page, shareLink: string) {
     // No password prompt shown (public gallery)
   }
 
-  let passwordEntered = false;
-  const passwordTextbox = page.getByRole('textbox', { name: /password/i }).first();
-  if (await passwordTextbox.count()) {
-    await passwordTextbox.fill(GALLERY_PASSWORD);
-    passwordEntered = true;
-  }
-
-  const galleryPasswordField = page.getByPlaceholder(/gallery password/i);
-  if (!passwordEntered && await galleryPasswordField.count()) {
-    await galleryPasswordField.fill(GALLERY_PASSWORD);
-    passwordEntered = true;
-  } else if (!passwordEntered) {
-    const genericPasswordField = page.getByPlaceholder(/password/i).first();
-    if (await genericPasswordField.count()) {
-      await genericPasswordField.fill(GALLERY_PASSWORD);
-      passwordEntered = true;
-    } else {
-      const labelledPasswordField = page.getByLabel(/password/i).first();
-      if (await labelledPasswordField.count()) {
-        await labelledPasswordField.fill(GALLERY_PASSWORD);
-        passwordEntered = true;
-      }
-    }
-  }
-
-  if (!passwordEntered) {
-    const fallbackPasswordField = page.locator('input').first();
-    if (await fallbackPasswordField.count()) {
-      await fallbackPasswordField.fill(GALLERY_PASSWORD);
-      passwordEntered = true;
-    }
+  // Only a real password input. The old fallbacks ended at "the first input on
+  // the page", which on a gallery that needs no password is the photo search
+  // box: the password became a filter and the grid showed "No photos found".
+  const passwordField = page.locator('input[type="password"]').first();
+  if (await passwordField.count()) {
+    await passwordField.fill(GALLERY_PASSWORD);
   }
 
   const viewButton = page.getByRole('button', { name: /View Gallery/i });
@@ -163,16 +141,20 @@ async function openGalleryShareLink(page: Page, shareLink: string) {
   return tiles;
 }
 
-test('admin login and gallery viewing smoke test', async ({ page }) => {
+test('admin login and gallery viewing smoke test @smoke', async ({ page }) => {
   const { shareLink, adminToken } = await createEventWithPhotos(page);
 
   // Admin UI login
+  // The API login above already put the admin cookie in this context, so the
+  // login page may redirect to the dashboard. Wait for one or the other.
   await page.goto('/admin/login');
   const emailField = page.getByLabel(/Email/i);
-  if (await emailField.count()) {
+  const dashboard = page.getByRole('heading', { name: /Dashboard/i });
+  await expect(emailField.or(dashboard).first()).toBeVisible({ timeout: 20000 });
+  if (await emailField.isVisible()) {
     await emailField.fill(ADMIN_EMAIL);
     await page.getByLabel(/Password/i).fill(ADMIN_PASSWORD);
-    await page.getByRole('button', { name: /Sign In|Log in/i }).click();
+    await page.getByRole('button', { name: /^(Sign In|Log in|Anmelden)$/i }).click();
   }
   await expect(page.getByRole('heading', { name: /Dashboard/i })).toBeVisible({ timeout: 20000 });
 

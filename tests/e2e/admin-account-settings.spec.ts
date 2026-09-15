@@ -16,7 +16,8 @@ test('admin can update account email via settings page', async ({ page }, testIn
   await page.getByRole('button', { name: /^(Sign In|Log in|Anmelden)$/i }).click();
   await expect(page.getByRole('heading', { name: /Dashboard|Übersicht/i })).toBeVisible({ timeout: 20000 });
 
-  await page.goto('/admin/settings');
+  // The settings page opens on the Features tab; the account card is on General.
+  await page.goto('/admin/settings?tab=general');
   const emailInput = page.getByLabel(/Admin (Email|E-Mail)/i);
   const usernameInput = page.getByLabel(/Admin (Username|Benutzername)/i);
 
