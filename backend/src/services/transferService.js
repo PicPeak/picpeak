@@ -717,6 +717,27 @@ async function loadTransferExtraFiles(transferId) {
  * Stream a single ORIGINAL file from a transfer to `res`. Returns false when
  * the file id isn't part of this transfer or the bytes are missing.
  */
+/**
+ * Run the caller's pre-stream check (the download claim) for a source that is
+ * already open. A refused claim or a claim that throws (a failed DB write)
+ * closes the source, so it never holds a file descriptor or S3 connection.
+ */
+async function allowStream(beforeStream, openStream) {
+  if (!beforeStream) return true;
+  const close = () => {
+    if (openStream && typeof openStream.destroy === 'function') openStream.destroy();
+  };
+  let allowed;
+  try {
+    allowed = await beforeStream();
+  } catch (err) {
+    close();
+    throw err;
+  }
+  if (!allowed) close();
+  return Boolean(allowed);
+}
+
 async function streamTransferFile(transfer, rawFileId, res, { beforeStream = null } = {}) {
   // Public file ids are prefixed (see getPublicView): `p<id>` = referenced
   // gallery photo, `x<id>` = admin-uploaded file. Tolerate a bare number as a
@@ -774,10 +795,7 @@ async function streamTransferFile(transfer, rawFileId, res, { beforeStream = nul
   }
   // The file exists: let the caller claim the download before any byte goes
   // out. A refused claim leaves the response untouched.
-  if (beforeStream && !(await beforeStream())) {
-    if (source.type === 'stream' && typeof source.value.destroy === 'function') source.value.destroy();
-    return false;
-  }
+  if (!(await allowStream(beforeStream, source.type === 'stream' ? source.value : null))) return false;
 
   res.setHeader('Content-Type', row.mime_type || 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
@@ -802,10 +820,7 @@ async function streamTransferExtraFile(transfer, extraId, res, { beforeStream = 
     if (!srcStat) return false;
   }
   const stream = await storage.get(row.stored_path);
-  if (beforeStream && !(await beforeStream())) {
-    if (typeof stream.destroy === 'function') stream.destroy();
-    return false;
-  }
+  if (!(await allowStream(beforeStream, stream))) return false;
   res.setHeader('Content-Type', row.mime_type || 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(row.original_filename)}"`);
   stream.pipe(res);

@@ -82,6 +82,38 @@ describe('transfer download cap under concurrent requests', () => {
     expect(Number((await db('transfers').where({ id: transfer.id }).first()).download_count)).toBe(2);
   });
 
+  it('closes the opened file when the download claim fails', async () => {
+    // A failed DB write in the claim must not leave the storage stream open
+    // (a file descriptor, or an S3 connection).
+    const transfer = await makeTransfer(2);
+    const storage = require('../../src/services/storage').getStorage();
+    const key = `transfers/claim-fail-${transfer.id}/note.txt`;
+    await storage.put(key, Buffer.from('hello'));
+    const extraId = await transferService.addExtraFile(transfer.id, {
+      originalFilename: 'note.txt', storedPath: key, sizeBytes: 5, mimeType: 'text/plain',
+    });
+    const opened = [];
+    const realGet = storage.get.bind(storage);
+    const spy = jest.spyOn(storage, 'get').mockImplementation(async (...args) => {
+      const stream = await realGet(...args);
+      opened.push(stream);
+      return stream;
+    });
+    const res = { setHeader: jest.fn(), headersSent: false };
+
+    try {
+      await expect(transferService.streamTransferFile(transfer, `x${extraId}`, res, {
+        beforeStream: async () => { throw new Error('SQLITE_READONLY'); },
+      })).rejects.toThrow('SQLITE_READONLY');
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(opened).toHaveLength(1);
+    expect(opened[0].destroyed).toBe(true);
+    expect(res.setHeader).not.toHaveBeenCalled();
+  });
+
   it('does not use up a download for a file that does not exist', async () => {
     const transfer = await makeTransfer(2);
 
