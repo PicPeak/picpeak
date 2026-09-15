@@ -12,7 +12,8 @@ const validator = require('validator');
 const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
+const { requirePermission, userHasAnyPermission, isSuperAdminUser } = require('../middleware/permissions');
+const { ForbiddenError } = require('../utils/errors');
 const { clearMaintenanceCache } = require('../middleware/maintenance');
 const { clearSettingsCache, initializeRateLimiters, RATE_LIMIT_DEFAULTS } = require('../services/rateLimitService');
 const { SETTING_KEY: GALLERY_PASSWORD_SETTING, purgeRecoverablePasswords, purgePlanForSettingWrite } = require('../utils/galleryPasswordVault');
@@ -765,6 +766,18 @@ router.put('/sso', adminAuth, requirePermission('settings.security'), [
       }
     }
 
+    // A stored client secret belongs to the provider that issued it. Pointing
+    // SSO at another issuer or client must not send that secret there, so
+    // changing either needs the secret entered again.
+    const nextIssuer = req.body.oidc_issuer_url !== undefined ? String(req.body.oidc_issuer_url).trim() : undefined;
+    const nextClientId = req.body.oidc_client_id !== undefined ? String(req.body.oidc_client_id).trim() : undefined;
+    const providerChanged = (nextIssuer !== undefined && nextIssuer !== (current.issuerUrl || ''))
+      || (nextClientId !== undefined && nextClientId !== (current.clientId || ''));
+    const secretEntered = typeof req.body.oidc_client_secret === 'string' && req.body.oidc_client_secret.length > 0;
+    if (providerChanged && current.clientSecret && !secretEntered && (nextIssuer ?? current.issuerUrl)) {
+      return res.status(400).json({ error: 'Enter the client secret again when changing the issuer URL or client ID' });
+    }
+
     // Default role must exist — a typo here would brick JIT provisioning.
     if (req.body.oidc_default_role !== undefined) {
       const role = await db('roles').where('name', req.body.oidc_default_role).first();
@@ -783,6 +796,41 @@ router.put('/sso', adminAuth, requirePermission('settings.security'), [
         if (unknown.length > 0) {
           return res.status(400).json({ error: `Unknown role(s) in mapping: ${unknown.join(', ')}` });
         }
+      }
+    }
+
+    // The role an SSO login lands in is a grant. Below super_admin, a
+    // settings.security holder must not map anyone, themselves included, into
+    // super_admin or into a role holding permissions their own role lacks.
+    // Only targets that change are checked, so resaving a mapping a Super
+    // Admin set up keeps working.
+    const changedRoleTargets = new Set();
+    if (req.body.oidc_default_role !== undefined) {
+      const nextDefault = String(req.body.oidc_default_role).trim();
+      if (nextDefault && nextDefault !== current.defaultRole) changedRoleTargets.add(nextDefault);
+    }
+    if (req.body.oidc_role_mappings !== undefined) {
+      for (const [idpRole, target] of Object.entries(req.body.oidc_role_mappings)) {
+        const next = String(target).trim();
+        if (next && current.roleMappings[String(idpRole).trim()] !== next) changedRoleTargets.add(next);
+      }
+    }
+    if (changedRoleTargets.size > 0 && !(await isSuperAdminUser(req.admin.id))) {
+      if (changedRoleTargets.has('super_admin')) {
+        return res.status(403).json({ error: 'Only a Super Admin can map SSO users to the Super Admin role' });
+      }
+      const targetPermissions = await db('role_permissions')
+        .join('roles', 'roles.id', 'role_permissions.role_id')
+        .join('permissions', 'permissions.id', 'role_permissions.permission_id')
+        .whereIn('roles.name', [...changedRoleTargets])
+        .pluck('permissions.name');
+      try {
+        await require('../services/userManagementService').assertActorMayGrant(req.admin.id, targetPermissions);
+      } catch (err) {
+        if (err instanceof ForbiddenError) {
+          return res.status(403).json({ error: 'You can only map SSO users to roles whose permissions your own role already holds' });
+        }
+        throw err;
       }
     }
 

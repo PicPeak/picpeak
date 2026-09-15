@@ -231,9 +231,21 @@ function clearPermissionCache() {
   cacheLastUpdated = 0;
 }
 
+/** Whether an admin account holds the super_admin role. */
+async function isSuperAdminUser(userId) {
+  if (!userId) return false;
+  const user = await db('admin_users')
+    .join('roles', 'roles.id', 'admin_users.role_id')
+    .where('admin_users.id', userId)
+    .select('roles.name as role_name')
+    .first();
+  return Boolean(user && user.role_name === 'super_admin');
+}
+
 module.exports = {
   requirePermission,
   requireSuperAdmin,
+  isSuperAdminUser,
   getUserPermissions,
   userHasAnyPermission,
   userHasAllPermissions,
