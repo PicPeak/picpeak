@@ -88,7 +88,7 @@ router.post('/config', [
     // A kept (masked) password must not follow a changed destination: the
     // test button would then authenticate to the new server with it.
     if (existingConfig?.smtp_pass && isMaskedOrBlank(smtp_pass)
-      && !sameSmtpTarget(existingConfig, { smtp_host, smtp_port, smtp_user, smtp_secure })) {
+      && !sameSmtpTarget(existingConfig, { smtp_host, smtp_port, smtp_user, smtp_secure: smtp_secure || false })) {
       return res.status(400).json({ error: PASSWORD_FOR_NEW_SERVER('SMTP'), code: 'PASSWORD_REQUIRED' });
     }
     
@@ -104,7 +104,7 @@ router.post('/config', [
     };
 
     // Only update password if provided and not masked
-    if (smtp_pass && smtp_pass !== '********') {
+    if (!isMaskedOrBlank(smtp_pass)) {
       configData.smtp_pass = smtp_pass;
     }
 
@@ -176,7 +176,7 @@ router.post('/incoming-config', [
     const existing = await db('email_configs').first();
     // Same rule as SMTP: the poller would log in to the new server with it.
     if (existing?.imap_pass && isMaskedOrBlank(imap_pass)
-      && !sameImapTarget(existing, { imap_host, imap_port, imap_user, imap_secure })) {
+      && !sameImapTarget(existing, { imap_host, imap_port, imap_user, imap_secure: imap_secure || false })) {
       return res.status(400).json({ error: PASSWORD_FOR_NEW_SERVER('IMAP'), code: 'PASSWORD_REQUIRED' });
     }
     const data = {
@@ -187,7 +187,7 @@ router.post('/incoming-config', [
       imap_folder: imap_folder || 'INBOX',
       updated_at: new Date(),
     };
-    if (imap_pass && imap_pass !== '********') data.imap_pass = imap_pass;
+    if (!isMaskedOrBlank(imap_pass)) data.imap_pass = imap_pass;
     if (existing) await db('email_configs').where('id', existing.id).update(data);
     else await db('email_configs').insert(data);
     await logActivity('incoming_mail_config_updated', { imap_host }, null, { type: 'admin', id: req.admin.id, name: req.admin.username });
@@ -431,27 +431,32 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
       label: b.label || null,
       imap_host: b.imap_host || null,
       imap_port: b.imap_port ? parseInt(b.imap_port, 10) : 993,
-      imap_secure: b.imap_secure !== false,
+      // SQLite returns these flags as 0/1 and the form sends them back as-is.
+      imap_secure: b.imap_secure !== false && b.imap_secure !== 0 && b.imap_secure !== '0',
       imap_user: b.imap_user || null,
       imap_folder: b.imap_folder || 'INBOX',
       // Outgoing (SMTP) identity — replies from this mailbox send from here.
       smtp_host: b.smtp_host || null,
       smtp_port: b.smtp_port ? parseInt(b.smtp_port, 10) : 587,
-      smtp_secure: b.smtp_secure === true,
+      smtp_secure: b.smtp_secure === true || b.smtp_secure === 1 || b.smtp_secure === '1',
       smtp_user: b.smtp_user || null,
       from_email: b.from_email || null,
       from_name: b.from_name || null,
       enabled: !!b.enabled,
       updated_at: new Date(),
     };
-    if (b.imap_pass && b.imap_pass !== '********') patch.imap_pass = b.imap_pass;
-    if (b.smtp_pass && b.smtp_pass !== '********') patch.smtp_pass = b.smtp_pass;
+    if (!isMaskedOrBlank(b.imap_pass)) patch.imap_pass = b.imap_pass;
+    if (!isMaskedOrBlank(b.smtp_pass)) patch.smtp_pass = b.smtp_pass;
+    // Removing a connection (blank host) drops its password with it; leaving
+    // SMTP blank sends through the global outgoing transport.
+    if (!patch.imap_host) patch.imap_pass = '';
+    if (!patch.smtp_host) patch.smtp_pass = '';
     const existing = await db('mail_accounts').where({ account_key: b.account_key }).first();
     // A kept password must not follow a changed server (see mailCredentialTarget).
-    if (existing?.imap_pass && isMaskedOrBlank(b.imap_pass) && !sameImapTarget(existing, patch)) {
+    if (patch.imap_host && existing?.imap_pass && isMaskedOrBlank(b.imap_pass) && !sameImapTarget(existing, patch)) {
       return res.status(400).json({ error: PASSWORD_FOR_NEW_SERVER('IMAP'), code: 'PASSWORD_REQUIRED' });
     }
-    if (existing?.smtp_pass && isMaskedOrBlank(b.smtp_pass) && !sameSmtpTarget(existing, patch)) {
+    if (patch.smtp_host && existing?.smtp_pass && isMaskedOrBlank(b.smtp_pass) && !sameSmtpTarget(existing, patch)) {
       return res.status(400).json({ error: PASSWORD_FOR_NEW_SERVER('SMTP'), code: 'PASSWORD_REQUIRED' });
     }
     if (existing) {
@@ -459,8 +464,8 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
     } else {
       await db('mail_accounts').insert({
         account_key: b.account_key,
-        imap_pass: (b.imap_pass && b.imap_pass !== '********') ? b.imap_pass : '',
-        smtp_pass: (b.smtp_pass && b.smtp_pass !== '********') ? b.smtp_pass : '',
+        imap_pass: '',
+        smtp_pass: '',
         created_at: new Date().toISOString(),
         ...patch,
       });
