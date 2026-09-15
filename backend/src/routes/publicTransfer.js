@@ -62,9 +62,12 @@ router.get('/:token/download', downloadLimiter, tokenValidator, handleAsync(asyn
   if (!gate.ok) {
     return res.status(gate.status).json({ error: 'This link is no longer available', code: gate.code });
   }
-  // Count the download BEFORE streaming so a mid-stream disconnect still
-  // counts against the cap (matches the "disable after N downloads" intent).
-  await transferService.recordDownload(transfer, { kind: 'all', ip: clientIpForAudit(req) });
+  // Claim the download BEFORE streaming: the claim is the cap check, so
+  // concurrent requests cannot all pass a cap read from the same snapshot, and
+  // a mid-stream disconnect still counts ("disable after N downloads").
+  if (!(await transferService.claimDownload(transfer, { kind: 'all', ip: clientIpForAudit(req) }))) {
+    return res.status(410).json({ error: 'This link is no longer available', code: 'DOWNLOAD_LIMIT_REACHED' });
+  }
   await transferService.streamTransferArchive(transfer, res);
 }));
 
@@ -80,16 +83,24 @@ router.get('/:token/download/:fileId', downloadLimiter,
     if (!gate.ok) {
       return res.status(gate.status).json({ error: 'This link is no longer available', code: gate.code });
     }
-    const ok = await transferService.streamTransferFile(
-      transfer, req.params.fileId, res,
-    );
+    // Counted once the file is known to exist and before it streams, so
+    // parallel requests cannot stream past the cap and a missing file does
+    // not use up a download.
+    let limitReached = false;
+    const ok = await transferService.streamTransferFile(transfer, req.params.fileId, res, {
+      beforeStream: async () => {
+        const claimed = await transferService.claimDownload(transfer, {
+          kind: 'single', photoId: null, ip: clientIpForAudit(req),
+        });
+        limitReached = !claimed;
+        return claimed;
+      },
+    });
+    if (limitReached && !res.headersSent) {
+      return res.status(410).json({ error: 'This link is no longer available', code: 'DOWNLOAD_LIMIT_REACHED' });
+    }
     if (!ok && !res.headersSent) {
       return res.status(404).json({ error: 'File not found', code: 'FILE_NOT_FOUND' });
-    }
-    if (ok) {
-      await transferService.recordDownload(transfer, {
-        kind: 'single', photoId: null, ip: clientIpForAudit(req),
-      });
     }
   }),
 );
