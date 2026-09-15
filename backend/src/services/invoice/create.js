@@ -50,8 +50,9 @@ async function createInvoice(payload, adminId, trx = db) {
   // (e.g. the accumulator itself, or future test fixtures).
   if ((customer.billing_cadence === 'monthly' || customer.billing_cadence === 'manual')
       && !payload._skipMonthlyRouting) {
-    const draft = await appendToMonthlyDraft(payload, customer, adminId, trx);
-    return { invoiceIds: draft?.id ? [draft.id] : [] };
+    // appendToMonthlyDraft returns the draft id itself, not a row.
+    const draftId = await appendToMonthlyDraft(payload, customer, adminId, trx);
+    return { invoiceIds: draftId ? [draftId] : [] };
   }
 
   // Route reads through the caller's trx (no-op when trx === db) — see #851.
@@ -343,7 +344,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
   // below is bypassed; the quote's payment timing is irrelevant once
   // items flow into the monthly accumulator.
   if (customer && customer.billing_cadence === 'monthly') {
-    const draft = await appendToMonthlyDraft({
+    const draftId = await appendToMonthlyDraft({
       customerAccountId: customer.id,
       lineItems: (lineItems || []).map((li) => ({
         position: li.position,
@@ -356,7 +357,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       })),
       vatRate: totals?.vatRate,
     }, customer, adminId, trx);
-    return { invoiceIds: draft?.id ? [draft.id] : [] };
+    return { invoiceIds: draftId ? [draftId] : [] };
   }
 
   // netDays drives the due-date offset on every scheduled invoice
