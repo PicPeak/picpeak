@@ -803,16 +803,25 @@ router.put('/sso', adminAuth, requirePermission('settings.security'), [
     // settings.security holder must not map anyone, themselves included, into
     // super_admin or into a role holding permissions their own role lacks.
     // Only targets that change are checked, so resaving a mapping a Super
-    // Admin set up keeps working.
+    // Admin set up keeps working. A new provider, a new roles claim or newly
+    // enabled mapping or provisioning decides afresh who reaches every target
+    // that stays, so then all of them count.
+    const loginSourceChanged = providerChanged
+      || (req.body.oidc_roles_claim !== undefined && (String(req.body.oidc_roles_claim).trim() || 'roles') !== current.rolesClaim)
+      || (req.body.oidc_role_mapping_enabled === true && !current.roleMappingEnabled)
+      || (req.body.oidc_autoprovision === true && !current.autoprovision);
     const changedRoleTargets = new Set();
-    if (req.body.oidc_default_role !== undefined) {
-      const nextDefault = String(req.body.oidc_default_role).trim();
-      if (nextDefault && nextDefault !== current.defaultRole) changedRoleTargets.add(nextDefault);
+    const nextDefaultRole = req.body.oidc_default_role !== undefined
+      ? String(req.body.oidc_default_role).trim()
+      : current.defaultRole;
+    if (nextDefaultRole && (loginSourceChanged || nextDefaultRole !== current.defaultRole)) {
+      changedRoleTargets.add(nextDefaultRole);
     }
-    if (req.body.oidc_role_mappings !== undefined) {
-      for (const [idpRole, target] of Object.entries(req.body.oidc_role_mappings)) {
-        const next = String(target).trim();
-        if (next && current.roleMappings[String(idpRole).trim()] !== next) changedRoleTargets.add(next);
+    const nextMappings = req.body.oidc_role_mappings !== undefined ? req.body.oidc_role_mappings : current.roleMappings;
+    for (const [idpRole, target] of Object.entries(nextMappings || {})) {
+      const next = String(target).trim();
+      if (next && (loginSourceChanged || current.roleMappings[String(idpRole).trim()] !== next)) {
+        changedRoleTargets.add(next);
       }
     }
     if (changedRoleTargets.size > 0 && !(await isSuperAdminUser(req.admin.id))) {

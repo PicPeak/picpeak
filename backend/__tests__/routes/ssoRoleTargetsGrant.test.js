@@ -87,8 +87,30 @@ describe('SSO settings: role targets and client secret', () => {
 
   beforeEach(async () => {
     await oidcService.saveOidcSettings({
-      oidc_enabled: false, oidc_default_role: 'viewer', oidc_role_mappings: {}, oidc_button_label: '',
+      oidc_enabled: false, oidc_default_role: 'viewer', oidc_role_mappings: {}, oidc_button_label: '', oidc_roles_claim: 'roles',
     });
+  });
+
+  it('rechecks the role targets that stay when the provider or roles claim changes', async () => {
+    expect((await putSso(superToken, {
+      oidc_issuer_url: 'https://idp-one.example.com',
+      oidc_client_id: 'picpeak',
+      oidc_client_secret: 'first-secret',
+      oidc_role_mappings: { 'idp-owners': 'super_admin' },
+    })).status).toBe(200);
+
+    // The editor's own IdP would decide who arrives in the retained mapping.
+    const newProvider = await putSso(managerToken, {
+      oidc_issuer_url: 'https://idp-mine.example.com',
+      oidc_client_secret: 'my-secret',
+    });
+    const newClaim = await putSso(managerToken, { oidc_roles_claim: 'name' });
+
+    expect(newProvider.status).toBe(403);
+    expect(newClaim.status).toBe(403);
+    const config = await oidcService.getOidcConfig();
+    expect(config.issuerUrl).toBe('https://idp-one.example.com');
+    expect(config.rolesClaim).toBe('roles');
   });
 
   afterAll(async () => { if (cleanup) await cleanup(); });

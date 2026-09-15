@@ -24,11 +24,24 @@ const DESTINATION_SETTING_RE = /^backup_(destination_|s3_|rsync_)/;
 const DATABASE_SETTING_KEYS = new Set(['backup_include_database', 'backup_database_inline_dump']);
 const SECRET_MASK = '••••••••';
 
+// Read like backupService.normalizeBoolean, which decides what a backup
+// actually does: booleans as they are, 'true'/'false' strings, and anything
+// else by truthiness.
+function readBackupBoolean(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed === 'true') return true;
+    if (trimmed === 'false') return false;
+  }
+  return Boolean(value);
+}
+
 function comparableBackupSetting(key, value) {
-  if (DATABASE_SETTING_KEYS.has(key)) {
-    // Both are on when never saved.
-    if (value === undefined || value === null || value === '') return true;
-    return !(value === false || value === 'false' || value === 0 || value === '0');
+  if (key === 'backup_include_database') return readBackupBoolean(value);
+  if (key === 'backup_database_inline_dump') {
+    // The inline dump stays on unless it was explicitly turned off.
+    return value === undefined || value === null ? true : readBackupBoolean(value);
   }
   if (value === undefined || value === null) return '';
   return String(value).trim();
@@ -86,6 +99,14 @@ router.get('/config', adminAuth, requirePermission('backup.view'), async (req, r
 router.put('/config', adminAuth, requirePermission('backup.create'), async (req, res) => {
   try {
     const updates = req.body;
+
+    // Real booleans only: a string such as "0" would compare as off here but
+    // read as on when the backup runs.
+    for (const key of DATABASE_SETTING_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(updates || {}, key) && typeof updates[key] !== 'boolean') {
+        return res.status(400).json({ error: `${key} must be true or false` });
+      }
+    }
 
     const restricted = await changedRestrictedBackupSettings(updates);
     if (restricted.length > 0 && !(await isSuperAdminUser(req.admin && req.admin.id))) {
