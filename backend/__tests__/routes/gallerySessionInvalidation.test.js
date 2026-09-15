@@ -38,6 +38,8 @@ beforeAll(async () => {
     id: eventId, slug, event_type: 'wedding', event_name: 'Session invalidation',
     event_date: '2026-01-01', host_email: 'h@example.test', admin_email: 'a@example.test',
     password_hash: 'unused', share_link: `/gallery/${slug}`, created_by: adminId,
+    // "Send gallery email" builds the share link from it.
+    share_token: crypto.randomBytes(16).toString('hex'),
   });
   await db('event_customer_assignments').insert({ event_id: eventId, customer_account_id: customerId });
   // Pin the idle timeout the preview cases rely on (the default is 60 minutes).
@@ -85,6 +87,20 @@ describe('rotating a gallery credential', () => {
     expect((await listWith(client)).status).toBe(200);
     expect((await listWith(portal)).status).toBe(200);
     expect((await listWith(slideshow)).status).toBe(200);
+  });
+
+  it('ends guest sessions when "Send gallery email" sets a new gallery password', async () => {
+    const guest = galleryToken();
+    expect((await listWith(guest)).status).toBe(200);
+
+    const sent = await request(app).post(`/api/admin/events/${eventId}/send-gallery-email`)
+      .set('Authorization', `Bearer ${mintAdminToken(adminId)}`)
+      .send({ password: 'Gallery-Email-Rotation-2026!' });
+    expect(sent.status).toBe(200);
+
+    const refused = await listWith(guest);
+    expect(refused.status).toBe(401);
+    expect(refused.body.code).toBe('GALLERY_PASSWORD_CHANGED');
   });
 
   it('does not let an event update clear the cutoff and revive the ended sessions', async () => {
