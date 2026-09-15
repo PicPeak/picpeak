@@ -5,6 +5,38 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.132.3](https://github.com/PicPeak/picpeak/compare/v3.132.2...v3.132.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **admin:** limit events, archives and event records to what each role may act on ([#1483](https://github.com/PicPeak/picpeak/issues/1483)) ([#1484](https://github.com/PicPeak/picpeak/issues/1484)) ([83e256c](https://github.com/PicPeak/picpeak/commit/83e256ce9268db87949bf520c7b950382050eda1))
+* **backend:** enforce single-use and cap limits under concurrent requests ([#1486](https://github.com/PicPeak/picpeak/issues/1486)) ([#1487](https://github.com/PicPeak/picpeak/issues/1487)) ([3383392](https://github.com/PicPeak/picpeak/commit/33833920598958f685523bf3df9e6fd95e4c0596))
+* **backup:** pin every restore download from S3 to the validated endpoint address ([#1477](https://github.com/PicPeak/picpeak/issues/1477)) ([#1479](https://github.com/PicPeak/picpeak/issues/1479)) ([abd8994](https://github.com/PicPeak/picpeak/commit/abd89940ee05907a1362713310086dd41423707e))
+* **backup:** test the database backup directory a real backup writes to ([#1504](https://github.com/PicPeak/picpeak/issues/1504)) ([#1505](https://github.com/PicPeak/picpeak/issues/1505)) ([cc3f146](https://github.com/PicPeak/picpeak/commit/cc3f146ca8f717745228c330ca1a68f8b75c4651))
+* **backup:** verify restore dumps, bound imports and keep secrets apart ([#1491](https://github.com/PicPeak/picpeak/issues/1491)) ([#1492](https://github.com/PicPeak/picpeak/issues/1492)) ([ca5ed4b](https://github.com/PicPeak/picpeak/commit/ca5ed4b219e7b03020df393b7fdbfb388d7f04e1))
+* **backup:** write the database dump where the backend can reach it ([#1502](https://github.com/PicPeak/picpeak/issues/1502)) ([#1503](https://github.com/PicPeak/picpeak/issues/1503)) ([b55da1c](https://github.com/PicPeak/picpeak/commit/b55da1c994e3cc9995844ba735542ab180721020))
+* **contracts:** accept PDF files in the signed-contract uploads ([#1471](https://github.com/PicPeak/picpeak/issues/1471)) ([#1472](https://github.com/PicPeak/picpeak/issues/1472)) ([67234c8](https://github.com/PicPeak/picpeak/commit/67234c811ff4ca9d81e6c9659393e4bbd447d100))
+* **contracts:** keep signing tokens out of admin views and make signature writes atomic ([#1469](https://github.com/PicPeak/picpeak/issues/1469)) ([#1470](https://github.com/PicPeak/picpeak/issues/1470)) ([585e9b3](https://github.com/PicPeak/picpeak/commit/585e9b386c0812d558aa97876ff158cfd98f026d))
+* **contracts:** make saving a contract draft work and fail safely ([#1460](https://github.com/PicPeak/picpeak/issues/1460)) ([#1461](https://github.com/PicPeak/picpeak/issues/1461)) ([9099685](https://github.com/PicPeak/picpeak/commit/90996851272e710d3d73ddf9076cbe1733f018e1))
+* **crm:** stop quote saves, hour entries and payments stalling on SQLite ([#1462](https://github.com/PicPeak/picpeak/issues/1462)) ([#1463](https://github.com/PicPeak/picpeak/issues/1463)) ([f9c061b](https://github.com/PicPeak/picpeak/commit/f9c061b99a28f31ae006ec00f70aaef9138cd08c))
+* **crm:** verify the customer before a contract or quote link shows or acts on their data ([#1465](https://github.com/PicPeak/picpeak/issues/1465)) ([#1466](https://github.com/PicPeak/picpeak/issues/1466)) ([3eeb28f](https://github.com/PicPeak/picpeak/commit/3eeb28f34269061a548e7a9cffa78619bef24d81))
+* **email:** keep mail passwords and account links out of reach of other servers and readers ([#1485](https://github.com/PicPeak/picpeak/issues/1485)) ([#1488](https://github.com/PicPeak/picpeak/issues/1488)) ([d40d73c](https://github.com/PicPeak/picpeak/commit/d40d73cdfc032aeade70e42b5a619a4ef854d20a))
+* **frontend:** keep custom head HTML out of the admin UI, drop dead feedback limits ([#1489](https://github.com/PicPeak/picpeak/issues/1489)) ([#1490](https://github.com/PicPeak/picpeak/issues/1490)) ([f677b78](https://github.com/PicPeak/picpeak/commit/f677b780c3e9d323f57e05fa14430ebca388d402))
+* **gallery:** end gallery sessions when their password, portal session or admin idle time ends ([#1497](https://github.com/PicPeak/picpeak/issues/1497)) ([#1498](https://github.com/PicPeak/picpeak/issues/1498)) ([39e415a](https://github.com/PicPeak/picpeak/commit/39e415a0ddf3dba8971ee0c5cfb0f8f825c02fbb))
+* **gallery:** enforce category downloads, hidden-photo feedback and photo caps for guests ([#1495](https://github.com/PicPeak/picpeak/issues/1495)) ([#1496](https://github.com/PicPeak/picpeak/issues/1496)) ([5c3d28b](https://github.com/PicPeak/picpeak/commit/5c3d28bbbc091dbf7e966bde3d5b9c451edfe897))
+* **gallery:** store in-app browser user agents longer than 255 characters ([#1507](https://github.com/PicPeak/picpeak/issues/1507)) ([#1508](https://github.com/PicPeak/picpeak/issues/1508)) ([b3f518c](https://github.com/PicPeak/picpeak/commit/b3f518cb31493aac58d5ab04f6280a71146cbd81))
+* **gallery:** tell an admin preview blocked on a password change what to do ([#1454](https://github.com/PicPeak/picpeak/issues/1454)) ([#1456](https://github.com/PicPeak/picpeak/issues/1456)) ([c956968](https://github.com/PicPeak/picpeak/commit/c9569686e8a864beb9644f3483f4b33a8c6726f4))
+* **images:** resolve the protected-image client address through trust proxy ([#1467](https://github.com/PicPeak/picpeak/issues/1467)) ([#1468](https://github.com/PicPeak/picpeak/issues/1468)) ([e38f005](https://github.com/PicPeak/picpeak/commit/e38f005fab9df898819f3974f145338bcdb45359))
+* **permissions:** keep SSO role mappings, backup destinations and restores within the actor's own power ([#1493](https://github.com/PicPeak/picpeak/issues/1493)) ([#1494](https://github.com/PicPeak/picpeak/issues/1494)) ([e374f2a](https://github.com/PicPeak/picpeak/commit/e374f2a67a93bed98e5840959d528d8c7b4b6bf7))
+* **uploads:** accept iPhone DNGs in both byte orders and under any reported type ([#1458](https://github.com/PicPeak/picpeak/issues/1458)) ([#1459](https://github.com/PicPeak/picpeak/issues/1459)) ([440ed34](https://github.com/PicPeak/picpeak/commit/440ed3403738a62e07eedf0c93f0b81f45a5b0c8))
+* **uploads:** serve and accept only image files from the public logo trees ([#1478](https://github.com/PicPeak/picpeak/issues/1478)) ([#1480](https://github.com/PicPeak/picpeak/issues/1480)) ([3cc5a1c](https://github.com/PicPeak/picpeak/commit/3cc5a1cca73f03f89ee855565af971675ca8d13d))
+
+
+### Documentation
+
+* **security:** mark the 3.46.x stable line as end of life ([#1481](https://github.com/PicPeak/picpeak/issues/1481)) ([#1482](https://github.com/PicPeak/picpeak/issues/1482)) ([e8b9a87](https://github.com/PicPeak/picpeak/commit/e8b9a877885354172e4721219b9aa3f1c40882fc))
+
 ## [3.132.2](https://github.com/PicPeak/picpeak/compare/v3.132.1...v3.132.2) (2026-09-14)
 
 
