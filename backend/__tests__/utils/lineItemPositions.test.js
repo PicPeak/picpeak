@@ -86,15 +86,41 @@ describe('renumberLineItemPositions', () => {
     expect(out.map((li) => li.parent_position)).toEqual([null, null, null]);
   });
 
-  it('leaves a parent_position that is not in the payload to the hierarchy validation', () => {
-    // An unknown parent must still be reported as a missing parent by
-    // validateLineItemHierarchy, not silently re-parented onto whichever
-    // item happens to end up on that number.
-    const out = renumberLineItemPositions([
-      { position: 1, description: 'A' },
-      { position: 9, description: 'Orphan', parent_position: 42 },
-    ]);
-    expect(out[1].parent_position).toBe(42);
+  it.each([1, 42])('rejects a missing parent %i before it can alias a new position', (parent) => {
+    expect(() => renumberLineItemPositions([
+      { position: 10, description: 'A' },
+      { position: 20, description: 'Orphan', parent_position: parent },
+    ])).toThrow(expect.objectContaining({ code: 'LINE_ITEM_PARENT_NOT_FOUND' }));
+  });
+
+  it.each([
+    [{ position: 10 }, { position: 10 }],
+    [{ position: '10' }, { position: 10 }],
+    [{ position: 2 }, {}],
+  ])('rejects duplicate original or defaulted positions in %j', (...items) => {
+    expect(() => renumberLineItemPositions(items))
+      .toThrow(expect.objectContaining({ code: 'LINE_ITEM_POSITION_DUPLICATE' }));
+  });
+
+  it('preserves numeric string parent references and does not mutate the input', () => {
+    const items = [
+      Object.freeze({ position: '10', description: 'Parent' }),
+      Object.freeze({ position: '20', parent_position: '10', details_text: 'Keep me' }),
+    ];
+    const out = renumberLineItemPositions(Object.freeze(items));
+    expect(out[1]).toEqual({ position: 2, parent_position: 1, details_text: 'Keep me' });
+    expect(items[1].parent_position).toBe('10');
+  });
+
+  it('rejects self-parenting', () => {
+    expect(() => renumberLineItemPositions([{ position: 10, parent_position: 10 }]))
+      .toThrow(expect.objectContaining({ code: 'LINE_ITEM_SELF_PARENT' }));
+  });
+
+  it('rejects nesting under a child', () => {
+    expect(() => renumberLineItemPositions([
+      { position: 10 }, { position: 20, parent_position: 10 }, { position: 30, parent_position: 20 },
+    ])).toThrow(expect.objectContaining({ code: 'LINE_ITEM_NESTING_TOO_DEEP' }));
   });
 
   it('gives a row with no position the position its array order implies', () => {
