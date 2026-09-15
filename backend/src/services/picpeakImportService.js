@@ -19,6 +19,8 @@ const fsp = require('fs').promises;
 const path = require('path');
 const os = require('os');
 const StreamZip = require('node-stream-zip');
+const { pipeline } = require('stream/promises');
+const { Transform, Writable } = require('stream');
 const { assertZipEntriesWithin } = require('../utils/safePath');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
@@ -42,12 +44,14 @@ function migrationOrder(name) {
 }
 
 // What an uploaded .picpeak may expand to. The upload itself is capped by
-// multer, but a small archive can declare entries that inflate far beyond it,
-// and extraction used to write every entry to the temp dir unchecked. The
-// sizes come from the archive's directory; node-stream-zip verifies each
-// entry's inflated length against them while extracting, so they cannot be
-// understated. Defaults are generous (a full backup includes every photo);
-// the free-space check below is what actually protects the disk.
+// multer, but a small archive can inflate far beyond it, and extraction used to
+// write every entry to the temp dir unchecked. The sizes an archive declares
+// are only a first, cheap check: a crafted archive can understate them (local
+// headers override the directory, and a data-descriptor flag turns off
+// node-stream-zip's length check), so the bytes actually decompressed are
+// counted as well, while extracting and while reading the manifest. Defaults
+// are generous (a full backup includes every photo); the free space of the
+// extraction directory is what actually protects the disk.
 const DEFAULT_MAX_ENTRIES = 2000000;
 const DEFAULT_MAX_EXPANDED_BYTES = 1024 * 1024 * 1024 * 1024; // 1 TiB
 const DEFAULT_MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
@@ -63,10 +67,31 @@ function archiveLimitError(message, statusCode) {
   return err;
 }
 
+async function freeBytes(dir) {
+  if (typeof fsp.statfs !== 'function') return Infinity;
+  const stats = await fsp.statfs(dir);
+  const available = Number(stats.bavail) * Number(stats.bsize);
+  return Number.isFinite(available) ? available : Infinity;
+}
+
+function expandedTooLarge(bytes, maxBytes, available) {
+  return available < maxBytes
+    ? archiveLimitError(
+      `The backup expands to more than ${bytes > available ? bytes : available} bytes, but only ${available} bytes are free for extracting it.`,
+      507,
+    )
+    : archiveLimitError(
+      `The backup expands to more than the limit of ${maxBytes} bytes (PICPEAK_IMPORT_MAX_EXPANDED_BYTES).`,
+      413,
+    );
+}
+
 /**
- * Refuse an archive whose entry count or total expanded size exceeds the
- * configured caps, or that would not fit into the free space of the directory
- * it is about to be extracted to.
+ * Refuse, from what the archive declares, an archive with more entries
+ * (files and directories alike: each one is created on disk) than the cap, or
+ * whose declared size exceeds the byte cap or the free space of the directory
+ * it is about to be extracted to. The declared sizes can understate, so
+ * extractWithinLimits() enforces the same budget on the real bytes.
  */
 async function assertArchiveWithinLimits(entries, extractDir) {
   const maxEntries = positiveEnvNumber('PICPEAK_IMPORT_MAX_ENTRIES', DEFAULT_MAX_ENTRIES);
@@ -74,44 +99,81 @@ async function assertArchiveWithinLimits(entries, extractDir) {
   let count = 0;
   let total = 0;
   for (const entry of entries || []) {
-    if (!entry || entry.isDirectory) continue;
+    if (!entry) continue;
     count += 1;
-    total += Number(entry.size) || 0;
+    if (!entry.isDirectory) total += Number(entry.size) || 0;
   }
   if (count > maxEntries) {
     throw archiveLimitError(
-      `The backup contains ${count} files, more than the limit of ${maxEntries} (PICPEAK_IMPORT_MAX_ENTRIES).`,
+      `The backup contains ${count} entries, more than the limit of ${maxEntries} (PICPEAK_IMPORT_MAX_ENTRIES).`,
       413,
     );
   }
-  if (total > maxBytes) {
-    throw archiveLimitError(
-      `The backup expands to ${total} bytes, more than the limit of ${maxBytes} (PICPEAK_IMPORT_MAX_EXPANDED_BYTES).`,
-      413,
-    );
-  }
-  if (typeof fsp.statfs === 'function') {
-    const stats = await fsp.statfs(extractDir);
-    const available = Number(stats.bavail) * Number(stats.bsize);
-    if (Number.isFinite(available) && total > available) {
-      throw archiveLimitError(
-        `The backup expands to ${total} bytes, but only ${available} bytes are free for extracting it.`,
-        507,
-      );
-    }
-  }
+  const available = await freeBytes(extractDir);
+  if (total > Math.min(maxBytes, available)) throw expandedTooLarge(total, maxBytes, available);
   return { entries: count, expandedBytes: total };
+}
+
+/** A pass-through stream that fails once more than `budget.remaining` bytes went through it. */
+function byteBudget(budget, onExceed) {
+  return new Transform({
+    transform(chunk, _encoding, callback) {
+      budget.remaining -= chunk.length;
+      if (budget.remaining < 0) return callback(onExceed());
+      return callback(null, chunk);
+    },
+  });
+}
+
+/**
+ * Extract every entry into extractDir, counting the bytes actually
+ * decompressed against the smaller of the byte cap and the free space, and
+ * stopping at the first byte over. Entry names were checked for traversal by
+ * assertZipEntriesWithin() before this runs.
+ */
+async function extractWithinLimits(zip, entries, extractDir) {
+  const maxBytes = positiveEnvNumber('PICPEAK_IMPORT_MAX_EXPANDED_BYTES', DEFAULT_MAX_EXPANDED_BYTES);
+  const available = await freeBytes(extractDir);
+  const limit = Math.min(maxBytes, available);
+  const budget = { remaining: limit };
+  const root = path.resolve(extractDir);
+  for (const entry of entries) {
+    const target = path.resolve(root, entry.name);
+    if (entry.isDirectory) {
+      await fsp.mkdir(target, { recursive: true });
+      continue;
+    }
+    await fsp.mkdir(path.dirname(target), { recursive: true });
+    await pipeline(
+      await zip.stream(entry.name),
+      byteBudget(budget, () => expandedTooLarge(limit - budget.remaining, maxBytes, available)),
+      fs.createWriteStream(target),
+    );
+  }
+  return { expandedBytes: limit - budget.remaining };
+}
+
+/** Read one entry into memory, refusing it past maxBytes of real content. */
+async function readEntryWithin(zip, name, maxBytes, onExceed) {
+  const chunks = [];
+  await pipeline(
+    await zip.stream(name),
+    byteBudget({ remaining: maxBytes }, onExceed),
+    new Writable({
+      write(chunk, _encoding, callback) { chunks.push(chunk); callback(); },
+    }),
+  );
+  return Buffer.concat(chunks);
 }
 
 async function readManifestFromZip(picpeakPath) {
   const zip = new StreamZip.async({ file: picpeakPath });
   try {
     const maxManifestBytes = positiveEnvNumber('PICPEAK_IMPORT_MAX_MANIFEST_BYTES', DEFAULT_MAX_MANIFEST_BYTES);
+    const tooLarge = () => archiveLimitError('The backup manifest is too large to be a PicPeak manifest.', 400);
     const entry = await zip.entry('manifest.json');
-    if (entry && Number(entry.size) > maxManifestBytes) {
-      throw archiveLimitError('The backup manifest is too large to be a PicPeak manifest.', 400);
-    }
-    return JSON.parse((await zip.entryData('manifest.json')).toString('utf8'));
+    if (entry && Number(entry.size) > maxManifestBytes) throw tooLarge();
+    return JSON.parse((await readEntryWithin(zip, 'manifest.json', maxManifestBytes, tooLarge)).toString('utf8'));
   } finally {
     await zip.close();
   }
@@ -578,7 +640,7 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
       const entries = Object.values(await zip.entries());
       assertZipEntriesWithin(entries, staging);
       await assertArchiveWithinLimits(entries, staging);
-      await zip.extract(null, staging);
+      await extractWithinLimits(zip, entries, staging);
     } finally {
       await zip.close();
     }
@@ -700,6 +762,7 @@ module.exports = {
   readManifestFromZip,
   validateManifest,
   assertArchiveWithinLimits,
+  extractWithinLimits,
   // exported for testing — the cross-engine coercion (#1038)
   epochToIso,
   coerceForTargetEngine,
