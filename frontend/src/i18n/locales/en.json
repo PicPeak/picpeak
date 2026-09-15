@@ -1130,6 +1130,8 @@
     "tryAgain": "Try Again",
     "passwordChangeRequired": "Change your password in the admin area before previewing this gallery.",
     "goToAdminArea": "Go to admin area",
+    "adminSessionExpired": "Your admin session has expired. Sign in again to preview this gallery.",
+    "signInAgain": "Sign in again",
     "loading": "Loading gallery...",
     "expiredOn": "This gallery expired on {{date}}.",
     "downloadBefore": "Download your photos before they're no longer available.",

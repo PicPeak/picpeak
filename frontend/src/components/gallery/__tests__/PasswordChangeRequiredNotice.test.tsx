@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 import { PasswordChangeRequiredNotice } from '../PasswordChangeRequiredNotice';
-import { isPasswordChangeRequired } from '../../../utils/passwordChangeRequired';
+import { isAdminSessionExpired, isPasswordChangeRequired } from '../../../utils/passwordChangeRequired';
 
 const axiosError = (status: number, code?: string) => ({ response: { status, data: { code } } });
 
@@ -26,6 +26,26 @@ describe('isPasswordChangeRequired', () => {
     expect(isPasswordChangeRequired(new Error('Network Error'))).toBe(false);
     expect(isPasswordChangeRequired(null)).toBe(false);
     expect(isPasswordChangeRequired(undefined)).toBe(false);
+  });
+});
+
+describe('isAdminSessionExpired', () => {
+  it('matches only a 401 carrying SESSION_TIMEOUT', () => {
+    expect(isAdminSessionExpired(axiosError(401, 'SESSION_TIMEOUT'))).toBe(true);
+    expect(isAdminSessionExpired(axiosError(401))).toBe(false);
+    expect(isAdminSessionExpired(axiosError(401, 'TOKEN_REVOKED'))).toBe(false);
+    expect(isAdminSessionExpired(axiosError(403, 'SESSION_TIMEOUT'))).toBe(false);
+    expect(isAdminSessionExpired(null)).toBe(false);
+  });
+});
+
+describe('PasswordChangeRequiredNotice for an idled-out admin session', () => {
+  it('asks the admin to sign in again and links to the admin login', () => {
+    render(<PasswordChangeRequiredNotice reason="session" />);
+
+    expect(screen.getByText(/admin session has expired/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /sign in again/i })).toHaveAttribute('href', '/admin/login');
+    expect(screen.queryByText(/change your password/i)).not.toBeInTheDocument();
   });
 });
 
