@@ -15,6 +15,7 @@ Security support follows the current release channels:
 | Latest stable release from `stable` | Supported; security fixes are published through this channel |
 | Latest beta release from `main` | Supported; security fixes are published through this channel |
 | Superseded stable or beta releases | Upgrade to the latest release in the same channel; older releases are not maintained separately |
+| 3.46.x stable line | End of life. It was superseded by stable 3.132.1; the last release is v3.46.13. Upgrade to the latest stable release |
 | 2.x and earlier | No longer supported |
 
 See the [latest stable release](https://github.com/PicPeak/picpeak/releases/latest)
