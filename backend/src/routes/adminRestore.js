@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { restoreService } = require('../services/restoreService');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/permissions');
+const { requirePermission, requireSuperAdmin } = require('../middleware/permissions');
 const { body, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 const { getPagination, safeValidationErrors } = require('../utils/routeHelpers');
@@ -74,8 +74,12 @@ router.get('/status', requirePermission('backup.view'), async (req, res) => {
 
 /**
  * Validate restore request
+ *
+ * Validating and starting a restore are super_admin only: a restore replaces
+ * every table, admin accounts and roles included, so a lesser role able to
+ * run one could restore a Super Admin account of its own.
  */
-router.post('/validate', requirePermission('backup.restore'), [
+router.post('/validate', requireSuperAdmin(), [
   body('source').notEmpty().withMessage('Backup source is required'),
   body('manifestPath').notEmpty().withMessage('Manifest path is required'),
   body('restoreType').isIn(['full', 'database', 'files', 'selective']).withMessage('Invalid restore type'),
@@ -143,9 +147,9 @@ router.post('/validate', requirePermission('backup.restore'), [
 });
 
 /**
- * Start restore operation
+ * Start restore operation (super_admin only, see /validate)
  */
-router.post('/start', requirePermission('backup.restore'), [
+router.post('/start', requireSuperAdmin(), [
   body('source').notEmpty().withMessage('Backup source is required'),
   body('manifestPath').notEmpty().withMessage('Manifest path is required'),
   body('restoreType').isIn(['full', 'database', 'files', 'selective']).withMessage('Invalid restore type'),

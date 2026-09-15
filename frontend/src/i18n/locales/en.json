@@ -4404,7 +4404,8 @@
       },
       "testingConnection": "Testing connection...",
       "saveSettings": "Save Configuration",
-      "savingSettings": "Saving..."
+      "savingSettings": "Saving...",
+      "destinationSuperAdminOnly": "Only a Super Admin can change where backups are stored or whether they include the database."
     },
     "history": {
       "searchPlaceholder": "Search backups...",
@@ -4434,6 +4435,7 @@
       }
     },
     "restore": {
+      "superAdminOnly": "Restoring a backup replaces all data on this instance, user accounts and roles included, so only a Super Admin can do it.",
       "steps": {
         "selectSource": "Select Source",
         "chooseBackup": "Choose Backup",

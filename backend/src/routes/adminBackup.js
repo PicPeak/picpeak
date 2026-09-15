@@ -1,7 +1,7 @@
 const express = require('express');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
-const { requirePermission, requireSuperAdmin } = require('../middleware/permissions');
+const { requirePermission, requireSuperAdmin, isSuperAdminUser } = require('../middleware/permissions');
 const { clearAdminAuthCookie } = require('../utils/tokenUtils');
 const { revokeToken } = require('../utils/tokenRevocation');
 const { triggerManualBackup, getBackupStatus, cleanupOldBackupRuns, getBackupManifest, validateBackupManifest } = require('../services/backupService');
@@ -15,6 +15,44 @@ const archiver = require('archiver');
 const S3StorageAdapter = require('../services/storage/s3Storage');
 
 const router = express.Router();
+
+// Where backups are sent, and whether they carry the database, decides who
+// ends up with a full copy of this instance. backup.create is held by the
+// built-in admin role, so changing those settings is limited to super_admin.
+// Schedule, retention and which files to include stay on backup.create.
+const DESTINATION_SETTING_RE = /^backup_(destination_|s3_|rsync_)/;
+const DATABASE_SETTING_KEYS = new Set(['backup_include_database', 'backup_database_inline_dump']);
+const SECRET_MASK = '••••••••';
+
+function comparableBackupSetting(key, value) {
+  if (DATABASE_SETTING_KEYS.has(key)) {
+    // Both are on when never saved.
+    if (value === undefined || value === null || value === '') return true;
+    return !(value === false || value === 'false' || value === 0 || value === '0');
+  }
+  if (value === undefined || value === null) return '';
+  return String(value).trim();
+}
+
+/** The destination and database-inclusion keys this update would change. */
+async function changedRestrictedBackupSettings(updates) {
+  const keys = Object.keys(updates || {}).filter((key) => (
+    (DESTINATION_SETTING_RE.test(key) || DATABASE_SETTING_KEYS.has(key)) && updates[key] !== SECRET_MASK
+  ));
+  if (keys.length === 0) return [];
+  const rows = await db('app_settings')
+    .where('setting_type', 'backup')
+    .whereIn('setting_key', keys)
+    .select('setting_key', 'setting_value');
+  const stored = new Map(rows.map((row) => {
+    try {
+      return [row.setting_key, JSON.parse(row.setting_value)];
+    } catch {
+      return [row.setting_key, row.setting_value];
+    }
+  }));
+  return keys.filter((key) => comparableBackupSetting(key, updates[key]) !== comparableBackupSetting(key, stored.get(key)));
+}
 
 // Get backup configuration
 router.get('/config', adminAuth, requirePermission('backup.view'), async (req, res) => {
@@ -48,6 +86,15 @@ router.get('/config', adminAuth, requirePermission('backup.view'), async (req, r
 router.put('/config', adminAuth, requirePermission('backup.create'), async (req, res) => {
   try {
     const updates = req.body;
+
+    const restricted = await changedRestrictedBackupSettings(updates);
+    if (restricted.length > 0 && !(await isSuperAdminUser(req.admin && req.admin.id))) {
+      return res.status(403).json({
+        error: 'Only a Super Admin can change where backups are stored or whether they include the database',
+        code: 'SUPER_ADMIN_REQUIRED',
+        fields: restricted,
+      });
+    }
     
     // Validate required fields based on destination type
     if (updates.backup_destination_type) {
@@ -213,7 +260,11 @@ const picpeakUpload = multer({
 // all data except the current logged-in account (the client shows an explicit
 // confirmation before calling this). Returns `usesExternalMedia` so the UI can
 // prompt the admin to reconfigure the external-media mount afterwards.
-router.post('/picpeak/import', adminAuth, requirePermission('backup.restore'), picpeakUpload.single('backup'), async (req, res) => {
+//
+// super_admin only: the import replaces admin_users, roles and their
+// permissions from the file, so any lesser role able to run it could bring in
+// a Super Admin account of its own.
+router.post('/picpeak/import', adminAuth, requireSuperAdmin(), picpeakUpload.single('backup'), async (req, res) => {
   const fsSync = require('fs');
   if (!req.file) return res.status(400).json({ error: 'No backup file uploaded' });
   const picpeakPath = req.file.path;
@@ -345,7 +396,9 @@ router.delete('/cleanup', adminAuth, requirePermission('backup.delete'), async (
 });
 
 // Test backup destination connectivity
-router.post('/test-connection', adminAuth, requirePermission('backup.create'), async (req, res) => {
+// Probes a caller-supplied destination, which only matters to whoever may set
+// one: super_admin (see changedRestrictedBackupSettings).
+router.post('/test-connection', adminAuth, requireSuperAdmin(), async (req, res) => {
   try {
     const { destination_type, ...config } = req.body;
     
