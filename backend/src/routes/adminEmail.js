@@ -15,7 +15,11 @@ const emailWebhookTransport = require('../services/emailWebhookTransport');
 const businessProfileService = require('../services/businessProfileService');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const logger = require('../utils/logger');
-const { parseEmailData, secretValues, redactRenderedHtml, redactDocumentLinks } = require('../utils/emailSecretRedaction');
+const { parseEmailData, secretValues, redactRenderedHtml, redactBearerLinks } = require('../utils/emailSecretRedaction');
+const { isMaskedOrBlank, sameSmtpTarget, sameImapTarget } = require('../utils/mailCredentialTarget');
+
+// Shared wording for a masked password that may not follow a changed server.
+const PASSWORD_FOR_NEW_SERVER = (kind) => `Enter the ${kind} password again: the server, port, username or encryption changed, and the saved password is only used for the server it was saved for.`;
 const router = express.Router();
 
 // Get email configuration
@@ -81,6 +85,12 @@ router.post('/config', [
 
     // Check if config exists
     const existingConfig = await db('email_configs').first();
+    // A kept (masked) password must not follow a changed destination: the
+    // test button would then authenticate to the new server with it.
+    if (existingConfig?.smtp_pass && isMaskedOrBlank(smtp_pass)
+      && !sameSmtpTarget(existingConfig, { smtp_host, smtp_port, smtp_user, smtp_secure })) {
+      return res.status(400).json({ error: PASSWORD_FOR_NEW_SERVER('SMTP'), code: 'PASSWORD_REQUIRED' });
+    }
     
     const configData = {
       smtp_host,
@@ -164,6 +174,11 @@ router.post('/incoming-config', [
       return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
     }
     const existing = await db('email_configs').first();
+    // Same rule as SMTP: the poller would log in to the new server with it.
+    if (existing?.imap_pass && isMaskedOrBlank(imap_pass)
+      && !sameImapTarget(existing, { imap_host, imap_port, imap_user, imap_secure })) {
+      return res.status(400).json({ error: PASSWORD_FOR_NEW_SERVER('IMAP'), code: 'PASSWORD_REQUIRED' });
+    }
     const data = {
       imap_host,
       imap_port: parseInt(imap_port),
@@ -186,7 +201,9 @@ router.post('/incoming-config', [
 // List IMAP folders so the UI can offer a dropdown (auto-detect) instead of a
 // free-text path. Accepts optional creds in the body to detect before saving;
 // falls back to the stored config (and stored password when masked).
-router.post('/incoming-config/folders', adminAuth, requirePermission('email.view'), async (req, res) => {
+// Needs email.edit: it logs in with credentials, and the stored password is
+// only reused for the saved server (emailIntakeService).
+router.post('/incoming-config/folders', adminAuth, requirePermission('email.edit'), async (req, res) => {
   try {
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass } = req.body || {};
     if (imap_host) {
@@ -201,6 +218,7 @@ router.post('/incoming-config/folders', adminAuth, requirePermission('email.view
     );
     res.json({ folders });
   } catch (error) {
+    if (error.code === 'PASSWORD_REQUIRED') return res.status(400).json({ error: error.message, code: error.code });
     logger.error('IMAP folder detection error:', error);
     res.status(422).json({ error: `Could not connect to the mailbox (${error.message}). Check host, port (IMAP is usually 993) and credentials.` });
   }
@@ -208,7 +226,7 @@ router.post('/incoming-config/folders', adminAuth, requirePermission('email.view
 
 // Test the incoming-mail connection: log in + open the configured folder and
 // report message/unread counts. Accepts current form creds (test before save).
-router.post('/incoming-config/test', adminAuth, requirePermission('email.view'), async (req, res) => {
+router.post('/incoming-config/test', adminAuth, requirePermission('email.edit'), async (req, res) => {
   try {
     const { imap_host, imap_port, imap_secure, imap_user, imap_pass, imap_folder } = req.body || {};
     if (imap_host) {
@@ -227,6 +245,7 @@ router.post('/incoming-config/test', adminAuth, requirePermission('email.view'),
     if (result?.ok) capabilityEvidence(res, 'incoming_mail');
     res.json(result);
   } catch (error) {
+    if (error.code === 'PASSWORD_REQUIRED') return res.status(400).json({ error: error.message, code: error.code });
     logger.error('IMAP connection test error:', error);
     res.status(422).json({ error: `Could not connect to the mailbox (${error.message}). Check host, port (IMAP is usually 993), credentials and folder.` });
   }
@@ -428,6 +447,13 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
     if (b.imap_pass && b.imap_pass !== '********') patch.imap_pass = b.imap_pass;
     if (b.smtp_pass && b.smtp_pass !== '********') patch.smtp_pass = b.smtp_pass;
     const existing = await db('mail_accounts').where({ account_key: b.account_key }).first();
+    // A kept password must not follow a changed server (see mailCredentialTarget).
+    if (existing?.imap_pass && isMaskedOrBlank(b.imap_pass) && !sameImapTarget(existing, patch)) {
+      return res.status(400).json({ error: PASSWORD_FOR_NEW_SERVER('IMAP'), code: 'PASSWORD_REQUIRED' });
+    }
+    if (existing?.smtp_pass && isMaskedOrBlank(b.smtp_pass) && !sameSmtpTarget(existing, patch)) {
+      return res.status(400).json({ error: PASSWORD_FOR_NEW_SERVER('SMTP'), code: 'PASSWORD_REQUIRED' });
+    }
     if (existing) {
       await db('mail_accounts').where({ account_key: b.account_key }).update(patch);
     } else {
@@ -447,7 +473,7 @@ router.post('/accounts', adminAuth, messagingGate, requirePermission('email.edit
 
 // Test an inbound mailbox's IMAP connection (before or after saving). Resolves
 // a masked/blank password from the stored row for the given account_key.
-router.post('/accounts/test', adminAuth, messagingGate, requirePermission('email.view'), async (req, res) => {
+router.post('/accounts/test', adminAuth, messagingGate, requirePermission('email.edit'), async (req, res) => {
   try {
     const b = req.body || {};
     const { isHostAllowed } = require('../utils/networkValidation');
@@ -455,9 +481,13 @@ router.post('/accounts/test', adminAuth, messagingGate, requirePermission('email
       return res.status(400).json({ error: 'IMAP host cannot point to a private or internal network address' });
     }
     let pass = b.imap_pass;
-    if ((!pass || pass === '********') && b.account_key) {
-      const stored = await db('mail_accounts').where({ account_key: b.account_key }).first();
-      pass = stored?.imap_pass || '';
+    if (isMaskedOrBlank(pass)) {
+      // The stored password only for the server it was saved for.
+      const stored = b.account_key ? await db('mail_accounts').where({ account_key: b.account_key }).first() : null;
+      if (!stored?.imap_pass || !sameImapTarget(stored, b)) {
+        return res.status(400).json({ ok: false, error: 'Enter the IMAP password: the saved password is only used for the server it was saved for.', code: 'PASSWORD_REQUIRED' });
+      }
+      pass = stored.imap_pass;
     }
     const emailIntakeService = require('../services/emailIntakeService');
     const result = await emailIntakeService.testConnection({
@@ -798,8 +828,9 @@ router.get('/queue/:id', adminAuth, messagingGate, requirePermission('email.view
     // gallery password / client PIN in their variables and body. Redact on
     // read from the same rule, so the pane never serves a password.
     const data = parseEmailData(row.email_data);
-    // Document links carry the customer's contract or quote token as well.
-    const renderedHtml = redactDocumentLinks(redactRenderedHtml(row.rendered_html || null, secretValues(data)));
+    // Link tokens are credentials too: documents, invitation and
+    // password-reset links, and admin action links.
+    const renderedHtml = redactBearerLinks(redactRenderedHtml(row.rendered_html || null, secretValues(data)));
     try {
       if (data.cc) cc = Array.isArray(data.cc) ? data.cc.join(', ') : String(data.cc);
       if (Array.isArray(data.attachments)) {

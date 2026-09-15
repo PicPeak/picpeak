@@ -18,6 +18,7 @@ const { getStoragePath } = require('../config/storage');
 const expenseService = require('./expenseService');
 const sanitizeHtml = require('sanitize-html');
 const { isUniqueViolation } = require('../utils/dbErrors');
+const { isMaskedOrBlank, sameImapTarget, PasswordRequiredError } = require('../utils/mailCredentialTarget');
 
 const ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
 
@@ -93,6 +94,20 @@ async function getImapConfig() {
   };
 }
 
+/**
+ * The password for a caller-supplied connection. A masked or blank password
+ * falls back to the stored one only when the connection targets the saved
+ * server; anything else would send the stored password to a server the
+ * caller chose.
+ */
+async function resolveOverridePassword(override) {
+  if (!isMaskedOrBlank(override.pass)) return override.pass;
+  const saved = await db('email_configs').first();
+  const target = { imap_host: override.host, imap_port: override.port, imap_user: override.user, imap_secure: override.secure };
+  if (saved && saved.imap_pass && sameImapTarget(saved, target)) return saved.imap_pass;
+  throw new PasswordRequiredError('Enter the IMAP password: the saved password is only used for the server it was saved for.');
+}
+
 async function saveAttachment(att) {
   const year = new Date().getFullYear();
   const dir = path.join(getStoragePath(), 'business-docs', 'inbound', String(year));
@@ -109,7 +124,7 @@ async function saveAttachment(att) {
  * dropdown instead of a free-text path. Uses the saved config; an
  * `override` ({ host, port, secure, user, pass }) lets the admin detect
  * folders BEFORE saving. A masked/blank override password falls back to
- * the stored one. Returns [{ path, name, specialUse }] (specialUse like
+ * the stored one only for the saved server. Returns [{ path, name, specialUse }] (specialUse like
  * '\\Inbox' lets the caller auto-select the inbox).
  */
 async function listFolders(override) {
@@ -119,12 +134,8 @@ async function listFolders(override) {
       host: override.host,
       port: override.port || 993,
       secure: override.secure !== false && override.secure !== 0,
-      auth: { user: override.user, pass: override.pass || '' },
+      auth: { user: override.user, pass: await resolveOverridePassword(override) },
     };
-    if (!cfg.auth.pass || cfg.auth.pass === '********') {
-      const stored = await getImapConfig();
-      cfg.auth.pass = stored?.auth?.pass || '';
-    }
   } else {
     cfg = await getImapConfig();
   }
@@ -144,7 +155,8 @@ async function listFolders(override) {
  * the message + unread counts. Non-destructive (marks nothing seen, ingests
  * nothing) — proves host/port/user/pass AND that the chosen folder opens.
  * Accepts an `override` ({ host, port, secure, user, pass, folder }) so the
- * admin can test before saving; a masked/blank password falls back to stored.
+ * admin can test before saving; a masked/blank password falls back to the
+ * stored one only for the saved server.
  */
 async function testConnection(override) {
   let cfg; let folder;
@@ -153,13 +165,9 @@ async function testConnection(override) {
       host: override.host,
       port: override.port || 993,
       secure: override.secure !== false && override.secure !== 0,
-      auth: { user: override.user, pass: override.pass || '' },
+      auth: { user: override.user, pass: await resolveOverridePassword(override) },
     };
     folder = override.folder || 'INBOX';
-    if (!cfg.auth.pass || cfg.auth.pass === '********') {
-      const stored = await getImapConfig();
-      cfg.auth.pass = stored?.auth?.pass || '';
-    }
   } else {
     const c = await getImapConfig();
     if (!c) return { ok: false, error: 'unconfigured' };
