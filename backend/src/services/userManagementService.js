@@ -875,5 +875,6 @@ module.exports = {
   cloneRole,
   getPendingInvitations,
   cancelInvitation,
-  validateInvitationToken
+  validateInvitationToken,
+  assertActorMayGrant
 };
