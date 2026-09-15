@@ -277,3 +277,44 @@ describe.each(['quotes', 'invoices'])('%s — hierarchy validation before renumb
       .toEqual([reloaded.body.lineItems[1].id, reloaded.body.lineItems[1].id]);
   });
 });
+
+describe('appendToMonthlyDraft — sub-items appended to a draft that already has lines', () => {
+  const line = (position, description, extra = {}) => ({
+    position, description, quantity: 1, unit_price_minor: 10000, discount_percent: 0, ...extra,
+  });
+
+  // The route hands the service line items renumbered to 1..n, so their
+  // positions collide with the draft's existing lines and the append has to
+  // shift each parent reference along with its parent. The aligned case pins
+  // that row ids already matching the shifted slots keep working.
+  test.each([
+    ['row ids colliding with the existing line', 'colliding',
+      [line(1, 'A'), line(2, 'B'), line(3, 'Child', { parent_position: 2 })]],
+    ['row ids matching the shifted positions', 'aligned',
+      [line(2, 'A'), line(3, 'B'), line(4, 'Child', { parent_position: 3 })]],
+  ])('a sub-item keeps its parent with %s', async (_name, key, lineItems) => {
+    // Required here, not at the top: the service binds to the database that
+    // bootCrmDb configured in beforeAll.
+    const invoiceService = require('../../src/services/invoiceService');
+    const inserted = await db('customer_accounts').insert({
+      email: `monthly-${key}@example.com`,
+      display_name: 'Monthly Customer',
+      password_hash: 'unused',
+      preferred_language: 'de',
+      is_active: 1,
+      billing_cadence: 'monthly',
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    const customer = await db('customer_accounts').where({ id: inserted[0]?.id ?? inserted[0] }).first();
+
+    const draftId = await invoiceService.appendToMonthlyDraft(
+      { lineItems: [line(1, 'Existing')] }, customer, adminId, db);
+    expect(await invoiceService.appendToMonthlyDraft({ lineItems }, customer, adminId, db)).toBe(draftId);
+
+    const rows = await db('invoice_line_items').where({ invoice_id: draftId }).orderBy('position', 'asc');
+    expect(rows.map((r) => r.description)).toEqual(['Existing', 'A', 'B', 'Child']);
+    expect(rows.map((r) => r.position)).toEqual([1, 2, 3, 4]);
+    const byDescription = Object.fromEntries(rows.map((r) => [r.description, r]));
+    expect(byDescription.Child.parent_line_item_id).toBe(byDescription.B.id);
+  });
+});
