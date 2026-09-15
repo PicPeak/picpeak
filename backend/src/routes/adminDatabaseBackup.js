@@ -1,8 +1,13 @@
 const express = require('express');
+const path = require('path');
 const router = express.Router();
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { databaseBackupService, isUnderPubliclyServableRoot } = require('../services/databaseBackup');
+const {
+  databaseBackupService,
+  isUnderPubliclyServableRoot,
+  resolveDatabaseBackupDestination,
+} = require('../services/databaseBackup');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getPagination } = require('../utils/routeHelpers');
@@ -255,16 +260,24 @@ router.post('/test', requirePermission('backup.create'), async (req, res) => {
       testResults.databaseConnectionError = error.message;
     }
     
-    // Test destination path
-    if (config.destinationPath) {
+    // Test the directory a real backup would write to. This read an
+    // unprefixed `destinationPath` that getBackupConfig() never returns, so
+    // the check was skipped and always reported the destination unwritable.
+    const destinationPath = await resolveDatabaseBackupDestination(config);
+    testResults.destinationPath = destinationPath;
+    if (isUnderPubliclyServableRoot(destinationPath)) {
+      testResults.destinationError = `Refusing to write a database backup to a publicly served directory: ${destinationPath}`;
+    } else {
       try {
         const fs = require('fs').promises;
-        const testFile = `${config.destinationPath}/.test-${Date.now()}`;
+        await fs.mkdir(destinationPath, { recursive: true });
+        const testFile = path.join(destinationPath, `.test-${Date.now()}`);
         await fs.writeFile(testFile, 'test');
         await fs.unlink(testFile);
         testResults.destinationWritable = true;
       } catch (error) {
-        testResults.destinationError = error.message;
+        testResults.destinationError = `Cannot write to the database backup directory ${destinationPath}: ${error.code || error.message}. `
+          + 'Set database_backup_destination_path to a directory the backend can write to, or mount a writable volume at that path.';
       }
     }
     
