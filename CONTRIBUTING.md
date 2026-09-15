@@ -109,9 +109,38 @@ cd backend && npm test
 # Frontend tests
 cd frontend && npm test
 
-# E2E tests
-npm run test:e2e
+# E2E tests (needs Docker; see below)
+scripts/e2e.sh
 ```
+
+#### E2E suite
+
+`scripts/e2e.sh` runs the Playwright suite in `tests/e2e` against its own stack, `docker-compose.e2e.yml`. That stack uses compose project `picpeak-e2e` and ports 7200–7225, so it does not touch a dev stack you already have running. The script:
+
+1. builds the images from your checkout and starts the stack on an empty database
+2. waits for every service to be healthy
+3. seeds a known state: admin `admin@example.com` with a password generated for this run (saved with the other generated credentials in `.e2e/credentials.env`), no forced password change, auth rate limit raised, OIDC off
+4. runs Playwright, passing along any arguments you give it
+5. tears the stack down again
+
+```bash
+npx playwright install chromium                     # once
+scripts/e2e.sh                                      # every spec, both projects
+scripts/e2e.sh --project=chromium --grep @smoke     # the subset CI runs on PRs
+E2E_KEEP_STACK=1 scripts/e2e.sh tests/e2e/seo-settings.spec.ts   # keep the stack up afterwards
+E2E_NO_BUILD=1 scripts/e2e.sh                       # reuse the images from the last run
+```
+
+With the stack kept up you can also run `npx playwright test` on its own after loading the run's credentials: `set -a; . .e2e/credentials.env; set +a`. On failure, traces are in `test-results/` (`npx playwright show-trace <trace.zip>`) and the backend log is saved to `test-results/e2e-backend.log`.
+
+When writing a spec:
+
+- create the data it needs through the API, and don't depend on what other specs leave behind
+- restore any global setting it changes in a `finally` block or an `afterEach`, so a failed assertion doesn't leak into later specs
+- log in through `tests/e2e/_helpers/admin.ts`, and prefer role + exact name or `data-testid` locators over label regexes, which start matching a second element as soon as the UI grows one
+- tag it `@smoke` in the test title if it is fast and covers a core flow
+
+CI runs the `@smoke` subset on every pull request, and every spec on both projects nightly (`.github/workflows/e2e.yml`).
 
 ## 📝 Styleguides
 

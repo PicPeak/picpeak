@@ -11,10 +11,9 @@ async function loginAndGoToSeoSettings(page) {
   await page.getByRole('button', { name: /^(Sign In|Log in|Anmelden)$/i }).click();
   await expect(page.getByRole('heading', { name: /Dashboard|Übersicht/i })).toBeVisible({ timeout: 20000 });
 
-  await page.goto('/admin/settings');
-  // Click on SEO tab
-  const seoTab = page.getByRole('button', { name: /SEO|Robots/i });
-  await seoTab.click();
+  // Deep link rather than clicking the tab: /SEO|Robots/ also matches other
+  // buttons on the settings page.
+  await page.goto('/admin/settings?tab=seo');
   await expect(page.getByRole('heading', { name: /Search Engine Indexing|Suchmaschinen-Indexierung/i })).toBeVisible({ timeout: 10000 });
 }
 
@@ -115,14 +114,14 @@ test.describe('SEO Settings Tab', () => {
     await expect(page.locator('.Toastify__toast--success')).toBeVisible({ timeout: 10000 });
 
     // Refresh and verify it's still there
+    // The URL keeps ?tab=seo, so the reload lands on the same tab.
     await page.reload();
-    await page.getByRole('button', { name: /SEO|Robots/i }).click();
     await expect(page.getByText(testAgent)).toBeVisible({ timeout: 10000 });
   });
 });
 
 test.describe('robots.txt Endpoint', () => {
-  test('returns valid robots.txt from backend', async ({ request }) => {
+  test('returns valid robots.txt from backend @smoke', async ({ request }) => {
     const response = await request.get('/robots.txt');
 
     expect(response.status()).toBe(200);

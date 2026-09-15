@@ -5,7 +5,7 @@
  * a customer can log in once and open every assigned gallery without
  * re-entering the per-event password. Specifically:
  *
- *   1. Admin enables the Customer dashboard (Settings → Advanced features).
+ *   1. Admin enables the customerPortal feature flag (Settings → Features).
  *   2. Admin creates an event AND invites a customer to that event.
  *   3. Customer accepts the invitation (sets a password).
  *   4. Customer logs in.
@@ -13,10 +13,11 @@
  *   6. Customer clicks the gallery → lands on /gallery/<slug> WITHOUT
  *      seeing a password prompt. The grid renders with photos.
  *
- * Side checks:
- *   - With the master toggle OFF, /customer/login redirects to /admin/login
- *     (frontend gate) and the customer-side API returns 410 Gone (backend
- *     gate). This is the kill-switch contract.
+ * The flag no longer locks customers out when switched off (see
+ * backend/src/routes/customerAuth.js), so there is no kill-switch check.
+ *
+ * Needs a backend started with PICPEAK_ECHO_INVITE_TOKEN=1, which
+ * docker-compose.e2e.yml sets.
  *
  * Hits the API directly for setup (admin login, event create, photo upload,
  * customer invite, accept-invite, gallery assignment) and only uses the
@@ -28,6 +29,7 @@
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { publishEvent, waitForPhotosProcessed } from './_helpers/admin';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
@@ -51,15 +53,15 @@ async function adminLogin(page: Page): Promise<string> {
 }
 
 async function setCustomerPortalEnabled(page: Page, adminToken: string, enabled: boolean) {
-  const res = await page.request.put('/api/admin/settings/advanced-features', {
+  const res = await page.request.put('/api/admin/feature-flags', {
     headers: {
       Authorization: `Bearer ${adminToken}`,
       'Content-Type': 'application/json',
     },
-    data: { customer_portal_enabled: enabled },
+    data: { customerPortal: enabled },
     failOnStatusCode: false,
   });
-  expect(res.ok()).toBeTruthy();
+  expect(res.ok(), `feature flag update failed: ${res.status()} ${await res.text()}`).toBeTruthy();
 }
 
 async function createEventWithPhoto(page: Page, adminToken: string) {
@@ -89,6 +91,7 @@ async function createEventWithPhoto(page: Page, adminToken: string) {
     throw new Error(`Event create failed: ${createRes.status()} ${await createRes.text()}`);
   }
   const event = await createRes.json();
+  await publishEvent(page.request, adminToken, event.id);
 
   // One photo so the gallery grid has something to render after the
   // customer hits it. Tests that the gallery loads, not that it's empty.
@@ -103,6 +106,7 @@ async function createEventWithPhoto(page: Page, adminToken: string) {
     failOnStatusCode: false,
   });
   expect(uploadRes.ok()).toBeTruthy();
+  await waitForPhotosProcessed(page.request, adminToken, event.id);
 
   return event;
 }
@@ -203,18 +207,21 @@ test.describe('Customer portal — login + gallery handoff', () => {
       await page.context().clearCookies();
       await page.goto('/customer/login');
       await page.getByLabel(/Email/i).fill(email);
-      await page.getByLabel(/Password/i).fill(CUSTOMER_PASSWORD);
+      // Role, not label: the "Show password" toggle matches /Password/ too.
+      await page.getByRole('textbox', { name: 'Password' }).fill(CUSTOMER_PASSWORD);
       await page.getByRole('button', { name: /Sign in/i }).click();
 
       // Dashboard should list the assigned event by name.
-      await expect(page.getByRole('heading', { name: /Your galleries/i })).toBeVisible({ timeout: 15000 });
+      // The portal switches to the customer's preferred language after login,
+      // which a fresh invite can leave on German.
+      await expect(page.getByRole('heading', { name: /Your galleries|Ihre Galerien/i })).toBeVisible({ timeout: 15000 });
       await expect(page.getByText(event.event_name, { exact: false })).toBeVisible({ timeout: 15000 });
 
       // Click → gallery handoff. Watch for the URL change AND the absence
       // of the per-event password prompt. Either of those failing is the
       // primary regression this spec is designed to catch.
       const navPromise = page.waitForURL(/\/gallery\//, { timeout: 15000 });
-      await page.getByRole('button', { name: /Open gallery/i }).first().click();
+      await page.getByRole('button', { name: /Open gallery|Galerie .* öffnen/i }).first().click();
       await navPromise;
 
       // The password prompt would render `Enter Gallery Password` (heading
@@ -232,28 +239,5 @@ test.describe('Customer portal — login + gallery handoff', () => {
       // run is something to investigate manually.
       await setCustomerPortalEnabled(page, adminToken, false).catch(() => { /* noop */ });
     }
-  });
-
-  test('disabling the master toggle redirects /customer/login to /admin/login and refuses the API', async ({ page }) => {
-    // Verifies the kill-switch contract on both sides:
-    //   - frontend: CustomerPortalGate redirects when public-settings says off
-    //   - backend: /api/customer/auth/session returns 410 Gone with code
-    //              CUSTOMER_PORTAL_DISABLED
-    const adminToken = await adminLogin(page);
-    await setCustomerPortalEnabled(page, adminToken, false);
-
-    // API gate: 410 Gone (the chosen status for "feature was here, admin
-    // turned it off" — distinct from a generic 403).
-    const apiRes = await page.request.get('/api/customer/auth/session', { failOnStatusCode: false });
-    expect(apiRes.status()).toBe(410);
-    const body = await apiRes.json().catch(() => ({}));
-    expect(body.code).toBe('CUSTOMER_PORTAL_DISABLED');
-
-    // Frontend gate: CustomerPortalGate redirects /customer/* away to
-    // /admin/login. Use waitForURL so we don't race the React Router
-    // <Navigate>.
-    await page.goto('/customer/login');
-    await page.waitForURL(/\/admin\/login/, { timeout: 10000 });
-    expect(page.url()).toContain('/admin/login');
   });
 });

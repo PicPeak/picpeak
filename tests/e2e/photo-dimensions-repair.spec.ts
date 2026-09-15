@@ -1,15 +1,8 @@
 import { test, expect, Page } from '@playwright/test';
-
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
+import { adminApiToken } from './_helpers/admin';
 
 async function getAdminToken(page: Page): Promise<string> {
-  const res = await page.request.post('/api/auth/admin/login', {
-    data: { username: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  });
-  expect(res.ok()).toBeTruthy();
-  const { token } = await res.json();
-  return token;
+  return adminApiToken(page.request);
 }
 
 test.describe('Photo Dimensions Repair (#180)', () => {

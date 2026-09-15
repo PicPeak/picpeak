@@ -172,7 +172,8 @@ test.describe('Settings Page Dark Mode', () => {
 
     // Go to settings
     await page.goto('/admin/settings');
-    await expect(page.getByRole('heading', { name: /Settings|Einstellungen/i })).toBeVisible({ timeout: 10000 });
+    // level 1: the sidebar's "CRM-Settings" group heading matches the regex too.
+    await expect(page.getByRole('heading', { level: 1, name: /Settings|Einstellungen/i })).toBeVisible({ timeout: 10000 });
 
     // Verify settings heading has dark text style
     const heading = page.getByRole('heading', { name: /Settings|Einstellungen/i }).first();
@@ -207,7 +208,8 @@ test.describe('Gallery Theme Color Mode', () => {
     await expect(page.getByText(/Theme|Themen/i).first()).toBeVisible({ timeout: 10000 });
 
     // Look for the color mode selector
-    await expect(page.getByText(/Color Mode|Farbmodus/i)).toBeVisible();
+    // Anchored: "Force color mode" on the same page matches an unanchored regex.
+    await expect(page.getByText(/^(Color Mode|Farbmodus)$/i)).toBeVisible();
 
     // Verify the mode buttons exist
     await expect(page.getByRole('button', { name: /^Light$|^Hell$/i })).toBeVisible();
@@ -248,25 +250,39 @@ test.describe('Force color mode (instance-wide lock)', () => {
     let toggle = page.getByRole('button', { name: /dark mode|light mode|Dunkelmodus|Hellmodus/i });
     await expect(toggle).toBeVisible();
 
-    // Set force-dark via Branding page.
-    await page.goto('/admin/branding');
-    await page.getByRole('button', { name: /Force dark|Dunkel erzwingen/i }).click();
-    await page.getByRole('button', { name: /^Save|^Speichern/i }).first().click();
+    // Force color mode saves on click (BrandingPage handleForceColorModeChange).
+    // Wait for that save rather than also pressing Save: the bulk save is a
+    // second PUT that the reload below can cut off after it has overwritten
+    // the first.
+    const saveForceMode = async (name: RegExp) => {
+      await page.goto('/admin/branding');
+      await Promise.all([
+        page.waitForResponse((r) => r.url().includes('/api/admin/settings/branding') && r.request().method() === 'PUT' && r.ok()),
+        page.getByRole('button', { name }).click(),
+      ]);
+    };
 
-    // Reload so the public-settings refetch picks up the new value.
-    await page.reload();
-    await page.waitForLoadState('networkidle');
+    await saveForceMode(/Force dark|Dunkel erzwingen/i);
 
-    toggle = page.getByRole('button', { name: /dark mode|light mode|Dunkelmodus|Hellmodus/i });
-    await expect(toggle).toHaveCount(0);
+    try {
+      // Load a fresh page so the public-settings fetch picks up the new value.
+      // The dashboard, not a reload of Branding: that page has color mode
+      // buttons of its own that the toggle locator below would also match.
+      await page.goto('/admin/dashboard');
+      await expect(page.getByRole('heading', { name: /Dashboard|Übersicht/i })).toBeVisible({ timeout: 20000 });
 
-    // The .dark class should be applied to <html>.
-    const html = page.locator('html');
-    await expect(html).toHaveClass(/(^|\s)dark(\s|$)/);
+      toggle = page.getByRole('button', { name: /dark mode|light mode|Dunkelmodus|Hellmodus/i });
+      await expect(toggle).toHaveCount(0);
 
-    // Restore: clear the force mode so subsequent test runs aren't affected.
-    await page.goto('/admin/branding');
-    await page.getByRole('button', { name: /No force|Kein/i }).click();
-    await page.getByRole('button', { name: /^Save|^Speichern/i }).first().click();
+      // The .dark class should be applied to <html>.
+      const html = page.locator('html');
+      await expect(html).toHaveClass(/(^|\s)dark(\s|$)/);
+    } finally {
+      // Restore even when an assertion above failed: a forced dark theme left
+      // behind fails every later spec that expects the light default. Through
+      // the page, not the API, because PUT /branding writes every branding key
+      // and the page sends them all back.
+      await saveForceMode(/No force|Kein/i);
+    }
   });
 });

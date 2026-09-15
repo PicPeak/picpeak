@@ -1,18 +1,13 @@
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { adminApiToken, waitForPhotosProcessed } from './_helpers/admin';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
 const GALLERY_PASSWORD = process.env.GALLERY_PASSWORD || 'PlaywrightGallery123!';
 
 async function getAdminToken(page: Page): Promise<string> {
-  const res = await page.request.post('/api/auth/admin/login', {
-    data: { username: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  });
-  expect(res.ok()).toBeTruthy();
-  const { token } = await res.json();
-  return token;
+  return adminApiToken(page.request);
 }
 
 test.describe('Admin video upload (#203)', () => {
@@ -61,8 +56,7 @@ test.describe('Admin video upload (#203)', () => {
     const uploadBody = await uploadRes.json();
     expect(uploadBody.successCount).toBeGreaterThanOrEqual(1);
 
-    // Wait for background processing
-    await page.waitForTimeout(5000);
+    await waitForPhotosProcessed(page.request, token, event.id);
 
     // Fetch photos for this event via admin API
     const photosRes = await page.request.get(`/api/admin/photos/${event.id}/photos`, {
@@ -96,7 +90,7 @@ test.describe('Admin video upload (#203)', () => {
     });
     expect(imgUploadRes.ok()).toBeTruthy();
 
-    await page.waitForTimeout(2000);
+    await waitForPhotosProcessed(page.request, token, event.id);
 
     // Re-fetch and verify image has correct media_type and dimensions
     const photosRes2 = await page.request.get(`/api/admin/photos/${event.id}/photos`, {

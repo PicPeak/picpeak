@@ -1,18 +1,14 @@
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import { adminApiToken, publishEvent, waitForPhotosProcessed } from './_helpers/admin';
+import { passGalleryPasswordPrompt } from './_helpers/gallery';
 
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@example.com';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Admin!234';
 const GALLERY_PASSWORD = process.env.GALLERY_PASSWORD || 'PlaywrightGallery123!';
 
 async function getAdminToken(page: Page): Promise<string> {
-  const res = await page.request.post('/api/auth/admin/login', {
-    data: { username: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  });
-  expect(res.ok()).toBeTruthy();
-  const { token } = await res.json();
-  return token;
+  return adminApiToken(page.request);
 }
 
 async function createGalleryPremiumEvent(page: Page) {
@@ -38,6 +34,7 @@ async function createGalleryPremiumEvent(page: Page) {
   });
   expect(createRes.ok()).toBeTruthy();
   const event = await createRes.json();
+  await publishEvent(page.request, token, event.id);
 
   // Upload 3 images so we can verify select-all picks all of them
   const imagePaths = ['img1.png', 'img2.png', 'img1.png'].map((f) =>
@@ -55,6 +52,7 @@ async function createGalleryPremiumEvent(page: Page) {
     });
     expect(uploadRes.ok()).toBeTruthy();
   }
+  await waitForPhotosProcessed(page.request, token, event.id);
 
   return { shareLink: event.share_link, slug: event.slug, token };
 }
@@ -71,17 +69,7 @@ test.describe('Gallery-Premium Select All (#220)', () => {
     await page.goto(shareLink);
     await page.waitForLoadState('domcontentloaded');
 
-    // Handle password if needed
-    const passwordField = page.getByPlaceholder(/gallery password/i).first();
-    if (await passwordField.count()) {
-      await passwordField.fill(GALLERY_PASSWORD);
-      try {
-        await page.getByRole('button', { name: /View Gallery/i }).click({ timeout: 5000 });
-      } catch {
-        // Token may auto-auth
-      }
-      await page.waitForLoadState('networkidle');
-    }
+    await passGalleryPasswordPrompt(page, GALLERY_PASSWORD);
 
     // Wait for photos to render
     await page.waitForTimeout(3000);
