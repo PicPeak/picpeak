@@ -18,6 +18,7 @@
  */
 
 const request = require('supertest');
+const { formatBoolean } = require('../../src/utils/dbCompat');
 const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
@@ -43,8 +44,9 @@ const descriptionsOf = (body) => body.lineItems.map((li) => li.description);
 const positionsOf = (body) => body.lineItems.map((li) => li.position);
 
 async function enableFlag(key) {
-  const updated = await db('feature_flags').where({ key }).update({ value: true });
-  if (!updated) await db('feature_flags').insert({ key, value: true });
+  const value = formatBoolean(true);
+  const updated = await db('feature_flags').where({ key }).update({ value });
+  if (!updated) await db('feature_flags').insert({ key, value });
 }
 
 /**
@@ -169,24 +171,14 @@ describe('PUT /api/admin/quotes/:id — line-item order', () => {
     expect(reloaded.body.lineItems[2].parentPosition).toBe(1);
   });
 
-  test('a new quote can be reordered before its first save is lost', async () => {
-    // Same code path: rows get positions 1..n on creation, so this used to
-    // be lost as well.
+  test('a new quote keeps the order chosen before its first save', async () => {
     const quoteId = await createQuote([
+      { position: 3, quantity: 1, description: 'Third', unitPriceMinor: 30000, discountPercent: 0 },
       { position: 1, quantity: 1, description: 'First', unitPriceMinor: 10000, discountPercent: 0 },
       { position: 2, quantity: 1, description: 'Second', unitPriceMinor: 20000, discountPercent: 0 },
-      { position: 3, quantity: 1, description: 'Third', unitPriceMinor: 30000, discountPercent: 0 },
     ]);
-
-    await request(quoteApp).put(`/api/admin/quotes/${quoteId}`).set(auth).send({
-      lineItems: [
-        { position: 3, quantity: 1, description: 'Third', unitPriceMinor: 30000, discountPercent: 0 },
-        { position: 1, quantity: 1, description: 'First', unitPriceMinor: 10000, discountPercent: 0 },
-        { position: 2, quantity: 1, description: 'Second', unitPriceMinor: 20000, discountPercent: 0 },
-      ],
-    }).expect(200);
-
     const reloaded = await request(quoteApp).get(`/api/admin/quotes/${quoteId}`).set(auth);
+    expect(reloaded.status).toBe(200);
     expect(descriptionsOf(reloaded.body)).toEqual(['Third', 'First', 'Second']);
   });
 });
@@ -220,5 +212,68 @@ describe('PUT /api/admin/invoices/:id — line-item order', () => {
     expect(reloaded.status).toBe(200);
     expect(descriptionsOf(reloaded.body)).toEqual(['Album', 'Wedding coverage']);
     expect(positionsOf(reloaded.body)).toEqual([1, 2]);
+  });
+});
+
+describe.each(['quotes', 'invoices'])('%s — hierarchy validation before renumbering', (resource) => {
+  const line = (position, description, extra = {}) => ({
+    position, description, quantity: 1, unitPriceMinor: 10000, discountPercent: 0, ...extra,
+  });
+  const invalidCases = [
+    ['missing parent colliding with a new position', [
+      line(10, 'Unrelated'),
+      line(20, 'Orphan', { parentPosition: 1 }),
+    ], 'LINE_ITEM_PARENT_NOT_FOUND'],
+    ['duplicate original positions', [
+      line(10, 'First'),
+      line(10, 'Second'),
+      line(20, 'Child', { parentPosition: 10 }),
+    ], 'LINE_ITEM_POSITION_DUPLICATE'],
+  ];
+
+  test.each(invalidCases)('POST rejects %s without creating a document', async (_name, lineItems, code) => {
+    const app = resource === 'quotes' ? quoteApp : invoiceApp;
+    const before = await db(resource).select('id');
+    const res = await request(app).post(`/api/admin/${resource}`).set(auth).send({
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0, lineItems,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe(code);
+    expect(await db(resource).select('id')).toEqual(before);
+  });
+
+  test.each(invalidCases)('PUT rejects %s without changing saved lines or totals', async (_name, lineItems, code) => {
+    const app = resource === 'quotes' ? quoteApp : invoiceApp;
+    const created = await request(app).post(`/api/admin/${resource}`).set(auth).send({
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0,
+      lineItems: [line(1, 'Original')],
+    });
+    expect(created.status).toBe(201);
+    const id = (created.body.quote || created.body.invoice).id;
+    const url = `/api/admin/${resource}/${id}`;
+    const before = await request(app).get(url).set(auth).expect(200);
+    const rejected = await request(app).put(url).set(auth).send({ lineItems });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.code).toBe(code);
+    const after = await request(app).get(url).set(auth).expect(200);
+    expect(after.body.lineItems).toEqual(before.body.lineItems);
+    const key = resource === 'quotes' ? 'quote' : 'invoice';
+    expect(after.body[key].totalAmountMinor).toBe(before.body[key].totalAmountMinor);
+  });
+
+  test('POST preserves a moved parent and reordered children on first save', async () => {
+    const app = resource === 'quotes' ? quoteApp : invoiceApp;
+    const created = await request(app).post(`/api/admin/${resource}`).set(auth).send({
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0,
+      lineItems: [line(4, 'Travel'), line(1, 'Package'),
+        line(3, 'Lens', { parentPosition: 1 }), line(2, 'Camera', { parentPosition: 1 })],
+    });
+    expect(created.status).toBe(201);
+    const id = (created.body.quote || created.body.invoice).id;
+    const reloaded = await request(app).get(`/api/admin/${resource}/${id}`).set(auth).expect(200);
+    expect(descriptionsOf(reloaded.body)).toEqual(['Travel', 'Package', 'Lens', 'Camera']);
+    expect(positionsOf(reloaded.body)).toEqual([1, 2, 3, 4]);
+    expect(reloaded.body.lineItems.slice(2).map((li) => li.parentLineItemId))
+      .toEqual([reloaded.body.lineItems[1].id, reloaded.body.lineItems[1].id]);
   });
 });

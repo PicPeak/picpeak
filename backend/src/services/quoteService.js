@@ -33,6 +33,7 @@ const logger = require('../utils/logger');
 const { getAppSetting } = require('../utils/appSettings');
 const { cleanNetMinor } = require('../utils/invoiceRounding');
 const { AppError } = require('../utils/errors');
+const { validateLineItemHierarchy } = require('../utils/lineItemPositions');
 const { formatBoolean } = require('../utils/dbCompat');
 const { nextDocumentNumber } = require('../utils/documentSequences');
 const { resolveDefaultEventType } = require('./eventTypeService');
@@ -228,48 +229,6 @@ function resolveParentTotalsFromSubItems(items) {
       0,
     );
     if (pricedSum > 0) li.line_total_minor = pricedSum;
-  }
-}
-
-/**
- * Validate the hierarchy of a line-item payload BEFORE insert. Throws
- * AppError on:
- *   - duplicate positions
- *   - sub-item's parent_position not found in the payload
- *   - sub-item's parent is itself a sub-item (max 1 level deep)
- *   - circular reference (item references itself)
- *
- * Used by both quote + invoice services so the rules stay identical
- * across both flows (and so the quote→invoice cloner doesn't have to
- * re-validate).
- */
-function validateLineItemHierarchy(lineItems) {
-  if (!Array.isArray(lineItems) || lineItems.length === 0) return;
-  const positions = new Set();
-  const parentPositions = new Map(); // position → parent_position (or null)
-  for (const li of lineItems) {
-    const pos = ensureInt(li.position);
-    if (!pos) {
-      throw new AppError('Every line item must have a positive position', 400, 'LINE_ITEM_POSITION_REQUIRED');
-    }
-    if (positions.has(pos)) {
-      throw new AppError(`Duplicate line item position: ${pos}`, 400, 'LINE_ITEM_POSITION_DUPLICATE');
-    }
-    positions.add(pos);
-    const pp = li.parent_position == null || li.parent_position === '' ? null : ensureInt(li.parent_position);
-    parentPositions.set(pos, pp);
-  }
-  for (const [pos, pp] of parentPositions) {
-    if (pp == null) continue;
-    if (pp === pos) {
-      throw new AppError(`Line item ${pos} cannot be its own parent`, 400, 'LINE_ITEM_SELF_PARENT');
-    }
-    if (!parentPositions.has(pp)) {
-      throw new AppError(`Sub-item ${pos} references missing parent position ${pp}`, 400, 'LINE_ITEM_PARENT_NOT_FOUND');
-    }
-    if (parentPositions.get(pp) != null) {
-      throw new AppError(`Sub-item ${pos} cannot nest under another sub-item (max one level deep)`, 400, 'LINE_ITEM_NESTING_TOO_DEEP');
-    }
   }
 }
 
