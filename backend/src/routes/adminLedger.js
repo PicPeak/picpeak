@@ -16,6 +16,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const ledgerService = require('../services/ledgerService');
+const accountingHistory = require('../services/accountingHistory');
 
 const router = express.Router();
 const toInt = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : undefined; };
@@ -31,31 +32,44 @@ router.use(requireAccounting);
 router.get('/accounts', requirePermission('accounting.view'), handleAsync(async (_req, res) =>
   successResponse(res, { items: await ledgerService.listAccounts() })));
 
+// Change history (migration 219), oldest first.
+router.get('/accounts/:id/history', requirePermission('accounting.view'), [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    return successResponse(res, { entries: await accountingHistory.listHistory('ledger_account', toInt(req.params.id)) });
+  }));
+
 router.post('/accounts', requirePermission('accounting.manage'),
   [body('number').isString().isLength({ min: 1, max: 16 }), body('name').isString().isLength({ min: 1, max: 200 }),
     body('type').isIn(ledgerService.ACCOUNT_TYPES)],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, { account: await ledgerService.createAccount(req.body) }, 201, 'Account created');
+    return successResponse(res, { account: await ledgerService.createAccount(req.body, req.admin.id) }, 201, 'Account created');
   }));
 
 router.patch('/accounts/:id', requirePermission('accounting.manage'),
   [param('id').isInt({ min: 1 }), body('type').optional().isIn(ledgerService.ACCOUNT_TYPES)],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, { account: await ledgerService.updateAccount(toInt(req.params.id), req.body) });
+    return successResponse(res, { account: await ledgerService.updateAccount(toInt(req.params.id), req.body, req.admin.id) });
   }));
 
 router.delete('/accounts/:id', requirePermission('accounting.manage'),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, await ledgerService.deleteAccount(toInt(req.params.id)));
+    return successResponse(res, await ledgerService.deleteAccount(toInt(req.params.id), req.admin.id));
   }));
 
 // ── VAT codes ────────────────────────────────────────────────────────
 router.get('/vat-codes', requirePermission('accounting.view'), handleAsync(async (_req, res) =>
   successResponse(res, { items: await ledgerService.listVatCodes() })));
+
+router.get('/vat-codes/:id/history', requirePermission('accounting.view'), [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    return successResponse(res, { entries: await accountingHistory.listHistory('vat_code', toInt(req.params.id)) });
+  }));
 
 router.post('/vat-codes', requirePermission('accounting.manage'),
   [body('code').isString().isLength({ min: 1, max: 16 }), body('name').isString().isLength({ min: 1, max: 200 }),
@@ -63,7 +77,7 @@ router.post('/vat-codes', requirePermission('accounting.manage'),
     body('accountId').optional({ nullable: true }).isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, { vatCode: await ledgerService.createVatCode(req.body) }, 201, 'VAT code created');
+    return successResponse(res, { vatCode: await ledgerService.createVatCode(req.body, req.admin.id) }, 201, 'VAT code created');
   }));
 
 router.patch('/vat-codes/:id', requirePermission('accounting.manage'),
@@ -71,14 +85,14 @@ router.patch('/vat-codes/:id', requirePermission('accounting.manage'),
     body('rate').optional().isFloat({ min: 0 }), body('accountId').optional({ nullable: true }).isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, { vatCode: await ledgerService.updateVatCode(toInt(req.params.id), req.body) });
+    return successResponse(res, { vatCode: await ledgerService.updateVatCode(toInt(req.params.id), req.body, req.admin.id) });
   }));
 
 router.delete('/vat-codes/:id', requirePermission('accounting.manage'),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, await ledgerService.deleteVatCode(toInt(req.params.id)));
+    return successResponse(res, await ledgerService.deleteVatCode(toInt(req.params.id), req.admin.id));
   }));
 
 // ── mappings (category→account + default accounts / VAT maps) ─────────
@@ -89,7 +103,7 @@ router.patch('/mappings/category/:id', requirePermission('accounting.manage'),
   [param('id').isInt({ min: 1 }), body('ledgerAccountId').optional({ nullable: true }).isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, { category: await ledgerService.setCategoryAccount(toInt(req.params.id), req.body.ledgerAccountId ?? null) });
+    return successResponse(res, { category: await ledgerService.setCategoryAccount(toInt(req.params.id), req.body.ledgerAccountId ?? null, req.admin.id) });
   }));
 
 router.patch('/mappings/settings', requirePermission('accounting.manage'), handleAsync(async (req, res) => {

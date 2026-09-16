@@ -66,6 +66,10 @@ const toInt = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n 
 router.get('/categories', requireAccounting, requirePermission('accounting.view'), handleAsync(async (_req, res) =>
   successResponse(res, { items: await expenseCategoriesService.list() })));
 
+router.get('/categories/:id/history', requireAccounting, requirePermission('accounting.view'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => { validateRequest(req); return successResponse(res, { entries: await accountingHistory.listHistory('expense_category', toInt(req.params.id)) }); }));
+
 router.post('/categories', requireAccounting, requirePermission('accounting.manage'),
   [body('name').isString().isLength({ min: 1, max: 128 }), body('color').optional({ nullable: true }).isString()],
   handleAsync(async (req, res) => {
@@ -77,14 +81,14 @@ router.patch('/categories/:id', requireAccounting, requirePermission('accounting
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, { category: await expenseCategoriesService.update(toInt(req.params.id), req.body) });
+    return successResponse(res, { category: await expenseCategoriesService.update(toInt(req.params.id), req.body, req.admin.id) });
   }));
 
 router.delete('/categories/:id', requireAccounting, requirePermission('accounting.manage'),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, await expenseCategoriesService.remove(toInt(req.params.id)));
+    return successResponse(res, await expenseCategoriesService.remove(toInt(req.params.id), req.admin.id));
   }));
 
 // ── Incoming invoices (external) ────────────────────────────────────────────

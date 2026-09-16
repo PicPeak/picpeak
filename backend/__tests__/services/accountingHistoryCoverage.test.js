@@ -65,9 +65,22 @@ describe('accounting change history coverage', () => {
       const [location] = hit.split(' ');
       return !location.startsWith(`${path.relative(SRC, RECORDER)}:`);
     })).toEqual([]);
+    // The one sanctioned rewrite: erasing a customer blanks the personal
+    // values in that customer's own history (redactCustomerHistory).
     const recorder = fs.readFileSync(RECORDER, 'utf8');
-    for (const { statement } of statementsOn(recorder, 'accounting_change_history')) {
-      expect(statement).not.toMatch(/\.(update|del|delete|increment|decrement|truncate)\s*\(/);
+    const redactStart = recorder.indexOf('async function redactCustomerHistory');
+    const redactEnd = recorder.indexOf('\n}\n', redactStart);
+    expect(redactStart).toBeGreaterThan(-1);
+    const rewrites = [];
+    const reference = /\(\s*['"`]accounting_change_history['"`]\s*\)/g;
+    let match;
+    while ((match = reference.exec(recorder))) {
+      const end = recorder.indexOf(';', match.index);
+      const statement = recorder.slice(match.index, end);
+      expect(statement).not.toMatch(/\.(del|delete|increment|decrement|truncate)\s*\(/);
+      if (/\.update\s*\(/.test(statement)) rewrites.push(match.index);
     }
+    expect(rewrites).toHaveLength(1);
+    expect(rewrites[0] > redactStart && rewrites[0] < redactEnd).toBe(true);
   });
 });

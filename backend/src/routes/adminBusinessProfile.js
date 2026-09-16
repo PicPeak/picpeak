@@ -25,6 +25,7 @@ const { getStoragePath } = require('../config/storage');
 const { uploadedPdfLogoPath } = require('../utils/safePath');
 const { validateFileType, validateFileContent, ALLOWED_MEDIA_TYPES } = require('../utils/fileSecurityUtils');
 const businessProfileService = require('../services/businessProfileService');
+const accountingHistory = require('../services/accountingHistory');
 const { db } = require('../database/db');
 const { validateIban } = require('../utils/iban');
 const { validationResult } = require('express-validator');
@@ -253,6 +254,17 @@ router.get(
       bankAccounts: bankAccounts.map(transformBank),
     });
   })
+);
+
+// ---- GET /history -----------------------------------------------------
+// Change history (migration 219) of the profile and its bank accounts,
+// oldest first. Same gate as the profile itself.
+router.get(
+  '/history',
+  requirePermission(['settings.view', 'settings.banking']),
+  handleAsync(async (_req, res) => successResponse(res, {
+    entries: await accountingHistory.listHistory('business_profile', 1),
+  }))
 );
 
 // ---- GET /logo-diagnostic ---------------------------------------------

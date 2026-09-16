@@ -22,6 +22,7 @@ const { getAppSetting } = require('../utils/appSettings');
 const { buildCustomerLabel } = require('./taxReportService')._internal;
 const { ensureInt } = require('../utils/numericHelpers');
 const { neutralizeSpreadsheetFormula } = require('../utils/spreadsheetSafe');
+const { auditedDelete, auditedInsert, auditedUpdate } = require('./accountingHistory');
 
 const ACCOUNT_TYPES = ['asset', 'liability', 'equity', 'revenue', 'expense'];
 const VAT_DIRECTIONS = ['output', 'input'];
@@ -80,18 +81,18 @@ async function listAccounts() {
   return db('ledger_accounts').orderBy('number', 'asc').select('*');
 }
 
-async function createAccount({ number, name, type }) {
+async function createAccount({ number, name, type }, adminId = null) {
   if (!number || !name) throw httpError(400, 'number and name are required', 'VALIDATION');
   if (!ACCOUNT_TYPES.includes(type)) throw httpError(400, 'invalid account type', 'VALIDATION');
   const exists = await db('ledger_accounts').where({ number }).first();
   if (exists) throw httpError(409, 'an account with this number already exists', 'DUPLICATE');
-  const [row] = await db('ledger_accounts')
-    .insert({ number, name, type, is_seed: false, active: true })
-    .returning('*');
-  return row || db('ledger_accounts').where({ number }).first();
+  const [{ id }] = await auditedInsert(db, 'ledger_accounts',
+    { number, name, type, is_seed: false, active: true },
+    { actor: adminId, source: 'ledger_account.create' });
+  return db('ledger_accounts').where({ id }).first();
 }
 
-async function updateAccount(id, { number, name, type, active }) {
+async function updateAccount(id, { number, name, type, active }, adminId = null) {
   const patch = { updated_at: new Date() };
   if (number !== undefined) patch.number = number;
   if (name !== undefined) patch.name = name;
@@ -104,18 +105,18 @@ async function updateAccount(id, { number, name, type, active }) {
     const clash = await db('ledger_accounts').where({ number: patch.number }).whereNot({ id }).first();
     if (clash) throw httpError(409, 'an account with this number already exists', 'DUPLICATE');
   }
-  await db('ledger_accounts').where({ id }).update(patch);
+  await auditedUpdate(db, 'ledger_accounts', { id }, patch, { actor: adminId, source: 'ledger_account.update' });
   return db('ledger_accounts').where({ id }).first();
 }
 
 /** Hard-delete only when nothing references the account; otherwise tell the
  *  caller to deactivate instead (keeps mappings + exports stable). */
-async function deleteAccount(id) {
+async function deleteAccount(id, adminId = null) {
   const acct = await db('ledger_accounts').where({ id }).first();
   if (!acct) throw httpError(404, 'account not found', 'NOT_FOUND');
   const refs = await accountReferences(acct);
   if (refs.length) throw httpError(409, `account is in use (${refs.join(', ')}) — deactivate it instead`, 'IN_USE');
-  await db('ledger_accounts').where({ id }).del();
+  await auditedDelete(db, 'ledger_accounts', { id }, { actor: adminId, source: 'ledger_account.delete' });
   return { deleted: true };
 }
 
@@ -141,18 +142,18 @@ async function listVatCodes() {
   return db('vat_codes').orderBy('display_order', 'asc').select('*');
 }
 
-async function createVatCode({ code, name, rate, direction, accountId }) {
+async function createVatCode({ code, name, rate, direction, accountId }, adminId = null) {
   if (!code || !name) throw httpError(400, 'code and name are required', 'VALIDATION');
   if (!VAT_DIRECTIONS.includes(direction)) throw httpError(400, 'invalid direction', 'VALIDATION');
   const exists = await db('vat_codes').where({ code }).first();
   if (exists) throw httpError(409, 'a VAT code with this code already exists', 'DUPLICATE');
-  const [row] = await db('vat_codes')
-    .insert({ code, name, rate: Number(rate) || 0, direction, account_id: accountId || null, is_seed: false, active: true })
-    .returning('*');
-  return row || db('vat_codes').where({ code }).first();
+  const [{ id }] = await auditedInsert(db, 'vat_codes',
+    { code, name, rate: Number(rate) || 0, direction, account_id: accountId || null, is_seed: false, active: true },
+    { actor: adminId, source: 'vat_code.create' });
+  return db('vat_codes').where({ id }).first();
 }
 
-async function updateVatCode(id, { code, name, rate, direction, accountId, active }) {
+async function updateVatCode(id, { code, name, rate, direction, accountId, active }, adminId = null) {
   const patch = { updated_at: new Date() };
   if (code !== undefined) patch.code = code;
   if (name !== undefined) patch.name = name;
@@ -167,11 +168,11 @@ async function updateVatCode(id, { code, name, rate, direction, accountId, activ
     const clash = await db('vat_codes').where({ code: patch.code }).whereNot({ id }).first();
     if (clash) throw httpError(409, 'a VAT code with this code already exists', 'DUPLICATE');
   }
-  await db('vat_codes').where({ id }).update(patch);
+  await auditedUpdate(db, 'vat_codes', { id }, patch, { actor: adminId, source: 'vat_code.update' });
   return db('vat_codes').where({ id }).first();
 }
 
-async function deleteVatCode(id) {
+async function deleteVatCode(id, adminId = null) {
   const vat = await db('vat_codes').where({ id }).first();
   if (!vat) throw httpError(404, 'VAT code not found', 'NOT_FOUND');
   // Referenced by the tax_treatment / output-rate maps?
@@ -180,7 +181,7 @@ async function deleteVatCode(id) {
   ]);
   const used = Object.values(vatMap || {}).includes(vat.code) || Object.values(outputVatMap || {}).includes(vat.code);
   if (used) throw httpError(409, 'VAT code is referenced by a mapping — change the mapping first', 'IN_USE');
-  await db('vat_codes').where({ id }).del();
+  await auditedDelete(db, 'vat_codes', { id }, { actor: adminId, source: 'vat_code.delete' });
   return { deleted: true };
 }
 
@@ -200,11 +201,12 @@ async function getMappings() {
   return { categories, settings };
 }
 
-async function setCategoryAccount(categoryId, ledgerAccountId) {
+async function setCategoryAccount(categoryId, ledgerAccountId, adminId = null) {
   if (!(await db.schema.hasColumn('expense_categories', 'ledger_account_id'))) {
     throw httpError(409, 'category→account mapping column missing', 'SCHEMA');
   }
-  await db('expense_categories').where({ id: categoryId }).update({ ledger_account_id: ledgerAccountId || null });
+  await auditedUpdate(db, 'expense_categories', { id: categoryId }, { ledger_account_id: ledgerAccountId || null },
+    { actor: adminId, source: 'expense_category.ledger_account' });
   return db('expense_categories').where({ id: categoryId }).first();
 }
 

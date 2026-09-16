@@ -16,7 +16,7 @@ const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getBcryptRounds } = require('../utils/passwordValidation');
 const { queueEmail } = require('./emailProcessor');
-const { auditedUpdate } = require('./accountingHistory');
+const { auditedInsert, auditedUpdate, redactCustomerHistory } = require('./accountingHistory');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const logger = require('../utils/logger');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
@@ -247,7 +247,7 @@ async function createDirect({ email, prefill, createdByAdminId }) {
   const sanitised = sanitisePrefill(prefill) || {};
   const preferredLanguage = sanitised.preferred_language || defaultPreferredLanguage;
 
-  const [inserted] = await db('customer_accounts').insert({
+  const [inserted] = await auditedInsert(db, 'customer_accounts', {
     email: normalisedEmail,
     salutation: sanitised.salutation || null,
     first_name: sanitised.first_name || null,
@@ -271,7 +271,7 @@ async function createDirect({ email, prefill, createdByAdminId }) {
     created_by_admin_id: createdByAdminId || null,
     created_at: new Date(),
     updated_at: new Date(),
-  }).returning('id');
+  }, { actor: createdByAdminId || null, source: 'customer.create' });
   const id = inserted?.id || inserted;
 
   await logActivity('customer_created_passive',
@@ -391,9 +391,11 @@ async function acceptInvitation({ token, name, password, profile }) {
       overwriteIfSet('state');
       overwriteIfSet('country_code');
       if (merged.preferred_language) updates.preferred_language = merged.preferred_language;
-      await trx('customer_accounts').where('id', id).update(updates);
+      await auditedUpdate(trx, 'customer_accounts', { id }, updates, {
+        actor: { type: 'customer', id }, source: 'customer.invitation.accept',
+      });
     } else {
-      const [inserted] = await trx('customer_accounts').insert({
+      const [inserted] = await auditedInsert(trx, 'customer_accounts', {
         email: invitation.email,
         // Profile fields land directly on the customer row. Anything the user
         // didn't set stays null.
@@ -432,7 +434,7 @@ async function acceptInvitation({ token, name, password, profile }) {
         created_by_admin_id: invitation.invited_by,
         created_at: new Date(),
         updated_at: new Date(),
-      }).returning('id');
+      }, { actor: 'customer-invitation', source: 'customer.invitation.accept' });
       id = inserted?.id || inserted;
     }
 
@@ -699,7 +701,9 @@ async function updateCustomer(id, updates, updatedByAdminId) {
   }
 
   allowed.updated_at = new Date();
-  await db('customer_accounts').where('id', id).update(allowed);
+  await auditedUpdate(db, 'customer_accounts', { id }, allowed, {
+    actor: updatedByAdminId || null, source: 'customer.update',
+  });
 
   await logActivity('customer_updated',
     { customerId: id, fields: Object.keys(allowed) },
@@ -732,13 +736,13 @@ async function deactivateCustomer(id, deactivatedByAdminId) {
     throw new NotFoundError('Customer', id);
   }
 
-  await db('customer_accounts').where('id', id).update({
+  await auditedUpdate(db, 'customer_accounts', { id }, {
     is_active: formatBoolean(false),
     // Bumping password_changed_at invalidates any outstanding tokens
     // immediately — same trick adminAuth uses.
     password_changed_at: new Date(),
     updated_at: new Date(),
-  });
+  }, { actor: deactivatedByAdminId || null, source: 'customer.deactivate' });
 
   await logActivity('customer_deactivated',
     { customerId: id, email: customer.email },
@@ -764,12 +768,12 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
     return; // already active, no-op
   }
 
-  await db('customer_accounts').where('id', id).update({
+  await auditedUpdate(db, 'customer_accounts', { id }, {
     is_active: formatBoolean(true),
     // Don't touch password_changed_at — the customer's password (if set)
     // remains valid. They log in with their existing credential.
     updated_at: new Date(),
-  });
+  }, { actor: reactivatedByAdminId || null, source: 'customer.reactivate' });
 
   await logActivity('customer_reactivated',
     { customerId: id, email: customer.email },
@@ -824,7 +828,7 @@ async function eraseCustomer(id, erasedByAdminId) {
   const sentinelEmail = `deleted-${id}-${crypto.randomBytes(4).toString('hex')}@deleted.invalid`;
 
   await db.transaction(async (trx) => {
-    await trx('customer_accounts').where('id', id).update({
+    await auditedUpdate(trx, 'customer_accounts', { id }, {
       email: sentinelEmail,
       salutation: null,
       first_name: null,
@@ -846,7 +850,9 @@ async function eraseCustomer(id, erasedByAdminId) {
       must_change_password: formatBoolean(false),
       password_changed_at: new Date(),
       updated_at: new Date(),
-    });
+    }, { actor: erasedByAdminId || null, source: 'customer.erase' });
+    // After the erasure's own entry, which still holds the erased values.
+    await redactCustomerHistory(trx, id);
 
     // Drop pending invitations the customer hasn't accepted yet AND any
     // that ARE pointed at this customer (accepted_customer_id) — keep the
@@ -1485,12 +1491,12 @@ async function applyPasswordReset({ token, password }) {
 
   const passwordHash = await bcrypt.hash(password, getBcryptRounds());
   await db.transaction(async (trx) => {
-    await trx('customer_accounts').where('id', customer.id).update({
+    await auditedUpdate(trx, 'customer_accounts', { id: customer.id }, {
       password_hash: passwordHash,
       password_changed_at: new Date(),
       must_change_password: formatBoolean(false),
       updated_at: new Date(),
-    });
+    }, { actor: { type: 'customer', id: customer.id }, source: 'customer.password_reset' });
     await trx('customer_password_resets').where('id', row.id).update({ used_at: new Date() });
   });
 

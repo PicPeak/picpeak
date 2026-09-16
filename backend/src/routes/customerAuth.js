@@ -44,6 +44,7 @@ const { getClientIp } = require('../utils/requestIp');
 const customerAccountsService = require('../services/customerAccountsService');
 const { customerAuth } = require('../middleware/customerAuth');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
+const { auditedUpdate } = require('../services/accountingHistory');
 
 const router = express.Router();
 
@@ -116,10 +117,11 @@ router.post('/login', [
     }
 
     await trackSuccessfulLogin(lockoutKey, ipAddress, userAgent);
-    await db('customer_accounts').where('id', customer.id).update({
+    // Not a billing field, so this leaves no history entry.
+    await auditedUpdate(db, 'customer_accounts', { id: customer.id }, {
       last_login: new Date(),
       last_login_ip: ipAddress,
-    });
+    }, { actor: { type: 'customer', id: customer.id }, source: 'customer.login' });
 
     const token = jwt.sign({
       customerId: customer.id,

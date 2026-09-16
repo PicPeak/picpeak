@@ -83,6 +83,15 @@ jest.mock('../../src/database/db', () => ({
 }));
 
 const mockQueueEmail = jest.fn(async () => {});
+// The change-history recorder needs a real knex client; route its writes to
+// the mock chain above, as the service made them before.
+jest.mock('../../src/services/accountingHistory', () => ({
+  auditedInsert: jest.fn(async (conn, table, rows) => conn(table).insert(rows).returning('id')),
+  auditedUpdate: jest.fn(async (conn, table, where, values) => conn(table).where(where).update(values)),
+  auditedDelete: jest.fn(async (conn, table, where) => conn(table).where(where).del()),
+  redactCustomerHistory: jest.fn(async () => 0),
+}));
+
 jest.mock('../../src/services/emailProcessor', () => ({
   queueEmail: mockQueueEmail,
 }));
