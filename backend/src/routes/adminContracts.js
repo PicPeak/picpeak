@@ -556,6 +556,7 @@ router.post(
       parseInt(req.params.id, 10),
       req.file.path,
       'admin',
+      req.admin.id,
     );
     return successResponse(res, result);
   }),

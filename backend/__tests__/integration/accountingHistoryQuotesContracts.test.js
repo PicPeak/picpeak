@@ -9,6 +9,9 @@
  */
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'crm-route-test-secret';
 
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const express = require('express');
@@ -308,6 +311,17 @@ describe('contracts', () => {
     expect(update.source).toBe('contract.upload.signed_pdf');
     expect(update.actor).toEqual({ type: 'customer', id: customerId, name: 'Test Customer' });
     expect(update.changes.status).toEqual({ from: 'sent', to: 'fully_signed' });
+  });
+
+  it('a signed PDF uploaded by an admin records that admin', async () => {
+    const { id } = await sentContract();
+    const file = path.join(os.tmpdir(), `admin-signed-${id}-${Date.now()}.pdf`);
+    fs.writeFileSync(file, '%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n');
+    await contractService.attachSignedPdfUpload(id, file, 'admin', adminId);
+
+    const update = lastUpdate(await historyOf('contract', id), 'contract');
+    expect(update.source).toBe('contract.upload.signed_pdf');
+    expect(update.actor).toEqual({ type: 'admin', id: adminId, name: null });
   });
 
   it('countersignature records the admin', async () => {

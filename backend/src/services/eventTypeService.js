@@ -156,7 +156,9 @@ const createEventType = async (eventTypeData) => {
  * @param {Object} updates - Fields to update
  * @returns {Promise<Object>} - Updated event type
  */
-const updateEventType = async (id, updates) => {
+// `actor` is the admin, recorded in the accounting change history when a slug
+// rename carries over to quotes.
+const updateEventType = async (id, updates, actor = null) => {
   const eventType = await getEventTypeById(id);
   if (!eventType) {
     const error = new Error('Event type not found');
@@ -249,7 +251,7 @@ const updateEventType = async (id, updates) => {
     let qCount = 0;
     if (quotesHasEventType) {
       qCount = await auditedUpdate(trx, 'quotes', { event_type: oldSlug }, { event_type: newSlug },
-        { actor: null, source: 'event_type.rename' });
+        { actor, source: 'event_type.rename' });
     }
     // Carry the authored per-type reminder template along (subject/body follow the
     // rename). Guard: never clobber an existing target template for the new slug.

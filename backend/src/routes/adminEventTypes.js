@@ -167,7 +167,7 @@ router.put('/:id', adminAuth, requirePermission('event_types.manage'), [
     const updates = req.body;
 
     const before = await eventTypeService.getEventTypeById(parseInt(id));
-    const eventType = await eventTypeService.updateEventType(parseInt(id), updates);
+    const eventType = await eventTypeService.updateEventType(parseInt(id), updates, req.admin?.id ?? null);
     changedEvidence(res, 'event_type_editing', before, eventType,
       ['name', 'slug_prefix', 'emoji', 'theme_preset', 'theme_config', 'display_order', 'is_active']);
 
