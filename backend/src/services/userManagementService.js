@@ -6,6 +6,7 @@
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const { db, logActivity } = require('../database/db');
+const { deleteWithAccountingHistory } = require('./accountingHistory');
 const { formatBoolean } = require('../utils/dbCompat');
 const { generateSecurePassword } = require('../utils/passwordGenerator');
 const { getBcryptRounds } = require('../utils/passwordValidation');
@@ -464,7 +465,8 @@ async function deleteAdminUser(id, deletedById) {
   //   CASCADE on api_tokens.user_id, admin_invitations.invited_by,
   //     customer_invitations.invited_by (drops pending tokens + invites
   //     this user issued)
-  await db('admin_users').where('id', id).del();
+  await deleteWithAccountingHistory(db, 'admin_users', { id },
+    { actor: deletedById, source: 'admin_user.delete' });
 
   await logActivity('admin_user_deleted',
     { userId: id, username: user.username, email: user.email },

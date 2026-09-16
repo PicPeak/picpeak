@@ -84,7 +84,7 @@ router.delete('/categories/:id', requireAccounting, requirePermission('accountin
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    return successResponse(res, await expenseCategoriesService.remove(toInt(req.params.id)));
+    return successResponse(res, await expenseCategoriesService.remove(toInt(req.params.id), req.admin.id));
   }));
 
 // ── Incoming invoices (external) ────────────────────────────────────────────

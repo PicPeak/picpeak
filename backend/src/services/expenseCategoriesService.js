@@ -7,6 +7,7 @@
  */
 const { db } = require('../database/db');
 const { AppError } = require('../utils/errors');
+const { deleteWithAccountingHistory } = require('./accountingHistory');
 
 async function list() {
   return db('expense_categories')
@@ -51,13 +52,14 @@ async function update(id, { name, color, displayOrder }) {
   return getById(id);
 }
 
-async function remove(id) {
+async function remove(id, adminId = null) {
   const existing = await getById(id);
   if (existing.is_seed) {
     throw new AppError('Seed categories cannot be deleted', 409, 'SEED_CATEGORY_PROTECTED');
   }
   // FK on expenses.category_id is ON DELETE SET NULL — orphaned expenses keep working.
-  await db('expense_categories').where({ id: existing.id }).del();
+  await deleteWithAccountingHistory(db, 'expense_categories', { id: existing.id },
+    { actor: adminId, source: 'expense_category.delete' });
   return { deleted: true };
 }
 

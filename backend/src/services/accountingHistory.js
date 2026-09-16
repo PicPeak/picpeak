@@ -5,7 +5,7 @@
  * auditedInsert / auditedUpdate / auditedDelete. Each reads the affected rows,
  * makes the change and writes one history row per changed record with the
  * old and new values, all in one transaction: when the caller passes a
- * transaction it is used, otherwise one is opened for that write. A failed
+ * transaction a savepoint is used, otherwise one is opened for that write. A failed
  * history insert therefore rolls the change back, unlike logActivity, which
  * is best-effort.
  *
@@ -14,6 +14,7 @@
  * audited tables are not written anywhere else.
  */
 const { db } = require('../database/db');
+const DELETE_REFERENCES = require('./accountingHistoryReferences');
 
 const invoiceDocument = (row) => ['invoice', row.invoice_id];
 
@@ -40,7 +41,7 @@ const IGNORED_COLUMNS = new Set([
 const SECRET_COLUMN = /token|secret|password/i;
 
 // SQLite caps bound parameters; keep IN lists well below it.
-const CHUNK = 500;
+const CHUNK = 400;
 
 // PostgreSQL returns bigint columns (the *_minor amounts) as strings, SQLite
 // as numbers. Record numbers on both, so a history reads the same everywhere.
@@ -131,7 +132,10 @@ function normalizeActor(actor) {
 
 function inTransaction(conn, work) {
   const executor = conn || db;
-  return executor.isTransaction ? work(executor) : executor.transaction(work);
+  // Knex creates a savepoint when executor is already a transaction. Without
+  // it a caller catching a failed history INSERT could commit the preceding
+  // business write on SQLite (and could not recover its transaction on PG).
+  return executor.transaction(work);
 }
 
 function applyWhere(query, where) {
@@ -199,8 +203,12 @@ async function auditedInsert(conn, table, rows, context = {}) {
 async function auditedUpdate(conn, table, where, values, context = {}) {
   tableConfig(table);
   return inTransaction(conn, async (trx) => {
-    const lock = applyWhere(trx(table).select('*'), where);
-    if (trx.client.config.client === 'pg') lock.forUpdate();
+    const lock = applyWhere(trx(table).select('*'), where).orderBy('id');
+    // Compatible with the KEY SHARE lock held by foreign-key checks on child
+    // inserts. FOR UPDATE here deadlocks two payments inserting children of
+    // the same invoice before updating it. The UPDATE itself still acquires
+    // a stronger lock if it actually changes a referenced key.
+    if (trx.client.config.client === 'pg') lock.forNoKeyUpdate();
     const before = await lock;
     if (before.length === 0) return 0;
     const ids = before.map((row) => row.id);
@@ -219,17 +227,42 @@ async function auditedUpdate(conn, table, where, values, context = {}) {
 /** Delete the rows matching `where`. Resolves to the number deleted. */
 async function auditedDelete(conn, table, where, context = {}) {
   tableConfig(table);
+  return deleteWithAccountingHistory(conn, table, where, context);
+}
+
+// Also used for parents outside the accounting scope (an event, admin or
+// category). Their deletion can change audited rows through foreign keys.
+async function deleteWithAccountingHistory(conn, table, where, context = {}) {
+  if (!AUDITED_TABLES[table] && !DELETE_REFERENCES[table]) tableConfig(table);
   return inTransaction(conn, async (trx) => {
-    const lock = applyWhere(trx(table).select('*'), where);
+    const lock = applyWhere(trx(table).select('*'), where).orderBy('id');
     if (trx.client.config.client === 'pg') lock.forUpdate();
     const before = await lock;
     if (before.length === 0) return 0;
     let count = 0;
     const ids = before.map((row) => row.id);
+    const deletingIds = new Set(ids);
+    for (const ref of DELETE_REFERENCES[table] || []) {
+      if (!AUDITED_TABLES[ref.table] || !(await trx.schema.hasColumn(ref.table, ref.column))) continue;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const referencedIds = await trx(ref.table).whereIn(ref.column, ids.slice(i, i + CHUNK)).pluck('id');
+        // Rows already being deleted have their original values recorded
+        // below. Filter in memory to keep every bound IN list bounded.
+        const affectedIds = referencedIds.filter((id) => ref.table !== table || !deletingIds.has(id));
+        for (let j = 0; j < affectedIds.length; j += CHUNK) {
+          const match = (q) => q.whereIn('id', affectedIds.slice(j, j + CHUNK))
+            .whereIn(ref.column, ids.slice(i, i + CHUNK));
+          if (ref.action === 'delete') await auditedDelete(trx, ref.table, match, context);
+          else await auditedUpdate(trx, ref.table, match, { [ref.column]: null }, context);
+        }
+      }
+    }
     for (let i = 0; i < ids.length; i += CHUNK) {
       count += await applyWhere(trx(table).whereIn('id', ids.slice(i, i + CHUNK)), where).delete();
     }
-    for (const row of before) await writeHistory(trx, table, 'deleted', row, null, context);
+    if (AUDITED_TABLES[table]) {
+      for (const row of before) await writeHistory(trx, table, 'deleted', row, null, context);
+    }
     return count;
   });
 }
@@ -256,6 +289,7 @@ module.exports = {
   auditedInsert,
   auditedUpdate,
   auditedDelete,
+  deleteWithAccountingHistory,
   listHistory,
   diffRows,
   normalizeActor,
