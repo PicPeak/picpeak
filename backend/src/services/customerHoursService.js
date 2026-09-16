@@ -86,7 +86,12 @@ function resolveEffectiveRate(entry, customer, installDefaultMinor = null) {
  */
 async function getInstallDefaultRateMinor(trx) {
   const conn = trx || db;
-  if (!(await hasColumnCached('business_profile', 'default_hourly_rate_minor'))) {
+  // A cold global schema-cache lookup would acquire a second connection
+  // while SQLite's only connection is held by the caller's transaction.
+  const hasRate = trx
+    ? await trx.schema.hasColumn('business_profile', 'default_hourly_rate_minor')
+    : await hasColumnCached('business_profile', 'default_hourly_rate_minor');
+  if (!hasRate) {
     return null;
   }
   const row = await conn('business_profile').where({ id: 1 })
