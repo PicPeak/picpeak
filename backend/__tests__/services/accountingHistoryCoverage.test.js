@@ -10,6 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const { AUDITED_TABLES } = require('../../src/services/accountingHistory');
+const DELETE_REFERENCES = require('../../src/services/accountingHistoryReferences');
 
 const SRC = path.resolve(__dirname, '..', '..', 'src');
 const RECORDER = path.join(SRC, 'services', 'accountingHistory.js');
@@ -38,14 +39,14 @@ function statementsOn(text, table) {
   return found;
 }
 
-function offenders(tables, allowFile) {
+function offenders(tables, allowFile, writePattern = WRITE) {
   const result = [];
   for (const file of sourceFiles(SRC)) {
     if (allowFile(file)) continue;
     const text = fs.readFileSync(file, 'utf8');
     for (const table of tables) {
       for (const { statement, line } of statementsOn(text, table)) {
-        if (WRITE.test(statement)) result.push(`${path.relative(SRC, file)}:${line} ${table}`);
+        if (writePattern.test(statement)) result.push(`${path.relative(SRC, file)}:${line} ${table}`);
       }
       text.split('\n').forEach((content, index) => {
         if (RAW_WRITE(table).test(content)) result.push(`${path.relative(SRC, file)}:${index + 1} ${table} (raw SQL)`);
@@ -58,6 +59,13 @@ function offenders(tables, allowFile) {
 describe('accounting change history coverage', () => {
   it('writes audited tables only through the recorder', () => {
     expect(offenders(Object.keys(AUDITED_TABLES), (file) => file === RECORDER)).toEqual([]);
+  });
+
+  it('routes parent deletions that can change audited records through the recorder', () => {
+    const parents = Object.entries(DELETE_REFERENCES)
+      .filter(([, refs]) => refs.some((ref) => AUDITED_TABLES[ref.table]))
+      .map(([table]) => table);
+    expect(offenders(parents, (file) => file === RECORDER, /\.(del|delete|truncate)\s*\(/)).toEqual([]);
   });
 
   it('never updates or deletes history rows, and only the recorder inserts them', () => {

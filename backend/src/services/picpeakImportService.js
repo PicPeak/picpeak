@@ -495,7 +495,13 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       await dropExternalRelpathIndex(trx);
     }
 
-    for (const table of tables) {
+    // An archive made before accounting history existed must also replace
+    // the local history. Keeping it would attach later/foreign changes to
+    // restored documents whose numeric IDs happen to match.
+    const hasAccountingHistory = await trx.schema.hasTable('accounting_change_history');
+    const tablesToClear = new Set(tables);
+    if (hasAccountingHistory) tablesToClear.add('accounting_change_history');
+    for (const table of tablesToClear) {
       await trx(table).del();
     }
 

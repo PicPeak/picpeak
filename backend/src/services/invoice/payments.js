@@ -37,11 +37,6 @@ async function markPaid(id, payment, adminId) {
 // recorded_by_admin_id: the payment-check link records the payment on
 // behalf of the invoice's admin, but the history names the link.
 async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference, notes, skontoApplied }, adminId, actor) {
-  const invoice = await db('invoices').where({ id }).first();
-  if (!invoice) throw new AppError('Invoice not found', 404);
-  if (invoice.status === 'cancelled') {
-    throw new AppError('Cannot mark a cancelled invoice as paid', 409);
-  }
   const amount = ensureInt(amountMinor);
   if (amount <= 0) {
     throw new AppError('amount must be > 0', 400);
@@ -53,11 +48,23 @@ async function recordPayment(id, { amountMinor, paidAt, paymentMethod, reference
   // later template/percentage edits — the tax-report row stays
   // accurate for years.
   const skontoFlag = Boolean(skontoApplied);
-  const skontoAmountMinor = skontoFlag
-    ? Math.max(0, ensureInt(invoice.total_amount_minor) - amount)
-    : null;
+  let invoice;
+  let skontoAmountMinor;
 
   const markResult = await db.transaction(async (trx) => {
+    // Serialize payments before inserting their FK children or reading the
+    // running sum. Otherwise two successful inserts can overwrite the total
+    // with different partial sums, even with a compatible recorder lock.
+    const invoiceQuery = trx('invoices').where({ id });
+    if (trx.client.config.client === 'pg') invoiceQuery.forNoKeyUpdate();
+    invoice = await invoiceQuery.first();
+    if (!invoice) throw new AppError('Invoice not found', 404);
+    if (invoice.status === 'cancelled') {
+      throw new AppError('Cannot mark a cancelled invoice as paid', 409);
+    }
+    skontoAmountMinor = skontoFlag
+      ? Math.max(0, ensureInt(invoice.total_amount_minor) - amount)
+      : null;
     await auditedInsert(trx, 'invoice_payment_log', {
       invoice_id: id,
       amount_minor: amount,
