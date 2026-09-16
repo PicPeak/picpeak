@@ -43,7 +43,7 @@ function makeChain(tableName) {
     orderBy() { return this; },
     leftJoin() { return this; },
     groupBy() { return this; },
-    select(...args) {
+    select() {
       // listCustomers / search → return seeded array
       const seeded = tableSeeds[`${tableName}__select`];
       return Promise.resolve(seeded || []);
