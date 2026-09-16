@@ -24,6 +24,7 @@ const { getStoragePath } = require('../config/storage');
 const { assertPathInside } = require('../utils/safePath');
 const { db } = require('../database/db');
 const expenseService = require('../services/expenseService');
+const accountingHistory = require('../services/accountingHistory');
 const expenseCategoriesService = require('../services/expenseCategoriesService');
 const rasterizeService = require('../services/rasterizeService');
 
@@ -156,6 +157,11 @@ router.get('/inbound/:id/page/:n', requireIncoming, requirePermission('accountin
     createReadStream(safePng).pipe(res);
   }));
 
+// Change history (migration 219), oldest first.
+router.get('/inbound/:id/history', requireIncoming, requirePermission('accounting.view'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => { validateRequest(req); return successResponse(res, { entries: await accountingHistory.listHistory('inbound_document', toInt(req.params.id)) }); }));
+
 router.get('/inbound/:id', requireIncoming, requirePermission('accounting.view'),
   [param('id').isInt({ min: 1 })],
   handleAsync(async (req, res) => { validateRequest(req); return successResponse(res, { document: await expenseService.getInbound(toInt(req.params.id)) }); }));
@@ -223,6 +229,10 @@ router.get('/:id/proof', requireExpenses, requirePermission('accounting.view'),
     if (!isPdf) res.setHeader('Content-Security-Policy', 'default-src \'none\'; img-src \'self\' data:; style-src \'unsafe-inline\'');
     createReadStream(safe).pipe(res);
   }));
+
+router.get('/:id/history', requireExpenses, requirePermission('accounting.view'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => { validateRequest(req); return successResponse(res, { entries: await accountingHistory.listHistory('expense', toInt(req.params.id)) }); }));
 
 router.get('/:id', requireExpenses, requirePermission('accounting.view'),
   [param('id').isInt({ min: 1 })],

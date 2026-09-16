@@ -34,6 +34,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { renumberLineItemPositions } = require('../utils/lineItemPositions');
 const quoteService = require('../services/quoteService');
+const accountingHistory = require('../services/accountingHistory');
 const { db } = require('../database/db');
 
 const router = express.Router();
@@ -294,6 +295,19 @@ router.get(
       pagination: { total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1 },
     });
   })
+);
+
+// Change history (migration 219): every change to this quote and its line
+// items, with old and new values, oldest first.
+router.get(
+  '/:id/history',
+  requirePermission('quotes.view'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const entries = await accountingHistory.listHistory('quote', parseInt(req.params.id, 10));
+    return successResponse(res, { entries });
+  }),
 );
 
 router.get(

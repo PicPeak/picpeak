@@ -30,6 +30,7 @@ const { handleAsync, validateRequest, successResponse } = require('../utils/rout
 const { renumberLineItemPositions } = require('../utils/lineItemPositions');
 const { getStoragePath } = require('../config/storage');
 const invoiceService = require('../services/invoiceService');
+const accountingHistory = require('../services/accountingHistory');
 const expenseService = require('../services/expenseService');
 const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
 const { db } = require('../database/db');
@@ -384,6 +385,19 @@ router.get(
       pagination: { total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1 },
     });
   })
+);
+
+// Change history (migration 219): every change to this invoice, its line
+// items and payments, with old and new values, oldest first.
+router.get(
+  '/:id/history',
+  requirePermission('bills.view'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const entries = await accountingHistory.listHistory('invoice', parseInt(req.params.id, 10));
+    return successResponse(res, { entries });
+  }),
 );
 
 router.get(
