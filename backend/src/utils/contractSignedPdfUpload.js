@@ -61,8 +61,12 @@ async function uploadSignedPdfSettingGuard(req, res, next) {
   return next();
 }
 
-/** Attach the uploaded file and spend the token. Responds itself. */
-async function finishSignedPdfUpload(req, res) {
+/**
+ * Attach the uploaded file and spend the token. Responds itself. `actor` is
+ * the uploader the accounting change history records: the customer portal
+ * passes the signed-in customer, the public link leaves it to the service.
+ */
+async function finishSignedPdfUpload(req, res, { actor = null } = {}) {
   const tokenRow = req.publicTokenRow;
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded', code: 'NO_FILE' });
@@ -75,7 +79,7 @@ async function finishSignedPdfUpload(req, res) {
     return res.status(400).json({ error: 'The uploaded file is not a PDF.', code: 'INVALID_PDF' });
   }
   const contractService = require('../services/contractService');
-  const result = await contractService.attachSignedPdfUpload(tokenRow.contract_id, req.file.path, 'customer');
+  const result = await contractService.attachSignedPdfUpload(tokenRow.contract_id, req.file.path, 'customer', actor);
   // Mark the token as used so the link can't be re-played.
   // IP storage is gated by the crm_contracts_store_ip setting so
   // privacy-strict operators can opt out — same toggle that gates

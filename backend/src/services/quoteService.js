@@ -44,6 +44,7 @@ const pdfService = require('./pdfService');
 const emailProcessor = require('./emailProcessor');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { auditedInsert, auditedUpdate, auditedDelete } = require('./accountingHistory');
 const fs = require('fs');
 const path = require('path');
 
@@ -251,8 +252,11 @@ function resolveParentTotalsFromSubItems(items) {
  *
  * Caller must have already run `validateLineItemHierarchy` on the
  * items, so this function trusts the hierarchy is sound.
+ *
+ *   context      — { actor, source } recorded in the accounting change
+ *                  history for every inserted row
  */
-async function insertLineItemsHierarchical(trx, tableName, ownerColumn, ownerId, items) {
+async function insertLineItemsHierarchical(trx, tableName, ownerColumn, ownerId, items, context = {}) {
   if (!Array.isArray(items) || items.length === 0) return;
   // Phase 1: top-level items, captured into a position→id map for
   // phase 2.
@@ -270,7 +274,7 @@ async function insertLineItemsHierarchical(trx, tableName, ownerColumn, ownerId,
       created_at: new Date(),
       updated_at: new Date(),
     };
-    const inserted = await trx(tableName).insert(row).returning('id');
+    const inserted = await auditedInsert(trx, tableName, row, context);
     const newId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
     positionToId.set(ensureInt(li.position), newId);
   }
@@ -289,7 +293,7 @@ async function insertLineItemsHierarchical(trx, tableName, ownerColumn, ownerId,
       created_at: new Date(),
       updated_at: new Date(),
     };
-    await trx(tableName).insert(row);
+    await auditedInsert(trx, tableName, row, context);
   }
 }
 
@@ -579,7 +583,8 @@ async function createQuote(payload, adminId) {
     if (payload.bookingWorkflowId !== undefined && hasBookingWorkflowId) {
       row.booking_workflow_id = payload.bookingWorkflowId || null;
     }
-    const inserted = await trx('quotes').insert(row).returning('id');
+    const history = { actor: adminId, source: 'quote.create' };
+    const inserted = await auditedInsert(trx, 'quotes', row, history);
     const quoteId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
     // Cascade the project link across the deal lineage (no-op for a brand-new
@@ -604,7 +609,7 @@ async function createQuote(payload, adminId) {
         parent_position: li.parent_position || null,
       }));
       validateLineItemHierarchy(rows);
-      await insertLineItemsHierarchical(trx, 'quote_line_items', 'quote_id', quoteId, rows);
+      await insertLineItemsHierarchical(trx, 'quote_line_items', 'quote_id', quoteId, rows, history);
     }
 
     try {
@@ -734,7 +739,8 @@ async function updateQuote(id, payload, adminId) {
     if (hasBookingWorkflowId) {
       updates.booking_workflow_id = payload.bookingWorkflowId || null;
     }
-    await trx('quotes').where({ id }).update(updates);
+    const history = { actor: adminId, source: 'quote.update' };
+    await auditedUpdate(trx, 'quotes', { id }, updates, history);
 
     // When linked to a project, cascade across the deal lineage so the linked
     // contract / event / invoices roll up into the same project automatically.
@@ -748,7 +754,7 @@ async function updateQuote(id, payload, adminId) {
     // old rows and rebuild from scratch. CASCADE on parent_line_item_id
     // means deleting parents sweeps their sub-items too, so there's
     // no orphan risk here.
-    await trx('quote_line_items').where({ quote_id: id }).del();
+    await auditedDelete(trx, 'quote_line_items', { quote_id: id }, history);
     if (totals.lineItems.length > 0) {
       const rows = totals.lineItems.map((li, idx) => ({
         position: ensureInt(li.position) || (idx + 1),
@@ -761,7 +767,7 @@ async function updateQuote(id, payload, adminId) {
         parent_position: li.parent_position || null,
       }));
       validateLineItemHierarchy(rows);
-      await insertLineItemsHierarchical(trx, 'quote_line_items', 'quote_id', id, rows);
+      await insertLineItemsHierarchical(trx, 'quote_line_items', 'quote_id', id, rows, history);
     }
 
     try {
@@ -1008,13 +1014,13 @@ async function sendQuote(id, adminId) {
       expires_at: expiresAt,
       created_at: new Date(),
     });
-    await trx('quotes').where({ id }).update({
+    await auditedUpdate(trx, 'quotes', { id }, {
       status: 'sent',
       sent_at: new Date(),
       pdf_path: pdfPath,
       payment_term_snapshot: paymentTermSnapshot ? JSON.stringify(paymentTermSnapshot) : null,
       updated_at: new Date(),
-    });
+    }, { actor: adminId, source: 'quote.send' });
   });
 
   // Queue customer email (with PDF + cc) — honour the global
@@ -1140,16 +1146,17 @@ async function emitQuoteEvent(quote, status) {
  *   - window still open → defer; `finalizeQuoteResponses` (scheduler) fires the
  *     FINAL status once it locks, so toggling inside the window never converts.
  * Returns true if it emitted, false if deferred / already emitted.
+ * `history` is the { actor, source } of the response being emitted.
  */
-async function maybeEmitQuoteResponse(quote, status, responseLockedAt) {
+async function maybeEmitQuoteResponse(quote, status, responseLockedAt, history = {}) {
   const locked = !responseLockedAt || new Date(responseLockedAt).getTime() <= Date.now();
   if (!locked) return false; // deferred to the finalize sweep
   const hasCol = await hasColumnCached('quotes', 'workflow_response_emitted_at');
   if (hasCol) {
     // Atomically claim the emit so a concurrent finalize sweep can't double-fire.
-    const claimed = await db('quotes').where({ id: quote.id })
-      .whereNull('workflow_response_emitted_at')
-      .update({ workflow_response_emitted_at: new Date() });
+    const claimed = await auditedUpdate(db, 'quotes',
+      (q) => q.where({ id: quote.id }).whereNull('workflow_response_emitted_at'),
+      { workflow_response_emitted_at: new Date() }, history);
     if (!claimed) return false; // already emitted elsewhere
   }
   await emitQuoteEvent(quote, status);
@@ -1177,9 +1184,10 @@ async function finalizeQuoteResponses(limit = 200) {
   const rows = candidates.filter((q) => new Date(q.response_locked_at).getTime() <= now);
   let emitted = 0;
   for (const q of rows) {
-    const claimed = await db('quotes').where({ id: q.id })
-      .whereNull('workflow_response_emitted_at')
-      .update({ workflow_response_emitted_at: new Date() });
+    const claimed = await auditedUpdate(db, 'quotes',
+      (query) => query.where({ id: q.id }).whereNull('workflow_response_emitted_at'),
+      { workflow_response_emitted_at: new Date() },
+      { actor: 'scheduler', source: 'quote.response.finalize' });
     if (!claimed) continue; // raced with another tick / the inline emit
     await emitQuoteEvent(q, q.status);
     emitted += 1;
@@ -1187,7 +1195,15 @@ async function finalizeQuoteResponses(limit = 200) {
   return emitted;
 }
 
-async function recordResponse({ token, action, ip, tosAccepted }) {
+// The change history's actor for a response through the emailed link. The
+// token row names only the quote, not who holds the link.
+const QUOTE_LINK_ACTOR = { type: 'public', id: null, name: 'quote-link' };
+
+/**
+ * `actor` names the responder in the accounting change history: the customer
+ * portal passes the signed-in customer; the public link leaves the default.
+ */
+async function recordResponse({ token, action, ip, tosAccepted, actor = QUOTE_LINK_ACTOR }) {
   if (!['accept', 'decline'].includes(action)) {
     throw new AppError('Invalid action', 400);
   }
@@ -1244,6 +1260,7 @@ async function recordResponse({ token, action, ip, tosAccepted }) {
   const respondedAt = quote.responded_at || now;
   const responseLockedAt = new Date(new Date(respondedAt).getTime() + windowMinutes * 60 * 1000);
   assertQuoteTransition(quote.status, newStatus);
+  const history = { actor, source: 'quote.respond' };
 
   await db.transaction(async (trx) => {
     const updates = {
@@ -1262,7 +1279,7 @@ async function recordResponse({ token, action, ip, tosAccepted }) {
       updates.tos_accepted_at = now;
       updates.tos_text_snapshot = tosText || null;
     }
-    await trx('quotes').where({ id: quote.id }).update(updates);
+    await auditedUpdate(trx, 'quotes', { id: quote.id }, updates, history);
     await trx('quote_action_tokens').where({ id: tokenRow.id }).update({
       used_at: now,
       used_action: newStatus,
@@ -1278,7 +1295,7 @@ async function recordResponse({ token, action, ip, tosAccepted }) {
   // Defer the workflow emit until the 15-min toggle window locks — so accepting
   // (then converting) can't strip the customer's ability to decline. The
   // scheduler's finalize sweep fires the final status once it locks.
-  await maybeEmitQuoteResponse(quote, newStatus, responseLockedAt);
+  await maybeEmitQuoteResponse(quote, newStatus, responseLockedAt, history);
 
   return { status: newStatus, lockedAt: responseLockedAt };
 }
@@ -1319,7 +1336,8 @@ async function adminAcceptQuote(id, adminId) {
   const windowMinutes = ensureInt(await getAppSetting('crm_quotes_accept_window_minutes')) || 15;
   const responseLockedAt = new Date(now.getTime() + windowMinutes * 60 * 1000);
 
-  await db('quotes').where({ id }).update({
+  const history = { actor: adminId, source: 'quote.accept.admin' };
+  await auditedUpdate(db, 'quotes', { id }, {
     status: 'accepted',
     responded_at: now,
     response_locked_at: responseLockedAt,
@@ -1328,7 +1346,7 @@ async function adminAcceptQuote(id, adminId) {
     // column — the audit log entry below captures who accepted and
     // when, which is the legally relevant breadcrumb.
     updated_at: now,
-  });
+  }, history);
 
   try {
     await logActivity('quote_accepted_by_admin', { quoteId: id }, null, `admin:${adminId}`);
@@ -1380,7 +1398,7 @@ async function adminAcceptQuote(id, adminId) {
 
   // Same deferral as the public path — an admin "accept on behalf" also opens
   // the toggle window, so don't convert until it locks.
-  await maybeEmitQuoteResponse(quote, 'accepted', responseLockedAt);
+  await maybeEmitQuoteResponse(quote, 'accepted', responseLockedAt, history);
 
   return { status: 'accepted', lockedAt: responseLockedAt };
 }
@@ -1418,6 +1436,7 @@ async function adminDeclineQuote(id, adminId, reason = null) {
   const now = new Date();
   const cleanReason = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 5000) : null;
   const hasReasonColumn = await hasColumnCached('quotes', 'decline_reason');
+  const history = { actor: adminId, source: 'quote.decline.admin' };
 
   await db.transaction(async (trx) => {
     const updates = {
@@ -1432,7 +1451,7 @@ async function adminDeclineQuote(id, adminId, reason = null) {
       updated_at: now,
     };
     if (hasReasonColumn) updates.decline_reason = cleanReason;
-    await trx('quotes').where({ id }).update(updates);
+    await auditedUpdate(trx, 'quotes', { id }, updates, history);
 
     // Burn any unused tokens for this quote — defense in depth alongside
     // the closed response window above.
@@ -1448,7 +1467,7 @@ async function adminDeclineQuote(id, adminId, reason = null) {
 
   // Admin decline locks the window immediately (response_locked_at = now), so
   // this emits straight away (and stamps emitted) rather than deferring.
-  await maybeEmitQuoteResponse(quote, 'declined', now);
+  await maybeEmitQuoteResponse(quote, 'declined', now, history);
 
   return { status: 'declined', declinedAt: now };
 }
@@ -1571,10 +1590,10 @@ async function convertToInvoiceOnly(quoteId, adminId, options = {}) {
     // existing transition rules still apply (can't be edited / sent
     // again). The list view's status badge says "converted"; admin
     // sees the linked invoices in the customer detail panel.
-    await trx('quotes').where({ id: quote.id }).update({
+    await auditedUpdate(trx, 'quotes', { id: quote.id }, {
       status: 'converted',
       updated_at: new Date(),
-    });
+    }, { actor: adminId, source: 'quote.convert.invoices' });
 
     return { installmentsCreated: installments.length, invoiceIds: spawnResult?.invoiceIds || [] };
   });
@@ -1761,11 +1780,11 @@ async function convertToEvent(quoteId, adminId, options = {}) {
         hold: options.hold === true,
       });
 
-    await trx('quotes').where({ id: quote.id }).update({
+    await auditedUpdate(trx, 'quotes', { id: quote.id }, {
       status: 'converted',
       converted_event_id: eventId,
       updated_at: new Date(),
-    });
+    }, { actor: adminId, source: 'quote.convert.event' });
 
     return { eventId, alreadyConverted: false, invoiceIds: spawnResult?.invoiceIds || [] };
   });

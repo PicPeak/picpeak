@@ -809,6 +809,12 @@ async function ownedDocument(req, res, { table, featureKey, label, notFound }) {
 const CONTRACT = { table: 'contracts', featureKey: 'contracts', label: 'Contracts', notFound: 'Contract not found' };
 const QUOTE = { table: 'quotes', featureKey: 'quotes', label: 'Quotes', notFound: 'Quote not found' };
 
+// The signed-in customer, as the actor the accounting change history records
+// for a portal signature, upload or response.
+function portalActor(req) {
+  return { type: 'customer', id: req.customer.id, name: req.customer.displayName || null };
+}
+
 function sendValidationErrors(req, res) {
   const errors = validationResult(req);
   if (errors.isEmpty()) return false;
@@ -866,6 +872,7 @@ router.post(
         accepted: req.body.accepted === true,
         // See utils/clientIp.js — the trusted req.ip only.
         ip: clientIpForAudit(req),
+        actor: portalActor(req),
       });
       res.json(result);
     } catch (error) {
@@ -898,7 +905,7 @@ router.post(
   contractSignedPdfUpload.signedPdfUpload.single('file'),
   async (req, res) => {
     try {
-      await contractSignedPdfUpload.finishSignedPdfUpload(req, res);
+      await contractSignedPdfUpload.finishSignedPdfUpload(req, res, { actor: portalActor(req) });
     } catch (error) {
       if (sendServiceRefusal(res, error)) return;
       errorResponse(res, error, 500, 'Failed to upload the signed contract');
@@ -944,6 +951,7 @@ router.post(
         action: req.body.action,
         ip: clientIpForAudit(req),
         tosAccepted: req.body.tosAccepted === true,
+        actor: portalActor(req),
       });
       res.json({ status: result.status, lockedAt: result.lockedAt });
     } catch (error) {

@@ -16,6 +16,7 @@
 const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
+const { auditedUpdate } = require('./accountingHistory');
 const { redactBearerLinks, hasMaskedRecoveryLink, parseEmailData } = require('../utils/emailSecretRedaction');
 
 // A sent invitation or password-reset mail no longer holds its link (see
@@ -399,11 +400,12 @@ async function linkDealToProject(dealUuid, projectId, conn = db, actor = null) {
 
   // Cleared to write: link the deal's quotes/contracts, re-point its events so
   // invoices/emails/gallery roll up automatically.
+  const history = { actor: actor?.id ?? null, source: 'project.link_deal' };
   if (quotesHaveDeal && await hasColumnCached('quotes', 'project_id')) {
-    await conn('quotes').where({ deal_uuid: dealUuid }).update({ project_id: projectId });
+    await auditedUpdate(conn, 'quotes', { deal_uuid: dealUuid }, { project_id: projectId }, history);
   }
   if (contractsHaveDeal && await hasColumnCached('contracts', 'project_id')) {
-    await conn('contracts').where({ deal_uuid: dealUuid }).update({ project_id: projectId });
+    await auditedUpdate(conn, 'contracts', { deal_uuid: dealUuid }, { project_id: projectId }, history);
   }
   if (eventIds.size && await hasColumnCached('events', 'project_id')) {
     await conn('events').whereIn('id', Array.from(eventIds)).update({ project_id: projectId });
@@ -450,7 +452,8 @@ async function assignDocument(table, projectId, documentId, actor = null) {
   if (projectId && doc.deal_uuid) {
     await linkDealToProject(doc.deal_uuid, projectId, db, actor);
   }
-  await db(table).where({ id: documentId }).update({ project_id: projectId || null });
+  await auditedUpdate(db, table, { id: documentId }, { project_id: projectId || null },
+    { actor: actor?.id ?? null, source: 'project.assign_document' });
   return { projectId: projectId || null, documentId };
 }
 

@@ -12,6 +12,7 @@ const businessProfileService = require('../businessProfileService');
 const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { adminActor, ensureCustomerActive, nextContractNumber } = require('./helpers');
+const { auditedInsert, auditedUpdate, auditedDelete } = require('../accountingHistory');
 
 
 // ---------------------------------------------------------------------
@@ -221,7 +222,8 @@ async function createContract(payload, adminId, { idempotencyKey = null } = {}) 
     if (hasKeyCol) {
       row.create_idempotency_key = idempotencyKey;
     }
-    const inserted = await trx('contracts').insert(row).returning('id');
+    const history = { actor: adminId, source: 'contract.create' };
+    const inserted = await auditedInsert(trx, 'contracts', row, history);
     if (row.project_id && row.deal_uuid) {
       await require('../projectService').linkDealToProject(row.deal_uuid, row.project_id, trx, { id: adminId });
     }
@@ -232,7 +234,7 @@ async function createContract(payload, adminId, { idempotencyKey = null } = {}) 
       // draft and its inclusions commit together. It used to follow up with a
       // separate update, which could fail after the draft was committed
       // (issue 1447).
-      await writeInclusions(trx, contractId, payload.blocks);
+      await writeInclusions(trx, contractId, payload.blocks, history);
     } else {
       // Seed with every active system block, toggled on. Per-section
       // position = display_order from the source block.
@@ -260,7 +262,7 @@ async function createContract(payload, adminId, { idempotencyKey = null } = {}) 
         };
       });
       if (inclusionRows.length > 0) {
-        await trx('contract_block_inclusions').insert(inclusionRows);
+        await auditedInsert(trx, 'contract_block_inclusions', inclusionRows, history);
       }
     }
 
@@ -323,9 +325,10 @@ async function createContractIdempotent(payload, adminId, idempotencyKey) {
  * Write a contract's inclusion rows from a `{ blockId, included, position }`
  * list, inside the caller's transaction. Shared by createContract and
  * updateContract. Unknown block ids are skipped, and each row's section comes
- * from the block itself, never from the caller.
+ * from the block itself, never from the caller. `history` is the { actor,
+ * source } recorded in the accounting change history.
  */
-async function writeInclusions(trx, contractId, blocks) {
+async function writeInclusions(trx, contractId, blocks, history) {
   // Recompute per-section position so we don't trust caller order
   // for ordering integrity; caller controls only the section
   // sequence via the order of items in blocks.
@@ -350,7 +353,7 @@ async function writeInclusions(trx, contractId, blocks) {
     const section = sectionByBlockId.get(entry.blockId);
     if (!section) continue;
     sectionCounters[section] = (sectionCounters[section] || 0) + 1;
-    await trx('contract_block_inclusions').insert({
+    await auditedInsert(trx, 'contract_block_inclusions', {
       contract_id: contractId,
       block_id: entry.blockId,
       section,
@@ -360,7 +363,7 @@ async function writeInclusions(trx, contractId, blocks) {
       included: entry.included === false ? false : true,
       created_at: new Date(),
       updated_at: new Date(),
-    });
+    }, history);
   }
 }
 
@@ -420,7 +423,8 @@ async function updateContract(id, payload, adminId) {
     if (hasProjectCol) {
       updates.project_id = payload.projectId || null;
     }
-    await trx('contracts').where({ id }).update(updates);
+    const history = { actor: adminId, source: 'contract.update' };
+    await auditedUpdate(trx, 'contracts', { id }, updates, history);
 
     // Cascade across the deal lineage (linked quote / event / invoices).
     if (updates.project_id) {
@@ -432,8 +436,8 @@ async function updateContract(id, payload, adminId) {
     // (Editor's "save" sends every row; an inline "toggle" save could
     // send a partial update — current frontend always sends full list.)
     if (Array.isArray(payload.blocks)) {
-      await trx('contract_block_inclusions').where({ contract_id: id }).del();
-      await writeInclusions(trx, id, payload.blocks);
+      await auditedDelete(trx, 'contract_block_inclusions', { contract_id: id }, history);
+      await writeInclusions(trx, id, payload.blocks, history);
     }
 
     try {
@@ -451,10 +455,10 @@ async function cancelContract(id, adminId) {
   if (!['draft', 'sent'].includes(contract.status)) {
     throw new AppError(`Cannot cancel a contract with status '${contract.status}'`, 409);
   }
-  await db('contracts').where({ id }).update({
+  await auditedUpdate(db, 'contracts', { id }, {
     status: 'cancelled',
     updated_at: new Date(),
-  });
+  }, { actor: adminId, source: 'contract.cancel' });
   // Invalidate any outstanding tokens.
   await db('contract_action_tokens').where({ contract_id: id, used_at: null }).update({
     expires_at: new Date(),
