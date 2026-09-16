@@ -4,6 +4,7 @@
 const { logActivity } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
+const { auditedDelete, auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { computeDueDate, computeScheduledSendAt, EDITABLE_INSTALLMENT_STATUSES, getHierarchyHelpers, nextInvoiceNumber, snapToNextBillingCycle, VALID_INSTALLMENT_TRIGGERS } = require('./helpers');
 
 
@@ -100,14 +101,15 @@ function isReconciliationLineItem(li) {
  * once don't have to re-query.
  */
 async function replaceReconciliationLine(
-  trx, invoiceId, { label, percent, index, total, netSlice, topLineSubtotal },
+  trx, invoiceId, { label, percent, index, total, netSlice, topLineSubtotal, actor = null },
 ) {
+  const context = { actor, source: 'invoice.installmentPlan.reconciliationLine' };
   const all = await trx('invoice_line_items')
     .where({ invoice_id: invoiceId })
     .orderBy('position', 'asc');
   for (const li of all) {
     if (isReconciliationLineItem(li)) {
-      await trx('invoice_line_items').where({ id: li.id }).del();
+      await auditedDelete(trx, 'invoice_line_items', { id: li.id }, context);
     }
   }
   if (total <= 1) return;
@@ -123,7 +125,7 @@ async function replaceReconciliationLine(
   const maxPosition = nonRecon.reduce(
     (m, x) => Math.max(m, ensureInt(x.position)), 0,
   );
-  await trx('invoice_line_items').insert({
+  await auditedInsert(trx, 'invoice_line_items', {
     invoice_id: invoiceId,
     position: maxPosition + 1,
     quantity: 1,
@@ -135,7 +137,7 @@ async function replaceReconciliationLine(
     details_text: null,
     created_at: new Date(),
     updated_at: new Date(),
-  });
+  }, context);
 }
 
 /**
@@ -255,7 +257,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
 
     if (i < reusableCount) {
       const existingRow = existing[i];
-      await trx('invoices').where({ id: existingRow.id }).update({
+      await auditedUpdate(trx, 'invoices', { id: existingRow.id }, {
         installment_index: i,
         installment_total: newCount,
         installment_label: label,
@@ -269,9 +271,9 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
         shipping_amount_minor: slice.shipping,
         total_amount_minor: slice.total,
         updated_at: new Date(),
-      });
+      }, { actor: adminId, source: 'invoice.installmentPlan.update' });
       await replaceReconciliationLine(trx, existingRow.id, {
-        label, percent: inst.percent, index: i, total: newCount, netSlice: slice.net,
+        label, percent: inst.percent, index: i, total: newCount, netSlice: slice.net, actor: adminId,
       });
       kept.push(existingRow.id);
       continue;
@@ -320,7 +322,7 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
       created_at: new Date(),
       updated_at: new Date(),
     };
-    const inserted = await trx('invoices').insert(row).returning('id');
+    const inserted = await auditedInsert(trx, 'invoices', row, { actor: adminId, source: 'invoice.installmentPlan.create' });
     const newId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
     if (canonicalLineItems.length > 0) {
@@ -336,11 +338,12 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
       }));
       const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
       validateLineItemHierarchy(cloned);
-      await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', newId, cloned);
+      await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', newId, cloned,
+        { actor: adminId, source: 'invoice.installmentPlan.create' });
     }
 
     await replaceReconciliationLine(trx, newId, {
-      label, percent: inst.percent, index: i, total: newCount, netSlice: slice.net,
+      label, percent: inst.percent, index: i, total: newCount, netSlice: slice.net, actor: adminId,
     });
 
     try {
@@ -355,8 +358,9 @@ async function updateInstallmentPlan({ trx, dealUuid, installments, adminId }) {
   // Trim extras (only fires when newCount < existing.length).
   for (let i = newCount; i < existing.length; i++) {
     const oldRow = existing[i];
-    await trx('invoice_line_items').where({ invoice_id: oldRow.id }).del();
-    await trx('invoices').where({ id: oldRow.id }).del();
+    const trimContext = { actor: adminId, source: 'invoice.installmentPlan.trim' };
+    await auditedDelete(trx, 'invoice_line_items', { invoice_id: oldRow.id }, trimContext);
+    await auditedDelete(trx, 'invoices', { id: oldRow.id }, trimContext);
     deleted.push(oldRow.id);
   }
 

@@ -27,6 +27,7 @@ const logger = require('../../utils/logger');
 const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
 const { assertPathInside } = require('../../utils/safePath');
 const { getStoragePath } = require('../../config/storage');
+const { auditedUpdate } = require('../accountingHistory');
 
 // Dispositions that re-bill/pass a supplier invoice to a client (mirrors
 // expenseService.CUSTOMER_DISPOSITIONS — duplicated as a 2-item constant rather
@@ -106,8 +107,9 @@ function resolveDefaultAttach(customer, globalOn) {
  * @param customer         the customer_accounts row (for the tri-state override)
  * @param proofInboundIds  optional explicit selection (manual send). When
  *                         omitted, the resolved default decides all-or-none.
+ * @param actor            who is sending, for the accounting change history
  */
-async function collectRebillProofAttachments(invoice, customer, proofInboundIds) {
+async function collectRebillProofAttachments(invoice, customer, proofInboundIds, actor = null) {
   // Backend flag gate — no proof handling at all when incoming-invoices is off.
   if (!(await isFeatureEnabled('incomingInvoices'))) return [];
 
@@ -171,8 +173,9 @@ async function collectRebillProofAttachments(invoice, customer, proofInboundIds)
     // Persist / clear the failure marker (best-effort; never blocks the send).
     try {
       // eslint-disable-next-line no-await-in-loop
-      await db('inbound_documents').where({ id: row.id })
-        .update({ proof_attach_error: markerErr, updated_at: new Date() });
+      await auditedUpdate(db, 'inbound_documents', { id: row.id },
+        { proof_attach_error: markerErr, updated_at: new Date() },
+        { actor, source: 'invoice.send.proofMarker' });
     } catch (_e) { /* marker column may be absent pre-migration — ignore */ }
     if (markerErr) logger.warn?.(`rebillProofs: invoice ${invoice.invoice_number} inbound ${row.id}: ${markerErr}`);
   }

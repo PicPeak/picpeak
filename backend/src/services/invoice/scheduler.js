@@ -7,6 +7,7 @@ const { getAppSetting } = require('../../utils/appSettings');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { queuePaymentCheckEmail } = require('./payments');
 const { sendInvoice } = require('./sending');
+const { auditedUpdate } = require('../accountingHistory');
 
 
 /**
@@ -64,11 +65,11 @@ async function runScheduledTasks() {
         // that we still record for audit-trail continuity. Listing
         // queries that aggregate cancelled rows (e.g. the Bills list
         // cancellation footnote) should not pull skipped rows in.
-        await db('invoices').where({ id: draft.id }).update({
+        await auditedUpdate(db, 'invoices', { id: draft.id }, {
           is_monthly_draft: false,
           status: 'skipped',
           updated_at: new Date(),
-        });
+        }, { actor: 'scheduler', source: 'invoice.monthly.skipEmpty' });
         logger.info('Monthly bill skipped — no items queued', {
           invoiceId: draft.id, customerId: draft.customer_account_id,
         });
@@ -84,12 +85,12 @@ async function runScheduledTasks() {
       // crm_invoices_net_days_default (best-effort; admin can override
       // by editing the draft before the cadence day).
       const issueDate = monthlyToday.toISOString().slice(0, 10);
-      await db('invoices').where({ id: draft.id }).update({
+      await auditedUpdate(db, 'invoices', { id: draft.id }, {
         is_monthly_draft: false,
         issue_date: issueDate,
         scheduled_send_at: new Date(),
         updated_at: new Date(),
-      });
+      }, { actor: 'scheduler', source: 'invoice.monthly.issue' });
       try {
         await logActivity('monthly_bill_issued',
           { invoiceId: draft.id, customerId: draft.customer_account_id,
@@ -146,7 +147,7 @@ async function runScheduledTasks() {
       .limit(20);
     for (const inv of firstBatch) {
       try {
-        await queuePaymentCheckEmail(inv.id);
+        await queuePaymentCheckEmail(inv.id, { actor: 'scheduler' });
       } catch (err) {
         logger.error('Payment-check email failed', { invoiceId: inv.id, err: err.message });
       }
@@ -161,7 +162,7 @@ async function runScheduledTasks() {
       .limit(20);
     for (const inv of secondBatch) {
       try {
-        await queuePaymentCheckEmail(inv.id);
+        await queuePaymentCheckEmail(inv.id, { actor: 'scheduler' });
       } catch (err) {
         logger.error('Payment-check email (level 2) failed', { invoiceId: inv.id, err: err.message });
       }
