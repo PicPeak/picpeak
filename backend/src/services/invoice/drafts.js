@@ -77,11 +77,13 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
 
   // None yet — mint one with zero line items + zero totals. The
   // caller appends items + recomputes immediately after.
-  const profile = (await businessProfileService.getProfile()).profile;
+  // Reuse the caller's connection: conversions and re-bills can already
+  // hold SQLite's only connection inside their transaction.
+  const profile = (await businessProfileService.getProfile(trx)).profile;
   const currency = (customer.preferred_currency || profile?.default_currency || 'CHF').toUpperCase();
   const language = customer.preferred_language || profile?.default_locale || 'de';
   const invoiceNumber = await nextInvoiceNumber(trx);
-  const bank = await businessProfileService.resolveBankAccountForCurrency(currency, null);
+  const bank = await businessProfileService.resolveBankAccountForCurrency(currency, null, trx);
 
   const row = {
     invoice_number: invoiceNumber,
@@ -220,7 +222,7 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
   try {
     await logActivity('monthly_billing_items_queued',
       { invoiceId: draft.id, customerId: customer.id, itemsAdded: newItems.length },
-      null, `admin:${adminId}`);
+      null, `admin:${adminId}`, trx);
   } catch (_) { /* non-fatal */ }
 
   return draft.id;
