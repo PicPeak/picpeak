@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.132.10-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.9-beta.0...v3.132.10-beta.0) (2026-09-16)
+
+
+### Bug Fixes
+
+* **guests:** preserve feedback ownership when merging identities ([#1517](https://github.com/PicPeak/picpeak/issues/1517)) ([65047a7](https://github.com/PicPeak/picpeak/commit/65047a7448bbed5e11ca19e026aa09c606f9f4f3))
+
 ## [3.132.9-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.8-beta.0...v3.132.9-beta.0) (2026-09-16)
 
 
