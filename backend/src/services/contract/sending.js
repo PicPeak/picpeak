@@ -16,6 +16,7 @@ const { adminActor, emitContractEvent, ensureCustomerActive } = require('./helpe
 const { buildRenderContext } = require('./renderContext');
 const { persistContractPdf } = require('./signatureAssets');
 const { getContractById } = require('./crud');
+const { auditedUpdate } = require('../accountingHistory');
 
 
 /**
@@ -56,11 +57,11 @@ async function sendContract(id, adminId) {
   await db.transaction(async (trx) => {
     for (const inc of inclusions) {
       if (!(inc.included === true || inc.included === 1 || inc.included === '1')) continue;
-      await trx('contract_block_inclusions').where({ id: inc.id }).update({
+      await auditedUpdate(trx, 'contract_block_inclusions', { id: inc.id }, {
         body_text_snapshot: inc.block_body_text || null,
         body_text_de_snapshot: inc.block_body_text_de || null,
         updated_at: new Date(),
-      });
+      }, { actor: adminId, source: 'contract.send' });
     }
   });
 
@@ -97,7 +98,7 @@ async function sendContract(id, adminId) {
       updated_at: new Date(),
     };
     if (hasPdfSha) updates.pdf_sha256 = pdfSha256;
-    await trx('contracts').where({ id }).update(updates);
+    await auditedUpdate(trx, 'contracts', { id }, updates, { actor: adminId, source: 'contract.send' });
   });
 
   const frontendUrl = (await getFrontendBaseUrl()) || 'http://localhost:3000';

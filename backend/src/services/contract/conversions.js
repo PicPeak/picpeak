@@ -12,6 +12,7 @@ const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { adminActor, ensureCustomerActive, nextContractNumber } = require('./helpers');
 const { resolveDefaultEventType } = require('../eventTypeService');
+const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 
 
 /**
@@ -109,7 +110,8 @@ async function createFromQuote(quoteId, adminId) {
       contractRow.event_time_start = quote.event_time_start || null;
       contractRow.event_time_end = quote.event_time_end || null;
     }
-    const inserted = await trx('contracts').insert(contractRow).returning('id');
+    const history = { actor: adminId, source: 'quote.convert.contract' };
+    const inserted = await auditedInsert(trx, 'contracts', contractRow, history);
     const contractId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
     // Seed every active system block. Same shape as createContract.
@@ -133,7 +135,7 @@ async function createFromQuote(quoteId, adminId) {
       };
     });
     if (inclusionRows.length > 0) {
-      await trx('contract_block_inclusions').insert(inclusionRows);
+      await auditedInsert(trx, 'contract_block_inclusions', inclusionRows, history);
     }
 
     // Back-pointer so the quote detail page can deep-link to its
@@ -141,10 +143,10 @@ async function createFromQuote(quoteId, adminId) {
     // to refuse double conversion. Skipped silently when the column
     // hasn't migrated — the contract is still created cleanly.
     if (hasQuoteContractBackPointer) {
-      await trx('quotes').where({ id: quote.id }).update({
+      await auditedUpdate(trx, 'quotes', { id: quote.id }, {
         converted_contract_id: contractId,
         updated_at: new Date(),
-      });
+      }, history);
     }
 
     try {
@@ -191,10 +193,10 @@ async function convertToEvent(contractId, adminId) {
     const quoteService = require('../quoteService');
     const result = await quoteService.convertToEvent(contract.source_quote_id, adminId, { fromContract: true });
     if (hasContractConvertedEvent) {
-      await db('contracts').where({ id: contractId }).update({
+      await auditedUpdate(db, 'contracts', { id: contractId }, {
         converted_event_id: result.eventId,
         updated_at: new Date(),
-      });
+      }, { actor: adminId, source: 'contract.convert.event' });
     }
     try {
       await logActivity('contract_converted_to_event',
@@ -285,10 +287,10 @@ async function convertToEvent(contractId, adminId) {
   } catch (_) { /* best-effort */ }
 
   if (hasContractConvertedEvent) {
-    await db('contracts').where({ id: contractId }).update({
+    await auditedUpdate(db, 'contracts', { id: contractId }, {
       converted_event_id: eventId,
       updated_at: new Date(),
-    });
+    }, { actor: adminId, source: 'contract.convert.event' });
   }
 
   try {
@@ -324,10 +326,10 @@ async function convertToInvoiceOnly(contractId, adminId) {
     const quoteService = require('../quoteService');
     const result = await quoteService.convertToInvoiceOnly(contract.source_quote_id, adminId, { fromContract: true });
     if (hasInvoiceContractBackPointer) {
-      await db('invoices')
-        .where({ source_quote_id: contract.source_quote_id })
-        .whereNull('source_contract_id')
-        .update({ source_contract_id: contractId });
+      await auditedUpdate(db, 'invoices',
+        (q) => q.where({ source_quote_id: contract.source_quote_id }).whereNull('source_contract_id'),
+        { source_contract_id: contractId },
+        { actor: adminId, source: 'contract.convert.invoices' });
     }
     try {
       await logActivity('contract_converted_to_invoices',
@@ -403,7 +405,8 @@ async function convertToInvoiceOnly(contractId, adminId) {
     invoiceRow.event_time_start = contract.event_time_start || null;
     invoiceRow.event_time_end = contract.event_time_end || null;
   }
-  const inserted = await db('invoices').insert(invoiceRow).returning('id');
+  const inserted = await auditedInsert(db, 'invoices', invoiceRow,
+    { actor: adminId, source: 'contract.convert.invoices' });
   const invoiceId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
   try {

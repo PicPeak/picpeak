@@ -4,6 +4,12 @@
  * insertLineItemsHierarchical helper. All pure / db-mocked so the
  * suite runs fast and is deterministic.
  */
+// The recorder's own behaviour is covered by the accountingHistory suites;
+// here it forwards to the trx mock so the insert order and remap stay visible.
+jest.mock('../../src/services/accountingHistory', () => ({
+  auditedInsert: jest.fn((trx, table, row) => trx(table).insert(row).returning('id')),
+}));
+const { auditedInsert } = require('../../src/services/accountingHistory');
 const quoteService = require('../../src/services/quoteService');
 const {
   computeTotals,
@@ -213,5 +219,17 @@ describe('insertLineItemsHierarchical', () => {
     expect(inserts[0].table).toBe('invoice_line_items');
     expect(inserts[0].row.invoice_id).toBe(42);
     expect(inserts[0].row).not.toHaveProperty('quote_id');
+  });
+
+  it('records every row with the caller\'s history context', async () => {
+    const { trx } = makeTrxMock();
+    const context = { actor: 5, source: 'quote.update' };
+    auditedInsert.mockClear();
+    await insertLineItemsHierarchical(trx, 'quote_line_items', 'quote_id', 1, [
+      { position: 1, description: 'P', unit_price_minor: 0, parent_position: null },
+      { position: 2, description: 'S', unit_price_minor: 0, parent_position: 1 },
+    ], context);
+    expect(auditedInsert).toHaveBeenCalledTimes(2);
+    for (const call of auditedInsert.mock.calls) expect(call[3]).toBe(context);
   });
 });

@@ -12,6 +12,11 @@
  *
  * Pure helper, no DB.
  */
+// The recorder's own behaviour is covered by the accountingHistory suites;
+// here it forwards to the trx mock so the insert order and remap stay visible.
+jest.mock('../../src/services/accountingHistory', () => ({
+  auditedInsert: jest.fn((trx, table, row) => trx(table).insert(row).returning('id')),
+}));
 const quoteService = require('../../src/services/quoteService');
 
 const { validateLineItemHierarchy, insertLineItemsHierarchical } = quoteService._internal;

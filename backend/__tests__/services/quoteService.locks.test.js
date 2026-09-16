@@ -72,6 +72,14 @@ jest.mock('../../src/utils/logger', () => ({
   info: jest.fn(), warn: jest.fn(), error: jest.fn(),
 }));
 
+// The change-history recorder reads and writes through knex in ways this chain
+// mock does not model; its behaviour is covered by the accountingHistory suites.
+jest.mock('../../src/services/accountingHistory', () => ({
+  auditedInsert: jest.fn(async () => [{ id: 999 }]),
+  auditedUpdate: jest.fn(async () => 1),
+  auditedDelete: jest.fn(async () => 1),
+}));
+
 const quoteService = require('../../src/services/quoteService');
 
 function resetChains() {
