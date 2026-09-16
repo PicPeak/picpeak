@@ -930,7 +930,7 @@ async function rebillExpense(id, payload, adminId, trx0) {
       status: 'invoiced',
       updated_at: new Date(),
     });
-    await logActivity('expense_invoiced', { expenseId: id, invoiceId }, null, adminActor(adminId));
+    await logActivity('expense_invoiced', { expenseId: id, invoiceId }, null, adminActor(adminId), trx);
     return invoiceId;
   };
   const invoiceId = trx0 ? await run(trx0) : await db.transaction(run);
