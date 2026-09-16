@@ -229,7 +229,10 @@ describe('installment plan', () => {
     expect(spawned.map((e) => [e.entity_type, e.action])).toEqual(expect.arrayContaining([
       ['invoice', 'created'], ['invoice_line_item', 'created'],
     ]));
-    const reconId = spawned.find((e) => e.entity_type === 'invoice_line_item').entity_id;
+    // The spawn clones the quote's lines and adds a reconciliation line
+    // ("Label (50% — 1/2)"); the reshape replaces only that one.
+    const reconId = spawned.find((e) => e.entity_type === 'invoice_line_item'
+      && / \(\d+(?:\.\d+)?% — \d+\/\d+\)$/.test(e.changes.description?.to || '')).entity_id;
     const secondItemIds = (await db('invoice_line_items').where({ invoice_id: second })).map((li) => Number(li.id));
     const { deal_uuid: dealUuid } = await db('invoices').where({ id: first }).first();
 
