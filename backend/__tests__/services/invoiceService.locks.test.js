@@ -69,6 +69,7 @@ function pickChainFor(name) {
 }
 
 const mockDbFn = jest.fn((name) => pickChainFor(name));
+mockDbFn.client = { config: { client: 'sqlite3' } };
 // db.transaction(cb) runs the callback with a "trx" — for our
 // purposes the same chain factory works as trx.
 mockDbFn.transaction = jest.fn(async (cb) => cb(mockDbFn));
