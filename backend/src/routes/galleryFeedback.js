@@ -100,6 +100,9 @@ router.get('/:slug/photos/:photoId/feedback',
       
       // Get guest's own feedback separately
       const guestFeedback = await feedbackService.getPhotoFeedback(photoId, {
+        // Older merges updated guest_id without rewriting guest_identifier.
+        // Use the verified identity, as /my-feedback and submissions do.
+        guest_id: req.guest?.id,
         guest_identifier: guestIdentifier,
         identity_mode: settings.identity_mode,
       });
