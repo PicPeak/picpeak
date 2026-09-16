@@ -5,6 +5,14 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.132.9-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.8-beta.0...v3.132.9-beta.0) (2026-09-16)
+
+
+### Bug Fixes
+
+* **crm:** preserve saved line-item order and validate parent references ([#1510](https://github.com/PicPeak/picpeak/issues/1510)) ([bfec89a](https://github.com/PicPeak/picpeak/commit/bfec89a232ec3ac7d73ea0980ea5179867123c4b))
+* **crm:** return the draft id when invoicing a monthly or manual customer ([#1512](https://github.com/PicPeak/picpeak/issues/1512)) ([9dc050e](https://github.com/PicPeak/picpeak/commit/9dc050e80ef8b1796adb1fe4eeb6e44c2de610b5))
+
 ## [3.132.8-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.7-beta.0...v3.132.8-beta.0) (2026-09-15)
 
 
