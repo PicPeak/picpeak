@@ -78,7 +78,7 @@ async function billCombinedForCustomer(customerId, { includeHours, includeRebill
     }
     if (rebills.docs.length) {
       const rebillLineIds = rebills.docs.map((_, i) => lineByPos.get(hoursCount + i + 1) || null);
-      await expenseService.stampBilledRebills(trx, rebills.docs, invoiceId, rebillLineIds);
+      await expenseService.stampBilledRebills(trx, rebills.docs, invoiceId, rebillLineIds, adminId);
     }
 
     logInfo = {

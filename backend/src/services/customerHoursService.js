@@ -26,6 +26,7 @@ const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
 const { hasColumnCached } = require('../utils/schemaCache');
 const invoiceService = require('./invoiceService');
+const { auditedUpdate, auditedDelete } = require('./accountingHistory');
 
 // ---------------------------------------------------------------------
 // Pure helpers — exported under `_internal` for direct unit testing.
@@ -351,13 +352,14 @@ async function updateEntry(entryId, payload, adminId) {
       const installDefaultMinor = await getInstallDefaultRateMinor(trx);
       const rate = resolveEffectiveRate(next, customer, installDefaultMinor);
       const newLineItem = buildLineItemFromEntry(next, rate);
-      await trx('invoice_line_items').where({ id: entry.invoice_line_item_id }).update({
+      const audit = { actor: adminId || null, source: 'hours.updateEntry' };
+      await auditedUpdate(trx, 'invoice_line_items', { id: entry.invoice_line_item_id }, {
         description: newLineItem.description,
         quantity: newLineItem.quantity,
         unit_price_minor: newLineItem.unit_price_minor,
         line_total_minor: newLineItem.line_total_minor,
         updated_at: new Date(),
-      });
+      }, audit);
       // Recompute invoice totals — same shape as appendToMonthlyDraft.
       const allItems = await trx('invoice_line_items').where({ invoice_id: entry.invoice_id });
       let netMinor = 0;
@@ -368,12 +370,12 @@ async function updateEntry(entryId, payload, adminId) {
       const vatMinor = Math.round(netMinor * vatRate / 100);
       const shippingMinor = Number(invoice.shipping_amount_minor || 0);
       const totalMinor = netMinor + vatMinor + shippingMinor;
-      await trx('invoices').where({ id: entry.invoice_id }).update({
+      await auditedUpdate(trx, 'invoices', { id: entry.invoice_id }, {
         net_amount_minor: netMinor,
         vat_amount_minor: vatMinor,
         total_amount_minor: totalMinor,
         updated_at: new Date(),
-      });
+      }, audit);
     }
 
     await trx('customer_hour_entries').where({ id: entryId }).update({
@@ -414,8 +416,9 @@ async function deleteEntry(entryId, adminId) {
       );
     }
 
+    const audit = { actor: adminId || null, source: 'hours.deleteEntry' };
     if (entry.invoice_line_item_id) {
-      await trx('invoice_line_items').where({ id: entry.invoice_line_item_id }).del();
+      await auditedDelete(trx, 'invoice_line_items', { id: entry.invoice_line_item_id }, audit);
     }
     if (entry.invoice_id) {
       const allItems = await trx('invoice_line_items').where({ invoice_id: entry.invoice_id });
@@ -427,12 +430,12 @@ async function deleteEntry(entryId, adminId) {
       const vatMinor = Math.round(netMinor * vatRate / 100);
       const shippingMinor = Number(invoice.shipping_amount_minor || 0);
       const totalMinor = netMinor + vatMinor + shippingMinor;
-      await trx('invoices').where({ id: entry.invoice_id }).update({
+      await auditedUpdate(trx, 'invoices', { id: entry.invoice_id }, {
         net_amount_minor: netMinor,
         vat_amount_minor: vatMinor,
         total_amount_minor: totalMinor,
         updated_at: new Date(),
-      });
+      }, audit);
     }
 
     await trx('customer_hour_entries').where({ id: entryId }).del();
