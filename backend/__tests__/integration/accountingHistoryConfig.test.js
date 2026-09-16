@@ -43,9 +43,6 @@ beforeAll(async () => {
   customerService = require('../../src/services/customerAccountsService');
   hoursService = require('../../src/services/customerHoursService');
   await profileService.getProfile();
-  // updateEntry reads a cached schema check through the global db inside its
-  // transaction; warm the cache so SQLite does not deadlock on it.
-  await hoursService.getInstallDefaultRateMinor();
 });
 
 afterAll(async () => { if (cleanup) await cleanup(); });
@@ -168,6 +165,33 @@ describe('customers', () => {
       ['created', 'test.fixture'], ['updated', 'hours.updateEntry'], ['deleted', 'hours.deleteEntry'],
     ]);
     expect(entries[1].changes.duration_minutes).toEqual({ from: 60, to: 150 });
+  });
+
+  it('updates billed hours and their invoice with a cold schema cache', async () => {
+    const customerId = idOf(await createCustomer());
+    await customerService.updateCustomer(customerId, { hourly_rate_minor: 5000 }, adminId);
+    const [invoice] = await history.auditedInsert(db, 'invoices', {
+      invoice_number: `CONFIG-HOURS-${customerId}`, customer_account_id: customerId,
+      issue_date: '2026-09-01', due_date: '2026-09-30', status: 'draft', is_monthly_draft: true,
+    });
+    const [line] = await history.auditedInsert(db, 'invoice_line_items', {
+      invoice_id: invoice.id, description: 'Shoot', quantity: 1,
+      unit_price_minor: 5000, line_total_minor: 5000,
+    });
+    const [entry] = await history.auditedInsert(db, 'customer_hour_entries', {
+      customer_account_id: customerId, entry_date: '2026-09-01', start_time: '09:00', end_time: '10:00',
+      duration_minutes: 60, description: 'Shoot', status: 'billed',
+      invoice_id: invoice.id, invoice_line_item_id: line.id,
+    });
+    require('../../src/utils/schemaCache').invalidateSchemaCache();
+    await hoursService.updateEntry(entry.id, { endTime: '11:00' }, adminId);
+    expect(Number((await db('invoice_line_items').where({ id: line.id }).first()).line_total_minor)).toBe(10000);
+    const invoiceHistory = await history.listHistory('invoice', invoice.id);
+    expect(invoiceHistory.find((e) => e.entity_type === 'invoice_line_item' && e.action === 'updated').changes.line_total_minor)
+      .toEqual({ from: 5000, to: 10000 });
+    const hoursHistory = await history.listHistory('customer', customerId);
+    expect(hoursHistory.find((e) => e.entity_type === 'hour_entry' && e.action === 'updated').changes.duration_minutes)
+      .toEqual({ from: 60, to: 120 });
   });
 
   it('blanks personal values in the customer\'s history on erasure and keeps billing settings', async () => {
