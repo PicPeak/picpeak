@@ -35,6 +35,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { validateFileType, validateFileContent } = require('../utils/fileSecurityUtils');
 const contractService = require('../services/contractService');
+const accountingHistory = require('../services/accountingHistory');
 const contractBlocksService = require('../services/contractBlocksService');
 const { db } = require('../database/db');
 
@@ -615,6 +616,19 @@ router.get(
 
 // Audit trail — chronological activity_logs entries for this contract.
 // Used by the AuditTrailCard on the admin detail page; read-only.
+// Change history (migration 219): every change to this contract, and its
+// included blocks, with old and new values, oldest first.
+router.get(
+  '/:id/history',
+  requirePermission('contracts.view'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const entries = await accountingHistory.listHistory('contract', parseInt(req.params.id, 10));
+    return successResponse(res, { entries });
+  }),
+);
+
 router.get(
   '/:id/audit-trail',
   requirePermission('contracts.view'),
