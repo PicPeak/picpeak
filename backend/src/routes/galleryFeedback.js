@@ -484,11 +484,24 @@ router.get('/:slug/my-feedback',
         query.where('photo_feedback.guest_identifier', guestIdentifier);
       }
 
+      // Name the columns rather than photo_feedback.*: the row also carries
+      // guest_email, guest_name, ip_address and user_agent. After an admin
+      // merges two guest identities those still describe the source guest,
+      // so the survivor's token would receive another person's email and IP.
+      // GalleryView reads photo_id and feedback_type from this list.
       const myFeedback = await query
         .select(
-          'photo_feedback.*',
-          'photos.filename',
-          'photos.path'
+          'photo_feedback.id',
+          'photo_feedback.photo_id',
+          'photo_feedback.feedback_type',
+          'photo_feedback.rating',
+          'photo_feedback.comment_text',
+          'photo_feedback.reaction',
+          'photo_feedback.color_label',
+          'photo_feedback.is_approved',
+          'photo_feedback.created_at',
+          'photo_feedback.updated_at',
+          'photos.filename'
         )
         .orderBy('photo_feedback.created_at', 'desc');
 
