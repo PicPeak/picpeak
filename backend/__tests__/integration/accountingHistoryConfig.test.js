@@ -124,7 +124,7 @@ describe('customers', () => {
     seq += 1;
     return customerService.createDirect({
       email: `hist-config-${seq}@example.com`,
-      prefill: { first_name: 'Tina', last_name: 'Muster', company_name: 'Muster GmbH', vat_id: 'DE123' },
+      prefill: { first_name: 'Tina', last_name: 'Muster', display_name: 'Tina Muster', company_name: 'Muster GmbH', vat_id: 'DE123' },
       createdByAdminId: adminId,
     });
   }
@@ -172,6 +172,14 @@ describe('customers', () => {
 
   it('blanks personal values in the customer\'s history on erasure and keeps billing settings', async () => {
     const customerId = idOf(await createCustomer());
+    const app = buildRouteApp('/api/customer', require('../../src/routes/customer'));
+    const token = require('jsonwebtoken').sign({ type: 'customer', customerId }, process.env.JWT_SECRET,
+      { expiresIn: '1h', issuer: 'picpeak-auth' });
+    const edited = await request(app).put('/api/customer/profile')
+      .set('Cookie', `${require('../../src/utils/tokenUtils').CUSTOMER_COOKIE_NAME}=${token}`).send({ city: 'Bern' });
+    expect(edited.status).toBe(200);
+    const portalEntry = (await history.listHistory('customer', customerId)).find((e) => e.source === 'customer.portal.profile');
+    expect(portalEntry.actor).toEqual({ type: 'customer', id: customerId, name: 'Tina Muster' });
     await customerService.updateCustomer(customerId, { city: 'Zürich', billing_cadence: 'monthly' }, adminId);
     await customerService.eraseCustomer(customerId, adminId);
 
@@ -181,8 +189,10 @@ describe('customers', () => {
       expect(text).not.toContain(personal);
     }
     const cityChange = updatesOf(entries, 'customer').find((e) => e.changes.city && e.source === 'customer.update');
-    expect(cityChange.changes.city).toEqual({ from: null, to: '[erased]' });
+    expect(cityChange.changes.city).toEqual({ from: '[erased]', to: '[erased]' });
     expect(cityChange.changes.billing_cadence.to).toBe('monthly');
+    expect(entries.find((e) => e.source === 'customer.portal.profile').actor)
+      .toEqual({ type: 'customer', id: customerId, name: '[erased]' });
     expect(entries.find((e) => e.source === 'customer.erase')).toMatchObject({ actor: adminActor() });
   });
 

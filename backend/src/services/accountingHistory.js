@@ -320,8 +320,8 @@ const PERSONAL_CUSTOMER_COLUMNS = new Set([
 
 /**
  * Blank the recorded personal values in an erased customer's own history:
- * names, addresses, emails and VAT id. Which fields changed, when and by
- * whom stays. Run it in the erasure's
+ * names, addresses, emails, VAT id and the customer's actor display name.
+ * Which fields changed, when and the actor's type/id stay. Run it in the erasure's
  * transaction after the erasure's own update, whose entry holds the values
  * being erased.
  */
@@ -336,7 +336,11 @@ async function redactCustomerHistory(trx, customerId) {
         ? { from: from === null ? null : ERASED, to: to === null ? null : ERASED }
         : { from, to };
     }
-    await trx('accounting_change_history').where({ id: row.id }).update({ changes: JSON.stringify(redacted) });
+    const actorName = row.actor_type === 'customer' && Number(row.actor_id) === Number(customerId)
+      && row.actor_name !== null ? ERASED : row.actor_name;
+    await trx('accounting_change_history').where({ id: row.id }).update({
+      changes: JSON.stringify(redacted), actor_name: actorName,
+    });
   }
   return rows.length;
 }
