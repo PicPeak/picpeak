@@ -8,6 +8,7 @@ const businessProfileService = require('../businessProfileService');
 const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { renumberLineItemPositions } = require('../../utils/lineItemPositions');
 const { computeMonthlyCadenceDate, getHierarchyHelpers, nextInvoiceNumber } = require('./helpers');
+const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 
 
 /**
@@ -118,7 +119,7 @@ async function getOrCreateMonthlyDraft(customer, adminId, trx) {
     updated_at: new Date(),
   };
   try {
-    const inserted = await trx('invoices').insert(row).returning('id');
+    const inserted = await auditedInsert(trx, 'invoices', row, { actor: adminId, source: 'invoice.monthly.createDraft' });
     const id = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
     return { id, row: { ...row, id }, created: true };
   } catch (err) {
@@ -199,7 +200,8 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
   if (newItems.length > 0) {
     const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
     validateLineItemHierarchy(newItems);
-    await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', draft.id, newItems);
+    await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', draft.id, newItems,
+      { actor: adminId, source: 'invoice.monthly.appendItems' });
   }
 
   // Recompute totals across the entire draft so the running figures
@@ -216,13 +218,13 @@ async function appendToMonthlyDraft(payload, customer, adminId, trx) {
   const shippingMinor = ensureInt(draft.row.shipping_amount_minor);
   const totalMinor = netMinor + vatMinor + shippingMinor;
 
-  await trx('invoices').where({ id: draft.id }).update({
+  await auditedUpdate(trx, 'invoices', { id: draft.id }, {
     net_amount_minor: netMinor,
     vat_rate: vatRate,
     vat_amount_minor: vatMinor,
     total_amount_minor: totalMinor,
     updated_at: new Date(),
-  });
+  }, { actor: adminId, source: 'invoice.monthly.appendItems' });
 
   try {
     await logActivity('monthly_billing_items_queued',

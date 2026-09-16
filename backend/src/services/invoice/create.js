@@ -11,6 +11,7 @@ const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { hasColumnCached } = require('../../utils/schemaCache');
 const { computeDueDate, computeScheduledSendAt, ensureCustomerCanBill, getHierarchyHelpers, nextInvoiceNumber, resolveDealUuid, resolveNetDays, snapToNextBillingCycle } = require('./helpers');
 const { appendToMonthlyDraft } = require('./drafts');
+const { auditedInsert } = require('../accountingHistory');
 
 
 /**
@@ -298,13 +299,14 @@ async function createInvoice(payload, adminId, trx = db) {
   if (payload.vatCode !== undefined && await hasColumnCached('invoices', 'vat_code')) {
     row.vat_code = payload.vatCode ? String(payload.vatCode).slice(0, 16) : null;
   }
-  const inserted = await trx('invoices').insert(row).returning('id');
+  const inserted = await auditedInsert(trx, 'invoices', row, { actor: adminId, source: 'invoice.create' });
   const invoiceId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
   if (items.length > 0) {
     const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
     validateLineItemHierarchy(items);
-    await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', invoiceId, items);
+    await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', invoiceId, items,
+      { actor: adminId, source: 'invoice.create' });
   }
 
   try { await logActivity('invoice_created', { invoiceId, invoiceNumber }, payload.eventId || null, `admin:${adminId}`, trx); } catch (_) { /* non-fatal */ }
@@ -477,7 +479,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       updated_at: new Date(),
     };
 
-    const inserted = await trx('invoices').insert(row).returning('id');
+    const inserted = await auditedInsert(trx, 'invoices', row, { actor: adminId, source: 'invoice.spawnInstallments' });
     const invoiceId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
 
     // Line items: copy from the quote so the customer sees what they
@@ -495,7 +497,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       // Fallback for the (rare) case where the quote has no line
       // items — fall back to the legacy "Installment N/M" line so
       // we still produce a sensible invoice.
-      await trx('invoice_line_items').insert({
+      await auditedInsert(trx, 'invoice_line_items', {
         invoice_id: invoiceId,
         position: 1,
         quantity: 1,
@@ -505,7 +507,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
         line_total_minor: netSlice,
         created_at: new Date(),
         updated_at: new Date(),
-      });
+      }, { actor: adminId, source: 'invoice.spawnInstallments' });
     } else {
       // Clone each quote line as-is, preserving its original `position`
       // so the sub-item hierarchy carries over. Source lines already
@@ -526,7 +528,8 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
       }));
       const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
       validateLineItemHierarchy(cloned);
-      await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', invoiceId, cloned);
+      await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', invoiceId, cloned,
+        { actor: adminId, source: 'invoice.spawnInstallments' });
 
       // For split payments add an explicit "Installment X/Y (Z%)"
       // adjustment line that reconciles the cloned line totals to
@@ -546,7 +549,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
         if (adjustment !== 0) {
           const installmentLabel = inst.label || `Installment ${i + 1}/${total}`;
           const maxPosition = cloned.reduce((m, x) => Math.max(m, x.position), 0);
-          await trx('invoice_line_items').insert({
+          await auditedInsert(trx, 'invoice_line_items', {
             invoice_id: invoiceId,
             position: maxPosition + 1,
             quantity: 1,
@@ -558,7 +561,7 @@ async function spawnInstallmentInvoices({ trx, eventId, quoteId, customer, curre
             details_text: null,
             created_at: new Date(),
             updated_at: new Date(),
-          });
+          }, { actor: adminId, source: 'invoice.spawnInstallments' });
         }
       }
     }

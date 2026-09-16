@@ -79,6 +79,14 @@ jest.mock('../../src/database/db', () => ({
   logActivity: jest.fn(async () => {}),
 }));
 
+// The change-history recorder reads rows back and needs a real knex
+// client; against the chain mock, replay the plain write it wraps.
+jest.mock('../../src/services/accountingHistory', () => ({
+  auditedInsert: jest.fn(async (conn, table, rows) => conn(table).insert(rows).returning('id')),
+  auditedUpdate: jest.fn(async (conn, table, where, values) => conn(table).where(where).update(values)),
+  auditedDelete: jest.fn(async (conn, table, where) => conn(table).where(where).del()),
+}));
+
 jest.mock('../../src/utils/appSettings', () => ({
   getAppSetting: jest.fn(async () => null),
 }));

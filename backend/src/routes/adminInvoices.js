@@ -582,7 +582,9 @@ router.post(
       updated_at: new Date(),
     };
 
-    const inserted = await db('invoices').insert(row).returning('id');
+    const inserted = await accountingHistory.auditedInsert(db, 'invoices', row, {
+      actor: req.admin.id, source: 'invoice.import',
+    });
     const invoiceId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
     capabilityEvidence(res, 'crm_invoice_import');
 
@@ -617,6 +619,8 @@ router.put(
       });
     }
     const payload = mapPayloadToService(req.body);
+
+    const history = { actor: req.admin.id, source: 'invoice.update' };
 
     // Recompute totals if line items are present.
     let updates = { updated_at: new Date() };
@@ -758,15 +762,15 @@ router.put(
       const quoteService = require('../services/quoteService');
       const { validateLineItemHierarchy, insertLineItemsHierarchical } = quoteService._internal;
       await db.transaction(async (trx) => {
-        await trx('invoice_line_items').where({ invoice_id: id }).del();
+        await accountingHistory.auditedDelete(trx, 'invoice_line_items', { invoice_id: id }, history);
         if (items.length > 0) {
           validateLineItemHierarchy(items);
-          await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', id, items);
+          await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', id, items, history);
         }
-        await trx('invoices').where({ id }).update(updates);
+        await accountingHistory.auditedUpdate(trx, 'invoices', { id }, updates, history);
       });
     } else {
-      await db('invoices').where({ id }).update(updates);
+      await accountingHistory.auditedUpdate(db, 'invoices', { id }, updates, history);
     }
 
     const data = await invoiceService.getInvoiceById(id);
@@ -870,7 +874,7 @@ router.post(
     validateRequest(req);
     const result = await invoiceService.queuePaymentCheckEmail(
       parseInt(req.params.id, 10),
-      { skipThrottle: true }
+      { skipThrottle: true, actor: req.admin.id }
     );
     if (!result.sent) {
       return res.status(409).json({

@@ -16,6 +16,7 @@ const { getInvoiceById } = require('./queries');
 const { createInvoice } = require('./create');
 const { buildInvoiceRenderContext } = require('./render');
 const { collectRebillProofAttachments } = require('./rebillProofs');
+const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 
 
 /**
@@ -68,10 +69,10 @@ async function sendInvoice(id, adminId, options = {}) {
   // rendered PDF is the source of truth from the moment it ships.
   if (invoice.status === 'scheduled' && customer.preferred_language
       && customer.preferred_language !== invoice.language) {
-    await db('invoices').where({ id }).update({
+    await auditedUpdate(db, 'invoices', { id }, {
       language: customer.preferred_language,
       updated_at: new Date(),
-    });
+    }, { actor: adminId, source: 'invoice.send.language' });
     invoice.language = customer.preferred_language;
   }
 
@@ -103,7 +104,7 @@ async function sendInvoice(id, adminId, options = {}) {
     if (storedDue && storedDue === oldAutoDue) {
       updates.due_date = computeDueDate(new Date(sendDateIso), netDays).toISOString().slice(0, 10);
     }
-    await db('invoices').where({ id }).update(updates);
+    await auditedUpdate(db, 'invoices', { id }, updates, { actor: adminId, source: 'invoice.send.issueDate' });
     invoice.issue_date = updates.issue_date;
     if (updates.due_date) invoice.due_date = updates.due_date;
   }
@@ -121,9 +122,9 @@ async function sendInvoice(id, adminId, options = {}) {
   fs.writeFileSync(pdfPath, buffer);
 
   const newStatus = invoice.status === 'overdue' ? 'overdue' : 'sent';
-  await db('invoices').where({ id }).update({
+  await auditedUpdate(db, 'invoices', { id }, {
     status: newStatus, sent_at: new Date(), pdf_path: pdfPath, updated_at: new Date(),
-  });
+  }, { actor: adminId, source: 'invoice.send' });
 
   const { to: invoiceTo, cc: invoiceCc } = resolveBillingRecipients(customer, invoice.cc_pdf_email);
 
@@ -137,7 +138,7 @@ async function sendInvoice(id, adminId, options = {}) {
     contentType: 'application/pdf',
   }];
   try {
-    const proofs = await collectRebillProofAttachments(invoice, customer, options.proofInboundIds);
+    const proofs = await collectRebillProofAttachments(invoice, customer, options.proofInboundIds, adminId);
     if (proofs.length) invoiceAttachments.push(...proofs);
   } catch (e) {
     logger.warn?.(`sendInvoice: proof attachment collection failed for ${invoice.invoice_number}: ${e.message}`);
@@ -215,12 +216,12 @@ async function sendInvoice(id, adminId, options = {}) {
  * Mirrors the categorise-time reset; returns the item to the billable pool.
  * Best-effort + schema-guarded (no-op on non-accounting installs).
  */
-async function releaseRebillsForCancelledInvoice(conn, invoiceId) {
+async function releaseRebillsForCancelledInvoice(conn, invoiceId, adminId) {
   try {
     if (!(await conn.schema.hasTable('inbound_documents'))) return;
-    await conn('inbound_documents')
-      .where({ billed_invoice_id: invoiceId })
-      .update({ billed_invoice_id: null, billed_invoice_line_item_id: null, updated_at: new Date() });
+    await auditedUpdate(conn, 'inbound_documents', { billed_invoice_id: invoiceId },
+      { billed_invoice_id: null, billed_invoice_line_item_id: null, updated_at: new Date() },
+      { actor: adminId, source: 'invoice.cancel.releaseRebills' });
   } catch (e) {
     logger.warn?.(`releaseRebillsForCancelledInvoice failed for invoice ${invoiceId}: ${e.message}`);
   }
@@ -257,7 +258,7 @@ async function createStorno(originalId, adminId, trx = db) {
   // contributes correctly without the renderer needing to flip
   // signs at report time). Line items below stay positive — the
   // renderer applies the sign at presentation time.
-  const insertedRow = await trx('invoices').insert({
+  const insertedRow = await auditedInsert(trx, 'invoices', {
     kind: 'storno',
     invoice_number: stornoNumber,
     customer_account_id: original.customer_account_id,
@@ -311,7 +312,7 @@ async function createStorno(originalId, adminId, trx = db) {
     deal_uuid: original.deal_uuid || crypto.randomUUID(),
     created_at: now,
     updated_at: now,
-  }).returning('id');
+  }, { actor: adminId, source: 'invoice.storno.create' });
   const stornoId = Array.isArray(insertedRow)
     ? (insertedRow[0]?.id ?? insertedRow[0])
     : insertedRow;
@@ -337,17 +338,18 @@ async function createStorno(originalId, adminId, trx = db) {
     }));
     const { validateLineItemHierarchy, insertLineItemsHierarchical } = getHierarchyHelpers();
     validateLineItemHierarchy(cloned);
-    await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', stornoId, cloned);
+    await insertLineItemsHierarchical(trx, 'invoice_line_items', 'invoice_id', stornoId, cloned,
+      { actor: adminId, source: 'invoice.storno.create' });
   }
 
   // Flip the original to cancelled + link the Storno.
-  await trx('invoices').where({ id: originalId }).update({
+  await auditedUpdate(trx, 'invoices', { id: originalId }, {
     status: 'cancelled',
     cancellation_storno_id: stornoId,
     updated_at: now,
-  });
+  }, { actor: adminId, source: 'invoice.storno.cancelOriginal' });
   // Free any re-billed supplier invoices so the cost isn't stranded (#866 review).
-  await releaseRebillsForCancelledInvoice(trx, originalId);
+  await releaseRebillsForCancelledInvoice(trx, originalId, adminId);
 
   try {
     // Pass `trx` so the audit insert rides the transaction's connection;
@@ -395,12 +397,12 @@ async function sendStorno(stornoId, adminId) {
   const pdfPath = path.join(root, `${storno.invoice_number}.pdf`);
   fs.writeFileSync(pdfPath, buffer);
 
-  await db('invoices').where({ id: stornoId }).update({
+  await auditedUpdate(db, 'invoices', { id: stornoId }, {
     status: 'sent',
     sent_at: new Date(),
     pdf_path: pdfPath,
     updated_at: new Date(),
-  });
+  }, { actor: adminId, source: 'invoice.storno.send' });
 
   // Look up the original so we can include both numbers in the
   // email body — customers' bookkeepers expect to see the pair.
@@ -548,10 +550,10 @@ async function reissueInvoice(id, adminId) {
     // forced), so the array length is 1.
     const newId = reissuedIds[0];
 
-    await trx('invoices').where({ id: newId }).update({
+    await auditedUpdate(trx, 'invoices', { id: newId }, {
       replaces_invoice_id: id,
       updated_at: new Date(),
-    });
+    }, { actor: adminId, source: 'invoice.reissue' });
 
     try {
       // Pass `trx` so the audit insert rides the transaction's connection.
@@ -585,11 +587,11 @@ async function releaseForDelivery(id, adminId) {
     );
   }
   const now = new Date();
-  await db('invoices').where({ id }).update({
+  await auditedUpdate(db, 'invoices', { id }, {
     status: 'scheduled',
     scheduled_send_at: now,
     updated_at: now,
-  });
+  }, { actor: adminId, source: 'invoice.releaseForDelivery' });
   try {
     await logActivity('invoice_released_for_delivery', { invoiceId: id }, invoice.event_id || null, `admin:${adminId}`);
   } catch (_) { /* non-fatal */ }
@@ -637,11 +639,11 @@ async function cancelInvoice(id, adminId) {
 
   // Draft path: nothing was issued, soft cancel and we're done.
   if (invoice.status === 'scheduled') {
-    await db('invoices').where({ id }).update({
+    await auditedUpdate(db, 'invoices', { id }, {
       status: 'cancelled', updated_at: new Date(),
-    });
+    }, { actor: adminId, source: 'invoice.cancel' });
     // Free any re-billed supplier invoices so the cost isn't stranded (#866 review).
-    await releaseRebillsForCancelledInvoice(db, id);
+    await releaseRebillsForCancelledInvoice(db, id, adminId);
     try {
       await logActivity('invoice_cancelled',
         { invoiceId: id, viaStorno: false },
@@ -680,12 +682,12 @@ async function triggerMonthlyBillNow(customerId, adminId) {
   // distinct activity so the audit trail shows admin override vs the
   // scheduler's automatic fire.
   const issueDate = new Date().toISOString().slice(0, 10);
-  await db('invoices').where({ id: draft.id }).update({
+  await auditedUpdate(db, 'invoices', { id: draft.id }, {
     is_monthly_draft: false,
     issue_date: issueDate,
     scheduled_send_at: new Date(),
     updated_at: new Date(),
-  });
+  }, { actor: adminId, source: 'invoice.monthly.triggerNow' });
   try {
     await logActivity('monthly_bill_triggered_manually',
       { invoiceId: draft.id, customerId, periodEnd: draft.monthly_period_end },
