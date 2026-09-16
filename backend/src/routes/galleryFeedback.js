@@ -348,6 +348,15 @@ router.post('/:slug/photos/:photoId/feedback',
         guestIdentifier
       );
 
+      // The guest was merged away or deleted while this request was running.
+      // Same answer resolveGuest gives the next request from that token.
+      if (result && result.guest_missing) {
+        return res.status(401).json({
+          error: 'Guest identity required',
+          code: 'GUEST_IDENTITY_REQUIRED'
+        });
+      }
+
       // Per-guest cap reached (#655). Surface as a structured 403 so the
       // frontend can show an explicit popup with the actual cap value and
       // remaining-slots count, rather than a generic toast. Code is the
