@@ -140,6 +140,28 @@ describe('auditedDelete', () => {
 });
 
 describe('a history row that cannot be written', () => {
+  it.each(['insert', 'update', 'delete'])('rolls back %s even when the caller catches the error', async (operation) => {
+    const [{ id }] = await history.auditedInsert(db, 'invoices', invoiceValues(), { actor: adminId });
+    const values = invoiceValues();
+    await withHistoryTableOffline(async () => {
+      await db.transaction(async (trx) => {
+        const write = operation === 'insert'
+          ? () => history.auditedInsert(trx, 'invoices', values)
+          : operation === 'update'
+            ? () => history.auditedUpdate(trx, 'invoices', { id }, { status: 'paid' })
+            : () => history.auditedDelete(trx, 'invoices', { id });
+        await expect(write()).rejects.toThrow();
+        // The caller can continue and commit unrelated work after rollback
+        // to the recorder's savepoint, including on PostgreSQL.
+        await trx('app_settings').insert({ setting_key: `history_caught_${operation}`, setting_value: JSON.stringify('ok') });
+      });
+    });
+    expect((await db('invoices').where({ id }).first()).status).toBe('draft');
+    expect(await db('invoices').where({ invoice_number: values.invoice_number }).first()).toBeUndefined();
+    expect((await historyOf('invoice', id)).map((e) => e.action)).toEqual(['created']);
+    expect(await db('app_settings').where({ setting_key: `history_caught_${operation}` }).first()).toBeTruthy();
+  });
+
   it('rolls back a standalone write', async () => {
     const [{ id }] = await history.auditedInsert(db, 'invoices', invoiceValues(), { actor: adminId });
     await withHistoryTableOffline(() => expect(
@@ -161,6 +183,39 @@ describe('a history row that cannot be written', () => {
       await history.auditedDelete(trx, 'invoices', { id }, { actor: adminId });
     })).rejects.toThrow());
     expect(await db('invoices').where({ id }).first()).toBeTruthy();
+  });
+});
+
+describe('concurrent payments', () => {
+  it('keeps both payments and the full running total', async () => {
+    const [{ id }] = await history.auditedInsert(db, 'invoices', invoiceValues({ status: 'sent' }));
+    const { markPaid } = require('../../src/services/invoice/payments');
+    await Promise.all([4000, 6000].map((amountMinor) => markPaid(id, { amountMinor }, adminId)));
+    expect(await db('invoice_payment_log').where({ invoice_id: id })).toHaveLength(2);
+    const invoice = await db('invoices').where({ id }).first();
+    expect(Number(invoice.paid_amount_minor)).toBe(10000);
+    expect(invoice.status).toBe('paid');
+    const entries = await historyOf('invoice', id);
+    expect(entries.filter((e) => e.entity_type === 'invoice_payment')).toHaveLength(2);
+    expect(Number(entries.filter((e) => e.changes.paid_amount_minor).at(-1).changes.paid_amount_minor.to)).toBe(10000);
+  });
+
+  const pgOnly = process.env.DATABASE_CLIENT === 'pg' ? it : it.skip;
+  pgOnly('does not upgrade two child FK locks into a parent-row deadlock', async () => {
+    const [{ id }] = await history.auditedInsert(db, 'invoices', invoiceValues());
+    let arrived = 0;
+    let release;
+    const bothInserted = new Promise((resolve) => { release = resolve; });
+    const payment = () => db.transaction(async (trx) => {
+      await history.auditedInsert(trx, 'invoice_payment_log', { invoice_id: id, amount_minor: 100, paid_at: new Date() });
+      if (++arrived === 2) release();
+      await bothInserted;
+      await history.auditedUpdate(trx, 'invoices', { id }, {
+        paid_amount_minor: trx.raw('?? + ?', ['paid_amount_minor', 100]),
+      });
+    });
+    await Promise.all([payment(), payment()]);
+    expect(Number((await db('invoices').where({ id }).first()).paid_amount_minor)).toBe(200);
   });
 });
 

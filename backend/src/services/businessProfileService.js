@@ -18,6 +18,7 @@ const logger = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const { formatBoolean } = require('../utils/dbCompat');
 const { normaliseSchedule } = require('../utils/businessHours');
+const { deleteWithAccountingHistory } = require('./accountingHistory');
 
 const ALLOWED_PROFILE_FIELDS = [
   'company_name',
@@ -373,7 +374,8 @@ async function deleteBankAccount(id, adminId) {
     if (!existing) {
       throw new AppError('Bank account not found', 404);
     }
-    await db('business_bank_accounts').where({ id }).del();
+    await deleteWithAccountingHistory(db, 'business_bank_accounts', { id },
+      { actor: adminId, source: 'bank_account.delete' });
     logger.info('Business bank account deleted', { adminId, id });
     return { deleted: true };
   });

@@ -125,6 +125,12 @@ jest.mock('../../src/database/db', () => ({
   logActivity: jest.fn().mockResolvedValue(undefined),
 }));
 
+// This suite checks storage cleanup; reference history is exercised against
+// real databases in accountingHistoryReferences.test.js.
+jest.mock('../../src/services/accountingHistory', () => ({
+  deleteWithAccountingHistory: (conn, table, where) => conn(table).where(where).del(),
+}));
+
 jest.mock('../../src/services/storage', () => ({
   getStorage: () => mockStorage,
 }));
