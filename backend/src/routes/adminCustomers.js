@@ -25,6 +25,7 @@ const requireHoursLogging = requireFeatureFlag('hoursLogging', 'HOURS_LOGGING_DI
 const requireIncoming = requireFeatureFlag('incomingInvoices', 'INCOMING_INVOICES_DISABLED');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const customerAccountsService = require('../services/customerAccountsService');
+const accountingHistory = require('../services/accountingHistory');
 const customerHoursService = require('../services/customerHoursService');
 const combinedBillingService = require('../services/combinedBillingService');
 const invoiceService = require('../services/invoiceService');
@@ -365,6 +366,19 @@ router.post('/:id/send-invite', [
 }));
 
 // ---- customer record ----------------------------------------------------
+
+// Change history (migration 219) of the customer's billing fields and hour
+// entries, oldest first. Personal values are blanked once a customer is erased.
+router.get('/:id/history', [
+  adminAuth,
+  requirePermission('customers.view'),
+  param('id').isInt({ min: 1 }),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  return successResponse(res, {
+    entries: await accountingHistory.listHistory('customer', parseInt(req.params.id, 10)),
+  });
+}));
 
 router.get('/:id', [
   adminAuth,

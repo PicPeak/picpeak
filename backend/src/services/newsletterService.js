@@ -29,6 +29,7 @@ const { formatBoolean, isPostgreSQL } = require('../utils/dbCompat');
 const { sanitizeCSS } = require('../utils/cssSanitizer');
 const { timingSafeEqualStr } = require('../utils/timingSafe');
 const { getFrontendBaseUrl, getApiBaseUrl } = require('../utils/frontendUrl');
+const { auditedUpdate } = require('./accountingHistory');
 
 // A 200 KB body is already an absurd newsletter; the cap exists so a paste
 // from a WYSIWYG suite full of base64 images can't put a multi-megabyte row
@@ -797,10 +798,11 @@ async function setMarketingOptOut(customerId, optOut, source, actor = null) {
   // actually withdrawn under its own confirmations.
   if (isOptedOut(current) === Boolean(optOut)) return false;
 
-  await db('customer_accounts').where({ id: customerId }).update({
+  // Not a billing field, so this leaves no history entry.
+  await auditedUpdate(db, 'customer_accounts', { id: customerId }, {
     marketing_opt_out: formatBoolean(Boolean(optOut)),
     marketing_opt_out_at: optOut ? new Date().toISOString() : null,
-  });
+  }, { actor, source: 'customer.marketing_opt_out' });
 
   await logActivity('customer_marketing_opt_out', {
     customerId, optOut: Boolean(optOut), source,

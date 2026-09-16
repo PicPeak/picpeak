@@ -9,7 +9,10 @@
  * history insert therefore rolls the change back, unlike logActivity, which
  * is best-effort.
  *
- * Nothing in the application may update or delete history rows;
+ * Nothing in the application may update or delete history rows, with one
+ * exception: erasing a customer blanks the values in that customer's own
+ * billing-field history (redactCustomerHistory). The document history of
+ * their invoices, quotes and contracts is kept, like the documents.
  * __tests__/services/accountingHistoryCoverage.test.js pins that, and that
  * audited tables are not written anywhere else.
  */
@@ -29,6 +32,27 @@ const AUDITED_TABLES = {
   },
   expenses: { entity: 'expense', document: (row) => ['expense', row.id] },
   inbound_documents: { entity: 'inbound_document', document: (row) => ['inbound_document', row.id] },
+  // Configuration printed on or feeding accounting documents.
+  business_profile: { entity: 'business_profile', document: (row) => ['business_profile', row.id] },
+  business_bank_accounts: {
+    entity: 'bank_account', document: (row) => ['business_profile', row.business_profile_id || 1],
+  },
+  ledger_accounts: { entity: 'ledger_account', document: (row) => ['ledger_account', row.id] },
+  vat_codes: { entity: 'vat_code', document: (row) => ['vat_code', row.id] },
+  expense_categories: { entity: 'expense_category', document: (row) => ['expense_category', row.id] },
+  // Only the columns that feed billing; logins, passwords, portal feature
+  // switches and marketing consent are not accounting data.
+  customer_accounts: {
+    entity: 'customer',
+    document: (row) => ['customer', row.id],
+    columns: [
+      'salutation', 'first_name', 'last_name', 'display_name', 'company_name', 'email',
+      'billing_email', 'vat_id', 'address_line1', 'address_line2', 'postal_code', 'city',
+      'state', 'country_code', 'country_name', 'preferred_language', 'billing_cadence',
+      'billing_cycle_day', 'hourly_rate_minor', 'skonto_disabled', 'rebill_attach_proof',
+    ],
+  },
+  customer_hour_entries: { entity: 'hour_entry', document: (row) => ['customer', row.customer_account_id] },
 };
 
 // Bookkeeping columns: a change to only these is not a change to the record.
@@ -73,7 +97,8 @@ function tableConfig(table) {
   return config;
 }
 
-function recorded(column) {
+function recorded(column, config) {
+  if (config?.columns && !config.columns.includes(column)) return false;
   return !IGNORED_COLUMNS.has(column) && !SECRET_COLUMN.test(column);
 }
 
@@ -92,11 +117,11 @@ function sameValue(a, b) {
  * { column: { from, to } } for the recorded columns that differ. A created
  * record lists its non-null values, a deleted one what it held.
  */
-function diffRows(before, after) {
+function diffRows(before, after, config = null) {
   const changes = {};
   const columns = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
   for (const column of columns) {
-    if (!recorded(column)) continue;
+    if (!recorded(column, config)) continue;
     const from = before ? normalizeValue(before[column]) : null;
     const to = after ? normalizeValue(after[column]) : null;
     if (sameValue(from, to)) continue;
@@ -152,7 +177,7 @@ async function writeHistory(trx, table, action, before, after, context) {
   const config = tableConfig(table);
   const row = after || before;
   const columns = await bigintColumns(trx, table);
-  const changes = diffRows(numericBigints(before, columns), numericBigints(after, columns));
+  const changes = diffRows(numericBigints(before, columns), numericBigints(after, columns), config);
   if (action === 'updated' && Object.keys(changes).length === 0) return;
   const [documentType, documentId] = config.document(row);
   const actor = normalizeActor(context.actor);
@@ -251,8 +276,41 @@ async function listHistory(documentType, documentId, conn = db) {
   }));
 }
 
+const ERASED = '[erased]';
+// The customer billing fields that identify a person. Billing settings such
+// as the cadence or hourly rate stay readable after erasure.
+const PERSONAL_CUSTOMER_COLUMNS = new Set([
+  'salutation', 'first_name', 'last_name', 'display_name', 'company_name', 'email',
+  'billing_email', 'vat_id', 'address_line1', 'address_line2', 'postal_code', 'city',
+  'state', 'country_code', 'country_name',
+]);
+
+/**
+ * Blank the recorded personal values in an erased customer's own history:
+ * names, addresses, emails and VAT id. Which fields changed, when and by
+ * whom stays. Run it in the erasure's
+ * transaction after the erasure's own update, whose entry holds the values
+ * being erased.
+ */
+async function redactCustomerHistory(trx, customerId) {
+  const rows = await trx('accounting_change_history')
+    .where({ document_type: 'customer', entity_type: 'customer', document_id: customerId });
+  for (const row of rows) {
+    const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
+    const redacted = {};
+    for (const [column, { from, to }] of Object.entries(changes || {})) {
+      redacted[column] = PERSONAL_CUSTOMER_COLUMNS.has(column)
+        ? { from: from === null ? null : ERASED, to: to === null ? null : ERASED }
+        : { from, to };
+    }
+    await trx('accounting_change_history').where({ id: row.id }).update({ changes: JSON.stringify(redacted) });
+  }
+  return rows.length;
+}
+
 module.exports = {
   AUDITED_TABLES,
+  redactCustomerHistory,
   auditedInsert,
   auditedUpdate,
   auditedDelete,

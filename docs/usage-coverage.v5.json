@@ -309,6 +309,7 @@
       "reason": "Business identity/bank/tax-address configuration and VAT-code helper surface are not separate usage signals. Billing/accounting capabilities are covered without profiling the business.",
       "route_signatures": [
         "GET /",
+        "GET /history",
         "GET /logo-diagnostic",
         "POST /logo",
         "DELETE /logo",
@@ -429,6 +430,7 @@
         "DELETE /invitations/:id",
         "POST /",
         "POST /:id/send-invite",
+        "GET /:id/history",
         "GET /:id",
         "PUT /:id",
         "POST /:id/deactivate",
@@ -727,6 +729,7 @@
       "reason": "Admin expense/inbound-invoice operations; no financial values, suppliers, mileage/location, dates, receipt files or OCR text.",
       "route_signatures": [
         "GET /categories",
+        "GET /categories/:id/history",
         "POST /categories",
         "PATCH /categories/:id",
         "DELETE /categories/:id",
@@ -897,10 +900,12 @@
       "reason": "Admin ledger-account/VAT/mapping edits and ledger export initiation only; no account/currency/VAT identifiers or exported records.",
       "route_signatures": [
         "GET /accounts",
+        "GET /accounts/:id/history",
         "POST /accounts",
         "PATCH /accounts/:id",
         "DELETE /accounts/:id",
         "GET /vat-codes",
+        "GET /vat-codes/:id/history",
         "POST /vat-codes",
         "PATCH /vat-codes/:id",
         "DELETE /vat-codes/:id",
