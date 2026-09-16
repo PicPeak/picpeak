@@ -16,6 +16,7 @@ const { db, logActivity } = require('../database/db');
 const { formatBoolean } = require('../utils/dbCompat');
 const { getBcryptRounds } = require('../utils/passwordValidation');
 const { queueEmail } = require('./emailProcessor');
+const { auditedUpdate } = require('./accountingHistory');
 const { getFrontendBaseUrl } = require('../utils/frontendUrl');
 const logger = require('../utils/logger');
 const { ConflictError, NotFoundError, ValidationError } = require('../utils/errors');
@@ -868,10 +869,10 @@ async function eraseCustomer(id, erasedByAdminId) {
     // silently lost or billed to a ghost (PR #636 review #2). Guarded for
     // schema drift on installs that predate migration 132.
     if (await trx.schema.hasColumn('inbound_documents', 'customer_account_id')) {
-      await trx('inbound_documents')
-        .where({ customer_account_id: id })
-        .whereNull('billed_invoice_id')
-        .update({ customer_account_id: null, disposition: null, status: 'unsorted', updated_at: new Date() });
+      await auditedUpdate(trx, 'inbound_documents',
+        (q) => q.where({ customer_account_id: id }).whereNull('billed_invoice_id'),
+        { customer_account_id: null, disposition: null, status: 'unsorted', updated_at: new Date() },
+        { actor: erasedByAdminId || null, source: 'customer.erase' });
     }
   });
 
