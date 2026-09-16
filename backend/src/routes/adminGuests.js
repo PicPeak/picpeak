@@ -9,6 +9,8 @@ const { requireEventOwnership } = require('../middleware/ownership');
 const feedbackService = require('../services/feedbackService');
 const logger = require('../utils/logger');
 const { errorResponse } = require('../utils/routeHelpers');
+const { ValidationError } = require('../utils/errors');
+const { formatBoolean } = require('../utils/dbCompat');
 const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 
 // ----------------------------------------------------------------------------
@@ -624,71 +626,84 @@ router.post(
   async (req, res) => {
     try {
       const { eventId, keepId } = req.params;
-      const mergeIds = Array.isArray(req.body?.mergeIds) ? req.body.mergeIds : [];
+      const mergeIds = Array.isArray(req.body?.mergeIds) ? req.body.mergeIds.map(Number) : [];
 
       if (mergeIds.length === 0) {
         return res.status(400).json({ error: 'mergeIds is required' });
+      }
+      if (![Number(keepId), ...mergeIds].every(id => Number.isSafeInteger(id) && id > 0)) {
+        return res.status(400).json({ error: 'Guest IDs must be positive integers' });
       }
       if (mergeIds.includes(Number(keepId))) {
         return res.status(400).json({ error: 'Cannot merge a guest into itself' });
       }
 
-      // Sanity check: all guests belong to this event.
-      const all = await db('gallery_guests')
-        .whereIn('id', [Number(keepId), ...mergeIds.map(Number)])
-        .where({ event_id: eventId });
-      if (all.length !== mergeIds.length + 1) {
-        return res.status(400).json({ error: 'All guests must belong to the same event' });
-      }
-
-      const result = await feedbackService.mergeGuestFeedback(Number(keepId), mergeIds.map(Number));
-
-      // Canonicalise the survivor's address (#1210 review). Rows are grouped
-      // for review with the case and whitespace folded out, so a merge can be
-      // proposed between `tina@example.com` and `Tina@Example.com ` — and if
-      // the non-canonical one survives, guest recovery can never find it
-      // again: /guest/recover lowercases and trims what the guest types, then
-      // matches on equality (galleryGuests.js). Every write path normalises
-      // today, so this is for rows that predate that, which are exactly the
-      // rows case-folded grouping surfaces.
-      const survivor = all.find((g) => Number(g.id) === Number(keepId));
-      if (survivor?.email) {
-        const canonical = String(survivor.email).trim().toLowerCase();
-        if (canonical !== survivor.email) {
-          await db('gallery_guests').where({ id: Number(keepId) }).update({ email: canonical });
+      const result = await db.transaction(async (trx) => {
+        // Lock in a stable order on PostgreSQL so overlapping merges cannot
+        // move feedback into an identity another merge has just deleted.
+        const guestQuery = trx('gallery_guests')
+          .whereIn('id', [Number(keepId), ...mergeIds])
+          .where({ event_id: eventId, is_deleted: formatBoolean(false) })
+          .orderBy('id');
+        if (trx.client.config.client === 'pg') guestQuery.forUpdate();
+        const all = await guestQuery;
+        if (all.length !== mergeIds.length + 1) {
+          throw new ValidationError('All guests must be active and belong to the same event');
         }
-      }
+        const merged = await feedbackService.mergeGuestFeedback(Number(keepId), mergeIds, trx);
 
-      // Carry any unredeemed invite over to the survivor BEFORE the source row
-      // is soft-deleted (#1210 review). guest_invites.guest_id points at a real
-      // gallery_guests row — creating an invite inserts one — and redemption
-      // looks it up with `is_deleted: false`. Merging without this leaves the
-      // emailed link resolving to a deleted guest: the client gets a 404
-      // `guest_missing` while the admin's invite dialog still shows the invite
-      // as Pending, so nothing anywhere says the link is dead.
-      //
-      // Only unredeemed, unrevoked invites move. A spent invite is a historical
-      // record of who redeemed what and retargeting it would rewrite that.
-      await db('guest_invites')
-        .whereIn('guest_id', mergeIds.map(Number))
-        .whereNull('redeemed_at')
-        .whereNull('revoked_at')
-        .update({ guest_id: Number(keepId) });
+        // Canonicalise the survivor's address (#1210 review). Rows are grouped
+        // for review with the case and whitespace folded out, so a merge can be
+        // proposed between `tina@example.com` and `Tina@Example.com ` — and if
+        // the non-canonical one survives, guest recovery can never find it
+        // again: /guest/recover lowercases and trims what the guest types, then
+        // matches on equality (galleryGuests.js). Every write path normalises
+        // today, so this is for rows that predate that, which are exactly the
+        // rows case-folded grouping surfaces.
+        const survivor = all.find((g) => Number(g.id) === Number(keepId));
+        if (survivor?.email) {
+          const canonical = String(survivor.email).trim().toLowerCase();
+          if (canonical !== survivor.email) {
+            await trx('gallery_guests').where({ id: Number(keepId) }).update({ email: canonical });
+          }
+        }
 
-      // Soft-delete the merged (source) guests.
-      await db('gallery_guests')
-        .whereIn('id', mergeIds.map(Number))
-        .update({ is_deleted: true, last_seen_at: db.fn.now() });
+        // Carry any unredeemed invite over to the survivor BEFORE the source row
+        // is soft-deleted (#1210 review). guest_invites.guest_id points at a real
+        // gallery_guests row — creating an invite inserts one — and redemption
+        // looks it up with `is_deleted: false`. Merging without this leaves the
+        // emailed link resolving to a deleted guest: the client gets a 404
+        // `guest_missing` while the admin's invite dialog still shows the invite
+        // as Pending, so nothing anywhere says the link is dead.
+        //
+        // Only unredeemed, unrevoked invites move. A spent invite is a historical
+        // record of who redeemed what and retargeting it would rewrite that.
+        await trx('guest_invites')
+          .whereIn('guest_id', mergeIds)
+          .whereNull('redeemed_at')
+          .whereNull('revoked_at')
+          .update({ guest_id: Number(keepId) });
 
-      await logActivity(
-        'guest_merged',
-        { event_id: eventId, keep_id: keepId, merged_ids: mergeIds },
-        eventId,
-        { type: 'admin', id: req.admin.id, name: req.admin.username }
-      );
+        // Soft-delete the merged (source) guests.
+        await trx('gallery_guests')
+          .whereIn('id', mergeIds)
+          .update({ is_deleted: formatBoolean(true), last_seen_at: trx.fn.now() });
+
+        await logActivity(
+          'guest_merged',
+          { event_id: eventId, keep_id: keepId, merged_ids: mergeIds },
+          eventId,
+          { type: 'admin', id: req.admin.id, name: req.admin.username },
+          trx
+        );
+        return merged;
+      });
 
       res.json({ success: true, ...result });
     } catch (error) {
+      if (error instanceof ValidationError) {
+        return res.status(400).json({ error: error.message });
+      }
       errorResponse(res, error, 500, 'Failed to merge guests');
     }
   }
