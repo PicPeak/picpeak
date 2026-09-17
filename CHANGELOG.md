@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.133.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.133.0-beta.0...v3.133.1-beta.0) (2026-09-17)
+
+
+### Bug Fixes
+
+* **invoices:** refuse a payment-check link whose expiry can't be read ([#1535](https://github.com/PicPeak/picpeak/issues/1535)) ([d7f9633](https://github.com/PicPeak/picpeak/commit/d7f96333686216f5aa5fc6b919182aed663b9a60))
+
 ## [3.133.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.10-beta.0...v3.133.0-beta.0) (2026-09-17)
 
 
