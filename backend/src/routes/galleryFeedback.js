@@ -100,6 +100,9 @@ router.get('/:slug/photos/:photoId/feedback',
       
       // Get guest's own feedback separately
       const guestFeedback = await feedbackService.getPhotoFeedback(photoId, {
+        // Older merges updated guest_id without rewriting guest_identifier.
+        // Use the verified identity, as /my-feedback and submissions do.
+        guest_id: req.guest?.id,
         guest_identifier: guestIdentifier,
         identity_mode: settings.identity_mode,
       });
@@ -345,6 +348,15 @@ router.post('/:slug/photos/:photoId/feedback',
         guestIdentifier
       );
 
+      // The guest was merged away or deleted while this request was running.
+      // Same answer resolveGuest gives the next request from that token.
+      if (result && result.guest_missing) {
+        return res.status(401).json({
+          error: 'Guest identity required',
+          code: 'GUEST_IDENTITY_REQUIRED'
+        });
+      }
+
       // Per-guest cap reached (#655). Surface as a structured 403 so the
       // frontend can show an explicit popup with the actual cap value and
       // remaining-slots count, rather than a generic toast. Code is the
@@ -481,11 +493,24 @@ router.get('/:slug/my-feedback',
         query.where('photo_feedback.guest_identifier', guestIdentifier);
       }
 
+      // Name the columns rather than photo_feedback.*: the row also carries
+      // guest_email, guest_name, ip_address and user_agent. After an admin
+      // merges two guest identities those still describe the source guest,
+      // so the survivor's token would receive another person's email and IP.
+      // GalleryView reads photo_id and feedback_type from this list.
       const myFeedback = await query
         .select(
-          'photo_feedback.*',
-          'photos.filename',
-          'photos.path'
+          'photo_feedback.id',
+          'photo_feedback.photo_id',
+          'photo_feedback.feedback_type',
+          'photo_feedback.rating',
+          'photo_feedback.comment_text',
+          'photo_feedback.reaction',
+          'photo_feedback.color_label',
+          'photo_feedback.is_approved',
+          'photo_feedback.created_at',
+          'photo_feedback.updated_at',
+          'photos.filename'
         )
         .orderBy('photo_feedback.created_at', 'desc');
 
