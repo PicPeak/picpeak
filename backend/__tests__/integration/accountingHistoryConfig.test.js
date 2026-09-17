@@ -249,5 +249,24 @@ describe('history routes', () => {
       .set('Authorization', `Bearer ${mintAdminToken(adminId)}`);
     expect(res.status).toBe(200);
     expect((res.body.entries ?? res.body.data.entries).length).toBeGreaterThan(0);
+
+    await history.auditedInsert(db, 'customer_hour_entries', {
+      customer_account_id: customerId, entry_date: '2026-06-02', start_time: '09:00', end_time: '10:00',
+      duration_minutes: 60, description: 'Route shoot', status: 'unbilled', recorded_by_admin_id: adminId,
+      created_at: now(), updated_at: now(),
+    }, { actor: adminId, source: 'test.fixture' });
+    const { invalidateFeatureFlagCache } = require('../../src/middleware/requireFeatureFlag');
+    const entityTypes = async (enabled) => {
+      await db('feature_flags').where({ key: 'hoursLogging' }).del();
+      await db('feature_flags').insert({ key: 'hoursLogging', value: enabled });
+      invalidateFeatureFlagCache();
+      const r = await request(app).get(`/api/admin/customers/${customerId}/history`)
+        .set('Authorization', `Bearer ${mintAdminToken(adminId)}`);
+      expect(r.status).toBe(200);
+      return (r.body.entries ?? r.body.data.entries).map((e) => e.entity_type);
+    };
+    expect(await entityTypes(false)).not.toContain('hour_entry');
+    expect(await entityTypes(false)).toContain('customer');
+    expect(await entityTypes(true)).toContain('hour_entry');
   });
 });
