@@ -205,6 +205,12 @@ describe('customers', () => {
     const portalEntry = (await history.listHistory('customer', customerId)).find((e) => e.source === 'customer.portal.profile');
     expect(portalEntry.actor).toEqual({ type: 'customer', id: customerId, name: 'Tina Muster' });
     await customerService.updateCustomer(customerId, { city: 'Zürich', billing_cadence: 'monthly' }, adminId);
+    const [quote] = await history.auditedInsert(db, 'quotes', {
+      quote_number: `CONFIG-ERASE-${customerId}`, customer_account_id: customerId, status: 'sent',
+      issue_date: '2026-09-01', valid_until: '2026-09-30',
+    }, { actor: adminId, source: 'test.fixture' });
+    await history.auditedUpdate(db, 'quotes', { id: quote.id }, { status: 'accepted' },
+      { actor: { type: 'customer', id: customerId, name: 'Tina Muster' }, source: 'quote.respond' });
     await customerService.eraseCustomer(customerId, adminId);
 
     const entries = await history.listHistory('customer', customerId);
@@ -218,6 +224,13 @@ describe('customers', () => {
     expect(entries.find((e) => e.source === 'customer.portal.profile').actor)
       .toEqual({ type: 'customer', id: customerId, name: '[erased]' });
     expect(entries.find((e) => e.source === 'customer.erase')).toMatchObject({ actor: adminActor() });
+    // Their portal actions on documents lose the name too; the document changes stay.
+    const quoteEntries = await history.listHistory('quote', quote.id);
+    expect(JSON.stringify(quoteEntries)).not.toContain('Tina');
+    expect(quoteEntries.find((e) => e.source === 'quote.respond')).toMatchObject({
+      actor: { type: 'customer', id: customerId, name: '[erased]' },
+      changes: { status: { from: 'sent', to: 'accepted' } },
+    });
   });
 
   it('rolls a customer change back when its history row cannot be written', async () => {
