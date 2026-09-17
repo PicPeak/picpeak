@@ -615,8 +615,6 @@ router.get(
   }),
 );
 
-// Audit trail — chronological activity_logs entries for this contract.
-// Used by the AuditTrailCard on the admin detail page; read-only.
 // Change history (migration 219): every change to this contract, and its
 // included blocks, with old and new values, oldest first.
 router.get(
@@ -630,6 +628,8 @@ router.get(
   }),
 );
 
+// Audit trail — chronological activity_logs entries for this contract.
+// Used by the AuditTrailCard on the admin detail page; read-only.
 router.get(
   '/:id/audit-trail',
   requirePermission('contracts.view'),
