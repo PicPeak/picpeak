@@ -665,7 +665,7 @@ async function logActivity(activityType, metadata = {}, eventId = null, actor = 
     const actorName = actor?.name
       || (actorIdInt === null && rawId !== undefined && rawId !== null ? String(rawId) : null);
 
-    await conn('activity_logs').insert({
+    const insert = (executor) => executor('activity_logs').insert({
       activity_type: activityType,
       actor_type: actor?.type || 'system',
       actor_id: actorIdInt,
@@ -673,6 +673,12 @@ async function logActivity(activityType, metadata = {}, eventId = null, actor = 
       metadata: JSON.stringify(metadata),
       event_id: eventId
     });
+    // Inside a caller's transaction, insert under a savepoint. A failed
+    // statement aborts a whole PostgreSQL transaction, so the catch below
+    // would otherwise hide an error that still rolls back the caller's work
+    // at commit, while SQLite commits it without the audit row. Rolling back
+    // to the savepoint makes both engines keep the caller's work.
+    await (conn.isTransaction ? conn.transaction(insert) : insert(conn));
   } catch (error) {
     logger.error('Failed to log activity:', { error: error.message });
   }

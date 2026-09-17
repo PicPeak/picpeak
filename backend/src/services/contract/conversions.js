@@ -365,9 +365,7 @@ async function convertToInvoiceOnly(contractId, adminId) {
   const invoiceHasEventName = await hasColumnCached('invoices', 'event_name');
   const eventNameSnapshot = (contract.event_name || contract.title || null);
 
-  const invoiceNumber = await invoiceService.nextInvoiceNumber();
   const invoiceRow = {
-    invoice_number: invoiceNumber,
     customer_account_id: contract.customer_account_id,
     source_quote_id: null,
     event_id: null,
@@ -405,9 +403,15 @@ async function convertToInvoiceOnly(contractId, adminId) {
     invoiceRow.event_time_start = contract.event_time_start || null;
     invoiceRow.event_time_end = contract.event_time_end || null;
   }
-  const inserted = await auditedInsert(db, 'invoices', invoiceRow,
-    { actor: adminId, source: 'contract.convert.invoices' });
-  const invoiceId = typeof inserted[0] === 'object' ? inserted[0].id : inserted[0];
+  // Claiming a number and persisting its invoice are one operation. If the
+  // INSERT or its history row fails, the sequence update must roll back on
+  // both databases.
+  const { invoiceId, invoiceNumber } = await db.transaction(async (trx) => {
+    const number = await invoiceService.nextInvoiceNumber(trx);
+    const inserted = await auditedInsert(trx, 'invoices', { ...invoiceRow, invoice_number: number },
+      { actor: adminId, source: 'contract.convert.invoices' });
+    return { invoiceId: inserted[0].id, invoiceNumber: number };
+  });
 
   try {
     await logActivity('contract_converted_to_empty_invoice',

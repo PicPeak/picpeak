@@ -227,4 +227,120 @@ describe('guest merge feedback ownership (#1265)', () => {
     expect((await merge())).toMatchObject({ status: 400 });
     expect((await db('photo_feedback').first()).guest_id).toBe(guests[1].id);
   });
+
+  describe('rejected merges leave every row where it was', () => {
+    let otherEventGuest;
+    beforeEach(async () => {
+      await feedback(guests[1], photos[0]);
+      let otherEvent = await db('events').where({ slug: `${slug}-other` }).first();
+      if (!otherEvent) {
+        const [row] = await db('events').insert({
+          slug: `${slug}-other`, event_type: 'wedding', event_name: 'Other event',
+          event_date: '2026-09-15', host_email: 'host@example.com', admin_email: 'admin@example.com',
+          password_hash: 'x', share_link: `/gallery/${slug}-other/share`,
+          expires_at: new Date(Date.now() + 86400000).toISOString(),
+          is_active: true, is_archived: false, is_draft: false,
+        }).returning('id');
+        otherEvent = { id: row.id ?? row };
+      }
+      [otherEventGuest] = await db('gallery_guests').insert({
+        event_id: otherEvent.id, name: 'elsewhere', identifier: 'guest-elsewhere', is_deleted: false,
+      }).returning('*');
+    });
+
+    const unchanged = async () => {
+      expect((await db('photo_feedback').first()).guest_id).toBe(guests[1].id);
+      expect(Boolean((await db('gallery_guests').where({ id: guests[1].id }).first()).is_deleted)).toBe(false);
+    };
+
+    it('rejects a guest from another event', async () => {
+      expect((await merge([guests[1].id, otherEventGuest.id])).status).toBe(400);
+      await unchanged();
+    });
+
+    it('rejects a deleted source guest', async () => {
+      await db('gallery_guests').where({ id: guests[2].id }).update({ is_deleted: true });
+      expect((await merge([guests[1].id, guests[2].id])).status).toBe(400);
+      await unchanged();
+    });
+
+    it.each([
+      ['zero', () => [0]],
+      ['negative', () => [-1]],
+      ['fractional', () => [1.5]],
+      ['non-numeric', () => ['abc']],
+      ['boolean', () => [true]],
+      ['hexadecimal', () => [`0x${guests[1].id.toString(16)}`]],
+      ['nested array', () => [[guests[1].id]]],
+      ['duplicate', () => [guests[1].id, guests[1].id]],
+      ['oversized', () => Array.from({ length: 101 }, (_, i) => guests[1].id + i)],
+    ])('rejects %s merge IDs', async (_label, ids) => {
+      const res = await merge(ids());
+      expect(res.status).toBe(400);
+      await unchanged();
+    });
+
+    it('rejects a non-numeric keep ID', async () => {
+      expect((await merge([guests[1].id], 'abc')).status).toBe(400);
+      await unchanged();
+    });
+
+    it('requires events.edit and ownership of the event', async () => {
+      const [viewer] = await db('admin_users').insert({
+        username: `viewer-${Date.now()}`, email: `viewer-${Date.now()}@example.com`,
+        password_hash: 'x', must_change_password: false, created_at: new Date().toISOString(),
+      }).returning('id');
+      const viewerId = viewer.id ?? viewer;
+      await assignAdminRole(db, viewerId, 'viewer');
+      const asAdmin = (id) => request(app)
+        .post(`/api/admin/events/${eventId}/guests/${guests[0].id}/merge`)
+        .set('Authorization', `Bearer ${mintAdminToken(id)}`)
+        .send({ mergeIds: [guests[1].id] });
+      expect((await asAdmin(viewerId)).status).toBe(403);
+
+      await assignAdminRole(db, viewerId, 'editor');
+      await db('events').where({ id: eventId }).update({ created_by: adminId });
+      try {
+        expect((await asAdmin(viewerId)).status).toBe(403);
+      } finally {
+        await db('events').where({ id: eventId }).update({ created_by: null });
+      }
+      await unchanged();
+    });
+  });
+
+  it('completes the merge on every engine when only the audit insert fails', async () => {
+    await feedback(guests[1], photos[0]);
+    await db.schema.renameTable('activity_logs', 'activity_logs_offline');
+    let res;
+    try {
+      res = await merge();
+    } finally {
+      await db.schema.renameTable('activity_logs_offline', 'activity_logs');
+    }
+    expect(res.status).toBe(200);
+    expect((await db('photo_feedback').first()).guest_id).toBe(guests[0].id);
+    expect(Boolean((await db('gallery_guests').where({ id: guests[1].id }).first()).is_deleted)).toBe(true);
+  });
+
+  it('does not strand a like submitted while a merge is deleting its guest', async () => {
+    const trx = await db.transaction();
+    let pending;
+    try {
+      const lock = trx('gallery_guests').where({ id: guests[1].id });
+      if (trx.client.config.client === 'pg') lock.forUpdate();
+      await lock.first();
+      pending = service.submitFeedback(photos[0].id, eventId, {
+        feedback_type: 'like', guest_id: guests[1].id, identity_mode: 'guest',
+      }, guests[1].identifier);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      await trx('gallery_guests').where({ id: guests[1].id }).update({ is_deleted: true });
+      await trx.commit();
+    } catch (error) {
+      await trx.rollback();
+      throw error;
+    }
+    expect(await pending).toMatchObject({ guest_missing: true });
+    expect(await db('photo_feedback').where({ guest_id: guests[1].id })).toHaveLength(0);
+  });
 });

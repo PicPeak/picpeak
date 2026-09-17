@@ -61,6 +61,10 @@ beforeAll(async () => {
   invoiceService = require('../../src/services/invoiceService');
 }, 120000);
 
+// activity_logs.metadata is a text column on SQLite and jsonb on
+// PostgreSQL, where the driver already returns an object.
+const metadataOf = (row) => (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata);
+
 afterAll(async () => {
   process.chdir(prevCwd);
   if (cleanup) await cleanup();
@@ -77,7 +81,7 @@ test('createContract persists the contract_created audit row (was silently lost 
     .orderBy('id', 'desc')
     .first();
   expect(row).toBeTruthy();
-  expect(JSON.parse(row.metadata).contractId).toBe(contractId);
+  expect(metadataOf(row).contractId).toBe(contractId);
   expect(row.actor_type).toBe('admin');
 });
 
@@ -94,7 +98,7 @@ test('updateContract persists the contract_updated audit row', async () => {
     .orderBy('id', 'desc')
     .first();
   expect(row).toBeTruthy();
-  expect(JSON.parse(row.metadata).contractId).toBe(contractId);
+  expect(metadataOf(row).contractId).toBe(contractId);
 });
 
 test('cancelInvoice (Storno mint) persists the invoice_cancelled_via_storno audit row', async () => {
@@ -117,7 +121,7 @@ test('cancelInvoice (Storno mint) persists the invoice_cancelled_via_storno audi
     .orderBy('id', 'desc')
     .first();
   expect(row).toBeTruthy();
-  const meta = JSON.parse(row.metadata);
+  const meta = metadataOf(row);
   expect(meta.invoiceId).toBe(id);
   expect(meta.stornoId).toBe(result.stornoId);
 });
@@ -149,7 +153,7 @@ test('reissueInvoice completes on SQLite and persists the invoice_reissued audit
     .orderBy('id', 'desc')
     .first();
   expect(row).toBeTruthy();
-  expect(JSON.parse(row.metadata).newInvoiceId).toBe(result.id);
+  expect(metadataOf(row).newInvoiceId).toBe(result.id);
 });
 
 void path; // referenced for parity with sibling suites
