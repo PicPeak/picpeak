@@ -11,7 +11,7 @@
  *
  * Nothing in the application may update or delete history rows, with one
  * exception: erasing a customer blanks the values in that customer's own
- * billing-field history (redactCustomerHistory). The document history of
+ * billing-field history and their name as an actor (redactCustomerHistory). The document history of
  * their invoices, quotes and contracts is kept, like the documents.
  * __tests__/services/accountingHistoryCoverage.test.js pins that, and that
  * audited tables are not written anywhere else.
@@ -319,20 +319,26 @@ const PERSONAL_CUSTOMER_COLUMNS = new Set([
 ]);
 
 /**
- * Blank the recorded personal values in an erased customer's own history:
- * names, addresses, emails, VAT id and the customer's actor display name.
- * Which fields changed, when and the actor's type/id stay. Run it in the erasure's
+ * Blank the recorded personal values in an erased customer's own history
+ * (names, addresses, emails, VAT id) and their display name as the actor of
+ * any entry, including portal actions on quotes and contracts. Which fields
+ * changed, when and the actor's type/id stay. Run it in the erasure's
  * transaction after the erasure's own update, whose entry holds the values
  * being erased.
  */
 async function redactCustomerHistory(trx, customerId) {
+  // The customer's own record, plus every entry they made as the actor: portal
+  // quote responses, signatures and uploads name them on those documents too.
   const rows = await trx('accounting_change_history')
-    .where({ document_type: 'customer', entity_type: 'customer', document_id: customerId });
+    .where((q) => q.where({ document_type: 'customer', entity_type: 'customer', document_id: customerId })
+      .orWhere({ actor_type: 'customer', actor_id: customerId }));
   for (const row of rows) {
+    const ownRecord = row.document_type === 'customer' && row.entity_type === 'customer'
+      && Number(row.document_id) === Number(customerId);
     const changes = typeof row.changes === 'string' ? JSON.parse(row.changes) : row.changes;
     const redacted = {};
     for (const [column, { from, to }] of Object.entries(changes || {})) {
-      redacted[column] = PERSONAL_CUSTOMER_COLUMNS.has(column)
+      redacted[column] = ownRecord && PERSONAL_CUSTOMER_COLUMNS.has(column)
         ? { from: from === null ? null : ERASED, to: to === null ? null : ERASED }
         : { from, to };
     }
