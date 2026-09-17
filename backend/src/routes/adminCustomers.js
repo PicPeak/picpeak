@@ -11,7 +11,7 @@ const { capabilityEvidence } = require('../usage/capabilityEvidence');
 const { body, param, query } = require('express-validator');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
-const { requireFeatureFlag } = require('../middleware/requireFeatureFlag');
+const { requireFeatureFlag, isFeatureEnabled } = require('../middleware/requireFeatureFlag');
 const { filterOwnedEventIds } = require('../middleware/ownership');
 const { db } = require('../database/db');
 
@@ -375,9 +375,12 @@ router.get('/:id/history', [
   param('id').isInt({ min: 1 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  return successResponse(res, {
-    entries: await accountingHistory.listHistory('customer', parseInt(req.params.id, 10)),
-  });
+  let entries = await accountingHistory.listHistory('customer', parseInt(req.params.id, 10));
+  // Hour entries stay behind the same gate as /:id/hour-entries.
+  if (!(await isFeatureEnabled('hoursLogging'))) {
+    entries = entries.filter((entry) => entry.entity_type !== 'hour_entry');
+  }
+  return successResponse(res, { entries });
 }));
 
 router.get('/:id', [
