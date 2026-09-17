@@ -10,6 +10,7 @@ const { formatShortDate } = require('../../utils/dateFormatter');
 const { getFrontendBaseUrl, DEFAULT_ABSOLUTE_BASE } = require('../../utils/frontendUrl');
 const emailProcessor = require('../emailProcessor');
 const { ensureInt } = require('../../utils/numericHelpers');
+const { toMillis } = require('../../utils/queueTimestamps');
 const { formatMajor } = require('./helpers');
 const { auditedInsert, auditedUpdate } = require('../accountingHistory');
 const { applyReminder, resolveAdminEmailForInvoice, resolvePerReminderFeeMinor, resolveSkontoPercentForInvoice } = require('./reminders');
@@ -23,6 +24,27 @@ const { applyReminder, resolveAdminEmailForInvoice, resolvePerReminderFeeMinor, 
 // doesn't strand an admin who hasn't acted yet — they just get a new
 // link on the next tick.
 const PAYMENT_CHECK_TOKEN_TTL_MS = 72 * 60 * 60 * 1000; // 72h
+
+// Once per invoice per day, so a daily scheduler tick doesn't mail the same
+// admin about the same invoice again (see queuePaymentCheckEmail).
+const PAYMENT_CHECK_THROTTLE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Refuse a payment-check link whose expiry has passed — or can't be read.
+ *
+ * `expires_at` is NOT NULL (migration 107), so a missing value is as
+ * unreadable as a garbled one, and `new Date(x).getTime() < Date.now()` is
+ * false for both: the link would keep working forever. `toMillis` reads the
+ * shapes the engines actually store (a Date from PostgreSQL, epoch ms from
+ * SQLite, ISO strings) and returns null when it can't, which counts as
+ * expired.
+ */
+function assertNotExpired(row) {
+  const expiresAt = toMillis(row.expires_at);
+  if (expiresAt == null || expiresAt < Date.now()) {
+    throw new AppError('This link has expired', 410, 'TOKEN_EXPIRED');
+  }
+}
 
 /**
  * Record a payment against an invoice. Supports partial payments
@@ -242,9 +264,16 @@ async function queuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
     return { sent: false, reason: `wrong_status_${invoice.status}` };
   }
   const now = new Date();
-  if (!skipThrottle && invoice.last_payment_check_at) {
-    const last = new Date(invoice.last_payment_check_at).getTime();
-    if (now.getTime() - last < 24 * 60 * 60 * 1000) {
+  const nowIso = now.toISOString();
+  if (!skipThrottle) {
+    // Read through toMillis for the same reason assertNotExpired does: a
+    // stamp `new Date(x).getTime()` can't parse is NaN, and `now - NaN <
+    // 24h` is false, so the throttle silently stops holding and every tick
+    // mails the admin again. Unlike the expiry, null here means NOT
+    // throttled — the other way round would stop payment checks for this
+    // invoice for good, and the cost of this way is one extra email.
+    const last = toMillis(invoice.last_payment_check_at);
+    if (last != null && now.getTime() - last < PAYMENT_CHECK_THROTTLE_MS) {
       return { sent: false, reason: 'throttled_24h' };
     }
   }
@@ -260,12 +289,16 @@ async function queuePaymentCheckEmail(invoiceId, { skipThrottle = false, actor =
   await db('invoice_payment_check_tokens').insert({
     invoice_id: invoiceId,
     token,
-    expires_at: expiresAt,
-    created_at: now,
+    // ISO, not a bare Date: node-sqlite3 stores a Date from another realm as
+    // "[object Object]", which no reader can parse back into a time.
+    expires_at: expiresAt.toISOString(),
+    created_at: nowIso,
   });
+  // ISO here too: the throttle above reads last_payment_check_at back, and a
+  // bare Date is the one shape that can't be read (see the note there).
   await auditedUpdate(db, 'invoices', { id: invoiceId }, {
-    last_payment_check_at: now,
-    updated_at: now,
+    last_payment_check_at: nowIso,
+    updated_at: nowIso,
   }, { actor, source: 'invoice.paymentCheck.queue' });
 
   const customer = await db('customer_accounts').where({ id: invoice.customer_account_id }).first();
@@ -366,9 +399,7 @@ async function getPaymentCheckByToken(token) {
     err.usedAction = row.used_action;
     throw err;
   }
-  if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) {
-    throw new AppError('This link has expired', 410, 'TOKEN_EXPIRED');
-  }
+  assertNotExpired(row);
   const invoice = await db('invoices').where({ id: row.invoice_id }).first();
   if (!invoice) throw new AppError('Invoice not found', 404);
   const customer = await db('customer_accounts').where({ id: invoice.customer_account_id }).first();
@@ -479,9 +510,7 @@ async function recordPaymentCheckAction({ token, action, amountMinor, ip, adminI
   if (row.used_at) {
     throw new AppError('This link has already been used', 410, 'TOKEN_ALREADY_USED');
   }
-  if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) {
-    throw new AppError('This link has expired', 410, 'TOKEN_EXPIRED');
-  }
+  assertNotExpired(row);
   const invoice = await db('invoices').where({ id: row.invoice_id }).first();
   if (!invoice) throw new AppError('Invoice not found', 404);
 
