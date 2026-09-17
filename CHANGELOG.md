@@ -5,6 +5,23 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.133.0](https://github.com/PicPeak/picpeak/compare/v3.132.4...v3.133.0) (2026-09-17)
+
+
+### Features
+
+* **accounting:** record an append-only change history for accounting records (stable) ([#1530](https://github.com/PicPeak/picpeak/issues/1530)) ([80b7c7a](https://github.com/PicPeak/picpeak/commit/80b7c7a7fdddd049d03f5c8c5b10d03e35d1706b))
+* **accounting:** record changes to accounting configuration and customer billing data (stable) ([#1532](https://github.com/PicPeak/picpeak/issues/1532)) ([7c2620f](https://github.com/PicPeak/picpeak/commit/7c2620fb88af19041f22649a89d0b81e5feac96b))
+
+
+### Bug Fixes
+
+* **deps:** update vulnerable test tooling dependencies (stable) ([#1523](https://github.com/PicPeak/picpeak/issues/1523)) ([9b266da](https://github.com/PicPeak/picpeak/commit/9b266da7de0fb1230f53bf431d71c6ce1df9617b))
+* **gallery:** stop returning personal feedback columns from my-feedback ([#1528](https://github.com/PicPeak/picpeak/issues/1528)) ([81de515](https://github.com/PicPeak/picpeak/commit/81de515890f012b3557babcd526308985b1268a9))
+* **guests:** preserve feedback ownership when merging identities (stable) ([#1525](https://github.com/PicPeak/picpeak/issues/1525)) ([fdd7eea](https://github.com/PicPeak/picpeak/commit/fdd7eea71b919c72149f497c82f318f29140b568))
+* **invoices:** allocate standalone contract invoice numbers atomically ([#1521](https://github.com/PicPeak/picpeak/issues/1521)) ([1d029f6](https://github.com/PicPeak/picpeak/commit/1d029f665dc5fda779d75969eeb74a3b467337c4))
+* **invoices:** refuse a payment-check link whose expiry can't be read (stable) ([#1536](https://github.com/PicPeak/picpeak/issues/1536)) ([b89ca2a](https://github.com/PicPeak/picpeak/commit/b89ca2a99e427dd40e8436c7d480fe958fa4687d))
+
 ## [3.132.4](https://github.com/PicPeak/picpeak/compare/v3.132.3...v3.132.4) (2026-09-16)
 
 
