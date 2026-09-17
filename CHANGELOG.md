@@ -5,6 +5,22 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.133.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.10-beta.0...v3.133.0-beta.0) (2026-09-17)
+
+
+### Features
+
+* **accounting:** record an append-only change history for accounting records ([#1529](https://github.com/PicPeak/picpeak/issues/1529)) ([54f7f3d](https://github.com/PicPeak/picpeak/commit/54f7f3d8d78167f16027dfe5a7a197c4cf2f4adf))
+* **accounting:** record changes to accounting configuration and customer billing data ([#1531](https://github.com/PicPeak/picpeak/issues/1531)) ([9505e66](https://github.com/PicPeak/picpeak/commit/9505e66cf70e07c419c379c7916399a32a9de9d9))
+
+
+### Bug Fixes
+
+* **deps:** update vulnerable test tooling dependencies ([#1522](https://github.com/PicPeak/picpeak/issues/1522)) ([7b11ce7](https://github.com/PicPeak/picpeak/commit/7b11ce75ba879db11f39bd3764243a19a60643a9))
+* **gallery:** stop returning personal feedback columns from my-feedback ([#1526](https://github.com/PicPeak/picpeak/issues/1526)) ([e6279ab](https://github.com/PicPeak/picpeak/commit/e6279ab43b250f71c88f7abe9e8fd18772281da0))
+* **guests:** harden guest merge validation, auditing and concurrent likes ([#1527](https://github.com/PicPeak/picpeak/issues/1527)) ([045e667](https://github.com/PicPeak/picpeak/commit/045e667d0aa23913d2cfd656ab640a610ef65c9e))
+* **invoices:** allocate standalone contract invoice numbers atomically ([#1520](https://github.com/PicPeak/picpeak/issues/1520)) ([8b8da87](https://github.com/PicPeak/picpeak/commit/8b8da87f80de6f5199b01f01bc04c5310b891ea6))
+
 ## [3.132.10-beta.0](https://github.com/PicPeak/picpeak/compare/v3.132.9-beta.0...v3.132.10-beta.0) (2026-09-16)
 
 
