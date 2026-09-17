@@ -618,6 +618,9 @@ router.delete(
 // Body: { mergeIds: number[] }
 // ----------------------------------------------------------------------------
 
+// The admin picks duplicates by hand; this only bounds the IN lists.
+const MAX_MERGE_GUESTS = 100;
+
 router.post(
   '/events/:eventId/guests/:keepId/merge',
   adminAuth,
@@ -625,16 +628,29 @@ router.post(
   requireEventOwnership,
   async (req, res) => {
     try {
-      const { eventId, keepId } = req.params;
-      const mergeIds = Array.isArray(req.body?.mergeIds) ? req.body.mergeIds.map(Number) : [];
+      const { eventId } = req.params;
+      // Numbers or decimal strings only: Number() alone would also turn
+      // true, '0x10' and [[3]] into valid-looking IDs.
+      const toGuestId = (value) => (
+        (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value)))
+          ? Number(value) : NaN
+      );
+      const keepId = toGuestId(req.params.keepId);
+      const mergeIds = Array.isArray(req.body?.mergeIds) ? req.body.mergeIds.map(toGuestId) : [];
 
       if (mergeIds.length === 0) {
         return res.status(400).json({ error: 'mergeIds is required' });
       }
-      if (![Number(keepId), ...mergeIds].every(id => Number.isSafeInteger(id) && id > 0)) {
+      if (mergeIds.length > MAX_MERGE_GUESTS) {
+        return res.status(400).json({ error: `Merge at most ${MAX_MERGE_GUESTS} guests at once` });
+      }
+      if (![keepId, ...mergeIds].every(id => Number.isSafeInteger(id) && id > 0)) {
         return res.status(400).json({ error: 'Guest IDs must be positive integers' });
       }
-      if (mergeIds.includes(Number(keepId))) {
+      if (new Set(mergeIds).size !== mergeIds.length) {
+        return res.status(400).json({ error: 'mergeIds must not contain duplicates' });
+      }
+      if (mergeIds.includes(keepId)) {
         return res.status(400).json({ error: 'Cannot merge a guest into itself' });
       }
 
@@ -642,7 +658,7 @@ router.post(
         // Lock in a stable order on PostgreSQL so overlapping merges cannot
         // move feedback into an identity another merge has just deleted.
         const guestQuery = trx('gallery_guests')
-          .whereIn('id', [Number(keepId), ...mergeIds])
+          .whereIn('id', [keepId, ...mergeIds])
           .where({ event_id: eventId, is_deleted: formatBoolean(false) })
           .orderBy('id');
         if (trx.client.config.client === 'pg') guestQuery.forUpdate();
@@ -650,7 +666,7 @@ router.post(
         if (all.length !== mergeIds.length + 1) {
           throw new ValidationError('All guests must be active and belong to the same event');
         }
-        const merged = await feedbackService.mergeGuestFeedback(Number(keepId), mergeIds, trx);
+        const merged = await feedbackService.mergeGuestFeedback(keepId, mergeIds, trx);
 
         // Canonicalise the survivor's address (#1210 review). Rows are grouped
         // for review with the case and whitespace folded out, so a merge can be
@@ -660,11 +676,11 @@ router.post(
         // matches on equality (galleryGuests.js). Every write path normalises
         // today, so this is for rows that predate that, which are exactly the
         // rows case-folded grouping surfaces.
-        const survivor = all.find((g) => Number(g.id) === Number(keepId));
+        const survivor = all.find((g) => Number(g.id) === keepId);
         if (survivor?.email) {
           const canonical = String(survivor.email).trim().toLowerCase();
           if (canonical !== survivor.email) {
-            await trx('gallery_guests').where({ id: Number(keepId) }).update({ email: canonical });
+            await trx('gallery_guests').where({ id: keepId }).update({ email: canonical });
           }
         }
 
@@ -682,7 +698,7 @@ router.post(
           .whereIn('guest_id', mergeIds)
           .whereNull('redeemed_at')
           .whereNull('revoked_at')
-          .update({ guest_id: Number(keepId) });
+          .update({ guest_id: keepId });
 
         // Soft-delete the merged (source) guests.
         await trx('gallery_guests')

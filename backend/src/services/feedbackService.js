@@ -637,7 +637,7 @@ class FeedbackService {
       }
 
       // Insert new feedback
-      const result = await db('photo_feedback').insert({
+      const insertFeedback = (executor) => executor('photo_feedback').insert({
         photo_id: photoId,
         event_id: eventId,
         feedback_type,
@@ -662,6 +662,24 @@ class FeedbackService {
         created_at: new Date(),
         updated_at: new Date()
       }).returning('id');
+
+      // A guest merge soft-deletes its source guests while holding their rows
+      // locked. resolveGuest ran before that, so re-check the guest in the
+      // insert's transaction: FOR SHARE waits for the merge to commit and then
+      // sees the deleted row, instead of attaching a like to a guest nobody
+      // can sign in as any more. SQLite serialises the transaction outright.
+      let result;
+      if (guest_id) {
+        result = await db.transaction(async (trx) => {
+          const guest = trx('gallery_guests').where({ id: guest_id }).first('is_deleted');
+          if (trx.client.config.client === 'pg') guest.forShare();
+          if ((await guest)?.is_deleted) return null;
+          return insertFeedback(trx);
+        });
+        if (!result) return { guest_missing: true };
+      } else {
+        result = await insertFeedback(db);
+      }
       
       const id = result[0]?.id || result[0];
       
@@ -1345,7 +1363,9 @@ class FeedbackService {
       }
 
       const merge = async (trx) => {
-        const survivor = await trx('gallery_guests').where({ id: keepGuestId }).first();
+        const survivor = await trx('gallery_guests')
+          .where({ id: keepGuestId, is_deleted: formatBoolean(false) })
+          .first();
         if (!survivor?.identifier) throw new Error('Merge target guest not found');
 
         // Include the survivor's rows: previous merges may already have left
@@ -1357,7 +1377,8 @@ class FeedbackService {
           'id', 'photo_id', 'guest_id', 'feedback_type', 'is_hidden', 'created_at', 'updated_at',
         );
         const photoIds = [...new Set(rows.map((row) => row.photo_id))];
-        const merged = rows.filter((row) => sources.includes(row.guest_id)).length;
+        const sourceIds = new Set(sources.map(Number));
+        const merged = rows.filter((row) => sourceIds.has(Number(row.guest_id))).length;
 
         // SQLite may return epoch milliseconds or SQL/ISO strings; PostgreSQL
         // returns Dates. Compare actual times, with id as a deterministic tie.
