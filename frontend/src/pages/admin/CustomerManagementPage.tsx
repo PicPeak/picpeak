@@ -22,6 +22,8 @@ import {
   UserPlus, UserCog, Trash2, Search, X, AlertTriangle, CheckCircle2, Clock, MailCheck,
 } from 'lucide-react';
 import { InlineCustomerCreate } from '../../components/admin/InlineCustomerCreate';
+import { CustomerGroupChipList, CustomerGroupFilter } from '../../components/admin/CustomerGroupChips';
+import { CustomerGroupsPanel } from '../../components/admin/CustomerGroupsPanel';
 import { useMutationWithToast } from '../../hooks';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
@@ -32,7 +34,7 @@ import {
   type CustomerInvitationSummary,
 } from '../../services/customerAdmin.service';
 
-type TabType = 'customers' | 'invitations';
+type TabType = 'customers' | 'invitations' | 'groups';
 
 export const CustomerManagementPage: React.FC = () => {
   const { t } = useTranslation();
@@ -67,10 +69,23 @@ export const CustomerManagementPage: React.FC = () => {
   const [createMode, setCreateMode] = useState<'passive' | 'invite' | null>(null);
   const [confirm, setConfirm] = useState<{ kind: 'deactivate'; id: number; name: string } | { kind: 'cancelInvite'; id: number; email: string } | null>(null);
 
+  // Group filter (#1443). Empty = every customer, which is what the page
+  // opens with; the server does the filtering so it survives a reload of the
+  // list rather than only hiding rows already fetched.
+  const [groupFilter, setGroupFilter] = useState<number[]>([]);
+
   const { data: customers, isLoading: customersLoading, error: customersError } = useQuery({
-    queryKey: ['admin-customers'],
-    queryFn: () => customerAdminService.list(),
+    queryKey: ['admin-customers', groupFilter],
+    queryFn: () => customerAdminService.list(undefined, groupFilter),
   });
+
+  const { data: groups } = useQuery({
+    queryKey: ['admin-customer-groups'],
+    queryFn: () => customerAdminService.listGroups(true),
+  });
+  // Archived groups stay visible on the customers that carry them, but are
+  // not offered as a filter: nothing new lands in them.
+  const filterableGroups = useMemo(() => (groups || []).filter((g) => !g.isArchived), [groups]);
 
   const { data: invitations, isLoading: invitationsLoading, error: invitationsError } = useQuery({
     queryKey: ['admin-customer-invitations'],
@@ -151,6 +166,16 @@ export const CustomerManagementPage: React.FC = () => {
         {t('customers.tabs.invitations', 'Invitations')}
         {invitations ? <span className="ml-2 text-xs">({invitations.length})</span> : null}
       </button>
+      <button
+        type="button"
+        onClick={() => setActiveTab('groups')}
+        className={`pb-3 -mb-px border-b-2 text-sm font-medium ${
+          activeTab === 'groups' ? 'border-accent text-accent' : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100'
+        }`}
+      >
+        {t('customers.tabs.groups', 'Groups')}
+        {groups ? <span className="ml-2 text-xs">({groups.filter((g) => !g.isArchived).length})</span> : null}
+      </button>
     </div>
   );
 
@@ -187,16 +212,30 @@ export const CustomerManagementPage: React.FC = () => {
       <Card padding="lg">
         {renderTabs()}
 
-        <div className="mb-4">
-          <Input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={t('customers.search.placeholder', 'Search by email, name, or company')}
-            leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
-          />
-        </div>
+        {activeTab !== 'groups' && (
+          <div className="mb-4 space-y-3">
+            <Input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={t('customers.search.placeholder', 'Search by email, name, or company')}
+              leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
+            />
+            {activeTab === 'customers' && (
+              <CustomerGroupFilter
+                groups={filterableGroups}
+                selectedIds={groupFilter}
+                onToggle={(id) => setGroupFilter((current) => (
+                  current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
+                ))}
+                onClear={() => setGroupFilter([])}
+              />
+            )}
+          </div>
+        )}
 
-        {activeTab === 'customers' ? (
+        {activeTab === 'groups' ? (
+          <CustomerGroupsPanel />
+        ) : activeTab === 'customers' ? (
           customersLoading ? (
             <div className="flex justify-center py-8"><Loading /></div>
           ) : customersError ? (
@@ -206,7 +245,9 @@ export const CustomerManagementPage: React.FC = () => {
             </div>
           ) : filteredCustomers.length === 0 ? (
             <div className="text-center text-neutral-500 dark:text-neutral-400 py-12">
-              {t('customers.empty', 'No customers yet. Click "Invite customer" to add one.')}
+              {groupFilter.length > 0
+                ? t('customers.groups.emptyFiltered', 'No customers in the selected groups.')
+                : t('customers.empty', 'No customers yet. Click "Invite customer" to add one.')}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -216,6 +257,7 @@ export const CustomerManagementPage: React.FC = () => {
                     <th className="px-3 py-2 font-medium">{t('customers.table.name', 'Name')}</th>
                     <th className="px-3 py-2 font-medium">{t('customers.table.email', 'Email')}</th>
                     <th className="px-3 py-2 font-medium">{t('customers.table.company', 'Company')}</th>
+                    <th className="px-3 py-2 font-medium">{t('customers.table.groups', 'Groups')}</th>
                     <th className="px-3 py-2 font-medium">{t('customers.table.eventCount', 'Events')}</th>
                     <th className="px-3 py-2 font-medium">{t('customers.table.lastLogin', 'Last login')}</th>
                     <th className="px-3 py-2 font-medium">{t('customers.table.status', 'Status')}</th>
@@ -232,6 +274,7 @@ export const CustomerManagementPage: React.FC = () => {
                       </td>
                       <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.email}</td>
                       <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.companyName || '—'}</td>
+                      <td className="px-3 py-3"><CustomerGroupChipList groups={c.groups} /></td>
                       <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.eventCount ?? 0}</td>
                       <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
                       <td className="px-3 py-3">
