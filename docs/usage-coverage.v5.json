@@ -436,8 +436,14 @@
         "crm_combined_billing",
         "crm_monthly_billing_manual"
       ],
-      "reason": "Successful admin CRM/hour-entry/invitation operations only. No customer/account names, IDs, rates, billed hours, payment state or portal behavior. v3 adds only: crm_combined_billing, crm_monthly_billing_manual. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. Customer-document writes (v5) only count as crm: no file names, sizes, counts or review outcomes.",
+      "reason": "Successful admin CRM/hour-entry/invitation operations only. No customer/account names, IDs, rates, billed hours, payment state or portal behavior. v3 adds only: crm_combined_billing, crm_monthly_billing_manual. Exact definitions are in features.v4.json; configuration-only signals never observe the public surface. Customer-document writes (v5) only count as crm: no file names, sizes, counts or review outcomes. Customer groups (#1443) are admin-side organisation: the catalogue and the assignment routes report crm only — no group names, colours, membership or counts.",
       "route_signatures": [
+        "GET /groups",
+        "POST /groups",
+        "POST /groups/reorder",
+        "PUT /groups/:groupId",
+        "DELETE /groups/:groupId",
+        "PUT /:id/groups",
         "GET /",
         "GET /search",
         "GET /invitations",
