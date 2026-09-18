@@ -1,0 +1,59 @@
+name: Release Please
+
+on:
+  push:
+    branches: [stable]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}
+    steps:
+      - name: Run Release Please
+        uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          # Dedicated token so the release PR runs CI + can auto-merge without a
+          # manual review. Falls back to GITHUB_TOKEN before the secret is set (#719).
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          target-branch: stable
+
+      # NOTE: stable release PRs are intentionally NOT auto-merged here
+      # anymore. Fixes accumulate in the rolling release PR and are cut as
+      # ONE patch version per day by release-stable-daily.yml (18:00 UTC,
+      # or on demand via workflow_dispatch / a manual merge of the release
+      # PR). Beta keeps instant releases — see release-please-beta.yml —
+      # because same-day reporter verification depends on it.
+
+      - name: Output Release Info
+        if: ${{ steps.release.outputs.release_created }}
+        run: |
+          echo "## Release Created! " >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ steps.release.outputs.tag_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Docker images will be built and tagged with this version." >> $GITHUB_STEP_SUMMARY
+
+  # Best-effort "What's New" highlights on the freshly-created release. Runs in
+  # this same workflow run (not a `release:` trigger) because release-please
+  # creates the release with GITHUB_TOKEN, which never starts new workflow runs.
+  whatsnew:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    permissions:
+      contents: write   # edit the release body
+      models: read       # GitHub Models (free tier)
+    uses: ./.github/workflows/whatsnew-highlights.yml
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+

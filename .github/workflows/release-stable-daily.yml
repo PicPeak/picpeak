@@ -1,0 +1,86 @@
+name: Cut Stable Release (daily batch)
+
+# Stable fixes accumulate in release-please's rolling release PR instead of
+# each cutting its own patch version (the old per-merge auto-merge produced
+# e.g. 3.45.8 AND 3.45.9 on the same day). This workflow merges the open
+# stable release PR once a day, so a day of N bugfixes ships as ONE version
+# with all N changelog entries — and one Docker build instead of N.
+#
+# - schedule only fires from the default branch (main); the stable copy of
+#   this file is inert and exists to keep the branches in sync.
+# - Need a release NOW? Run this via workflow_dispatch, or merge the
+#   release PR by hand — the schedule is a default, not a gate.
+# - Approval/merge mechanics mirror the old inline step (#719): approve as
+#   github-actions[bot] (GITHUB_TOKEN, a valid distinct reviewer), enable
+#   auto-merge as the PAT so the merge attributes to a real identity and
+#   triggers the tag-cutting run. --auto waits for green checks.
+
+on:
+  schedule:
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge-stable-release-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Approve and enable auto-merge on the open stable release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_PAT: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          # No checkout — set the repo explicitly so gh works without a
+          # git remote (same pattern as whatsnew, 2a5f0a8).
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$RELEASE_PAT" ]; then
+            echo "RELEASE_PLEASE_TOKEN not set — skipping (manual review required)."
+            exit 0
+          fi
+          # Strict selection (review P1): this job runs daily even without a
+          # stable push, and `gh pr list --head` matches the branch NAME only
+          # — a fork PR can spoof `release-please--branches--stable`. Pin the
+          # base to stable AND require a same-repo head (isCrossRepository
+          # == false); a fork PR is cross-repository, so it can never be
+          # picked and auto-merged with the privileged PAT.
+          pr=$(gh pr list \
+            --base stable \
+            --head release-please--branches--stable \
+            --state open \
+            --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository == false)] | .[0].number // empty')
+          if [ -z "$pr" ]; then
+            echo "No open same-repo stable release PR — nothing to cut today."
+            exit 0
+          fi
+          # Approve is tolerant — a pre-existing approval already satisfies
+          # branch protection and re-approving can return non-zero.
+          gh pr review "$pr" --approve --body "Automated approval — daily stable release batch (release-please version bump + changelog)." || echo "::warning::approve returned non-zero (PR may already be approved)"
+          # But the auto-merge enable is the load-bearing step: this scheduled
+          # job is the ONLY automatic stable cut, so DON'T swallow its failure
+          # (review P2) — an expired/under-scoped PAT would otherwise stop
+          # releases while the workflow stays green.
+          GH_TOKEN="$RELEASE_PAT" gh pr merge "$pr" --squash --auto
+          # `gh pr merge --auto` merges IMMEDIATELY when the required checks
+          # are already green — the normal case at 18:00, since the fixes
+          # merged hours earlier and CI passed. So success is EITHER the PR is
+          # already merged OR an auto-merge request is now pending; only a PR
+          # that is still open with no auto-merge request is a real failure
+          # (expired/under-scoped PAT) worth failing the job on (review round 2).
+          # One snapshot of both fields (review round 3): querying state and
+          # autoMergeRequest separately races — auto-merge can complete
+          # between the two calls, so the first sees OPEN and the second sees
+          # the request already cleared on the now-merged PR → false failure.
+          read -r state automerge < <(gh pr view "$pr" --json state,autoMergeRequest \
+            --jq '[.state, (.autoMergeRequest != null)] | @tsv')
+          if [ "$state" = "MERGED" ]; then
+            echo "Stable release PR #$pr merged immediately (checks were already green)."
+          elif [ "$automerge" = "true" ]; then
+            echo "Auto-merge enabled on stable release PR #$pr — merges when checks are green."
+          else
+            echo "::error::stable release PR #$pr is still open with no auto-merge — check RELEASE_PLEASE_TOKEN scope/expiry."
+            exit 1
+          fi
