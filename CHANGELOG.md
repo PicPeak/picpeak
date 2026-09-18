@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.134.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.133.1-beta.0...v3.134.0-beta.0) (2026-09-18)
+
+
+### Features
+
+* **crm:** quote templates, service catalogue, contract designer, signatures v2 and the customer portal ([#1464](https://github.com/PicPeak/picpeak/issues/1464)) ([32fe2ba](https://github.com/PicPeak/picpeak/commit/32fe2ba02af9e54f5049825f96bedd9652d81608))
+
 ## [3.133.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.133.0-beta.0...v3.133.1-beta.0) (2026-09-17)
 
 
