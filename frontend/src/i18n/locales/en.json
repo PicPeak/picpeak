@@ -5492,6 +5492,7 @@
     "enableToggle": "Enable Client Access",
     "enableDescription": "Allow clients to review and hide photos before the gallery is shared with guests.",
     "pinHelperText": "The client will use this PIN to access the review page. At least 6 characters.",
+    "linkAfterCreate": "The client access link appears on the event page as soon as the event is created.",
     "pinUpdated": "Client PIN updated",
     "setPin": "Set PIN",
     "linkLabel": "Client Access Link",

@@ -11,7 +11,8 @@ import {
   EyeOff,
   Image,
   Key,
-  Download
+  Download,
+  Shield
 } from 'lucide-react';
 import { addDays } from 'date-fns';
 import { toast } from 'react-toastify';
@@ -1046,6 +1047,64 @@ export const CreateEventPage: React.FC = () => {
               </div>
             )}
 
+            {/* Client Access (#172). Sits directly under the gallery password
+                because the two are the same kind of thing: the credentials
+                someone needs to get in. It used to sit further down, with no
+                heading, between "Default Photo Sort" and the upload toggle —
+                present, but invisible enough that it read as missing and sent
+                photographers to the edit screen to set it up. The heading and
+                icon are the edit screen's, so the same control is recognisable
+                in both places. */}
+            <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700">
+              <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb-3 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-accent" />
+                {t('clientAccess.adminTitle')}
+              </h3>
+
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-1 w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
+                  checked={formData.client_access_enabled}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    client_access_enabled: e.target.checked,
+                    client_password: e.target.checked ? prev.client_password : '',
+                  }))}
+                />
+                <div>
+                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                    {t('clientAccess.enableToggle')}
+                  </span>
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                    {t('clientAccess.enableDescription')}
+                  </p>
+                </div>
+              </label>
+
+              {formData.client_access_enabled && (
+                <div className="mt-3 space-y-2">
+                  <Input
+                    type="text"
+                    label={t('clientAccess.pinLabel')}
+                    placeholder={t('clientAccess.pinPlaceholder')}
+                    value={formData.client_password}
+                    onChange={handleInputChange('client_password')}
+                    minLength={6}
+                    leftIcon={<Key className="w-5 h-5" />}
+                    helperText={t('clientAccess.pinHelperText')}
+                  />
+                  {/* The link cannot exist yet: client_share_token is minted
+                      with the event. Saying so here stops the next person
+                      hunting this screen for a link that only appears once
+                      the event is saved. */}
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                    {t('clientAccess.linkAfterCreate')}
+                  </p>
+                </div>
+              )}
+            </div>
+
             {requireExpiration ? (
               <div>
                 <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-2">
@@ -1157,45 +1216,6 @@ export const CreateEventPage: React.FC = () => {
                 <option value="filename_asc">{t('photoSort.filenameAZ', 'Filename (A-Z)')}</option>
                 <option value="filename_desc">{t('photoSort.filenameZA', 'Filename (Z-A)')}</option>
               </select>
-            </div>
-
-            {/* Client Access (#172) */}
-            <div className="pt-4 border-t border-neutral-200 dark:border-neutral-700">
-              <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  className="mt-1 w-4 h-4 text-accent border-neutral-300 dark:border-neutral-600 rounded focus:ring-primary-500"
-                  checked={formData.client_access_enabled}
-                  onChange={(e) => setFormData(prev => ({
-                    ...prev,
-                    client_access_enabled: e.target.checked,
-                    client_password: e.target.checked ? prev.client_password : '',
-                  }))}
-                />
-                <div>
-                  <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
-                    {t('clientAccess.enableToggle')}
-                  </span>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                    {t('clientAccess.enableDescription')}
-                  </p>
-                </div>
-              </label>
-
-              {formData.client_access_enabled && (
-                <div className="mt-3">
-                  <Input
-                    type="text"
-                    label={t('clientAccess.pinLabel')}
-                    placeholder={t('clientAccess.pinPlaceholder')}
-                    value={formData.client_password}
-                    onChange={handleInputChange('client_password')}
-                    minLength={6}
-                    leftIcon={<Key className="w-5 h-5" />}
-                    helperText={t('clientAccess.pinHelperText')}
-                  />
-                </div>
-              )}
             </div>
 
             {/* User Upload Settings */}

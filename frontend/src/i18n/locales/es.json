@@ -2618,6 +2618,7 @@
     "enableToggle": "Habilitar acceso cliente",
     "enableDescription": "Permitir que clientes revisen y oculten fotos antes de compartir.",
     "pinHelperText": "El cliente usará este PIN para acceder a la revisión.",
+    "linkAfterCreate": "El enlace de acceso del cliente aparece en la página del evento en cuanto se crea el evento.",
     "pinUpdated": "PIN del cliente actualizado",
     "setPin": "Establecer PIN",
     "linkLabel": "Enlace de acceso cliente",

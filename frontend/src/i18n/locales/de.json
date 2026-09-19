@@ -5318,6 +5318,7 @@
     "enableToggle": "Kundenzugang aktivieren",
     "enableDescription": "Ermöglichen Sie Kunden, Fotos zu überprüfen und auszublenden, bevor die Galerie mit den Gästen geteilt wird.",
     "pinHelperText": "Der Kunde verwendet diese PIN, um die Überprüfungsseite aufzurufen. Mindestens 6 Zeichen.",
+    "linkAfterCreate": "Der Link für den Kundenzugang erscheint auf der Event-Seite, sobald das Event angelegt ist.",
     "pinUpdated": "Kunden-PIN aktualisiert",
     "setPin": "PIN festlegen",
     "linkLabel": "Kundenzugangs-Link",

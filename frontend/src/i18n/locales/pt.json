@@ -3065,6 +3065,7 @@
     "enableToggle": "Ativar Acesso do Cliente",
     "enableDescription": "Permitir que clientes revisem e ocultem fotos antes de a galeria ser compartilhada com os convidados.",
     "pinHelperText": "O cliente usará este PIN para acessar a página de revisão.",
+    "linkAfterCreate": "O link de acesso do cliente aparece na página do evento assim que o evento for criado.",
     "pinUpdated": "PIN do cliente atualizado",
     "setPin": "Definir PIN",
     "linkLabel": "Link de Acesso do Cliente",

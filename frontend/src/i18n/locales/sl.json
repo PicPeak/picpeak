@@ -5469,6 +5469,7 @@
     "enableToggle": "Omogoči dostop stranke",
     "enableDescription": "Dovolite strankam pregled in skrivanje fotografij, preden galerijo delite z gosti.",
     "pinHelperText": "Stranka bo ta PIN uporabila za dostop do strani za pregled.",
+    "linkAfterCreate": "Povezava za dostop stranke se prikaže na strani dogodka takoj, ko je dogodek ustvarjen.",
     "pinUpdated": "PIN stranke posodobljen",
     "setPin": "Nastavi PIN",
     "linkLabel": "Povezava za dostop stranke",

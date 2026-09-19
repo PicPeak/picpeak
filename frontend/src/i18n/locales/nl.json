@@ -2837,6 +2837,7 @@
     "enableToggle": "Klanttoegang inschakelen",
     "enableDescription": "Sta klanten toe foto's te beoordelen en te verbergen voordat de galerij wordt gedeeld met gasten.",
     "pinHelperText": "De klant gebruikt deze PIN om de beoordelingspagina te openen.",
+    "linkAfterCreate": "De link voor klanttoegang verschijnt op de evenementpagina zodra het evenement is aangemaakt.",
     "pinUpdated": "Klant-PIN bijgewerkt",
     "setPin": "PIN instellen",
     "linkLabel": "Klanttoegangslink",
