@@ -798,3 +798,132 @@ test('the signing certificate can be downloaded once it exists', async () => {
     .where({ doc_type: 'contract', doc_id: id, kind: 'audit' }).orderBy('id', 'desc').first();
   expect(sha256(res.body)).toBe(sha256(fs.readFileSync(stored.path)));
 });
+
+// ---------------------------------------------------------------------
+// Slice 2 of the #1446 plan — the isolation and permission matrix.
+//
+// The suite above signs happy paths with a super_admin and one customer.
+// These are the refusals: another signer's session, another contract's
+// attachment, a revoked link, a reused key, and the evidence view behind
+// the permission that is supposed to guard it.
+// ---------------------------------------------------------------------
+
+test('a verified session reaches only its own contract\'s attachments', async () => {
+  const attachments = require('../../src/services/contract/attachments');
+  const mine = await newContract();
+  const theirs = await newContract();
+
+  // A real attachment, on the OTHER contract: the session is scoped to its
+  // own contract, not merely to "an attachment that exists".
+  const pdf = await PDFDocument.create();
+  pdf.addPage([200, 200]);
+  const { attachment } = await attachments.storeAttachment(Buffer.from(await pdf.save()), { name: 'Terms' }, adminId);
+  await db.transaction((trx) => attachments.writeContractAttachments(trx, theirs, [
+    { attachmentId: attachment.id, delivery: 'separate' },
+  ]));
+  expect(await attachments.loadContractAttachments(theirs)).toHaveLength(1);
+
+  await ok(request(contractsApp).post(`/api/admin/contracts/${mine}/send`).set(auth));
+  const session = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+
+  const res = await asSigner(request(signingApp).get(`/api/public/contract-signing/session/attachments/${attachment.id}`))
+    .set('X-Signing-Session', session);
+  expect(res.status).toBe(404);
+});
+
+test('a signer\'s session signs their own slot and nobody else\'s', async () => {
+  const id = await newContract();
+  await ok(request(contractsApp).put(`/api/admin/contracts/${id}/signers`).set(auth).send({
+    order: 'parallel',
+    signers: [{ name: 'Anna Muster', email: customerEmail }, { name: 'Ben Muster', email: 'ben@example.com' }],
+  }));
+  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+  const benSession = await verifiedSession(linkToken(await lastMail('contract_sent', 'ben@example.com')), 'ben@example.com');
+
+  // Ben signs — with Anna's name, which is the closest a signer can come to
+  // signing someone else's slot. The slot follows the session, not the name.
+  await ok(sign(benSession, { name: 'Anna Muster', mode: 'typed' }));
+
+  const rows = await db('contract_signers').where({ contract_id: id, role: 'customer' }).orderBy('position');
+  expect(rows.map((r) => [r.slot_key, r.status])).toEqual([
+    ['customer-1', 'invited'], ['customer-2', 'signed'],
+  ]);
+  expect((await db('contracts').where({ id }).first()).status).toBe('sent');
+});
+
+test('a revoked link is refused before it can ask for a code', async () => {
+  const id = await newContract();
+  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+  const link = linkToken(await lastMail('contract_sent', customerEmail));
+  const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+  // A resend revokes the earlier link.
+  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/signers/${signer.id}/resend`).set(auth));
+
+  const before = await db('contract_signing_events').where({ contract_id: id, event_type: 'code_sent' });
+  const code = await asSigner(request(signingApp).post(`/api/public/contract-signing/invite/${link}/code`));
+  expect(code.status).toBe(410);
+  expect(code.body.code).toBe('SIGNING_LINK_REVOKED');
+  // No mail, and nothing appended to the chain for a link that is gone.
+  expect(await db('contract_signing_events').where({ contract_id: id, event_type: 'code_sent' }))
+    .toHaveLength(before.length);
+});
+
+test('a signing key replayed with different details is refused, not answered "done"', async () => {
+  const id = await newContract();
+  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+  const session = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+
+  await ok(sign(session, { name: 'Anna Muster', mode: 'typed', idempotencyKey: 'reuse-1' }));
+  // The same key is what makes a resend after a lost response safe…
+  const replay = await ok(sign(session, { name: 'Anna Muster', mode: 'typed', idempotencyKey: 'reuse-1' }));
+  expect(replay.replayed).toBe(true);
+
+  // …but it must not vouch for a signature nobody made under that name.
+  const different = await sign(session, { name: 'Someone Else', mode: 'typed', idempotencyKey: 'reuse-1' });
+  expect(different.status).toBe(409);
+  expect(different.body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+  const mode = await sign(session, { name: 'Anna Muster', mode: 'drawn', signatureDataUrl: PNG, idempotencyKey: 'reuse-1' });
+  expect(mode.status).toBe(409);
+  expect(mode.body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+  // Still exactly one signature, with the details it was recorded with.
+  const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+  expect(signer.signature_mode).toBe('typed');
+  expect(require('../../src/utils/fieldEncryption').tryDecrypt(signer.name_enc)).toBe('Anna Muster');
+});
+
+test('the evidence view needs contracts.manage, and every opening is logged', async () => {
+  // The suite signs everything as a super_admin, so the permission that is
+  // supposed to guard decrypted IP addresses and user agents was unpinned.
+  const readOnlyAdmin = await db('admin_users').insert({
+    username: 'contracts-reader', email: 'contracts-reader@example.com',
+    password_hash: 'x', is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  }).returning('id');
+  const readerId = typeof readOnlyAdmin[0] === 'object' ? readOnlyAdmin[0].id : readOnlyAdmin[0];
+  const role = await db('roles').insert({
+    name: 'contracts_reader', display_name: 'Contracts Reader', is_system: 0, priority: 10,
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  }).returning('id');
+  const roleId = typeof role[0] === 'object' ? role[0].id : role[0];
+  const viewPerm = await db('permissions').where({ name: 'contracts.view' }).first();
+  await db('role_permissions').insert({ role_id: roleId, permission_id: viewPerm.id });
+  await db('admin_users').where({ id: readerId }).update({ role_id: roleId });
+  // The middleware caches role → permissions for a minute; the role was
+  // created after this suite's first request filled it.
+  require('../../src/middleware/permissions').clearPermissionCache();
+  const readerAuth = { Authorization: `Bearer ${mintAdminToken(readerId)}` };
+
+  const denied = await request(contractsApp).get(`/api/admin/contracts/${ids.contract}/signing-evidence`).set(readerAuth);
+  expect(denied.status).toBe(403);
+  // A read-only role still reads the contract itself — this is about the
+  // evidence, not about the contract being invisible.
+  expect((await request(contractsApp).get(`/api/admin/contracts/${ids.contract}`).set(readerAuth)).status).toBe(200);
+
+  const opened = () => db('activity_logs').where({ activity_type: 'contract_signing_evidence_viewed' });
+  const before = await opened();
+  const allowed = await ok(request(contractsApp).get(`/api/admin/contracts/${ids.contract}/signing-evidence`).set(auth));
+  expect(allowed.evidence.some((e) => e.ip)).toBe(true);
+  const after = await opened();
+  expect(after.length).toBe(before.length + 1);
+  const latest = await opened().orderBy('id', 'desc').first();
+  expect(parsed(latest.metadata).contractId).toBe(ids.contract);
+});

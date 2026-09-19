@@ -591,6 +591,17 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
   const idempotencyKey = input.idempotencyKey ? String(input.idempotencyKey).slice(0, 64) : null;
   if (signer.status === 'signed') {
     if (idempotencyKey && signer.idempotency_key === idempotencyKey) {
+      // A replay answers with the signature that was recorded — but only when
+      // it IS the same signature. The key is generated once per link and
+      // resent after a lost response, so a key arriving with a different name
+      // or a different mode is not the request that succeeded, and answering
+      // "done" would report a signature nobody made that way.
+      if (signerName(signer) !== name || (signer.signature_mode || null) !== mode) {
+        throw new AppError(
+          'This signature was already recorded with different details. Reload the page to see where the contract stands.',
+          409, 'IDEMPOTENCY_KEY_REUSED',
+        );
+      }
       return { status: contract.status, signedAt: signer.signed_at, replayed: true };
     }
     throw new AppError('You have already signed this contract.', 409, 'ALREADY_SIGNED');

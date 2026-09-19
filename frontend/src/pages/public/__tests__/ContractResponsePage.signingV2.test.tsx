@@ -382,3 +382,19 @@ it('keeps the typed name for the tab, and never the drawn signature', async () =
   // Nothing that could be a signature image is in the store.
   expect(JSON.stringify(window.sessionStorage)).not.toContain('data:image');
 });
+
+it('shows the recorded signature when a resent key carried different details', async () => {
+  // The server refuses a key reused for a different name rather than
+  // vouching for it (IDEMPOTENCY_KEY_REUSED). The signature is still on
+  // record, so the page shows it instead of an error.
+  const user = userEvent.setup();
+  session
+    .mockResolvedValueOnce(sessionView())
+    .mockResolvedValue(sessionView({ status: 'signed', canSign: false, canDecline: false }));
+  sign.mockRejectedValue(httpError(409, { code: 'IDEMPOTENCY_KEY_REUSED' }));
+
+  await readyToSign(user);
+  await user.click(screen.getByRole('button', { name: 'Sign contract' }));
+
+  expect(await screen.findByText('Thank you — you have signed the contract.')).toBeInTheDocument();
+});

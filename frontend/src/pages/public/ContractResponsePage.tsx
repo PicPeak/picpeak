@@ -738,7 +738,11 @@ const SignForm: React.FC<SignFormProps> = ({
         onSessionInvalid();
         return;
       }
-      if (signingErrorCode(err) === 'ALREADY_SIGNED') {
+      // Both mean the signature IS on record: the plain repeat, and a key
+      // resent with a different name or mode, which the server refuses
+      // rather than vouching for a signature nobody made that way (#1446).
+      // Either way the honest answer is the recorded signature, not an error.
+      if (['ALREADY_SIGNED', 'IDEMPOTENCY_KEY_REUSED'].includes(signingErrorCode(err) || '')) {
         onAlreadySigned();
         return;
       }

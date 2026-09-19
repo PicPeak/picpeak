@@ -190,6 +190,30 @@ describe('customer portal contracts and quotes', () => {
     expect((await get(`/api/customer/quotes/${othersQuote}`)).status).toBe(404);
   });
 
+  it('refuses portal signing access to another customer\'s v2 contract, even to a listed signer (#1446)', async () => {
+    // Being named as a signer on someone else's contract is not owning it.
+    // The portal path opens a signing session with no code at all, so the
+    // ownership filter is the only thing standing in front of it.
+    const fieldEncryption = require('../../src/utils/fieldEncryption');
+    const me = await db('customer_accounts').where({ id: customerId }).first();
+    const foreign = await contract(otherCustomerId, 'sent', 'K-P-9');
+    await db('contracts').where({ id: foreign }).update({ signing_version: 2 });
+    await db('contract_signers').insert({
+      contract_id: foreign, position: 1, role: 'customer', slot_key: 'customer-1',
+      name_enc: fieldEncryption.encrypt('Someone'),
+      email_enc: fieldEncryption.encrypt(me.email),
+      email_hash: fieldEncryption.hashEmail(me.email),
+      status: 'invited', created_at: nowIso(), updated_at: nowIso(),
+    });
+
+    expect((await post(`/api/customer/contracts/${foreign}/signing-access`)).status).toBe(404);
+    expect((await get(`/api/customer/contracts/${foreign}/pdf`)).status).toBe(404);
+    // …and nothing was minted on the way out.
+    expect(await db('contract_signing_sessions').where({ signer_id: null })).toHaveLength(0);
+    const signer = await db('contract_signers').where({ contract_id: foreign }).first();
+    expect(await db('contract_signing_sessions').where({ signer_id: signer.id })).toHaveLength(0);
+  });
+
   it('refuses an upload for a contract that cannot be signed, before writing the file', async () => {
     const uploadDir = path.join(process.env.STORAGE_PATH, 'uploads/contracts/signed');
     const before = fs.existsSync(uploadDir) ? fs.readdirSync(uploadDir).length : 0;
