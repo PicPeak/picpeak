@@ -16,13 +16,16 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   UserPlus, UserCog, Trash2, Search, X, AlertTriangle, CheckCircle2, Clock, MailCheck,
 } from 'lucide-react';
 import { InlineCustomerCreate } from '../../components/admin/InlineCustomerCreate';
+import { CustomerGroupChipList, CustomerGroupFilter } from '../../components/admin/CustomerGroupChips';
+import { CustomerGroupsPanel } from '../../components/admin/CustomerGroupsPanel';
 import { useMutationWithToast } from '../../hooks';
+import { usePermissions } from '../../contexts/PermissionsContext';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
 import { Button, Card, Input, Loading } from '../../components/common';
@@ -32,7 +35,7 @@ import {
   type CustomerInvitationSummary,
 } from '../../services/customerAdmin.service';
 
-type TabType = 'customers' | 'invitations';
+type TabType = 'customers' | 'invitations' | 'groups';
 
 export const CustomerManagementPage: React.FC = () => {
   const { t } = useTranslation();
@@ -67,9 +70,33 @@ export const CustomerManagementPage: React.FC = () => {
   const [createMode, setCreateMode] = useState<'passive' | 'invite' | null>(null);
   const [confirm, setConfirm] = useState<{ kind: 'deactivate'; id: number; name: string } | { kind: 'cancelInvite'; id: number; email: string } | null>(null);
 
+  // Group filter (#1443). Empty = every customer, which is what the page
+  // opens with; the server does the filtering so it survives a reload of the
+  // list rather than only hiding rows already fetched.
+  const [groupFilter, setGroupFilter] = useState<number[]>([]);
+  const { hasPermission } = usePermissions();
+
+  const { data: groups } = useQuery({
+    queryKey: ['admin-customer-groups'],
+    queryFn: () => customerAdminService.listGroups(true),
+  });
+  // Archived groups stay visible on the customers that carry them, but are
+  // not offered as a filter: nothing new lands in them.
+  const filterableGroups = useMemo(() => (groups || []).filter((g) => !g.isArchived), [groups]);
+  // Only what the filter still offers. A selected group that was archived or
+  // deleted on the Groups tab would otherwise keep filtering the list with no
+  // pill left to switch it off — and no Clear once it was the last live one.
+  const activeGroupFilter = useMemo(
+    () => (groups ? groupFilter.filter((id) => filterableGroups.some((g) => g.id === id)) : groupFilter),
+    [groups, groupFilter, filterableGroups],
+  );
+
   const { data: customers, isLoading: customersLoading, error: customersError } = useQuery({
-    queryKey: ['admin-customers'],
-    queryFn: () => customerAdminService.list(),
+    queryKey: ['admin-customers', activeGroupFilter],
+    queryFn: () => customerAdminService.list(undefined, activeGroupFilter),
+    // Toggling a filter pill keeps the table up until the new list is in,
+    // instead of swapping it for a spinner each time.
+    placeholderData: keepPreviousData,
   });
 
   const { data: invitations, isLoading: invitationsLoading, error: invitationsError } = useQuery({
@@ -129,12 +156,57 @@ export const CustomerManagementPage: React.FC = () => {
     return display || <span className="text-neutral-500 dark:text-neutral-400 italic">{t('customers.unnamed', 'Unnamed')}</span>;
   };
 
+  // Active / deactivated plus the passive and invitation-pending badges.
+  // One block for the status column and for the phone copy under the name,
+  // so a phone row can't fall behind the desktop one.
+  const renderStatus = (c: CustomerAccountSummary) => (
+    <div className="flex flex-col gap-1">
+      {c.isActive ? (
+        <span className="inline-flex items-center gap-1 text-xs" style={{ color: 'var(--color-accent)' }}>
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          {t('customers.status.active', 'Active')}
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 text-xs text-red-600">
+          <X className="w-3.5 h-3.5" />
+          {t('customers.status.inactive', 'Deactivated')}
+        </span>
+      )}
+      {/* Passive customers (no portal access). The
+          status badge sits on its own line so a
+          passive deactivated customer can still
+          show both states clearly. */}
+      {c.isPassive && (() => {
+        const invite = pendingInviteByEmail.get(c.email.trim().toLowerCase());
+        return invite ? (
+          <span
+            className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300"
+            // Deliberately describes the invitation ROW, not a
+            // delivery. createInvitation inserts the row and then
+            // queues the email without a transaction, so an open
+            // invitation does not prove an email_queue row exists,
+            // let alone that anything was delivered.
+            title={t('customers.invitePending.hint',
+              'An invitation link for this address is open and has not been accepted. That is not proof the email reached them — check System health if they say it never arrived.') as string}
+          >
+            <MailCheck className="w-3 h-3" />
+            {t('customers.invitePending.badge', 'Invitation pending')}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+            {t('customers.passive.badge', 'Passive — admin only')}
+          </span>
+        );
+      })()}
+    </div>
+  );
+
   const renderTabs = () => (
-    <div className="flex gap-6 border-b border-neutral-200 dark:border-neutral-700 mb-6">
+    <div className="flex flex-wrap gap-x-4 gap-y-1 sm:gap-x-6 border-b border-neutral-200 dark:border-neutral-700 mb-6">
       <button
         type="button"
         onClick={() => setActiveTab('customers')}
-        className={`pb-3 -mb-px border-b-2 text-sm font-medium ${
+        className={`pb-3 -mb-px shrink-0 whitespace-nowrap border-b-2 text-sm font-medium ${
           activeTab === 'customers' ? 'border-accent text-accent' : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100'
         }`}
       >
@@ -144,19 +216,29 @@ export const CustomerManagementPage: React.FC = () => {
       <button
         type="button"
         onClick={() => setActiveTab('invitations')}
-        className={`pb-3 -mb-px border-b-2 text-sm font-medium ${
+        className={`pb-3 -mb-px shrink-0 whitespace-nowrap border-b-2 text-sm font-medium ${
           activeTab === 'invitations' ? 'border-accent text-accent' : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100'
         }`}
       >
         {t('customers.tabs.invitations', 'Invitations')}
         {invitations ? <span className="ml-2 text-xs">({invitations.length})</span> : null}
       </button>
+      <button
+        type="button"
+        onClick={() => setActiveTab('groups')}
+        className={`pb-3 -mb-px shrink-0 whitespace-nowrap border-b-2 text-sm font-medium ${
+          activeTab === 'groups' ? 'border-accent text-accent' : 'border-transparent text-neutral-500 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100'
+        }`}
+      >
+        {t('customers.tabs.groups', 'Groups')}
+        {groups ? <span className="ml-2 text-xs">({groups.filter((g) => !g.isArchived).length})</span> : null}
+      </button>
     </div>
   );
 
   return (
     <div className="container py-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-neutral-900 dark:text-neutral-100">{t('customers.pageTitle', 'Customers')}</h1>
@@ -174,11 +256,23 @@ export const CustomerManagementPage: React.FC = () => {
             {t('customers.pageSubtitle', 'Recurring customer accounts that can log in at /customer/login.')}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" leftIcon={<UserCog className="w-4 h-4" />} onClick={() => setCreateMode('passive')}>
+        {/* On a phone the two labels are wider than the screen side by side,
+            so they stack and fill the row instead of being cut off. */}
+        <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2">
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto justify-center"
+            leftIcon={<UserCog className="w-4 h-4" />}
+            onClick={() => setCreateMode('passive')}
+          >
             {t('customers.create.openButton', 'Create passive customer')}
           </Button>
-          <Button variant="primary" leftIcon={<UserPlus className="w-4 h-4" />} onClick={() => setCreateMode('invite')}>
+          <Button
+            variant="primary"
+            className="w-full sm:w-auto justify-center"
+            leftIcon={<UserPlus className="w-4 h-4" />}
+            onClick={() => setCreateMode('invite')}
+          >
             {t('customers.invite.button', 'Invite customer')}
           </Button>
         </div>
@@ -187,16 +281,30 @@ export const CustomerManagementPage: React.FC = () => {
       <Card padding="lg">
         {renderTabs()}
 
-        <div className="mb-4">
-          <Input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={t('customers.search.placeholder', 'Search by email, name, or company')}
-            leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
-          />
-        </div>
+        {activeTab !== 'groups' && (
+          <div className="mb-4 space-y-3">
+            <Input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={t('customers.search.placeholder', 'Search by email, name, or company')}
+              leftIcon={<Search className="w-5 h-5 text-neutral-400" />}
+            />
+            {activeTab === 'customers' && (
+              <CustomerGroupFilter
+                groups={filterableGroups}
+                selectedIds={activeGroupFilter}
+                onToggle={(id) => setGroupFilter((current) => (
+                  current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
+                ))}
+                onClear={() => setGroupFilter([])}
+              />
+            )}
+          </div>
+        )}
 
-        {activeTab === 'customers' ? (
+        {activeTab === 'groups' ? (
+          <CustomerGroupsPanel canManage={hasPermission('customers.groups.manage')} />
+        ) : activeTab === 'customers' ? (
           customersLoading ? (
             <div className="flex justify-center py-8"><Loading /></div>
           ) : customersError ? (
@@ -206,20 +314,27 @@ export const CustomerManagementPage: React.FC = () => {
             </div>
           ) : filteredCustomers.length === 0 ? (
             <div className="text-center text-neutral-500 dark:text-neutral-400 py-12">
-              {t('customers.empty', 'No customers yet. Click "Invite customer" to add one.')}
+              {activeGroupFilter.length > 0
+                ? t('customers.groups.emptyFiltered', 'No customers in the selected groups.')
+                : t('customers.empty', 'No customers yet. Click "Invite customer" to add one.')}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="text-left text-neutral-500 dark:text-neutral-400">
+                    {/* On a phone the row is name + groups + email + status:
+                        the columns that only make sense side by side are
+                        hidden, and the groups move under the name so they are
+                        visible without scrolling the table sideways. */}
                     <th className="px-3 py-2 font-medium">{t('customers.table.name', 'Name')}</th>
                     <th className="px-3 py-2 font-medium">{t('customers.table.email', 'Email')}</th>
-                    <th className="px-3 py-2 font-medium">{t('customers.table.company', 'Company')}</th>
-                    <th className="px-3 py-2 font-medium">{t('customers.table.eventCount', 'Events')}</th>
-                    <th className="px-3 py-2 font-medium">{t('customers.table.lastLogin', 'Last login')}</th>
-                    <th className="px-3 py-2 font-medium">{t('customers.table.status', 'Status')}</th>
-                    <th className="px-3 py-2"></th>
+                    <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.company', 'Company')}</th>
+                    <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.groups', 'Groups')}</th>
+                    <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.eventCount', 'Events')}</th>
+                    <th className="hidden md:table-cell px-3 py-2 font-medium">{t('customers.table.lastLogin', 'Last login')}</th>
+                    <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.status', 'Status')}</th>
+                    <th className="hidden sm:table-cell px-3 py-2"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -229,53 +344,27 @@ export const CustomerManagementPage: React.FC = () => {
                         <Link to={`/admin/clients/accounts/${c.id}`} className="text-neutral-900 dark:text-neutral-100 hover:underline">
                           {renderCustomerName(c)}
                         </Link>
+                        {/* Phone only: the groups sit under the name, where the
+                            Groups column is hidden. */}
+                        {c.groups && c.groups.length > 0 && (
+                          <span className="mt-1 flex sm:hidden">
+                            <CustomerGroupChipList groups={c.groups} max={2} />
+                          </span>
+                        )}
+                        {/* …and the status, so a phone row is name, groups,
+                            state and email without scrolling sideways. */}
+                        <span className="mt-1 flex sm:hidden">{renderStatus(c)}</span>
                       </td>
-                      <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.email}</td>
-                      <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.companyName || '—'}</td>
-                      <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.eventCount ?? 0}</td>
-                      <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
-                      <td className="px-3 py-3">
-                        <div className="flex flex-col gap-1">
-                          {c.isActive ? (
-                            <span className="inline-flex items-center gap-1 text-xs" style={{ color: 'var(--color-accent)' }}>
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              {t('customers.status.active', 'Active')}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-xs text-red-600">
-                              <X className="w-3.5 h-3.5" />
-                              {t('customers.status.inactive', 'Deactivated')}
-                            </span>
-                          )}
-                          {/* Passive customers (no portal access). The
-                              status badge sits on its own line so a
-                              passive deactivated customer can still
-                              show both states clearly. */}
-                          {c.isPassive && (() => {
-                            const invite = pendingInviteByEmail.get(c.email.trim().toLowerCase());
-                            return invite ? (
-                              <span
-                                className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300"
-                                // Deliberately describes the invitation ROW, not a
-                                // delivery. createInvitation inserts the row and then
-                                // queues the email without a transaction, so an open
-                                // invitation does not prove an email_queue row exists,
-                                // let alone that anything was delivered.
-                                title={t('customers.invitePending.hint',
-                                  'An invitation link for this address is open and has not been accepted. That is not proof the email reached them — check System health if they say it never arrived.') as string}
-                              >
-                                <MailCheck className="w-3 h-3" />
-                                {t('customers.invitePending.badge', 'Invitation pending')}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
-                                {t('customers.passive.badge', 'Passive — admin only')}
-                              </span>
-                            );
-                          })()}
-                        </div>
+                      {/* Wraps on a phone instead of pushing the row sideways. */}
+                      <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400 break-all max-w-[38vw] sm:max-w-none sm:break-normal">{c.email}</td>
+                      <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.companyName || '—'}</td>
+                      <td className="hidden sm:table-cell px-3 py-3"><CustomerGroupChipList groups={c.groups} /></td>
+                      <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.eventCount ?? 0}</td>
+                      <td className="hidden md:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
+                      <td className="hidden sm:table-cell px-3 py-3">
+                        {renderStatus(c)}
                       </td>
-                      <td className="px-3 py-3 text-right">
+                      <td className="hidden sm:table-cell px-3 py-3 text-right">
                         {c.isActive && (
                           <Button
                             type="button"

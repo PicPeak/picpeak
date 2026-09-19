@@ -32,6 +32,7 @@ const invoiceService = require('../services/invoiceService');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 const { NotFoundError } = require('../utils/errors');
 const customerDocumentsService = require('../services/customerDocumentsService');
+const customerGroupsService = require('../services/customerGroupsService');
 const { receivePdfUpload, discardTempFile, sendPdfAttachment } = require('../middleware/customerDocumentUpload');
 
 const router = express.Router();
@@ -109,6 +110,10 @@ function transformCustomer(c) {
     createdAt: c.created_at,
     updatedAt: c.updated_at,
     eventCount: c.event_count != null ? Number(c.event_count) : undefined,
+    // Customer groups (#1443, migration 226). Attached by the list and detail
+    // routes; `undefined` where a response was never meant to carry them, so
+    // an existing consumer sees no change.
+    groups: Array.isArray(c.groups) ? c.groups : undefined,
     events: Array.isArray(c.events)
       ? c.events.map((e) => ({
         id: e.id,
@@ -133,18 +138,120 @@ function transformInvitation(inv) {
   };
 }
 
+// Far more groups than a catalogue holds, and well under what an IN list or
+// a reorder loop should be handed from a request.
+const MAX_GROUP_IDS = 100;
+const MAX_REORDER_IDS = 500;
+
+/**
+ * `?groupIds=1,2` or `?groupIds=1&groupIds=2` → [1, 2]. Anything that isn't a
+ * positive integer is dropped rather than refused, so a stale bookmark shows
+ * the unfiltered list instead of an error. Capped at MAX_GROUP_IDS.
+ */
+function parseGroupIds(value) {
+  if (value === undefined || value === null || value === '') return [];
+  const raw = Array.isArray(value) ? value : String(value).split(',');
+  return [...new Set(raw
+    .map((id) => Number(String(id).trim()))
+    .filter((id) => Number.isInteger(id) && id > 0))].slice(0, MAX_GROUP_IDS);
+}
+
+// ---- customer groups (#1443) --------------------------------------------
+// Mounted before /:id so "groups" is never read as a customer id. Reading the
+// catalogue needs customers.view (it is part of the overview); changing it
+// needs customers.groups.manage (migration 226).
+
+const requireGroupManage = requirePermission('customers.groups.manage');
+
+router.get('/groups', [
+  adminAuth,
+  requirePermission('customers.view'),
+  query('includeArchived').optional().isBoolean(),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const includeArchived = req.query.includeArchived === 'true' || req.query.includeArchived === '1';
+  return successResponse(res, { groups: await customerGroupsService.list({ includeArchived }) });
+}));
+
+router.post('/groups', [
+  adminAuth,
+  requireGroupManage,
+  body('name').isString().trim().isLength({ min: 1, max: 80 }),
+  body('description').optional({ nullable: true }).isString(),
+  body('color').optional({ nullable: true }).isString(),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const group = await customerGroupsService.create(req.body, req.admin);
+  return successResponse(res, { group }, 201);
+}));
+
+// Before /groups/:groupId, or "reorder" is read as an id.
+router.post('/groups/reorder', [
+  adminAuth,
+  requireGroupManage,
+  body('orderedIds').isArray({ min: 1, max: MAX_REORDER_IDS }),
+  body('orderedIds.*').isInt({ min: 1 }).toInt(),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const groups = await customerGroupsService.reorder(req.body.orderedIds, req.admin);
+  return successResponse(res, { groups });
+}));
+
+router.put('/groups/:groupId', [
+  adminAuth,
+  requireGroupManage,
+  param('groupId').isInt({ min: 1 }),
+  body('name').optional().isString().trim().isLength({ min: 1, max: 80 }),
+  body('description').optional({ nullable: true }).isString(),
+  body('color').optional({ nullable: true }).isString(),
+  body('isArchived').optional().isBoolean(),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const group = await customerGroupsService.update(parseInt(req.params.groupId, 10), req.body, req.admin);
+  return successResponse(res, { group });
+}));
+
+router.delete('/groups/:groupId', [
+  adminAuth,
+  requireGroupManage,
+  param('groupId').isInt({ min: 1 }),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  return successResponse(res, await customerGroupsService.remove(parseInt(req.params.groupId, 10), req.admin));
+}));
+
+router.put('/:id/groups', [
+  adminAuth,
+  requireGroupManage,
+  param('id').isInt({ min: 1 }),
+  body('groupIds').isArray({ max: MAX_GROUP_IDS }),
+  body('groupIds.*').isInt({ min: 1 }).toInt(),
+], handleAsync(async (req, res) => {
+  validateRequest(req);
+  const groups = await customerGroupsService.setCustomerGroups(
+    parseInt(req.params.id, 10), req.body.groupIds, req.admin,
+  );
+  return successResponse(res, { groups });
+}));
+
 // ---- list / search ------------------------------------------------------
 
 router.get('/', [
   adminAuth,
   requirePermission('customers.view'),
   query('search').optional().isString(),
+  // Repeatable (?groupIds=1&groupIds=2) or comma-separated (?groupIds=1,2).
+  query('groupIds').optional(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   const customers = await customerAccountsService.listCustomers({
     search: req.query.search,
+    groupIds: parseGroupIds(req.query.groupIds),
   });
-  res.json({ customers: customers.map(transformCustomer) });
+  const groupsByCustomer = await customerGroupsService.groupsForCustomers(customers.map((c) => c.id));
+  res.json({
+    customers: customers.map((c) => transformCustomer({ ...c, groups: groupsByCustomer.get(Number(c.id)) || [] })),
+  });
 }));
 
 /**
@@ -396,10 +503,10 @@ router.get('/:id', [
   param('id').isInt({ min: 1 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  const customer = await customerAccountsService.getCustomerById(
-    parseInt(req.params.id, 10)
-  );
-  res.json({ customer: transformCustomer(customer) });
+  const id = parseInt(req.params.id, 10);
+  const customer = await customerAccountsService.getCustomerById(id);
+  const groups = await customerGroupsService.groupsForCustomer(id);
+  res.json({ customer: transformCustomer({ ...customer, groups }) });
 }));
 
 router.put('/:id', [
