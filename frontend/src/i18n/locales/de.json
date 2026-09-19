@@ -5938,6 +5938,16 @@
       "empty": "Noch keine Gruppen. Lege eine an, um deine Kunden zu ordnen.",
       "emptyCatalogue": "Noch keine Gruppen. Lege eine unter Kunden → Gruppen an.",
       "emptyFiltered": "Keine Kunden in den gewählten Gruppen.",
+      "palette": {
+        "blue": "Blau",
+        "green": "Grün",
+        "amber": "Bernstein",
+        "red": "Rot",
+        "violet": "Violett",
+        "teal": "Petrol",
+        "pink": "Pink",
+        "grey": "Grau"
+      },
       "memberCount_one": "{{count}} Kunde",
       "memberCount_other": "{{count}} Kunden",
       "moveUp": "Nach oben",
@@ -5958,7 +5968,6 @@
       "clearFilter": "Zurücksetzen",
       "none": "—",
       "more": "+{{count}}",
-      "removeFrom": "Aus {{name}} entfernen",
       "change": "Gruppen ändern",
       "noneAssigned": "Dieser Kunde ist in keiner Gruppe.",
       "assignSaved": "Gruppen gespeichert"

@@ -248,8 +248,16 @@ describe('filtering', () => {
     expect(cleared.body.customers.length).toBeGreaterThan(2);
     expect(cleared.body.customers.map((c) => c.id)).toContain(customerId);
 
-    // A group id that no longer exists filters nothing rather than erroring.
+    // Something that isn't an id is dropped, so the list is unfiltered…
     expect((await listCustomers('?groupIds=abc')).body.customers.length).toBe(cleared.body.customers.length);
+    // …while the id of a group that no longer exists is a filter nobody
+    // matches: an empty list, not an error.
+    const stale = await listCustomers('?groupIds=999999');
+    expect(stale.status).toBe(200);
+    expect(stale.body.customers).toEqual([]);
+    // More ids than the route accepts are cut off, not refused.
+    const many = await listCustomers(`?groupIds=${Array.from({ length: 1200 }, (_, i) => i + 1000000).join(',')}`);
+    expect(many.status).toBe(200);
   });
 });
 
@@ -273,6 +281,44 @@ describe('deletion', () => {
     expect((await request(adminApp).delete(`/api/admin/customers/groups/${group.id}`).set(auth(superToken))).status).toBe(200);
     expect(await db('customer_groups').where({ id: group.id }).first()).toBeUndefined();
     expect(await db('customer_accounts').where({ id: customer }).first()).toBeTruthy();
+  });
+});
+
+describe('assignment under a race', () => {
+  it('answers 409, not 500, when another admin\'s save inserted the same membership first', async () => {
+    const group = bodyOf(await createGroup({ name: 'Raced' })).group;
+    const customer = await createCustomer();
+    // The unique index the service leans on is there…
+    await db('customer_group_members').insert({ group_id: group.id, customer_account_id: customer });
+    await expect(db('customer_group_members').insert({ group_id: group.id, customer_account_id: customer }))
+      .rejects.toThrow();
+    await db('customer_group_members').where({ customer_account_id: customer }).del();
+
+    // …and losing to it is a conflict to reload on. A single SQLite
+    // connection serialises the two saves, so the window between the read and
+    // the insert can't be opened here; the transaction is made to fail the way
+    // the index makes it fail on PostgreSQL. (`db` is a proxy over the pool,
+    // so the client underneath is what has to be patched.)
+    const realTransaction = db.client.transaction;
+    db.client.transaction = () => Promise.reject(
+      Object.assign(new Error('UNIQUE constraint failed: customer_group_members.group_id'), { code: 'SQLITE_CONSTRAINT' }),
+    );
+    let raced;
+    try {
+      raced = await setGroups(customer, [group.id]);
+    } finally {
+      db.client.transaction = realTransaction;
+    }
+    expect(raced.status).toBe(409);
+    expect(raced.body.code).toBe('GROUP_ASSIGNMENT_CONFLICT');
+
+    // Nothing half-done: the retry goes through, and two saves at once end
+    // in one membership row, not an error.
+    expect((await setGroups(customer, [group.id])).status).toBe(200);
+    await db('customer_group_members').where({ customer_account_id: customer }).del();
+    const both = await Promise.all([setGroups(customer, [group.id]), setGroups(customer, [group.id])]);
+    expect(both.map((res) => res.status)).toEqual([200, 200]);
+    expect(await db('customer_group_members').where({ customer_account_id: customer })).toHaveLength(1);
   });
 });
 
@@ -300,6 +346,21 @@ describe('permissions and the log', () => {
     expect(created.status).toBe(403);
     const assigned = await setGroups(await createCustomer(), [group.id], viewerToken);
     expect(assigned.status).toBe(403);
+    // Every other write, too — and the group is as it was afterwards.
+    const base = '/api/admin/customers/groups';
+    expect((await request(adminApp).put(`${base}/${group.id}`).set(auth(viewerToken)).send({ name: 'Renamed' })).status).toBe(403);
+    expect((await request(adminApp).post(`${base}/reorder`).set(auth(viewerToken)).send({ orderedIds: [group.id] })).status).toBe(403);
+    expect((await request(adminApp).delete(`${base}/${group.id}`).set(auth(viewerToken))).status).toBe(403);
+    expect(await db('customer_groups').where({ id: group.id }).first()).toMatchObject({ name: 'Permission check' });
+  });
+
+  it('refuses id lists longer than a catalogue could be', async () => {
+    const customer = await createCustomer();
+    const tooMany = Array.from({ length: 101 }, (_, i) => i + 1);
+    expect((await setGroups(customer, tooMany)).status).toBe(400);
+    const reorder = await request(adminApp).post('/api/admin/customers/groups/reorder')
+      .set(auth(superToken)).send({ orderedIds: Array.from({ length: 501 }, (_, i) => i + 1) });
+    expect(reorder.status).toBe(400);
   });
 
   it('records every change in the activity log', async () => {

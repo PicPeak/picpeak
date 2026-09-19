@@ -5938,6 +5938,16 @@
       "empty": "No groups yet. Create one to organise your customers.",
       "emptyCatalogue": "No groups yet. Create one under Customers → Groups.",
       "emptyFiltered": "No customers in the selected groups.",
+      "palette": {
+        "blue": "Blue",
+        "green": "Green",
+        "amber": "Amber",
+        "red": "Red",
+        "violet": "Violet",
+        "teal": "Teal",
+        "pink": "Pink",
+        "grey": "Grey"
+      },
       "memberCount_one": "{{count}} customer",
       "memberCount_other": "{{count}} customers",
       "moveUp": "Move up",
@@ -5958,7 +5968,6 @@
       "clearFilter": "Clear",
       "none": "—",
       "more": "+{{count}}",
-      "removeFrom": "Remove from {{name}}",
       "change": "Change groups",
       "noneAssigned": "This customer is in no group.",
       "assignSaved": "Groups saved"

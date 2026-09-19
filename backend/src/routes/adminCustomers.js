@@ -138,17 +138,22 @@ function transformInvitation(inv) {
   };
 }
 
+// Far more groups than a catalogue holds, and well under what an IN list or
+// a reorder loop should be handed from a request.
+const MAX_GROUP_IDS = 100;
+const MAX_REORDER_IDS = 500;
+
 /**
  * `?groupIds=1,2` or `?groupIds=1&groupIds=2` → [1, 2]. Anything that isn't a
  * positive integer is dropped rather than refused, so a stale bookmark shows
- * the unfiltered list instead of an error.
+ * the unfiltered list instead of an error. Capped at MAX_GROUP_IDS.
  */
 function parseGroupIds(value) {
   if (value === undefined || value === null || value === '') return [];
   const raw = Array.isArray(value) ? value : String(value).split(',');
   return [...new Set(raw
     .map((id) => Number(String(id).trim()))
-    .filter((id) => Number.isInteger(id) && id > 0))];
+    .filter((id) => Number.isInteger(id) && id > 0))].slice(0, MAX_GROUP_IDS);
 }
 
 // ---- customer groups (#1443) --------------------------------------------
@@ -184,7 +189,7 @@ router.post('/groups', [
 router.post('/groups/reorder', [
   adminAuth,
   requireGroupManage,
-  body('orderedIds').isArray({ min: 1 }),
+  body('orderedIds').isArray({ min: 1, max: MAX_REORDER_IDS }),
   body('orderedIds.*').isInt({ min: 1 }).toInt(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
@@ -219,7 +224,7 @@ router.put('/:id/groups', [
   adminAuth,
   requireGroupManage,
   param('id').isInt({ min: 1 }),
-  body('groupIds').isArray(),
+  body('groupIds').isArray({ max: MAX_GROUP_IDS }),
   body('groupIds.*').isInt({ min: 1 }).toInt(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);

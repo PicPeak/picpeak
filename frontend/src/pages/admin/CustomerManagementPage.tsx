@@ -16,7 +16,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   UserPlus, UserCog, Trash2, Search, X, AlertTriangle, CheckCircle2, Clock, MailCheck,
@@ -94,6 +94,9 @@ export const CustomerManagementPage: React.FC = () => {
   const { data: customers, isLoading: customersLoading, error: customersError } = useQuery({
     queryKey: ['admin-customers', activeGroupFilter],
     queryFn: () => customerAdminService.list(undefined, activeGroupFilter),
+    // Toggling a filter pill keeps the table up until the new list is in,
+    // instead of swapping it for a spinner each time.
+    placeholderData: keepPreviousData,
   });
 
   const { data: invitations, isLoading: invitationsLoading, error: invitationsError } = useQuery({

@@ -298,7 +298,36 @@ describe('the catalogue tab', () => {
     await openGroupsTab(user);
     const deleteButton = (await screen.findAllByRole('button', { name: 'Delete' }))[0];
     expect(deleteButton).toBeDisabled();
+    // Clicking it anyway opens no confirmation and sends nothing.
+    const before = screen.getAllByRole('button', { name: /Delete/ }).length;
+    await user.click(deleteButton);
+    expect(screen.getAllByRole('button', { name: /Delete/ })).toHaveLength(before);
     expect(deleteGroup).not.toHaveBeenCalled();
+  });
+
+  it('deletes an empty group, after a confirmation', async () => {
+    listGroups.mockResolvedValue([group(5, 'Empty', { memberCount: 0 })]);
+    deleteGroup.mockResolvedValue({ deleted: true });
+    const user = userEvent.setup();
+    renderPage();
+    await openGroupsTab(user);
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    expect(deleteGroup).not.toHaveBeenCalled();
+    const buttons = screen.getAllByRole('button', { name: /Delete/ });
+    await user.click(buttons[buttons.length - 1]);
+    await waitFor(() => expect(deleteGroup).toHaveBeenCalledWith(5));
+  });
+
+  it('names the palette colours for a screen reader instead of reading out hex values', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openGroupsTab(user);
+    await user.click(await screen.findByRole('button', { name: 'New group' }));
+    for (const name of ['Blue', 'Green', 'Amber', 'Red', 'Violet', 'Teal', 'Pink', 'Grey']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('button', { name: /^#/ })).not.toBeInTheDocument();
+    expect(Object.keys(en.customers.groups.palette)).toEqual(Object.keys(de.customers.groups.palette));
   });
 
   it('creates a group from the form', async () => {

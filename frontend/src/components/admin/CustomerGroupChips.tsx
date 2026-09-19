@@ -15,12 +15,11 @@ const dot = (color: string) => ({ backgroundColor: color });
 
 interface CustomerGroupChipProps {
   group: CustomerGroup;
-  onRemove?: () => void;
   className?: string;
 }
 
 /** One group, as it shows on a customer row or on the detail page. */
-export const CustomerGroupChip: React.FC<CustomerGroupChipProps> = ({ group, onRemove, className = '' }) => {
+export const CustomerGroupChip: React.FC<CustomerGroupChipProps> = ({ group, className = '' }) => {
   const { t } = useTranslation();
   return (
     <span
@@ -34,16 +33,6 @@ export const CustomerGroupChip: React.FC<CustomerGroupChipProps> = ({ group, onR
           className="h-3 w-3 shrink-0 text-neutral-400"
           aria-label={t('customers.groups.archived', 'Archived')}
         />
-      )}
-      {onRemove && (
-        <button
-          type="button"
-          onClick={onRemove}
-          className="shrink-0 rounded-full p-0.5 hover:bg-neutral-200 dark:hover:bg-neutral-700"
-          aria-label={t('customers.groups.removeFrom', 'Remove from {{name}}', { name: group.name })}
-        >
-          <X className="h-3 w-3" />
-        </button>
       )}
     </span>
   );

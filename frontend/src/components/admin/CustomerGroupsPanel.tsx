@@ -23,7 +23,19 @@ import { customerAdminService, type CustomerGroup } from '../../services/custome
  * Eight colours that stay distinguishable on both themes' surfaces. The field
  * still accepts any hex, so this is a starting point rather than a cage.
  */
-const PALETTE = ['#2563EB', '#15803D', '#B45309', '#B91C1C', '#7C3AED', '#0F766E', '#BE185D', '#4B5563'];
+// Each with a name, because a screen reader has no use for "#B45309".
+// `as const`, so the key stays a literal union the i18n extractor can follow.
+const PALETTE_NAMES = [
+  ['#2563EB', 'blue', 'Blue'],
+  ['#15803D', 'green', 'Green'],
+  ['#B45309', 'amber', 'Amber'],
+  ['#B91C1C', 'red', 'Red'],
+  ['#7C3AED', 'violet', 'Violet'],
+  ['#0F766E', 'teal', 'Teal'],
+  ['#BE185D', 'pink', 'Pink'],
+  ['#4B5563', 'grey', 'Grey'],
+] as const;
+const PALETTE: string[] = PALETTE_NAMES.map(([color]) => color);
 
 interface DraftState {
   name: string;
@@ -256,6 +268,7 @@ export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManag
                         ? t('customers.groups.restore', 'Restore')
                         : t('customers.groups.archive', 'Archive')}
                       onClick={() => updateGroup.mutate({ id: group.id, changes: { isArchived: !group.isArchived } })}
+                      disabled={updateGroup.isPending}
                     >
                       {group.isArchived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
                     </IconButton>
@@ -324,12 +337,13 @@ const ColorPicker: React.FC<{ value: string; onChange: (color: string) => void }
         {t('customers.groups.color', 'Colour')}
       </span>
       <div className="flex flex-wrap items-center gap-2">
-        {PALETTE.map((color) => (
+        {PALETTE_NAMES.map(([color, key, name]) => (
           <button
             key={color}
             type="button"
             onClick={() => onChange(color)}
-            aria-label={color}
+            aria-label={t(`customers.groups.palette.${key}`, name)}
+            title={t(`customers.groups.palette.${key}`, name)}
             aria-pressed={value.toUpperCase() === color}
             className={`h-6 w-6 rounded-full border-2 ${
               value.toUpperCase() === color ? 'border-neutral-900 dark:border-neutral-100' : 'border-transparent'
