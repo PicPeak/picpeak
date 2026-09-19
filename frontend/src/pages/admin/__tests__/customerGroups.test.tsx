@@ -166,8 +166,30 @@ describe('the overview', () => {
     await screen.findByText('carrier@example.com');
     const filter = screen.getByRole('group', { name: 'Filter by group' });
     expect(within(filter).queryByRole('button', { name: /Retired/ })).toBeNull();
-    // …but the chip on the row names it.
-    expect(screen.getByText('Retired')).toBeInTheDocument();
+    // …but the chip on the row names it, in the row and in the phone copy
+    // under the name (see the responsive test below).
+    expect(screen.getAllByText('Retired').length).toBeGreaterThan(0);
+  });
+
+  it('puts the groups under the name for a phone, and drops the wide columns there', async () => {
+    renderPage();
+    await screen.findByText('grouped@example.com');
+
+    // The Groups column and the ones that only make sense side by side are
+    // hidden below the sm breakpoint; the name cell carries a copy instead,
+    // so a phone shows who they are and which groups they are in without
+    // scrolling the table sideways.
+    const headers = screen.getAllByRole('columnheader');
+    const byName = (name: string) => headers.find((h) => h.textContent?.trim() === name);
+    expect(byName('Name')?.className).not.toContain('hidden');
+    expect(byName('Email')?.className).not.toContain('hidden');
+    expect(byName('Groups')?.className).toContain('hidden sm:table-cell');
+    expect(byName('Company')?.className).toContain('hidden sm:table-cell');
+    expect(byName('Last login')?.className).toContain('hidden md:table-cell');
+
+    const nameCell = screen.getByText('grouped@example.com').closest('tr')?.querySelector('td');
+    const phoneChips = nameCell?.querySelector('.sm\\:hidden');
+    expect(phoneChips?.textContent).toContain('VIP');
   });
 });
 
