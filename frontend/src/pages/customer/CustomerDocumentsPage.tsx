@@ -57,10 +57,13 @@ export function uploadErrorMessage(t: TFunction, code: string | undefined, name:
   }
 }
 
+// Light values only left the chips unreadable in dark mode — and the status
+// is the one thing this page exists to communicate. Same pairs the signing
+// page's signer chips use.
 const STATUS_STYLE: Record<CustomerDocument['status'], string> = {
-  clean: 'bg-green-100 text-green-800',
-  pending: 'bg-amber-100 text-amber-800',
-  rejected: 'bg-red-100 text-red-800',
+  clean: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200',
+  pending: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  rejected: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
 };
 
 function statusLabel(t: TFunction, status: CustomerDocument['status']): string {

@@ -264,6 +264,70 @@ describe('with the documents flag on', () => {
     expect(row.status).toBe('pending');
   });
 
+  it('refuses EVERY admin mutation addressed through the wrong customer (#1444)', async () => {
+    // Review was the only one pinned; the rest of the admin surface reaches
+    // the same document by id, and each one had to be checked on its own.
+    const wrong = (path, method = 'post') => asAdmin(request(adminApp)[method](
+      `/api/admin/customers/${customerB}/documents/${pendingId}${path}`,
+    ));
+    const before = await db('customer_documents').where({ id: pendingId }).first();
+
+    expect((await wrong('/share')).status).toBe(404);
+    expect((await wrong('/unshare')).status).toBe(404);
+    expect((await wrong('/download', 'get')).status).toBe(404);
+    expect((await wrong('', 'delete')).status).toBe(404);
+    expect((await wrong('', 'patch').send({ eventId: null }))).toMatchObject({ status: 404 });
+
+    // A 404 that changed something is not a refusal.
+    const after = await db('customer_documents').where({ id: pendingId }).first();
+    expect({
+      status: after.status, shared_at: after.shared_at, unshared_at: after.unshared_at,
+      deleted_at: after.deleted_at, event_id: after.event_id,
+    }).toEqual({
+      status: before.status, shared_at: before.shared_at, unshared_at: before.unshared_at,
+      deleted_at: before.deleted_at, event_id: before.event_id,
+    });
+  });
+
+  it('refuses an upload linked to another customer\'s contract or project', async () => {
+    // resolveLinks checks ownership, and answers 400 rather than telling the
+    // caller whether the record exists.
+    const foreignContract = idOf(await db('contracts').insert({
+      contract_number: `K-X-${Date.now()}`, customer_account_id: customerB, title: 'Theirs',
+      status: 'draft', language: 'de', issue_date: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString(),
+    }).returning('id'));
+
+    const res = await uploadAs(customerA, PDF, 'linked.pdf', { contractId: foreignContract });
+    expect(res.status).toBe(400);
+    expect(await db('customer_documents').where({ contract_id: foreignContract }).first()).toBeUndefined();
+    expect(tempFiles()).toHaveLength(0);
+
+    // A project is admin-only on the way in; a customer naming one is
+    // ignored rather than trusted.
+    const ok = await uploadAs(customerA, PDF, 'noproject.pdf', { projectId: 999999 });
+    expect(ok.status).toBe(201);
+    expect((await db('customer_documents').where({ id: ok.body.document.id }).first()).project_id).toBeNull();
+
+    await db('contracts').where({ id: foreignContract }).del();
+  });
+
+  it('shuts a deactivated customer out of every document route', async () => {
+    await db('customer_accounts').where({ id: customerB }).update({ is_active: 0 });
+    try {
+      const list = await asCustomer(request(customerApp).get('/api/customer/documents'), customerB);
+      expect([401, 403]).toContain(list.status);
+      const upload = await uploadAs(customerB, PDF, 'while-off.pdf');
+      expect([401, 403]).toContain(upload.status);
+      const download = await asCustomer(
+        request(customerApp).get(`/api/customer/documents/${pendingId}/download`), customerB,
+      );
+      expect([401, 403, 404]).toContain(download.status);
+    } finally {
+      await db('customer_accounts').where({ id: customerB }).update({ is_active: 1 });
+    }
+  });
+
   it('lets the customer download once an admin marked it clean, as an attachment', async () => {
     const review = await asAdmin(request(adminApp)
       .post(`/api/admin/customers/${customerA}/documents/${pendingId}/review`)).send({ status: 'clean' });

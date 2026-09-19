@@ -134,6 +134,37 @@ describe('CustomerDocumentsPage', () => {
     expect(screen.getByRole('button', { name: /Try again/ })).toBeEnabled();
   });
 
+  it('names the new refusals the deeper PDF check produces (#1444)', async () => {
+    // The check behind the upload got stricter (plan slice 1d). Each refusal
+    // has to say what the customer can do about it, not fall back to
+    // "could not be uploaded".
+    for (const [code, expected] of [
+      ['PDF_ACTIVE_CONTENT', /contains active content[\s\S]*print it to PDF/],
+      ['PDF_TOO_COMPLEX', /could not be checked[\s\S]*print it to PDF/],
+      ['PDF_TOO_MANY_PAGES', /has too many pages/],
+    ] as const) {
+      uploadSpy.mockRejectedValueOnce({ response: { status: 400, data: { code } } });
+      const view = renderPage();
+      const input = await screen.findByLabelText('PDF file');
+      await userEvent.upload(input, new File(['%PDF-1.4'], 'scan.pdf', { type: 'application/pdf' }));
+      await userEvent.click(screen.getByRole('button', { name: /Upload/ }));
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(expected));
+      expect(screen.getByRole('status')).toHaveTextContent('scan.pdf');
+      view.unmount();
+    }
+  });
+
+  it('carries a dark-mode class on every status chip, so none of them is light-only', async () => {
+    // The three chips are the page's only colour-carrying elements. A chip
+    // styled for light mode alone is unreadable in dark mode, and the status
+    // is the one thing this page exists to communicate.
+    renderPage();
+    await screen.findByText('signed-contract.pdf');
+    for (const label of ['Awaiting review', 'Available', 'Rejected']) {
+      expect(screen.getByText(label).className).toMatch(/\bdark:/);
+    }
+  });
+
   it('confirms a received upload as awaiting review', async () => {
     renderPage();
     const input = await screen.findByLabelText('PDF file');
