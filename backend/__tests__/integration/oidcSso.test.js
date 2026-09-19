@@ -176,6 +176,32 @@ describe('OIDC SSO (#798)', () => {
     expect(victim.external_subject).toBeNull();
   });
 
+  it('does NOT link by verified email when the local email was not set by a trusted flow', async () => {
+    // email_link_eligible = false: the address was typed into a profile or
+    // set by a non-super admin, so it proves nothing about who owns it. A
+    // verified IdP identity with that email must not land on this row.
+    const role = await db('roles').where({ name: 'admin' }).first();
+    await db('admin_users').insert({
+      username: 'self-edited-admin',
+      email: 'claimed@example.com',
+      password_hash: await bcrypt.hash('ClaimedPass123', 4),
+      role_id: role.id,
+      is_active: 1,
+      auth_provider: 'local',
+      email_link_eligible: 0,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    idp.setNextUser({ sub: 'sub-real-owner', email: 'claimed@example.com', email_verified: true });
+    const res = await ssoRoundTrip();
+    // A clear, specific refusal — not a JIT insert colliding on the email.
+    expect(res.headers.location).toMatch(/sso_error=email_unverified/);
+
+    const row = await db('admin_users').where({ email: 'claimed@example.com' }).first();
+    expect(row.external_subject).toBeNull();
+  });
+
   it('refuses a deactivated admin with sso_error=inactive', async () => {
     await db('admin_users').where({ id: agentCookies.jitAdminId }).update({ is_active: 0 });
     idp.setNextUser({ sub: 'sub-jit-1', email: 'renamed@example.com', email_verified: true });

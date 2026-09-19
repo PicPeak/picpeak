@@ -14,6 +14,7 @@ const { getAbsoluteFrontendUrl } = require('../utils/frontendUrl');
 const { queueEmail } = require('./emailProcessor');
 const logger = require('../utils/logger');
 const { ConflictError, NotFoundError, ValidationError, ForbiddenError } = require('../utils/errors');
+const { hasColumnCached } = require('../utils/schemaCache');
 
 /**
  * Create a new admin user invitation
@@ -245,6 +246,17 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
 
   const allowedUpdates = {};
 
+  // Only a super_admin may change a super_admin account. users.edit is a
+  // delegable permission; without this a holder could rewrite a super_admin's
+  // email or deactivate them, which the dedicated routes (reset-password,
+  // role assignment, invitations) already refuse.
+  const superAdminRole = await db('roles').where('name', 'super_admin').first();
+  const actorIsSuperAdmin = requestingAdmin.roleName === 'super_admin';
+  const targetIsSuperAdmin = Boolean(superAdminRole && user.role_id === superAdminRole.id);
+  if (targetIsSuperAdmin && !actorIsSuperAdmin) {
+    throw new ForbiddenError('Only Super Admins can modify a Super Admin account');
+  }
+
   if (updates.username !== undefined) {
     const existing = await db('admin_users')
       .where('username', updates.username)
@@ -265,6 +277,17 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
       throw new ConflictError('Email already in use', 'email');
     }
     allowedUpdates.email = updates.email;
+    // Whether a later SSO login may link to this account by email
+    // (oidcService, migration 227): an address set by a super_admin is
+    // trusted — saving it unchanged is how a super_admin confirms one — while
+    // a change by anyone else is not proof of ownership.
+    if (await hasColumnCached('admin_users', 'email_link_eligible')) {
+      if (actorIsSuperAdmin) {
+        allowedUpdates.email_link_eligible = formatBoolean(true);
+      } else if (String(updates.email).toLowerCase() !== String(user.email || '').toLowerCase()) {
+        allowedUpdates.email_link_eligible = formatBoolean(false);
+      }
+    }
   }
 
   if (updates.role_id !== undefined) {
@@ -273,12 +296,8 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
       throw new NotFoundError('Role', updates.role_id);
     }
 
-    // Role hierarchy enforcement
-    const superAdminRole = await db('roles').where('name', 'super_admin').first();
-    const isSuperAdmin = requestingAdmin.roleName === 'super_admin';
-
     // Only super_admin can assign super_admin role
-    if (superAdminRole && role.id === superAdminRole.id && !isSuperAdmin) {
+    if (superAdminRole && role.id === superAdminRole.id && !actorIsSuperAdmin) {
       throw new ValidationError('Only Super Admins can assign the Super Admin role');
     }
 
@@ -314,7 +333,28 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
   }
 
   if (updates.is_active !== undefined) {
-    allowedUpdates.is_active = formatBoolean(updates.is_active);
+    // The route validates with isBoolean(), which also lets 'true'/'false'
+    // strings through; a non-empty string is truthy, so read it explicitly.
+    const nextActive = updates.is_active === true || updates.is_active === 'true'
+      || updates.is_active === 1 || updates.is_active === '1';
+    if (!nextActive) {
+      // Same guards as deactivateAdminUser, so this route is not a weaker
+      // path to the same state.
+      if (id === updatedById) {
+        throw new ValidationError('Cannot deactivate your own account');
+      }
+      if (targetIsSuperAdmin) {
+        const superAdminCount = await db('admin_users')
+          .where('role_id', superAdminRole.id)
+          .where('is_active', formatBoolean(true))
+          .count('id as count')
+          .first();
+        if (Number(superAdminCount?.count) <= 1) {
+          throw new ValidationError('Cannot deactivate the last Super Admin');
+        }
+      }
+    }
+    allowedUpdates.is_active = formatBoolean(nextActive);
   }
 
   allowedUpdates.updated_at = new Date();
@@ -331,6 +371,23 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
 }
 
 /**
+ * Only a super_admin may change a super_admin account (deactivate, activate,
+ * delete). users.delete is delegable; the dedicated routes for invitations,
+ * role assignment and password resets already hold the same line.
+ */
+async function assertMayManageSuperAdminTarget(target, actorId) {
+  const superAdminRole = await db('roles').where('name', 'super_admin').first();
+  if (!superAdminRole || target.role_id !== superAdminRole.id) return;
+  const actor = await db('admin_users')
+    .leftJoin('roles', 'roles.id', 'admin_users.role_id')
+    .where('admin_users.id', actorId)
+    .first('roles.name as role_name');
+  if (!actor || actor.role_name !== 'super_admin') {
+    throw new ForbiddenError('Only Super Admins can modify a Super Admin account');
+  }
+}
+
+/**
  * Deactivate admin user
  * @param {number} id - User ID to deactivate
  * @param {number} deactivatedById - ID of user performing deactivation
@@ -340,6 +397,7 @@ async function deactivateAdminUser(id, deactivatedById) {
   if (!user) {
     throw new NotFoundError('Admin user', id);
   }
+  await assertMayManageSuperAdminTarget(user, deactivatedById);
 
   // Prevent self-deactivation
   if (id === deactivatedById) {
@@ -391,6 +449,7 @@ async function activateAdminUser(id, activatedById) {
   if (!user) {
     throw new NotFoundError('Admin user', id);
   }
+  await assertMayManageSuperAdminTarget(user, activatedById);
 
   // No "last super admin" guard needed — activate only ever ADDS an
   // active super_admin, never removes one. No "can't activate
@@ -433,6 +492,7 @@ async function deleteAdminUser(id, deletedById) {
   if (!user) {
     throw new NotFoundError('Admin user', id);
   }
+  await assertMayManageSuperAdminTarget(user, deletedById);
 
   // Self-delete would lock the actor out of their own session at the
   // moment of commit. Refuse — same shape as the deactivate guard.

@@ -381,6 +381,9 @@ async function resyncSequences(tables) {
 const PRESERVED_AUTH_FIELDS = [
   'username', 'email', 'password_hash', 'is_active', 'must_change_password',
   'two_factor_enabled', 'two_factor_secret', 'two_factor_recovery_codes', 'two_factor_enrolled_at',
+  // Whether SSO may link to this row by email (migration 227) — auth state,
+  // so a backup must not set it for the operator either.
+  'email_link_eligible',
 ];
 
 // The json/jsonb columns of a table (Postgres only). The pg driver returns

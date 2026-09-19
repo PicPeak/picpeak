@@ -36,6 +36,7 @@ const { Issuer, generators } = require('openid-client');
 const { db } = require('../database/db');
 const { getAppSetting, upsertAppSetting } = require('../utils/appSettings');
 const { formatBoolean } = require('../utils/dbCompat');
+const { hasColumnCached } = require('../utils/schemaCache');
 const { getBcryptRounds } = require('../utils/passwordValidation');
 const logger = require('../utils/logger');
 
@@ -600,11 +601,19 @@ async function resolveAdminFromClaims(claims) {
   // 2. One-time email link — verified emails only, and only onto rows that
   //    have no binding yet (a different identity on the row means a
   //    different IdP identity already owns it).
+  //    The local email must also have been set by a trusted flow
+  //    (email_link_eligible, migration 227): an email an admin typed into
+  //    their own profile, or that a non-super admin set on someone else's
+  //    account, is not proof of ownership and must not let an IdP identity
+  //    — and its mapped role — land on that row.
   if (email && emailVerified) {
-    const byEmail = await db('admin_users')
+    const byEmailQuery = db('admin_users')
       .where('email', email)
-      .whereNull('external_subject')
-      .first();
+      .whereNull('external_subject');
+    if (await hasColumnCached('admin_users', 'email_link_eligible')) {
+      byEmailQuery.where('email_link_eligible', formatBoolean(true));
+    }
+    const byEmail = await byEmailQuery.first();
     if (byEmail) {
       if (!byEmail.is_active) {
         const err = new Error('Admin account is deactivated');
@@ -640,6 +649,18 @@ async function resolveAdminFromClaims(claims) {
         sub,
       });
       return syncAdminRole({ ...byEmail, external_issuer: iss, external_subject: sub }, mappedRole);
+    }
+    // An unlinked admin with this email exists but its email was not set by a
+    // trusted flow. Refuse clearly instead of falling through to JIT
+    // provisioning, which would collide on the unique email.
+    const unconfirmed = await db('admin_users')
+      .where('email', email)
+      .whereNull('external_subject')
+      .first('id');
+    if (unconfirmed) {
+      const err = new Error('An admin with this email exists but its email was not confirmed by a Super Admin');
+      err.code = 'OIDC_EMAIL_UNVERIFIED';
+      throw err;
     }
   }
 

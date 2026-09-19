@@ -68,7 +68,7 @@ export const AdminLoginPage: React.FC = () => {
   useEffect(() => {
     const ssoError = searchParams.get('sso_error');
     if (!ssoError) return;
-    const known = ['config', 'state', 'idp', 'inactive', 'not_provisioned', 'no_email', 'no_role'];
+    const known = ['config', 'state', 'idp', 'inactive', 'not_provisioned', 'no_email', 'no_role', 'email_unverified'];
     const key = known.includes(ssoError) ? ssoError : 'idp';
     toast.error(t(`adminLogin.ssoErrors.${key}`));
   }, [searchParams, t]);

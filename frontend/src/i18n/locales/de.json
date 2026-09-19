@@ -5240,7 +5240,8 @@
       "inactive": "Ihr Admin-Konto ist deaktiviert.",
       "not_provisioned": "Kein Admin-Konto passt zu Ihrer SSO-Identität. Bitten Sie einen Administrator um eine Einladung.",
       "no_email": "Ihr Identity Provider hat keine E-Mail-Adresse geliefert — es kann kein Konto erstellt werden.",
-      "no_role": "Ihr Identity Provider hat keine Rolle geliefert, die dieser Instanz zugeordnet ist — bitten Sie einen Administrator, Sie einer zugeordneten Gruppe hinzuzufügen."
+      "no_role": "Ihr Identity Provider hat keine Rolle geliefert, die dieser Instanz zugeordnet ist — bitten Sie einen Administrator, Sie einer zugeordneten Gruppe hinzuzufügen.",
+      "email_unverified": "Es gibt ein Admin-Konto mit Ihrer E-Mail-Adresse, aber die Adresse wurde nicht von einem Super-Admin bestätigt, daher kann SSO sie nicht verknüpfen. Bitten Sie einen Super-Admin, Ihre E-Mail-Adresse in der Benutzerverwaltung zu speichern, und versuchen Sie es erneut."
     }
   },
   "cssTemplates": {

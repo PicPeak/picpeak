@@ -5122,7 +5122,8 @@
       "inactive": "Your admin account is deactivated.",
       "not_provisioned": "No admin account matches your SSO identity. Ask an administrator to invite you.",
       "no_email": "Your identity provider supplied no email address — an account cannot be created.",
-      "no_role": "Your identity provider granted no role that is mapped to this instance — ask an administrator to add you to a mapped group."
+      "no_role": "Your identity provider granted no role that is mapped to this instance — ask an administrator to add you to a mapped group.",
+      "email_unverified": "An admin account with your email exists, but its email address has not been confirmed by a Super Admin, so SSO cannot link to it. Ask a Super Admin to save your email address in user management, then try again."
     }
   },
   "slideshow": {
