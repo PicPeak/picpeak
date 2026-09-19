@@ -176,7 +176,7 @@ router.post('/groups', [
   body('color').optional({ nullable: true }).isString(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  const group = await customerGroupsService.create(req.body, req.admin.id);
+  const group = await customerGroupsService.create(req.body, req.admin);
   return successResponse(res, { group }, 201);
 }));
 
@@ -188,7 +188,7 @@ router.post('/groups/reorder', [
   body('orderedIds.*').isInt({ min: 1 }).toInt(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  const groups = await customerGroupsService.reorder(req.body.orderedIds, req.admin.id);
+  const groups = await customerGroupsService.reorder(req.body.orderedIds, req.admin);
   return successResponse(res, { groups });
 }));
 
@@ -202,7 +202,7 @@ router.put('/groups/:groupId', [
   body('isArchived').optional().isBoolean(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  const group = await customerGroupsService.update(parseInt(req.params.groupId, 10), req.body, req.admin.id);
+  const group = await customerGroupsService.update(parseInt(req.params.groupId, 10), req.body, req.admin);
   return successResponse(res, { group });
 }));
 
@@ -212,7 +212,7 @@ router.delete('/groups/:groupId', [
   param('groupId').isInt({ min: 1 }),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
-  return successResponse(res, await customerGroupsService.remove(parseInt(req.params.groupId, 10), req.admin.id));
+  return successResponse(res, await customerGroupsService.remove(parseInt(req.params.groupId, 10), req.admin));
 }));
 
 router.put('/:id/groups', [
@@ -224,7 +224,7 @@ router.put('/:id/groups', [
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   const groups = await customerGroupsService.setCustomerGroups(
-    parseInt(req.params.id, 10), req.body.groupIds, req.admin.id,
+    parseInt(req.params.id, 10), req.body.groupIds, req.admin,
   );
   return successResponse(res, { groups });
 }));

@@ -33,7 +33,12 @@ interface DraftState {
 
 const EMPTY: DraftState = { name: '', description: '', color: PALETTE[0] };
 
-export const CustomerGroupsPanel: React.FC = () => {
+/**
+ * `canManage` is `customers.groups.manage`. Without it the catalogue is what
+ * `customers.view` may read: the groups and their counts, and no control that
+ * would only answer 403.
+ */
+export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManage }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<DraftState>(EMPTY);
@@ -131,7 +136,7 @@ export const CustomerGroupsPanel: React.FC = () => {
             {t('customers.groups.intro', 'Organise customers into groups. A customer can be in several, and the overview can be filtered by them.')}
           </p>
         </div>
-        {!creating && (
+        {canManage && !creating && (
           <Button variant="outline" size="sm" onClick={() => setCreating(true)} leftIcon={<Plus className="h-4 w-4" />}>
             {t('customers.groups.new', 'New group')}
           </Button>
@@ -221,8 +226,13 @@ export const CustomerGroupsPanel: React.FC = () => {
                     )}
                   </div>
                   <span className="text-xs text-neutral-500 dark:text-neutral-400">
-                    {t('customers.groups.memberCount', '{{count}} customers', { count: group.memberCount || 0 })}
+                    {t('customers.groups.memberCount', {
+                      count: group.memberCount || 0,
+                      defaultValue_one: '{{count}} customer',
+                      defaultValue_other: '{{count}} customers',
+                    })}
                   </span>
+                  {canManage && (
                   <div className="flex items-center gap-1">
                     <IconButton
                       label={t('customers.groups.moveUp', 'Move up')}
@@ -260,6 +270,7 @@ export const CustomerGroupsPanel: React.FC = () => {
                       <Trash2 className="h-4 w-4" />
                     </IconButton>
                   </div>
+                  )}
                 </div>
               )}
             </li>

@@ -906,6 +906,11 @@ async function eraseCustomer(id, erasedByAdminId) {
     // Active reset tokens for this customer should be invalidated.
     await trx('customer_password_resets').where('customer_account_id', id).del();
 
+    // Group memberships (#1443) say something about the person, a group name
+    // can be one, and an anonymised row that still counted as a member would
+    // keep its groups undeletable.
+    await trx('customer_group_members').where('customer_account_id', id).del();
+
     // Pending re-bills (incoming invoices, migration 132) attached to this
     // customer would otherwise stay billable to the now-anonymized account —
     // return the not-yet-billed ones to the inbox for re-triage so they're not

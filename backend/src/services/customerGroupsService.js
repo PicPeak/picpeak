@@ -21,6 +21,7 @@
 
 const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
+const { isUniqueViolation } = require('../utils/dbErrors');
 
 const NAME_MAX = 80;
 const DESCRIPTION_MAX = 500;
@@ -57,17 +58,25 @@ function normalizeDescription(value) {
 }
 
 /**
- * Names are unique regardless of case, checked here rather than by a
- * functional index so SQLite and PostgreSQL behave the same. The plain unique
- * index from migration 226 still catches an exact-case race.
+ * What name uniqueness hangs on (`customer_groups.name_key`, unique). Folded
+ * here rather than with SQL LOWER(), which is ASCII-only on SQLite: "Ärzte"
+ * and "ärzte" have to be one group on both engines.
  */
+const nameKey = (name) => name.normalize('NFC').toLowerCase();
+
+const nameTaken = () => new AppError('A group with that name already exists', 409, 'GROUP_NAME_TAKEN');
+
+/** The friendly refusal; the unique index is what holds under a race. */
 async function assertNameFree(name, { exceptId = null, conn = db } = {}) {
-  const query = conn('customer_groups').whereRaw('LOWER(name) = ?', [name.toLowerCase()]);
+  const query = conn('customer_groups').where({ name_key: nameKey(name) });
   if (exceptId) query.whereNot('id', exceptId);
-  if (await query.first()) {
-    throw new AppError('A group with that name already exists', 409, 'GROUP_NAME_TAKEN');
-  }
+  if (await query.first()) throw nameTaken();
 }
+
+/** activity_logs wants an actor object; a bare id is stored as "system". */
+const adminActor = (admin) => (admin?.id
+  ? { type: 'admin', id: admin.id, name: admin.username || 'admin' }
+  : null);
 
 const toApi = (row) => ({
   id: row.id,
@@ -101,7 +110,7 @@ async function getById(id) {
   return row;
 }
 
-async function create({ name, description, color }, adminId = null) {
+async function create({ name, description, color }, admin = null) {
   const row = {
     name: normalizeName(name),
     description: normalizeDescription(description),
@@ -109,14 +118,21 @@ async function create({ name, description, color }, adminId = null) {
     // New groups sort after the existing ones; the admin reorders from there.
     sort_order: Number((await db('customer_groups').max('sort_order as max').first())?.max || 0) + 1,
     is_archived: false,
-    created_by_admin_id: adminId || null,
+    created_by_admin_id: admin?.id || null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
+  row.name_key = nameKey(row.name);
   await assertNameFree(row.name);
-  const [inserted] = await db('customer_groups').insert(row).returning('id');
+  let inserted;
+  try {
+    [inserted] = await db('customer_groups').insert(row).returning('id');
+  } catch (err) {
+    if (isUniqueViolation(err)) throw nameTaken();
+    throw err;
+  }
   const id = typeof inserted === 'object' ? inserted.id : inserted;
-  await logActivity('customer_group_created', { groupId: id, name: row.name }, null, adminId);
+  await logActivity('customer_group_created', { groupId: id, name: row.name }, null, adminActor(admin));
   return toApi({ ...await getById(id), member_count: 0 });
 }
 
@@ -124,12 +140,13 @@ async function create({ name, description, color }, adminId = null) {
  * Rename, recolour, re-describe or (un)archive. Every field is optional, so a
  * caller that only archives doesn't have to send the rest back.
  */
-async function update(id, payload, adminId = null) {
+async function update(id, payload, admin = null) {
   const existing = await getById(id);
   const updates = { updated_at: new Date().toISOString() };
   const changed = {};
   if (payload.name !== undefined) {
     updates.name = normalizeName(payload.name);
+    updates.name_key = nameKey(updates.name);
     if (updates.name !== existing.name) {
       await assertNameFree(updates.name, { exceptId: id });
       changed.name = { from: existing.name, to: updates.name };
@@ -147,9 +164,14 @@ async function update(id, payload, adminId = null) {
     updates.is_archived = !!payload.isArchived;
     if (!!payload.isArchived !== !!existing.is_archived) changed.isArchived = !!payload.isArchived;
   }
-  await db('customer_groups').where({ id }).update(updates);
+  try {
+    await db('customer_groups').where({ id }).update(updates);
+  } catch (err) {
+    if (isUniqueViolation(err)) throw nameTaken();
+    throw err;
+  }
   if (Object.keys(changed).length > 0) {
-    await logActivity('customer_group_updated', { groupId: id, name: updates.name || existing.name, changed }, null, adminId);
+    await logActivity('customer_group_updated', { groupId: id, name: updates.name || existing.name, changed }, null, adminActor(admin));
   }
   return (await list({ includeArchived: true })).find((group) => group.id === Number(id));
 }
@@ -158,25 +180,38 @@ async function update(id, payload, adminId = null) {
  * Delete a group. Refused while customers carry it: the admin archives it
  * instead, or clears the assignments first. This is what keeps a delete from
  * ever reaching a customer record.
+ *
+ * The check and the delete are one statement, so nothing can be assigned in
+ * between on SQLite. On PostgreSQL a concurrent assignment can still commit
+ * after the statement took its snapshot; there the RESTRICT foreign key from
+ * migration 226 refuses the delete (23503) instead of cascading it away.
  */
-async function remove(id, adminId = null) {
+async function remove(id, admin = null) {
   const group = await getById(id);
-  const [{ count }] = await db('customer_group_members').where({ group_id: id }).count({ count: '*' });
-  const members = Number(count) || 0;
-  if (members > 0) {
+  let deleted;
+  try {
+    deleted = await db('customer_groups')
+      .where({ id })
+      .whereNotExists(db('customer_group_members').where({ group_id: id }).select(db.raw('1')))
+      .del();
+  } catch (err) {
+    if (err.code !== '23503') throw err;
+    deleted = 0;
+  }
+  if (!deleted) {
+    const [{ count }] = await db('customer_group_members').where({ group_id: id }).count({ count: '*' });
     throw new AppError(
-      `${members} customer(s) are still in this group. Archive it, or remove it from those customers first.`,
+      `${Number(count) || 0} customer(s) are still in this group. Archive it, or remove it from those customers first.`,
       409,
       'GROUP_IN_USE',
     );
   }
-  await db('customer_groups').where({ id }).del();
-  await logActivity('customer_group_deleted', { groupId: id, name: group.name }, null, adminId);
+  await logActivity('customer_group_deleted', { groupId: id, name: group.name }, null, adminActor(admin));
   return { deleted: true };
 }
 
 /** The order the admin dragged the catalogue into. Ids not listed keep theirs. */
-async function reorder(ids, adminId = null) {
+async function reorder(ids, admin = null) {
   if (!Array.isArray(ids) || ids.length === 0) {
     throw new AppError('Send the group ids in their new order', 400, 'GROUP_ORDER_REQUIRED');
   }
@@ -189,7 +224,7 @@ async function reorder(ids, adminId = null) {
         .update({ sort_order: position + 1, updated_at: new Date().toISOString() });
     }
   });
-  await logActivity('customer_groups_reordered', { groupIds: ids }, null, adminId);
+  await logActivity('customer_groups_reordered', { groupIds: ids }, null, adminActor(admin));
   return list({ includeArchived: true });
 }
 
@@ -228,7 +263,7 @@ async function groupsForCustomers(customerIds, conn = db) {
  * customer who carries one keeps it through an unrelated edit — the caller
  * sends the ids it was shown, including the archived one.
  */
-async function setCustomerGroups(customerId, groupIds, adminId = null) {
+async function setCustomerGroups(customerId, groupIds, admin = null) {
   const wanted = [...new Set((Array.isArray(groupIds) ? groupIds : [])
     .map((id) => Number(id))
     .filter((id) => Number.isInteger(id) && id > 0))];
@@ -269,7 +304,7 @@ async function setCustomerGroups(customerId, groupIds, adminId = null) {
       })));
     }
   });
-  await logActivity('customer_groups_assigned', { customerId, added, removed }, null, adminId);
+  await logActivity('customer_groups_assigned', { customerId, added, removed }, null, adminActor(admin));
   return groupsForCustomer(customerId);
 }
 
@@ -283,5 +318,5 @@ module.exports = {
   groupsForCustomer,
   groupsForCustomers,
   setCustomerGroups,
-  _internal: { normalizeColor, normalizeName, normalizeDescription },
+  _internal: { normalizeColor, normalizeName, normalizeDescription, nameKey },
 };

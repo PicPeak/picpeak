@@ -25,6 +25,7 @@ import { InlineCustomerCreate } from '../../components/admin/InlineCustomerCreat
 import { CustomerGroupChipList, CustomerGroupFilter } from '../../components/admin/CustomerGroupChips';
 import { CustomerGroupsPanel } from '../../components/admin/CustomerGroupsPanel';
 import { useMutationWithToast } from '../../hooks';
+import { usePermissions } from '../../contexts/PermissionsContext';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 
 import { Button, Card, Input, Loading } from '../../components/common';
@@ -73,11 +74,7 @@ export const CustomerManagementPage: React.FC = () => {
   // opens with; the server does the filtering so it survives a reload of the
   // list rather than only hiding rows already fetched.
   const [groupFilter, setGroupFilter] = useState<number[]>([]);
-
-  const { data: customers, isLoading: customersLoading, error: customersError } = useQuery({
-    queryKey: ['admin-customers', groupFilter],
-    queryFn: () => customerAdminService.list(undefined, groupFilter),
-  });
+  const { hasPermission } = usePermissions();
 
   const { data: groups } = useQuery({
     queryKey: ['admin-customer-groups'],
@@ -86,6 +83,18 @@ export const CustomerManagementPage: React.FC = () => {
   // Archived groups stay visible on the customers that carry them, but are
   // not offered as a filter: nothing new lands in them.
   const filterableGroups = useMemo(() => (groups || []).filter((g) => !g.isArchived), [groups]);
+  // Only what the filter still offers. A selected group that was archived or
+  // deleted on the Groups tab would otherwise keep filtering the list with no
+  // pill left to switch it off — and no Clear once it was the last live one.
+  const activeGroupFilter = useMemo(
+    () => (groups ? groupFilter.filter((id) => filterableGroups.some((g) => g.id === id)) : groupFilter),
+    [groups, groupFilter, filterableGroups],
+  );
+
+  const { data: customers, isLoading: customersLoading, error: customersError } = useQuery({
+    queryKey: ['admin-customers', activeGroupFilter],
+    queryFn: () => customerAdminService.list(undefined, activeGroupFilter),
+  });
 
   const { data: invitations, isLoading: invitationsLoading, error: invitationsError } = useQuery({
     queryKey: ['admin-customer-invitations'],
@@ -143,6 +152,51 @@ export const CustomerManagementPage: React.FC = () => {
       || c.companyName?.trim();
     return display || <span className="text-neutral-500 dark:text-neutral-400 italic">{t('customers.unnamed', 'Unnamed')}</span>;
   };
+
+  // Active / deactivated plus the passive and invitation-pending badges.
+  // One block for the status column and for the phone copy under the name,
+  // so a phone row can't fall behind the desktop one.
+  const renderStatus = (c: CustomerAccountSummary) => (
+    <div className="flex flex-col gap-1">
+      {c.isActive ? (
+        <span className="inline-flex items-center gap-1 text-xs" style={{ color: 'var(--color-accent)' }}>
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          {t('customers.status.active', 'Active')}
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 text-xs text-red-600">
+          <X className="w-3.5 h-3.5" />
+          {t('customers.status.inactive', 'Deactivated')}
+        </span>
+      )}
+      {/* Passive customers (no portal access). The
+          status badge sits on its own line so a
+          passive deactivated customer can still
+          show both states clearly. */}
+      {c.isPassive && (() => {
+        const invite = pendingInviteByEmail.get(c.email.trim().toLowerCase());
+        return invite ? (
+          <span
+            className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300"
+            // Deliberately describes the invitation ROW, not a
+            // delivery. createInvitation inserts the row and then
+            // queues the email without a transaction, so an open
+            // invitation does not prove an email_queue row exists,
+            // let alone that anything was delivered.
+            title={t('customers.invitePending.hint',
+              'An invitation link for this address is open and has not been accepted. That is not proof the email reached them — check System health if they say it never arrived.') as string}
+          >
+            <MailCheck className="w-3 h-3" />
+            {t('customers.invitePending.badge', 'Invitation pending')}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
+            {t('customers.passive.badge', 'Passive — admin only')}
+          </span>
+        );
+      })()}
+    </div>
+  );
 
   const renderTabs = () => (
     <div className="flex flex-wrap gap-x-4 gap-y-1 sm:gap-x-6 border-b border-neutral-200 dark:border-neutral-700 mb-6">
@@ -235,7 +289,7 @@ export const CustomerManagementPage: React.FC = () => {
             {activeTab === 'customers' && (
               <CustomerGroupFilter
                 groups={filterableGroups}
-                selectedIds={groupFilter}
+                selectedIds={activeGroupFilter}
                 onToggle={(id) => setGroupFilter((current) => (
                   current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
                 ))}
@@ -246,7 +300,7 @@ export const CustomerManagementPage: React.FC = () => {
         )}
 
         {activeTab === 'groups' ? (
-          <CustomerGroupsPanel />
+          <CustomerGroupsPanel canManage={hasPermission('customers.groups.manage')} />
         ) : activeTab === 'customers' ? (
           customersLoading ? (
             <div className="flex justify-center py-8"><Loading /></div>
@@ -257,7 +311,7 @@ export const CustomerManagementPage: React.FC = () => {
             </div>
           ) : filteredCustomers.length === 0 ? (
             <div className="text-center text-neutral-500 dark:text-neutral-400 py-12">
-              {groupFilter.length > 0
+              {activeGroupFilter.length > 0
                 ? t('customers.groups.emptyFiltered', 'No customers in the selected groups.')
                 : t('customers.empty', 'No customers yet. Click "Invite customer" to add one.')}
             </div>
@@ -296,19 +350,7 @@ export const CustomerManagementPage: React.FC = () => {
                         )}
                         {/* …and the status, so a phone row is name, groups,
                             state and email without scrolling sideways. */}
-                        <span className="mt-1 flex sm:hidden text-xs">
-                          {c.isActive ? (
-                            <span className="inline-flex items-center gap-1" style={{ color: 'var(--color-accent)' }}>
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              {t('customers.status.active', 'Active')}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-red-600">
-                              <X className="w-3.5 h-3.5" />
-                              {t('customers.status.inactive', 'Deactivated')}
-                            </span>
-                          )}
-                        </span>
+                        <span className="mt-1 flex sm:hidden">{renderStatus(c)}</span>
                       </td>
                       {/* Wraps on a phone instead of pushing the row sideways. */}
                       <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400 break-all max-w-[38vw] sm:max-w-none sm:break-normal">{c.email}</td>
@@ -317,45 +359,7 @@ export const CustomerManagementPage: React.FC = () => {
                       <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.eventCount ?? 0}</td>
                       <td className="hidden md:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
                       <td className="hidden sm:table-cell px-3 py-3">
-                        <div className="flex flex-col gap-1">
-                          {c.isActive ? (
-                            <span className="inline-flex items-center gap-1 text-xs" style={{ color: 'var(--color-accent)' }}>
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              {t('customers.status.active', 'Active')}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-xs text-red-600">
-                              <X className="w-3.5 h-3.5" />
-                              {t('customers.status.inactive', 'Deactivated')}
-                            </span>
-                          )}
-                          {/* Passive customers (no portal access). The
-                              status badge sits on its own line so a
-                              passive deactivated customer can still
-                              show both states clearly. */}
-                          {c.isPassive && (() => {
-                            const invite = pendingInviteByEmail.get(c.email.trim().toLowerCase());
-                            return invite ? (
-                              <span
-                                className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300"
-                                // Deliberately describes the invitation ROW, not a
-                                // delivery. createInvitation inserts the row and then
-                                // queues the email without a transaction, so an open
-                                // invitation does not prove an email_queue row exists,
-                                // let alone that anything was delivered.
-                                title={t('customers.invitePending.hint',
-                                  'An invitation link for this address is open and has not been accepted. That is not proof the email reached them — check System health if they say it never arrived.') as string}
-                              >
-                                <MailCheck className="w-3 h-3" />
-                                {t('customers.invitePending.badge', 'Invitation pending')}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300">
-                                {t('customers.passive.badge', 'Passive — admin only')}
-                              </span>
-                            );
-                          })()}
-                        </div>
+                        {renderStatus(c)}
                       </td>
                       <td className="hidden sm:table-cell px-3 py-3 text-right">
                         {c.isActive && (

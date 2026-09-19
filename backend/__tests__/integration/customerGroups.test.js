@@ -112,6 +112,23 @@ describe('the catalogue', () => {
     expect(duplicate.status).toBe(409);
     expect(duplicate.body.code).toBe('GROUP_NAME_TAKEN');
 
+    // SQL LOWER() is ASCII-only on SQLite, so the umlaut is the case that
+    // told the two engines apart.
+    expect((await createGroup({ name: 'Ärzte' })).status).toBe(201);
+    const umlaut = await createGroup({ name: 'ärzte' });
+    expect(umlaut.status).toBe(409);
+    expect(umlaut.body.code).toBe('GROUP_NAME_TAKEN');
+
+    // A rename into a taken name, in another case.
+    const other = bodyOf(await createGroup({ name: 'Praxen' })).group;
+    const renamed = await request(adminApp).put(`/api/admin/customers/groups/${other.id}`)
+      .set(auth(superToken)).send({ name: 'ÄRZTE' });
+    expect(renamed.status).toBe(409);
+    expect(renamed.body.code).toBe('GROUP_NAME_TAKEN');
+
+    // What holds when two creates pass the check together: the index itself.
+    await expect(db('customer_groups').insert({ name: 'CORPORATE', name_key: 'corporate' })).rejects.toThrow();
+
     const badColor = await createGroup({ name: 'Studio', color: 'cornflowerblue' });
     expect(badColor.status).toBe(400);
     expect(badColor.body.code).toBe('GROUP_COLOR_INVALID');
@@ -246,11 +263,31 @@ describe('deletion', () => {
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe('GROUP_IN_USE');
     expect(await db('customer_accounts').where({ id: customer }).first()).toBeTruthy();
+    expect(await db('customer_group_members').where({ group_id: group.id })).toHaveLength(1);
+    // The database refuses it too, where it enforces foreign keys: an
+    // assignment landing between the check and the delete must not cascade.
+    const fks = await db.raw('PRAGMA foreign_key_list(customer_group_members)');
+    expect(fks.find((fk) => fk.table === 'customer_groups').on_delete).toBe('RESTRICT');
 
     await setGroups(customer, []);
     expect((await request(adminApp).delete(`/api/admin/customers/groups/${group.id}`).set(auth(superToken))).status).toBe(200);
     expect(await db('customer_groups').where({ id: group.id }).first()).toBeUndefined();
     expect(await db('customer_accounts').where({ id: customer }).first()).toBeTruthy();
+  });
+});
+
+describe('erasure', () => {
+  it('takes an erased customer out of their groups, so the group can go', async () => {
+    const group = bodyOf(await createGroup({ name: 'Erasure' })).group;
+    const customer = await createCustomer();
+    await setGroups(customer, [group.id]);
+
+    const erased = await request(adminApp).post(`/api/admin/customers/${customer}/erase`).set(auth(superToken));
+    expect(erased.status).toBe(200);
+    expect(await db('customer_group_members').where({ customer_account_id: customer })).toHaveLength(0);
+    const listed = bodyOf(await listGroups()).groups.find((g) => g.id === group.id);
+    expect(listed.memberCount).toBe(0);
+    expect((await request(adminApp).delete(`/api/admin/customers/groups/${group.id}`).set(auth(superToken))).status).toBe(200);
   });
 });
 
@@ -274,13 +311,20 @@ describe('permissions and the log', () => {
     await setGroups(customer, []);
     await request(adminApp).delete(`/api/admin/customers/groups/${group.id}`).set(auth(superToken));
 
-    const types = await db('activity_logs')
-      .whereIn('activity_type', [
-        'customer_group_created', 'customer_group_updated', 'customer_groups_assigned', 'customer_group_deleted',
-      ])
-      .pluck('activity_type');
+    // This group's rows only — the tests above logged the same types.
+    const rows = (await db('activity_logs').whereIn('activity_type', [
+      'customer_group_created', 'customer_group_updated', 'customer_groups_assigned', 'customer_group_deleted',
+    ])).filter((row) => {
+      const meta = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+      return meta.groupId === group.id || (meta.customerId === customer);
+    });
     for (const type of ['customer_group_created', 'customer_group_updated', 'customer_groups_assigned', 'customer_group_deleted']) {
-      expect(types).toContain(type);
+      expect(rows.map((row) => row.activity_type)).toContain(type);
+    }
+    // …and every one says who did it. A bare admin id is stored as "system".
+    for (const row of rows) {
+      expect(row).toMatchObject({ actor_type: 'admin', actor_id: adminId });
+      expect(row.actor_name).toBeTruthy();
     }
   });
 });

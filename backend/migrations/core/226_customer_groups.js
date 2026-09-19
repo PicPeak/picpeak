@@ -14,10 +14,14 @@
  *                            record ever depends on a delete.
  *   customer_group_members   The many-to-many join: one customer can be in any
  *                            number of groups, one group holds any number of
- *                            customers. Both sides CASCADE, so the join row
- *                            goes when either side goes — and a customer is
- *                            anonymised in place rather than deleted, so their
- *                            memberships survive erasure with the row.
+ *                            customers. The customer side CASCADEs. The group
+ *                            side RESTRICTs: the service refuses to delete a
+ *                            group with members, and on PostgreSQL the
+ *                            database backs that against an assignment landing
+ *                            between the check and the delete. A customer is
+ *                            anonymised in place rather than deleted, so
+ *                            erasure clears their memberships itself
+ *                            (customerAccountsService.eraseCustomer).
  *
  * A group is referenced by id, so renaming or recolouring one changes nothing
  * on a customer record.
@@ -46,6 +50,11 @@ exports.up = async function (knex) {
     await knex.schema.createTable('customer_groups', (t) => {
       t.increments('id').primary();
       t.string('name', 80).notNullable();
+      // The name lowercased in JS (customerGroupsService.nameKey), and what
+      // uniqueness hangs on. SQL LOWER() is ASCII-only on SQLite, so "Ärzte"
+      // and "ärzte" were two groups there and one on PostgreSQL. Wider than
+      // `name` because lowercasing can lengthen a string ("İ" → "i̇").
+      t.string('name_key', 255).notNullable();
       t.string('description', 500);
       // #rrggbb. The UI offers a palette that holds up in both themes and
       // shows the colour as a dot beside the name, never as the only
@@ -60,12 +69,7 @@ exports.up = async function (knex) {
       t.timestamp('created_at').defaultTo(knex.fn.now());
       t.timestamp('updated_at').defaultTo(knex.fn.now());
       t.index(['sort_order'], 'customer_groups_sort_idx');
-    });
-    // Case-insensitive uniqueness is enforced in the service (LOWER(name)),
-    // because a functional unique index is not portable between SQLite and
-    // PostgreSQL through knex's schema builder.
-    await knex.schema.alterTable('customer_groups', (t) => {
-      t.unique(['name'], 'customer_groups_name_unique');
+      t.unique(['name_key'], 'customer_groups_name_key_unique');
     });
   }
 
@@ -73,7 +77,7 @@ exports.up = async function (knex) {
     await knex.schema.createTable('customer_group_members', (t) => {
       t.increments('id').primary();
       t.integer('group_id').unsigned().notNullable()
-        .references('id').inTable('customer_groups').onDelete('CASCADE');
+        .references('id').inTable('customer_groups').onDelete('RESTRICT');
       t.integer('customer_account_id').unsigned().notNullable()
         .references('id').inTable('customer_accounts').onDelete('CASCADE');
       t.timestamp('assigned_at').defaultTo(knex.fn.now());

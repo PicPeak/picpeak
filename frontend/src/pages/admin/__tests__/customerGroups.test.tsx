@@ -23,8 +23,10 @@ vi.mock('react-i18next', async () => {
     ...actual,
     useTranslation: () => ({
       t: (k: string, fb?: unknown, opts?: Record<string, unknown>) => {
-        const base = typeof fb === 'string' ? fb : k;
         const values = (typeof fb === 'object' && fb !== null ? fb : opts) as Record<string, unknown> | undefined;
+        // Plural keys carry their English forms as defaultValue_one/_other.
+        const plural = values?.[values?.count === 1 ? 'defaultValue_one' : 'defaultValue_other'];
+        const base = typeof fb === 'string' ? fb : typeof plural === 'string' ? plural : k;
         return values
           ? base.replace(/\{\{(\w+)\}\}/g, (_m, key) => String(values[key] ?? ''))
           : base;
@@ -38,9 +40,11 @@ vi.mock('react-toastify', () => ({
   toast: { success: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
+// customers.groups.manage is the only permission this page asks about.
+const hasPermission = vi.fn((_name: string) => true);
 vi.mock('../../../contexts/PermissionsContext', () => ({
   usePermissions: () => ({
-    hasPermission: () => true,
+    hasPermission: (name: string) => hasPermission(name),
     hasAnyPermission: () => true,
     hasAllPermissions: () => true,
     isSuperAdmin: true,
@@ -74,6 +78,8 @@ vi.mock('../../../services/businessProfile.service', () => ({
 }));
 
 import { CustomerManagementPage } from '../CustomerManagementPage';
+import en from '../../../i18n/locales/en.json';
+import de from '../../../i18n/locales/de.json';
 
 const group = (id: number, name: string, extra: Record<string, unknown> = {}) => ({
   id, name, description: null, color: '#2563EB', sortOrder: id, isArchived: false, memberCount: 1, ...extra,
@@ -94,6 +100,24 @@ const customer = (id: number, email: string, groups: unknown[] = []) => ({
   groups,
 });
 
+/** renderPage, plus a way to make the catalogue query see a changed catalogue. */
+function renderPageWithClient() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter>
+        <CustomerManagementPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return {
+    rerenderWithGroups: async (groups: unknown[]) => {
+      listGroups.mockResolvedValue(groups);
+      await qc.invalidateQueries({ queryKey: ['admin-customer-groups'] });
+    },
+  };
+}
+
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -110,6 +134,7 @@ const press = group(2, 'Press', { color: '#15803D' });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  hasPermission.mockImplementation(() => true);
   listGroups.mockResolvedValue([vip, press]);
   list.mockResolvedValue([
     customer(10, 'grouped@example.com', [vip]),
@@ -190,6 +215,25 @@ describe('the overview', () => {
     const nameCell = screen.getByText('grouped@example.com').closest('tr')?.querySelector('td');
     const phoneChips = nameCell?.querySelector('.sm\\:hidden');
     expect(phoneChips?.textContent).toContain('VIP');
+    // The status column is hidden on a phone too, so its copy under the name
+    // has to say everything the column says — the passive badge included.
+    const phoneCopy = [...(nameCell?.querySelectorAll('.sm\\:hidden') ?? [])].map((el) => el.textContent).join(' ');
+    expect(phoneCopy).toContain('Active');
+    expect(phoneCopy).toContain('Passive — admin only');
+  });
+
+  it('drops a selected group from the filter once it is archived, instead of filtering by it with nothing to switch it off', async () => {
+    const user = userEvent.setup();
+    listGroups.mockResolvedValue([vip]);
+    const { rerenderWithGroups } = renderPageWithClient();
+    await screen.findByText('grouped@example.com');
+    await user.click(screen.getByRole('button', { name: /VIP/ }));
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(undefined, [1]));
+
+    // Archived from the Groups tab (or by another admin): no live group is left.
+    await rerenderWithGroups([{ ...vip, isArchived: true }]);
+    await waitFor(() => expect(list).toHaveBeenLastCalledWith(undefined, []));
+    expect(screen.getByText('ungrouped@example.com')).toBeInTheDocument();
   });
 });
 
@@ -204,8 +248,32 @@ describe('the catalogue tab', () => {
     renderPage();
     await openGroupsTab(user);
     // Two groups, each with one member.
-    expect(await screen.findAllByText('1 customers')).toHaveLength(2);
+    expect(await screen.findAllByText('1 customer')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'New group' })).toBeInTheDocument();
+  });
+
+  it('counts in the plural for anything but one, in both shipped locales', async () => {
+    listGroups.mockResolvedValue([group(1, 'Empty', { memberCount: 0 }), group(2, 'Pair', { memberCount: 2 })]);
+    const user = userEvent.setup();
+    renderPage();
+    await openGroupsTab(user);
+    expect(await screen.findByText('0 customers')).toBeInTheDocument();
+    expect(screen.getByText('2 customers')).toBeInTheDocument();
+    for (const locale of [en, de]) {
+      expect(locale.customers.groups.memberCount_one).toContain('{{count}}');
+      expect(locale.customers.groups.memberCount_other).toContain('{{count}}');
+    }
+  });
+
+  it('is read-only without customers.groups.manage: the catalogue, and no control that would only answer 403', async () => {
+    hasPermission.mockImplementation((name) => name !== 'customers.groups.manage');
+    const user = userEvent.setup();
+    renderPage();
+    await openGroupsTab(user);
+    expect(await screen.findAllByText('1 customer')).toHaveLength(2);
+    for (const name of ['New group', 'Edit', 'Delete', 'Archive', 'Move up', 'Move down']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
   });
 
   it('shows an empty state when there is no group yet', async () => {
