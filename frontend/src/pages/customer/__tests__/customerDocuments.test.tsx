@@ -154,14 +154,18 @@ describe('CustomerDocumentsPage', () => {
     }
   });
 
-  it('carries a dark-mode class on every status chip, so none of them is light-only', async () => {
-    // The three chips are the page's only colour-carrying elements. A chip
-    // styled for light mode alone is unreadable in dark mode, and the status
-    // is the one thing this page exists to communicate.
+  it('styles every status chip through the theme-aware class, never a fixed light colour', async () => {
+    // The chips are the page's only colour-carrying elements, and the portal
+    // themes through CSS tokens rather than the `dark` class the admin shell
+    // toggles on <html> — so a Tailwind `bg-green-100` (or even a `dark:`
+    // variant) renders its light value on the portal's dark ground. The
+    // token-derived `.status-chip` classes are what read on both.
     renderPage();
     await screen.findByText('signed-contract.pdf');
     for (const label of ['Awaiting review', 'Available', 'Rejected']) {
-      expect(screen.getByText(label).className).toMatch(/\bdark:/);
+      const chip = screen.getByText(label).className;
+      expect(chip).toMatch(/\bstatus-chip\b/);
+      expect(chip).not.toMatch(/\bbg-(green|amber|red)-\d{2,3}\b/);
     }
   });
 
