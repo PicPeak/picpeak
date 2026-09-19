@@ -234,6 +234,38 @@ async function persistAuditCertificate(contract) {
     return null;
   }
 }
+/**
+ * The signing certificate a contract was issued, for download (#1446).
+ *
+ * Both signing flows record it as the `audit` artifact of the contract —
+ * signatures v2 through `signingV2.issueCertificate`, the flow before it
+ * through `persistAuditCertificate` above — so the newest one of that kind
+ * is the certificate whichever flow signed it. Until this existed the file
+ * only ever reached anyone as an email attachment; a lost email meant a lost
+ * certificate.
+ */
+async function readCertificate(contractId) {
+  const { db } = require('../../database/db');
+  const { assertContractPdfPath } = require('../../utils/safePath');
+  const contract = await db('contracts').where({ id: contractId }).first('id', 'contract_number');
+  if (!contract) throw new AppError('Contract not found', 404);
+  const row = await db('generated_documents')
+    .where({ doc_type: 'contract', doc_id: contractId, kind: 'audit' })
+    .orderBy('id', 'desc')
+    .first('path');
+  if (!row || !row.path) {
+    throw new AppError('This contract has no signing certificate yet', 404, 'CERTIFICATE_MISSING');
+  }
+  // The same containment the contract PDF routes apply: the stored path is
+  // written by this service, but a bad row must not turn a download into an
+  // arbitrary-file read.
+  const file = assertContractPdfPath(row.path);
+  if (!fs.existsSync(file)) {
+    throw new AppError('The signing certificate is missing from disk', 404, 'CERTIFICATE_MISSING_ON_DISK');
+  }
+  return { fileName: `${contract.contract_number}-certificate.pdf`, buffer: fs.readFileSync(file) };
+}
+
 module.exports = {
   sha256OfBuffer,
   sha256OfFile,
@@ -243,4 +275,5 @@ module.exports = {
   buildSignatureStamps,
   buildAuditCertContext,
   persistAuditCertificate,
+  readCertificate,
 };

@@ -20,6 +20,7 @@ const { body, param, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { getBcryptRounds, MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
 const { assertContractPdfPath } = require('../utils/safePath');
+const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const logger = require('../utils/logger');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const { getClientIp } = require('../utils/requestIp');
@@ -730,6 +731,18 @@ router.get('/contracts', customerAuth, async (req, res) => {
     // token never leaves the server.
     const liveTokens = await publicDocumentViews.liveContractTokens(rows.map((r) => r.id));
 
+    // Which of them have a signing certificate to download (#1446). One
+    // grouped read rather than a probe per row, and the button is only
+    // offered for a contract that actually has one.
+    const certified = new Set();
+    if (rows.length && await dbi.schema.hasTable('generated_documents')) {
+      const certificates = await dbi('generated_documents')
+        .where({ doc_type: 'contract', kind: 'audit' })
+        .whereIn('doc_id', rows.map((r) => r.id))
+        .distinct('doc_id');
+      for (const row of certificates) certified.add(Number(row.doc_id));
+    }
+
     res.json({
       contracts: rows.map((c) => ({
         id: c.id,
@@ -747,6 +760,7 @@ router.get('/contracts', customerAuth, async (req, res) => {
         // Surface flags only — no paths leaked to the customer.
         hasPdf: !!c.pdf_path,
         hasSignedPdf: !!c.signed_pdf_path,
+        hasCertificate: certified.has(Number(c.id)),
         // A signatures-v2 contract signs through a signer session, so it has
         // no action token to look for; one sent before still needs a live one.
         canSign: c.status === 'sent' && (Number(c.signing_version) === 2 || liveTokens.has(c.id)),
@@ -816,6 +830,32 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
     fs.createReadStream(safePath).pipe(res);
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to render contract PDF');
+  }
+});
+
+// The signing certificate (#1446): the evidence record issued when the
+// contract was completed. Scoped exactly like the PDF route above — the
+// customer's own contract, never a draft.
+router.get('/contracts/:id/certificate', customerAuth, async (req, res) => {
+  try {
+    const { db: dbi } = require('../database/db');
+    if (!(await dbi.schema.hasTable('contracts'))) {
+      return res.status(404).json({ error: 'Contract not found' });
+    }
+    if (!(await customerFeatureAllowed(req, res, 'contracts', 'Contracts'))) return;
+    const contract = await dbi('contracts')
+      .where({ id: parseInt(req.params.id, 10), customer_account_id: req.customer.id })
+      .first();
+    if (!contract || contract.status === 'draft') return res.status(404).json({ error: 'Contract not found' });
+    const { readCertificate } = require('../services/contract/signatureAssets');
+    const { fileName, buffer } = await readCertificate(contract.id);
+    res.set('Content-Type', 'application/pdf');
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Disposition', buildContentDisposition(fileName, 'attachment'));
+    return res.send(buffer);
+  } catch (error) {
+    if (sendServiceRefusal(res, error)) return;
+    return errorResponse(res, error, 500, 'Failed to load the signing certificate');
   }
 });
 

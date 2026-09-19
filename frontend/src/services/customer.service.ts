@@ -454,6 +454,12 @@ export const customerService = {
     return URL.createObjectURL(res.data);
   },
 
+  /** The signing certificate issued when the contract was completed (#1446). */
+  async contractCertificateUrl(id: number): Promise<string> {
+    const res = await api.get(`/customer/contracts/${id}/certificate`, { responseType: 'blob' });
+    return URL.createObjectURL(res.data);
+  },
+
   /** Open a contract for signing: a signing session for a signatures-v2
    *  contract (no code needed — the portal login confirms the email), or a
    *  short-lived link for a contract sent before. */
@@ -576,6 +582,8 @@ export interface CustomerContract {
   signedAdminName: string | null;
   hasPdf: boolean;
   hasSignedPdf: boolean;
+  /** Whether a signing certificate has been issued for it (#1446). */
+  hasCertificate?: boolean;
   /** Whether the customer can sign this contract from the portal. */
   canSign: boolean;
 }

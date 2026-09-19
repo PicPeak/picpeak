@@ -73,6 +73,17 @@ export interface ContractSigner {
   signatureMode: 'drawn' | 'typed' | null;
 }
 
+/**
+ * A signer an uploaded paper copy has to account for (#1446): everyone who
+ * has neither signed in the browser nor declined.
+ */
+export interface PaperSignatureSigner {
+  id: number;
+  position: number;
+  name: string | null;
+  status: ContractSignerStatus;
+}
+
 export type ContractSigningEventType =
   | 'sent' | 'invited' | 'invitation_resent' | 'code_sent' | 'verified' | 'signed'
   | 'declined' | 'countersigned' | 'completed' | 'wet_upload' | 'revoked';
@@ -495,13 +506,39 @@ export const contractsService = {
     return data.data || data;
   },
 
-  async uploadSignedPdf(id: number, file: File): Promise<{ status: 'fully_signed'; signedPdfPath: string }> {
+  /**
+   * The customer signers a paper copy would have to account for (#1446):
+   * everyone who has neither signed in the browser nor declined. Empty once
+   * they all have, in which case the upload needs no confirmation.
+   */
+  async paperSignatureCoverage(id: number): Promise<{ signers: PaperSignatureSigner[] }> {
+    const { data } = await api.get(`/admin/contracts/${id}/paper-signature-coverage`);
+    return data.data || data;
+  },
+
+  /**
+   * `coversSignerIds` states which signers the paper copy carries. The upload
+   * completes the contract for all of them, so the server refuses it unless
+   * every signer still awaiting a signature is named.
+   */
+  async uploadSignedPdf(
+    id: number,
+    file: File,
+    coversSignerIds: number[] = [],
+  ): Promise<{ status: 'fully_signed'; signedPdfPath: string }> {
     const form = new FormData();
     form.append('file', file);
+    if (coversSignerIds.length) form.append('coversSignerIds', JSON.stringify(coversSignerIds));
     const { data } = await api.post(`/admin/contracts/${id}/upload-signed-pdf`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return data.data || data;
+  },
+
+  /** The signing certificate, once the contract has one. */
+  async certificateUrl(id: number): Promise<string> {
+    const res = await api.get(`/admin/contracts/${id}/certificate`, { responseType: 'blob' });
+    return URL.createObjectURL(res.data);
   },
 
   async pdfUrl(id: number): Promise<string> {
@@ -607,10 +644,16 @@ export interface PublicContractView {
       body: string;
     }>;
   }>;
+  /**
+   * The account holder's block. On a signer session it is trimmed to the
+   * display name for anyone who is not that customer (#1446): the address a
+   * co-signer verifies with is their authentication data, not the other
+   * signers'.
+   */
   recipient: {
     displayName: string;
     companyName: string | null;
-    email: string;
+    email: string | null;
   } | null;
   issuer: {
     companyName: string | null;

@@ -307,3 +307,78 @@ it('opens a session from the customer portal without a link or code', async () =
   expect(screen.getByText('It isn\'t your turn yet')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Sign contract' })).toBeNull();
 });
+
+// ---------------------------------------------------------------------
+// Slice 1 of the #1446 plan — a lost response must never invite a blind
+// resubmission of something legally meaningful.
+// ---------------------------------------------------------------------
+
+/** Verify the email and get to the sign form with the consent ticked. */
+async function readyToSign(user: ReturnType<typeof userEvent.setup>) {
+  renderAt(`/contract/${TOKEN}`);
+  await user.click(await screen.findByRole('button', { name: 'Send code' }));
+  await user.type(await screen.findByLabelText('6-digit code'), '123456');
+  await user.click(screen.getByRole('button', { name: 'Confirm' }));
+  await screen.findByRole('heading', { name: 'Wedding contract' });
+  await user.click(screen.getByRole('radio', { name: 'Type my name' }));
+  await user.click(screen.getByRole('checkbox', { name: /I have read this contract/ }));
+}
+
+it('shows the signature that did land when the response was lost', async () => {
+  const user = userEvent.setup();
+  session
+    .mockResolvedValueOnce(sessionView())
+    // The re-read after the lost response: it was recorded after all.
+    .mockResolvedValue(sessionView({ status: 'signed', canSign: false, canDecline: false }));
+  // A network failure: no `response`, so no HTTP status.
+  sign.mockRejectedValue(Object.assign(new Error('Network Error'), { isAxiosError: true }));
+
+  await readyToSign(user);
+  await user.click(screen.getByRole('button', { name: 'Sign contract' }));
+
+  expect(await screen.findByText('Thank you — you have signed the contract.')).toBeInTheDocument();
+  // No "check your connection and try again" over a signature that arrived.
+  expect(screen.queryByText(/Check your connection/)).toBeNull();
+  expect(sign).toHaveBeenCalledTimes(1);
+});
+
+it('offers a re-check and a deliberate resend when the signature did not land', async () => {
+  const user = userEvent.setup();
+  session.mockResolvedValue(sessionView());
+  sign.mockRejectedValue(Object.assign(new Error('Network Error'), { isAxiosError: true }));
+
+  await readyToSign(user);
+  await user.click(screen.getByRole('button', { name: 'Sign contract' }));
+
+  expect(await screen.findByText("We couldn't confirm whether your signature arrived")).toBeInTheDocument();
+  expect(screen.queryByText(/Check your connection/)).toBeNull();
+  // The plain submit button is gone: the two deliberate paths replace it.
+  expect(screen.queryByRole('button', { name: 'Sign contract' })).toBeNull();
+  await user.click(screen.getByRole('button', { name: 'Check again' }));
+  expect(sign).toHaveBeenCalledTimes(1);
+
+  // Sending again repeats the same attempt under the SAME idempotency key,
+  // which is what makes a resend safe rather than a second signature.
+  await user.click(screen.getByRole('button', { name: 'Send my signature again' }));
+  expect(sign).toHaveBeenCalledTimes(2);
+  expect(sign.mock.calls[1][1].idempotencyKey).toBe(sign.mock.calls[0][1].idempotencyKey);
+});
+
+it('keeps the typed name for the tab, and never the drawn signature', async () => {
+  const user = userEvent.setup();
+  session.mockResolvedValue(sessionView());
+  renderAt(`/contract/${TOKEN}`);
+  await user.click(await screen.findByRole('button', { name: 'Send code' }));
+  await user.type(await screen.findByLabelText('6-digit code'), '123456');
+  await user.click(screen.getByRole('button', { name: 'Confirm' }));
+  await screen.findByRole('heading', { name: 'Wedding contract' });
+
+  await user.click(screen.getByRole('radio', { name: 'Type my name' }));
+  await user.clear(screen.getByLabelText('Your full name'));
+  await user.type(screen.getByLabelText('Your full name'), 'Anna M. Muster');
+
+  const draft = JSON.parse(window.sessionStorage.getItem(`picpeak.contractSigning.draft.${TOKEN}`) as string);
+  expect(draft).toEqual({ name: 'Anna M. Muster', mode: 'typed' });
+  // Nothing that could be a signature image is in the store.
+  expect(JSON.stringify(window.sessionStorage)).not.toContain('data:image');
+});

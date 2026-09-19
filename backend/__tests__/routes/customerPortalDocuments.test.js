@@ -116,6 +116,42 @@ describe('customer portal contracts and quotes', () => {
   const get = (url) => request(app).get(url).set('Cookie', cookie);
   const post = (url) => request(app).post(url).set('Cookie', cookie);
 
+  it('serves the signing certificate to its own customer only (#1446)', async () => {
+    // Until this route existed the certificate only ever reached anyone as an
+    // email attachment, so a lost email was a lost evidence record.
+    const certDir = path.join(process.env.STORAGE_PATH, 'business-docs', 'contract', String(new Date().getFullYear()));
+    fs.mkdirSync(certDir, { recursive: true });
+    const file = path.join(certDir, 'K-P-1_certificate.pdf');
+    fs.writeFileSync(file, '%PDF-1.4\ncertificate bytes\n%%EOF\n');
+    await db('generated_documents').insert({
+      doc_type: 'contract', doc_id: signable, kind: 'audit', path: file,
+      sha256: 'a'.repeat(64), bytes: fs.statSync(file).size, renderer_version: '2', generated_at: nowIso(),
+    });
+
+    // The list says which contracts have one, so the button is only offered
+    // where it works.
+    const list = await get('/api/customer/contracts');
+    const byNumber = Object.fromEntries(list.body.contracts.map((c) => [c.contractNumber, c]));
+    expect(byNumber['K-P-1'].hasCertificate).toBe(true);
+    expect(byNumber['K-P-2'].hasCertificate).toBe(false);
+
+    const mine = await get(`/api/customer/contracts/${signable}/certificate`);
+    expect(mine.status).toBe(200);
+    expect(mine.headers['content-type']).toMatch('application/pdf');
+    expect(mine.headers['x-content-type-options']).toBe('nosniff');
+    expect(mine.headers['content-disposition']).toMatch(/^attachment;/);
+    expect(mine.body.toString()).toContain('certificate bytes');
+
+    // A contract with no certificate says so — not a 500, not an empty PDF.
+    const none = await get(`/api/customer/contracts/${unsignable}/certificate`);
+    expect(none.status).toBe(404);
+    expect(none.body.code).toBe('CERTIFICATE_MISSING');
+
+    // Another customer's contract, and a draft, are a plain 404 either way.
+    expect((await get(`/api/customer/contracts/${othersContract}/certificate`)).status).toBe(404);
+    expect((await get(`/api/customer/contracts/${draft}/certificate`)).status).toBe(404);
+  });
+
   it('lists contracts without any signing token, with canSign', async () => {
     const res = await get('/api/customer/contracts');
 

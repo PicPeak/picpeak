@@ -34,6 +34,50 @@ router.use(adminAuth);
 
 const VALID_SCOPES = ['quote', 'contract', 'contract-signature', 'invoice'];
 
+// Every column of signing evidence that fieldEncryption writes (#1446).
+const EVIDENCE_COLUMNS = ['name_enc', 'email_enc', 'ip_enc', 'user_agent_enc', 'decline_reason_enc'];
+// A cap so a large install can't turn the health page into a table scan that
+// reads every signer row; the newest rows are the ones that matter for
+// "is the current key the one in use".
+const EVIDENCE_SCAN_LIMIT = 2000;
+
+/**
+ * How much stored evidence the current key can still read (#1446).
+ *
+ * Each value carries `v1:<keyId>:` in front of it, so the key a row was
+ * written under is a prefix read rather than a decryption — counting is
+ * cheap and never touches the key material.
+ */
+async function evidenceKeyUsage(currentKeyId) {
+  const fieldEncryption = require('../utils/fieldEncryption');
+  const rows = await db('contract_signers')
+    .orderBy('id', 'desc')
+    .limit(EVIDENCE_SCAN_LIMIT)
+    .select('id', ...EVIDENCE_COLUMNS);
+  const byKeyId = {};
+  let values = 0;
+  for (const row of rows) {
+    for (const column of EVIDENCE_COLUMNS) {
+      if (!row[column]) continue;
+      const keyId = fieldEncryption.keyIdOf(row[column]) || 'unreadable';
+      byKeyId[keyId] = (byKeyId[keyId] || 0) + 1;
+      values += 1;
+    }
+  }
+  const underCurrent = byKeyId[currentKeyId] || 0;
+  const otherKeyIds = Object.keys(byKeyId).filter((id) => id !== currentKeyId).sort();
+  return {
+    // Kept for the panel that already reads these two: the newest key id in
+    // use, and whether it is the current one.
+    storedKeyId: otherKeyIds.length ? otherKeyIds[0] : (values ? currentKeyId : null),
+    matchesStored: values === 0 ? null : otherKeyIds.length === 0,
+    storedValues: values,
+    storedValuesUnderCurrentKey: underCurrent,
+    storedKeyIds: byKeyId,
+    scanTruncated: rows.length === EVIDENCE_SCAN_LIMIT,
+  };
+}
+
 router.get(
   '/backup-integrity',
   requirePermission(['settings.view', 'system.view']),
@@ -249,12 +293,13 @@ router.get(
     // — a rotated env var, a restore that brought back another key file —
     // leaves names, emails and addresses unreadable and invitations going out
     // to '', so say so here rather than letting it surface as blank data.
+    //
+    // Counted across every encrypted column rather than read off the newest
+    // row: a key that changed part-way through leaves older rows under the
+    // old id, and looking only at the newest name_enc reported "all fine"
+    // while most of the evidence on the install was unreadable.
     if (evidenceKey.keyId && await db.schema.hasTable('contract_signers')) {
-      const stored = await db('contract_signers').whereNotNull('name_enc')
-        .orderBy('id', 'desc').first('name_enc');
-      const storedKeyId = stored ? fieldEncryption.keyIdOf(stored.name_enc) : null;
-      evidenceKey.storedKeyId = storedKeyId;
-      evidenceKey.matchesStored = storedKeyId == null ? null : storedKeyId === evidenceKey.keyId;
+      Object.assign(evidenceKey, await evidenceKeyUsage(evidenceKey.keyId));
     }
 
     return successResponse(res, {

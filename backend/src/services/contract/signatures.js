@@ -21,6 +21,22 @@ const { auditedUpdate } = require('../accountingHistory');
 // link. The token row names only the contract, not who holds the link.
 const CONTRACT_LINK_ACTOR = { type: 'public', id: null, name: 'contract-link' };
 
+/** Remove an upload that never became the contract's signed copy. */
+function removeUpload(filePath) {
+  try {
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (cleanupErr) {
+    logger.warn('Orphan signed PDF upload cleanup failed', { path: filePath, message: cleanupErr.message });
+  }
+}
+
+/** The admin id behind an `actor` argument, which callers pass as an id or an object. */
+function adminIdOf(actor) {
+  if (typeof actor === 'number') return Number.isFinite(actor) ? actor : null;
+  const id = actor && actor.id;
+  return Number.isFinite(Number(id)) ? Number(id) : null;
+}
+
 
 /**
  * Record a customer's in-browser signature (canvas + typed name +
@@ -540,8 +556,14 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
  * `actor` names the uploader in the accounting change history. Without one,
  * an admin upload is recorded as an unnamed admin and a customer upload as
  * the public link.
+ *
+ * `options.coversSignerIds` is the admin's explicit statement of which
+ * customer signers the paper copy carries (#1446). On a signatures-v2
+ * contract it has to account for every signer who hasn't signed or declined,
+ * because this upload completes the contract for all of them; the customer's
+ * own upload path refuses a multi-signer contract outright instead.
  */
-async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor = null) {
+async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor = null, options = {}) {
   // Self-heal contract email templates — same reason as the
   // sendContract + recordAdminCountersignature paths.
   await ensureContractEmailTemplatesSeeded(db, logger);
@@ -551,6 +573,18 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
   if (!contract) throw new AppError('Contract not found', 404);
   if (['cancelled', 'draft'].includes(contract.status)) {
     throw new AppError(`Cannot attach a signed PDF to a contract in status '${contract.status}'`, 409);
+  }
+
+  // Refused before anything is written, and the upload goes with it rather
+  // than sitting on disk unreferenced.
+  let coversSignerIds = null;
+  if (uploaderRole === 'admin' && Number(contract.signing_version) === 2) {
+    try {
+      coversSignerIds = await require('./signingV2').assertPaperCoversSigners(contractId, options.coversSignerIds);
+    } catch (err) {
+      removeUpload(filePath);
+      throw err;
+    }
   }
 
   const now = new Date();
@@ -585,18 +619,17 @@ async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor =
   const applied = await auditedUpdate(db, 'contracts', { id: contractId, status: contract.status }, updates,
     { actor: historyActor, source: 'contract.upload.signed_pdf' });
   if (!applied) {
-    try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    } catch (cleanupErr) {
-      logger.warn('Orphan signed PDF upload cleanup failed', { path: filePath, message: cleanupErr.message });
-    }
+    removeUpload(filePath);
     throw new AppError('The contract changed while the signed PDF was uploading. Reload and try again.', 409, 'CONTRACT_STATE_CHANGED');
   }
   // Signatures v2 (#1446): the upload goes into the event log, and every
   // signer's link stops working.
   if (Number(contract.signing_version) === 2) {
     await require('./signingV2').recordWetUpload(contractId, {
-      by: uploaderRole, sha256: updates.signed_pdf_sha256 || sha256OfFile(filePath),
+      by: uploaderRole,
+      sha256: updates.signed_pdf_sha256 || sha256OfFile(filePath),
+      coversSignerIds,
+      uploadedByAdminId: uploaderRole === 'admin' ? adminIdOf(actor) : null,
     });
   }
 

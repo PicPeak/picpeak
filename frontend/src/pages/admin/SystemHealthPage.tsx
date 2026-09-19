@@ -243,8 +243,12 @@ export const SystemHealthPage: React.FC = () => {
               {data.evidenceKey.matchesStored === false && (
                 <p role="alert" className="text-sm mt-1 text-red-700 dark:text-red-300">
                   {t('systemHealth.evidenceKey.mismatch',
-                    'The evidence already stored was written under key {{stored}}, so it can no longer be read — and signer names and email addresses come back empty. Put the earlier key back, or expect blank names on contracts signed before.',
-                    { stored: data.evidenceKey.storedKeyId || '—' })}
+                    'Evidence already stored was written under key {{stored}}, so it can no longer be read — and those signer names and email addresses come back empty. {{unreadable}} of {{total}} stored values are affected. Put the earlier key back, or expect blank names on contracts signed before.',
+                    {
+                      stored: data.evidenceKey.storedKeyId || '—',
+                      unreadable: (data.evidenceKey.storedValues ?? 0) - (data.evidenceKey.storedValuesUnderCurrentKey ?? 0),
+                      total: data.evidenceKey.storedValues ?? 0,
+                    })}
                 </p>
               )}
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">

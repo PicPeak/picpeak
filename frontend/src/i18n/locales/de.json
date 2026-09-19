@@ -713,7 +713,7 @@
       "unreadable": "Die Schlüsseldatei kann nicht gelesen werden. Stellen Sie sie aus einem Backup wieder her, sonst lassen sich gespeicherte Signaturnachweise nicht entschlüsseln.",
       "id": "Schlüssel-ID {{id}}",
       "hint": "IP-Adressen und Browser der Unterzeichnenden werden mit diesem Schlüssel verschlüsselt gespeichert. Ohne ihn lassen sich diese Nachweise nicht lesen; Unterschriften und PDFs bleiben gültig.",
-      "mismatch": "Die bereits gespeicherten Nachweise wurden mit dem Schlüssel {{stored}} verschlüsselt und können damit nicht mehr gelesen werden – Namen und E-Mail-Adressen der Unterzeichnenden kommen leer zurück. Setzen Sie den früheren Schlüssel wieder ein, sonst bleiben diese Felder bei älteren Verträgen leer."
+      "mismatch": "Bereits gespeicherte Nachweise wurden mit dem Schlüssel {{stored}} verschlüsselt und können nicht mehr gelesen werden – die betroffenen Namen und E-Mail-Adressen der Unterzeichner bleiben leer. Betroffen sind {{unreadable}} von {{total}} gespeicherten Werten. Legen Sie den früheren Schlüssel zurück, oder rechnen Sie bei zuvor unterschriebenen Verträgen mit leeren Namen."
     }
   },
   "common": {
@@ -5531,7 +5531,8 @@
       "signError": "Der Vertrag konnte nicht zum Unterschreiben geöffnet werden. Versuchen Sie es gleich noch einmal.",
       "declinedHint": "Dieser Vertrag wurde abgelehnt und kann nicht mehr unterschrieben werden.",
       "opening": "Wird geöffnet…",
-      "sign": "Unterschreiben"
+      "sign": "Unterschreiben",
+      "downloadCertificate": "Signaturzertifikat"
     },
     "documents": {
       "title": "Dokumente",
@@ -7615,7 +7616,10 @@
       "countersignModeLabel": "Wie möchten Sie unterschreiben?",
       "countersignModeDrawn": "Unterschrift zeichnen",
       "countersignModeTyped": "Eingegebenen Namen verwenden",
-      "countersignTypedHint": "Ihr oben eingegebener Name wird in das Unterschriftsfeld eingesetzt."
+      "countersignTypedHint": "Ihr oben eingegebener Name wird in das Unterschriftsfeld eingesetzt.",
+      "downloadCertificate": "Signaturzertifikat herunterladen",
+      "certificateUnavailable": "Signaturzertifikat nicht verfügbar",
+      "countersignUncertain": "Wir konnten den Server nicht erreichen und können daher nicht sagen, ob die Gegenzeichnung gespeichert wurde. Der Vertrag wurde neu geladen – prüfen Sie seinen Status, bevor Sie erneut unterschreiben."
     },
     "editor": {
       "back": "Zurück zur Liste",
@@ -7948,6 +7952,17 @@
       },
       "followUpFailed": "Ein Schritt nach der Unterschrift ist fehlgeschlagen",
       "followUpFailedBody": "Die Unterschrift selbst ist erfasst. Seit {{date}} ist ein Schritt offen: {{error}}. Mit «Signierten Vertrag erneut senden» wird er nochmals ausgeführt, oder Sie senden der nächsten Person ihren Link."
+    },
+    "paperUpload": {
+      "title": "Unterschriebenen Vertrag hochladen",
+      "intro": "Das hochgeladene PDF wird zum massgeblichen unterschriebenen Vertrag. Es geht an beide Parteien, und alle Signaturlinks werden ungültig.",
+      "confirmTitle": "Wessen Unterschriften trägt dieses Exemplar?",
+      "confirmBody": "Dieser Upload schliesst den Vertrag für alle unten genannten Personen ab. Bestätigen Sie deshalb, dass das Papierexemplar von jeder von ihnen unterschrieben ist. Was Sie bestätigen, wird im Signaturprotokoll festgehalten.",
+      "unnamedSigner": "Unterzeichner {{position}}",
+      "fileLabel": "Das unterschriebene PDF",
+      "uploading": "Wird hochgeladen …",
+      "submit": "Unterschriebenes PDF hochladen",
+      "notCovered": "Bestätigen Sie jede Person, deren Unterschrift das Papierexemplar trägt – der Upload schliesst den Vertrag für alle ab."
     }
   },
   "messages": {
@@ -8422,7 +8437,14 @@
       "modeDrawn": "Zeichnen",
       "modeTyped": "Namen eingeben",
       "typedHint": "Ihr oben eingegebener Name wird in Ihr Unterschriftsfeld eingesetzt.",
-      "submitting": "Wird unterschrieben…"
+      "submitting": "Wird unterschrieben…",
+      "uncertain": {
+        "title": "Wir konnten nicht bestätigen, ob Ihre Unterschrift angekommen ist",
+        "body": "Die Verbindung ist beim Senden abgebrochen, die Unterschrift wurde also möglicherweise gespeichert – möglicherweise auch nicht. Prüfen Sie es zuerst erneut. Ein zweites Senden kann den Vertrag nicht doppelt unterschreiben – wir erkennen die Wiederholung.",
+        "check": "Erneut prüfen",
+        "checking": "Wird geprüft …",
+        "resend": "Unterschrift erneut senden"
+      }
     },
     "otp": {
       "errors": {
@@ -8443,7 +8465,8 @@
       "reasonHint": "Wird dem Absender mitgeteilt.",
       "keep": "Nicht ablehnen",
       "declining": "Wird abgelehnt…",
-      "confirm": "Vertrag ablehnen"
+      "confirm": "Vertrag ablehnen",
+      "uncertain": "Wir konnten den Server nicht erreichen und können daher nicht sagen, ob Ihre Ablehnung gespeichert wurde. Laden Sie diese Seite neu, um den Stand des Vertrags zu sehen, bevor Sie es erneut versuchen."
     }
   }
 }

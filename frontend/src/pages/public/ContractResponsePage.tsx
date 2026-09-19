@@ -53,6 +53,7 @@ import {
   saveBlob,
   signingErrorCode,
   signingErrorStatus,
+  signingDraftStore,
   signingIdempotencyKey,
   signingSessionStore,
   type SignatureMode,
@@ -215,7 +216,9 @@ const ContractBody: React.FC<{ contract: PublicContractView }> = ({ contract: c 
       {c.recipient && (
         <div className="mb-4 text-sm text-neutral-700 dark:text-neutral-300">
           <p className="font-medium">{c.recipient.companyName || c.recipient.displayName}</p>
-          <p className="text-neutral-500 dark:text-neutral-400">{c.recipient.email}</p>
+          {/* Blank for a signer who is not the account holder (#1446): the
+              address their co-signer verifies with is not theirs to see. */}
+          {c.recipient.email && <p className="text-neutral-500 dark:text-neutral-400">{c.recipient.email}</p>}
         </div>
       )}
 
@@ -370,7 +373,7 @@ const SigningFlow: React.FC<SigningFlowProps> = ({ scope, token, invite, onLinkE
       sessionToken={session.sessionToken}
       contract={viewQuery.data.contract}
       onSessionInvalid={dropSession}
-      onRefresh={() => { viewQuery.refetch(); }}
+      onRefresh={() => viewQuery.refetch()}
     />
   );
 };
@@ -380,7 +383,9 @@ interface SigningContractViewProps {
   sessionToken: string;
   contract: SigningSessionContract;
   onSessionInvalid: () => void;
-  onRefresh: () => void;
+  /** Re-read the session. Awaitable: the sign form asks it whether a
+   *  signature whose response was lost actually landed. */
+  onRefresh: () => Promise<unknown>;
 }
 
 type Outcome =
@@ -487,6 +492,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
           onSigned={(signedAt) => { setOutcome({ kind: 'signed', signedAt }); onRefresh(); }}
           onAlreadySigned={onRefresh}
           onSessionInvalid={onSessionInvalid}
+          onRefresh={onRefresh}
         />
         {c.allowPdfUpload && (
           <WetUpload
@@ -500,6 +506,7 @@ const SigningContractView: React.FC<SigningContractViewProps> = ({
             sessionToken={sessionToken}
             onDeclined={() => setOutcome({ kind: 'declined' })}
             onSessionInvalid={onSessionInvalid}
+            onRefresh={onRefresh}
           />
         )}
       </>
@@ -656,19 +663,36 @@ interface SignFormProps {
   onSigned: (signedAt: string | null) => void;
   onAlreadySigned: () => void;
   onSessionInvalid: () => void;
+  /** Re-read the session — used to find out whether a lost signature landed. */
+  onRefresh: () => Promise<unknown>;
 }
 
 const SignForm: React.FC<SignFormProps> = ({
-  scope, sessionToken, contract: c, onSigned, onAlreadySigned, onSessionInvalid,
+  scope, sessionToken, contract: c, onSigned, onAlreadySigned, onSessionInvalid, onRefresh,
 }) => {
   const { t } = useTranslation();
   const requireDrawn = c.requireDrawnSignature === true;
-  const [name, setName] = useState(c.signing.name || '');
-  const [mode, setMode] = useState<SignatureMode>('drawn');
+  const draft = useMemo(() => signingDraftStore.read(scope), [scope]);
+  const [name, setName] = useState(draft?.name || c.signing.name || '');
+  const [mode, setMode] = useState<SignatureMode>(draft?.mode || 'drawn');
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A submission whose response never arrived: we cannot say whether it
+  // landed, so the page asks the server instead of inviting a blind retry.
+  const [uncertain, setUncertain] = useState(false);
+  const [checking, setChecking] = useState(false);
   const padRef = useRef<SignaturePadHandle>(null);
+  // The drawn image of the attempt in flight, so "Send again" repeats exactly
+  // that attempt — under the same idempotency key — even if the pad was
+  // cleared meanwhile. In memory only.
+  const lastDrawnRef = useRef<string | null>(null);
   const effectiveMode: SignatureMode = requireDrawn ? 'drawn' : mode;
+
+  // Keep what was typed for the tab, so a reload doesn't lose it. Never the
+  // drawn image (see signingDraftStore).
+  useEffect(() => {
+    signingDraftStore.write(scope, { name, mode: effectiveMode });
+  }, [scope, name, effectiveMode]);
 
   function describe(err: unknown): string {
     switch (signingErrorCode(err)) {
@@ -705,9 +729,11 @@ const SignForm: React.FC<SignFormProps> = ({
     }),
     onSuccess: (result) => {
       setError(null);
+      setUncertain(false);
+      signingDraftStore.clear(scope);
       onSigned(result?.signedAt || null);
     },
-    onError: (err: unknown) => {
+    onError: async (err: unknown) => {
       if (isSessionInvalid(err)) {
         onSessionInvalid();
         return;
@@ -716,9 +742,35 @@ const SignForm: React.FC<SignFormProps> = ({
         onAlreadySigned();
         return;
       }
+      // No HTTP status at all — the connection dropped. The request may
+      // still have been recorded, so telling the signer to "try again" is
+      // telling them to resubmit something legally meaningful blind. Ask the
+      // session which it was: if it landed, the parent swaps this form for
+      // the signed result; if it didn't, the panel below offers both a
+      // re-check and a deliberate resend under the same idempotency key.
+      if (!signingErrorStatus(err)) {
+        setError(null);
+        setUncertain(true);
+        setChecking(true);
+        try {
+          await onRefresh();
+        } finally {
+          setChecking(false);
+        }
+        return;
+      }
       setError(describe(err));
     },
   });
+
+  async function checkAgain() {
+    setChecking(true);
+    try {
+      await onRefresh();
+    } finally {
+      setChecking(false);
+    }
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -727,6 +779,7 @@ const SignForm: React.FC<SignFormProps> = ({
       return;
     }
     const signatureDataUrl = effectiveMode === 'drawn' ? (padRef.current?.toDataUrl() ?? null) : null;
+    lastDrawnRef.current = signatureDataUrl;
     if (effectiveMode === 'drawn' && !signatureDataUrl) {
       setError(requireDrawn
         ? t('publicContract.errorSignatureRequired', 'A drawn signature is required for this contract.')
@@ -815,13 +868,47 @@ const SignForm: React.FC<SignFormProps> = ({
 
         {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-        <div className="flex justify-end">
-          <button type="submit" disabled={signMutation.isPending} className={PRIMARY_BUTTON}>
-            {signMutation.isPending
-              ? t('contractSigning.sign.submitting', 'Signing…')
-              : t('publicContract.submit', 'Sign contract')}
-          </button>
-        </div>
+        {uncertain ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="p-4 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30"
+          >
+            <h3 className="text-sm font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4" />
+              {t('contractSigning.sign.uncertain.title', 'We couldn\'t confirm whether your signature arrived')}
+            </h3>
+            <p className="text-sm text-amber-900 dark:text-amber-200 mt-1">
+              {t('contractSigning.sign.uncertain.body',
+                'The connection dropped while it was being sent, so it may or may not have been recorded. Check again first. Sending it a second time cannot sign the contract twice — we recognise the repeat.')}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2 justify-end">
+              <button type="button" onClick={checkAgain} disabled={checking} className={SECONDARY_BUTTON}>
+                {checking
+                  ? t('contractSigning.sign.uncertain.checking', 'Checking…')
+                  : t('contractSigning.sign.uncertain.check', 'Check again')}
+              </button>
+              <button
+                type="button"
+                onClick={() => signMutation.mutate(lastDrawnRef.current)}
+                disabled={signMutation.isPending || checking}
+                className={PRIMARY_BUTTON}
+              >
+                {signMutation.isPending
+                  ? t('contractSigning.sign.submitting', 'Signing…')
+                  : t('contractSigning.sign.uncertain.resend', 'Send my signature again')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-end">
+            <button type="submit" disabled={signMutation.isPending} className={PRIMARY_BUTTON}>
+              {signMutation.isPending
+                ? t('contractSigning.sign.submitting', 'Signing…')
+                : t('publicContract.submit', 'Sign contract')}
+            </button>
+          </div>
+        )}
       </form>
     </>
   );
@@ -883,7 +970,8 @@ const DeclinePanel: React.FC<{
   sessionToken: string;
   onDeclined: () => void;
   onSessionInvalid: () => void;
-}> = ({ sessionToken, onDeclined, onSessionInvalid }) => {
+  onRefresh: () => Promise<unknown>;
+}> = ({ sessionToken, onDeclined, onSessionInvalid, onRefresh }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
@@ -891,14 +979,25 @@ const DeclinePanel: React.FC<{
   const declineMutation = useMutation({
     mutationFn: () => publicContractSigningService.decline(sessionToken, reason.trim() || undefined),
     onSuccess: () => { setError(null); onDeclined(); },
-    onError: (err: unknown) => {
+    onError: async (err: unknown) => {
       if (isSessionInvalid(err)) {
         onSessionInvalid();
         return;
       }
-      setError(signingErrorCode(err) === 'CONTRACT_NOT_SIGNABLE'
-        ? t('contractSigning.sign.errors.notSignable', 'This contract can no longer be signed — it may have been withdrawn or declined. Contact the sender if you have questions.')
-        : t('contractSigning.decline.error', 'The contract couldn\'t be declined. Try again; if it keeps failing, contact the sender.'));
+      if (signingErrorCode(err) === 'CONTRACT_NOT_SIGNABLE') {
+        setError(t('contractSigning.sign.errors.notSignable', 'This contract can no longer be signed — it may have been withdrawn or declined. Contact the sender if you have questions.'));
+        return;
+      }
+      // No HTTP status: the connection dropped and we cannot say whether the
+      // refusal was recorded. Re-read the contract rather than leaving the
+      // signer to guess — declining is not something to repeat blindly.
+      if (!signingErrorStatus(err)) {
+        setError(t('contractSigning.decline.uncertain',
+          'We couldn\'t reach the server, so we can\'t say whether your refusal was recorded. Reload this page to see where the contract stands before trying again.'));
+        await onRefresh();
+        return;
+      }
+      setError(t('contractSigning.decline.error', 'The contract couldn\'t be declined. Try again; if it keeps failing, contact the sender.'));
     },
   });
 
