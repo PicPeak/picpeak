@@ -3009,7 +3009,7 @@
       "showLogoHint": "Verwendet das oben konfigurierte Branding-Logo.",
       "showCompanyName": "Firmennamen in der Kundenkopfzeile anzeigen",
       "showCompanyNameHint": "Ausblenden, wenn Ihr Logo den Firmennamen bereits enthält.",
-      "save": "Änderungen speichern",
+      "save": "Kopfzeilen-Einstellungen speichern",
       "saved": "Branding des Kundendashboards gespeichert",
       "error": "Einstellungen konnten nicht gespeichert werden"
     },

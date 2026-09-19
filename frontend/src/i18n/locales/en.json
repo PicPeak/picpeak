@@ -2505,7 +2505,7 @@
       "showLogoHint": "Uses the same branding logo configured above.",
       "showCompanyName": "Show company name in customer header",
       "showCompanyNameHint": "Hide if your logo already includes the company name.",
-      "save": "Save changes",
+      "save": "Save header settings",
       "saved": "Customer dashboard branding saved",
       "error": "Could not save settings"
     },
