@@ -872,6 +872,7 @@ router.post('/:id/documents', documentGuards, handleAsync(async (req, res) => {
       share,
       admin: req.admin,
       actor: adminActor(req.admin),
+      maxUploadBytes: limits.maxUploadBytes,
     });
     return successResponse(res, { document: { id: row.id, status: row.status } }, 201);
   } finally {

@@ -11,6 +11,13 @@
  *      for the retention period. The row stays, with purged_at set, as the
  *      record that the file existed.
  *
+ * A contract-linked document is skipped by both: it is part of a contractual
+ * record, and erasure already keeps such a document rather than destroying
+ * it. Deleting one is refused while the link stands (#1444), so a row that
+ * reaches the sweep still linked came from before that rule or from a direct
+ * database edit — either way, purging its bytes is the silent destruction
+ * the issue rules out.
+ *
  * Time comparisons run in JS: a timestamp written through knex is epoch
  * milliseconds on SQLite and a Date on Postgres (see utils/queueTimestamps).
  */
@@ -39,6 +46,7 @@ async function runCustomerDocumentRetention(now = Date.now()) {
   const rejected = await db('customer_documents')
     .where('status', 'rejected')
     .whereNull('deleted_at')
+    .whereNull('contract_id')
     .select('id', 'reviewed_at');
   const expiredRejections = rejected.filter((r) => isDue(r.reviewed_at, cutoff)).map((r) => r.id);
   if (expiredRejections.length > 0) {
@@ -51,6 +59,7 @@ async function runCustomerDocumentRetention(now = Date.now()) {
   const deleted = await db('customer_documents')
     .whereNotNull('deleted_at')
     .whereNull('purged_at')
+    .whereNull('contract_id')
     .select('id', 'storage_key', 'deleted_at');
   const due = deleted.filter((r) => isDue(r.deleted_at, cutoff));
   if (due.length > 0) {

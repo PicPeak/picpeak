@@ -5573,7 +5573,10 @@
         "stillPending": "{{name}} is still being reviewed.",
         "gone": "{{name}} is no longer shared with you.",
         "purged": "{{name}} has been removed.",
-        "download": "{{name}} could not be downloaded. Please try again."
+        "download": "{{name}} could not be downloaded. Please try again.",
+        "activeContent": "{{name}} contains active content (a script, an embedded file or a form action) and cannot be uploaded. Open it and print it to PDF, then upload that file.",
+        "tooComplex": "{{name}} could not be checked. Open it and print it to PDF, then upload that file.",
+        "tooManyPages": "{{name}} has too many pages to upload."
       }
     },
     "event": {

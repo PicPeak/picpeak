@@ -28,7 +28,7 @@ const { getAppSetting } = require('../utils/appSettings');
 const { getStorage } = require('./storage');
 const { getStoragePath } = require('../config/storage');
 const { assertPathInside } = require('../utils/safePath');
-const { validateFileContent } = require('../utils/fileSecurityUtils');
+const { validatePdf } = require('../utils/pdfValidation');
 const { toIso } = require('../utils/dateNormalize');
 const { AppError, NotFoundError, ValidationError } = require('../utils/errors');
 const { filterOwnedEventIds, ownedProjectIds } = require('../middleware/ownership');
@@ -38,9 +38,9 @@ const logger = require('../utils/logger');
 const STORAGE_PREFIX = 'business-docs/customer-documents';
 const STORAGE_KEY_RE = /^business-docs\/customer-documents\/\d+\/[0-9a-f-]{36}\.pdf$/;
 const MB = 1024 * 1024;
-// The encryption dictionary is referenced from the trailer, which sits at the
-// end of the file (also for cross-reference streams).
-const ENCRYPT_SCAN_BYTES = MB;
+// A signed contract, a scanned appendix — generous, and far below what the
+// inspector's own budgets would let through anyway.
+const MAX_DOCUMENT_PAGES = 300;
 
 // ---------------------------------------------------------------------------
 // Settings
@@ -107,28 +107,71 @@ async function sha256OfFile(localPath) {
   return hash.digest('hex');
 }
 
-async function isEncryptedPdf(localPath, size) {
-  const length = Math.min(size, ENCRYPT_SCAN_BYTES);
-  const handle = await fs.promises.open(localPath, 'r');
+/**
+ * Check the file's content, and refuse anything that isn't a plain PDF.
+ *
+ * This used to be a 20-byte magic check plus a string search for `/Encrypt`
+ * near the end of the file — which sees neither a PDF carrying JavaScript or
+ * a launch action, nor one that inflates into gigabytes, nor a `/Encrypt`
+ * dictionary that sits anywhere else. Contract attachments were already
+ * inspected properly (utils/pdfValidation: parsed in a worker with heap,
+ * time, RSS and decompression budgets); customer uploads, which come from
+ * outside the building, were checked less.
+ *
+ * Two deliberate differences from the attachment path:
+ *
+ *   - forms stay allowed. Customers upload *signed* contracts, and a signed
+ *     PDF carries an AcroForm signature field. `pdfInspect` refuses actions
+ *     that run, submit or import — `/SubmitForm`, `/ResetForm`, `/ImportData`
+ *     — but not the presence of a form, so signature fields pass.
+ *   - the ORIGINAL bytes are stored, not the `normalised` re-serialisation
+ *     an attachment keeps. Re-writing the file would break the byte ranges a
+ *     digital signature covers, and these documents are evidence.
+ *
+ * @returns {Promise<{ size: number, pages: number|null }>}
+ */
+async function assertPdf(localPath, { maxBytes = null } = {}) {
+  const { size } = await fs.promises.stat(localPath);
+  let info;
   try {
-    const buffer = Buffer.alloc(length);
-    await handle.read(buffer, 0, length, Math.max(0, size - length));
-    return buffer.includes('/Encrypt');
-  } finally {
-    await handle.close();
+    info = await validatePdf(await fs.promises.readFile(localPath), {
+      maxBytes: maxBytes || undefined,
+      maxPages: MAX_DOCUMENT_PAGES,
+    });
+  } catch (err) {
+    throw documentPdfError(err);
   }
+  return { size, pages: info.pages == null ? null : Number(info.pages) };
 }
 
-/** Throws a 400 unless the file is an unencrypted PDF by content. */
-async function assertPdf(localPath) {
-  if (!(await validateFileContent(localPath, 'application/pdf'))) {
-    throw new AppError('The file is not a PDF', 400, 'NOT_A_PDF');
+/**
+ * The inspector's refusals, in this route's own vocabulary. Its codes are
+ * written for an admin attaching a document to a contract; these reach a
+ * customer who is trying to upload a signed contract, and the portal has a
+ * message for each.
+ */
+const PDF_ERROR_CODES = {
+  PDF_NOT_A_PDF: ['The file is not a PDF', 'NOT_A_PDF'],
+  PDF_ENCRYPTED: ['Password-protected PDFs cannot be uploaded', 'PDF_ENCRYPTED'],
+  PDF_TOO_LARGE: [null, 'FILE_TOO_LARGE'],
+  PDF_TOO_MANY_PAGES: [`A document may have at most ${MAX_DOCUMENT_PAGES} pages`, 'PDF_TOO_MANY_PAGES'],
+  PDF_TOO_COMPLEX: [null, 'PDF_TOO_COMPLEX'],
+  PDF_ACTIVE_CONTENT: [null, 'PDF_ACTIVE_CONTENT'],
+};
+
+function documentPdfError(err) {
+  if (!(err instanceof AppError)) {
+    throw new AppError('The file could not be checked', 400, 'NOT_A_PDF');
   }
-  const { size } = await fs.promises.stat(localPath);
-  if (await isEncryptedPdf(localPath, size)) {
-    throw new AppError('Password-protected PDFs cannot be uploaded', 400, 'PDF_ENCRYPTED');
-  }
-  return size;
+  const mapped = PDF_ERROR_CODES[err.code];
+  if (mapped) return new AppError(mapped[0] || err.message, err.statusCode || 400, mapped[1]);
+  // Everything else the inspector refuses is active or embedded content:
+  // JavaScript, a launch action, an embedded file, an XFA form.
+  return new AppError(
+    'This PDF contains active content (a script, an embedded file or a form action) and cannot be uploaded. '
+    + 'Please print it to PDF and upload that file.',
+    400, 'PDF_ACTIVE_CONTENT',
+  );
 }
 
 function assertStorageKey(key) {
@@ -324,19 +367,28 @@ async function getReviewCounts() {
  * it afterwards. `actor` is the activity-log actor.
  */
 async function createDocument({
-  customerId, uploaderType, uploaderId, file, links, share = false, admin = null, actor, quotaBytes = null,
+  customerId, uploaderType, uploaderId, file, links, share = false, admin = null, actor,
+  quotaBytes = null, maxUploadBytes = null,
 }) {
   const resolved = await resolveLinks(customerId, links || {}, { admin });
-  const size = await assertPdf(file.path);
+  const { size } = await assertPdf(file.path, { maxBytes: maxUploadBytes });
   const sha256 = await sha256OfFile(file.path);
   const verdict = await documentScanService.scanFile(file.path);
   if (verdict === 'rejected') {
     await logActivity('customer_document_scan_rejected', { customerId, uploaderType }, null, actor);
     throw new AppError('The file did not pass the security check', 422, 'DOCUMENT_REJECTED_BY_SCAN');
   }
-  // With no scanner registered an admin upload is vouched for by the admin
-  // who uploaded it; a customer upload waits for review.
-  const status = verdict === 'clean' || uploaderType === 'admin' ? 'clean' : 'pending';
+  // With NO scanner registered an admin upload is vouched for by the admin
+  // who uploaded it, and a customer upload waits for their review — the
+  // admin's review is the gate that stands in for a scanner.
+  //
+  // Once a scanner IS registered it is the gate, for both. An admin upload
+  // used to be stored `clean` whatever the scanner said, so a scanner that
+  // was down, timed out or answered `pending` let an admin upload through
+  // unscanned and shareable — the one case where a scanner would have been
+  // doing something.
+  const vouched = uploaderType === 'admin' && !documentScanService.hasScanner();
+  const status = verdict === 'clean' || vouched ? 'clean' : 'pending';
   const now = new Date().toISOString();
 
   const key = `${STORAGE_PREFIX}/${customerId}/${crypto.randomUUID()}.pdf`;
@@ -432,8 +484,28 @@ async function updateLinks(customerId, documentId, links, admin) {
     { documentId: row.id, customerId, ...resolved }, resolved.eventId, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
 }
 
+/**
+ * A contract-linked document is part of a contractual record, so deleting it
+ * is refused until it is unlinked (#1444).
+ *
+ * Erasure already keeps such a document — unshared and renamed — as evidence
+ * (markErasedForCustomer), but a plain delete removed it and the retention
+ * sweep then purged its bytes, which is the silent destruction of a
+ * contractual record the issue rules out. Refusing makes the deliberate path
+ * the only path: unlink from the contract, then delete.
+ */
+function assertNotContractLinked(row) {
+  if (row.contract_id) {
+    throw new AppError(
+      'This document is linked to a contract. Unlink it from the contract before deleting it.',
+      409, 'DOCUMENT_CONTRACT_LINKED',
+    );
+  }
+}
+
 async function softDelete(customerId, documentId, admin) {
   const row = await getForAdmin(customerId, documentId);
+  assertNotContractLinked(row);
   const now = new Date().toISOString();
   await db('customer_documents').where({ id: row.id }).update({
     deleted_at: now,

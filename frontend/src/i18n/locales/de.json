@@ -5573,7 +5573,10 @@
         "stillPending": "{{name}} wird noch geprüft.",
         "gone": "{{name}} ist nicht mehr mit Ihnen geteilt.",
         "purged": "{{name}} wurde entfernt.",
-        "download": "{{name}} konnte nicht heruntergeladen werden. Bitte versuchen Sie es erneut."
+        "download": "{{name}} konnte nicht heruntergeladen werden. Bitte versuchen Sie es erneut.",
+        "activeContent": "{{name}} enthält aktive Inhalte (ein Skript, eine eingebettete Datei oder eine Formularaktion) und kann nicht hochgeladen werden. Öffnen Sie die Datei, drucken Sie sie als PDF und laden Sie diese Datei hoch.",
+        "tooComplex": "{{name}} konnte nicht geprüft werden. Öffnen Sie die Datei, drucken Sie sie als PDF und laden Sie diese Datei hoch.",
+        "tooManyPages": "{{name}} hat zu viele Seiten zum Hochladen."
       }
     },
     "event": {

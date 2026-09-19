@@ -24,9 +24,24 @@ const {
   bootCrmDb, seedMinimal, assignAdminRole, mintAdminToken, buildRouteApp,
 } = require('./helpers/crmDb');
 
-const PDF = Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n');
+// Real PDFs, built with pdf-lib. The fixtures used to be hand-written stubs
+// that started with `%PDF-` and parsed as nothing: enough for the 20-byte
+// magic check this suite was written against, not for the content inspection
+// that replaced it (utils/pdfValidation, #1444 slice 1d). `makePdf` is the
+// same shape pdfValidation.test.js and contractAttachments.test.js use.
+const { PDFDocument, PDFName, PDFString } = require('pdf-lib');
+
+async function makePdf({ pages = 1, mutate } = {}) {
+  const doc = await PDFDocument.create();
+  for (let i = 0; i < pages; i += 1) doc.addPage([200, 200]);
+  if (mutate) mutate(doc);
+  return Buffer.from(await doc.save());
+}
+
 const ZIP_NAMED_PDF = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00]);
-const ENCRYPTED_PDF = Buffer.from('%PDF-1.7\n1 0 obj << >> endobj\ntrailer << /Root 1 0 R /Encrypt 5 0 R >>\n%%EOF\n');
+let PDF;
+let ENCRYPTED_PDF;
+let SCRIPTED_PDF;
 
 const binary = (res, cb) => {
   const chunks = [];
@@ -84,6 +99,18 @@ const tempDir = () => path.join(process.env.STORAGE_PATH, 'temp', 'customer-docu
 const tempFiles = () => (fs.existsSync(tempDir()) ? fs.readdirSync(tempDir()) : []);
 
 beforeAll(async () => {
+  PDF = await makePdf();
+  // pdf-lib refuses to LOAD an encrypted document, which is what the check
+  // relies on; the same trick pdfValidation.test.js uses to make one.
+  ENCRYPTED_PDF = Buffer.from(
+    (await makePdf()).toString('latin1').replace('/Root', '/Encrypt 1 0 R\n/Root'), 'latin1',
+  );
+  SCRIPTED_PDF = await makePdf({
+    mutate: (doc) => doc.catalog.set(PDFName.of('OpenAction'), doc.context.obj({
+      Type: 'Action', S: 'JavaScript', JS: PDFString.of('app.alert(1)'),
+    })),
+  });
+
   ({ db, cleanup } = await bootCrmDb());
   let adminId;
   ({ adminId, customerId: customerA } = await seedMinimal(db));
@@ -115,7 +142,10 @@ beforeAll(async () => {
 
   customerApp = buildRouteApp('/api/customer', require('../../src/routes/customer'));
   adminApp = buildRouteApp('/api/admin/customers', require('../../src/routes/adminCustomers'));
-}, 120000);
+  // 120s is not enough to run the full core-migration set against a
+  // containerised PostgreSQL: the boot alone takes ~110s there, and a
+  // timeout in this hook fails every test in the file at once.
+}, 300000);
 
 afterAll(async () => {
   if (cleanup) await cleanup();
@@ -343,6 +373,105 @@ describe('with the documents flag on', () => {
 
     await db('app_settings').where({ setting_key: 'customer_documents_quota_mb' })
       .update({ setting_value: JSON.stringify(250) });
+  });
+
+  // -------------------------------------------------------------------
+  // Slice 1 of the #1444 plan — hardening what shipped
+  // -------------------------------------------------------------------
+
+  it('refuses a PDF carrying active content, by its contents (#1444)', async () => {
+    // The old check read the first 20 bytes and searched for `/Encrypt`; a
+    // PDF that opens a JavaScript action passed both.
+    const before = tempFiles().length;
+    const res = await uploadAs(customerA, SCRIPTED_PDF, 'signed.pdf');
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('PDF_ACTIVE_CONTENT');
+    expect(tempFiles().length).toBe(before);
+  });
+
+  it('still accepts a PDF with a form, which is what a signed contract is', async () => {
+    // pdfInspect refuses actions that run, submit or import — not the
+    // presence of a form. A customer uploading a digitally signed contract
+    // is uploading an AcroForm with a signature field.
+    const withForm = await makePdf({
+      mutate: (doc) => doc.catalog.set(PDFName.of('AcroForm'), doc.context.obj({
+        Fields: [], SigFlags: 3,
+      })),
+    });
+    const res = await uploadAs(customerA, withForm, 'signed-contract.pdf');
+    expect(res.status).toBe(201);
+    // And the bytes on disk are the ones the customer uploaded, not a
+    // re-serialisation: rewriting the file would break the byte ranges a
+    // digital signature covers.
+    const row = await db('customer_documents').where({ id: res.body.document.id }).first();
+    expect(fs.readFileSync(path.join(process.env.STORAGE_PATH, row.storage_key)).equals(withForm)).toBe(true);
+  });
+
+  it('a registered scanner gates an admin upload too', async () => {
+    // An admin upload was stored `clean` whatever the scanner said, so a
+    // scanner that was down or answered `pending` let it through unscanned
+    // and shareable — the one case a scanner exists for.
+    const documentScanService = require('../../src/services/documentScanService');
+    documentScanService.registerScanner(async () => { throw new Error('scanner down'); });
+    try {
+      const res = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+        .attach('file', PDF, { filename: 'from-admin.pdf', contentType: 'application/pdf' });
+      expect(res.status).toBe(201);
+      expect(res.body.document.status).toBe('pending');
+
+      // …and a pending document cannot be shared.
+      const share = await asAdmin(
+        request(adminApp).post(`/api/admin/customers/${customerA}/documents/${res.body.document.id}/share`),
+      ).send({ shared: true });
+      expect(share.status).toBe(409);
+      expect(share.body.code).toBe('DOCUMENT_NOT_CLEAN');
+    } finally {
+      documentScanService.registerScanner(null);
+    }
+  });
+
+  it('with no scanner an admin upload is still vouched for by the admin', async () => {
+    const res = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .attach('file', PDF, { filename: 'vouched.pdf', contentType: 'application/pdf' });
+    expect(res.status).toBe(201);
+    expect(res.body.document.status).toBe('clean');
+  });
+
+  it('refuses to delete a contract-linked document, and the sweep leaves it alone', async () => {
+    const { runCustomerDocumentRetention } = require('../../src/services/customerDocumentRetentionService');
+    // A draft, and removed again at the end: a `sent` contract left behind
+    // shows up in the portal dashboard's "needs action" and would fail the
+    // suite's later expectations on it.
+    const contractId = idOf(await db('contracts').insert({
+      contract_number: `K-DOC-${Date.now()}`, customer_account_id: customerA, title: 'Linked',
+      status: 'draft', language: 'de', issue_date: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString(),
+    }).returning('id'));
+
+    const up = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .field('contractId', String(contractId))
+      .attach('file', PDF, { filename: 'agreement.pdf', contentType: 'application/pdf' });
+    expect(up.status).toBe(201);
+    const id = up.body.document.id;
+
+    const del = await asAdmin(request(adminApp).delete(`/api/admin/customers/${customerA}/documents/${id}`));
+    expect(del.status).toBe(409);
+    expect(del.body.code).toBe('DOCUMENT_CONTRACT_LINKED');
+    expect((await db('customer_documents').where({ id }).first()).deleted_at).toBeFalsy();
+
+    // Even a row that somehow reaches the sweep deleted keeps its bytes
+    // while the contract link stands.
+    const stamp = new Date(Date.now() - 90 * 864e5).toISOString();
+    await db('customer_documents').where({ id }).update({ deleted_at: stamp });
+    const row = await db('customer_documents').where({ id }).first();
+    await runCustomerDocumentRetention(Date.now());
+    expect((await db('customer_documents').where({ id }).first()).purged_at).toBeFalsy();
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, row.storage_key))).toBe(true);
+
+    // Unlinking is the deliberate path, and then it deletes.
+    await db('customer_documents').where({ id }).update({ deleted_at: null, contract_id: null });
+    expect((await asAdmin(request(adminApp).delete(`/api/admin/customers/${customerA}/documents/${id}`))).status).toBe(200);
+    await db('contracts').where({ id: contractId }).del();
   });
 
   it('removes the bytes of a deleted document once retention has passed', async () => {

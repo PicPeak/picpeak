@@ -39,6 +39,15 @@ export function uploadErrorMessage(t: TFunction, code: string | undefined, name:
       return t('customer.documents.errors.tooLarge', '{{name}} is larger than {{size}}. Upload a smaller file.', {
         name, size: formatFileSize(maxBytes),
       });
+    case 'PDF_ACTIVE_CONTENT':
+      return t('customer.documents.errors.activeContent',
+        '{{name}} contains active content (a script, an embedded file or a form action) and cannot be uploaded. '
+        + 'Open it and print it to PDF, then upload that file.', { name });
+    case 'PDF_TOO_COMPLEX':
+      return t('customer.documents.errors.tooComplex',
+        '{{name}} could not be checked. Open it and print it to PDF, then upload that file.', { name });
+    case 'PDF_TOO_MANY_PAGES':
+      return t('customer.documents.errors.tooManyPages', '{{name}} has too many pages to upload.', { name });
     case 'QUOTA_EXCEEDED':
       return t('customer.documents.errors.quota', 'There is not enough room for {{name}}. Ask your photographer to remove older documents.', { name });
     case 'UPLOAD_RATE_LIMITED':
