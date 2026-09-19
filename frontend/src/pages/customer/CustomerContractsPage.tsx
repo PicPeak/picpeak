@@ -77,7 +77,7 @@ export const CustomerContractsPage: React.FC = () => {
     }
     return (
       <div className="container py-8">
-        <p className="text-red-600">{t('customer.contracts.loadError', 'Could not load contracts.')}</p>
+        <p className="text-status hue-danger">{t('customer.contracts.loadError', 'Could not load contracts.')}</p>
       </div>
     );
   }
@@ -205,13 +205,16 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
     }
   }
 
+  // Token-derived, because `dark:` does not fire on the customer surface
+  // (see .status-chip in index.css). These were fixed light colours, so on a
+  // dark portal the contract's status — the reason this list exists — was
+  // dark text on a pale chip nobody could read.
   const statusBadge =
-    c.status === 'fully_signed' ? 'bg-green-100 text-green-800'
-      : c.status === 'signed_by_customer' || c.status === 'signed_by_admin' ? 'bg-blue-100 text-blue-800'
-      : c.status === 'sent' ? 'bg-amber-100 text-amber-800'
-      : c.status === 'declined' ? 'bg-red-100 text-red-800'
-      : c.status === 'cancelled' ? 'bg-neutral-200 text-neutral-600'
-      : 'bg-neutral-100 text-neutral-700';
+    c.status === 'fully_signed' ? 'status-chip hue-success'
+      : c.status === 'signed_by_customer' || c.status === 'signed_by_admin' ? 'status-chip hue-info'
+      : c.status === 'sent' ? 'status-chip hue-warning'
+      : c.status === 'declined' ? 'status-chip hue-danger'
+      : 'status-chip hue-neutral';
 
   return (
     <li className="p-4 flex items-center justify-between gap-3 flex-wrap">

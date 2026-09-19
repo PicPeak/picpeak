@@ -89,7 +89,7 @@ export const CustomerBillsPage: React.FC = () => {
     }
     return (
       <div className="container py-8">
-        <p className="text-red-600">{t('customer.bills.loadError', 'Could not load invoices.')}</p>
+        <p className="text-status hue-danger">{t('customer.bills.loadError', 'Could not load invoices.')}</p>
       </div>
     );
   }
@@ -236,12 +236,14 @@ const InvoiceRow: React.FC<{ inv: CustomerInvoice; onViewPdf: () => void }> = ({
   // pair.
   const showOutstanding = !isStorno && !isCancelled && outstanding > 0;
 
+  // Token-derived, because `dark:` does not fire on the customer surface
+  // (see .status-chip in index.css).
   const statusClass = isStorno
-    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300'
-    : inv.status === 'paid' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
-      : inv.status === 'overdue' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-        : inv.status === 'cancelled' ? 'bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300'
-          : 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300';
+    ? 'status-chip hue-storno'
+    : inv.status === 'paid' ? 'status-chip hue-success'
+      : inv.status === 'overdue' ? 'status-chip hue-danger'
+        : inv.status === 'cancelled' ? 'status-chip hue-neutral'
+          : 'status-chip hue-info';
 
   // Cancelled invoices and Storni display the absolute total. The
   // row-level totals on Storno rows are stored negative in the DB,
@@ -251,7 +253,7 @@ const InvoiceRow: React.FC<{ inv: CustomerInvoice; onViewPdf: () => void }> = ({
   const displayTotal = Math.abs(total);
 
   return (
-    <li className={`px-4 py-3 ${isStorno || isCancelled ? 'bg-neutral-50/50 dark:bg-neutral-800/30' : ''}`}>
+    <li className={`px-4 py-3 ${isStorno || isCancelled ? 'row-muted' : ''}`}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
@@ -293,34 +295,34 @@ const InvoiceRow: React.FC<{ inv: CustomerInvoice; onViewPdf: () => void }> = ({
               (matching the PDF's reference line so the customer's
               bookkeeper can find both documents). */}
           {isStorno && inv.cancelsInvoiceId && (
-            <div className="text-xs text-purple-700 dark:text-purple-300 mt-1">
+            <div className="text-xs text-status hue-storno mt-1">
               {t('customer.bills.cancelsLabel', 'Cancels invoice')}{' '}
               {inv.cancelsInvoiceNumber || `#${inv.cancelsInvoiceId}`}
             </div>
           )}
           {!isStorno && isCancelled && inv.cancellationStornoId && (
-            <div className="text-xs text-neutral-600 dark:text-neutral-400 mt-1">
+            <div className="text-xs text-muted-theme mt-1">
               {t('customer.bills.cancelledByLabel', 'Cancelled by cancellation invoice')}{' '}
               {inv.cancellationStornoNumber || `#${inv.cancellationStornoId}`}
             </div>
           )}
         </div>
         <div className="text-right">
-          <div className={`font-medium tabular-nums ${isStorno ? 'text-purple-700 dark:text-purple-300' : ''}`}>
+          <div className={`font-medium tabular-nums ${isStorno ? 'text-status hue-storno' : ''}`}>
             {isStorno ? '-' : ''}{formatMoney(displayTotal, inv.currency)}
           </div>
           {showOutstanding && (
-            <div className="text-xs text-red-700 dark:text-red-400 mt-0.5">
+            <div className="text-xs text-status hue-danger mt-0.5">
               {t('customer.bills.field.outstanding', 'Outstanding')}: {formatMoney(outstanding, inv.currency)}
             </div>
           )}
           {lateFee > 0 && !isStorno && (
-            <div className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+            <div className="text-xs text-status hue-warning mt-0.5">
               {t('customer.bills.field.lateFee', 'Late fee')}: {formatMoney(lateFee, inv.currency)}
             </div>
           )}
           <button type="button" onClick={onViewPdf}
-            className="text-xs text-primary-600 dark:text-primary-400 mt-1 inline-flex items-center gap-1 hover:underline">
+            className="text-xs text-accent mt-1 inline-flex items-center gap-1 hover:underline">
             <Download className="w-3 h-3" />
             {t('customer.bills.viewPdf', 'View PDF')}
           </button>

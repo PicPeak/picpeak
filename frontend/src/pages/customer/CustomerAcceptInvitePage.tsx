@@ -208,7 +208,7 @@ export const CustomerAcceptInvitePage: React.FC = () => {
             <div className="flex justify-center py-8"><Loading size="lg" /></div>
           ) : lookupError || !invitation ? (
             <div className="flex items-start gap-2 text-sm">
-              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0 text-red-600" />
+              <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0 text-status hue-danger" />
               <p className="text-theme">{lookupError}</p>
             </div>
           ) : (
@@ -230,7 +230,7 @@ export const CustomerAcceptInvitePage: React.FC = () => {
 
               {errors.form && (
                 <div role="alert" className="flex items-start gap-2 p-3 rounded-lg border" style={{ borderColor: 'var(--color-surface-border)' }}>
-                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-600" />
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-status hue-danger" />
                   <span className="text-sm text-theme">{errors.form}</span>
                 </div>
               )}
@@ -263,7 +263,7 @@ export const CustomerAcceptInvitePage: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-theme mb-1">
-                      {t('customer.acceptInvite.displayName', 'Display name')} <span className="text-red-500">*</span>
+                      {t('customer.acceptInvite.displayName', 'Display name')} <span className="text-status hue-danger">*</span>
                     </label>
                     <Input
                       value={form.display_name}
@@ -439,7 +439,7 @@ export const CustomerAcceptInvitePage: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-theme mb-1">
-                      {t('customer.acceptInvite.password', 'Password')} <span className="text-red-500">*</span>
+                      {t('customer.acceptInvite.password', 'Password')} <span className="text-status hue-danger">*</span>
                     </label>
                     <Input
                       type="password"
@@ -451,7 +451,7 @@ export const CustomerAcceptInvitePage: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-theme mb-1">
-                      {t('customer.acceptInvite.confirm', 'Confirm password')} <span className="text-red-500">*</span>
+                      {t('customer.acceptInvite.confirm', 'Confirm password')} <span className="text-status hue-danger">*</span>
                     </label>
                     <Input
                       type="password"

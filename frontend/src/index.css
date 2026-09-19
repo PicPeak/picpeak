@@ -499,26 +499,52 @@
   }
 
   /*
-   * Status chips on the customer surface.
+   * Status colours for the customer surface.
    *
    * Tailwind's `dark:` modifier is INERT here: the portal themes through
    * CSS tokens (see CustomerLayout), while `dark:` needs the class the
    * admin shell toggles on <html>. A chip written as `bg-green-100
-   * text-green-800 dark:…` therefore rendered its light values on the dark
-   * ground — and the chip is the one thing the documents page exists to
+   * text-green-800 dark:…` therefore rendered its LIGHT values on a dark
+   * portal — and the chip is usually the one thing the page exists to
    * communicate.
    *
-   * Both colours are mixed FROM the surface the chip sits on, so the same
-   * rule reads on either ground without knowing which one it is.
+   * Putting `dark` on the portal's own root would make the variants fire but
+   * break what they sit inside: `.dark` re-declares `--color-surface` and the
+   * rest with PicPeak's generic palette, so any operator running custom
+   * branding would lose their colours below that element.
+   *
+   * So these derive from the surface instead. A `hue-*` class names the
+   * meaning; `.status-chip` washes that hue over whatever surface it lands
+   * on, and `.text-status` pulls it toward the surface's own text colour.
+   * One rule, readable on a white portal and on a near-black one, and it
+   * follows the operator's palette rather than replacing it.
    */
   .status-chip {
     background-color: color-mix(in srgb, var(--chip-hue) 18%, var(--color-surface, #ffffff));
     color: color-mix(in srgb, var(--chip-hue) 72%, var(--color-text, #171717));
   }
 
-  .status-chip-success { --chip-hue: #16a34a; }
-  .status-chip-warning { --chip-hue: #d97706; }
-  .status-chip-danger { --chip-hue: #dc2626; }
+  /* The same hue as text, for a line that is not a chip. */
+  .text-status {
+    color: color-mix(in srgb, var(--chip-hue) 72%, var(--color-text, #171717));
+  }
+
+  .hue-success { --chip-hue: #16a34a; }
+  .hue-warning { --chip-hue: #d97706; }
+  .hue-danger { --chip-hue: #dc2626; }
+  .hue-info { --chip-hue: #2563eb; }
+  .hue-storno { --chip-hue: #9333ea; }
+  .hue-neutral { --chip-hue: var(--color-muted-text, #737373); }
+
+  /* A row that is cancelled or reversed: dimmed against its own surface. */
+  .row-muted {
+    background-color: color-mix(in srgb, var(--color-muted-text, #737373) 8%, transparent);
+  }
+
+  /* Hover for a list row or icon button, in the surface's own direction. */
+  .hover-surface:hover {
+    background-color: color-mix(in srgb, var(--color-text, #171717) 6%, transparent);
+  }
 
   .customer-surface .input::placeholder {
     color: var(--color-muted-text);

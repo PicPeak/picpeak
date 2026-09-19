@@ -63,9 +63,9 @@ export function uploadErrorMessage(t: TFunction, code: string | undefined, name:
 // rather than the class the admin shell toggles on <html> — so the chip
 // styles are token-derived in index.css instead.
 const STATUS_STYLE: Record<CustomerDocument['status'], string> = {
-  clean: 'status-chip status-chip-success',
-  pending: 'status-chip status-chip-warning',
-  rejected: 'status-chip status-chip-danger',
+  clean: 'status-chip hue-success',
+  pending: 'status-chip hue-warning',
+  rejected: 'status-chip hue-danger',
 };
 
 function statusLabel(t: TFunction, status: CustomerDocument['status']): string {
@@ -128,7 +128,7 @@ export const CustomerDocumentList: React.FC<{ documents: CustomerDocument[]; sho
               </p>
             )}
             {doc.status === 'rejected' && (
-              <p className="text-xs text-red-600 mt-1">
+              <p className="text-xs text-status hue-danger mt-1">
                 {doc.rejectionReason
                   ? t('customer.documents.rejectedWithReason', 'Not accepted: {{reason}}', { reason: doc.rejectionReason })
                   : t('customer.documents.rejectedHint', 'Your photographer did not accept this file. Contact them if you are unsure why.')}
@@ -179,7 +179,7 @@ export const CustomerDocumentsPage: React.FC = () => {
     return (
       <div className="container py-8">
         <h1 className="text-2xl font-bold text-theme mb-2">{t('customer.documents.title', 'Documents')}</h1>
-        <p className={status === 403 ? 'text-muted-theme' : 'text-red-600'}>
+        <p className={status === 403 ? 'text-muted-theme' : 'text-status hue-danger'}>
           {status === 403
             ? t('customer.documents.disabled', 'Documents are not available for your account.')
             : t('customer.documents.loadError', 'Could not load your documents.')}
@@ -329,7 +329,7 @@ export const CustomerDocumentsPage: React.FC = () => {
         )}
         <div role="status" aria-live="polite" className="mt-3 text-sm">
           {result && (
-            <p className={result.kind === 'success' ? 'text-green-700' : 'text-red-600'}>{result.message}</p>
+            <p className={result.kind === 'success' ? 'text-status hue-success' : 'text-status hue-danger'}>{result.message}</p>
           )}
         </div>
       </Card>

@@ -85,7 +85,7 @@ export const CustomerQuotesPage: React.FC = () => {
     }
     return (
       <div className="container py-8">
-        <p className="text-red-600">{t('customer.quotes.loadError', 'Could not load quotes.')}</p>
+        <p className="text-status hue-danger">{t('customer.quotes.loadError', 'Could not load quotes.')}</p>
       </div>
     );
   }
@@ -221,10 +221,10 @@ const QuoteRow: React.FC<{ q: CustomerQuote }> = ({ q }) => {
   };
 
   const statusClass =
-    q.status === 'accepted' || q.status === 'converted' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
-      : q.status === 'declined' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300'
-        : q.status === 'sent' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300'
-          : 'bg-neutral-100 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-300';
+    q.status === 'accepted' || q.status === 'converted' ? 'status-chip hue-success'
+      : q.status === 'declined' ? 'status-chip hue-danger'
+        : q.status === 'sent' ? 'status-chip hue-info'
+          : 'status-chip hue-neutral';
 
   const body = (
     <div className="flex items-center justify-between gap-3 px-4 py-3">
@@ -247,12 +247,12 @@ const QuoteRow: React.FC<{ q: CustomerQuote }> = ({ q }) => {
         </div>
         <div className="mt-1 flex items-center justify-end gap-3 text-xs">
           <button type="button" onClick={handleDownloadPdf}
-            className="text-primary-600 dark:text-primary-400 inline-flex items-center gap-1 hover:underline">
+            className="text-accent inline-flex items-center gap-1 hover:underline">
             <Download className="w-3 h-3" />
             {t('customer.quotes.viewPdf', 'View PDF')}
           </button>
           {canRespond && linkHref && (
-            <span className="text-primary-600 dark:text-primary-400 inline-flex items-center gap-1">
+            <span className="text-accent inline-flex items-center gap-1">
               {t('customer.quotes.openToRespond', 'Open to respond')}
               <ExternalLink className="w-3 h-3" />
             </span>
@@ -265,7 +265,7 @@ const QuoteRow: React.FC<{ q: CustomerQuote }> = ({ q }) => {
   return (
     <li>
       {linkHref ? (
-        <Link to={linkHref} className="block hover:bg-neutral-50 dark:hover:bg-neutral-800">
+        <Link to={linkHref} className="block hover-surface">
           {body}
         </Link>
       ) : body}

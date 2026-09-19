@@ -188,7 +188,7 @@ export const CustomerProfilePage: React.FC = () => {
     return (
       <div className="container py-12">
         <ProfileTile>
-          <p className="text-sm text-red-600">
+          <p className="text-sm text-status hue-danger">
             {t('customer.profile.loadError', 'Could not load your profile.')}
           </p>
         </ProfileTile>
@@ -455,7 +455,7 @@ export const CustomerProfilePage: React.FC = () => {
         </ProfileTile>
 
         {profileErr && (
-          <p className="text-sm text-red-600">{profileErr}</p>
+          <p className="text-sm text-status hue-danger">{profileErr}</p>
         )}
 
         <div className="flex justify-end">

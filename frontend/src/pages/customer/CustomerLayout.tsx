@@ -243,7 +243,7 @@ export const CustomerLayout: React.FC = () => {
             <button
               type="button"
               onClick={() => { void logout(); }}
-              className="p-2 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-muted-theme hover:text-theme focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+              className="p-2 rounded hover-surface text-muted-theme hover:text-theme focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
               aria-label={t('common.logout', 'Logout')}
               title={t('common.logout', 'Logout')}
             >
@@ -265,7 +265,7 @@ export const CustomerLayout: React.FC = () => {
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="p-2 -ml-2 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-theme"
+            className="p-2 -ml-2 rounded hover-surface text-theme"
             aria-label={t('common.menu', 'Menu')}
           >
             <Menu className="w-6 h-6" />

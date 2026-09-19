@@ -98,7 +98,7 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
                 : t('customer.dashboard.invoiceDue', 'Invoice {{number}} is due {{date}}', {
                   number: i.invoiceNumber, date: i.dueDate ? fmtDate(i.dueDate) : '',
                 })}
-              <span className={`block text-xs ${i.overdue ? 'text-red-600' : 'text-muted-theme'}`}>
+              <span className={`block text-xs ${i.overdue ? 'text-status hue-danger' : 'text-muted-theme'}`}>
                 {t('customer.dashboard.openAmount', 'Open: {{amount}}', { amount: formatMoneyMinor(i.openAmountMinor, i.currency) })}
               </span>
             </span>
@@ -213,7 +213,7 @@ export const CustomerDashboardPage: React.FC = () => {
         <div className="flex justify-center py-16"><Loading size="lg" /></div>
       ) : error || !data ? (
         <div role="alert" className="rounded-xl border p-6 flex items-start gap-3" style={surfaceStyle}>
-          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0 text-red-500" />
+          <AlertCircle className="w-5 h-5 mt-0.5 flex-shrink-0 text-status hue-danger" />
           <p className="text-theme">
             {t('customer.dashboard.loadError', 'Could not load your galleries. Please try again.')}
           </p>

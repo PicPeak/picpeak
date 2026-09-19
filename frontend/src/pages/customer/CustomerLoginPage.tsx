@@ -187,7 +187,7 @@ export const CustomerLoginPage: React.FC = () => {
                   backgroundColor: 'var(--color-elevated, rgba(220, 38, 38, 0.05))',
                 }}
               >
-                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-600" />
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-status hue-danger" />
                 <span className="text-sm">{errors.form}</span>
               </div>
             )}
