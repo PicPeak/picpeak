@@ -31,6 +31,15 @@ const AUDITED_TABLES = {
   contract_block_inclusions: {
     entity: 'contract_block_inclusion', document: (row) => ['contract', row.contract_id],
   },
+  // The free text a contract carries beyond its clauses, and which
+  // attachments go out with it and how — both are part of what the customer
+  // is sent, so a change to either belongs in the document's history (#1445).
+  contract_text_sections: {
+    entity: 'contract_text_section', document: (row) => ['contract', row.contract_id],
+  },
+  contract_attachment_inclusions: {
+    entity: 'contract_attachment_inclusion', document: (row) => ['contract', row.contract_id],
+  },
   expenses: { entity: 'expense', document: (row) => ['expense', row.id] },
   inbound_documents: { entity: 'inbound_document', document: (row) => ['inbound_document', row.id] },
   // Configuration printed on or feeding accounting documents.

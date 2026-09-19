@@ -7614,7 +7614,9 @@
       "countersignModeLabel": "How do you want to sign?",
       "countersignModeDrawn": "Draw my signature",
       "countersignModeTyped": "Use my typed name",
-      "countersignTypedHint": "Your name, as typed above, is placed in the signature field."
+      "countersignTypedHint": "Your name, as typed above, is placed in the signature field.",
+      "attachmentMerged": "merged from page {{page}}",
+      "attachmentSeparate": "sent as a separate file"
     },
     "editor": {
       "back": "Back to list",
@@ -8192,6 +8194,24 @@
       "title": "Attachments",
       "download": "Download",
       "inPdf": "Part of the contract PDF"
+    },
+    "price": {
+      "title": "Services and price",
+      "description": "Description",
+      "quantity": "Qty",
+      "amount": "Amount",
+      "net": "Net",
+      "shipping": "Shipping",
+      "vat": "VAT",
+      "total": "Total",
+      "fromQuote": "From quote {{number}}",
+      "unit": {
+        "hour": "h",
+        "day": "d",
+        "piece": "pcs",
+        "km": "km",
+        "flat": "flat rate"
+      }
     }
   },
   "crmOverview": {

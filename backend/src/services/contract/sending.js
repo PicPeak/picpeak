@@ -107,6 +107,11 @@ async function sendContract(id, adminId) {
     issuer: ctx.issuer,
     templateVersionId: refreshed.contract.template_version_id,
     manifest: sendable.manifest,
+    // The contract row does not carry this yet — completeSend writes it with
+    // the status, after the PDF exists. Passing it means the log entry for
+    // the send names the content the PDF was built from.
+    contentSha256,
+    actor: await adminActor(adminId),
   });
 
   // Marks the contract sent, starts the event log and emails each signer

@@ -134,6 +134,30 @@ async function buildPublicView(contractId) {
   }));
   view.allowPdfUpload = allowPdfUpload;
   view.requireDrawnSignature = requireDrawnSignature;
+  // What the contract costs (#1445). The PDF printed the line table and the
+  // totals; the page a signer reads before signing showed neither, so "what
+  // you see is what you sign" stopped short of the price. Taken from the
+  // frozen snapshot only — a contract sent before format 2 has no frozen
+  // commercial terms, and re-reading the live quote here would show a signer
+  // figures that are not the ones in the document they are signing.
+  const snapshot = require('./renderContext').parseContentSnapshot(data.contract.rendered_content);
+  view.commercial = snapshot && snapshot.quote ? {
+    sourceQuoteNumber: snapshot.quote.number || null,
+    currency: snapshot.quote.currency,
+    lineItems: (snapshot.quote.lineItems || []).map((li) => ({
+      position: li.position,
+      parentPosition: li.parent_position,
+      kind: li.line_kind,
+      description: li.description,
+      details: li.details_text,
+      unit: li.unit,
+      quantity: li.quantity,
+      unitPriceMinor: li.unit_price_minor,
+      discountPercent: li.discount_percent,
+      lineTotalMinor: li.line_total_minor,
+    })),
+    totals: snapshot.quote.totals,
+  } : null;
   return view;
 }
 

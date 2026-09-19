@@ -19,7 +19,7 @@ const { getStoragePath } = require('../config/storage');
 const { resolveFontFiles } = require('./pdf/fonts');
 
 // Bumped when the renderer's output for the same inputs changes on purpose.
-const RENDERER_VERSION = '2';
+const RENDERER_VERSION = '3';
 const DOC_TYPES = ['quote', 'invoice', 'contract'];
 
 const sha256 = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
@@ -148,13 +148,32 @@ async function persist(opts) {
   return { path: filePath, sha256: digest, bytes: buffer.length, id };
 }
 
-/** A document's generated PDFs, newest first (no file paths). */
+function parseManifest(value) {
+  if (!value) return null;
+  if (typeof value === 'object') return value;
+  try {
+    return JSON.parse(value);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * A document's generated PDFs, newest first (no file paths).
+ *
+ * The manifest comes with them (#1445): it records which attachments went
+ * into a contract, in which order, with each one's sha256 — including the
+ * ones delivered separately, which are bound into nothing else. It was
+ * written at send and then unreadable through any API, so nobody could see
+ * what a document was actually made of.
+ */
 async function listForDocument(docType, docId) {
   const rows = await db('generated_documents')
     .where({ doc_type: docType, doc_id: docId })
     .orderBy('generated_at', 'desc')
     .orderBy('id', 'desc')
-    .select('id', 'kind', 'sha256', 'bytes', 'pages', 'template_version_id', 'renderer_version', 'parent_id', 'generated_at');
+    .select('id', 'kind', 'sha256', 'bytes', 'pages', 'template_version_id', 'renderer_version',
+      'parent_id', 'manifest', 'generated_at');
   return rows.map((r) => ({
     id: r.id,
     kind: r.kind,
@@ -164,6 +183,7 @@ async function listForDocument(docType, docId) {
     templateVersionId: r.template_version_id || null,
     rendererVersion: r.renderer_version,
     parentId: r.parent_id || null,
+    manifest: parseManifest(r.manifest),
     generatedAt: r.generated_at,
   }));
 }

@@ -7615,7 +7615,9 @@
       "countersignModeLabel": "Wie möchten Sie unterschreiben?",
       "countersignModeDrawn": "Unterschrift zeichnen",
       "countersignModeTyped": "Eingegebenen Namen verwenden",
-      "countersignTypedHint": "Ihr oben eingegebener Name wird in das Unterschriftsfeld eingesetzt."
+      "countersignTypedHint": "Ihr oben eingegebener Name wird in das Unterschriftsfeld eingesetzt.",
+      "attachmentMerged": "ab Seite {{page}} eingefügt",
+      "attachmentSeparate": "als separate Datei versendet"
     },
     "editor": {
       "back": "Zurück zur Liste",
@@ -8193,6 +8195,24 @@
       "title": "Anhänge",
       "download": "Herunterladen",
       "inPdf": "Teil des Vertrags-PDFs"
+    },
+    "price": {
+      "title": "Leistungen und Preis",
+      "description": "Beschreibung",
+      "quantity": "Menge",
+      "amount": "Betrag",
+      "net": "Netto",
+      "shipping": "Versand",
+      "vat": "MwSt.",
+      "total": "Gesamt",
+      "fromQuote": "Aus Offerte {{number}}",
+      "unit": {
+        "hour": "Std.",
+        "day": "Tage",
+        "piece": "Stk.",
+        "km": "km",
+        "flat": "pauschal"
+      }
     }
   },
   "crmOverview": {

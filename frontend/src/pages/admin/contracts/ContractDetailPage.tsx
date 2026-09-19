@@ -844,6 +844,27 @@ const GeneratedDocumentsCard: React.FC<{ contractId: number }> = ({ contractId }
               <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400 break-all" title={d.sha256}>
                 {d.sha256.slice(0, 16)}…
               </span>
+              {/* What the PDF was actually made of (#1445): which attachments
+                  went into it, in what order, and each one's own checksum —
+                  including the ones delivered as separate files, which are
+                  bound into nothing else. Recorded at send, but until now
+                  unreadable through any API. */}
+              {d.manifest?.attachments?.length ? (
+                <ul className="w-full mt-1 pl-4 space-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+                  {d.manifest.attachments.map((a) => (
+                    <li key={a.attachmentId} className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">{a.name}</span>
+                      <span>
+                        {a.delivery === 'merged'
+                          ? t('contracts.detail.attachmentMerged', 'merged from page {{page}}', { page: a.firstPage ?? '—' })
+                          : t('contracts.detail.attachmentSeparate', 'sent as a separate file')}
+                      </span>
+                      <span>{t('contracts.detail.documentPages', 'Pages: {{count}}', { count: a.pages })}</span>
+                      <span className="font-mono break-all" title={a.sha256}>{a.sha256.slice(0, 12)}…</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
           ))}
         </ul>
