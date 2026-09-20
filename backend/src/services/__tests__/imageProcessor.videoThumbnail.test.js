@@ -149,6 +149,20 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
     expect(result).toBe('thumbnails/thumb_clip.jpg');
   });
 
+  it('skips the bound for the admin regenerate job and takes the real poster frame', async () => {
+    const storage = getStorage();
+    storage.kind.mockReturnValue('s3');
+    storage.stat.mockResolvedValue({ size: 4 * 1024 * 1024 * 1024 });
+
+    const result = await ensureThumbnail({ ...managedVideo, id: 49 }, { boundVideoSource: false });
+
+    expect(storage.stat).not.toHaveBeenCalled();
+    expect(storage.getToFile).toHaveBeenCalled();
+    expect(processUploadedVideo).toHaveBeenCalledWith(expect.any(String), 'thumbnails/thumb_clip.jpg');
+    expect(storage.put).not.toHaveBeenCalled();
+    expect(result).toBe('thumbnails/thumb_clip.jpg');
+  });
+
   it('leaves still images on the image path', async () => {
     resolvePhotoStorageKey.mockImplementation(() => { throw new Error('resolved as an image'); });
 

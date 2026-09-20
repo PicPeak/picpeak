@@ -544,7 +544,7 @@ function isVideoPhoto(photo) {
  * to fall back to streaming the full original on every tile — minutes of
  * load time for a 100-photo NAS-mounted gallery.
  */
-async function ensureThumbnail(photo, { force = false } = {}) {
+async function ensureThumbnail(photo, { force = false, boundVideoSource = true } = {}) {
   // Check if thumbnail exists and is valid (works for any source).
   if (!force && photo.thumbnail_path) {
     const isValid = await isThumbnailValid(photo.thumbnail_path);
@@ -554,10 +554,10 @@ async function ensureThumbnail(photo, { force = false } = {}) {
     logger.warn(`Invalid thumbnail detected for photo ${photo.id}, regenerating...`);
   }
 
-  return singleFlight(flightKey('thumbnail', photo), () => regenerateThumbnail(photo), { force });
+  return singleFlight(flightKey('thumbnail', photo), () => regenerateThumbnail(photo, { boundVideoSource }), { force });
 }
 
-async function regenerateThumbnail(photo) {
+async function regenerateThumbnail(photo, { boundVideoSource = true } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
 
   const event = await db('events').where('id', photo.event_id).first();
@@ -577,7 +577,7 @@ async function regenerateThumbnail(photo) {
     // fall back to a placeholder, or with its rendition since lost — stayed
     // thumbnail-less forever, however many times it was viewed or the admin
     // pressed regenerate.
-    newThumbnailPath = await regenerateVideoThumbnail(event, photo, isExternal);
+    newThumbnailPath = await regenerateVideoThumbnail(event, photo, isExternal, { boundSource: boundVideoSource });
   } else if (isExternal) {
     // External: source is on a local mount path. No withLocalCopy needed
     // (storage-backend abstraction doesn't apply — this is a direct fs
@@ -647,8 +647,13 @@ async function regenerateThumbnail(photo) {
  * reach, and a poster frame is not worth a multi-GB download. Over the limit
  * the row gets the placeholder after a single HEAD. Local and external sources
  * are exempt: nothing is copied for them.
+ *
+ * `boundSource: false` lifts that bound. It is for the admin regenerate job
+ * only (adminThumbnails.js): an admin asked, it runs in the background one
+ * video at a time, and bounded it could never give a large video whose
+ * thumbnail is missing anything but the placeholder.
  */
-async function regenerateVideoThumbnail(event, photo, isExternal) {
+async function regenerateVideoThumbnail(event, photo, isExternal, { boundSource = true } = {}) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
   const { processUploadedVideo } = require('./videoProcessor');
 
@@ -672,7 +677,7 @@ async function regenerateVideoThumbnail(event, photo, isExternal) {
     }
     const sourceKey = resolvePhotoStorageKey(event, photo);
     const storage = getStorage();
-    if (storage.kind() !== 'local') {
+    if (boundSource && storage.kind() !== 'local') {
       // Read at call time, as restoreService reads RESTORE_MAX_DECOMPRESSED_BYTES.
       const configured = Number(process.env.VIDEO_THUMBNAIL_MAX_SOURCE_BYTES);
       const maxBytes = Number.isFinite(configured) && configured > 0
