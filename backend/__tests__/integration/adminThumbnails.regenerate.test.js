@@ -166,17 +166,92 @@ describe('admin thumbnail regeneration (#1129)', () => {
     expect(imageProcessor.deleteThumbnailTiers).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves videos alone rather than handing a container file to Sharp', async () => {
-    const eventId = await seedEvent();
-    await seedPhoto(eventId, { source_origin: 'managed', media_type: 'video', filename: 'clip.mp4' });
-    await seedPhoto(eventId, { source_origin: 'managed', filename: 'still.jpg' });
+  /**
+   * Videos used to be filtered out of this query: ensureThumbnail had no video
+   * branch, so each one only produced a Sharp error. It has one now (issue
+   * 1414), and this button is what an admin with a galleryful of broken video
+   * tiles reaches for — so videos are back in, under different rules from
+   * stills, because a poster frame is not a function of the thumbnail settings
+   * (videoProcessor renders it at a fixed 300x300):
+   *
+   *  - REPAIR, not rebuild. thumbnail_path is passed through and `force` is
+   *    off, so ensureThumbnail's own valid-thumbnail check skips a healthy
+   *    poster. Forcing it would re-download every video on every press — a
+   *    full object each on S3 — to write back the same bytes.
+   *  - No size bound. The bound exists for the guest request path; here an
+   *    admin asked, in a background job. Bounded, a large S3 video whose
+   *    thumbnail is missing could only ever get the placeholder.
+   *  - No tier deletion: videos never take the tier path.
+   */
+  describe('videos', () => {
+    it('repairs a video through ensureThumbnail without forcing or bounding it', async () => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, {
+        source_origin: 'managed', media_type: 'video', filename: 'clip.mp4',
+        thumbnail_path: 'thumbnails/thumb_clip.jpg',
+      });
 
-    const res = await request(app).post('/admin/thumbnails/regenerate').send({});
-    await drain();
+      const res = await request(app).post('/admin/thumbnails/regenerate').send({});
+      await drain();
 
-    expect(res.body.count).toBe(1);
-    expect(imageProcessor.ensureThumbnail).toHaveBeenCalledTimes(1);
-    expect(imageProcessor.ensureThumbnail.mock.calls[0][0].filename).toBe('still.jpg');
+      expect(res.body.count).toBe(1);
+      expect(imageProcessor.ensureThumbnail).toHaveBeenCalledTimes(1);
+      const [photoArg, options] = imageProcessor.ensureThumbnail.mock.calls[0];
+      expect(photoArg.filename).toBe('clip.mp4');
+      expect(photoArg.thumbnail_path).toBe('thumbnails/thumb_clip.jpg');
+      expect(options).toEqual({ boundVideoSource: false });
+      expect(imageProcessor.deleteThumbnailTiers).not.toHaveBeenCalled();
+    });
+
+    it('recognises a legacy video row by mime_type alone', async () => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, { source_origin: 'managed', mime_type: 'video/mp4', filename: 'old.mp4' });
+
+      await request(app).post('/admin/thumbnails/regenerate').send({});
+      await drain();
+
+      expect(imageProcessor.ensureThumbnail.mock.calls[0][1]).toEqual({ boundVideoSource: false });
+    });
+
+    it('keeps rebuilding stills with force and a nulled thumbnail_path', async () => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, { source_origin: 'managed', filename: 'still.jpg', thumbnail_path: 'thumbnails/thumb_still.jpg' });
+
+      await request(app).post('/admin/thumbnails/regenerate').send({});
+      await drain();
+
+      const [photoArg, options] = imageProcessor.ensureThumbnail.mock.calls[0];
+      expect(photoArg.thumbnail_path).toBeNull();
+      expect(options).toEqual({ force: true });
+      expect(imageProcessor.deleteThumbnailTiers).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not let an unreadable video take the rest of the batch down', async () => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, { source_origin: 'managed', media_type: 'video', filename: 'broken.mp4' });
+      await seedPhoto(eventId, { source_origin: 'managed', media_type: 'video', filename: 'throws.mp4' });
+      await seedPhoto(eventId, { source_origin: 'managed', filename: 'still.jpg' });
+      imageProcessor.ensureThumbnail
+        .mockResolvedValueOnce(null)
+        .mockRejectedValueOnce(new Error('ffmpeg exited with code 1'));
+
+      await request(app).post('/admin/thumbnails/regenerate').send({});
+      await drain();
+
+      expect(imageProcessor.ensureThumbnail).toHaveBeenCalledTimes(3);
+      const done = logInfo.mock.calls.map((c) => String(c[0])).find((l) => /regeneration complete/.test(l));
+      expect(done).toMatch(/1 success, 2 errors/);
+    });
+
+    it('still leaves videos out of the preview regeneration, which is image-only', async () => {
+      const eventId = await seedEvent();
+      await seedPhoto(eventId, { source_origin: 'managed', media_type: 'video', filename: 'clip.mp4' });
+      await seedPhoto(eventId, { source_origin: 'managed', filename: 'still.jpg' });
+
+      const res = await request(app).post('/admin/thumbnails/regenerate-previews').send({});
+
+      expect(res.body.count).toBe(1);
+    });
   });
 
   /**
