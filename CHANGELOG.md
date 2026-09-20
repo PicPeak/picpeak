@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.133.1](https://github.com/PicPeak/picpeak/compare/v3.133.0...v3.133.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **video:** regenerate missing thumbnails for already-uploaded videos (stable) ([#1556](https://github.com/PicPeak/picpeak/issues/1556)) ([9ecf0da](https://github.com/PicPeak/picpeak/commit/9ecf0da5dfda8005fcff56f93a7033c6f67b5a51))
+
 ## [3.133.0](https://github.com/PicPeak/picpeak/compare/v3.132.4...v3.133.0) (2026-09-17)
 
 
