@@ -30,12 +30,16 @@ jest.mock('../../database/db', () => {
   db.photosUpdate = photosUpdate;
   return { db };
 });
-jest.mock('../storage', () => ({
-  getStorage: () => ({
-    kind: () => 'local',
-    resolveLocalPath: (key) => `/storage/${key}`
-  })
-}));
+jest.mock('../storage', () => {
+  const storage = {
+    kind: jest.fn(() => 'local'),
+    resolveLocalPath: (key) => `/storage/${key}`,
+    stat: jest.fn(),
+    getToFile: jest.fn().mockResolvedValue(undefined),
+    put: jest.fn().mockResolvedValue(undefined)
+  };
+  return { getStorage: () => storage };
+});
 jest.mock('../videoProcessor', () => ({
   processUploadedVideo: jest.fn()
 }));
@@ -45,6 +49,7 @@ jest.mock('../photoResolver', () => ({
 }));
 
 const { db } = require('../../database/db');
+const { getStorage } = require('../storage');
 const { processUploadedVideo } = require('../videoProcessor');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../photoResolver');
 const { ensureThumbnail } = require('../imageProcessor');
@@ -62,6 +67,7 @@ const managedVideo = {
 describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    getStorage().kind.mockReturnValue('local');
     resolvePhotoStorageKey.mockReturnValue('events/active/summer-wedding/individual/clip.mp4');
     resolvePhotoFilePath.mockReturnValue('/mnt/nas/2026/clip.mp4');
     processUploadedVideo.mockImplementation(async (_videoPath, thumbnailKey) => ({
@@ -112,6 +118,35 @@ describe('ensureThumbnail rebuilds a video thumbnail from the video (#1414)', ()
 
     await expect(ensureThumbnail({ ...managedVideo, id: 45 })).resolves.toBeNull();
     expect(db.photosUpdate).not.toHaveBeenCalled();
+  });
+
+  it('writes the placeholder without downloading a video over the size bound', async () => {
+    const storage = getStorage();
+    storage.kind.mockReturnValue('s3');
+    storage.stat.mockResolvedValue({ size: 513 * 1024 * 1024 });
+
+    const result = await ensureThumbnail({ ...managedVideo, id: 47 });
+
+    expect(storage.stat).toHaveBeenCalledWith('events/active/summer-wedding/individual/clip.mp4');
+    expect(storage.getToFile).not.toHaveBeenCalled();
+    expect(processUploadedVideo).not.toHaveBeenCalled();
+    expect(storage.put).toHaveBeenCalledWith('thumbnails/thumb_clip.jpg', expect.any(Buffer), {
+      contentType: 'image/jpeg'
+    });
+    expect(result).toBe('thumbnails/thumb_clip.jpg');
+  });
+
+  it('downloads a video under the size bound and takes the poster frame', async () => {
+    const storage = getStorage();
+    storage.kind.mockReturnValue('s3');
+    storage.stat.mockResolvedValue({ size: 100 * 1024 * 1024 });
+
+    const result = await ensureThumbnail({ ...managedVideo, id: 48 });
+
+    expect(storage.getToFile).toHaveBeenCalled();
+    expect(processUploadedVideo).toHaveBeenCalledWith(expect.any(String), 'thumbnails/thumb_clip.jpg');
+    expect(storage.put).not.toHaveBeenCalled();
+    expect(result).toBe('thumbnails/thumb_clip.jpg');
   });
 
   it('leaves still images on the image path', async () => {

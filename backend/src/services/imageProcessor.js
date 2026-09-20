@@ -106,6 +106,8 @@ async function withProcessableImage(localPath, sourceName) {
 // Default thumbnail settings
 const DEFAULT_THUMBNAIL_WIDTH = 300;
 const DEFAULT_THUMBNAIL_HEIGHT = 300;
+// Largest video pulled off a remote backend for a poster frame (#1414 review).
+const DEFAULT_VIDEO_THUMBNAIL_MAX_SOURCE_BYTES = 512 * 1024 * 1024;
 // 'inside' preserves the source aspect ratio (output ≤ width × height).
 // This is the right default for masonry / mosaic / justified layouts —
 // the gallery sizes each card from photo.width/height and renders the
@@ -638,6 +640,13 @@ async function regenerateThumbnail(photo) {
  * external branch keeps regenerateThumbnail's `ext<id>_` prefix, which is what
  * stops two events that reference the same NAS basename from clobbering each
  * other's thumbnail.
+ *
+ * On a remote backend the source is bounded by VIDEO_THUMBNAIL_MAX_SOURCE_BYTES
+ * (default 512 MB): withLocalCopy materialises the whole object on the request
+ * path of the gallery thumbnail route, which an unauthenticated visitor can
+ * reach, and a poster frame is not worth a multi-GB download. Over the limit
+ * the row gets the placeholder after a single HEAD. Local and external sources
+ * are exempt: nothing is copied for them.
  */
 async function regenerateVideoThumbnail(event, photo, isExternal) {
   const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('./photoResolver');
@@ -662,6 +671,26 @@ async function regenerateVideoThumbnail(event, photo, isExternal) {
       return await generate(localPath);
     }
     const sourceKey = resolvePhotoStorageKey(event, photo);
+    const storage = getStorage();
+    if (storage.kind() !== 'local') {
+      // Read at call time, as restoreService reads RESTORE_MAX_DECOMPRESSED_BYTES.
+      const configured = Number(process.env.VIDEO_THUMBNAIL_MAX_SOURCE_BYTES);
+      const maxBytes = Number.isFinite(configured) && configured > 0
+        ? configured
+        : DEFAULT_VIDEO_THUMBNAIL_MAX_SOURCE_BYTES;
+      const stat = await storage.stat(sourceKey);
+      if (stat && stat.size > maxBytes) {
+        logger.warn(`Video ${photo.id} is ${stat.size} bytes, over the ${maxBytes} byte limit; using the placeholder`);
+        // Same filename derivation and explicit dimensions as
+        // processUploadedVideo's own fallback, so this lands under
+        // thumbnailKey and skips the settings lookup.
+        const placeholderName = path.basename(thumbnailKey).replace(/^thumb_/, '');
+        return await generateVideoPlaceholder(placeholderName, {
+          width: DEFAULT_THUMBNAIL_WIDTH,
+          height: DEFAULT_THUMBNAIL_HEIGHT
+        });
+      }
+    }
     logger.info(`Ensuring thumbnail for video ${photo.id} from key: ${sourceKey}`);
     return await withLocalCopy(sourceKey, generate);
   } catch (e) {
