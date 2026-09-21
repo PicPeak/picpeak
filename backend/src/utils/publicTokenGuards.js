@@ -29,11 +29,11 @@
  */
 
 const { db } = require('../database/db');
-const { clientIpForAudit } = require('./clientIp');
+const { rateLimitKey } = require('./rateLimitKey');
 const logger = require('./logger');
 
 // In-memory bad-attempt counter. Per-process; cleared on restart.
-// Keyed by IP. Each entry: { count, firstAt }. We could persist this
+// Keyed by rateLimitKey (an IPv6 /64 is one client). Each entry: { count, firstAt }. We could persist this
 // in app_settings or a dedicated table, but in-memory is simpler and
 // good enough for the threat (distributed brute force is the only
 // case where IP locking helps anyway, and that needs more than one
@@ -77,7 +77,7 @@ function isIpLocked(ip) {
  */
 async function loadActionToken(req, res, opts) {
   const { tableName, token, requireUnused = false } = opts;
-  const ip = clientIpForAudit(req);
+  const ip = rateLimitKey(req);
 
   if (isIpLocked(ip)) {
     res.status(429).json({

@@ -25,6 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { body, param } = require('express-validator');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { validateFileType, validateFileContent } = require('../utils/fileSecurityUtils');
@@ -39,7 +40,7 @@ const router = express.Router();
 // With contracts switched off, signing is off too — same code as the admin routes.
 router.use(requireFeatureFlag('contracts', 'CONTRACTS_DISABLED'));
 
-const limiter = (windowMs, max) => rateLimit({ windowMs, max, standardHeaders: true, legacyHeaders: false });
+const limiter = (windowMs, max) => rateLimit({ windowMs, max, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey });
 const viewLimiter = limiter(60 * 1000, 30);
 const codeLimiter = limiter(10 * 60 * 1000, 5);
 const verifyLimiter = limiter(10 * 60 * 1000, 20);
