@@ -1072,6 +1072,9 @@
       "deviceTypes": "Tipos de dispositivo desde agentes de usuario",
       "privacy": "Privacidad",
       "privacyText": "Las direcciones IP están hasheadas para privacidad. No se almacena datos personales. Los datos de analíticas se conservan durante 90 días."
+    },
+    "customerSurface": {
+      "save": "Guardar ajustes del encabezado"
     }
   },
   "analytics": {
