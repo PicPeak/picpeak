@@ -8,6 +8,8 @@ import type { BaseGalleryLayoutProps } from './BaseGalleryLayout';
 import { FeedbackIdentityModal } from '../../gallery/FeedbackIdentityModal';
 import { feedbackService } from '../../../services/feedback.service';
 import { useGuestIdentityOptional } from '../../../contexts/GuestIdentityContext';
+import { useDownloadQuota } from '../../../contexts/DownloadQuotaContext';
+import { downloadLimitReachedMessage } from '../../../utils/downloadLimit';
 
 export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   photos,
@@ -67,6 +69,8 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const [pendingAction, setPendingAction] = useState<null | { type: 'like'; photoId: number }>(null);
   const [savedIdentity, setSavedIdentity] = useState<{ name: string; email: string } | null>(null);
   const guestIdentity = useGuestIdentityOptional();
+  // Download limit (issue 1560); see PhotoCard for why aria-disabled.
+  const downloadQuota = useDownloadQuota();
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
   // Seed from server is_liked on first non-empty payload (#590 follow-up).
   // Mount-only so refetches don't clobber in-session optimistic toggles.
@@ -159,8 +163,11 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 variant="ghost"
                 size="sm"
                 onClick={(e) => onDownload(currentPhoto, e)}
-                className="text-white hover:bg-white/20"
-                title="Download photo"
+                className={`text-white hover:bg-white/20${currentPhoto && !downloadQuota.canDownload(currentPhoto) ? ' opacity-50 cursor-not-allowed' : ''}`}
+                aria-disabled={(currentPhoto && !downloadQuota.canDownload(currentPhoto)) || undefined}
+                title={currentPhoto && !downloadQuota.canDownload(currentPhoto)
+                  ? downloadLimitReachedMessage()
+                  : 'Download photo'}
               >
                 <Download className="w-5 h-5" />
               </Button>

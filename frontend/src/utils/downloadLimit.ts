@@ -83,14 +83,20 @@ export async function readDownloadLimitError(error: unknown): Promise<DownloadLi
   };
 }
 
+/** The refusal in the viewer's language, for tooltips on disabled buttons. */
+const REACHED_FALLBACK = 'Download limit reached. Please contact your photographer for more downloads.';
+export const downloadLimitReachedMessage = (): string =>
+  // An i18next that is not initialised yet returns nothing; the tooltip
+  // must still say something.
+  i18n.t('gallery.downloadLimit.reached', REACHED_FALLBACK) || REACHED_FALLBACK;
+
 export function showDownloadLimitReached(info?: DownloadLimitInfo): void {
   const message = info && typeof info.remaining === 'number' && info.remaining > 0
     ? i18n.t('gallery.downloadLimit.notEnough', {
       remaining: info.remaining,
       defaultValue: 'Only {{remaining}} downloads left. Please select fewer photos or contact your photographer.',
     })
-    : i18n.t('gallery.downloadLimit.reached',
-      'Download limit reached. Please contact your photographer for more downloads.');
+    : downloadLimitReachedMessage();
   // One toast however many buttons raced into the refusal.
   toastify.error(message, { toastId: 'download-limit-reached' });
 }
