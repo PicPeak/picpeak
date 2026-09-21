@@ -101,6 +101,8 @@ beforeEach(() => {
   list.mockResolvedValue([]);
 });
 
+// The badge is in the row twice: in the status column, and in the phone copy
+// under the name that stands in for the column below `sm` (customer groups).
 describe('CustomerManagementPage — invited vs merely passive (#1261)', () => {
   it('marks a passive customer who has an open invitation', async () => {
     list.mockResolvedValue([customer(1, 'invited@example.com')]);
@@ -108,7 +110,7 @@ describe('CustomerManagementPage — invited vs merely passive (#1261)', () => {
 
     renderWith(<CustomerManagementPage />);
 
-    expect(await screen.findByText('Invitation pending')).toBeTruthy();
+    expect(await screen.findAllByText('Invitation pending')).toHaveLength(2);
     expect(screen.queryByText('Passive — admin only')).toBeNull();
   });
 
@@ -118,7 +120,7 @@ describe('CustomerManagementPage — invited vs merely passive (#1261)', () => {
 
     renderWith(<CustomerManagementPage />);
 
-    expect(await screen.findByText('Passive — admin only')).toBeTruthy();
+    expect(await screen.findAllByText('Passive — admin only')).toHaveLength(2);
     expect(screen.queryByText('Invitation pending')).toBeNull();
   });
 
@@ -131,7 +133,7 @@ describe('CustomerManagementPage — invited vs merely passive (#1261)', () => {
 
     renderWith(<CustomerManagementPage />);
 
-    expect(await screen.findByText('Invitation pending')).toBeTruthy();
+    expect(await screen.findAllByText('Invitation pending')).toHaveLength(2);
   });
 
   it('does not mark an active customer, who needs no invitation', async () => {
@@ -293,9 +295,11 @@ describe('InlineCustomerCreate — what the toast may claim (#1261)', () => {
 
     renderWith(<CustomerManagementPage />);
 
-    const badge = await screen.findByText('Invitation pending');
-    const tooltip = badge.getAttribute('title') || badge.closest('[title]')?.getAttribute('title') || '';
-    expect(tooltip).not.toMatch(/invitation sent/i);
-    expect(tooltip).toMatch(/not proof/i);
+    // Both copies of the badge (status column and phone copy) carry it.
+    for (const badge of await screen.findAllByText('Invitation pending')) {
+      const tooltip = badge.getAttribute('title') || badge.closest('[title]')?.getAttribute('title') || '';
+      expect(tooltip).not.toMatch(/invitation sent/i);
+      expect(tooltip).toMatch(/not proof/i);
+    }
   });
 });

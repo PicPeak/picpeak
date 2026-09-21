@@ -256,7 +256,7 @@ async function createContract(payload, adminId, { idempotencyKey = null } = {}) 
       // separate update, which could fail after the draft was committed
       // (issue 1447).
       await writeInclusions(trx, contractId, payload.blocks, history);
-      if (Array.isArray(payload.textSections)) await writeTextSections(trx, contractId, payload.textSections);
+      if (Array.isArray(payload.textSections)) await writeTextSections(trx, contractId, payload.textSections, history);
     } else if (version) {
       // The version's clauses, with their frozen texts and overrides.
       await require('./templates').seedContractFromVersion(trx, contractId, version, history);
@@ -404,7 +404,7 @@ async function writeInclusions(trx, contractId, blocks, history, previous = new 
  * `{ section, position, heading, body }` entries, inside the caller's
  * transaction. `body` is a `{ en, de, … }` map.
  */
-async function writeTextSections(trx, contractId, sections) {
+async function writeTextSections(trx, contractId, sections, history = { source: 'contract.text_sections' }) {
   const content = require('./content');
   const { ALLOWED_SECTIONS } = require('../contractBlocksService');
   const now = new Date();
@@ -423,8 +423,8 @@ async function writeTextSections(trx, contractId, sections) {
       updated_at: now,
     };
   });
-  await trx('contract_text_sections').where({ contract_id: contractId }).del();
-  if (rows.length) await trx('contract_text_sections').insert(rows);
+  await auditedDelete(trx, 'contract_text_sections', { contract_id: contractId }, history);
+  if (rows.length) await auditedInsert(trx, 'contract_text_sections', rows, history);
 }
 
 /**
@@ -517,9 +517,9 @@ async function updateContract(id, payload, adminId) {
       await auditedDelete(trx, 'contract_block_inclusions', { contract_id: id }, history);
       await writeInclusions(trx, id, payload.blocks, history, previous);
     }
-    if (Array.isArray(payload.textSections)) await writeTextSections(trx, id, payload.textSections);
+    if (Array.isArray(payload.textSections)) await writeTextSections(trx, id, payload.textSections, history);
     if (Array.isArray(payload.attachments)) {
-      await require('./attachments').writeContractAttachments(trx, id, payload.attachments);
+      await require('./attachments').writeContractAttachments(trx, id, payload.attachments, history);
     }
 
     try {

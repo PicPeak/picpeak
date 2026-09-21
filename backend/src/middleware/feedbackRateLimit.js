@@ -2,6 +2,7 @@ const cleanupTimers = new Set();
 const crypto = require('crypto');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 
 /**
  * Generate a unique identifier for the guest.
@@ -224,7 +225,8 @@ function strictRateLimit(options = {}) {
   cleanupTimers.add(cleanupTimer);
   
   return (req, res, next) => {
-    const ip = req.ip || req.connection.remoteAddress;
+    // An IPv6 /64 is one client; see utils/rateLimitKey.js.
+    const ip = rateLimitKey(req) || req.connection?.remoteAddress;
     const now = Date.now();
     const resetTime = now + windowMs;
     

@@ -72,7 +72,34 @@ async function persistContractPdf(contract, buffer, suffix = '', meta = {}) {
     // Inside a transaction the record has to go through it (SQLite has one writer).
     conn: meta.conn,
   });
+  // Every contract PDF this app writes passes through here, so this is the
+  // one place the activity log can record that an artifact was generated
+  // (#1445): which contract, which file, what it hashes to, the content and
+  // template version behind it. The `generated_documents` row is the record;
+  // this is what makes it visible on the contract's audit trail.
+  await logArtifact(contract, stored, meta);
   return { filePath: stored.path, sha256: stored.sha256 };
+}
+
+/** Best-effort: a failed log line must never cost a contract its PDF. */
+async function logArtifact(contract, stored, meta) {
+  try {
+    const { logActivity } = require('../../database/db');
+    await logActivity('contract_document_generated', {
+      contractId: contract.id,
+      generatedDocumentId: stored.id,
+      kind: meta.kind || null,
+      pdfSha256: stored.sha256,
+      // The caller's value when it has one: on a send the contract row is
+      // only marked sent — and given its content hash — after this PDF
+      // exists, so reading it off the row here would always be null.
+      contentSha256: meta.contentSha256 || contract.rendered_content_sha256 || null,
+      templateVersionId: meta.templateVersionId || null,
+      rendererVersion: documentArtifactService.RENDERER_VERSION,
+    }, null, meta.actor || { type: 'system' }, meta.conn);
+  } catch (err) {
+    logger.warn('Could not log a generated contract document', { contractId: contract.id, message: err.message });
+  }
 }
 
 // Maximum decoded signature image size. Defends against a customer

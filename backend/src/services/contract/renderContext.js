@@ -6,7 +6,7 @@ const { getAppSetting } = require('../../utils/appSettings');
 const { formatShortDate } = require('../../utils/dateFormatter');
 const businessProfileService = require('../businessProfileService');
 const { buildIssuerBlock, buildRecipientBlock } = require('../_renderContext');
-const { ensureInt } = require('../../utils/numericHelpers');
+const { ensureInt, ensureNumber } = require('../../utils/numericHelpers');
 const { countedLineItems } = require('../../utils/lineItemTotals');
 const { SECTIONS_ORDER } = require('./helpers');
 const { canonicalSha256 } = require('../../utils/canonicalJson');
@@ -177,23 +177,107 @@ function parseContentSnapshot(value) {
   }
 }
 
+/** The current snapshot format. See buildContentSnapshot. */
+const SNAPSHOT_FORMAT = 2;
+
+/**
+ * The columns of a quote line the contract renderer reads, coerced to the
+ * shapes JSON round-trips identically on both engines.
+ *
+ * The DB column names are kept rather than an API shape: `buildRenderContext`
+ * hands these rows to exactly the mapper it already uses for live rows
+ * (pdfService's `quote_line_items_table` branch), so a frozen contract and a
+ * live one go through one code path.
+ *
+ * The coercion is not cosmetic. `*_minor` are bigint columns and
+ * `quantity` / `discount_percent` are decimals: PostgreSQL hands those back
+ * as strings and SQLite as numbers, so freezing them raw would give the same
+ * contract a different `rendered_content_sha256` on the two engines — and the
+ * hash is what a signature is bound to.
+ */
+function snapshotLineItem(li) {
+  return {
+    position: ensureInt(li.position),
+    parent_position: li.parent_position == null || li.parent_position === '' ? null : ensureInt(li.parent_position),
+    parent_line_item_id: li.parent_line_item_id == null ? null : ensureInt(li.parent_line_item_id),
+    line_kind: li.line_kind || 'item',
+    description: li.description == null ? '' : String(li.description),
+    details_text: li.details_text == null ? null : String(li.details_text),
+    unit: li.unit == null ? null : String(li.unit),
+    quantity: ensureNumber(li.quantity, 0),
+    unit_price_minor: ensureInt(li.unit_price_minor),
+    discount_percent: ensureNumber(li.discount_percent, 0),
+    line_total_minor: ensureInt(li.line_total_minor),
+    is_optional: li.is_optional === true || li.is_optional === 1 || li.is_optional === '1',
+    promotion_snapshot: li.promotion_snapshot == null ? null : String(li.promotion_snapshot),
+  };
+}
+
+/**
+ * The commercial terms a contract prints, as they stood when it was sent.
+ *
+ * The contract's own text was frozen from the start; the price was not. The
+ * `quote_line_items_table` block re-read `quote_line_items` on every render,
+ * so `rendered_content_sha256` — the hash a signature is bound to — covered
+ * the words and not the amounts. Editing the source quote after sending
+ * changed nothing a signer could see (a sent contract opens its stored PDF),
+ * but it did mean the hash never stood for the commercial terms.
+ *
+ * Totals are read from the quote row rather than recomputed: those are the
+ * amounts the quote itself states and the customer accepted, and re-deriving
+ * them here would let a later change to, say, the rounding setting disagree
+ * with the document that was sent.
+ */
+async function buildQuoteSnapshot(contract) {
+  if (!contract.source_quote_id) return null;
+  const quote = await db('quotes').where({ id: contract.source_quote_id }).first();
+  if (!quote) return null;
+  const rows = await db('quote_line_items as li')
+    .leftJoin('quote_line_items as parent', 'parent.id', 'li.parent_line_item_id')
+    .where('li.quote_id', contract.source_quote_id)
+    .orderBy('li.position', 'asc')
+    .select('li.*', 'parent.position as parent_position');
+  return {
+    number: quote.quote_number || null,
+    currency: (quote.currency || 'CHF').toUpperCase(),
+    // Unselected optional add-ons aren't part of the deal (#1451), so they
+    // are not part of what is signed either.
+    lineItems: countedLineItems(rows).map(snapshotLineItem),
+    totals: {
+      netMinor: ensureInt(quote.net_amount_minor),
+      vatRatePercent: ensureNumber(quote.vat_rate, 0),
+      vatMinor: ensureInt(quote.vat_amount_minor),
+      shippingMinor: ensureInt(quote.shipping_amount_minor),
+      grossMinor: ensureInt(quote.total_amount_minor),
+    },
+  };
+}
+
 /**
  * What a contract says at the moment it's sent (#1445): its clauses in
  * reading order with their texts in every language, the title, intro and
- * outro, and the placeholder values of that moment. sendContract stores it
- * with its sha256; from then on the PDF, the signing page and any re-render
- * read this instead of live data, whatever changes later in the library,
- * the template or the customer record.
+ * outro, the placeholder values of that moment — and, since format 2, the
+ * quote line items and totals it prints. sendContract stores it with its
+ * sha256; from then on the PDF, the signing page and any re-render read this
+ * instead of live data, whatever changes later in the library, the template,
+ * the customer record or the source quote.
+ *
+ * `quote` is frozen whenever the contract has a source quote, whether or not
+ * the `quote_line_items_table` block is included: what is frozen is the
+ * commercial basis of the contract, and which blocks print it is a question
+ * for the renderer.
  */
 async function buildContentSnapshot(contract, inclusions, textSections = []) {
   const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
+  const quote = await buildQuoteSnapshot(contract);
   const snapshot = {
-    format: 1,
+    format: SNAPSHOT_FORMAT,
     title: contract.title || '',
     introText: contract.intro_text || '',
     outroText: contract.outro_text || '',
     placeholders: await buildPlaceholderContext(contract, customer),
     clauses: orderedClauses(contract, inclusions, textSections),
+    ...(quote ? { quote } : {}),
   };
   return { snapshot, sha256: canonicalSha256(snapshot) };
 }
@@ -248,15 +332,26 @@ async function buildRenderContext(contract, inclusions, textSections = []) {
   const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
   const profile = (await businessProfileService.getProfile()).profile || {};
 
-  // Pull source-quote line items when this contract was generated from a
-  // quote. Surfaced on the render context so the renderer can draw a real
-  // table at the location of the `quote_line_items_table` system block.
-  // Sub-items keep their parent's position via the LEFT JOIN so the
-  // renderer can indent them with a `↳` prefix.
+  // The line items and totals the contract prints. A contract sent with a
+  // format-2 snapshot reads them from it and never touches `quote_line_items`
+  // again: editing the source quote afterwards must not change what was sent,
+  // and `rendered_content_sha256` — the hash a signature is bound to — covers
+  // these values.
+  //
+  // A contract sent before format 2 keeps the live read. Its commercial terms
+  // were never frozen and cannot be reconstructed; its stored PDF is what
+  // opens anyway, and re-deriving is the closest thing to the truth left.
+  const snapshot = parseContentSnapshot(contract.rendered_content);
   let quoteLineItems = [];
   let quoteCurrency = null;
   let quoteNumber = null;
-  if (contract.source_quote_id) {
+  let quoteTotals = null;
+  if (snapshot && ensureInt(snapshot.format) >= 2 && snapshot.quote) {
+    quoteLineItems = snapshot.quote.lineItems || [];
+    quoteCurrency = snapshot.quote.currency || null;
+    quoteNumber = snapshot.quote.number || null;
+    quoteTotals = snapshot.quote.totals || null;
+  } else if (contract.source_quote_id) {
     const srcQuote = await db('quotes').where({ id: contract.source_quote_id })
       .select('quote_number', 'currency').first();
     if (srcQuote) {
@@ -325,6 +420,9 @@ async function buildRenderContext(contract, inclusions, textSections = []) {
     quoteLineItems,
     quoteCurrency,
     quoteSourceNumber: quoteNumber,
+    // Present only for a contract sent with a format-2 snapshot; the renderer
+    // draws the totals row under the line table from it.
+    quoteTotals,
     // Signature evidence (used by the PDF renderer to stamp signatures
     // into the closing section when present).
     signatures: {
@@ -356,10 +454,13 @@ async function buildRenderContext(contract, inclusions, textSections = []) {
   };
 }
 module.exports = {
+  SNAPSHOT_FORMAT,
   renderTemplatedBody,
   buildPlaceholderContext,
   buildRenderContext,
   buildContentSnapshot,
+  buildQuoteSnapshot,
   resolveDisplayContent,
   orderedClauses,
+  parseContentSnapshot,
 };

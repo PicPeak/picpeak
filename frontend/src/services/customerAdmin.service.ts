@@ -6,6 +6,33 @@
  */
 import { api } from '../config/api';
 
+/**
+ * A customer group (#1443, migration 226). Referenced by id everywhere, so a
+ * rename or a recolour shows up wherever the chip is drawn without rewriting
+ * a customer record.
+ */
+export interface CustomerGroup {
+  id: number;
+  name: string;
+  description: string | null;
+  /** #rrggbb. Drawn as a dot beside the name, never as the only meaning. */
+  color: string;
+  sortOrder: number;
+  /** Archived groups stay on the customers that carry them and are not
+   *  offered for new assignments. */
+  isArchived: boolean;
+  /** Only on the catalogue listing. */
+  memberCount?: number;
+  createdAt?: string | null;
+}
+
+export interface CustomerGroupPayload {
+  name?: string;
+  description?: string | null;
+  color?: string | null;
+  isArchived?: boolean;
+}
+
 export interface CustomerAccountSummary {
   id: number;
   email: string;
@@ -23,6 +50,9 @@ export interface CustomerAccountSummary {
   lastLogin: string | null;
   createdAt: string;
   eventCount?: number;
+  /** Customer groups (#1443). Always present on the list and detail
+   *  responses, empty for a customer in no group. */
+  groups?: CustomerGroup[];
   /** Per-customer feature flags (#354 follow-up). */
   featureCalendar?: boolean;
   featureQuotes?: boolean;
@@ -124,13 +154,60 @@ export interface CustomerInvitationSummary {
   invitedBy: string | null;
 }
 
+/**
+ * The group routes answer through `successResponse`, which wraps the payload
+ * in `data`; the older customer routes answer with the payload itself. One
+ * place to stop caring which.
+ */
+const unwrap = (payload: any): any => (payload && payload.data !== undefined ? payload.data : payload);
+
 export const customerAdminService = {
-  async list(search?: string): Promise<CustomerAccountSummary[]> {
+  async list(search?: string, groupIds?: number[]): Promise<CustomerAccountSummary[]> {
+    // The group filter is server-side (#1443): the overview asks for the
+    // selected groups and keeps filtering the answer by the search box.
+    const params: Record<string, string> = {};
+    if (search) params.search = search;
+    if (groupIds && groupIds.length > 0) params.groupIds = groupIds.join(',');
     const response = await api.get<{ customers: CustomerAccountSummary[] }>(
       '/admin/customers',
-      { params: search ? { search } : undefined }
+      { params: Object.keys(params).length > 0 ? params : undefined }
     );
     return response.data.customers;
+  },
+
+  // ---- groups (#1443) ----------------------------------------------------
+
+  async listGroups(includeArchived = false): Promise<CustomerGroup[]> {
+    const response = await api.get<{ groups: CustomerGroup[] } | { data: { groups: CustomerGroup[] } }>(
+      '/admin/customers/groups',
+      { params: includeArchived ? { includeArchived: 'true' } : undefined }
+    );
+    return unwrap(response.data).groups;
+  },
+
+  async createGroup(payload: CustomerGroupPayload): Promise<CustomerGroup> {
+    const response = await api.post('/admin/customers/groups', payload);
+    return unwrap(response.data).group;
+  },
+
+  async updateGroup(id: number, payload: CustomerGroupPayload): Promise<CustomerGroup> {
+    const response = await api.put(`/admin/customers/groups/${id}`, payload);
+    return unwrap(response.data).group;
+  },
+
+  async deleteGroup(id: number): Promise<void> {
+    await api.delete(`/admin/customers/groups/${id}`);
+  },
+
+  async reorderGroups(orderedIds: number[]): Promise<CustomerGroup[]> {
+    const response = await api.post('/admin/customers/groups/reorder', { orderedIds });
+    return unwrap(response.data).groups;
+  },
+
+  /** Replace a customer's groups with exactly these ids. */
+  async setCustomerGroups(id: number, groupIds: number[]): Promise<CustomerGroup[]> {
+    const response = await api.put(`/admin/customers/${id}/groups`, { groupIds });
+    return unwrap(response.data).groups;
   },
 
   async search(term: string): Promise<CustomerAccountSummary[]> {

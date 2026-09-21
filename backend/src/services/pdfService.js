@@ -875,6 +875,63 @@ function stripTrailingZeros(value) {
  * VAT row drops when rate is 0 + amount is 0? No — reference shows
  * "ges. MwSt. 0.0% 0.00" so we keep it visible.
  */
+/**
+ * The totals under a contract's line table (#1445).
+ *
+ * Separate from `drawTotals` on purpose: that one is pinned to a fixed
+ * offset from the page bottom and shares its geometry with the payment
+ * block beneath it, neither of which exists in a contract — the table sits
+ * mid-document, between clauses. This draws the same three figures with the
+ * same column arithmetic, labels and money formatting, inline where the
+ * table ended.
+ *
+ * `totals` is the frozen snapshot's shape (netMinor / vatRatePercent /
+ * vatMinor / shippingMinor / grossMinor), not the quote service's.
+ */
+function drawContractTotals(doc, ctx, x, y, width) {
+  const { locale, currency, intlLocale, totals } = ctx;
+  const right = x + width;
+  const valueCol = 80;
+  const rateCol = 40;
+  const valueX = right - valueCol;
+  const rateX = right - valueCol - rateCol;
+  const labelX = x + (width - 20) / 2 + 20;
+  const labelCol = rateX - labelX - 6;
+  const body = doc._fonts ? doc._fonts.body : FONT_BODY;
+  const bold = doc._fonts ? doc._fonts.bold : FONT_BOLD;
+
+  const row = (label, value, rate) => {
+    doc.font(bold).fontSize(10).text(label, labelX, y, { width: labelCol });
+    if (rate != null) doc.font(body).text(rate, rateX, y, { width: rateCol, align: 'right' });
+    doc.font(body).text(value, valueX, y, { width: valueCol, align: 'right' });
+    y = doc.y + 4;
+  };
+
+  doc.moveTo(x, y).lineTo(right, y).strokeColor(themeColor(doc, 'text')).lineWidth(0.8).stroke();
+  y += 6;
+  doc.fillColor(themeColor(doc, 'text'));
+
+  row(t(locale, 'totals_net'), formatMinor(totals.netMinor, currency, intlLocale));
+  if (Number(totals.shippingMinor) > 0) {
+    row(t(locale, 'totals_shipping'), formatMinor(totals.shippingMinor, currency, intlLocale));
+  }
+  if (Number(totals.vatMinor) !== 0 || Number(totals.vatRatePercent) > 0) {
+    row(
+      ctx.vatLabel || t(locale, 'totals_vat'),
+      formatMinor(totals.vatMinor, currency, intlLocale),
+      `${stripTrailingZeros(totals.vatRatePercent)}%`,
+    );
+  }
+
+  doc.moveTo(labelX, y).lineTo(right, y).strokeColor(themeColor(doc, 'text')).lineWidth(0.8).stroke();
+  y += 6;
+  doc.font(bold).fontSize(11).text(t(locale, 'totals_grand'), labelX, y, { width: labelCol });
+  doc.text(formatMinor(totals.grossMinor, currency, intlLocale), valueX, y, { width: valueCol, align: 'right' });
+  y = doc.y + 6;
+  doc.fontSize(10);
+  return y;
+}
+
 function drawTotals(doc, ctx, x, y, width) {
   const { locale, currency, intlLocale, totals } = ctx;
   // Layout: align the totals labels with the RIGHT column of the
@@ -2174,6 +2231,25 @@ function renderContractWithSlots(context) {
               y += 10;
               doc.y = y;
               doc.fillColor(themeColor(doc, 'text'));
+
+              // The totals the contract was sent with (#1445). Without this
+              // the contract printed a table of line amounts and never named
+              // the sum the customer was signing for. Drawn from the frozen
+              // snapshot only, so the figure and the table can never disagree;
+              // a contract sent before the snapshot carried totals prints the
+              // table alone, exactly as it did when it went out.
+              if (ctx.quoteTotals) {
+                ensureSpace(60);
+                y = drawContractTotals(doc, {
+                  locale,
+                  currency: (ctx.quoteCurrency || 'CHF').toUpperCase(),
+                  intlLocale: localeForIntl(locale, ctx.issuer?.countryCode),
+                  totals: ctx.quoteTotals,
+                  vatLabel: ctx.issuer && ctx.issuer.vatLabel,
+                }, PAGE.marginLeft, doc.y, PAGE.contentWidth);
+                doc.y = y;
+                doc.fillColor(themeColor(doc, 'text'));
+              }
             }
           }
 

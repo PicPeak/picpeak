@@ -1196,7 +1196,7 @@
       "showLogoHint": "Utilise le même logo de marque configuré ci-dessus.",
       "showCompanyName": "Afficher le nom de l'entreprise dans l'en-tête client",
       "showCompanyNameHint": "Masquez si votre logo inclut déjà le nom de l'entreprise.",
-      "save": "Enregistrer les modifications",
+      "save": "Enregistrer les paramètres de l'en-tête",
       "saved": "Marque du tableau de bord client enregistrée",
       "error": "Impossible d'enregistrer les paramètres"
     },

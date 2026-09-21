@@ -45,6 +45,14 @@ interface PhotoLightboxProps {
   onSelectPerson?: (personId: number) => void;
 }
 
+// Finger travel before a single-finger touch starts moving the carousel.
+const SWIPE_SLOP_PX = 8;
+
+const touchSpan = (touches: React.TouchList) => Math.hypot(
+  touches[1].clientX - touches[0].clientX,
+  touches[1].clientY - touches[0].clientY
+);
+
 export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   photos,
   initialIndex,
@@ -68,7 +76,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [touchDistance, setTouchDistance] = useState<number | null>(null);
+  // Pinch baseline lives in a ref so a burst of touchmoves within one
+  // render frame chains off the previous step, not off stale state.
+  // isPinching is state because it gates the image's transform transition.
+  const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
+  const [isPinching, setIsPinching] = useState(false);
   // Ref (not state) so handleTouchEnd reads the value set by handleTouchStart
   // even when both fire in the same render batch.
   const swipeStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
@@ -649,18 +661,27 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     return () => el.removeEventListener('wheel', handleWheel);
   }, [currentPhoto]);
 
+  // iOS Safari ignores user-scalable=no, so a pinch with one finger on the
+  // toolbar or a button zoomed the page while the handlers below zoomed the
+  // image. touch-action on the root covers current Safari; gesturestart is
+  // the WebKit-only event that starts the native zoom. Touch devices only —
+  // a trackpad pinch in desktop Safari fires the same event.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || !navigator.maxTouchPoints) return;
+    const preventNativeZoom = (e: Event) => e.preventDefault();
+    el.addEventListener('gesturestart', preventNativeZoom);
+    return () => el.removeEventListener('gesturestart', preventNativeZoom);
+  }, []);
+
   // Touch event handlers: pinch-to-zoom (2 fingers) + single-finger
   // carousel-style swipe nav. Swipe is suppressed while zoomed in so the
   // user can pan instead. The carousel is also disabled mid-animation.
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-      const distance = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY
-      );
-      setTouchDistance(distance);
+      pinchRef.current = { distance: touchSpan(e.touches), zoom };
+      setIsPinching(true);
       swipeStartRef.current = null;
       // Cancel any in-progress carousel motion when a pinch starts —
       // spring the track back so the image doesn't jerk under the user.
@@ -691,18 +712,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2 && touchDistance !== null) {
-      const touch1 = e.touches[0];
-      const touch2 = e.touches[1];
-      const newDistance = Math.hypot(
-        touch2.clientX - touch1.clientX,
-        touch2.clientY - touch1.clientY
-      );
-
-      const scale = newDistance / touchDistance;
-      const newZoom = Math.max(1, Math.min(3, zoom * scale));
+    const pinch = pinchRef.current;
+    if (e.touches.length === 2 && pinch) {
+      const newDistance = touchSpan(e.touches);
+      const newZoom = Math.max(1, Math.min(3, pinch.zoom * (newDistance / pinch.distance)));
+      pinchRef.current = { distance: newDistance, zoom: newZoom };
       setZoom(newZoom);
-      setTouchDistance(newDistance);
       // Pinch-out back down to 1.0 has to re-centre the image — without
       // this the previous pan offset persists and the photo sits off-
       // centre at the natural zoom level (#532 follow-on).
@@ -742,12 +757,22 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         }
         return;
       }
-      setDragX(dx);
+      // The track stays put for the first few pixels. The first finger of
+      // a pinch always lands alone; without the slop it dragged the track
+      // and the second finger then sprang it back under the zooming image.
+      setDragX(Math.abs(dx) <= SWIPE_SLOP_PX ? 0 : dx - Math.sign(dx) * SWIPE_SLOP_PX);
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    setTouchDistance(null);
+    if (e.touches.length === 2 && pinchRef.current) {
+      // A third finger (palm) lifted: the remaining pair may be a different
+      // two touches, so re-baseline or the zoom jumps on the next move.
+      pinchRef.current = { ...pinchRef.current, distance: touchSpan(e.touches) };
+    } else {
+      pinchRef.current = null;
+      setIsPinching(false);
+    }
     // Release single-finger pan state (#532). The pan offset itself
     // persists so the image stays where the user left it — only the
     // "actively dragging" flag clears.
@@ -796,7 +821,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       }
     }
     swipeStartRef.current = null;
-    setTouchDistance(null);
+    pinchRef.current = null;
+    setIsPinching(false);
   };
 
   // Track transform. Percentages on translateX are self-referential (a
@@ -822,7 +848,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
     : 'none';
 
   const handleTrackTransitionEnd = (e: React.TransitionEvent) => {
-    if (e.propertyName !== 'transform') return;
+    // The zoomed image's own transform transition bubbles up here; only the
+    // track's transition may advance the carousel phase.
+    if (e.target !== e.currentTarget || e.propertyName !== 'transform') return;
     if (phase === 'committing') {
       if (commitDirection === 1) {
         setCurrentIndex((prev) => (prev < photos.length - 1 ? prev + 1 : 0));
@@ -858,7 +886,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   const isDesktopFeedback = showFeedback && !isSmallScreen;
 
   return (
-    <div className={lightboxClass}>
+    // pan-x pan-y: the feedback panel still scrolls, native pinch-zoom and
+    // double-tap zoom are off for the whole lightbox.
+    <div ref={rootRef} className={lightboxClass} style={{ touchAction: 'pan-x pan-y' }}>
       {/* Close button. top respects iOS safe-area (notch) so it doesn't
          disappear under the camera/dynamic-island. */}
       <button
@@ -1187,7 +1217,15 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
                 className="max-w-full max-h-full object-contain select-none"
                 style={{
                   transform: `scale(${zoom}) translate(${dragOffset.x / zoom}px, ${dragOffset.y / zoom}px)`,
-                  transition: isDragging ? 'none' : 'transform 0.2s',
+                  // No transition while a finger drives the transform: a pinch
+                  // retargeting a 0.2s transition on every touchmove makes
+                  // Safari promote and demote the image layer per frame, which
+                  // flickers. The toolbar buttons and wheel keep the easing.
+                  transition: isDragging || isPinching ? 'none' : 'transform 0.2s',
+                  // Own compositor layer for the gesture only, so Safari scales
+                  // a texture instead of repainting the 300%-wide track layer —
+                  // and repaints sharp once the fingers lift.
+                  willChange: isDragging || isPinching ? 'transform' : undefined,
                 }}
                 draggable={false}
                 isGallery={true}

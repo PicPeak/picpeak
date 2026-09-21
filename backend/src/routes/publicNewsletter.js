@@ -17,6 +17,7 @@
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { param } = require('express-validator');
 
 const logger = require('../utils/logger');
@@ -31,6 +32,7 @@ const unsubscribeLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: rateLimitKey,
 });
 
 function escapeHtml(text) {

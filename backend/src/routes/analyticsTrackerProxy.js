@@ -56,6 +56,7 @@
 
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { getAppSetting } = require('../utils/appSettings');
 const { isHostAllowed } = require('../utils/networkValidation');
 const { clientIpForAudit } = require('../utils/clientIp');
@@ -233,6 +234,7 @@ router.use(rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: rateLimitKey,
   handler: (req, res) => res.sendStatus(429),
 }));
 
