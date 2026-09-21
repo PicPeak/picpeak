@@ -313,18 +313,31 @@ describe('with the documents flag on', () => {
   });
 
   it('shuts a deactivated customer out of every document route', async () => {
+    // B's own clean document, downloadable while B is active: deactivation is
+    // then the only reason left for a refusal. Another customer's id would be
+    // refused with 404 anyway, so it could not tell the two apart.
+    const own = await uploadAs(customerB, PDF, 'own-before-off.pdf');
+    expect(own.status).toBe(201);
+    const ownId = own.body.document.id;
+    expect((await asAdmin(request(adminApp)
+      .post(`/api/admin/customers/${customerB}/documents/${ownId}/review`)).send({ status: 'clean' })).status).toBe(200);
+    const ownUrl = `/api/customer/documents/${ownId}/download`;
+    expect((await asCustomer(request(customerApp).get(ownUrl), customerB)).status).toBe(200);
+
     await db('customer_accounts').where({ id: customerB }).update({ is_active: 0 });
     try {
-      const list = await asCustomer(request(customerApp).get('/api/customer/documents'), customerB);
-      expect([401, 403]).toContain(list.status);
-      const upload = await uploadAs(customerB, PDF, 'while-off.pdf');
-      expect([401, 403]).toContain(upload.status);
-      const download = await asCustomer(
-        request(customerApp).get(`/api/customer/documents/${pendingId}/download`), customerB,
-      );
-      expect([401, 403, 404]).toContain(download.status);
+      // customerAuth re-reads the account on every request and treats an
+      // inactive one as gone.
+      const refused = (res) => {
+        expect(res.status).toBe(401);
+        expect(res.body.code).toBe('CUSTOMER_NOT_FOUND');
+      };
+      refused(await asCustomer(request(customerApp).get('/api/customer/documents'), customerB));
+      refused(await uploadAs(customerB, PDF, 'while-off.pdf'));
+      refused(await asCustomer(request(customerApp).get(ownUrl), customerB));
     } finally {
       await db('customer_accounts').where({ id: customerB }).update({ is_active: 1 });
+      await db('customer_documents').where({ id: ownId }).update({ deleted_at: new Date().toISOString() });
     }
   });
 
