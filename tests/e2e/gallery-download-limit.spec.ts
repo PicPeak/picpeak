@@ -76,13 +76,16 @@ test.describe('Gallery download limit (issue 1560)', () => {
     await download;
     await expect(counter).toContainText('1 of 1 downloads used');
 
-    // The second is refused with the limit message and no file.
+    // The second is shown as unavailable; clicking it anyway explains the
+    // refusal and delivers no file.
     const second = tiles.nth(1);
     await second.hover({ force: true });
+    const secondButton = second.getByRole('button', { name: /Download photo/i });
+    await expect(secondButton).toHaveAttribute('aria-disabled', 'true');
     let refusedDownload = false;
     const onDownload = () => { refusedDownload = true; };
     page.on('download', onDownload);
-    await second.getByRole('button', { name: /Download photo/i }).click();
+    await secondButton.click({ force: true });
     await expect(page.getByText(/Download limit reached/i).first()).toBeVisible();
     page.off('download', onDownload);
     expect(refusedDownload).toBe(false);
