@@ -822,8 +822,9 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
  *   - Set `is_active=false` and bump `password_changed_at` so any
  *     outstanding tokens die immediately.
  *   - Delete pending invitations + reset tokens for this customer.
- *   - Cancel and redact their unsigned contracts, and revoke every live
- *     signing link and session on the signed ones (contract/erasure.js).
+ *   - Redact every contract nobody signed (cancelling a draft or sent one),
+ *     and revoke every live signing link and session on the signed ones
+ *     (contract/erasure.js).
  *
  * What we keep:
  *   - The customer_accounts row itself (anonymized).
@@ -853,9 +854,9 @@ async function eraseCustomer(id, erasedByAdminId) {
   const customerDocumentsService = require('./customerDocumentsService');
   let erasedDocuments = [];
 
-  // Contracts (#1446): unsigned ones are cancelled and redacted, signed ones
-  // are kept whole and lose only their live access. The rule and the reasons
-  // are in services/contract/erasure.js. Planned on the global connection
+  // Contracts (#1446): unsigned ones are redacted (and cancelled when still
+  // draft or sent), signed ones are kept whole and lose only their live
+  // access. The rule and the reasons are in services/contract/erasure.js. Planned on the global connection
   // first — it reads the schema, which must not happen inside the
   // transaction below.
   const contractErasure = require('./contract/erasure');
@@ -863,7 +864,7 @@ async function eraseCustomer(id, erasedByAdminId) {
   const eraseActor = erasedByAdminId
     ? { type: 'admin', id: erasedByAdminId, name: `Admin #${erasedByAdminId}` }
     : { type: 'system' };
-  let erasedContracts = { cancelled: [], retained: [] };
+  let erasedContracts = { cancelled: [], redacted: [], retained: [] };
 
   await db.transaction(async (trx) => {
     erasedDocuments = await customerDocumentsService.markErasedForCustomer(id, trx);
@@ -930,6 +931,7 @@ async function eraseCustomer(id, erasedByAdminId) {
       customerId: id,
       originalEmail: customer.email,
       cancelledContracts: erasedContracts.cancelled,
+      redactedContracts: erasedContracts.redacted,
       retainedContracts: erasedContracts.retained,
     },
     null,
@@ -940,6 +942,7 @@ async function eraseCustomer(id, erasedByAdminId) {
     customerId: id,
     erasedByAdminId,
     cancelledContracts: erasedContracts.cancelled.length,
+    redactedContracts: erasedContracts.redacted.length,
     retainedContracts: erasedContracts.retained.length,
   });
 }
