@@ -307,3 +307,29 @@ it('opens a session from the customer portal without a link or code', async () =
   expect(screen.getByText('It isn\'t your turn yet')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Sign contract' })).toBeNull();
 });
+
+it('shows the frozen totals even when no line item was counted', async () => {
+  window.sessionStorage.setItem(
+    'picpeak.contractSigning.session.portal',
+    JSON.stringify({ sessionToken: SESSION_TOKEN, expiresAt: '2099-01-01T00:00:00.000Z' }),
+  );
+  const view = sessionView({ verifiedVia: 'portal' });
+  session.mockResolvedValue({
+    contract: {
+      ...view.contract,
+      commercial: {
+        sourceQuoteNumber: 'Q-2026-0003',
+        currency: 'CHF',
+        lineItems: [],
+        totals: { netMinor: 0, vatRatePercent: 0, vatMinor: 0, shippingMinor: 5000, grossMinor: 5000 },
+      },
+    },
+  });
+  renderAt('/contract/signing');
+
+  expect(await screen.findByRole('heading', { name: 'Services and price' })).toBeInTheDocument();
+  expect(screen.getByText('Total')).toBeInTheDocument();
+  expect(screen.getByText('Shipping')).toBeInTheDocument();
+  // No lines, so no line table header.
+  expect(screen.queryByRole('columnheader', { name: 'Description' })).toBeNull();
+});

@@ -51,15 +51,39 @@ async function sendContract(id, adminId) {
   const signingV2 = require('./signingV2');
   const { slots: signatureSlots } = await signingV2.prepareSend(contract);
 
-  // Render from the draft as it stands. A block reads its frozen text where
-  // it has any and the live library text otherwise (renderContext), which is
-  // exactly what the freeze below writes — so the PDF and the snapshot say
-  // the same thing, and nothing is frozen until the send is certain to go
-  // through. A send that fails at the attachment check used to leave the
-  // snapshot on the draft, and the renderer prefers a snapshot: later edits
-  // then never showed in the preview.
   const refreshed = await getContractById(id);
-  const ctx = await buildRenderContext(refreshed.contract, refreshed.inclusions, refreshed.textSections);
+
+  // What the send freezes: every included block's body in every language
+  // (#1445; only EN and DE were frozen before), plus the content — clauses,
+  // title, intro, outro, this moment's placeholder values and the source
+  // quote's line items and totals — with its sha256. The PDF, the signing
+  // page and later re-renders read this.
+  //
+  // Built once, before the render, and the render reads it: the PDF is drawn
+  // from the very object that is frozen, so the two cannot disagree. Rendered
+  // from the bare draft instead, the PDF read the live line items and no
+  // totals at all — only a stored snapshot carries them — so the unsigned PDF
+  // named no sum while the signing page and every re-render did.
+  //
+  // It reaches the render in memory only; nothing is written to the draft
+  // until completeSend. A send that fails at the attachment check used to
+  // leave the snapshot on the draft, and the renderer prefers a snapshot:
+  // later edits then never showed in the preview.
+  //
+  // completeSend writes it inside its transaction, against the draft's
+  // lock_version, so it lands only if this send is the one that goes out: two
+  // overlapping sends both pass the draft check above, and the loser's freeze
+  // would otherwise be written over the winner's sent contract. The same
+  // condition catches an edit saved between the render and the send, which
+  // passed its own lock check but never reached the rendered PDF.
+  const { snapshot, sha256: contentSha256 } = await require('./renderContext')
+    .buildContentSnapshot(refreshed.contract, refreshed.inclusions, refreshed.textSections);
+  const renderedContent = JSON.stringify(snapshot);
+  const ctx = await buildRenderContext(
+    { ...refreshed.contract, rendered_content: renderedContent },
+    refreshed.inclusions,
+    refreshed.textSections,
+  );
   ctx.signatureSlots = signatureSlots;
   // The footers are drawn now, the attachments are merged after, so the page
   // numbers have to be told how many pages will land in between.
@@ -72,23 +96,9 @@ async function sendContract(id, adminId) {
   const attachments = require('./attachments');
   const sendable = await attachments.buildSendable(refreshed.contract, rendered, { slots });
 
-  // What the render just resolved, ready to be frozen with the send: every
-  // included block's body in every language (#1445; only EN and DE were
-  // frozen before), plus the content — clauses, title, intro, outro and this
-  // moment's placeholder values — with its sha256. The PDF, the signing page
-  // and later re-renders read this.
-  //
-  // It is written inside completeSend's transaction, against the draft's
-  // lock_version, so it lands only if this send is the one that goes out: two
-  // overlapping sends both pass the draft check above, and the loser's freeze
-  // would otherwise be written over the winner's sent contract. The same
-  // condition catches an edit saved between the render and the send, which
-  // passed its own lock check but never reached the rendered PDF.
   const content = require('./content');
-  const { snapshot, sha256: contentSha256 } = await require('./renderContext')
-    .buildContentSnapshot(refreshed.contract, refreshed.inclusions, refreshed.textSections);
   const freeze = {
-    renderedContent: JSON.stringify(snapshot),
+    renderedContent,
     contentSha256,
     inclusions: refreshed.inclusions
       .filter((inc) => inc.included === true || inc.included === 1 || inc.included === '1')

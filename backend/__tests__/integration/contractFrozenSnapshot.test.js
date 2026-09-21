@@ -138,6 +138,26 @@ test('the snapshot freezes the counted line items and the quote\'s own totals', 
   for (const value of Object.values(snapshot.quote.totals)) expect(typeof value).toBe('number');
 });
 
+test('the PDF sent out draws the totals the snapshot freezes', async () => {
+  // The send renders the unsigned PDF from a draft, which has no snapshot
+  // yet. It used to render first and freeze after: the draft render read the
+  // live line items and no totals at all, so the stored PDF named no sum while
+  // the signing page and every later re-render did.
+  const pdfService = require('../../src/services/pdfService');
+  const spy = jest.spyOn(pdfService, 'renderContractWithSlots');
+  try {
+    const { contractId } = await sentContractFromQuote();
+    const snapshot = parsed((await contractRow(contractId)).rendered_content);
+    expect(spy).toHaveBeenCalledTimes(1);
+    const ctx = spy.mock.calls[0][0];
+    expect(ctx.quoteTotals).toEqual(snapshot.quote.totals);
+    expect(ctx.quoteLineItems).toEqual(snapshot.quote.lineItems);
+    expect(ctx.quoteSourceNumber).toBe(snapshot.quote.number);
+  } finally {
+    spy.mockRestore();
+  }
+});
+
 test('editing the source quote after the send changes neither the hash nor the render', async () => {
   const { quoteId, contractId } = await sentContractFromQuote();
   const before = await contractRow(contractId);

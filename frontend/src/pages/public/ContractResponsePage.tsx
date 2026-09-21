@@ -254,7 +254,10 @@ const ContractBody: React.FC<{ contract: PublicContractView }> = ({ contract: c 
 
 const ContractPrice: React.FC<{ commercial: PublicContractView['commercial'] }> = ({ commercial }) => {
   const { t } = useTranslation();
-  if (!commercial || !commercial.lineItems.length) return null;
+  // The totals stand on their own: a quote with no counted line (every
+  // add-on left unselected, say) still names a sum. Only the line table
+  // depends on there being lines.
+  if (!commercial) return null;
   const { currency, totals } = commercial;
   const money = (minor: number) => formatMoneyMinor(minor, currency);
   return (
@@ -264,29 +267,33 @@ const ContractPrice: React.FC<{ commercial: PublicContractView['commercial'] }> 
       </h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-              <th scope="col" className="py-1 pr-3 font-medium">{t('publicContract.price.description', 'Description')}</th>
-              <th scope="col" className="py-1 pr-3 font-medium text-right">{t('publicContract.price.quantity', 'Qty')}</th>
-              <th scope="col" className="py-1 font-medium text-right">{t('publicContract.price.amount', 'Amount')}</th>
-            </tr>
-          </thead>
-          <tbody className="text-neutral-700 dark:text-neutral-300">
-            {commercial.lineItems.map((li) => (
-              <tr key={`${li.position}-${li.parentPosition ?? 'top'}`} className="border-t border-neutral-100 dark:border-neutral-800">
-                <td className={`py-1.5 pr-3 ${li.parentPosition != null ? 'pl-4 text-neutral-600 dark:text-neutral-400' : ''}`}>
-                  {li.description}
-                  {li.details && (
-                    <span className="block text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-line">{li.details}</span>
-                  )}
-                </td>
-                <td className="py-1.5 pr-3 text-right tabular-nums whitespace-nowrap">
-                  {li.quantity}{li.unit ? ` ${t(`publicContract.price.unit.${li.unit}`, li.unit)}` : ''}
-                </td>
-                <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{money(li.lineTotalMinor)}</td>
-              </tr>
-            ))}
-          </tbody>
+          {commercial.lineItems.length > 0 && (
+            <>
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                  <th scope="col" className="py-1 pr-3 font-medium">{t('publicContract.price.description', 'Description')}</th>
+                  <th scope="col" className="py-1 pr-3 font-medium text-right">{t('publicContract.price.quantity', 'Qty')}</th>
+                  <th scope="col" className="py-1 font-medium text-right">{t('publicContract.price.amount', 'Amount')}</th>
+                </tr>
+              </thead>
+              <tbody className="text-neutral-700 dark:text-neutral-300">
+                {commercial.lineItems.map((li) => (
+                  <tr key={`${li.position}-${li.parentPosition ?? 'top'}`} className="border-t border-neutral-100 dark:border-neutral-800">
+                    <td className={`py-1.5 pr-3 ${li.parentPosition != null ? 'pl-4 text-neutral-600 dark:text-neutral-400' : ''}`}>
+                      {li.description}
+                      {li.details && (
+                        <span className="block text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-line">{li.details}</span>
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums whitespace-nowrap">
+                      {li.quantity}{li.unit ? ` ${t(`publicContract.price.unit.${li.unit}`, li.unit)}` : ''}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums whitespace-nowrap">{money(li.lineTotalMinor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </>
+          )}
           <tfoot className="border-t-2 border-neutral-300 dark:border-neutral-600">
             <tr>
               <td colSpan={2} className="py-1.5 pr-3 text-right">{t('publicContract.price.net', 'Net')}</td>
