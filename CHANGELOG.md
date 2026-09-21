@@ -5,6 +5,13 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.135.0-beta.0...v3.135.1-beta.0) (2026-09-21)
+
+
+### Bug Fixes
+
+* **portal:** colour every customer-surface status through the theme tokens ([#1552](https://github.com/PicPeak/picpeak/issues/1552)) ([1f2b306](https://github.com/PicPeak/picpeak/commit/1f2b3066edcb9e3abc10afc7b93a160e945bd3f3))
+
 ## [3.135.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.134.1-beta.0...v3.135.0-beta.0) (2026-09-21)
 
 
