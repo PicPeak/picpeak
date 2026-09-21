@@ -196,12 +196,9 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
     if (eventId) {
       query = query.where('event_id', eventId);
     }
-    // Skip videos, matching /regenerate-previews. Their thumbnail is a poster
-    // frame from videoProcessor, so handing the container file to Sharp here
-    // only ever produced an error per video row.
-    query = query.where(function() {
-      this.whereNull('media_type').orWhere('media_type', '!=', 'video');
-    });
+    // Videos are included since ensureThumbnail learned to rebuild a poster
+    // frame (issue 1414) — they used to be filtered out here because Sharp
+    // threw on every one. They are handled differently in the loop below.
 
     const photos = await query;
     
@@ -223,6 +220,27 @@ router.post('/regenerate', adminAuth, requirePermission('photos.edit'), async (r
       
       for (const photo of photos) {
         try {
+          // A video is REPAIRED, not rebuilt. Its poster frame is rendered at
+          // a fixed size by videoProcessor and does not depend on the settings
+          // this endpoint is pressed to apply, so forcing it would re-read
+          // every video on every press — a full object download each on S3 —
+          // to write back the same bytes. thumbnail_path stays on the row and
+          // `force` stays off, so ensureThumbnail's own validity check skips a
+          // healthy poster and only a missing or unreadable one is rebuilt.
+          // boundVideoSource:false because the size bound guards the guest
+          // request path; here an admin asked, in a background job, and
+          // bounded a large S3 video could only ever get the placeholder.
+          // No tier deletion either: videos never take the tier path.
+          const isVideo = photo.media_type === 'video' || (photo.mime_type && photo.mime_type.startsWith('video/'));
+          if (isVideo) {
+            if (await ensureThumbnail(photo, { boundVideoSource: false })) {
+              successCount++;
+            } else {
+              errorCount++;
+            }
+            continue;
+          }
+
           // Drop the responsive tiers first (#1095), same as the preview
           // endpoint below. They are cached by width outside thumbnail_path
           // and their key carries no settings version, so regenerating only

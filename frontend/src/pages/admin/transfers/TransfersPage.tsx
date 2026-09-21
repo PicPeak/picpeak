@@ -191,7 +191,10 @@ const CreateTransferModal: React.FC<{ onClose: () => void; onCreated: () => void
 
   const addFilesToList = (list: FileList | null) => {
     if (!list || !list.length) return;
-    setFiles((prev) => [...prev, ...Array.from(list)]);
+    // Copy now: the caller clears the input right after, which empties this
+    // live FileList, and React may run the updater only on the next render.
+    const incoming = Array.from(list);
+    setFiles((prev) => [...prev, ...incoming]);
   };
 
   const addPicked = (photos: PickedPhoto[]) => {

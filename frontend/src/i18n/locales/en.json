@@ -2505,7 +2505,7 @@
       "showLogoHint": "Uses the same branding logo configured above.",
       "showCompanyName": "Show company name in customer header",
       "showCompanyNameHint": "Hide if your logo already includes the company name.",
-      "save": "Save changes",
+      "save": "Save header settings",
       "saved": "Customer dashboard branding saved",
       "error": "Could not save settings"
     },
@@ -5702,7 +5702,8 @@
     "loadInvitationsError": "Could not load invitations",
     "tabs": {
       "customers": "Customers",
-      "invitations": "Invitations"
+      "invitations": "Invitations",
+      "groups": "Groups"
     },
     "search": {
       "placeholder": "Search by email, name, or company"
@@ -5713,7 +5714,8 @@
       "company": "Company",
       "eventCount": "Events",
       "lastLogin": "Last login",
-      "status": "Status"
+      "status": "Status",
+      "groups": "Groups"
     },
     "status": {
       "active": "Active",
@@ -5808,7 +5810,8 @@
       "rebillsSection": "Re-bills & passthrough",
       "noRebills": "No re-billed or passed-through supplier invoices for this customer yet.",
       "companyName": "Company name",
-      "marketingSection": "Newsletter consent"
+      "marketingSection": "Newsletter consent",
+      "groupsSection": "Groups"
     },
     "billing": {
       "section": "Billing cadence",
@@ -5926,6 +5929,51 @@
       "linkSaved": "Links saved.",
       "empty": "No documents yet.",
       "loadError": "Could not load documents."
+    },
+    "groups": {
+      "title": "Groups",
+      "intro": "Organise customers into groups. A customer can be in several, and the overview can be filtered by them.",
+      "new": "New group",
+      "name": "Name",
+      "description": "Description",
+      "color": "Colour",
+      "customColor": "Custom colour",
+      "empty": "No groups yet. Create one to organise your customers.",
+      "emptyCatalogue": "No groups yet. Create one under Customers → Groups.",
+      "emptyFiltered": "No customers in the selected groups.",
+      "palette": {
+        "blue": "Blue",
+        "green": "Green",
+        "amber": "Amber",
+        "red": "Red",
+        "violet": "Violet",
+        "teal": "Teal",
+        "pink": "Pink",
+        "grey": "Grey"
+      },
+      "memberCount_one": "{{count}} customer",
+      "memberCount_other": "{{count}} customers",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "archive": "Archive",
+      "archived": "Archived",
+      "restore": "Restore",
+      "delete": "Delete",
+      "deleteBlocked": "Customers are still in this group. Archive it, or remove it from them first.",
+      "confirmDelete": "Delete \"{{name}}\"? No customer is removed by this.",
+      "created": "Group created",
+      "saved": "Group saved",
+      "deleted": "Group deleted",
+      "reordered": "Order saved",
+      "nameRequired": "A group needs a name",
+      "loadError": "The groups could not be loaded. Reload the page to try again.",
+      "filterLabel": "Filter by group",
+      "clearFilter": "Clear",
+      "none": "—",
+      "more": "+{{count}}",
+      "change": "Change groups",
+      "noneAssigned": "This customer is in no group.",
+      "assignSaved": "Groups saved"
     }
   },
   "clients": {

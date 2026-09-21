@@ -1078,8 +1078,13 @@ if (spaCatchAll) {
   // error instead of the plain 404 nginx returns — and the 200 hides it from
   // any monitoring watching status codes.
   const BACKEND_OWNED = ['/photos/', '/thumbnails/', '/uploads/', '/fonts/', '/assets/', '/health'];
+  // Scanner probes (/wp-login.php, /cgi-bin/…) are no client route either. A
+  // 200 shell tells the scanner something is there and hides the probe from
+  // every log-based tool that counts 404s; frontend/nginx.conf does the same.
+  const { isScannerProbePath } = require('./src/utils/scannerPaths');
   app.get('*', (req, res, next) => {
     if (BACKEND_OWNED.some((prefix) => req.path.startsWith(prefix))) return next();
+    if (isScannerProbePath(req.path)) return next();
     return spaCatchAll(req, res);
   });
 }

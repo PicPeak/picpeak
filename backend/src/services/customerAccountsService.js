@@ -485,7 +485,7 @@ async function validateInvitationToken(token) {
  * many events each customer has access to, so the admin can spot orphaned
  * accounts at a glance.
  */
-async function listCustomers({ search } = {}) {
+async function listCustomers({ search, groupIds } = {}) {
   let q = db('customer_accounts')
     .leftJoin('event_customer_assignments', 'event_customer_assignments.customer_account_id', 'customer_accounts.id')
     .groupBy('customer_accounts.id')
@@ -531,6 +531,19 @@ async function listCustomers({ search } = {}) {
         .orWhereRaw('LOWER(COALESCE(customer_accounts.last_name, \'\')) LIKE ?', [term])
         .orWhereRaw('LOWER(COALESCE(customer_accounts.company_name, \'\')) LIKE ?', [term]);
     });
+  }
+
+  // Group filter (#1443): a customer matches when they are in ANY of the
+  // selected groups, which is what "show me these groups" means in the
+  // overview. A subquery rather than a join, so the event COUNT above stays
+  // the number of events and not the number of (event × group) pairs.
+  const groups = (Array.isArray(groupIds) ? groupIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  if (groups.length > 0) {
+    q = q.whereIn('customer_accounts.id', db('customer_group_members')
+      .whereIn('group_id', groups)
+      .select('customer_account_id'));
   }
 
   return q;
@@ -892,6 +905,11 @@ async function eraseCustomer(id, erasedByAdminId) {
 
     // Active reset tokens for this customer should be invalidated.
     await trx('customer_password_resets').where('customer_account_id', id).del();
+
+    // Group memberships (#1443) say something about the person, a group name
+    // can be one, and an anonymised row that still counted as a member would
+    // keep its groups undeletable.
+    await trx('customer_group_members').where('customer_account_id', id).del();
 
     // Pending re-bills (incoming invoices, migration 132) attached to this
     // customer would otherwise stay billable to the now-anonymized account —

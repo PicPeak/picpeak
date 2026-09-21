@@ -9,6 +9,7 @@
  */
 
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { body, param } = require('express-validator');
 const { handleAsync, validateRequest } = require('../utils/routeHelpers');
 const { loadActionToken } = require('../utils/publicTokenGuards');
@@ -18,7 +19,7 @@ const tokenParam = () => param('token').isString().isLength({ min: 64, max: 64 }
 
 // Per IP, on top of the per-token throttle and attempt limit in the service.
 const verificationLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+  windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
 });
 
 function sendVerificationRequired(res) {
