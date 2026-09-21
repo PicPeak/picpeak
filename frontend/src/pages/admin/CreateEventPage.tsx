@@ -19,6 +19,8 @@ import { toast } from 'react-toastify';
 import { Button, Input, Card, PasswordGenerator, LocalizedDateInput, TimeField } from '../../components/common';
 import { ThemeCustomizerEnhanced, GalleryPreview, WelcomeMessageEditor, FeedbackSettings } from '../../components/admin';
 import { CustomerAccountPicker } from '../../components/admin/CustomerAccountPicker';
+import { UploaderNameSettings } from '../../components/admin/UploaderNameSettings';
+import type { GuestNameMode } from '../../types';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { eventsService } from '../../services/events.service';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -57,6 +59,9 @@ interface FormData {
   expires_in_days: number;
   allow_user_uploads: boolean;
   upload_category_id: number | null;
+  // Uploader names (#1561), seeded from Settings → Event Defaults.
+  guest_name_mode: GuestNameMode;
+  show_credits_to_guests: boolean;
   css_template_id: number | null;
   photo_cap: number;
   // Download limit (issue 1560). 0 = unlimited.
@@ -136,6 +141,8 @@ export const CreateEventPage: React.FC = () => {
     expires_in_days: 30,
     allow_user_uploads: false,
     upload_category_id: null,
+    guest_name_mode: 'off',
+    show_credits_to_guests: false,
     css_template_id: null,
     photo_cap: 0,
     download_limit: 0,
@@ -299,6 +306,19 @@ export const CreateEventPage: React.FC = () => {
   // seeding them here is what makes the Settings > Events defaults actually
   // reach a gallery created through the UI — the server-side inheritance in
   // feedbackDefaults.js only covers callers that omit them (the v1 API).
+  // Uploader-name defaults (#1561), applied once like the feedback ones below.
+  const uploaderNameDefaultsApplied = useRef(false);
+  useEffect(() => {
+    if (uploaderNameDefaultsApplied.current) return;
+    if (publicSettings?.event_default_guest_name_mode === undefined) return;
+    uploaderNameDefaultsApplied.current = true;
+    setFormData(prev => ({
+      ...prev,
+      guest_name_mode: publicSettings.event_default_guest_name_mode || 'off',
+      show_credits_to_guests: publicSettings.event_default_show_credits_to_guests === true,
+    }));
+  }, [publicSettings]);
+
   const feedbackEnabledDefaultApplied = useRef(false);
   useEffect(() => {
     if (feedbackEnabledDefaultApplied.current) return;
@@ -515,6 +535,8 @@ export const CreateEventPage: React.FC = () => {
       expiration_days: requireExpiration ? formData.expires_in_days : undefined,
       allow_user_uploads: formData.allow_user_uploads,
       upload_category_id: formData.upload_category_id,
+      guest_name_mode: formData.guest_name_mode,
+      show_credits_to_guests: formData.show_credits_to_guests,
       css_template_id: formData.css_template_id,
       photo_cap: formData.photo_cap > 0 ? formData.photo_cap : null,
       download_limit: formData.download_limit > 0 ? formData.download_limit : null,
@@ -1215,6 +1237,15 @@ export const CreateEventPage: React.FC = () => {
                   </p>
                 </div>
               )}
+
+              <UploaderNameSettings
+                className="mt-4 ml-7"
+                idPrefix="create-uploader-names"
+                mode={formData.guest_name_mode}
+                onModeChange={(guest_name_mode) => setFormData(prev => ({ ...prev, guest_name_mode }))}
+                showToGuests={formData.show_credits_to_guests}
+                onShowToGuestsChange={(show_credits_to_guests) => setFormData(prev => ({ ...prev, show_credits_to_guests }))}
+              />
             </div>
           </div>
         </Card>

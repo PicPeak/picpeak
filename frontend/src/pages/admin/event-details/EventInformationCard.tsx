@@ -20,6 +20,7 @@ import type { Event } from '../../../types';
 import { Input, Card, Loading, MarkdownContent, LocalizedDateInput } from '../../../components/common';
 import { HeroPhotoSelector, FocalPointPicker, FeedbackSettings } from '../../../components/admin';
 import { CustomerAccountPicker } from '../../../components/admin/CustomerAccountPicker';
+import { UploaderNameSettings } from '../../../components/admin/UploaderNameSettings';
 import { api } from '../../../config/api';
 import { buildResourceUrl } from '../../../utils/url';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
@@ -493,6 +494,17 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
               </p>
             </div>
           )}
+
+          {/* Uploader names (#1561), beside the other guest upload options.
+              Not gated on uploads: the visibility switch also covers credits
+              read from EXIF. */}
+          <UploaderNameSettings
+            idPrefix="event-uploader-names"
+            mode={editForm.guest_name_mode}
+            onModeChange={(guest_name_mode) => setEditForm(prev => ({ ...prev, guest_name_mode }))}
+            showToGuests={editForm.show_credits_to_guests}
+            onShowToGuestsChange={(show_credits_to_guests) => setEditForm(prev => ({ ...prev, show_credits_to_guests }))}
+          />
 
           {/* Reveal mode (#838) — only meaningful with guest uploads */}
           {editForm.allow_user_uploads && (
@@ -984,6 +996,20 @@ export const EventInformationCard: React.FC<EventInformationCardProps> = ({
               )}
             </dd>
           </div>
+
+          {(event.guest_name_mode && event.guest_name_mode !== 'off') || Boolean(event.show_credits_to_guests) ? (
+            <div>
+              <dt className="text-sm font-medium text-neutral-500 dark:text-neutral-400">{t('events.uploaderNames.label')}</dt>
+              <dd className="mt-1 text-sm text-neutral-900 dark:text-neutral-100">
+                {t(`events.uploaderNames.modes.${event.guest_name_mode || 'off'}`)}
+                <p className="text-xs text-neutral-600 dark:text-neutral-400">
+                  {event.show_credits_to_guests
+                    ? t('events.uploaderNames.shownToGuests')
+                    : t('events.uploaderNames.hiddenFromGuests')}
+                </p>
+              </dd>
+            </div>
+          ) : null}
 
           {Boolean(event.reveal_mode) && (
             <div>

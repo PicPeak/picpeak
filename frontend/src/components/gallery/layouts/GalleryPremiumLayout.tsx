@@ -348,8 +348,16 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
       title: showOriginalFilename
         ? (photo.original_filename || photo.filename)
         : undefined,
+      // Photo credit (#1561), same wording as PhotoLightbox. Only present
+      // when the gallery shows names to this viewer.
+      description: photo.credit_name
+        ? (photo.uploaded_by_guest
+          ? t('gallery.credits.uploadedBy', { name: photo.credit_name })
+          : t('gallery.credits.photoBy', { name: photo.credit_name }))
+        : undefined,
     }));
-  }, [filteredPhotos, allowDownloads, showOriginalFilename, imageDimensions]);
+  }, [filteredPhotos, allowDownloads, showOriginalFilename, imageDimensions, t]);
+  const showCaptions = showOriginalFilename || slides.some((slide) => !!slide.description);
 
   const handleLike = useCallback(async (photo: Photo, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -716,7 +724,7 @@ export const GalleryPremiumLayout: React.FC<GalleryPremiumLayoutProps> = ({
           Zoom,
           Fullscreen,
           ...(allowDownloads ? [Download] : []),
-          ...(showOriginalFilename ? [Captions] : []),
+          ...(showCaptions ? [Captions] : []),
         ]}
         animation={{ fade: 300, swipe: 250 }}
         styles={{

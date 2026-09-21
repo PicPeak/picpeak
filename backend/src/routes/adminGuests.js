@@ -7,6 +7,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership } = require('../middleware/ownership');
 const feedbackService = require('../services/feedbackService');
+const { clearGuestCredits, reassignGuestCredits } = require('../services/photoCredit');
 const logger = require('../utils/logger');
 const { errorResponse } = require('../utils/routeHelpers');
 const { ValidationError } = require('../utils/errors');
@@ -591,6 +592,8 @@ router.delete(
       if (!guest) return;
 
       const result = await feedbackService.anonymizeGuestFeedback(guestId);
+      // The denormalised uploader name must not outlive the guest (#1561).
+      const creditsCleared = await clearGuestCredits(guestId);
 
       await db('gallery_guests').where({ id: guestId }).update({
         is_deleted: true,
@@ -601,7 +604,7 @@ router.delete(
 
       await logActivity(
         'guest_deleted',
-        { event_id: eventId, guest_id: guestId, anonymized: result.anonymized },
+        { event_id: eventId, guest_id: guestId, anonymized: result.anonymized, credits_cleared: creditsCleared },
         eventId,
         { type: 'admin', id: req.admin.id, name: req.admin.username }
       );
@@ -667,6 +670,8 @@ router.post(
           throw new ValidationError('All guests must be active and belong to the same event');
         }
         const merged = await feedbackService.mergeGuestFeedback(keepId, mergeIds, trx);
+        // Uploads follow the merge, under the survivor's name (#1561).
+        await reassignGuestCredits(mergeIds, all.find((g) => Number(g.id) === keepId), trx);
 
         // Canonicalise the survivor's address (#1210 review). Rows are grouped
         // for review with the case and whitespace folded out, so a merge can be

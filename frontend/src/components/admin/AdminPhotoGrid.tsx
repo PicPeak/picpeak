@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Check, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, Cog, AlertTriangle, RefreshCw, LayoutGrid, List } from 'lucide-react';
+import { Check, Download, Trash2, Eye, EyeOff, Heart, Package, MessageSquare, Star, Video, FolderOpen, Cog, AlertTriangle, RefreshCw, LayoutGrid, List, UserRound } from 'lucide-react';
 import { COLOR_LABEL_SWATCHES, type ColorLabel } from '../../services/feedback.service';
 import { toast } from 'react-toastify';
 import { useQueryClient } from '@tanstack/react-query';
@@ -14,6 +14,7 @@ import { Button } from '../common';
 import { PermissionGate } from './PermissionGate';
 import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { BulkCategoryModal } from './BulkCategoryModal';
+import { BulkCreditModal } from './BulkCreditModal';
 
 interface CategoryOption {
   id: number;
@@ -57,6 +58,9 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
   const [deletingPhotos, setDeletingPhotos] = useState<Set<number>>(new Set());
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [isUpdatingCategory, setIsUpdatingCategory] = useState(false);
+  // Photo credits (#1561)
+  const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
+  const [isUpdatingCredit, setIsUpdatingCredit] = useState(false);
   // Layout toggle (Grid / List) persisted per admin via localStorage.
   const [viewMode, setViewMode] = useState<PhotoViewMode>(() => getPhotoViewMode());
 
@@ -228,6 +232,23 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
     }
   };
 
+  const handleSetCredit = async (creditName: string | null) => {
+    setIsUpdatingCredit(true);
+    try {
+      await photosService.bulkUpdatePhotos(eventId, Array.from(selectedPhotos), { credit_name: creditName });
+      toast.success(creditName === null
+        ? t('admin.photos.credit.cleared')
+        : t('admin.photos.credit.saved'));
+      setIsCreditModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
+      onPhotosDeleted(); // Refresh the photo list
+    } catch {
+      toast.error(t('common.error'));
+    } finally {
+      setIsUpdatingCredit(false);
+    }
+  };
+
   return (
     <div>
       {/* Action Bar */}
@@ -265,6 +286,14 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                       leftIcon={<FolderOpen className="w-4 h-4" />}
                     >
                       {t('photos.moveToCategory', 'Move to Category')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsCreditModalOpen(true)}
+                      leftIcon={<UserRound className="w-4 h-4" />}
+                    >
+                      {t('admin.photos.credit.bulkAction')}
                     </Button>
                     <Button
                       variant="outline"
@@ -476,6 +505,12 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                     Original: {photo.original_filename}
                   </p>
                 )}
+                {photo.credit_name && (
+                  <p className="text-white/80 text-[11px] truncate mb-1 flex items-center gap-1" data-testid="admin-photo-credit">
+                    <UserRound className="w-3 h-3 flex-shrink-0" aria-hidden="true" />
+                    {photo.credit_name}
+                  </p>
+                )}
                 <p className="text-white/80 text-xs mb-2">
                   {photosService.formatBytes(photo.size)}
                 </p>
@@ -608,6 +643,9 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
               <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
                 {t('admin.photos.columns.category', 'Category')}
               </th>
+              <th className="hidden lg:table-cell px-3 py-2 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                {t('admin.photos.columns.credit')}
+              </th>
               <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-medium text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
                 {t('admin.photos.columns.uploaded', 'Uploaded')}
               </th>
@@ -733,6 +771,15 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
                     {photo.category_name || '—'}
                   </td>
 
+                  {/* Credit (#1561) */}
+                  <td className="hidden lg:table-cell px-3 py-2 max-w-[12rem] text-sm text-neutral-600 dark:text-neutral-400">
+                    {photo.credit_name ? (
+                      <span className="block truncate" title={photo.credit_name}>{photo.credit_name}</span>
+                    ) : photo.uploaded_by === 'guest' ? (
+                      <span className="text-neutral-400">{t('admin.photos.credit.unnamedGuest')}</span>
+                    ) : '—'}
+                  </td>
+
                   {/* Uploaded date */}
                   <td className="hidden md:table-cell px-3 py-2 whitespace-nowrap text-sm text-neutral-600 dark:text-neutral-400">
                     {photo.uploaded_at ? formatDate(photo.uploaded_at) : '—'}
@@ -820,6 +867,15 @@ export const AdminPhotoGrid: React.FC<AdminPhotoGridProps> = ({
           <p className="text-neutral-500 dark:text-neutral-400">{t('gallery.noMedia', 'No media uploaded yet')}</p>
         </div>
       )}
+
+      {/* Bulk credit (#1561) */}
+      <BulkCreditModal
+        isOpen={isCreditModalOpen}
+        onClose={() => setIsCreditModalOpen(false)}
+        onConfirm={handleSetCredit}
+        photoCount={selectedPhotos.size}
+        isLoading={isUpdatingCredit}
+      />
 
       {/* Bulk Category Modal */}
       <BulkCategoryModal

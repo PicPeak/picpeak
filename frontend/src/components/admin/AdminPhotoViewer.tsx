@@ -1,6 +1,6 @@
 import { usePhotoSelection } from '../../hooks/usePhotoSelection';
-import React, { useState } from 'react';
-import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, ChevronLeft, ChevronRight, Download, Trash2, Tag, Calendar, HardDrive, Eye, MousePointer, MessageSquare, Star, Heart, CheckCircle, XCircle, AlertCircle, UserRound } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -119,6 +119,33 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
       toast.success('Download started');
     } catch (error) {
       toast.error('Failed to download photo');
+    }
+  };
+
+  // Photo credit (#1561). Held locally after a save so the sidebar answers at
+  // once; the grid refreshes through onPhotoDeleted like the category does.
+  const [creditOverrides, setCreditOverrides] = useState<Record<number, string | null>>({});
+  const [editingCredit, setEditingCredit] = useState(false);
+  const [creditDraft, setCreditDraft] = useState('');
+  const [savingCredit, setSavingCredit] = useState(false);
+  const creditName = Object.prototype.hasOwnProperty.call(creditOverrides, currentPhoto.id)
+    ? creditOverrides[currentPhoto.id]
+    : currentPhoto.credit_name ?? null;
+  useEffect(() => { setEditingCredit(false); }, [currentPhoto.id]);
+
+  const saveCredit = async (value: string | null) => {
+    setSavingCredit(true);
+    try {
+      const result = await photosService.setPhotoCredit(eventId, currentPhoto.id, value);
+      setCreditOverrides((prev) => ({ ...prev, [currentPhoto.id]: result.credit_name }));
+      setEditingCredit(false);
+      toast.success(value === null ? t('admin.photos.credit.cleared') : t('admin.photos.credit.saved'));
+      queryClient.invalidateQueries({ queryKey: ['admin-photo-credits', eventId] });
+      onPhotoDeleted();
+    } catch {
+      toast.error(t('common.error'));
+    } finally {
+      setSavingCredit(false);
     }
   };
 
@@ -360,6 +387,68 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
                   </button>
                 ))}
               </div>
+            )}
+          </div>
+
+          {/* Credit (#1561) */}
+          <div className="mb-6" data-testid="admin-viewer-credit">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-neutral-400 text-sm flex items-center gap-1">
+                <UserRound className="w-4 h-4" />
+                {t('admin.photos.credit.label')}
+              </span>
+              {!editingCredit && (
+                <div className="flex items-center gap-3">
+                  {creditName && (
+                    <button
+                      onClick={() => saveCredit(null)}
+                      disabled={savingCredit}
+                      className="text-xs text-neutral-400 hover:text-white"
+                    >
+                      {t('admin.photos.credit.clear')}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setCreditDraft(creditName || ''); setEditingCredit(true); }}
+                    className="text-xs text-accent hover:text-accent-dark"
+                  >
+                    {t('admin.photos.credit.edit')}
+                  </button>
+                </div>
+              )}
+            </div>
+            {editingCredit ? (
+              <form
+                className="space-y-2"
+                onSubmit={(e) => { e.preventDefault(); if (creditDraft.trim()) saveCredit(creditDraft.trim()); }}
+              >
+                <input
+                  value={creditDraft}
+                  onChange={(e) => setCreditDraft(e.target.value)}
+                  maxLength={100}
+                  autoFocus
+                  aria-label={t('admin.photos.credit.label')}
+                  className="w-full px-3 py-2 text-sm rounded-lg bg-neutral-800 border border-neutral-700 text-white focus:ring-2 focus:ring-primary-500"
+                />
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" size="sm" type="button" onClick={() => setEditingCredit(false)} disabled={savingCredit}>
+                    {t('common.cancel')}
+                  </Button>
+                  <Button variant="primary" size="sm" type="submit" disabled={savingCredit || !creditDraft.trim()} isLoading={savingCredit}>
+                    {t('admin.photos.credit.save')}
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <p className="text-white">
+                {creditName || (
+                  <span className="text-neutral-500">
+                    {currentPhoto.uploaded_by === 'guest'
+                      ? t('admin.photos.credit.unnamedGuest')
+                      : t('admin.photos.credit.none')}
+                  </span>
+                )}
+              </p>
             )}
           </div>
 

@@ -36,6 +36,7 @@ const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const logger = require('../utils/logger');
 const router = express.Router();
 const { normaliseDownloadLimit } = require('../services/downloadQuota');
+const { GUEST_NAME_MODES } = require('../services/photoCredit');
 const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileSizeCache, clearMaxVideoSizeCache, MAX_ALLOWED_FILE_SIZE_MB } = require('../services/uploadSettings');
 const watermarkService = require('../services/watermarkService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
@@ -1595,6 +1596,18 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
         }
         settings.event_default_download_limit = normalized;
       }
+    }
+
+    // Uploader-name defaults for new events (#1561).
+    if (Object.prototype.hasOwnProperty.call(settings, 'event_default_guest_name_mode')
+      && !GUEST_NAME_MODES.includes(settings.event_default_guest_name_mode)) {
+      return res.status(400).json({
+        error: `event_default_guest_name_mode must be one of: ${GUEST_NAME_MODES.join(', ')}`
+      });
+    }
+    if (Object.prototype.hasOwnProperty.call(settings, 'event_default_show_credits_to_guests')) {
+      const raw = settings.event_default_show_credits_to_guests;
+      settings.event_default_show_credits_to_guests = raw === true || raw === 'true' || raw === 1 || raw === '1';
     }
 
     if (publicSiteKeysTouched) {

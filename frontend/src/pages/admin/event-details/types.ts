@@ -1,3 +1,5 @@
+import type { GuestNameMode } from '../../../types';
+
 export type EventDetailsTab = 'overview' | 'photos' | 'categories' | 'guests';
 
 export type EditFormState = {
@@ -10,6 +12,9 @@ export type EditFormState = {
   reveal_mode: boolean;
   reveal_at: string;
   upload_category_id: number | null;
+  // Uploader names (#1561)
+  guest_name_mode: GuestNameMode;
+  show_credits_to_guests: boolean;
   hero_photo_id: number | null;
   customer_name: string;
   customer_email: string;
@@ -67,6 +72,8 @@ export const INITIAL_EDIT_FORM: EditFormState = {
   reveal_mode: false,
   reveal_at: '',
   upload_category_id: null,
+  guest_name_mode: 'off',
+  show_credits_to_guests: false,
   hero_photo_id: null,
   customer_name: '',
   customer_email: '',

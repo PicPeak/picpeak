@@ -4,6 +4,7 @@ import { Button, Card } from '../../../components/common';
 import { useTranslation } from 'react-i18next';
 import type { EventSettings } from '../hooks/useSettingsState';
 import { COLOR_LABEL_SWATCHES, COLOR_LABELS } from '../../../services/feedback.service';
+import { UploaderNameSettings } from '../../../components/admin/UploaderNameSettings';
 
 interface EventsTabProps {
   eventSettings: EventSettings;
@@ -305,6 +306,16 @@ export const EventsTab: React.FC<EventsTabProps> = ({
               {t('settings.events.defaultDownloadLimitHelp', 'Pre-filled on new events: how many photos a client can download. 0 = unlimited.')}
             </p>
           </div>
+
+          {/* Uploader names (#1561): defaults for new galleries only. */}
+          <UploaderNameSettings
+            className="max-w-sm"
+            idPrefix="event-default-uploader-names"
+            mode={eventSettings.event_default_guest_name_mode}
+            onModeChange={(mode) => setEventSettings(prev => ({ ...prev, event_default_guest_name_mode: mode }))}
+            showToGuests={eventSettings.event_default_show_credits_to_guests}
+            onShowToGuestsChange={(show) => setEventSettings(prev => ({ ...prev, event_default_show_credits_to_guests: show }))}
+          />
 
           <div>
             <label className="flex items-start gap-3">

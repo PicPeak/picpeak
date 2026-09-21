@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Filter, SortAsc, SortDesc } from 'lucide-react';
+import { Search, Filter, SortAsc, SortDesc, UserRound } from 'lucide-react';
 import { Input } from '../common';
 import { useTranslation } from 'react-i18next';
 
@@ -15,6 +15,13 @@ interface PhotoFiltersProps {
   mediaType?: 'all' | 'photo' | 'video';
   onMediaTypeChange?: (mediaType: 'all' | 'photo' | 'video') => void;
   showMediaFilter?: boolean;
+  // Credit filter (#1561). Rendered only when the event has at least one
+  // credited photo. `creditNoneValue` is the backend's "no credit" token.
+  credits?: Array<{ name: string; count: number }>;
+  creditNoneCount?: number;
+  creditNoneValue?: string;
+  selectedCredit?: string;
+  onCreditChange?: (credit: string | undefined) => void;
 }
 
 export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
@@ -28,7 +35,12 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
   onSortChange,
   mediaType = 'all',
   onMediaTypeChange,
-  showMediaFilter = false
+  showMediaFilter = false,
+  credits = [],
+  creditNoneCount = 0,
+  creditNoneValue = '__none__',
+  selectedCredit,
+  onCreditChange,
 }) => {
   const { t } = useTranslation();
   const handleSortToggle = () => {
@@ -76,6 +88,30 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
             ))}
           </select>
         </div>
+
+        {onCreditChange && credits.length > 0 && (
+          <div className="flex items-center gap-2">
+            <UserRound className="w-5 h-5 text-neutral-400" aria-hidden="true" />
+            <select
+              value={selectedCredit ?? ''}
+              onChange={(e) => onCreditChange(e.target.value === '' ? undefined : e.target.value)}
+              aria-label={t('admin.photos.credit.filterLabel')}
+              className="px-3 py-2 border border-neutral-300 dark:border-neutral-600 rounded-lg bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:ring-2 focus:ring-primary-500 focus:border-accent-dark max-w-[16rem]"
+            >
+              <option value="">{t('admin.photos.credit.filterAll')}</option>
+              {credits.map((credit) => (
+                <option key={credit.name} value={credit.name}>
+                  {credit.name} ({credit.count})
+                </option>
+              ))}
+              {creditNoneCount > 0 && (
+                <option value={creditNoneValue}>
+                  {t('admin.photos.credit.filterNone')} ({creditNoneCount})
+                </option>
+              )}
+            </select>
+          </div>
+        )}
 
         {showMediaFilter && onMediaTypeChange && (
           <div className="flex items-center gap-2">

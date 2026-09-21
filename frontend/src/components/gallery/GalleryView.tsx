@@ -32,6 +32,7 @@ import { GalleryLayout } from './GalleryLayout';
 import { GallerySidebar } from './GallerySidebar';
 import { PhotoFilterBar } from './PhotoFilterBar';
 import { UserPhotoUpload } from './UserPhotoUpload';
+import { CreditFilterChips } from './CreditFilterChips';
 import { GuestNamePromptModal } from './GuestNamePromptModal';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { PeopleStrip } from './PeopleStrip';
@@ -151,6 +152,8 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   // person is picked, since the toggle is meaningless for one.
   const [selectedPersonIds, setSelectedPersonIds] = useState<number[]>([]);
   const [peopleMatchAny, setPeopleMatchAny] = useState(false);
+  // "By" filter (#1561): who took or uploaded the photo. null = everyone.
+  const [selectedCreditKey, setSelectedCreditKey] = useState<string | null>(null);
   const [showPeopleSheet, setShowPeopleSheet] = useState(false);
   // Dismissal is per gallery: a guest who hides the bar in one gallery has
   // said nothing about the next one.
@@ -329,6 +332,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     },
     enabled: !!event.id,
   });
+
+  // Uploader names (#1561): the upload dialog's name step, from the /photos
+  // payload. The guest identity it registers is the feedback one, so the
+  // feedback email requirement travels along.
+  const uploaderNameProps = {
+    slug,
+    nameMode: data?.event?.guest_name_mode ?? 'off',
+    creditsVisible: data?.event?.credits_visible === true,
+    requireEmail: !!(feedbackSettings?.feedback_enabled && feedbackSettings?.require_name_email),
+  } as const;
 
   // People in this gallery (#1074).
   //
@@ -668,7 +681,11 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     selectedCategoryId, searchTerm, sortBy, sortDesc, watermarkEnabled, slug,
     activeFilters, activeColorFilters, mediaFilter, isGuestIdentityMode, myFeedbackPhotoIds,
     selectedPersonIds, peopleMatchAny,
+    // Only while names are visible: a stale key must not keep filtering a
+    // gallery whose host has just switched names off.
+    selectedCreditKey: data?.event?.credits_visible ? selectedCreditKey : null,
   });
+  const creditsVisible = data?.event?.credits_visible === true;
 
   // Counts shown in the filter chips ("Liked (N)", etc.). In guest
   // mode these need to mirror the per-guest filter behaviour above —
@@ -1056,6 +1073,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
+            {...uploaderNameProps}
             onUploadComplete={() => setShowUploadModal(false)}
             onClose={() => setShowUploadModal(false)}
           />
@@ -1288,6 +1306,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
+            {...uploaderNameProps}
             onUploadComplete={handleUploadComplete}
             onClose={() => setShowUploadModal(false)}
           />
@@ -1366,6 +1385,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           activeColorFilters={activeColorFilters}
           onColorFilterChange={handleColorFilterToggle}
           colorLabelCounts={colorLabelCounts}
+          creditPhotos={creditsVisible ? scopedPhotos : undefined}
+          selectedCreditKey={selectedCreditKey}
+          onCreditChange={setSelectedCreditKey}
         />
       ) : null}
 
@@ -1523,6 +1545,14 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
             onColorFilterChange={handleColorFilterToggle}
             colorLabelCounts={colorLabelCounts}
           />
+          {creditsVisible && (
+            <CreditFilterChips
+              className="mt-3"
+              photos={scopedPhotos}
+              selectedKey={selectedCreditKey}
+              onChange={setSelectedCreditKey}
+            />
+          )}
         </div>
       ) : null}
 
@@ -1705,6 +1735,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
           <UserPhotoUpload
             eventId={data?.event?.id || event?.id}
             categoryId={data?.event?.upload_category_id || event?.upload_category_id}
+            {...uploaderNameProps}
             onUploadComplete={handleUploadComplete}
             onClose={() => setShowUploadModal(false)}
           />

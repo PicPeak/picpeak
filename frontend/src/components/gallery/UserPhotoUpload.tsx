@@ -1,11 +1,15 @@
-import React, { useState, useMemo } from 'react';
-import { Upload, X, CheckCircle, Loader2 } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Upload, X, CheckCircle, Loader2, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
-import { Button } from '../common';
+import { Button, Input } from '../common';
 import { api } from '../../config/api';
 import { usePublicSettings } from '../../hooks/usePublicSettings';
 import { extensionsToMimeTypes, buildUploadAcceptString, extensionsToLabel, normalizeFileMimeType } from '../../utils/fileTypes';
+import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
+import { guestsService, type GuestIdentity } from '../../services/guests.service';
+import { clearGuestIdentity, getGuestIdentity, getGuestToken, storeGuestIdentity } from '../../utils/guestIdentityStorage';
+import type { GuestNameMode } from '../../types';
 
 interface UserPhotoUploadProps {
   eventId: number;
@@ -14,6 +18,16 @@ interface UserPhotoUploadProps {
   // caller can poll their processing status instead of guessing (B7).
   onUploadComplete: (uploadIds: string[]) => void;
   onClose: () => void;
+  // Uploader names (#1561). The name is the gallery's guest identity — the
+  // same one likes and comments use — so it is keyed by slug and remembered on
+  // this device. Without a slug, or with the mode off, there is no name step.
+  slug?: string;
+  nameMode?: GuestNameMode;
+  // Whether other guests will see the name; only changes the privacy notice.
+  creditsVisible?: boolean;
+  // The feedback setting "require name and email" applies to the one guest
+  // identity, so registering it from here has to ask for the address too.
+  requireEmail?: boolean;
 }
 
 export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
@@ -21,8 +35,27 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   categoryId,
   onUploadComplete,
   onClose,
+  slug,
+  nameMode = 'off',
+  creditsVisible = false,
+  requireEmail = false,
 }) => {
   const { t } = useTranslation();
+  const identityContext = useGuestIdentityOptional();
+  const askName = nameMode !== 'off' && !!slug;
+  const [identity, setIdentity] = useState<GuestIdentity | null>(() => (askName ? getGuestIdentity(slug) : null));
+  const [nameInput, setNameInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [nameError, setNameError] = useState<string | undefined>();
+  const [emailError, setEmailError] = useState<string | undefined>();
+
+  // The gallery may switch identity underneath the dialog (another tab,
+  // "Not you?" in the feedback UI, an invite link). Follow it.
+  useEffect(() => {
+    if (identityContext && identityContext.slug === slug) {
+      setIdentity(identityContext.identity);
+    }
+  }, [identityContext, identityContext?.identity, slug]);
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
@@ -138,8 +171,67 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     setFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  // Resolve who is uploading, registering the typed name as a guest identity
+  // when there is none yet. Returns false when the upload must not start.
+  const resolveUploader = async (): Promise<{ ok: boolean; token: string | null }> => {
+    if (!askName || !slug) return { ok: true, token: null };
+    if (identity) return { ok: true, token: getGuestToken(slug) };
+
+    const name = nameInput.trim();
+    if (!name) {
+      if (nameMode === 'required') {
+        setNameError(t('upload.nameRequired'));
+        return { ok: false, token: null };
+      }
+      return { ok: true, token: null };
+    }
+    const email = emailInput.trim();
+    if (requireEmail && !email) {
+      setEmailError(t('gallery.guestPrompt.emailRequired', 'Email is required'));
+      return { ok: false, token: null };
+    }
+
+    try {
+      let registered: GuestIdentity;
+      if (identityContext && identityContext.slug === slug) {
+        registered = await identityContext.register(name, email || undefined);
+      } else {
+        const response = await guestsService.registerGuest(slug, { name, email: email || undefined });
+        storeGuestIdentity(slug, response.guest, response.token);
+        registered = response.guest;
+      }
+      setIdentity(registered);
+      return { ok: true, token: getGuestToken(slug) };
+    } catch (error: any) {
+      const data = error?.response?.data;
+      if (data?.field === 'email') {
+        setEmailError(data.error);
+      } else {
+        setNameError(data?.error || t('upload.nameSaveFailed'));
+      }
+      return { ok: false, token: null };
+    }
+  };
+
+  // "Not you?": drop the identity on this device only. The guest row and its
+  // feedback stay; this is the shared-phone case, not "forget me".
+  const handleNotYou = () => {
+    if (!slug) return;
+    if (identityContext && identityContext.slug === slug) {
+      identityContext.signOut();
+    } else {
+      clearGuestIdentity(slug);
+    }
+    setIdentity(null);
+  };
+
   const handleUpload = async () => {
     if (files.length === 0) return;
+
+    setNameError(undefined);
+    setEmailError(undefined);
+    const uploader = await resolveUploader();
+    if (!uploader.ok) return;
 
     setUploading(true);
     let successCount = 0;
@@ -151,6 +243,9 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
     // Set when the photo limit stopped the batch; its own message already
     // explains every file that was not sent.
     let stoppedAtPhotoCap = false;
+    // Set when the server no longer knows the stored uploader; the name field
+    // is back on screen and says why.
+    let stoppedForName = false;
 
     for (const [index, file] of files.entries()) {
       // The gallery's photo limit refuses this file and every one after it:
@@ -174,6 +269,10 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         }>(`/gallery/${eventId}/upload`, formData, {
           headers: {
             'Content-Type': 'multipart/form-data',
+            // Explicit, not left to the interceptor: this URL carries the
+            // event id where the interceptor looks for a slug, so it would
+            // look the guest token up under the wrong key (#1561).
+            ...(uploader.token ? { 'x-guest-token': uploader.token } : {}),
           },
           onUploadProgress: (progressEvent) => {
             if (progressEvent.total) {
@@ -223,6 +322,15 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
           stopAtPhotoCap(error.response.data.limit);
           break;
         }
+        // The stored identity is no longer honoured (removed by the host,
+        // expired): ask for the name again instead of failing every file.
+        if (error.response?.data?.code === 'UPLOADER_NAME_REQUIRED') {
+          failedCount += files.length - index;
+          stoppedForName = true;
+          handleNotYou();
+          setNameError(t('upload.nameRequired'));
+          break;
+        }
         // Upload error handled - user notified via UI
         failedCount++;
         
@@ -239,7 +347,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
       onUploadComplete(uploadIds);
     }
     
-    if (failedCount > 0 && !stoppedAtPhotoCap) {
+    if (failedCount > 0 && !stoppedAtPhotoCap && !stoppedForName) {
       toast.error(`${failedCount} ${t('upload.someFilesFailed')}`);
     }
 
@@ -272,6 +380,61 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
 
         {/* Scrollable Content */}
         <div className="flex-1 p-4 sm:p-6 overflow-y-auto min-h-0">
+            {/* Uploader name (#1561) */}
+            {askName && (
+              <div className="mb-4 sm:mb-6 rounded-lg border border-surface p-3 sm:p-4" data-testid="uploader-name-step">
+                {identity ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="flex items-center gap-2 text-sm text-theme min-w-0">
+                      <UserRound className="w-4 h-4 flex-shrink-0 text-muted-theme" aria-hidden="true" />
+                      <span className="truncate">{t('upload.uploadingAs', { name: identity.name })}</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleNotYou}
+                      disabled={uploading}
+                      className="text-xs font-medium text-accent hover:underline flex-shrink-0"
+                    >
+                      {t('upload.notYou')}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <Input
+                      label={nameMode === 'required' ? t('upload.yourName') : t('upload.yourNameOptional')}
+                      value={nameInput}
+                      onChange={(e) => { setNameInput(e.target.value); setNameError(undefined); }}
+                      error={nameError}
+                      placeholder={t('gallery.guestPrompt.namePlaceholder', 'Enter your name')}
+                      autoComplete="name"
+                      maxLength={100}
+                      required={nameMode === 'required'}
+                      disabled={uploading}
+                    />
+                    {requireEmail && (
+                      <Input
+                        type="email"
+                        label={t('gallery.guestPrompt.emailLabelRequired', 'Email')}
+                        value={emailInput}
+                        onChange={(e) => { setEmailInput(e.target.value); setEmailError(undefined); }}
+                        error={emailError}
+                        placeholder={t('gallery.guestPrompt.emailPlaceholder', 'you@example.com')}
+                        autoComplete="email"
+                        maxLength={255}
+                        disabled={uploading}
+                      />
+                    )}
+                  </div>
+                )}
+                {identity && nameError && (
+                  <p className="mt-2 text-xs text-red-600">{nameError}</p>
+                )}
+                <p className="mt-2 text-xs text-muted-theme">
+                  {creditsVisible ? t('upload.namePrivacyShown') : t('upload.namePrivacyHidden')}
+                </p>
+              </div>
+            )}
+
             {/* Upload Area — accepts both click-to-pick and drag-and-drop (#504). */}
             <div className="mb-4 sm:mb-6">
               <label className="block">
@@ -374,7 +537,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
           <Button
             variant="primary"
             onClick={handleUpload}
-            disabled={files.length === 0 || uploading}
+            disabled={files.length === 0 || uploading || (askName && nameMode === 'required' && !identity && !nameInput.trim())}
             isLoading={uploading}
             className="text-sm sm:text-base"
           >

@@ -1039,6 +1039,8 @@
         "PATCH /:eventId/photos/:photoId",
         "POST /:eventId/photos/bulk-delete",
         "POST /:eventId/photos/bulk-update",
+        "GET /:eventId/photos/credits",
+        "PUT /:eventId/photos/:photoId/credit",
         "GET /:eventId/photos/:photoId/download",
         "GET /:eventId/photos",
         "GET /:eventId/photo/:photoId",

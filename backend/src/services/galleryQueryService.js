@@ -12,6 +12,7 @@ const { resolveEventDownloadPolicy } = require('../utils/downloadResolutions');
 const { resolveHeroLogoVisible, originalNeedsPreview } = require('./galleryModel');
 const { applyFeedbackFilter } = require('./galleryPhotoQuery');
 const { getQuota, grantedPhotoIds } = require('./downloadQuota');
+const { guestNameModeOf } = require('./photoCredit');
 async function getGalleryPhotos({ event, query = {}, identity, accessLevel, adminPreview, hiddenForGuest, slug }) {
   // Get filter and sort parameters from query
   // `guest_id` is deliberately NOT read from the query string: the viewer's
@@ -409,6 +410,14 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
     : new Set();
   const withholdOriginals = !!downloadQuota;
 
+  // Uploader names / photo credits (#1561). Recorded for the admin; a guest
+  // sees them only when the per-event switch is on. The PIN client is the
+  // host, who sees them regardless — the same exemption the face strip makes.
+  // Never for the slideshow: a projector link is display-only and easy to
+  // leak, and a name on a wall screen is not what "show to guests" agreed to.
+  const creditsVisible = accessLevel !== 'slideshow'
+    && (isClient || parseBooleanInput(event.show_credits_to_guests, false));
+
   return {
     pagination: { page, limit: limit || total, total, has_more: !!limit && page * limit < total },
     event: {
@@ -424,6 +433,11 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
       // uploads off unless explicitly enabled (#1028).
       allow_downloads: parseBooleanInput(event.allow_downloads, true),
       allow_user_uploads: parseBooleanInput(event.allow_user_uploads, false),
+      // Upload dialog name step (#1561): off | optional | required.
+      guest_name_mode: guestNameModeOf(event),
+      // Whether photos carry credit_name, so the UI can show the "By" filter
+      // and the lightbox line.
+      credits_visible: creditsVisible,
       // Download resolutions (#858). `choices` drives the picker modal and is
       // empty when the picker is off, so the UI can never offer a size the
       // server would reject.
@@ -611,6 +625,14 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
         // face filtering client-side and instant, like the category and
         // liked/rated filters.
         person_ids: personIdsByPhoto.get(photo.id) || [],
+        // Photo credit (#1561), only when the viewer may see names — the key is
+        // left out otherwise rather than sent as null. `uploaded_by_guest`
+        // lets the "By" filter tell a nameless guest upload from the
+        // photographer's own photos.
+        ...(creditsVisible ? {
+          credit_name: photo.credit_name || null,
+          uploaded_by_guest: photo.uploaded_by === 'guest',
+        } : {}),
         // Visibility (only included for clients)
         ...(isClient ? { visibility: photo.visibility || 'visible' } : {})
       };

@@ -415,6 +415,8 @@ export const EventDetailsPage: React.FC = () => {
         ? (() => { const d = new Date(event.reveal_at); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); })()
         : '',
       upload_category_id: event.upload_category_id || null,
+      guest_name_mode: event.guest_name_mode || 'off',
+      show_credits_to_guests: Boolean(event.show_credits_to_guests),
       hero_photo_id: event.hero_photo_id || null,
       customer_name: event.customer_name || '',
       customer_email: event.customer_email || '',
@@ -560,6 +562,8 @@ export const EventDetailsPage: React.FC = () => {
     const updateData: any = {
       expires_at: editForm.expires_at || null,
       allow_user_uploads: editForm.allow_user_uploads,
+      guest_name_mode: editForm.guest_name_mode,
+      show_credits_to_guests: editForm.show_credits_to_guests,
       reveal_mode: editForm.allow_user_uploads && editForm.reveal_mode,
       reveal_at: editForm.allow_user_uploads && editForm.reveal_mode && editForm.reveal_at
         ? new Date(editForm.reveal_at).toISOString()
