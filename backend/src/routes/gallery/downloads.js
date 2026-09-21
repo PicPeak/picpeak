@@ -30,7 +30,9 @@ const {
 const { buildContentDisposition } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
 const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
-const { downloadLimitOf, grantDownloads, checkDownloads, downloadLimitError } = require('../../services/downloadQuota');
+const {
+  downloadLimitOf, grantDownloads, checkDownloads, downloadLimitError, revokeGrants, undeliveredGrants,
+} = require('../../services/downloadQuota');
 const fs = require('fs');
 function parseByteRange(header, size) {
   if (!header || typeof header !== 'string' || !size) return null;
@@ -158,10 +160,19 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       return res.end();
     }
 
-    // Download limit (issue 1560). Granted before any byte goes out; a photo
-    // this gallery already received downloads again for free.
-    const quota = await grantDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
-    if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
+    // Download limit (issue 1560). Checked here so a refused request does no
+    // work and bumps no counter; the grant itself is recorded below, once the
+    // bytes are actually in hand, so a photo whose file is missing never uses
+    // up a slot. A photo this gallery already received is free again.
+    const limitCheck = await checkDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
+    if (!limitCheck.ok) return res.status(403).json(downloadLimitError(limitCheck));
+    const grantThisPhoto = async () => {
+      const quota = await grantDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
+      if (quota.ok) return true;
+      // Lost a race with another device between the check and here.
+      res.status(403).json(downloadLimitError(quota));
+      return false;
+    };
 
     // Admin preview (#868) downloads are excluded from the download count +
     // guest analytics — kept out of client-facing stats.
@@ -230,6 +241,7 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     }
 
     if (rendered) {
+      if (!(await grantThisPhoto())) return;
       res.set({
         'Content-Type': resolvePhotoContentType(photo),
         'Content-Disposition': contentDisposition,
@@ -333,6 +345,11 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
           : res.status(500).json({ error: 'Failed to download photo' });
       }
 
+      if (!(await grantThisPhoto())) {
+        stream.destroy?.();
+        return;
+      }
+
       if (range) {
         // status()+set() rather than writeHead(): writeHead commits the
         // response immediately, so a stream that resolves and THEN errors
@@ -366,6 +383,17 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       });
       return res.status(404).json({ error: 'Photo file not found' });
     }
+
+    // Local file: make sure it is there before it is charged against the limit.
+    if (!fs.existsSync(filePath)) {
+      logger.error('Photo file missing on disk for download', {
+        slug: req.params.slug,
+        photoId,
+        eventId: req.event.id,
+      });
+      return res.status(404).json({ error: 'Photo file not found' });
+    }
+    if (!(await grantThisPhoto())) return;
 
     // res.download() builds Content-Disposition itself but doesn't emit the
     // RFC 5987 filename* parameter, so unicode camera filenames would lose
@@ -632,6 +660,15 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
       }
     }
 
+    // Download limit (issue 1560): photos skipped above were granted up front
+    // but never shipped, so they get their slots back.
+    const allUndelivered = undeliveredGrants(quota, appendedIds);
+    if (allUndelivered.length > 0) {
+      revokeGrants(req.event.id, allUndelivered).catch((err) => logger.warn('Could not release undelivered download grants', {
+        eventId: req.event.id, error: err.message,
+      }));
+    }
+
     // Notification only after the response actually finished — finalize()
     // ends Archiver's input, not the HTTP transfer (codex review of #849,
     // confirmation round). Registered before finalize so it can't be missed.
@@ -818,6 +855,14 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
           error: err.message,
         });
       }
+    }
+
+    // Download limit (issue 1560): same release as download-all.
+    const selectedUndelivered = undeliveredGrants(selectedQuota, appendedIds);
+    if (selectedUndelivered.length > 0) {
+      revokeGrants(req.event.id, selectedUndelivered).catch((err) => logger.warn('Could not release undelivered download grants', {
+        eventId: req.event.id, error: err.message,
+      }));
     }
 
     // See download-all: notify only on response 'finish'.

@@ -153,6 +153,21 @@ describe('Download limit (issue 1560)', () => {
       expect((await dl(photoIds[1])).status).toBe(200);
     });
 
+    it('does not charge a photo whose file is missing', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 1 });
+      await db('photos').where({ id: photoIds[0] }).update({ path: `${event.slug}/missing.jpg` });
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(404);
+      expect(await grantCount(event.id)).toBe(0);
+      // The slot is still there for a photo that exists.
+      await request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[1]}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+    });
+
     it('records nothing for an unlimited gallery', async () => {
       const { event, photoIds, token } = await makeEvent({ limit: null });
       const res = await request(app)
@@ -200,6 +215,50 @@ describe('Download limit (issue 1560)', () => {
         .parse((res, cb) => { res.on('data', () => {}); res.on('end', () => cb(null, null)); });
       expect(ok.status).toBe(200);
       expect(await grantCount(event.id)).toBe(3);
+    });
+
+    const drain = (r, cb) => { r.on('data', () => {}); r.on('end', () => cb(null, null)); };
+    const eventuallyGrantCount = async (eventId, expected) => {
+      // The release of undelivered grants runs after the archive is finalized.
+      for (let i = 0; i < 50; i += 1) {
+        if (await grantCount(eventId) === expected) return expected;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return grantCount(eventId);
+    };
+
+    it('gives back the slots of photos a selected zip had to skip', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 3, photos: 3 });
+      // Granted by an earlier download: must stay granted even though it is
+      // skipped from this zip.
+      await quota.grantDownloads(event, [photoIds[0]]);
+      await db('photos').whereIn('id', [photoIds[0], photoIds[1]])
+        .update({ path: `${event.slug}/missing.jpg` });
+
+      const res = await request(app)
+        .post(`/api/gallery/${event.slug}/download-selected`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ photo_ids: photoIds })
+        .buffer(true)
+        .parse(drain);
+      expect(res.status).toBe(200);
+      // photoIds[0] (earlier grant) + photoIds[2] (delivered); photoIds[1] released.
+      expect(await eventuallyGrantCount(event.id, 2)).toBe(2);
+      const granted = await quota.grantedPhotoIds(event.id);
+      expect([...granted].sort()).toEqual([photoIds[0], photoIds[2]].sort());
+    });
+
+    it('gives back the slots of photos download-all had to skip', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 10, photos: 3 });
+      await db('photos').where({ id: photoIds[1] }).update({ path: `${event.slug}/missing.jpg` });
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/download-all`)
+        .set('Authorization', `Bearer ${token}`)
+        .buffer(true)
+        .parse(drain);
+      expect(res.status).toBe(200);
+      expect(await eventuallyGrantCount(event.id, 2)).toBe(2);
+      expect((await quota.grantedPhotoIds(event.id)).has(photoIds[1])).toBe(false);
     });
 
     it('download-all is refused while the gallery holds more photos than remain', async () => {

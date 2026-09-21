@@ -87,14 +87,15 @@ async function checkDownloads(event, photoIds, { isAdminPreview = false } = {}) 
 }
 
 /**
- * Grant every photo in `photoIds`, or none of them. Returns { ok: true } or
- * { ok: false, limit, used, remaining }. Admin previews and unlimited events
- * are a no-op.
+ * Grant every photo in `photoIds`, or none of them. Returns
+ * { ok: true, newIds } — newIds being the photos this call counted for the
+ * first time — or { ok: false, limit, used, remaining }. Admin previews and
+ * unlimited events are a no-op.
  */
 async function grantDownloads(event, photoIds, { isAdminPreview = false } = {}) {
-  if (isAdminPreview || !downloadLimitOf(event)) return { ok: true };
+  if (isAdminPreview || !downloadLimitOf(event)) return { ok: true, newIds: [] };
   const ids = uniqueIds(photoIds);
-  if (ids.length === 0) return { ok: true };
+  if (ids.length === 0) return { ok: true, newIds: [] };
 
   return db.transaction(async (trx) => {
     // SQLite runs one write transaction at a time; Postgres needs the row lock.
@@ -104,7 +105,7 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false } = {}) 
     // The limit is re-read under the lock: an admin raising or lowering it
     // between the request's event load and here must be honoured.
     const current = await trx('events').where({ id: event.id }).first('id', 'download_limit');
-    if (!downloadLimitOf(current)) return { ok: true };
+    if (!downloadLimitOf(current)) return { ok: true, newIds: [] };
 
     const result = await evaluate(current, ids, trx);
     if (!result.ok) return result;
@@ -119,8 +120,28 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false } = {}) 
       }));
       await trx('event_download_grants').insert(rows).onConflict(['event_id', 'photo_id']).ignore();
     }
-    return { ok: true };
+    return { ok: true, newIds: result.newIds };
   });
+}
+
+/**
+ * Give back slots a download took but did not deliver: a zip grants its whole
+ * set before streaming, and a photo whose source turns out to be missing is
+ * skipped rather than failing the archive. Only pass photos the same request
+ * counted for the first time (grantDownloads' newIds) — a photo granted by an
+ * earlier download stays granted.
+ */
+async function revokeGrants(eventId, photoIds) {
+  const ids = uniqueIds(photoIds);
+  if (ids.length === 0) return 0;
+  return db('event_download_grants').where('event_id', eventId).whereIn('photo_id', ids).del();
+}
+
+/** The undelivered part of a grant: counted by this request, never appended. */
+function undeliveredGrants(quota, deliveredIds) {
+  if (!quota || !Array.isArray(quota.newIds) || quota.newIds.length === 0) return [];
+  const delivered = new Set((deliveredIds || []).map(Number));
+  return quota.newIds.filter((id) => !delivered.has(Number(id)));
 }
 
 /** The response body every download path sends when the limit refuses a request. */
@@ -161,5 +182,7 @@ module.exports = {
   grantDownloads,
   downloadLimitError,
   resetGrants,
+  revokeGrants,
+  undeliveredGrants,
   isOriginalWithheld,
 };
