@@ -7962,7 +7962,9 @@
       "fileLabel": "Das unterschriebene PDF",
       "uploading": "Wird hochgeladen …",
       "submit": "Unterschriebenes PDF hochladen",
-      "notCovered": "Bestätigen Sie jede Person, deren Unterschrift das Papierexemplar trägt – der Upload schliesst den Vertrag für alle ab."
+      "notCovered": "Bestätigen Sie jede Person, deren Unterschrift das Papierexemplar trägt – der Upload schliesst den Vertrag für alle ab.",
+      "refusedTitle": "Bereits im Browser unterschrieben",
+      "refusedBody": "Mindestens eine Person hat diesen Vertrag bereits im Browser unterschrieben. Ein Papierexemplar kann eine im Browser geleistete Unterschrift nicht ersetzen, deshalb ist der Upload nicht verfügbar. Lassen Sie die übrigen Personen im Browser unterschreiben und zeichnen Sie anschliessend auf dieser Seite gegen."
     }
   },
   "messages": {

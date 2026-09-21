@@ -761,16 +761,56 @@ test('an admin\'s paper copy has to say which signers it carries', async () => {
   expect(JSON.stringify(payload)).not.toContain('@');
 });
 
-test('a paper copy needs no confirmation once every signer has signed', async () => {
-  const id = await newContract();
-  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+test('a paper copy is refused once any signer has signed in the browser', async () => {
+  // The upload replaces the signed PDF and completes the contract, so an
+  // electronic signature already on the record would be discarded without
+  // the log saying so. The admin counter-signs in the browser instead.
+  const uploadPaper = (id, covers) => request(contractsApp).post(`/api/admin/contracts/${id}/upload-signed-pdf`).set(auth)
+    .field('coversSignerIds', JSON.stringify(covers))
+    .attach('file', Buffer.from('%PDF-1.4\n%%EOF\n'), { filename: 'paper.pdf', contentType: 'application/pdf' });
+
+  // One of two parallel signers has signed: the contract is still `sent`.
+  const partialId = await newContract();
+  await ok(request(contractsApp).put(`/api/admin/contracts/${partialId}/signers`).set(auth).send({
+    order: 'parallel',
+    signers: [{ name: 'Anna Muster', email: customerEmail }, { name: 'Ben Muster', email: 'ben@example.com' }],
+  }));
+  await ok(request(contractsApp).post(`/api/admin/contracts/${partialId}/send`).set(auth));
+  const annaSession = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+  await ok(sign(annaSession, { name: 'Anna Muster', mode: 'typed' }));
+  const before = await db('contracts').where({ id: partialId }).first();
+  const rows = await db('contract_signers').where({ contract_id: partialId, role: 'customer' }).orderBy('position');
+
+  const coverage = await ok(request(contractsApp).get(`/api/admin/contracts/${partialId}/paper-signature-coverage`).set(auth));
+  expect(coverage.electronicSignaturePresent).toBe(true);
+  const refused = await uploadPaper(partialId, [rows[1].id]);
+  expect(refused.status).toBe(409);
+  expect(refused.body.code).toBe('ELECTRONIC_SIGNATURE_PRESENT');
+  const after = await db('contracts').where({ id: partialId }).first();
+  expect(after.status).toBe('sent');
+  expect(after.signed_pdf_path).toBe(before.signed_pdf_path);
+  expect(await db('contract_signing_events').where({ contract_id: partialId, event_type: 'wet_upload' }).first()).toBeUndefined();
+  expect((await db('contract_signers').where({ id: rows[0].id }).first()).status).toBe('signed');
+
+  // Every signer has signed and only the counter-signature is missing.
+  const signedId = await newContract();
+  await ok(request(contractsApp).post(`/api/admin/contracts/${signedId}/send`).set(auth));
   const session = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
   await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+  const allSigned = await ok(request(contractsApp).get(`/api/admin/contracts/${signedId}/paper-signature-coverage`).set(auth));
+  expect(allSigned).toEqual({ signers: [], electronicSignaturePresent: true });
+  const res = await uploadPaper(signedId, []);
+  expect(res.status).toBe(409);
+  expect(res.body.code).toBe('ELECTRONIC_SIGNATURE_PRESENT');
+  expect((await db('contracts').where({ id: signedId }).first()).status).toBe('signed_by_customer');
+});
 
-  expect((await ok(request(contractsApp).get(`/api/admin/contracts/${id}/paper-signature-coverage`).set(auth))).signers).toEqual([]);
-  const res = await request(contractsApp).post(`/api/admin/contracts/${id}/upload-signed-pdf`).set(auth)
-    .attach('file', Buffer.from('%PDF-1.4\n%%EOF\n'), { filename: 'countersigned.pdf', contentType: 'application/pdf' });
-  expect(res.status).toBe(200);
+test('the coverage says no electronic signature is present before anyone signs', async () => {
+  const id = await newContract();
+  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+  const coverage = await ok(request(contractsApp).get(`/api/admin/contracts/${id}/paper-signature-coverage`).set(auth));
+  expect(coverage.electronicSignaturePresent).toBe(false);
+  expect(coverage.signers).toHaveLength(1);
 });
 
 test('the signing certificate can be downloaded once it exists', async () => {

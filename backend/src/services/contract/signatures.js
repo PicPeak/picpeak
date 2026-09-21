@@ -561,7 +561,9 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
  * customer signers the paper copy carries (#1446). On a signatures-v2
  * contract it has to account for every signer who hasn't signed or declined,
  * because this upload completes the contract for all of them; the customer's
- * own upload path refuses a multi-signer contract outright instead.
+ * own upload path refuses a multi-signer contract outright instead. Once any
+ * signer has signed in the browser the admin's upload is refused too
+ * (ELECTRONIC_SIGNATURE_PRESENT): it would discard that signature.
  */
 async function attachSignedPdfUpload(contractId, filePath, uploaderRole, actor = null, options = {}) {
   // Self-heal contract email templates — same reason as the
