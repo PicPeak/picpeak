@@ -419,6 +419,16 @@ describe('with the documents flag on', () => {
       expect(res.status).toBe(201);
       expect(res.body.document.status).toBe('pending');
 
+      // A share asked for with the upload is not recorded while the scanner
+      // has it pending: setShared would refuse it, so create must as well.
+      const withShare = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+        .field('share', 'true')
+        .attach('file', PDF, { filename: 'from-admin-shared.pdf', contentType: 'application/pdf' });
+      expect(withShare.status).toBe(201);
+      expect(withShare.body.document.status).toBe('pending');
+      const stored = await db('customer_documents').where({ id: withShare.body.document.id }).first();
+      expect(stored.shared_at).toBeFalsy();
+
       // …and a pending document cannot be shared.
       const share = await asAdmin(
         request(adminApp).post(`/api/admin/customers/${customerA}/documents/${res.body.document.id}/share`),
@@ -471,6 +481,69 @@ describe('with the documents flag on', () => {
     // Unlinking is the deliberate path, and then it deletes.
     await db('customer_documents').where({ id }).update({ deleted_at: null, contract_id: null });
     expect((await asAdmin(request(adminApp).delete(`/api/admin/customers/${customerA}/documents/${id}`))).status).toBe(200);
+    await db('contracts').where({ id: contractId }).del();
+  });
+
+  it('the sweep does not delete a rejected document linked to a contract after it was selected', async () => {
+    const { runCustomerDocumentRetention } = require('../../src/services/customerDocumentRetentionService');
+    const contractId = idOf(await db('contracts').insert({
+      contract_number: `K-RACE-${Date.now()}`, customer_account_id: customerA, title: 'Race',
+      status: 'draft', language: 'de', issue_date: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString(),
+    }).returning('id'));
+    const up = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .attach('file', PDF, { filename: 'late-link.pdf', contentType: 'application/pdf' });
+    expect(up.status).toBe(201);
+    const id = up.body.document.id;
+    await db('customer_documents').where({ id }).update({
+      status: 'rejected', reviewed_at: new Date(Date.now() - 90 * 864e5).toISOString(),
+    });
+
+    // The link lands between the sweep's select and its update: it is queued
+    // on the (single) SQLite connection the moment the select is issued.
+    let link = null;
+    const onQuery = (q) => {
+      if (!link && /^select/i.test(q.sql) && q.sql.includes('reviewed_at')) {
+        // .then() starts it now; a knex builder is lazy until then.
+        link = db('customer_documents').where({ id }).update({ contract_id: contractId }).then(() => {});
+      }
+    };
+    db.on('query', onQuery);
+    try {
+      await runCustomerDocumentRetention(Date.now());
+    } finally {
+      db.removeListener('query', onQuery);
+    }
+    await link;
+    const after = await db('customer_documents').where({ id }).first();
+    expect(Number(after.contract_id)).toBe(Number(contractId));
+    expect(after.deleted_at).toBeFalsy();
+
+    await db('customer_documents').where({ id }).update({ contract_id: null, deleted_at: new Date().toISOString() });
+    await db('contracts').where({ id: contractId }).del();
+  });
+
+  it('purging keeps the bytes of a row linked to a contract since the sweep read it', async () => {
+    const customerDocumentsService = require('../../src/services/customerDocumentsService');
+    const contractId = idOf(await db('contracts').insert({
+      contract_number: `K-PURGE-${Date.now()}`, customer_account_id: customerA, title: 'Purge race',
+      status: 'draft', language: 'de', issue_date: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString(),
+    }).returning('id'));
+    const up = await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents`))
+      .attach('file', PDF, { filename: 'purge-race.pdf', contentType: 'application/pdf' });
+    expect(up.status).toBe(201);
+    const id = up.body.document.id;
+    await db('customer_documents').where({ id }).update({ deleted_at: new Date(Date.now() - 90 * 864e5).toISOString() });
+    // The snapshot the sweep took, then the link that landed after it.
+    const snapshot = await db('customer_documents').where({ id }).first('id', 'storage_key', 'deleted_at');
+    await db('customer_documents').where({ id }).update({ contract_id: contractId });
+
+    await customerDocumentsService.purgeFiles([snapshot]);
+    expect((await db('customer_documents').where({ id }).first()).purged_at).toBeFalsy();
+    expect(fs.existsSync(path.join(process.env.STORAGE_PATH, snapshot.storage_key))).toBe(true);
+
+    await db('customer_documents').where({ id }).update({ contract_id: null });
     await db('contracts').where({ id: contractId }).del();
   });
 
