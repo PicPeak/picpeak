@@ -5,6 +5,25 @@ All notable changes to PicPeak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.135.0-beta.0](https://github.com/PicPeak/picpeak/compare/v3.134.1-beta.0...v3.135.0-beta.0) (2026-09-21)
+
+
+### Features
+
+* **contracts:** freeze what a contract costs, not only what it says ([#1548](https://github.com/PicPeak/picpeak/issues/1548)) ([e87e979](https://github.com/PicPeak/picpeak/commit/e87e97910da29a169c631a86348d443574862157))
+* **crm:** customer groups with colour chips, filtering and archiving ([#1539](https://github.com/PicPeak/picpeak/issues/1539)) ([760e62d](https://github.com/PicPeak/picpeak/commit/760e62decbdaeca47231911e805f56daab3325dc))
+
+
+### Bug Fixes
+
+* **branding:** name the second save button on the Branding page ([#1551](https://github.com/PicPeak/picpeak/issues/1551)) ([941542b](https://github.com/PicPeak/picpeak/commit/941542b9b4321bd434f5976395bf92eabcd987ac))
+* **contracts:** close the signing gaps found auditing issue 1446 ([#1545](https://github.com/PicPeak/picpeak/issues/1545)) ([559fdc4](https://github.com/PicPeak/picpeak/commit/559fdc4c7b929523d5e9d3b2d19901d6eed74db0))
+* **documents:** close the gaps the issue 1444 audit found in what shipped ([#1549](https://github.com/PicPeak/picpeak/issues/1549)) ([5048813](https://github.com/PicPeak/picpeak/commit/5048813512d6c754415dd78f13b1b034f51865cf))
+* **gallery:** stop lightbox pinch-zoom flickering in touchscreen Safari ([#1542](https://github.com/PicPeak/picpeak/issues/1542)) ([6d2e842](https://github.com/PicPeak/picpeak/commit/6d2e842274cddc87a2986098284d51867e9a0b49))
+* **security:** close the IPv6 rate-limit bypass and stop answering scanner probes with the SPA shell ([#1554](https://github.com/PicPeak/picpeak/issues/1554)) ([2dbc2b6](https://github.com/PicPeak/picpeak/commit/2dbc2b69206cd701ab669ffcba0f56791d6ef4af))
+* **transfers:** keep files picked in the create dialog ([#1543](https://github.com/PicPeak/picpeak/issues/1543)) ([1e276fe](https://github.com/PicPeak/picpeak/commit/1e276fe6324baaf0a1c6449496447ea671043055))
+* **video:** let the admin regenerate button repair video thumbnails ([#1557](https://github.com/PicPeak/picpeak/issues/1557)) ([2260e55](https://github.com/PicPeak/picpeak/commit/2260e55d36ce782eac362a1d81c5a53a127d5660))
+
 ## [3.134.1-beta.0](https://github.com/PicPeak/picpeak/compare/v3.134.0-beta.0...v3.134.1-beta.0) (2026-09-20)
 
 
