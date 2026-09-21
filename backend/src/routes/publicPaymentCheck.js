@@ -18,6 +18,7 @@
 const express = require('express');
 const { body, param } = require('express-validator');
 const rateLimit = require('express-rate-limit');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const invoiceService = require('../services/invoiceService');
 
@@ -25,10 +26,10 @@ const router = express.Router();
 
 // 30 reads / minute / IP; 10 records / minute / IP.
 const previewLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+  windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
 });
 const recordLimiter = rateLimit({
-  windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false,
+  windowMs: 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, keyGenerator: rateLimitKey,
 });
 
 router.get(

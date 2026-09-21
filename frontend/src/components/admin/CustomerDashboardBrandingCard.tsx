@@ -157,7 +157,11 @@ export const CustomerDashboardBrandingCard: React.FC = () => {
           disabled={!isDirty || saveMutation.isPending}
           onClick={() => saveMutation.mutate()}
         >
-          {t('settings.customerSurface.save', 'Save changes')}
+          {/* Names what it saves. "Save changes" collided with the page's own
+              header button: two buttons on /admin/branding with the same
+              accessible name, which a screen reader reads out identically and
+              which no selector can tell apart. */}
+          {t('settings.customerSurface.save', 'Save header settings')}
         </Button>
       </div>
     </Card>

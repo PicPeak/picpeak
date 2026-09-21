@@ -160,4 +160,19 @@ describe('videos stay playable under enhanced/maximum protection (#1370)', () =>
       expect((await photoPayload(imageId)).url).toBe(`/api/gallery/${SLUG}/photo/${imageId}`);
     });
   });
+
+  // Both rows here were seeded with no thumbnail_path, which is the state
+  // every video uploaded before the pipeline gained its placeholder fallback
+  // is still in.
+  describe('a video with no stored thumbnail (#1414)', () => {
+    test('is still offered the thumbnail route, which regenerates it lazily', async () => {
+      const photo = await photoPayload(videoId);
+      expect(photo.thumbnail_url).toBe(`/api/gallery/${SLUG}/thumbnail/${videoId}`);
+    });
+
+    test('while a still image keeps falling back to its original', async () => {
+      const photo = await photoPayload(imageId);
+      expect(photo.thumbnail_url).toBeNull();
+    });
+  });
 });

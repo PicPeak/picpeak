@@ -3009,7 +3009,7 @@
       "showLogoHint": "Verwendet das oben konfigurierte Branding-Logo.",
       "showCompanyName": "Firmennamen in der Kundenkopfzeile anzeigen",
       "showCompanyNameHint": "Ausblenden, wenn Ihr Logo den Firmennamen bereits enthält.",
-      "save": "Änderungen speichern",
+      "save": "Kopfzeilen-Einstellungen speichern",
       "saved": "Branding des Kundendashboards gespeichert",
       "error": "Einstellungen konnten nicht gespeichert werden"
     },
@@ -5702,7 +5702,8 @@
     "loadInvitationsError": "Einladungen konnten nicht geladen werden",
     "tabs": {
       "customers": "Kunden",
-      "invitations": "Einladungen"
+      "invitations": "Einladungen",
+      "groups": "Gruppen"
     },
     "search": {
       "placeholder": "Nach E-Mail, Name oder Firma suchen"
@@ -5713,7 +5714,8 @@
       "company": "Firma",
       "eventCount": "Events",
       "lastLogin": "Letzte Anmeldung",
-      "status": "Status"
+      "status": "Status",
+      "groups": "Gruppen"
     },
     "status": {
       "active": "Aktiv",
@@ -5808,7 +5810,8 @@
       "rebillsSection": "Weiterverrechnungen & Durchlaufposten",
       "noRebills": "Noch keine weiterverrechneten oder durchlaufenden Lieferantenrechnungen für diesen Kunden.",
       "companyName": "Firmenname",
-      "marketingSection": "Newsletter-Einwilligung"
+      "marketingSection": "Newsletter-Einwilligung",
+      "groupsSection": "Gruppen"
     },
     "billing": {
       "section": "Abrechnungsrhythmus",
@@ -5926,6 +5929,51 @@
       "linkSaved": "Verknüpfungen gespeichert.",
       "empty": "Noch keine Dokumente.",
       "loadError": "Dokumente konnten nicht geladen werden."
+    },
+    "groups": {
+      "title": "Gruppen",
+      "intro": "Ordne Kunden in Gruppen. Ein Kunde kann in mehreren sein, und die Übersicht lässt sich danach filtern.",
+      "new": "Neue Gruppe",
+      "name": "Name",
+      "description": "Beschreibung",
+      "color": "Farbe",
+      "customColor": "Eigene Farbe",
+      "empty": "Noch keine Gruppen. Lege eine an, um deine Kunden zu ordnen.",
+      "emptyCatalogue": "Noch keine Gruppen. Lege eine unter Kunden → Gruppen an.",
+      "emptyFiltered": "Keine Kunden in den gewählten Gruppen.",
+      "palette": {
+        "blue": "Blau",
+        "green": "Grün",
+        "amber": "Bernstein",
+        "red": "Rot",
+        "violet": "Violett",
+        "teal": "Petrol",
+        "pink": "Pink",
+        "grey": "Grau"
+      },
+      "memberCount_one": "{{count}} Kunde",
+      "memberCount_other": "{{count}} Kunden",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten",
+      "archive": "Archivieren",
+      "archived": "Archiviert",
+      "restore": "Wiederherstellen",
+      "delete": "Löschen",
+      "deleteBlocked": "In dieser Gruppe sind noch Kunden. Archiviere sie, oder nimm sie zuerst bei diesen Kunden heraus.",
+      "confirmDelete": "„{{name}}“ löschen? Es wird kein Kunde entfernt.",
+      "created": "Gruppe angelegt",
+      "saved": "Gruppe gespeichert",
+      "deleted": "Gruppe gelöscht",
+      "reordered": "Reihenfolge gespeichert",
+      "nameRequired": "Eine Gruppe braucht einen Namen",
+      "loadError": "Die Gruppen konnten nicht geladen werden. Lade die Seite neu.",
+      "filterLabel": "Nach Gruppe filtern",
+      "clearFilter": "Zurücksetzen",
+      "none": "—",
+      "more": "+{{count}}",
+      "change": "Gruppen ändern",
+      "noneAssigned": "Dieser Kunde ist in keiner Gruppe.",
+      "assignSaved": "Gruppen gespeichert"
     }
   },
   "clients": {

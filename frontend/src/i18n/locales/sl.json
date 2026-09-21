@@ -1196,7 +1196,7 @@
       "showLogoHint": "Uporabi isti logotip blagovne znamke, nastavljen zgoraj.",
       "showCompanyName": "Prikaži ime podjetja v glavi stranke",
       "showCompanyNameHint": "Skrijte, če logotip že vsebuje ime podjetja.",
-      "save": "Shrani spremembe",
+      "save": "Shrani nastavitve glave",
       "saved": "Blagovna znamka nadzorne plošče stranke je shranjena",
       "error": "Nastavitev ni bilo mogoče shraniti"
     },

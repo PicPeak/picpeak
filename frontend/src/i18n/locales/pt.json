@@ -1202,7 +1202,7 @@
       "showLogoHint": "Usa o mesmo logo de branding configurado acima.",
       "showCompanyName": "Mostrar nome da empresa no cabeçalho do cliente",
       "showCompanyNameHint": "Oculte se seu logo já inclui o nome da empresa.",
-      "save": "Salvar alterações",
+      "save": "Salvar configurações do cabeçalho",
       "saved": "Branding do painel do cliente salvo",
       "error": "Não foi possível salvar as configurações"
     }
