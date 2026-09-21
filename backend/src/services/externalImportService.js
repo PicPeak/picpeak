@@ -24,6 +24,7 @@ const logger = require('../utils/logger');
 const { resolveExternalPath } = require('./externalMediaService');
 const { generateThumbnail, extractCaptureDate, orientedDimensions } = require('./imageProcessor');
 const { isUniqueViolation } = require('../utils/dbErrors');
+const { resolveCredit } = require('./photoCredit');
 const jobState = require('./maintenanceJobState');
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
@@ -431,6 +432,9 @@ async function importExternalFolder({
           logger.warn(`Could not extract capture date for ${f.rel}: ${dateErr.message}`);
         }
 
+        // Credit from EXIF (#1561), same best-effort read as the date above.
+        const credit = await resolveCredit({ localPath: f.full });
+
         let inserted;
         try {
           inserted = await db('photos')
@@ -455,7 +459,8 @@ async function importExternalFolder({
               // to the sqlite3 binding land as the literal string
               // "[object Object]" (see CLAUDE.md). Strings round-trip on both
               // engines.
-              captured_at: capturedAt ? capturedAt.toISOString() : null
+              captured_at: capturedAt ? capturedAt.toISOString() : null,
+              ...credit
             })
             .returning('id');
         } catch (insertErr) {

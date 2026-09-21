@@ -3,13 +3,15 @@ const { db } = require('../../database/db');
 
 const router = express.Router();
 const { verifyGalleryAccess, denySlideshowToken } = require('../../middleware/gallery');
+const { resolveGuest } = require('../../middleware/guestAuth');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const logger = require('../../utils/logger');
 const { errorResponse } = require('../../utils/routeHelpers');
 const { photoCapOf, isPhotoCapReached, photoCapError } = require('../../services/photoCap');
 const categoryScope = require('../../utils/categoryScope');
+const { guestNameModeOf, guestCreditFields } = require('../../services/photoCredit');
 
-router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, async (req, res) => {
+router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, resolveGuest, async (req, res) => {
   try {
     const eventId = parseInt(req.params.eventId);
 
@@ -22,6 +24,22 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, async (
     if (!req.event.allow_user_uploads) {
       return res.status(403).json({ error: 'User uploads are not allowed for this event' });
     }
+
+    // Uploader name (#1561). The guest identity is the gallery_guests row the
+    // x-guest-token names — the same identity feedback uses, so one guest has
+    // one name across likes, comments and uploads. A token issued for another
+    // gallery names nobody here. `off` records nothing, whatever the request
+    // carries; `required` refuses a nameless upload before multer writes a
+    // byte.
+    const nameMode = guestNameModeOf(req.event);
+    const uploader = req.guest && Number(req.guest.eventId) === Number(req.event.id) ? req.guest : null;
+    if (nameMode === 'required' && !uploader) {
+      return res.status(400).json({
+        error: 'Please enter your name before uploading',
+        code: 'UPLOADER_NAME_REQUIRED',
+      });
+    }
+    const credit = nameMode === 'off' ? {} : guestCreditFields(uploader);
 
     // The event's photo cap applies to guests too. Refused here before multer
     // writes anything, and checked again as each photo row is inserted.
@@ -163,6 +181,8 @@ router.post('/:eventId/upload', verifyGalleryAccess, denySlideshowToken, async (
           photoType: 'individual',
           categoryId: numericCategoryId,
           photoCap,
+          uploadedBy: 'guest',
+          credit,
         });
 
         // Every file refused for the cap: say so as a refusal, not a 202.

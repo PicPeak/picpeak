@@ -8,8 +8,10 @@ const { verifyGalleryAccess } = require('../middleware/gallery');
 const { resolveGuest, requireGuest, signGuestToken } = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
 const guestRecovery = require('../services/guestRecoveryService');
+const { sanitizeName } = require('../utils/personName');
+const { parseBooleanInput } = require('../utils/parsers');
+const { guestNameModeOf, clearGuestCredits } = require('../services/photoCredit');
 
-const MAX_NAME_LEN = 100;
 const MAX_EMAIL_LEN = 255;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -29,18 +31,6 @@ function checkRegistrationRate(ip) {
   entry.count += 1;
   registrationAttempts.set(ip, entry);
   return entry.count <= REGISTRATION_MAX;
-}
-
-function sanitizeName(value) {
-  if (typeof value !== 'string') return '';
-  // Strip HTML/control chars, collapse whitespace.
-  const cleaned = value
-    .replace(/[<>&"']/g, '')
-    // eslint-disable-next-line no-control-regex -- intentional: strips control chars from guest input
-    .replace(/[\u0000-\u001F\u007F]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return cleaned.slice(0, MAX_NAME_LEN);
 }
 
 function sanitizeEmail(value) {
@@ -66,8 +56,11 @@ router.post('/:slug/guest', verifyGalleryAccess, async (req, res) => {
     const event = req.event;
     const settings = await feedbackService.getEventFeedbackSettings(event.id);
 
-    // Guest registration is only meaningful when feedback is enabled.
-    if (!settings.feedback_enabled) {
+    // A guest identity backs feedback, and — since #1561 — the uploader name
+    // on guest uploads. Registration is refused only when neither applies.
+    const uploaderNamesOn = parseBooleanInput(event.allow_user_uploads, false)
+      && guestNameModeOf(event) !== 'off';
+    if (!settings.feedback_enabled && !uploaderNamesOn) {
       return res.status(403).json({ error: 'Feedback is not enabled for this gallery' });
     }
 
@@ -80,7 +73,9 @@ router.post('/:slug/guest', verifyGalleryAccess, async (req, res) => {
     if (email && !EMAIL_REGEX.test(email)) {
       return res.status(400).json({ error: 'Invalid email format', field: 'email' });
     }
-    if (settings.require_name_email && !email) {
+    // require_name_email is a feedback setting; with feedback off the identity
+    // exists only for the uploader name, which asks for no address.
+    if (settings.feedback_enabled && settings.require_name_email && !email) {
       return res.status(400).json({ error: 'Email is required', field: 'email' });
     }
 
@@ -172,6 +167,8 @@ router.delete('/:slug/guest/me', verifyGalleryAccess, resolveGuest, requireGuest
     }
 
     await feedbackService.anonymizeGuestFeedback(req.guest.id);
+    // Their name on the photos they uploaded goes with them (#1561).
+    await clearGuestCredits(req.guest.id);
 
     await db('gallery_guests')
       .where({ id: req.guest.id })

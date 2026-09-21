@@ -472,6 +472,9 @@ router.post('/:eventId/upload', adminAuth, requirePermission('photos.upload'), r
             mime_type: file.mimetype,
             processing_status: 'pending',
             upload_id: uploadId,
+            // Explicit rather than the column default (#1561); the worker
+            // reads the EXIF credit for admin rows.
+            uploaded_by: 'admin',
           })
           .returning('id');
         const photoId = inserted[0]?.id || inserted[0];
