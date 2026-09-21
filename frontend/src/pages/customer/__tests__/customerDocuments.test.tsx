@@ -134,6 +134,41 @@ describe('CustomerDocumentsPage', () => {
     expect(screen.getByRole('button', { name: /Try again/ })).toBeEnabled();
   });
 
+  it('names the new refusals the deeper PDF check produces (#1444)', async () => {
+    // The check behind the upload got stricter (plan slice 1d). Each refusal
+    // has to say what the customer can do about it, not fall back to
+    // "could not be uploaded".
+    for (const [code, expected] of [
+      ['PDF_ACTIVE_CONTENT', /contains active content[\s\S]*print it to PDF/],
+      ['PDF_TOO_COMPLEX', /could not be checked[\s\S]*print it to PDF/],
+      ['PDF_TOO_MANY_PAGES', /has too many pages/],
+    ] as const) {
+      uploadSpy.mockRejectedValueOnce({ response: { status: 400, data: { code } } });
+      const view = renderPage();
+      const input = await screen.findByLabelText('PDF file');
+      await userEvent.upload(input, new File(['%PDF-1.4'], 'scan.pdf', { type: 'application/pdf' }));
+      await userEvent.click(screen.getByRole('button', { name: /Upload/ }));
+      await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(expected));
+      expect(screen.getByRole('status')).toHaveTextContent('scan.pdf');
+      view.unmount();
+    }
+  });
+
+  it('styles every status chip through the theme-aware class, never a fixed light colour', async () => {
+    // The chips are the page's only colour-carrying elements, and the portal
+    // themes through CSS tokens rather than the `dark` class the admin shell
+    // toggles on <html> — so a Tailwind `bg-green-100` (or even a `dark:`
+    // variant) renders its light value on the portal's dark ground. The
+    // token-derived `.status-chip` classes are what read on both.
+    renderPage();
+    await screen.findByText('signed-contract.pdf');
+    for (const label of ['Awaiting review', 'Available', 'Rejected']) {
+      const chip = screen.getByText(label).className;
+      expect(chip).toMatch(/\bstatus-chip\b/);
+      expect(chip).not.toMatch(/\bbg-(green|amber|red)-\d{2,3}\b/);
+    }
+  });
+
   it('confirms a received upload as awaiting review', async () => {
     renderPage();
     const input = await screen.findByLabelText('PDF file');

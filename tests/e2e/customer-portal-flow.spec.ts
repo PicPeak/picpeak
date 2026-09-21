@@ -52,16 +52,44 @@ async function adminLogin(page: Page): Promise<string> {
   return token as string;
 }
 
-async function setCustomerPortalEnabled(page: Page, adminToken: string, enabled: boolean) {
+async function setFlags(page: Page, adminToken: string, flags: Record<string, boolean>) {
   const res = await page.request.put('/api/admin/feature-flags', {
     headers: {
       Authorization: `Bearer ${adminToken}`,
       'Content-Type': 'application/json',
     },
-    data: { customerPortal: enabled },
+    data: flags,
     failOnStatusCode: false,
   });
   expect(res.ok(), `feature flag update failed: ${res.status()} ${await res.text()}`).toBeTruthy();
+}
+
+async function setCustomerPortalEnabled(page: Page, adminToken: string, enabled: boolean) {
+  await setFlags(page, adminToken, { customerPortal: enabled });
+}
+
+/**
+ * A real, parseable PDF. The upload is inspected by utils/pdfValidation
+ * (#1444), which loads the document rather than sniffing its first bytes —
+ * a hand-written `%PDF-` stub is refused, correctly.
+ */
+function onePagePdf(): Buffer {
+  const objects = [
+    '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj',
+    '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj',
+    '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Resources<<>>>>endobj',
+  ];
+  let body = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  for (const obj of objects) {
+    offsets.push(body.length);
+    body += `${obj}\n`;
+  }
+  const xrefAt = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const off of offsets) body += `${String(off).padStart(10, '0')} 00000 n \n`;
+  body += `trailer<</Size ${objects.length + 1}/Root 1 0 R>>\nstartxref\n${xrefAt}\n%%EOF\n`;
+  return Buffer.from(body, 'latin1');
 }
 
 async function createEventWithPhoto(page: Page, adminToken: string) {
@@ -238,6 +266,83 @@ test.describe('Customer portal — login + gallery handoff', () => {
       // known state. Errors are swallowed — leftover state from a failed
       // run is something to investigate manually.
       await setCustomerPortalEnabled(page, adminToken, false).catch(() => { /* noop */ });
+    }
+  });
+
+  /**
+   * Documents, end to end (#1444 plan slice 11).
+   *
+   * The jest suite pins each step against the routers; this pins that the
+   * steps join up in a browser, through the real gates: an upload is not
+   * downloadable until an admin has reviewed it, and once reviewed it is.
+   */
+  test('a customer uploads a document, waits for review, then downloads it', async ({ page }) => {
+    const adminToken = await adminLogin(page);
+    await setFlags(page, adminToken, { customerPortal: true, documents: true });
+    const { email } = await inviteAndAcceptCustomer(page, adminToken);
+    const customerId = await getCustomerIdByEmail(page, adminToken, email);
+
+    try {
+      await page.context().clearCookies();
+      await page.goto('/customer/login');
+      await page.getByLabel(/Email/i).fill(email);
+      await page.getByRole('textbox', { name: 'Password' }).fill(CUSTOMER_PASSWORD);
+      await page.getByRole('button', { name: /Sign in/i }).click();
+      // Not `toHaveURL(/\/customer\//)`: /customer/login matches that too, so
+      // a failed sign-in would sail past it and fail later somewhere vaguer.
+      await page.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 20000 });
+
+      await page.goto('/customer/documents');
+      await page.getByLabel(/PDF file|PDF-Datei/i).setInputFiles({
+        name: 'signed-contract.pdf',
+        mimeType: 'application/pdf',
+        buffer: onePagePdf(),
+      });
+      await page.getByRole('button', { name: /^Upload|Hochladen/i }).click();
+
+      // Received, and explicitly NOT available: the review is the gate.
+      // `exact`, because the success message names the file too — and the
+      // portal may be in German here, since a fresh invite leaves the
+      // customer's preferred language unset.
+      await expect(page.getByText('signed-contract.pdf', { exact: true })).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText(/Awaiting review|Wird geprüft/i)).toBeVisible();
+      await expect(page.getByRole('button', { name: /Download signed-contract\.pdf/i })).toHaveCount(0);
+
+      // The admin finds it and marks it clean.
+      const list = await page.request.get(`/api/admin/customers/${customerId}/documents`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        failOnStatusCode: false,
+      });
+      expect(list.ok(), `admin document list failed: ${list.status()}`).toBeTruthy();
+      const body = await list.json();
+      const documents = body.data?.documents ?? body.documents;
+      const uploaded = documents.find((d: any) => d.name === 'signed-contract.pdf');
+      expect(uploaded, 'the upload should be on the admin list').toBeTruthy();
+      expect(uploaded.status).toBe('pending');
+
+      const review = await page.request.post(
+        `/api/admin/customers/${customerId}/documents/${uploaded.id}/review`,
+        {
+          headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+          data: { status: 'clean' },
+          failOnStatusCode: false,
+        },
+      );
+      expect(review.ok(), `review failed: ${review.status()} ${await review.text()}`).toBeTruthy();
+
+      // …and now the customer can take it back, as an attachment.
+      await page.reload();
+      await expect(page.getByText(/Available|Verfügbar/i)).toBeVisible({ timeout: 15000 });
+      const download = await page.request.get(`/api/customer/documents/${uploaded.id}/download`, {
+        failOnStatusCode: false,
+      });
+      expect(download.status()).toBe(200);
+      expect(download.headers()['content-disposition']).toMatch(/^attachment;/);
+      expect(download.headers()['x-content-type-options']).toBe('nosniff');
+      expect((await download.body()).subarray(0, 5).toString()).toBe('%PDF-');
+    } finally {
+      await setFlags(page, adminToken, { customerPortal: false, documents: false })
+        .catch(() => { /* noop */ });
     }
   });
 });

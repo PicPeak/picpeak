@@ -57,10 +57,15 @@ export function uploadErrorMessage(t: TFunction, code: string | undefined, name:
   }
 }
 
+// The chips used hard-coded light Tailwind colours, which left the one thing
+// this page exists to communicate unreadable on the portal's dark ground.
+// `dark:` variants do NOT fix it here — the portal themes through tokens
+// rather than the class the admin shell toggles on <html> — so the chip
+// styles are token-derived in index.css instead.
 const STATUS_STYLE: Record<CustomerDocument['status'], string> = {
-  clean: 'bg-green-100 text-green-800',
-  pending: 'bg-amber-100 text-amber-800',
-  rejected: 'bg-red-100 text-red-800',
+  clean: 'status-chip status-chip-success',
+  pending: 'status-chip status-chip-warning',
+  rejected: 'status-chip status-chip-danger',
 };
 
 function statusLabel(t: TFunction, status: CustomerDocument['status']): string {
