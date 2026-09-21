@@ -51,7 +51,12 @@ async function runCustomerDocumentRetention(now = Date.now()) {
   const expiredRejections = rejected.filter((r) => isDue(r.reviewed_at, cutoff)).map((r) => r.id);
   if (expiredRejections.length > 0) {
     const stamp = new Date(now).toISOString();
+    // contract_id is asserted again here, not only in the select: a link
+    // made between the two would otherwise have this soft-delete a
+    // contract-linked document.
     await db('customer_documents').whereIn('id', expiredRejections)
+      .whereNull('contract_id')
+      .whereNull('deleted_at')
       .update({ deleted_at: stamp, updated_at: stamp });
     logger.info(`Customer documents: deleted ${expiredRejections.length} rejected file(s) after ${days} days`);
   }
