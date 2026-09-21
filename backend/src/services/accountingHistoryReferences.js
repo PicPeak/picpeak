@@ -33,7 +33,13 @@ module.exports = {
     nullRef('contracts', 'source_quote_id'),
   ],
   contracts: [
-    cascade('contract_block_inclusions', 'contract_id'), nullRef('invoices', 'source_contract_id'),
+    cascade('contract_block_inclusions', 'contract_id'),
+    // Both became audited with #1445: a deleted contract takes its free text
+    // and its attachment inclusions with it, and that is a change to audited
+    // rows, so the recorder has to see it.
+    cascade('contract_text_sections', 'contract_id'),
+    cascade('contract_attachment_inclusions', 'contract_id'),
+    nullRef('invoices', 'source_contract_id'),
     nullRef('quotes', 'converted_contract_id'),
   ],
   inbound_documents: [nullRef('expenses', 'inbound_document_id'), nullRef('inbound_documents', 'duplicate_of_id')],

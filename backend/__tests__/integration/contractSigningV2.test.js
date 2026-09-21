@@ -675,3 +675,166 @@ test('an invitation whose email fails leaves the signer invitable', async () => 
   expect(resent.status).toBe(200);
   expect((await db('contract_signers').where({ id: rows[0].id }).first()).status).toBe('invited');
 });
+
+// ---------------------------------------------------------------------
+// Slice 1 of the #1446 plan — fixes to shipped behaviour
+// ---------------------------------------------------------------------
+
+test('a co-signer never sees the account holder\'s email or company', async () => {
+  // buildPublicView's `recipient` block is the account holder's. Handing it
+  // to every verified signer gives a second signer the address their
+  // co-signer's login codes go to — one signer's authentication data,
+  // reaching another.
+  await db('customer_accounts').where({ id: customerId }).update({ company_name: 'Muster Fotografie AG' });
+  const id = await newContract();
+  await ok(request(contractsApp).put(`/api/admin/contracts/${id}/signers`).set(auth).send({
+    order: 'parallel',
+    signers: [{ name: 'Anna Muster', email: customerEmail }, { name: 'Ben Muster', email: 'ben@example.com' }],
+  }));
+  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+
+  const view = async (session) => (await ok(request(signingApp).get('/api/public/contract-signing/session')
+    .set('X-Signing-Session', session))).contract;
+
+  const co = await view(await verifiedSession(linkToken(await lastMail('contract_sent', 'ben@example.com')), 'ben@example.com'));
+  expect(co.recipient.email).toBeNull();
+  expect(co.recipient.companyName).toBeNull();
+  expect(JSON.stringify(co.recipient)).not.toContain(customerEmail);
+  expect(JSON.stringify(co.recipient)).not.toContain('Muster Fotografie AG');
+  // The display name stays: it is printed in the contract they are reading.
+  expect(co.recipient.displayName).toBeTruthy();
+  // Their own address is still theirs to see.
+  expect(co.signing.email).toBe('ben@example.com');
+
+  // The account holder still sees their own block whole.
+  const holder = await view(await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail));
+  expect(holder.recipient.email).toBe(customerEmail);
+  expect(holder.recipient.companyName).toBe('Muster Fotografie AG');
+  await db('customer_accounts').where({ id: customerId }).update({ company_name: null });
+});
+
+test('an admin\'s paper copy has to say which signers it carries', async () => {
+  // The upload completes the contract for everyone, and the server cannot
+  // read whose signatures the paper bears. The customer's own upload is
+  // refused outright on a multi-signer contract; the admin keeps the
+  // capability but has to state what the copy covers, on the record.
+  const id = await newContract();
+  await ok(request(contractsApp).put(`/api/admin/contracts/${id}/signers`).set(auth).send({
+    order: 'parallel',
+    signers: [{ name: 'Anna Muster', email: customerEmail }, { name: 'Ben Muster', email: 'ben@example.com' }],
+  }));
+  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+  const rows = await db('contract_signers').where({ contract_id: id, role: 'customer' }).orderBy('position');
+
+  const coverage = await ok(request(contractsApp).get(`/api/admin/contracts/${id}/paper-signature-coverage`).set(auth));
+  expect(coverage.signers.map((s) => s.id)).toEqual(rows.map((r) => r.id));
+
+  const upload = (covers) => {
+    const req = request(contractsApp).post(`/api/admin/contracts/${id}/upload-signed-pdf`).set(auth);
+    if (covers !== undefined) req.field('coversSignerIds', JSON.stringify(covers));
+    return req.attach('file', Buffer.from('%PDF-1.4\n%%EOF\n'), { filename: 'paper.pdf', contentType: 'application/pdf' });
+  };
+
+  const none = await upload(undefined);
+  expect(none.status).toBe(400);
+  expect(none.body.code).toBe('SIGNERS_NOT_COVERED');
+  const partial = await upload([rows[0].id]);
+  expect(partial.status).toBe(400);
+  expect(partial.body.code).toBe('SIGNERS_NOT_COVERED');
+  expect(partial.body.details.missingSignerIds).toEqual([rows[1].id]);
+  // A refused upload leaves the contract out for signature and writes no file.
+  expect((await db('contracts').where({ id }).first()).status).toBe('sent');
+
+  const foreign = await upload([rows[0].id, rows[1].id + 9999]);
+  expect(foreign.status).toBe(400);
+  expect(foreign.body.code).toBe('SIGNER_NOT_FOUND');
+
+  const all = await upload([rows[0].id, rows[1].id]);
+  expect(all.status).toBe(200);
+  expect((await db('contracts').where({ id }).first()).status).toBe('fully_signed');
+  const event = await db('contract_signing_events').where({ contract_id: id, event_type: 'wet_upload' }).first();
+  const payload = parsed(event.payload);
+  expect(payload.coversSignerIds).toEqual([rows[0].id, rows[1].id]);
+  expect(payload.uploadedByAdminId).toBe(adminId);
+  // Ids only — no names, no addresses.
+  expect(JSON.stringify(payload)).not.toContain('Muster');
+  expect(JSON.stringify(payload)).not.toContain('@');
+});
+
+test('a paper copy is refused once any signer has signed in the browser', async () => {
+  // The upload replaces the signed PDF and completes the contract, so an
+  // electronic signature already on the record would be discarded without
+  // the log saying so. The admin counter-signs in the browser instead.
+  const uploadPaper = (id, covers) => request(contractsApp).post(`/api/admin/contracts/${id}/upload-signed-pdf`).set(auth)
+    .field('coversSignerIds', JSON.stringify(covers))
+    .attach('file', Buffer.from('%PDF-1.4\n%%EOF\n'), { filename: 'paper.pdf', contentType: 'application/pdf' });
+
+  // One of two parallel signers has signed: the contract is still `sent`.
+  const partialId = await newContract();
+  await ok(request(contractsApp).put(`/api/admin/contracts/${partialId}/signers`).set(auth).send({
+    order: 'parallel',
+    signers: [{ name: 'Anna Muster', email: customerEmail }, { name: 'Ben Muster', email: 'ben@example.com' }],
+  }));
+  await ok(request(contractsApp).post(`/api/admin/contracts/${partialId}/send`).set(auth));
+  const annaSession = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+  await ok(sign(annaSession, { name: 'Anna Muster', mode: 'typed' }));
+  const before = await db('contracts').where({ id: partialId }).first();
+  const rows = await db('contract_signers').where({ contract_id: partialId, role: 'customer' }).orderBy('position');
+
+  const coverage = await ok(request(contractsApp).get(`/api/admin/contracts/${partialId}/paper-signature-coverage`).set(auth));
+  expect(coverage.electronicSignaturePresent).toBe(true);
+  const refused = await uploadPaper(partialId, [rows[1].id]);
+  expect(refused.status).toBe(409);
+  expect(refused.body.code).toBe('ELECTRONIC_SIGNATURE_PRESENT');
+  const after = await db('contracts').where({ id: partialId }).first();
+  expect(after.status).toBe('sent');
+  expect(after.signed_pdf_path).toBe(before.signed_pdf_path);
+  expect(await db('contract_signing_events').where({ contract_id: partialId, event_type: 'wet_upload' }).first()).toBeUndefined();
+  expect((await db('contract_signers').where({ id: rows[0].id }).first()).status).toBe('signed');
+
+  // Every signer has signed and only the counter-signature is missing.
+  const signedId = await newContract();
+  await ok(request(contractsApp).post(`/api/admin/contracts/${signedId}/send`).set(auth));
+  const session = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+  await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+  const allSigned = await ok(request(contractsApp).get(`/api/admin/contracts/${signedId}/paper-signature-coverage`).set(auth));
+  expect(allSigned).toEqual({ signers: [], electronicSignaturePresent: true });
+  const res = await uploadPaper(signedId, []);
+  expect(res.status).toBe(409);
+  expect(res.body.code).toBe('ELECTRONIC_SIGNATURE_PRESENT');
+  expect((await db('contracts').where({ id: signedId }).first()).status).toBe('signed_by_customer');
+});
+
+test('the coverage says no electronic signature is present before anyone signs', async () => {
+  const id = await newContract();
+  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+  const coverage = await ok(request(contractsApp).get(`/api/admin/contracts/${id}/paper-signature-coverage`).set(auth));
+  expect(coverage.electronicSignaturePresent).toBe(false);
+  expect(coverage.signers).toHaveLength(1);
+});
+
+test('the signing certificate can be downloaded once it exists', async () => {
+  const id = await newContract();
+  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+
+  // Nothing to download before the contract is complete — and that is a
+  // 404 with its own code, not an empty PDF.
+  const early = await request(contractsApp).get(`/api/admin/contracts/${id}/certificate`).set(auth);
+  expect(early.status).toBe(404);
+  expect(early.body.code).toBe('CERTIFICATE_MISSING');
+
+  const session = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+  await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+  await ok(request(contractsApp).post(`/api/admin/contracts/${id}/countersign`).set(auth).send({ name: 'Studio Admin', mode: 'typed' }));
+
+  const res = await request(contractsApp).get(`/api/admin/contracts/${id}/certificate`).set(auth);
+  expect(res.status).toBe(200);
+  expect(res.headers['content-type']).toBe('application/pdf');
+  expect(res.headers['x-content-type-options']).toBe('nosniff');
+  expect(res.headers['content-disposition']).toMatch(/^attachment;/);
+  expect(res.body.slice(0, 5).toString()).toBe('%PDF-');
+  // The bytes are the artifact that was recorded, not a fresh render.
+  const stored = await db('generated_documents')
+    .where({ doc_type: 'contract', doc_id: id, kind: 'audit' }).orderBy('id', 'desc').first();
+  expect(sha256(res.body)).toBe(sha256(fs.readFileSync(stored.path)));
+});

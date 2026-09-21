@@ -13,7 +13,7 @@ import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { ScrollText, PenLine, Download } from 'lucide-react';
+import { ScrollText, PenLine, Download, ShieldCheck } from 'lucide-react';
 import { customerService, type CustomerContract } from '../../services/customer.service';
 import { PORTAL_SIGNING_SCOPE, signingSessionStore } from '../../services/publicContractSigning.service';
 import { Card, Loading } from '../../components/common';
@@ -187,9 +187,11 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
     }
   }
 
-  async function handleDownload() {
-    // Sync-open BEFORE await so the popup-blocker accepts the gesture
-    // — same pattern bills/quotes use.
+  /**
+   * Sync-open BEFORE the await so the popup-blocker accepts the gesture
+   * — same pattern bills/quotes use.
+   */
+  async function openBlob(load: () => Promise<string>) {
     const w = window.open('about:blank', '_blank');
     if (!w) {
       toast.error(t('customer.contracts.popupBlocked',
@@ -197,13 +199,15 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
       return;
     }
     try {
-      const url = await customerService.contractPdfUrl(c.id);
-      w.location.href = url;
+      w.location.href = await load();
     } catch (err: any) {
       w.close();
       toast.error(err?.response?.data?.error || 'Download failed');
     }
   }
+
+  const handleDownload = () => openBlob(() => customerService.contractPdfUrl(c.id));
+  const handleCertificate = () => openBlob(() => customerService.contractCertificateUrl(c.id));
 
   // Token-derived, because `dark:` does not fire on the customer surface
   // (see .status-chip in index.css). These were fixed light colours, so on a
@@ -278,6 +282,24 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
             {c.hasSignedPdf
               ? t('customer.contracts.downloadSigned', 'Download signed PDF')
               : t('customer.contracts.download', 'Download PDF')}
+          </button>
+        )}
+        {/* The signing certificate (#1446): who signed, when, from where,
+            and the hashes of the exact document. It arrived by email at
+            completion; this is the copy that does not get lost. */}
+        {c.hasCertificate && (
+          <button
+            type="button"
+            onClick={handleCertificate}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-sm border"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              borderColor: 'var(--color-surface-border)',
+              color: 'var(--color-text)',
+            }}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            {t('customer.contracts.downloadCertificate', 'Signing certificate')}
           </button>
         )}
       </div>

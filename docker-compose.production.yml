@@ -128,6 +128,12 @@ services:
       - FACE_ML_URL=${FACE_ML_URL:-http://picpeak-ml:8000}
       - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
       - FACE_PROCESSOR_CONCURRENCY=${FACE_PROCESSOR_CONCURRENCY:-}
+      # PICPEAK_EVIDENCE_KEY (#1446) reaches the backend through env_file
+      # above. It encrypts contract signers' names, email addresses and IP
+      # addresses at rest. Unset, a key is generated into
+      # storage/business-docs/keys/evidence.key — that is inside the backup
+      # path, but it is then the only copy of it, so back it up with the
+      # database. See docs/ENVIRONMENT_VARIABLES.md.
     volumes:
       # Defaulted so a .env that simply does not set these still works. Without
       # them compose aborts with "invalid spec: :/app/storage: empty section

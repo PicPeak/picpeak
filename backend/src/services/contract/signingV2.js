@@ -497,11 +497,33 @@ function progress(rows) {
   }));
 }
 
+/**
+ * Is this signer the customer account the contract belongs to?
+ *
+ * `contract_signers` carries no `customer_account_id`, so the email hash is
+ * the link — the same one `portalSigningAccess` matches on when it opens a
+ * session for a signed-in customer.
+ */
+async function isAccountHolder(contract, signer) {
+  if (!signer.email_hash || !contract.customer_account_id) return false;
+  const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first('email');
+  if (!customer || !customer.email) return false;
+  return fieldEncryption.hashEmail(customer.email) === signer.email_hash;
+}
+
 /** The full contract for a verified signer, with where the signing stands. */
 async function sessionView(sessionToken) {
   const { signer, contract, session } = await sessionContext(sessionToken);
   const view = await require('./publicView').buildPublicView(contract.id);
   delete view.signedCustomerIp;
+  // `recipient` is the account holder's block: display name, company and the
+  // address their signing codes are sent to. A second signer is not that
+  // person, and the address a co-signer authenticates with is exactly the
+  // one signer's authentication data that must not reach another. The
+  // display name stays — it is printed in the contract they are reading.
+  if (view.recipient && !(await isAccountHolder(contract, signer))) {
+    view.recipient = { displayName: view.recipient.displayName, companyName: null, email: null };
+  }
   const rows = await signers.listSigners(contract.id);
   const due = signers.signersDue(contract, rows).some((r) => r.id === signer.id);
   const canSign = contract.status === 'sent' && signer.status === 'invited' && due;
@@ -719,14 +741,80 @@ async function decline(sessionToken, { reason } = {}) {
   return { status: 'declined' };
 }
 
+/**
+ * The customer signers a paper copy still has to account for: everyone who
+ * has neither signed in the browser nor declined.
+ */
+async function awaitingCustomerSigners(contractId, conn = db) {
+  const rows = await signers.listSigners(contractId, conn);
+  return rows.filter((r) => r.role === 'customer' && !['signed', 'declined'].includes(r.status));
+}
+
+/** Has any customer signer already signed this contract in the browser? */
+async function electronicSignaturePresent(contractId, conn = db) {
+  const rows = await signers.listSigners(contractId, conn);
+  return rows.some((r) => r.role === 'customer' && r.status === 'signed');
+}
+
+/**
+ * An admin uploading a wet-signed PDF completes the contract for everyone,
+ * and the server cannot read whose signatures the paper actually bears. The
+ * customer's own upload is simply refused when there is more than one signer
+ * (wetUploadContext); the admin keeps the capability — it is how an offline
+ * signature reaches the record at all — but has to state which signers the
+ * copy covers, and the answer goes into the event log as the evidence that
+ * they did.
+ *
+ * @returns {Promise<number[]>} the covered signer ids, in position order
+ */
+async function assertPaperCoversSigners(contractId, coversSignerIds) {
+  // The upload replaces the signed PDF and completes the contract, so a
+  // signature already given in the browser would be discarded while the log
+  // records only the slots the paper covers. Once anyone has signed
+  // electronically, the admin finishes in the browser instead.
+  if (await electronicSignaturePresent(contractId)) {
+    throw new AppError(
+      'A signer has already signed this contract in the browser, so a paper copy can\'t replace it. Counter-sign in the browser instead.',
+      409, 'ELECTRONIC_SIGNATURE_PRESENT',
+    );
+  }
+  const awaiting = await awaitingCustomerSigners(contractId);
+  if (!awaiting.length) return [];
+  const ticked = new Set((Array.isArray(coversSignerIds) ? coversSignerIds : []).map(Number).filter(Number.isFinite));
+  const known = new Set(awaiting.map((r) => Number(r.id)));
+  const unknown = [...ticked].filter((id) => !known.has(id));
+  if (unknown.length) {
+    throw new AppError('Those signers don\'t belong to this contract.', 400, 'SIGNER_NOT_FOUND');
+  }
+  const missing = awaiting.filter((r) => !ticked.has(Number(r.id))).map((r) => Number(r.id));
+  if (missing.length) {
+    const err = new AppError(
+      'Confirm which signers the uploaded copy carries. Every signer who hasn\'t signed yet has to be covered by it.',
+      400, 'SIGNERS_NOT_COVERED',
+    );
+    err.details = { missingSignerIds: missing };
+    throw err;
+  }
+  return awaiting.map((r) => Number(r.id));
+}
+
 /** A wet-signed upload on a v2 contract: logged, and every link withdrawn. */
-async function recordWetUpload(contractId, { by, sha256: fileSha }) {
+async function recordWetUpload(contractId, { by, sha256: fileSha, coversSignerIds = null, uploadedByAdminId = null }) {
   await db.transaction(async (trx) => {
     await signers.revokeAccess(trx, contractId);
     await auditedUpdate(trx, 'contracts', { id: contractId }, { sealed_at: new Date().toISOString() },
       { actor: by === 'admin' ? { type: 'admin' } : { type: 'customer' }, source: 'contract.upload.signed_pdf' });
     await signingEvents.appendEvent(trx, contractId, {
-      type: 'wet_upload', actorType: by === 'admin' ? 'admin' : 'signer', artifactSha256: fileSha || null, payload: { by },
+      type: 'wet_upload',
+      actorType: by === 'admin' ? 'admin' : 'signer',
+      artifactSha256: fileSha || null,
+      // Ids only: the log is evidence of which slots the paper stands in
+      // for, and it never carries names or addresses.
+      payload: {
+        by,
+        ...(coversSignerIds ? { coversSignerIds } : {}),
+        ...(uploadedByAdminId ? { uploadedByAdminId: Number(uploadedByAdminId) } : {}),
+      },
     });
   });
 }
@@ -1017,6 +1105,9 @@ module.exports = {
   sessionContext,
   sign,
   decline,
+  awaitingCustomerSigners,
+  assertPaperCoversSigners,
+  electronicSignaturePresent,
   recordWetUpload,
   countersign,
   issueCertificate,

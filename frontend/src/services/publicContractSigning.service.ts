@@ -168,6 +168,7 @@ export const PORTAL_SIGNING_SCOPE = 'portal';
 
 const sessionKey = (scope: string) => `picpeak.contractSigning.session.${scope}`;
 const idempotencyStorageKey = (scope: string) => `picpeak.contractSigning.idempotency.${scope}`;
+const draftKey = (scope: string) => `picpeak.contractSigning.draft.${scope}`;
 
 function storage(): Storage | null {
   try {
@@ -209,6 +210,45 @@ export const signingSessionStore = {
   clear(scope: string): void {
     try {
       storage()?.removeItem(sessionKey(scope));
+    } catch { /* nothing to clear */ }
+  },
+};
+
+export interface SigningDraft {
+  name: string;
+  mode: SignatureMode;
+}
+
+/**
+ * What the signer typed, kept for the tab so a reload — or a failed
+ * submission that re-renders the page — doesn't make them type it again.
+ *
+ * The typed name and the chosen mode only. A DRAWN signature stays in
+ * memory: it is the signature itself, and it has no business sitting in a
+ * shared-machine browser store after the tab that drew it moved on.
+ */
+export const signingDraftStore = {
+  read(scope: string): SigningDraft | null {
+    try {
+      const raw = storage()?.getItem(draftKey(scope));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Partial<SigningDraft>;
+      if (typeof parsed.name !== 'string') return null;
+      return { name: parsed.name, mode: parsed.mode === 'typed' ? 'typed' : 'drawn' };
+    } catch {
+      return null;
+    }
+  },
+
+  write(scope: string, draft: SigningDraft): void {
+    try {
+      storage()?.setItem(draftKey(scope), JSON.stringify(draft));
+    } catch { /* storage full or blocked: the form still works for this page view */ }
+  },
+
+  clear(scope: string): void {
+    try {
+      storage()?.removeItem(draftKey(scope));
     } catch { /* nothing to clear */ }
   },
 };

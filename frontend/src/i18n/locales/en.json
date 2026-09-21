@@ -713,7 +713,7 @@
       "unreadable": "The key file can't be read. Restore it from a backup, otherwise stored signing evidence can't be decrypted.",
       "id": "Key ID {{id}}",
       "hint": "Signers' IP addresses and browsers are stored encrypted with this key. Without it that evidence can't be read; the signatures and PDFs stay valid.",
-      "mismatch": "The evidence already stored was written under key {{stored}}, so it can no longer be read — and signer names and email addresses come back empty. Put the earlier key back, or expect blank names on contracts signed before."
+      "mismatch": "Evidence already stored was written under key {{stored}}, so it can no longer be read — and those signer names and email addresses come back empty. {{unreadable}} of {{total}} stored values are affected. Put the earlier key back, or expect blank names on contracts signed before."
     }
   },
   "common": {
@@ -5531,7 +5531,8 @@
       "signError": "The contract couldn't be opened for signing. Try again in a moment.",
       "declinedHint": "This contract was declined and can no longer be signed.",
       "opening": "Opening…",
-      "sign": "Sign"
+      "sign": "Sign",
+      "downloadCertificate": "Signing certificate"
     },
     "documents": {
       "title": "Documents",
@@ -7665,7 +7666,12 @@
       "countersignModeLabel": "How do you want to sign?",
       "countersignModeDrawn": "Draw my signature",
       "countersignModeTyped": "Use my typed name",
-      "countersignTypedHint": "Your name, as typed above, is placed in the signature field."
+      "countersignTypedHint": "Your name, as typed above, is placed in the signature field.",
+      "downloadCertificate": "Download signing certificate",
+      "certificateUnavailable": "Signing certificate unavailable",
+      "countersignUncertain": "We couldn't reach the server, so we can't say whether the counter-signature was recorded. The contract has been reloaded — check its status before signing again.",
+      "attachmentMerged": "merged from page {{page}}",
+      "attachmentSeparate": "sent as a separate file"
     },
     "editor": {
       "back": "Back to list",
@@ -7998,6 +8004,19 @@
       },
       "followUpFailed": "A step after the signature didn't go through",
       "followUpFailedBody": "The signature itself is on record. Since {{date}} one step is still outstanding: {{error}}. Use \"Re-send the signed contract\" to run it again, or send the next signer their link."
+    },
+    "paperUpload": {
+      "title": "Upload a signed contract",
+      "intro": "The uploaded PDF becomes the authoritative signed contract. It is sent to both parties and every signing link stops working.",
+      "confirmTitle": "Whose signatures does this copy carry?",
+      "confirmBody": "This upload completes the contract for everyone below, so confirm that the paper copy is signed by each of them. What you confirm is recorded in the signing log.",
+      "unnamedSigner": "Signer {{position}}",
+      "fileLabel": "The signed PDF",
+      "uploading": "Uploading…",
+      "submit": "Upload signed PDF",
+      "notCovered": "Confirm every signer the paper copy is signed by — the upload completes the contract for all of them.",
+      "refusedTitle": "Already signed in the browser",
+      "refusedBody": "At least one signer has already signed this contract in the browser. A paper copy can't replace a signature given in the browser, so the upload isn't available. Let the remaining signers sign in the browser, then counter-sign on this page."
     }
   },
   "messages": {
@@ -8243,6 +8262,24 @@
       "title": "Attachments",
       "download": "Download",
       "inPdf": "Part of the contract PDF"
+    },
+    "price": {
+      "title": "Services and price",
+      "description": "Description",
+      "quantity": "Qty",
+      "amount": "Amount",
+      "net": "Net",
+      "shipping": "Shipping",
+      "vat": "VAT",
+      "total": "Total",
+      "fromQuote": "From quote {{number}}",
+      "unit": {
+        "hour": "h",
+        "day": "d",
+        "piece": "pcs",
+        "km": "km",
+        "flat": "flat rate"
+      }
     }
   },
   "crmOverview": {
@@ -8472,7 +8509,14 @@
       "modeDrawn": "Draw",
       "modeTyped": "Type my name",
       "typedHint": "Your name, as typed above, is placed in your signature field.",
-      "submitting": "Signing…"
+      "submitting": "Signing…",
+      "uncertain": {
+        "title": "We couldn't confirm whether your signature arrived",
+        "body": "The connection dropped while it was being sent, so it may or may not have been recorded. Check again first. Sending it a second time cannot sign the contract twice — we recognise the repeat.",
+        "check": "Check again",
+        "checking": "Checking…",
+        "resend": "Send my signature again"
+      }
     },
     "otp": {
       "errors": {
@@ -8493,7 +8537,8 @@
       "reasonHint": "Shared with the sender.",
       "keep": "Keep the contract",
       "declining": "Declining…",
-      "confirm": "Decline contract"
+      "confirm": "Decline contract",
+      "uncertain": "We couldn't reach the server, so we can't say whether your refusal was recorded. Reload this page to see where the contract stands before trying again."
     }
   }
 }

@@ -37,6 +37,7 @@ import { formatAttachmentSize } from '../../../services/documentAttachments.serv
 import { PermissionGate } from '../../../components/admin/PermissionGate';
 import { SignaturePadField, type SignaturePadHandle } from '../../../components/contracts/SignaturePadField';
 import { SigningOverviewCard } from './SigningOverviewCard';
+import { PaperSignatureUploadDialog } from './PaperSignatureUploadDialog';
 
 function statusBadgeClass(status: ContractStatus): string {
   return status === 'fully_signed'         ? 'bg-green-100 text-green-800'
@@ -63,18 +64,27 @@ export const ContractDetailPage: React.FC = () => {
   const formatDate = (v: string | null | undefined) => v ? format(v) : '—';
   const formatDateTime = (v: string | null | undefined) => v ? fmtDateTime(v) : '—';
   const numericId = id ? parseInt(id, 10) : null;
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const countersignPadRef = useRef<SignaturePadHandle>(null);
 
   const [countersignName, setCountersignName] = useState('');
   // Signatures v2: counter-sign with a drawn signature or the typed name.
   const [countersignMode, setCountersignMode] = useState<'drawn' | 'typed'>('drawn');
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['contract', numericId],
     queryFn: () => contractsService.get(numericId as number),
     enabled: numericId !== null,
   });
+
+  // Shares its key with the documents card below, so this costs no extra
+  // request — it only decides whether the certificate button is offered.
+  const { data: documentsData } = useQuery({
+    queryKey: ['contract-documents', numericId],
+    queryFn: () => contractsService.documents(numericId as number),
+    enabled: numericId !== null,
+  });
+  const hasCertificate = (documentsData?.documents || []).some((d) => d.kind === 'audit');
 
   // Lineage: pull the source quote's number AND every invoice whose
   // source_contract_id matches this contract. Both queries are gated
@@ -142,9 +152,26 @@ export const ContractDetailPage: React.FC = () => {
     },
     successMessage: t('contracts.detail.countersignedToast', 'Counter-signed.') as string,
     invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
-    errorMessage: (err: any) => (err?.response?.data?.code === 'CUSTOMERS_PENDING'
-      ? t('contracts.detail.countersignCustomersPending', 'Every customer has to sign before you counter-sign.') as string
-      : err?.response?.data?.error || err?.message || t('contracts.detail.countersignError', 'Counter-sign failed') as string),
+    errorMessage: (err: any) => {
+      if (err?.response?.data?.code === 'CUSTOMERS_PENDING') {
+        return t('contracts.detail.countersignCustomersPending', 'Every customer has to sign before you counter-sign.') as string;
+      }
+      // No HTTP status at all — the connection dropped. The counter-signature
+      // may still have been recorded, so don't tell the admin to simply try
+      // again on a legally meaningful step (#1446). The refetch below shows
+      // where the contract actually stands.
+      if (!err?.response) {
+        return t('contracts.detail.countersignUncertain',
+          'We couldn\'t reach the server, so we can\'t say whether the counter-signature was recorded. The contract has been reloaded — check its status before signing again.') as string;
+      }
+      return err?.response?.data?.error || err?.message || t('contracts.detail.countersignError', 'Counter-sign failed') as string;
+    },
+    onError: (err: any) => {
+      if (!err?.response && numericId) {
+        queryClient.invalidateQueries({ queryKey: ['contract', numericId] });
+        queryClient.invalidateQueries({ queryKey: ['contract-signers', numericId] });
+      }
+    },
     onSuccess: () => {
       setCountersignName('');
       countersignPadRef.current?.clear();
@@ -152,10 +179,19 @@ export const ContractDetailPage: React.FC = () => {
   });
 
   const uploadMutation = useMutationWithToast({
-    mutationFn: (file: File) => contractsService.uploadSignedPdf(numericId as number, file),
+    mutationFn: ({ file, coversSignerIds }: { file: File; coversSignerIds: number[] }) => (
+      contractsService.uploadSignedPdf(numericId as number, file, coversSignerIds)
+    ),
     successMessage: t('contracts.detail.uploadedToast', 'Signed PDF uploaded.') as string,
-    invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
-    errorMessage: t('contracts.detail.uploadError', 'Upload failed') as string,
+    invalidateKeys: [['contract', numericId], ['contract-signers', numericId], ['contract-paper-coverage', numericId]],
+    errorMessage: (err: any) => (err?.response?.data?.code === 'SIGNERS_NOT_COVERED'
+      ? t('contracts.paperUpload.notCovered',
+        'Confirm every signer the paper copy is signed by — the upload completes the contract for all of them.') as string
+      : err?.response?.data?.code === 'ELECTRONIC_SIGNATURE_PRESENT'
+        ? t('contracts.paperUpload.refusedBody',
+          'At least one signer has already signed this contract in the browser. A paper copy can\'t replace a signature given in the browser, so the upload isn\'t available. Let the remaining signers sign in the browser, then counter-sign on this page.') as string
+        : err?.response?.data?.error || t('contracts.detail.uploadError', 'Upload failed') as string),
+    onSuccess: () => setUploadOpen(false),
   });
 
   const resendSignedMutation = useMutationWithToast({
@@ -226,6 +262,22 @@ export const ContractDetailPage: React.FC = () => {
     } catch (err: any) {
       previewWindow.close();
       toast.error(err?.response?.data?.error || 'Preview failed');
+    }
+  }
+
+  async function handleCertificateDownload() {
+    if (!numericId) return;
+    const previewWindow = window.open('about:blank', '_blank');
+    if (!previewWindow) {
+      toast.error(t('contracts.detail.popupBlocked', 'Allow pop-ups for this site to preview the PDF.') as string);
+      return;
+    }
+    try {
+      previewWindow.location.href = await contractsService.certificateUrl(numericId);
+    } catch (err: any) {
+      previewWindow.close();
+      toast.error(err?.response?.data?.error
+        || t('contracts.detail.certificateUnavailable', 'Signing certificate unavailable') as string);
     }
   }
 
@@ -314,6 +366,15 @@ export const ContractDetailPage: React.FC = () => {
             {t('contracts.detail.downloadSignedPdf', 'Download signed PDF')}
           </Button>
         )}
+        {/* The signing certificate (#1446) — the evidence record issued at
+            completion. It used to leave the server only as an email
+            attachment, so a lost email was a lost certificate. */}
+        {hasCertificate && (
+          <Button variant="outline" onClick={handleCertificateDownload}>
+            <FileDown className="w-4 h-4 mr-1" />
+            {t('contracts.detail.downloadCertificate', 'Download signing certificate')}
+          </Button>
+        )}
         {/* Recovery action — on fully-signed contracts, lets the admin
             re-render the signed PDF (if a previous render failed) and
             resend the confirmation email to both parties. Also useful
@@ -334,27 +395,17 @@ export const ContractDetailPage: React.FC = () => {
           </Button>
         )}
         {(c.status === 'sent' || c.status === 'signed_by_customer') && (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) uploadMutation.mutate(f);
-                if (e.target) e.target.value = '';
-              }}
-            />
-            <Button
-              variant="outline"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadMutation.isPending}
-            >
-              <Upload className="w-4 h-4 mr-1" />
-              {t('contracts.detail.uploadSigned', 'Upload signed PDF')}
-            </Button>
-          </>
+          // The upload completes the contract for every signer, so it goes
+          // through a dialog that has the admin confirm whose signatures the
+          // paper copy carries (#1446).
+          <Button
+            variant="outline"
+            onClick={() => setUploadOpen(true)}
+            disabled={uploadMutation.isPending}
+          >
+            <Upload className="w-4 h-4 mr-1" />
+            {t('contracts.detail.uploadSigned', 'Upload signed PDF')}
+          </Button>
         )}
 
         {/* Forward conversions — only available once both parties have
@@ -675,6 +726,16 @@ export const ContractDetailPage: React.FC = () => {
       {numericId && <IntegrityCheckCard contractId={numericId} />}
       {numericId && <GeneratedDocumentsCard contractId={numericId} />}
       {numericId && <AuditTrailCard contractId={numericId} />}
+
+      {numericId && (
+        <PaperSignatureUploadDialog
+          contractId={numericId}
+          isOpen={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+          onUpload={(file, coversSignerIds) => uploadMutation.mutate({ file, coversSignerIds })}
+          isUploading={uploadMutation.isPending}
+        />
+      )}
     </div>
   );
 };
@@ -844,6 +905,27 @@ const GeneratedDocumentsCard: React.FC<{ contractId: number }> = ({ contractId }
               <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400 break-all" title={d.sha256}>
                 {d.sha256.slice(0, 16)}…
               </span>
+              {/* What the PDF was actually made of (#1445): which attachments
+                  went into it, in what order, and each one's own checksum —
+                  including the ones delivered as separate files, which are
+                  bound into nothing else. Recorded at send, but until now
+                  unreadable through any API. */}
+              {d.manifest?.attachments?.length ? (
+                <ul className="w-full mt-1 pl-4 space-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+                  {d.manifest.attachments.map((a) => (
+                    <li key={a.attachmentId} className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">{a.name}</span>
+                      <span>
+                        {a.delivery === 'merged'
+                          ? t('contracts.detail.attachmentMerged', 'merged from page {{page}}', { page: a.firstPage ?? '—' })
+                          : t('contracts.detail.attachmentSeparate', 'sent as a separate file')}
+                      </span>
+                      <span>{t('contracts.detail.documentPages', 'Pages: {{count}}', { count: a.pages })}</span>
+                      <span className="font-mono break-all" title={a.sha256}>{a.sha256.slice(0, 12)}…</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
           ))}
         </ul>

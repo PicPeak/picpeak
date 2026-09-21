@@ -47,8 +47,21 @@ function validateEnvironment() {
   // The evidence key (#1446) is read here rather than at the first contract
   // send: a value that is a character short of a key would otherwise fail in
   // the middle of signing, hours after anyone touched the configuration.
-  const keyProblem = require('../utils/fieldEncryption').keyProblemAtBoot();
+  const fieldEncryption = require('../utils/fieldEncryption');
+  const keyProblem = fieldEncryption.keyProblemAtBoot();
   if (keyProblem) errors.push(keyProblem);
+  // No PICPEAK_EVIDENCE_KEY: the key is a file the install generated for
+  // itself. That works, but it means the only copy of it lives in the
+  // storage volume, and losing it makes every signer's name, email address
+  // and IP unreadable. Say so once at boot rather than leaving operators to
+  // discover the file exists.
+  if (!keyProblem && fieldEncryption.keyStatus().source === 'file') {
+    warnings.push(
+      'PICPEAK_EVIDENCE_KEY is not set, so signing evidence is encrypted with the key file at '
+      + 'storage/business-docs/keys/evidence.key. Back that file up with the database — without it, '
+      + 'signer names, email addresses and IP addresses cannot be read back. See docs/ENVIRONMENT_VARIABLES.md.',
+    );
+  }
 
   // Log warnings
   warnings.forEach(warning => logger.warn(warning));

@@ -10,8 +10,10 @@
  *   POST   /:id/cancel                  cancel (draft|sent)
  *   POST   /:id/countersign             admin in-browser counter-signature
  *   POST   /:id/upload-signed-pdf       attach wet-signed PDF (multer single)
+ *   GET    /:id/paper-signature-coverage  signers a paper copy must cover
  *   GET    /:id/pdf                     download / preview the system PDF
  *   GET    /:id/signed-pdf              download the wet-signed PDF (when present)
+ *   GET    /:id/certificate             download the signing certificate
  *   GET    /:id/preview                 render fresh PDF for preview (no DB write)
  *   GET    /blocks                      list block library
  *   POST   /blocks                      create admin-authored block
@@ -34,6 +36,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const { validateFileType, validateFileContent } = require('../utils/fileSecurityUtils');
+const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const contractService = require('../services/contractService');
 const accountingHistory = require('../services/accountingHistory');
 const contractBlocksService = require('../services/contractBlocksService');
@@ -659,6 +662,27 @@ router.post(
   }),
 );
 
+/**
+ * A wet-signed PDF the admin holds on paper. It completes the contract for
+ * everyone, so on a signatures-v2 contract the admin states which customer
+ * signers the copy carries (#1446) — `coversSignerIds`, a JSON array or a
+ * comma-separated list, since this is a multipart body. The service refuses
+ * the upload unless it accounts for every signer who has not signed or
+ * declined, and records the answer in the event log. Once any signer has
+ * signed in the browser the upload is refused outright
+ * (ELECTRONIC_SIGNATURE_PRESENT).
+ */
+function parseCoversSignerIds(raw) {
+  if (raw === undefined || raw === null || raw === '') return [];
+  const list = Array.isArray(raw)
+    ? raw
+    : String(raw).trim().startsWith('[')
+      ? (() => { try { return JSON.parse(raw); } catch (_) { return []; } })()
+      : String(raw).split(',');
+  return (Array.isArray(list) ? list : []).map((value) => Number(String(value).trim()))
+    .filter((value) => Number.isInteger(value) && value > 0);
+}
+
 router.post(
   '/:id/upload-signed-pdf',
   requirePermission('contracts.manage'),
@@ -680,8 +704,31 @@ router.post(
       req.file.path,
       'admin',
       req.admin.id,
+      { coversSignerIds: parseCoversSignerIds(req.body && req.body.coversSignerIds) },
     );
     return successResponse(res, result);
+  }),
+);
+
+// Which customer signers an uploaded paper copy would have to cover: the
+// list the upload dialog ticks off (#1446). `electronicSignaturePresent`
+// says the upload would be refused because someone already signed in the
+// browser.
+router.get(
+  '/:id/paper-signature-coverage',
+  requirePermission('contracts.manage'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const signingV2 = require('../services/contract/signingV2');
+    const signers = require('../services/contract/signers');
+    const contractId = parseInt(req.params.id, 10);
+    const rows = await signingV2.awaitingCustomerSigners(contractId);
+    return successResponse(res, {
+      signers: rows.map(signers.signerToApi).map((s) => ({ id: s.id, position: s.position, name: s.name, status: s.status })),
+      // A signature given in the browser rules the paper copy out entirely.
+      electronicSignaturePresent: await signingV2.electronicSignaturePresent(contractId),
+    });
   }),
 );
 
@@ -735,6 +782,24 @@ router.get(
       `inline; filename="${data.contract.contract_number}-signed.pdf"`,
     );
     fs.createReadStream(safePath).pipe(res);
+  }),
+);
+
+// The signing certificate — the evidence record issued when the contract was
+// completed (#1446). Until this route existed it only ever left the server as
+// an email attachment.
+router.get(
+  '/:id/certificate',
+  requirePermission('contracts.view'),
+  [param('id').isInt({ min: 1 })],
+  handleAsync(async (req, res) => {
+    validateRequest(req);
+    const { readCertificate } = require('../services/contract/signatureAssets');
+    const { fileName, buffer } = await readCertificate(parseInt(req.params.id, 10));
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', buildContentDisposition(fileName, 'attachment'));
+    return res.send(buffer);
   }),
 );
 

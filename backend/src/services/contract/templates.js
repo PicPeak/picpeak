@@ -360,29 +360,42 @@ async function saveDraft(id, payload, adminId) {
     versionUpdates.outro_text = content.serializeLocaleMap(content.sanitizeLocaleMap(payload.outroText, 'Closing text'));
   }
 
+  // Which parts of the draft this save actually rewrote. Keys only, never
+  // clause text: "who changed what" on a template is answerable from the
+  // activity log without putting the contract's wording into it (#1445).
+  const changed = [];
   await db.transaction(async (trx) => {
     const template = await claimLock(trx, id, payload.lockVersion);
     assertEditable(template);
     const now = new Date();
-    if (Object.keys(meta).length) await trx('contract_templates').where({ id }).update({ ...meta, updated_at: now });
+    if (Object.keys(meta).length) {
+      await trx('contract_templates').where({ id }).update({ ...meta, updated_at: now });
+      changed.push(...Object.keys(meta));
+    }
     const draft = await ensureDraft(trx, template);
     if (Object.keys(versionUpdates).length) {
       await trx('contract_template_versions').where({ id: draft.id }).update({ ...versionUpdates, updated_at: now });
+      changed.push(...Object.keys(versionUpdates));
     }
     if (payload.items !== undefined) {
       const items = await sanitizeItems(payload.items, trx);
+      const before = await trx('contract_template_version_items').where({ version_id: draft.id }).count({ n: '*' }).first();
       await trx('contract_template_version_items').where({ version_id: draft.id }).del();
       if (items.length) {
         await trx('contract_template_version_items').insert(items.map((item) => ({
           ...item, version_id: draft.id, created_at: now, updated_at: now,
         })));
       }
+      changed.push('items');
+      const was = ensureInt(before && before.n);
+      if (was !== items.length) changed.push(`items:${was}->${items.length}`);
     }
     if (payload.attachments !== undefined) {
       await attachments.writeVersionAttachments(trx, draft.id, await attachments.sanitizeAttachmentList(payload.attachments, trx));
+      changed.push('attachments');
     }
   });
-  await audit('contract_template_draft_saved', { templateId: id }, adminId);
+  await audit('contract_template_draft_saved', { templateId: id, changed }, adminId);
   return getTemplate(id);
 }
 
@@ -601,8 +614,8 @@ async function seedContractFromVersion(trx, contractId, version, history = { sou
     }
   }
   if (inclusions.length) await auditedInsert(trx, 'contract_block_inclusions', inclusions, history);
-  if (texts.length) await trx('contract_text_sections').insert(texts);
-  await attachments.seedContractAttachments(trx, contractId, version.id);
+  if (texts.length) await auditedInsert(trx, 'contract_text_sections', texts, history);
+  await attachments.seedContractAttachments(trx, contractId, version.id, history);
 }
 
 /**

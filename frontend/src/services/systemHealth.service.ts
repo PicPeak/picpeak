@@ -41,10 +41,18 @@ export interface SystemHealthFailures {
   evidenceKey?: {
     source: 'env' | 'file' | 'none' | 'unreadable';
     keyId: string | null;
-    /** The key stored evidence was written under, when there is any. */
+    /** A key OTHER than the current one that stored evidence was written under. */
     storedKeyId?: string | null;
-    /** null when nothing is stored yet. */
+    /** null when nothing is stored yet; false when any value is under another key. */
     matchesStored?: boolean | null;
+    /** Encrypted values counted, across every evidence column. */
+    storedValues?: number;
+    /** How many of them the current key can still read. */
+    storedValuesUnderCurrentKey?: number;
+    /** Values per key id, including `unreadable` for anything unparseable. */
+    storedKeyIds?: Record<string, number>;
+    /** True when there was more evidence than this endpoint reads. */
+    scanTruncated?: boolean;
   };
 }
 
