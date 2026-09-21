@@ -423,7 +423,10 @@ async function createDocument({
         status,
         reviewed_at: status === 'clean' ? now : null,
         reviewed_by_admin_id: status === 'clean' && uploaderType === 'admin' ? uploaderId : null,
-        shared_at: uploaderType === 'admin' && share ? now : null,
+        // Only a clean document can be shared (setShared refuses anything
+        // else), so a share asked for on an upload the scanner left pending
+        // is not recorded: the admin shares it after marking it clean.
+        shared_at: uploaderType === 'admin' && share && status === 'clean' ? now : null,
         created_at: now,
         updated_at: now,
       }).returning('id');
@@ -589,15 +592,31 @@ async function markErasedForCustomer(customerId, trx) {
   return doomed;
 }
 
-/** Delete the bytes of the given rows and stamp purged_at. Best effort per file. */
+/**
+ * Delete the bytes of the given rows and stamp purged_at. Best effort per file.
+ *
+ * The rows are a snapshot taken by the caller, so the stamp is claimed first
+ * and only while the row is still unlinked from a contract: a link made since
+ * the snapshot keeps the bytes. A failed delete releases the claim so the
+ * next sweep tries again.
+ */
 async function purgeFiles(rows) {
   const storage = getStorage();
   for (const r of rows) {
+    let claimed = false;
     try {
       assertStorageKey(r.storage_key);
+      claimed = (await db('customer_documents')
+        .where({ id: r.id })
+        .whereNull('contract_id')
+        .whereNull('purged_at')
+        .update({ purged_at: new Date().toISOString() })) > 0;
+      if (!claimed) continue;
       await storage.delete(r.storage_key);
-      await db('customer_documents').where({ id: r.id }).update({ purged_at: new Date().toISOString() });
     } catch (err) {
+      if (claimed) {
+        await db('customer_documents').where({ id: r.id }).update({ purged_at: null }).catch(() => {});
+      }
       logger.warn('Could not remove a customer document file', { documentId: r.id, error: err.message });
     }
   }
