@@ -6,6 +6,10 @@ import type {
 } from '../types';
 import { normalizeRequirePassword } from '../utils/accessControl';
 import { parseContentDispositionFilename } from '../utils/contentDisposition';
+import {
+  isGalleryLimited, markGalleryLimited, notifyDownloadQuotaChanged,
+  readDownloadLimitError, withDownloadLimit,
+} from '../utils/downloadLimit';
 
 // Gallery pages beyond the first are fetched this many at a time (#1357).
 const PAGE_FETCH_CONCURRENCY = 4;
@@ -123,6 +127,9 @@ export const galleryService = {
         pagination = next.pagination;
       }
     }
+    // Download limit (issue 1560): the download transports below pick a
+    // path whose refusal they can see while this gallery has one.
+    markGalleryLimited(slug, !!data?.event?.download_limit);
     const normalizedEvent = data?.event
       ? {
           ...data.event,
@@ -158,12 +165,25 @@ export const galleryService = {
   // feedback, prompting users to re-click and produce duplicate
   // downloads (#554 follow-up). Direct navigation eliminates the
   // latency outright rather than masking it with a spinner.
+  //
+  // A gallery with a download limit (issue 1560) fetches instead of
+  // navigating: a refused navigation lands as a broken file in the browser's
+  // download list, and the page never learns it should say why.
   async savePhotoToDevice(slug: string, photoId: number, filename: string): Promise<void> {
-    if (!isIOS()) {
+    return withDownloadLimit(slug, () => this.savePhotoToDeviceUnchecked(slug, photoId, filename));
+  },
+
+  async savePhotoToDeviceUnchecked(slug: string, photoId: number, filename: string): Promise<void> {
+    if (!isIOS() && !isGalleryLimited(slug)) {
       this.triggerDirectDownload(
         withAdminPreview(api.getUri({ url: `/gallery/${slug}/download/${photoId}` })),
         filename,
       );
+      return;
+    }
+    if (!isIOS()) {
+      const direct = await this.fetchPhotoBlob(slug, photoId);
+      this.triggerBrowserDownload(direct.blob, direct.serverFilename || filename);
       return;
     }
 
@@ -222,7 +242,10 @@ export const galleryService = {
         responseType: 'blob',
       });
       return readResponse(response);
-    } catch {
+    } catch (error) {
+      // A download limit refusal (issue 1560) is final: the view endpoint
+      // would hand over the preview as if it were the download.
+      if (await readDownloadLimitError(error)) throw error;
       // Fallback: view endpoint when /download isn't available (e.g.
       // the original is missing and only a derivative remains). The
       // view endpoint doesn't emit a download-oriented Content-Disposition,
@@ -267,8 +290,10 @@ export const galleryService = {
   // grid + lightbox-action callers that haven't been migrated to the
   // share-aware savePhotoToDevice path yet.
   async downloadPhoto(slug: string, photoId: number, filename: string): Promise<void> {
-    const fetched = await this.fetchPhotoBlob(slug, photoId);
-    this.triggerBrowserDownload(fetched.blob, fetched.serverFilename || filename);
+    return withDownloadLimit(slug, async () => {
+      const fetched = await this.fetchPhotoBlob(slug, photoId);
+      this.triggerBrowserDownload(fetched.blob, fetched.serverFilename || filename);
+    });
   },
 
   // Per-photo view beacon (#895). Fired by the lightbox when a photo
@@ -284,7 +309,7 @@ export const galleryService = {
   // When a pre-generated zip is available, use native browser download (Content-Length → progress bar).
   // Otherwise fall back to blob download.
   async downloadAllPhotos(slug: string, zipReady?: boolean): Promise<void> {
-    if (zipReady) {
+    if (zipReady && !isGalleryLimited(slug)) {
       // Native browser download — the server sends Content-Length so
       // the browser shows a real progress bar and mobile doesn't crash.
       const link = document.createElement('a');
@@ -297,9 +322,9 @@ export const galleryService = {
     }
 
     // Fallback: blob download (no Content-Length, buffered in memory)
-    const response = await api.get(`/gallery/${slug}/download-all`, {
+    const response = await withDownloadLimit(slug, () => api.get(`/gallery/${slug}/download-all`, {
       responseType: 'blob',
-    });
+    }));
 
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
@@ -317,8 +342,12 @@ export const galleryService = {
   // multi-photo case). Above the cap, or anywhere else, fall through
   // to the existing server-side zip flow.
   async downloadSelectedPhotos(slug: string, photoIds: number[]): Promise<void> {
+    // Not on a limited gallery (issue 1560): the share path fetches photo by
+    // photo, so a refusal halfway through would already have used up the
+    // photos before it, where the zip below is all or nothing.
     if (
       isIOS() &&
+      !isGalleryLimited(slug) &&
       photoIds.length > 0 &&
       photoIds.length <= MAX_WEB_SHARE_FILES
     ) {
@@ -329,9 +358,9 @@ export const galleryService = {
       if (status !== 'fallback') return;
     }
 
-    const response = await api.post(`/gallery/${slug}/download-selected`, { photo_ids: photoIds }, {
+    const response = await withDownloadLimit(slug, () => api.post(`/gallery/${slug}/download-selected`, { photo_ids: photoIds }, {
       responseType: 'blob',
-    });
+    }));
 
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
@@ -356,7 +385,7 @@ export const galleryService = {
   ): Promise<{ token: string; status: DownloadJobStatus }> {
     const body: Record<string, unknown> = { resolution };
     if (photoIds && photoIds.length) body.photo_ids = photoIds;
-    const response = await api.post(`/gallery/${slug}/download-jobs`, body);
+    const response = await withDownloadLimit(slug, () => api.post(`/gallery/${slug}/download-jobs`, body));
     return response.data;
   },
 
@@ -374,6 +403,9 @@ export const galleryService = {
     document.body.appendChild(link);
     link.click();
     link.remove();
+    // The server grants the photos once it starts sending; re-read the quota
+    // after that rather than racing it.
+    if (isGalleryLimited(slug)) window.setTimeout(() => notifyDownloadQuotaChanged(slug), 2000);
   },
 
   // iOS-only Web Share path for a selection of photos.

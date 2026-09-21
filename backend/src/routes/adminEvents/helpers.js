@@ -168,6 +168,10 @@ async function deleteEventCascade(eventId, adminContext) {
     if (await trx.schema.hasTable('event_people_merge_dismissals')) {
       await trx('event_people_merge_dismissals').where('event_id', eventId).del();
     }
+    // Download-limit grants (issue 1560): the same inert-cascade reason.
+    if (await trx.schema.hasTable('event_download_grants')) {
+      await trx('event_download_grants').where('event_id', eventId).del();
+    }
 
     await trx('photos').where('event_id', eventId).del();
     // 5. Finally delete the event row

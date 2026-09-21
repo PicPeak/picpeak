@@ -17,6 +17,7 @@ const { ensureThumbnail, ensureHeroImage, ensurePreviewImage, withLocalCopy } = 
 const { getStorage } = require('../../services/storage');
 const fs = require('fs');
 const { getStoragePath } = require('../../config/storage');
+const { isOriginalWithheld } = require('../../services/downloadQuota');
 
 router.post('/:slug/photo/:photoId/view',
   verifyGalleryAccess,
@@ -84,6 +85,14 @@ router.get('/:slug/photo/:photoId',
           secureEndpoint: `/api/secure-images/${req.params.slug}/generate-token`,
           photoId: photoId
         });
+      }
+
+      // Download limit (issue 1560). While one applies, guests get the preview
+      // tier rather than the original, which would otherwise be a full-size
+      // copy one long-press away from every counted download. Videos have no
+      // preview tier and stay streamable.
+      if (!isVideo && await isOriginalWithheld(req.event, photo, { isAdminPreview: req.isAdminPreview })) {
+        return res.redirect(`/api/gallery/${req.params.slug}/preview/${photoId}`);
       }
 
       // Resolve where to read the photo bytes from. For external/reference
@@ -517,6 +526,16 @@ router.get('/:slug/hero/:photoId',
 // broken image. The watermark application path is preserved so a
 // preview surfaced in the lightbox carries the same protection a
 // guest would see on the full original.
+// A preview that cannot be served falls back to the original, so the lightbox
+// always renders. Not while a download limit withholds that original (issue
+// 1560): /photo would send the request straight back here.
+async function fallBackToOriginal(req, res, photo) {
+  if (req.event && await isOriginalWithheld(req.event, photo, { isAdminPreview: req.isAdminPreview })) {
+    return res.status(404).json({ error: 'Preview not available' });
+  }
+  return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
+}
+
 router.get('/:slug/preview/:photoId',
   verifyGalleryAccess,
   blockHiddenGallery,
@@ -561,7 +580,7 @@ router.get('/:slug/preview/:photoId',
         : await ensurePreviewImage(photo);
       if (!previewPath) {
         logger.warn(`Failed to generate preview for photo ${photoId}, falling back to original`);
-        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
+        return fallBackToOriginal(req, res, photo);
       }
 
       const storage = getStorage();
@@ -570,7 +589,7 @@ router.get('/:slug/preview/:photoId',
         logger.error('Preview file does not exist in storage backend', {
           slug: req.params.slug, photoId, eventId: req.event.id, previewPath,
         });
-        return res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${photoId}`));
+        return fallBackToOriginal(req, res, photo);
       }
 
       const mtimeMs = stat.mtime ? stat.mtime.getTime() : 0;
@@ -629,7 +648,12 @@ router.get('/:slug/preview/:photoId',
         photoId: req.params.photoId,
         eventId: req.event?.id,
       });
-      res.redirect(withPreview(req, `/api/gallery/${req.params.slug}/photo/${req.params.photoId}`));
+      if (res.headersSent) return;
+      try {
+        await fallBackToOriginal(req, res, { id: req.params.photoId });
+      } catch (fallbackError) {
+        if (!res.headersSent) res.status(500).json({ error: 'Failed to serve preview' });
+      }
     }
   }
 );

@@ -14,6 +14,8 @@ import { galleryService } from '../../services/gallery.service';
 import { FeedbackIdentityModal } from './FeedbackIdentityModal';
 import { VideoPlayer } from './VideoPlayer';
 import { useGuestIdentityOptional } from '../../contexts/GuestIdentityContext';
+import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
+import { showDownloadLimitReached } from '../../utils/downloadLimit';
 import { useFeedbackLimitModal } from '../../hooks/useFeedbackLimitModal';
 
 interface PhotoLightboxProps {
@@ -201,6 +203,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // Defaults true for uncategorised photos and pre-migration-135 categories.
   const photoAllowsDownload =
     allowDownloads && currentPhoto?.category_allow_downloads !== false;
+  // Download limit (issue 1560): the button stays, disabled with the reason,
+  // once nothing is left — except for photos already downloaded, which are free.
+  const downloadQuota = useDownloadQuota();
+  const withinDownloadLimit = !currentPhoto || downloadQuota.canDownload(currentPhoto);
   
   // DevTools protection - enabled by individual setting OR legacy protection level
   const devToolsEnabled = enableDevtoolsProtection || (useEnhancedProtection && (protectionLevel === 'enhanced' || protectionLevel === 'maximum'));
@@ -577,6 +583,10 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
 
   const handleDownload = () => {
     if (!photoAllowsDownload) return;
+    if (!withinDownloadLimit) {
+      showDownloadLimitReached({ remaining: 0 });
+      return;
+    }
     downloadPhotoMutation.mutate({
       slug,
       photoId: currentPhoto.id,
@@ -1025,8 +1035,12 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             {photoAllowsDownload && (
               <button
                 onClick={handleDownload}
-                className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                disabled={!withinDownloadLimit}
+                className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 aria-label="Download photo"
+                title={withinDownloadLimit
+                  ? undefined
+                  : t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.')}
               >
                 <Download className="w-5 h-5 text-white" />
               </button>

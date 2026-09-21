@@ -1,6 +1,7 @@
 const express = require('express');
 const { db, withRetry } = require('../database/db');
 const logger = require('../utils/logger');
+const { normaliseDownloadLimit } = require('../services/downloadQuota');
 const router = express.Router();
 
 // Get public settings (branding and theme)
@@ -28,6 +29,8 @@ router.get('/', async (req, res) => {
               'event_default_allow_reactions',
               'event_default_allow_color_labels',
               'event_default_keybind_mode',
+              // Download limit default (issue 1560) — pre-fills the create form.
+              'event_default_download_limit',
               'gallery_show_filter_bar',
               'event_phone_field_enabled',
               // #613 — guest upload UI needs to know the per-batch file
@@ -226,6 +229,9 @@ router.get('/', async (req, res) => {
       event_default_allow_reactions: settingsObject.event_default_allow_reactions !== false,
       event_default_allow_color_labels: settingsObject.event_default_allow_color_labels === true,
       event_default_keybind_mode: settingsObject.event_default_keybind_mode === 'lightroom' ? 'lightroom' : 'colors',
+      // Download limit default (issue 1560). null = unlimited; the backend
+      // applies the same value when a create request omits the field.
+      event_default_download_limit: normaliseDownloadLimit(settingsObject.event_default_download_limit),
       // Phone-number field on events is opt-in (#322).
       event_phone_field_enabled: settingsObject.event_phone_field_enabled === true,
       // Whether to show the search/sort filter bar in public galleries (default: true)

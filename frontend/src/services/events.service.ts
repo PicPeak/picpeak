@@ -46,6 +46,7 @@ interface CreateEventData {
   moderate_comments?: boolean;
   show_feedback_to_guests?: boolean;
   photo_cap?: number | null;
+  download_limit?: number | null;
   default_photo_sort?: string;
   // Customer accounts assigned to this event (#354). Optional array of
   // customer_accounts.id; backend service diffs against the existing
@@ -81,12 +82,19 @@ interface UpdateEventData {
   external_path?: string | null;
   external_watch?: boolean;
   photo_cap?: number | null;
+  download_limit?: number | null;
   default_photo_sort?: string;
   // Per-event opt-in for hero photo as social-share preview (#474).
   og_image_share_enabled?: boolean;
   // Customer accounts (#354). Same semantics as on CreateEventData;
   // omit the field to leave assignments untouched, send [] to clear.
   customer_account_ids?: number[];
+}
+
+export interface DownloadLimitUsage {
+  download_limit: number | null;
+  downloads_used: number;
+  downloads_remaining: number | null;
 }
 
 export type EventStatusFilter = 'active' | 'inactive' | 'archived' | 'draft' | 'expiring';
@@ -153,6 +161,18 @@ export const eventsService = {
 
   // Update event (admin)
   // Reveal now (#838): stamps revealed_at so the gallery opens for guests.
+  // Download limit usage (issue 1560). The limit itself is set through
+  // updateEvent; these read and reset what the gallery has used.
+  async getDownloadLimitUsage(id: number): Promise<DownloadLimitUsage> {
+    const response = await api.get<DownloadLimitUsage>(`/admin/events/${id}/download-limit`);
+    return response.data;
+  },
+
+  async resetDownloadLimitUsage(id: number): Promise<DownloadLimitUsage> {
+    const response = await api.post<DownloadLimitUsage>(`/admin/events/${id}/download-limit/reset`);
+    return response.data;
+  },
+
   async revealEvent(id: number): Promise<{ revealed_at: string }> {
     const response = await api.post(`/admin/events/${id}/reveal`);
     return response.data;

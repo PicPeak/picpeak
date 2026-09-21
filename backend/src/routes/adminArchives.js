@@ -726,6 +726,10 @@ router.delete('/:id', adminAuth, requirePermission('archives.delete'), requireEv
     if (await db.schema.hasTable('event_people_merge_dismissals')) {
       await db('event_people_merge_dismissals').where('event_id', req.params.id).del();
     }
+    // Download-limit grants (issue 1560), for the same SQLite reason.
+    if (await db.schema.hasTable('event_download_grants')) {
+      await db('event_download_grants').where('event_id', req.params.id).del();
+    }
 
     // Delete from database (cascade will delete photos and logs)
     await deleteWithAccountingHistory(db, 'events', { id: req.params.id },

@@ -30,6 +30,7 @@ const {
 const { buildContentDisposition } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
 const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
+const { downloadLimitOf, grantDownloads, checkDownloads, downloadLimitError } = require('../../services/downloadQuota');
 const fs = require('fs');
 function parseByteRange(header, size) {
   if (!header || typeof header !== 'string' || !size) return null;
@@ -156,6 +157,11 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       res.set(headHeaders);
       return res.end();
     }
+
+    // Download limit (issue 1560). Granted before any byte goes out; a photo
+    // this gallery already received downloads again for free.
+    const quota = await grantDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
+    if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
 
     // Admin preview (#868) downloads are excluded from the download count +
     // guest analytics — kept out of client-facing stats.
@@ -439,7 +445,11 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         .where('photo_categories.allow_downloads', false)
         .first('photos.id')
         .then(Boolean);
-    const streamOnly = isClient || eventHasHidden || eventHasDownloadRestrictedPhotos;
+    // A download limit (issue 1560) grants exactly the photos that ship. The
+    // stream below knows that set; the prebuilt archive does not have to match
+    // it, so a limited gallery always streams.
+    const streamOnly = isClient || eventHasHidden || eventHasDownloadRestrictedPhotos
+      || !!downloadLimitOf(req.event);
     const zipInfo = streamOnly
       ? null
       : await downloadZipService.getZipInfo(req.event.id);
@@ -505,6 +515,11 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     if (photos.length === 0) {
       return res.status(404).json({ error: 'No photos found' });
     }
+
+    // Download limit (issue 1560): the whole archive or nothing, decided
+    // before the zip headers go out.
+    const quota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview });
+    if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
 
     // Count unique types
     const uniqueTypes = new Set(photos.map(p => p.type)).size;
@@ -708,6 +723,11 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     }
     const selectedBox = parseResolution(selectedResolution);
 
+    // Download limit (issue 1560): the resolved, visibility-filtered set is
+    // what gets zipped, so it is what gets granted. All or nothing.
+    const selectedQuota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview });
+    if (!selectedQuota.ok) return res.status(403).json(downloadLimitError(selectedQuota));
+
     const archiveName = `${req.event.slug}-selected.zip`;
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
@@ -869,6 +889,18 @@ router.post('/:slug/download-jobs', verifyGalleryAccess, denySlideshowToken, blo
       }
     }
 
+    // Download limit (issue 1560). Checked here so no archive gets built for a
+    // request that could never be delivered; granted when the file is handed
+    // over, because jobs are shared between requesters and creating one is not
+    // a download.
+    if (downloadLimitOf(req.event) && !req.isAdminPreview) {
+      const resolved = await downloadJobService
+        .photoQuery(req.event.id, photoIds, req.accessLevel)
+        .select('photos.id');
+      const quota = await checkDownloads(req.event, resolved.map((r) => r.id));
+      if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
+    }
+
     let job;
     try {
       job = await downloadJobService.createJob({
@@ -960,16 +992,31 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
       return res.status(410).json({ error: 'This download is no longer available' });
     }
 
+    // The DELIVERED set, not the requested one: a photo whose source was
+    // missing at build time isn't in the zip and must not be counted.
+    let deliveredIds = [];
+    try {
+      deliveredIds = JSON.parse(job.delivered_photo_ids || job.photo_ids || '[]');
+    } catch (_) { /* malformed row — skip counting rather than fail */ }
+
+    // Download limit (issue 1560). A limited gallery must know what it is
+    // handing over, so an unreadable manifest refuses rather than ships.
+    if (downloadLimitOf(req.event) && !req.isAdminPreview) {
+      if (!Array.isArray(deliveredIds) || deliveredIds.length === 0) {
+        return res.status(409).json({
+          error: 'This gallery changed since the download was prepared — please request it again',
+          status: 'stale',
+        });
+      }
+      const quota = await grantDownloads(req.event, deliveredIds);
+      if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
+    }
+
     // Stats parity with the other bulk paths (#895): only count once the
     // response actually completed, and keep admin previews out of guest stats.
     res.on('finish', () => {
       if (res.statusCode >= 400 || req.isAdminPreview) return;
-      // The DELIVERED set, not the requested one: a photo whose source was
-      // missing at build time isn't in the zip and must not be counted.
-      let ids = [];
-      try {
-        ids = JSON.parse(job.delivered_photo_ids || job.photo_ids || '[]');
-      } catch (_) { /* malformed row — skip counting rather than fail */ }
+      const ids = Array.isArray(deliveredIds) ? deliveredIds : [];
       if (ids.length > 0) {
         db('photos').whereIn('id', ids).increment('download_count', 1).catch(() => {});
       }

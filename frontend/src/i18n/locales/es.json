@@ -319,7 +319,15 @@
     "downloadFolderCapped": "Descargar las primeras {{limit}} de {{total}}",
     "downloadEverything": "Descargar todas las fotos",
     "videoFormatUnsupported": "Este formato de vídeo no se puede reproducir en este navegador. Descárgalo para verlo.",
-    "videoLoadFailed": "No se ha podido cargar este vídeo."
+    "videoLoadFailed": "No se ha podido cargar este vídeo.",
+    "downloadLimit": {
+      "reached": "Límite de descargas alcanzado. Contacta con tu fotógrafo para obtener más descargas.",
+      "notEnough": "Solo quedan {{remaining}} descargas. Selecciona menos fotos o contacta con tu fotógrafo.",
+      "counter": "{{used}} de {{limit}} descargas usadas",
+      "selectionCost": "Usa {{cost}} de tus {{remaining}} descargas restantes",
+      "selectionTooLarge": "Límite de descargas: esta selección necesita {{cost}} descargas, solo quedan {{remaining}}",
+      "downloadAllBlocked": "Esta galería tiene más fotos que tus descargas restantes"
+    }
   },
   "categories": {
     "title": "Categorías de fotos",
@@ -693,7 +701,14 @@
     "noEventsDescription": "Crea tu primer evento para comenzar.",
     "bulkArchive": "Archivar",
     "confirmBulkArchive": "¿Seguro que quieres archivar {{count}} evento(s)?",
-    "confirmBulkArchiveDescription": "Esta acción no se puede deshacer. Los eventos archivados dejarán de ser accesibles públicamente."
+    "confirmBulkArchiveDescription": "Esta acción no se puede deshacer. Los eventos archivados dejarán de ser accesibles públicamente.",
+    "downloadLimit": "Límite de descargas",
+    "downloadLimitHelp": "Número máximo de fotos que el cliente puede descargar. 0 = ilimitado",
+    "downloadLimitUsage": "{{used}} / {{limit}} descargadas",
+    "downloadLimitReset": "Restablecer",
+    "downloadLimitResetConfirm": "¿Restablecer las descargas de esta galería? El cliente recupera el límite completo y las fotos ya descargadas vuelven a contar.",
+    "downloadLimitResetDone": "Descargas restablecidas",
+    "downloadLimitResetFailed": "No se pudieron restablecer las descargas"
   },
   "settings": {
     "title": "Ajustes del sistema",
@@ -934,7 +949,9 @@
       "defaultAllowColorLabels": "Etiquetas de color",
       "defaultKeybindMode": "Atajos predeterminados del visor",
       "keybindColors": "Solo colores — 1 verde, 2 amarillo, 3 rojo",
-      "keybindLightroom": "Lightroom — 1-5 estrellas, 6-9 colores"
+      "keybindLightroom": "Lightroom — 1-5 estrellas, 6-9 colores",
+      "defaultDownloadLimit": "Límite de descargas predeterminado",
+      "defaultDownloadLimitHelp": "Valor inicial para nuevos eventos: cuántas fotos puede descargar un cliente. 0 = ilimitado."
     },
     "imageSecurity": {
       "title": "Proteger Imagen",

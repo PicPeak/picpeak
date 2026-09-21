@@ -348,7 +348,15 @@
     "downloadFolderCapped": "Baixar as primeiras {{limit}} de {{total}}",
     "downloadEverything": "Baixar todas as fotos",
     "videoFormatUnsupported": "Este formato de vídeo não pode ser reproduzido neste navegador. Baixe o arquivo para assistir.",
-    "videoLoadFailed": "Não foi possível carregar este vídeo."
+    "videoLoadFailed": "Não foi possível carregar este vídeo.",
+    "downloadLimit": {
+      "reached": "Limite de downloads atingido. Entre em contato com seu fotógrafo para obter mais downloads.",
+      "notEnough": "Restam apenas {{remaining}} downloads. Selecione menos fotos ou entre em contato com seu fotógrafo.",
+      "counter": "{{used}} de {{limit}} downloads usados",
+      "selectionCost": "Usa {{cost}} dos seus {{remaining}} downloads restantes",
+      "selectionTooLarge": "Limite de downloads: esta seleção precisa de {{cost}} downloads, restam apenas {{remaining}}",
+      "downloadAllBlocked": "Esta galeria tem mais fotos do que seus downloads restantes"
+    }
   },
   "categories": {
     "title": "Categorias de Fotos",
@@ -691,7 +699,14 @@
       "title": "Usar a foto principal como visualização ao compartilhar",
       "help": "Quando o URL desta galeria é compartilhado no WhatsApp, Facebook, Slack etc., a pré-visualização do link mostrará a foto principal acima. A miniatura é obtida sem autenticação pelos rastreadores de pré-visualização — quem compartilha o URL torna esta imagem efetivamente pública. Desativado por padrão; escolha uma foto principal que você esteja confortável em expor publicamente antes de ativar.",
       "heroRequired": "Escolha primeiro uma foto principal acima — esta opção a usa como imagem de pré-visualização no WhatsApp / Facebook / Slack."
-    }
+    },
+    "downloadLimit": "Limite de downloads",
+    "downloadLimitHelp": "Número máximo de fotos que o cliente pode baixar. 0 = ilimitado",
+    "downloadLimitUsage": "{{used}} / {{limit}} baixadas",
+    "downloadLimitReset": "Redefinir",
+    "downloadLimitResetConfirm": "Redefinir os downloads desta galeria? O cliente recebe o limite completo de volta e as fotos já baixadas voltam a contar.",
+    "downloadLimitResetDone": "Downloads redefinidos",
+    "downloadLimitResetFailed": "Não foi possível redefinir os downloads"
   },
   "settings": {
     "title": "Configurações do Sistema",
@@ -917,7 +932,9 @@
       "defaultAllowColorLabels": "Etiquetas de cor",
       "defaultKeybindMode": "Atalhos predefinidos do visualizador",
       "keybindColors": "Apenas cores — 1 verde, 2 amarelo, 3 vermelho",
-      "keybindLightroom": "Lightroom — 1-5 estrelas, 6-9 cores"
+      "keybindLightroom": "Lightroom — 1-5 estrelas, 6-9 cores",
+      "defaultDownloadLimit": "Limite de downloads padrão",
+      "defaultDownloadLimitHelp": "Preenchido em novos eventos: quantas fotos um cliente pode baixar. 0 = ilimitado."
     },
     "imageSecurity": {
       "title": "Proteção de Imagem",

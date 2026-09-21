@@ -90,6 +90,9 @@ const MOVE_TABLES = [
     mergeFields: ['rating', 'color_label'],
   },
   { table: 'transfer_files', keys: ['transfer_id'] },
+  // A photo the client already downloaded under a limit (issue 1560) stays
+  // downloaded; a survivor that already carries a grant keeps just the one.
+  { table: 'event_download_grants', keys: ['event_id'] },
 ];
 
 const equivalenceKey = (spec, row) => [

@@ -35,6 +35,7 @@ const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers')
 const { measureLocalStorageUsage } = require('../services/localStorageUsage');
 const logger = require('../utils/logger');
 const router = express.Router();
+const { normaliseDownloadLimit } = require('../services/downloadQuota');
 const { clearMaxFilesPerUploadCache, MAX_ALLOWED_FILES_PER_UPLOAD, clearMaxFileSizeCache, clearMaxVideoSizeCache, MAX_ALLOWED_FILE_SIZE_MB } = require('../services/uploadSettings');
 const watermarkService = require('../services/watermarkService');
 const watermarkGeneratorService = require('../services/watermarkGeneratorService');
@@ -1577,6 +1578,23 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       }
 
       settings.general_max_video_size_mb = normalizedValue;
+    }
+
+    // Default download limit for new events (issue 1560). Empty, 0 or null
+    // clears it (unlimited); anything else must be a positive integer.
+    if (Object.prototype.hasOwnProperty.call(settings, 'event_default_download_limit')) {
+      const raw = settings.event_default_download_limit;
+      if (raw === null || raw === '' || raw === 0 || raw === '0') {
+        settings.event_default_download_limit = null;
+      } else {
+        const normalized = normaliseDownloadLimit(raw);
+        if (normalized === null) {
+          return res.status(400).json({
+            error: 'event_default_download_limit must be a positive integer, or empty for unlimited'
+          });
+        }
+        settings.event_default_download_limit = normalized;
+      }
     }
 
     if (publicSiteKeysTouched) {

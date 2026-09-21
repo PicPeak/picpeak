@@ -1290,7 +1290,15 @@
     "preparingProgress_one": "{{count}} photos packaged",
     "preparingProgress_other": "{{count}} photos packaged",
     "videoFormatUnsupported": "This video format cannot be played in this browser. Download it to watch it.",
-    "videoLoadFailed": "This video could not be loaded."
+    "videoLoadFailed": "This video could not be loaded.",
+    "downloadLimit": {
+      "reached": "Download limit reached. Please contact your photographer for more downloads.",
+      "notEnough": "Only {{remaining}} downloads left. Please select fewer photos or contact your photographer.",
+      "counter": "{{used}} of {{limit}} downloads used",
+      "selectionCost": "Uses {{cost}} of your {{remaining}} remaining downloads",
+      "selectionTooLarge": "Download limit: this selection needs {{cost}} downloads, only {{remaining}} left",
+      "downloadAllBlocked": "This gallery holds more photos than your remaining downloads"
+    }
   },
   "categories": {
     "title": "Photo Categories",
@@ -1764,7 +1772,14 @@
       "searching": "Searching…",
       "noResultsCanCreate": "No matches. Use “Create new customer” to add one.",
       "noResultsNoPermission": "No matches, and your role cannot create customers. Ask an administrator to add this customer."
-    }
+    },
+    "downloadLimit": "Download Limit",
+    "downloadLimitHelp": "Maximum number of photos the client can download. 0 = unlimited",
+    "downloadLimitUsage": "{{used}} / {{limit}} downloaded",
+    "downloadLimitReset": "Reset",
+    "downloadLimitResetConfirm": "Reset the downloads for this gallery? The client gets the full limit again, and photos already downloaded count again.",
+    "downloadLimitResetDone": "Downloads reset",
+    "downloadLimitResetFailed": "Could not reset the downloads"
   },
   "settings": {
     "title": "System Settings",
@@ -2028,7 +2043,9 @@
       "defaultAllowColorLabels": "Color labels",
       "defaultKeybindMode": "Default lightbox shortcuts",
       "keybindColors": "Colors only — 1 green, 2 yellow, 3 red",
-      "keybindLightroom": "Lightroom — 1-5 stars, 6-9 colors"
+      "keybindLightroom": "Lightroom — 1-5 stars, 6-9 colors",
+      "defaultDownloadLimit": "Default download limit",
+      "defaultDownloadLimitHelp": "Pre-filled on new events: how many photos a client can download. 0 = unlimited."
     },
     "imageSecurity": {
       "title": "Image Protection",

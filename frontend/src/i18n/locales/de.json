@@ -1794,7 +1794,15 @@
     "preparingProgress_one": "{{count}} Foto verpackt",
     "preparingProgress_other": "{{count}} Fotos verpackt",
     "videoFormatUnsupported": "Dieses Videoformat kann in diesem Browser nicht abgespielt werden. Laden Sie es herunter, um es anzusehen.",
-    "videoLoadFailed": "Dieses Video konnte nicht geladen werden."
+    "videoLoadFailed": "Dieses Video konnte nicht geladen werden.",
+    "downloadLimit": {
+      "reached": "Download-Limit erreicht. Bitte wende dich für weitere Downloads an deinen Fotografen.",
+      "notEnough": "Nur noch {{remaining}} Downloads übrig. Bitte wähle weniger Fotos aus oder wende dich an deinen Fotografen.",
+      "counter": "{{used}} von {{limit}} Downloads genutzt",
+      "selectionCost": "Verbraucht {{cost}} deiner {{remaining}} verbleibenden Downloads",
+      "selectionTooLarge": "Download-Limit: Diese Auswahl braucht {{cost}} Downloads, nur noch {{remaining}} übrig",
+      "downloadAllBlocked": "Diese Galerie enthält mehr Fotos, als du noch herunterladen kannst"
+    }
   },
   "categories": {
     "title": "Fotokategorien",
@@ -2268,7 +2276,14 @@
       "searching": "Wird gesucht…",
       "noResultsCanCreate": "Keine Treffer. Legen Sie über „Neuen Kunden anlegen“ einen an.",
       "noResultsNoPermission": "Keine Treffer, und Ihre Rolle darf keine Kunden anlegen. Bitten Sie eine Administratorin oder einen Administrator, diesen Kunden anzulegen."
-    }
+    },
+    "downloadLimit": "Download-Limit",
+    "downloadLimitHelp": "Maximale Anzahl Fotos, die der Kunde herunterladen kann. 0 = unbegrenzt",
+    "downloadLimitUsage": "{{used}} / {{limit}} heruntergeladen",
+    "downloadLimitReset": "Zurücksetzen",
+    "downloadLimitResetConfirm": "Downloads für diese Galerie zurücksetzen? Der Kunde erhält das volle Limit zurück, und bereits heruntergeladene Fotos zählen erneut.",
+    "downloadLimitResetDone": "Downloads zurückgesetzt",
+    "downloadLimitResetFailed": "Downloads konnten nicht zurückgesetzt werden"
   },
   "settings": {
     "title": "Systemeinstellungen",
@@ -2467,7 +2482,9 @@
       "defaultAllowColorLabels": "Farbmarkierungen",
       "defaultKeybindMode": "Standard-Tastenkürzel in der Großansicht",
       "keybindColors": "Nur Farben – 1 Grün, 2 Gelb, 3 Rot",
-      "keybindLightroom": "Lightroom – 1–5 Sterne, 6–9 Farben"
+      "keybindLightroom": "Lightroom – 1–5 Sterne, 6–9 Farben",
+      "defaultDownloadLimit": "Standard-Download-Limit",
+      "defaultDownloadLimitHelp": "Vorbelegung für neue Events: wie viele Fotos ein Kunde herunterladen kann. 0 = unbegrenzt."
     },
     "imageSecurity": {
       "title": "Bildschutz",

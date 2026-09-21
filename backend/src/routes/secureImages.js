@@ -18,6 +18,7 @@ const {
 } = require('../services/downloadFilenameService');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const { isPhotoHiddenFromViewer, canSeeHiddenPhotos } = require('../utils/photoVisibility');
+const { grantDownloads, downloadLimitError } = require('../services/downloadQuota');
 
 const router = express.Router();
 
@@ -367,6 +368,11 @@ router.get('/:slug/secure-download/:photoId/:token',
         });
         return res.status(404).json({ error: 'Photo file not found' });
       }
+
+      // Download limit (issue 1560), granted once the file is in hand and
+      // before any byte of it goes out.
+      const quota = await grantDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
+      if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
 
       // Update download count
       await db('photos').where('id', photoId).increment('download_count', 1);

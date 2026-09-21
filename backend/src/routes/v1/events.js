@@ -142,6 +142,7 @@ const photoUpload = async (req, res, next) => {
  *               hero_logo_visible: { type: boolean, nullable: true, description: "Show event logo in the hero block. When omitted, falls back to the global branding_logo_display_hero setting." }
  *               hero_logo_size: { type: string, nullable: true, enum: [small, medium, large, xlarge], description: "Hero logo size. When omitted, falls back to the global branding_logo_size setting." }
  *               hero_logo_position: { type: string, nullable: true, enum: [top, center, bottom], description: "Hero logo position. Defaults to 'top' (not settings-backed — see migration 084)." }
+ *               download_limit: { type: integer, minimum: 1, nullable: true, description: "Maximum number of distinct photos the gallery may download. null = unlimited. When omitted, falls back to the global event_default_download_limit setting." }
  *     responses:
  *       201:
  *         description: Event created
@@ -189,7 +190,8 @@ router.post(
     body('image_quality').optional().not().isArray().isInt({ min: 1, max: 100 }).toInt(),
     body('hero_logo_visible').optional().isBoolean(),
     body('hero_logo_size').optional().isIn(['small', 'medium', 'large', 'xlarge']),
-    body('hero_logo_position').optional().isIn(['top', 'center', 'bottom'])
+    body('hero_logo_position').optional().isIn(['top', 'center', 'bottom']),
+    body('download_limit').optional({ nullable: true }).not().isArray().isInt({ min: 1, max: 2147483647 }).toInt()
   ],
   async (req, res) => {
     try {
