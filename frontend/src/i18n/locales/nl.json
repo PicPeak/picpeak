@@ -155,7 +155,15 @@
     "transferring": "Overdragen",
     "uploadingChunks_one": "{{count}} deel wordt geüpload",
     "uploadingChunks_other": "{{count}} delen worden geüpload",
-    "retryFailed": "Mislukte opnieuw proberen"
+    "retryFailed": "Mislukte opnieuw proberen",
+    "uploadingAs": "Uploaden als {{name}}",
+    "notYou": "Niet jij?",
+    "yourName": "Je naam",
+    "yourNameOptional": "Je naam (optioneel)",
+    "nameRequired": "Vul je naam in om te uploaden.",
+    "nameSaveFailed": "Je naam kon niet worden opgeslagen. Probeer het opnieuw.",
+    "namePrivacyShown": "Je naam wordt bij je foto’s opgeslagen en aan andere gasten getoond. De gastheer kan hem altijd verwijderen.",
+    "namePrivacyHidden": "Je naam wordt bij je foto’s opgeslagen voor de gastheer. Andere gasten zien hem niet, en de gastheer kan hem altijd verwijderen."
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -348,6 +356,14 @@
       "selectionCost": "Gebruikt {{cost}} van je {{remaining}} resterende downloads",
       "selectionTooLarge": "Downloadlimiet: deze selectie heeft {{cost}} downloads nodig, nog maar {{remaining}} over",
       "downloadAllBlocked": "Deze galerij bevat meer foto’s dan je resterende downloads"
+    },
+    "credits": {
+      "filterLabel": "Door",
+      "everyone": "Iedereen",
+      "unnamedGuests": "Gasten zonder naam",
+      "photographer": "Fotograaf",
+      "uploadedBy": "Geüpload door {{name}}",
+      "photoBy": "Foto door {{name}}"
     }
   },
   "categories": {
@@ -690,7 +706,20 @@
     "downloadLimitReset": "Resetten",
     "downloadLimitResetConfirm": "Downloads voor deze galerij resetten? De klant krijgt de volledige limiet terug en al gedownloade foto’s tellen opnieuw.",
     "downloadLimitResetDone": "Downloads gereset",
-    "downloadLimitResetFailed": "Downloads konden niet worden gereset"
+    "downloadLimitResetFailed": "Downloads konden niet worden gereset",
+    "uploaderNames": {
+      "label": "Namen van uploaders",
+      "help": "Gasten kunnen bij het uploaden hun naam opgeven, zodat iedereen ziet wie welke foto heeft gemaakt.",
+      "modes": {
+        "off": "Uit",
+        "optional": "Optioneel",
+        "required": "Verplicht"
+      },
+      "showToGuests": "Namen aan gasten tonen",
+      "showToGuestsHelp": "Als dit uit staat, worden namen alleen voor jou en de gastheer vastgelegd. Geldt ook voor fotografenvermeldingen uit EXIF.",
+      "shownToGuests": "Zichtbaar voor gasten",
+      "hiddenFromGuests": "Alleen zichtbaar voor jou"
+    }
   },
   "settings": {
     "title": "Systeeminstellingen",
@@ -1205,6 +1234,16 @@
       "save": "Kopregelinstellingen opslaan",
       "saved": "Branding van klantdashboard opgeslagen",
       "error": "Instellingen konden niet worden opgeslagen"
+    },
+    "creditBackfill": {
+      "title": "Fotomakers",
+      "description": "Leest de maker (EXIF Artist, XMP Creator of de naam in Copyright) voor foto’s die zijn toegevoegd voordat makers werden vastgelegd. Uploads van gasten en handmatig ingestelde namen worden nooit gewijzigd.",
+      "withCredit": "Met maker",
+      "undecided": "Nog niet gelezen",
+      "result": "Laatste run: {{success}} met maker, {{noCredit}} zonder naam in het bestand, {{failed}} onbereikbaar",
+      "running": "Makers worden gelezen...",
+      "noneToRead": "Geen foto’s meer te lezen",
+      "button": "Makers uit EXIF lezen"
     }
   },
   "analytics": {
@@ -1686,7 +1725,26 @@
       "rateStars": "{{count}} sterren geven",
       "markError": "Markering opslaan mislukt",
       "yourMarkColor": "Jouw markering: {{color}}",
-      "yourMarkRating": "Jouw beoordeling: {{count}}"
+      "yourMarkRating": "Jouw beoordeling: {{count}}",
+      "columns": {
+        "credit": "Maker"
+      },
+      "credit": {
+        "label": "Maker",
+        "edit": "Bewerken",
+        "save": "Naam opslaan",
+        "clear": "Naam verwijderen",
+        "saved": "Naam opgeslagen",
+        "cleared": "Naam verwijderd",
+        "none": "Geen naam",
+        "unnamedGuest": "Gast, zonder naam",
+        "manualHint": "Een naam die je hier instelt is definitief: EXIF-gegevens vervangen hem niet.",
+        "bulkAction": "Naam instellen",
+        "bulkTitle": "Naam instellen voor {{count}} foto’s",
+        "filterLabel": "Filteren op maker",
+        "filterAll": "Alle namen",
+        "filterNone": "Geen naam"
+      }
     },
     "events": {
       "tabs": {

@@ -13,7 +13,7 @@
  *  - guests see names only with the per-event switch on; the PIN client always;
  *    the slideshow never
  *  - admin uploads read the EXIF credit in the worker, guest uploads never do,
- *    and a manual credit survives the worker
+ *    and a manual credit survives both the worker and the backfill
  *  - removing a guest (admin delete or forget-me) takes their name off their
  *    photos; a merge moves the uploads to the survivor's name
  *  - the admin list, filter, names endpoint, CSV/JSON export and XMP carry it
@@ -138,6 +138,7 @@ describe('Photo credits (issue 1561)', () => {
     app.use('/api/gallery', require('../../src/routes/galleryGuests'));
     app.use('/api/gallery', require('../../src/routes/gallery'));
     app.use('/api/admin', require('../../src/routes/adminGuests'));
+    app.use('/api/admin/photos', require('../../src/routes/adminPhotoDimensions'));
     app.use('/api/admin/photos', require('../../src/routes/adminPhotos'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
   }, 120000);
@@ -295,6 +296,31 @@ describe('Photo credits (issue 1561)', () => {
         .toMatchObject({ credit_name: null, credit_source: null });
       expect(await db('photos').where({ id: manualId }).first())
         .toMatchObject({ credit_name: null, credit_source: 'manual' });
+    }, 30000);
+
+    it('the backfill fills undecided rows and leaves decided ones alone', async () => {
+      const { event } = await makeEvent();
+      const open = await addPhoto(event, { uploaded_by: 'admin' }, artistJpeg);
+      const guest = await addPhoto(event, { uploaded_by: 'guest' }, artistJpeg);
+      const manual = await addPhoto(event, { credit_source: 'manual', credit_name: 'Fixed' }, artistJpeg);
+
+      const res = await admin(request(app).post('/api/admin/photos/repair-credits'));
+      expect(res.status).toBe(200);
+
+      const deadline = Date.now() + 15000;
+      let state;
+      do {
+        // eslint-disable-next-line no-await-in-loop
+        state = (await admin(request(app).get('/api/admin/photos/repair-credits/status'))).body;
+        if (!state.isRunning) break;
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, 100));
+      } while (Date.now() < deadline);
+      expect(state.isRunning).toBe(false);
+
+      expect((await db('photos').where({ id: open }).first()).credit_name).toBe('Studio Lumen');
+      expect((await db('photos').where({ id: guest }).first()).credit_name).toBeNull();
+      expect((await db('photos').where({ id: manual }).first()).credit_name).toBe('Fixed');
     }, 30000);
   });
 

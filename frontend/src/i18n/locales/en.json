@@ -836,7 +836,15 @@
     "replacedFiles_other": "{{count}} photos replaced",
     "uploadingChunks_one": "{{count}} chunk uploading",
     "uploadingChunks_other": "{{count}} chunks uploading",
-    "fileTooLarge": "File too large: {{name}} (max {{limit}}MB)"
+    "fileTooLarge": "File too large: {{name}} (max {{limit}}MB)",
+    "uploadingAs": "Uploading as {{name}}",
+    "notYou": "Not you?",
+    "yourName": "Your name",
+    "yourNameOptional": "Your name (optional)",
+    "nameRequired": "Please enter your name to upload.",
+    "nameSaveFailed": "Your name could not be saved. Please try again.",
+    "namePrivacyShown": "Your name is saved with your photos and shown to other guests. The host can remove it at any time.",
+    "namePrivacyHidden": "Your name is saved with your photos for the host. Other guests do not see it, and the host can remove it at any time."
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -1298,6 +1306,14 @@
       "selectionCost": "Uses {{cost}} of your {{remaining}} remaining downloads",
       "selectionTooLarge": "Download limit: this selection needs {{cost}} downloads, only {{remaining}} left",
       "downloadAllBlocked": "This gallery holds more photos than your remaining downloads"
+    },
+    "credits": {
+      "filterLabel": "By",
+      "everyone": "Everyone",
+      "unnamedGuests": "Guests without a name",
+      "photographer": "Photographer",
+      "uploadedBy": "Uploaded by {{name}}",
+      "photoBy": "Photo by {{name}}"
     }
   },
   "categories": {
@@ -1779,7 +1795,20 @@
     "downloadLimitReset": "Reset",
     "downloadLimitResetConfirm": "Reset the downloads for this gallery? The client gets the full limit again, and photos already downloaded count again.",
     "downloadLimitResetDone": "Downloads reset",
-    "downloadLimitResetFailed": "Could not reset the downloads"
+    "downloadLimitResetFailed": "Could not reset the downloads",
+    "uploaderNames": {
+      "label": "Uploader names",
+      "help": "Lets guests add their name when uploading, so everyone can see who took which photo.",
+      "modes": {
+        "off": "Off",
+        "optional": "Optional",
+        "required": "Required"
+      },
+      "showToGuests": "Show uploader names to guests",
+      "showToGuestsHelp": "When off, names are recorded for you and the host only. Also covers photographer credits read from EXIF.",
+      "shownToGuests": "Shown to guests",
+      "hiddenFromGuests": "Visible to you only"
+    }
   },
   "settings": {
     "title": "System Settings",
@@ -2738,7 +2767,17 @@
       "staleTiers_other": "{{count}} cached size(s) could not be deleted and will keep serving the old orientation — re-run once storage is writable."
     },
     "saved": "Settings saved",
-    "saveError": "Failed to save settings"
+    "saveError": "Failed to save settings",
+    "creditBackfill": {
+      "title": "Photo Credits",
+      "description": "Read the photographer credit (EXIF Artist, XMP Creator, or the name in Copyright) for photos added before credits were recorded. Guest uploads and names you set by hand are never changed.",
+      "withCredit": "With a Credit",
+      "undecided": "Not Read Yet",
+      "result": "Last run: {{success}} credited, {{noCredit}} without a name in the file, {{failed}} unreachable",
+      "running": "Reading credits...",
+      "noneToRead": "No photos left to read",
+      "button": "Read Credits from EXIF"
+    }
   },
   "analytics": {
     "title": "Analytics Dashboard",
@@ -3401,7 +3440,8 @@
         "actions": "Actions",
         "views": "Views",
         "downloads": "Downloads",
-        "likes": "Likes"
+        "likes": "Likes",
+        "credit": "Credit"
       },
       "myMarks": "Your marks",
       "myMarksHelp": "Only you see these. They never appear in the client gallery, and they export to Lightroom as XMP.",
@@ -3414,7 +3454,23 @@
       "rateStars_one": "Rate {{count}} stars",
       "rateStars_other": "Rate {{count}} stars",
       "yourMarkRating_one": "Your rating: {{count}}",
-      "yourMarkRating_other": "Your rating: {{count}}"
+      "yourMarkRating_other": "Your rating: {{count}}",
+      "credit": {
+        "label": "Credit",
+        "edit": "Edit",
+        "save": "Save name",
+        "clear": "Clear name",
+        "saved": "Name saved",
+        "cleared": "Name removed",
+        "none": "No name",
+        "unnamedGuest": "Guest, no name",
+        "manualHint": "A name set here is final: it is not replaced by EXIF data.",
+        "bulkAction": "Set name",
+        "bulkTitle": "Set the name on {{count}} photos",
+        "filterLabel": "Filter by credit",
+        "filterAll": "All names",
+        "filterNone": "No name"
+      }
     },
     "events": {
       "tabs": {

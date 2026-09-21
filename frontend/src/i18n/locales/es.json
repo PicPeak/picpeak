@@ -156,7 +156,15 @@
     "limitReached": "Límite de subida alcanzado ({{limit}} archivos por lote)",
     "uploadingChunks": "Subiendo {{count}} archivos en {{total}} lotes...",
     "mediaCategory": "Categoría de medios",
-    "uploadAction": "Subir {{count}} archivos"
+    "uploadAction": "Subir {{count}} archivos",
+    "uploadingAs": "Subiendo como {{name}}",
+    "notYou": "¿No eres tú?",
+    "yourName": "Tu nombre",
+    "yourNameOptional": "Tu nombre (opcional)",
+    "nameRequired": "Introduce tu nombre para subir fotos.",
+    "nameSaveFailed": "No se pudo guardar tu nombre. Inténtalo de nuevo.",
+    "namePrivacyShown": "Tu nombre se guarda con tus fotos y se muestra a los demás invitados. El anfitrión puede eliminarlo en cualquier momento.",
+    "namePrivacyHidden": "Tu nombre se guarda con tus fotos para el anfitrión. Los demás invitados no lo ven, y el anfitrión puede eliminarlo en cualquier momento."
   },
   "navigation": {
     "dashboard": "Panel",
@@ -327,6 +335,14 @@
       "selectionCost": "Usa {{cost}} de tus {{remaining}} descargas restantes",
       "selectionTooLarge": "Límite de descargas: esta selección necesita {{cost}} descargas, solo quedan {{remaining}}",
       "downloadAllBlocked": "Esta galería tiene más fotos que tus descargas restantes"
+    },
+    "credits": {
+      "filterLabel": "De",
+      "everyone": "Todos",
+      "unnamedGuests": "Invitados sin nombre",
+      "photographer": "Fotógrafo",
+      "uploadedBy": "Subida por {{name}}",
+      "photoBy": "Foto de {{name}}"
     }
   },
   "categories": {
@@ -708,7 +724,20 @@
     "downloadLimitReset": "Restablecer",
     "downloadLimitResetConfirm": "¿Restablecer las descargas de esta galería? El cliente recupera el límite completo y las fotos ya descargadas vuelven a contar.",
     "downloadLimitResetDone": "Descargas restablecidas",
-    "downloadLimitResetFailed": "No se pudieron restablecer las descargas"
+    "downloadLimitResetFailed": "No se pudieron restablecer las descargas",
+    "uploaderNames": {
+      "label": "Nombres de quien sube",
+      "help": "Permite a los invitados añadir su nombre al subir fotos, para que todos vean quién hizo cada una.",
+      "modes": {
+        "off": "Desactivado",
+        "optional": "Opcional",
+        "required": "Obligatorio"
+      },
+      "showToGuests": "Mostrar los nombres a los invitados",
+      "showToGuestsHelp": "Si está desactivado, los nombres solo se guardan para ti y el anfitrión. También afecta a los créditos del fotógrafo leídos del EXIF.",
+      "shownToGuests": "Visible para los invitados",
+      "hiddenFromGuests": "Visible solo para ti"
+    }
   },
   "settings": {
     "title": "Ajustes del sistema",
@@ -1092,6 +1121,16 @@
     },
     "customerSurface": {
       "save": "Guardar ajustes del encabezado"
+    },
+    "creditBackfill": {
+      "title": "Autores de las fotos",
+      "description": "Lee el autor (EXIF Artist, XMP Creator o el nombre del Copyright) de las fotos añadidas antes de que se registraran autores. Las subidas de invitados y los nombres fijados a mano nunca se modifican.",
+      "withCredit": "Con autor",
+      "undecided": "Aún sin leer",
+      "result": "Última ejecución: {{success}} con autor, {{noCredit}} sin nombre en el archivo, {{failed}} inaccesibles",
+      "running": "Leyendo autores...",
+      "noneToRead": "No quedan fotos por leer",
+      "button": "Leer autores del EXIF"
     }
   },
   "analytics": {
@@ -1609,7 +1648,26 @@
       "rateStars": "Valorar con {{count}} estrellas",
       "markError": "No se pudo guardar tu marca",
       "yourMarkColor": "Tu marca: {{color}}",
-      "yourMarkRating": "Tu valoración: {{count}}"
+      "yourMarkRating": "Tu valoración: {{count}}",
+      "columns": {
+        "credit": "Autor"
+      },
+      "credit": {
+        "label": "Autor",
+        "edit": "Editar",
+        "save": "Guardar nombre",
+        "clear": "Quitar nombre",
+        "saved": "Nombre guardado",
+        "cleared": "Nombre eliminado",
+        "none": "Sin nombre",
+        "unnamedGuest": "Invitado, sin nombre",
+        "manualHint": "Un nombre fijado aquí es definitivo: los datos EXIF no lo sustituyen.",
+        "bulkAction": "Fijar nombre",
+        "bulkTitle": "Fijar el nombre en {{count}} fotos",
+        "filterLabel": "Filtrar por autor",
+        "filterAll": "Todos los nombres",
+        "filterNone": "Sin nombre"
+      }
     },
     "guests": {
       "columns": {

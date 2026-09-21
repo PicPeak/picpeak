@@ -42,7 +42,7 @@ const RULES_V2 = [
   [['GET'], /^\/archives\/[^/]+\/download\/?$/, ['archive_management', 'photo_exports']],
   [WRITE, /^\/(?:events|photos)\/[^/]+\/photos(?:\/|$)/, ['photo_management']],
   [['POST'], /^\/photos\/photos\/[^/]+\/retry\/?$/, ['photo_processing']],
-  [['POST'], /^\/photos\/repair-(?:dimensions|capture-dates|orientation)\/?$/, ['photo_processing']],
+  [['POST'], /^\/photos\/repair-(?:dimensions|capture-dates|orientation|credits)\/?$/, ['photo_processing']],
   [['POST', 'PUT'], /^\/thumbnails\/(?:settings|regenerate|regenerate-previews)\/?$/, ['photo_processing']],
   [['POST'], /^\/photo-export\/[^/]+\/export\/?$/, ['photo_exports']],
   [['GET'], /^\/(?:events|photos)\/[^/]+\/photos\/[^/]+\/download\/?$/, ['photo_exports']],

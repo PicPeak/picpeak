@@ -19,7 +19,7 @@ const maintenanceJobs = require('../services/maintenanceJobState');
 // Two separate rows, for the same reason the two objects were separate: the
 // jobs walk the same photos but read different things out of them, and one
 // running must not block or report for the other.
-const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFILL } = maintenanceJobs;
+const { JOB_DIMENSION_REPAIR, JOB_CAPTURE_DATE_BACKFILL, JOB_ORIENTATION_BACKFILL, JOB_CREDIT_BACKFILL } = maintenanceJobs;
 
 const { HEARTBEAT_INTERVAL_MS } = maintenanceJobs;
 
@@ -881,6 +881,194 @@ router.get('/repair-orientation/status', adminAuth, requirePermission('system.ma
   } catch (error) {
     logger.error('Error fetching orientation backfill status:', error);
     res.status(500).json({ error: 'Failed to fetch orientation backfill status' });
+  }
+});
+
+/**
+ * Backfill photo credits from EXIF (#1561).
+ *
+ * New photos get their credit at ingest (services/photoCredit.js). A library
+ * that predates the feature has none, and — same reasoning as the capture-date
+ * backfill above — this is an endpoint rather than a migration: the originals
+ * may sit on a mount that is unavailable at upgrade time, and a run that found
+ * nothing must be repeatable once it is back. Same claim + lease shape too.
+ *
+ * Candidates are rows whose credit nobody has decided yet: credit_source IS
+ * NULL. That skips `manual` (the admin's call is final), `guest` (a guest
+ * upload credits the guest, never EXIF) and `exif` (already read). Guest
+ * uploads without a name are skipped on uploaded_by — their EXIF is phone
+ * noise the resolver deliberately ignores. Guest photos queued before #1561
+ * were recorded as 'admin' and cannot be told apart; they are read like any
+ * admin upload.
+ */
+function creditCandidates() {
+  return db('photos')
+    .join('events', 'photos.event_id', 'events.id')
+    .whereNull('photos.credit_source')
+    .where(function () {
+      this.where('photos.uploaded_by', '!=', 'guest').orWhereNull('photos.uploaded_by');
+    })
+    // Same three video markers as the capture-date backfill: EXIF credits are
+    // read from images only.
+    .where(function () {
+      this.where('photos.media_type', '!=', 'video').orWhereNull('photos.media_type');
+    })
+    .where(function () {
+      this.where('photos.type', '!=', 'video').orWhereNull('photos.type');
+    })
+    .where(function () {
+      this.whereNull('photos.mime_type').orWhere('photos.mime_type', 'not like', 'video/%');
+    })
+    // Archived originals are inside the zip, not on storage.
+    .where(function () {
+      this.where('events.is_archived', false).orWhereNull('events.is_archived');
+    });
+}
+
+router.post('/repair-credits', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    const token = await maintenanceJobs.claim(JOB_CREDIT_BACKFILL);
+    if (!token) {
+      return res.status(409).json({ error: 'Credit backfill is already running' });
+    }
+    const lease = startLeaseKeeper(JOB_CREDIT_BACKFILL, token);
+
+    let photos;
+    try {
+      photos = await creditCandidates().select(
+        'photos.id', 'photos.path', 'photos.filename',
+        'photos.source_origin', 'photos.external_relpath', 'photos.event_id',
+        'events.source_mode', 'events.external_path', 'events.slug'
+      );
+    } catch (err) {
+      lease.stop();
+      await maintenanceJobs.release(JOB_CREDIT_BACKFILL, token);
+      throw err;
+    }
+
+    if (photos.length === 0) {
+      lease.stop();
+      await maintenanceJobs.release(JOB_CREDIT_BACKFILL, token);
+      return res.json({ message: 'No photos need a credit', count: 0 });
+    }
+
+    res.json({
+      message: `Started reading credits for ${photos.length} photos`,
+      count: photos.length
+    });
+
+    setImmediate(async () => {
+      const { withLocalCopy } = require('../services/imageProcessor');
+      const { resolvePhotoStorageKey } = require('../services/photoResolver');
+      const { extractExifCredit } = require('../services/photoCredit');
+      let successCount = 0;
+      let missingCount = 0;
+      let errorCount = 0;
+      let skippedCount = 0;
+      let lostClaim = false;
+
+      try {
+        for (const photo of photos) {
+          if (lease.lost()) { lostClaim = true; break; }
+
+          try {
+            const event = { source_mode: photo.source_mode, external_path: photo.external_path, slug: photo.slug };
+            const isExternal = photo.source_origin === 'external' || photo.source_origin === 'reference';
+
+            // Two source shapes, the same split as the capture-date backfill.
+            let name;
+            if (isExternal) {
+              let fullPath;
+              try {
+                fullPath = resolvePhotoFilePath(event, photo);
+                await fs.access(fullPath);
+              } catch (err) {
+                logger.warn(`Credit backfill: no readable file for photo ${photo.id}: ${err.message}`);
+                errorCount++;
+                continue;
+              }
+              name = await extractExifCredit(fullPath);
+            } else {
+              let sourceKey;
+              try {
+                sourceKey = resolvePhotoStorageKey(event, photo);
+              } catch (err) {
+                logger.warn(`Credit backfill: no storage key for photo ${photo.id}: ${err.message}`);
+                errorCount++;
+                continue;
+              }
+              name = await withLocalCopy(sourceKey, async (localPath) => {
+                await fs.access(localPath);
+                return extractExifCredit(localPath);
+              });
+            }
+
+            if (!name) {
+              missingCount++;
+              continue;
+            }
+
+            // Fenced on the identity that was read (a replacement mid-run
+            // swaps the file under the row, see the capture-date backfill) and
+            // on credit_source still being NULL, so an admin correction or a
+            // guest credit written meanwhile is never overwritten.
+            const updated = await db('photos')
+              .where({ id: photo.id, path: photo.path, filename: photo.filename })
+              .whereNull('credit_source')
+              .update({ credit_name: name, credit_source: 'exif' });
+            if (updated) successCount++; else skippedCount++;
+          } catch (error) {
+            logger.error(`Error backfilling credit for photo ${photo.id}:`, error);
+            errorCount++;
+          }
+        }
+
+        if (lostClaim) {
+          logger.warn(`Credit backfill stopped: claim taken over after ${successCount} updated, ${errorCount} errors`);
+          return;
+        }
+        await maintenanceJobs.release(JOB_CREDIT_BACKFILL, token, { success: successCount, noCredit: missingCount, failed: errorCount, skipped: skippedCount });
+        logger.info(
+          `Credit backfill complete: ${successCount} updated, ${missingCount} without a credit, `
+          + `${errorCount} errors, ${skippedCount} skipped (decided or replaced mid-run)`
+        );
+      } catch (err) {
+        logger.error('Credit backfill aborted:', err);
+        await maintenanceJobs
+          .release(JOB_CREDIT_BACKFILL, token, { success: successCount, noCredit: missingCount, failed: errorCount, skipped: skippedCount, error: err.message })
+          .catch(() => {});
+      } finally {
+        lease.stop();
+      }
+    });
+  } catch (error) {
+    logger.error('Error starting credit backfill:', error);
+    res.status(500).json({ error: 'Failed to start credit backfill' });
+  }
+});
+
+// system.manage for the same reason as the capture-date status above.
+router.get('/repair-credits/status', adminAuth, requirePermission('system.manage'), async (req, res) => {
+  try {
+    const counts = await db('photos')
+      .count('photos.id as total')
+      .count({ credited: db.raw('CASE WHEN photos.credit_name IS NOT NULL THEN 1 END') })
+      .first();
+    // Undecided rows are what a run would read. Rows without EXIF stay
+    // undecided, so this is "what the button would look at", not a backlog
+    // that a finished run always clears.
+    const pending = await creditCandidates().count('photos.id as count').first();
+    const state = await maintenanceJobs.read(JOB_CREDIT_BACKFILL);
+    res.json({
+      total: Number(counts.total),
+      withCredit: Number(counts.credited),
+      undecided: Number(pending.count),
+      isRunning: state.isRunning,
+      lastResult: state.lastResult
+    });
+  } catch (error) {
+    logger.error('Error fetching credit backfill status:', error);
+    res.status(500).json({ error: 'Failed to fetch credit backfill status' });
   }
 });
 
