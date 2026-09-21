@@ -22,6 +22,7 @@
 const { db, logActivity } = require('../database/db');
 const { AppError } = require('../utils/errors');
 const { isUniqueViolation } = require('../utils/dbErrors');
+const { formatBoolean } = require('../utils/dbCompat');
 
 const NAME_MAX = 80;
 const DESCRIPTION_MAX = 500;
@@ -101,7 +102,7 @@ async function list({ includeArchived = false } = {}) {
     .select('customer_groups.*', db.raw('COUNT(customer_group_members.id) as member_count'))
     .orderBy('customer_groups.sort_order', 'asc')
     .orderBy('customer_groups.name', 'asc');
-  if (!includeArchived) query.where('customer_groups.is_archived', false);
+  if (!includeArchived) query.where('customer_groups.is_archived', formatBoolean(false));
   return (await query).map(toApi);
 }
 
@@ -118,7 +119,7 @@ async function create({ name, description, color }, admin = null) {
     color: normalizeColor(color),
     // New groups sort after the existing ones; the admin reorders from there.
     sort_order: Number((await db('customer_groups').max('sort_order as max').first())?.max || 0) + 1,
-    is_archived: false,
+    is_archived: formatBoolean(false),
     created_by_admin_id: admin?.id || null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -162,7 +163,7 @@ async function update(id, payload, admin = null) {
     if (updates.color !== existing.color) changed.color = { from: existing.color, to: updates.color };
   }
   if (payload.isArchived !== undefined) {
-    updates.is_archived = !!payload.isArchived;
+    updates.is_archived = formatBoolean(!!payload.isArchived);
     if (!!payload.isArchived !== !!existing.is_archived) changed.isArchived = !!payload.isArchived;
   }
   try {
@@ -216,8 +217,8 @@ async function reorder(ids, admin = null) {
   if (!Array.isArray(ids) || ids.length === 0) {
     throw new AppError('Send the group ids in their new order', 400, 'GROUP_ORDER_REQUIRED');
   }
-  const known = await db('customer_groups').whereIn('id', ids).pluck('id');
-  const missing = ids.filter((id) => !known.includes(id));
+  const known = (await db('customer_groups').whereIn('id', ids).pluck('id')).map((id) => Number(id));
+  const missing = ids.filter((id) => !known.includes(Number(id)));
   if (missing.length > 0) throw new AppError('Customer group not found', 404, 'GROUP_NOT_FOUND');
   await db.transaction(async (trx) => {
     for (let position = 0; position < ids.length; position += 1) {
@@ -290,7 +291,7 @@ async function setCustomerGroups(customerId, groupIds, admin = null) {
       added = wanted.filter((id) => !currentIds.includes(id));
       removed = currentIds.filter((id) => !wanted.includes(id));
 
-      const archivedAdded = groups.filter((g) => g.is_archived && added.includes(g.id));
+      const archivedAdded = groups.filter((g) => g.is_archived && added.includes(Number(g.id)));
       if (archivedAdded.length > 0) {
         throw new AppError(
           `"${archivedAdded[0].name}" is archived and can't be assigned. Restore it first.`,

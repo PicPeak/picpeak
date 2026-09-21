@@ -134,6 +134,24 @@ describe('the catalogue', () => {
     expect(badColor.body.code).toBe('GROUP_COLOR_INVALID');
   });
 
+  it('refuses a description over 500 characters at the route, on create and on update', async () => {
+    // The route validator answers before the service's own check, so the
+    // service's GROUP_DESCRIPTION_TOO_LONG code must not be what comes back.
+    const tooLong = 'x'.repeat(501);
+    const created = await createGroup({ name: 'Long notes', description: tooLong });
+    expect(created.status).toBe(400);
+    expect(created.body.code).not.toBe('GROUP_DESCRIPTION_TOO_LONG');
+
+    // Padding is trimmed first, as the service does, so 500 characters fit.
+    const fits = await createGroup({ name: 'Long notes', description: `  ${'x'.repeat(500)}  ` });
+    expect(fits.status).toBe(201);
+
+    const updated = await request(adminApp).put(`/api/admin/customers/groups/${bodyOf(fits).group.id}`)
+      .set(auth(superToken)).send({ description: tooLong });
+    expect(updated.status).toBe(400);
+    expect(updated.body.code).not.toBe('GROUP_DESCRIPTION_TOO_LONG');
+  });
+
   it('keeps the admin\'s order, and lists archived groups only when asked', async () => {
     const first = bodyOf(await createGroup({ name: 'Order A' })).group;
     const second = bodyOf(await createGroup({ name: 'Order B' })).group;

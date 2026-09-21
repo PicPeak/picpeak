@@ -177,7 +177,7 @@ router.post('/groups', [
   adminAuth,
   requireGroupManage,
   body('name').isString().trim().isLength({ min: 1, max: 80 }),
-  body('description').optional({ nullable: true }).isString(),
+  body('description').optional({ nullable: true }).isString().trim().isLength({ max: 500 }),
   body('color').optional({ nullable: true }).isString(),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
@@ -202,7 +202,7 @@ router.put('/groups/:groupId', [
   requireGroupManage,
   param('groupId').isInt({ min: 1 }),
   body('name').optional().isString().trim().isLength({ min: 1, max: 80 }),
-  body('description').optional({ nullable: true }).isString(),
+  body('description').optional({ nullable: true }).isString().trim().isLength({ max: 500 }),
   body('color').optional({ nullable: true }).isString(),
   body('isArchived').optional().isBoolean(),
 ], handleAsync(async (req, res) => {
