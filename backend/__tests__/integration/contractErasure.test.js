@@ -7,6 +7,8 @@
  * had signed. The rule now (services/contract/erasure.js):
  *
  *   - no signature yet  → cancelled, redacted, every way in revoked;
+ *   - no signature, already declined or cancelled → redacted and revoked the
+ *     same way, its status left as it is;
  *   - at least one signature → kept whole as the contractual record, but the
  *     live invitations and sessions are revoked all the same.
  */
@@ -116,10 +118,38 @@ beforeAll(async () => {
     .send({ name: 'Anna Muster', mode: 'typed', accepted: true }));
   state.signedSession = session;
   state.unsignedSession = await verifiedSession(state.unsigned.link);
+
+  // Two that ended without anyone signing: one the customer declined, one
+  // the studio cancelled.
+  state.declined = await sentContract();
+  await ok(asSigner(request(signingApp).post('/api/public/contract-signing/session/decline'))
+    .set('X-Signing-Session', await verifiedSession(state.declined.link))
+    .send({ reason: 'Anna Muster found another studio' }));
+  state.cancelled = await sentContract();
+  state.cancelledSession = await verifiedSession(state.cancelled.link);
+  await ok(request(contractsApp).post(`/api/admin/contracts/${state.cancelled.id}/cancel`).set(auth));
+
+  // And one that was signed and then ended up cancelled: the signature makes
+  // it the record, whatever its status says.
+  state.signedCancelled = await sentContract();
+  await ok(asSigner(request(signingApp).post('/api/public/contract-signing/session/sign'))
+    .set('X-Signing-Session', await verifiedSession(state.signedCancelled.link))
+    .send({ name: 'Anna Muster', mode: 'typed', accepted: true }));
+  await db('contracts').where({ id: state.signedCancelled.id }).update({ status: 'cancelled' });
+
+  const contractRow = (id) => db('contracts').where({ id }).first();
   state.beforeErase = {
-    unsigned: await db('contracts').where({ id: state.unsigned.id }).first(),
-    signed: await db('contracts').where({ id: state.signed.id }).first(),
+    unsigned: await contractRow(state.unsigned.id),
+    signed: await contractRow(state.signed.id),
+    declined: await contractRow(state.declined.id),
+    cancelled: await contractRow(state.cancelled.id),
+    signedCancelled: await contractRow(state.signedCancelled.id),
   };
+  state.eventsBefore = {};
+  for (const key of ['declined', 'cancelled']) {
+    state.eventsBefore[key] = await db('contract_signing_events')
+      .where({ contract_id: state[key].id }).orderBy('id').select('id', 'event_type', 'actor_label', 'event_hash');
+  }
 
   await require('../../src/services/customerAccountsService').eraseCustomer(customerId, adminId);
 }, 120000);
@@ -197,9 +227,61 @@ test('a signed contract is kept whole, and only its live access is revoked', asy
     .set('X-Signing-Session', state.signedSession)).status).toBe(401);
 });
 
-test('the erasure log names what was cancelled and what was kept', async () => {
+test.each(['declined', 'cancelled'])('a %s contract nobody signed is redacted, its status left as it is', async (key) => {
+  // The fixture: before erasure the snapshot and the signer carry the data.
+  const before = state.beforeErase[key];
+  expect(before.status).toBe(key);
+  expect(parsed(before.rendered_content).placeholders.customer_name).toContain('Anna');
+
+  const contract = await db('contracts').where({ id: state[key].id }).first();
+  expect(contract.status).toBe(key);
+  const snapshot = parsed(contract.rendered_content);
+  expect(snapshot.placeholders.customer_name).toBe('');
+  expect(snapshot.placeholders.customer_address).toBe('');
+  expect(JSON.stringify(snapshot)).not.toContain('Bahnhofstrasse');
+  expect(contract.rendered_content_sha256).toBe(before.rendered_content_sha256);
+  expect(contract.rendered_content_redacted_at).toBeTruthy();
+
+  const rows = await db('contract_signers').where({ contract_id: state[key].id });
+  expect(rows.length).toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(row.name_enc).toBeNull();
+    expect(row.email_enc).toBeNull();
+    expect(row.email_hash).toBeNull();
+    expect(row.ip_enc).toBeNull();
+    expect(row.user_agent_enc).toBeNull();
+    expect(row.decline_reason_enc).toBeNull();
+  }
+
+  // The event log is left as it was: every earlier event unchanged, labels
+  // included, and the chain still verifies.
+  const events = await db('contract_signing_events')
+    .where({ contract_id: state[key].id }).orderBy('id').select('id', 'event_type', 'actor_label', 'event_hash');
+  expect(events.slice(0, state.eventsBefore[key].length)).toEqual(state.eventsBefore[key]);
+  expect(await require('../../src/services/contract/signingEvents').verifyChain(state[key].id))
+    .toEqual(expect.objectContaining({ ok: true }));
+});
+
+test('the link of a cancelled contract nobody signed stays dead after erasure', async () => {
+  expect((await request(signingApp).get(`/api/public/contract-signing/invite/${state.cancelled.link}`)).status).toBe(410);
+  expect((await request(signingApp).get('/api/public/contract-signing/session')
+    .set('X-Signing-Session', state.cancelledSession)).status).toBe(401);
+});
+
+test('a signed contract that was later cancelled is kept whole', async () => {
+  const contract = await db('contracts').where({ id: state.signedCancelled.id }).first();
+  expect(contract.status).toBe('cancelled');
+  expect(contract.rendered_content).toBe(state.beforeErase.signedCancelled.rendered_content);
+  expect(contract.rendered_content_redacted_at).toBeFalsy();
+  const signer = await db('contract_signers').where({ contract_id: state.signedCancelled.id, role: 'customer' }).first();
+  expect(require('../../src/utils/fieldEncryption').tryDecrypt(signer.name_enc)).toBe('Anna Muster');
+  expect(signer.email_hash).toBeTruthy();
+});
+
+test('the erasure log names what was cancelled, redacted and kept', async () => {
   const row = await db('activity_logs').where({ activity_type: 'customer_erased' }).orderBy('id', 'desc').first();
   const meta = parsed(row.metadata);
   expect(meta.cancelledContracts).toEqual([state.unsigned.id]);
-  expect(meta.retainedContracts).toEqual([state.signed.id]);
+  expect(meta.redactedContracts).toEqual([state.declined.id, state.cancelled.id]);
+  expect(meta.retainedContracts).toEqual([state.signed.id, state.signedCancelled.id]);
 });

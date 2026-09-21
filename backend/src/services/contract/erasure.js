@@ -9,11 +9,13 @@
  * address inside the frozen `rendered_content` stayed as they were, with no
  * written rule saying which of that was on purpose. The rule is:
  *
- *   - a contract that carries NO signature yet (draft or sent) is CANCELLED.
- *     Every outstanding invitation, signing session and action token stops
- *     working, the signers' encrypted columns are cleared, and the
- *     customer's name and address are taken out of the frozen snapshot.
- *     Nothing was concluded, so there is nothing to keep.
+ *   - a contract that carries NO signature is REDACTED. Every outstanding
+ *     invitation, signing session and action token stops working, the
+ *     signers' encrypted columns are cleared, and the customer's name and
+ *     address are taken out of the frozen snapshot. Nothing was concluded,
+ *     so there is nothing to keep. A draft or sent one is also CANCELLED;
+ *     one that already ended (declined, cancelled) keeps its status — the
+ *     outcome is not the customer's data, only the details around it are.
  *
  *   - a contract that carries AT LEAST ONE signature is KEPT WHOLE. It is
  *     evidence of a concluded — or partly concluded — agreement and stays
@@ -33,7 +35,8 @@
  *   - the signing event log keeps the signer labels it already carries.
  *     Each event's hash covers the one before it, so editing a label would
  *     break the chain for every event after it. The names left there belong
- *     to a cancelled contract and are listed in the retention documentation
+ *     to a contract nobody signed and are listed in the retention documentation
+ *     (https://docs.picpeak.app/features/crm/contracts#what-erasing-a-customer-keeps)
  *     rather than silently removed.
  */
 
@@ -84,7 +87,7 @@ async function plan(db, customerId) {
   const hasRedactedColumn = await db.schema.hasColumn('contracts', 'rendered_content_redacted_at');
   const rows = await db('contracts').where({ customer_account_id: customerId })
     .select('id', 'status', 'rendered_content', 'signed_by_customer_at', 'signed_by_admin_at', 'signed_pdf_path');
-  if (!rows.length) return { cancel: [], retain: [], hasSigners, hasRedactedColumn };
+  if (!rows.length) return { redact: [], retain: [], hasSigners, hasRedactedColumn };
 
   const signedIds = hasSigners
     ? new Set((await db('contract_signers')
@@ -93,19 +96,24 @@ async function plan(db, customerId) {
       .distinct('contract_id')).map((r) => Number(r.contract_id)))
     : new Set();
 
-  const cancel = [];
+  const redact = [];
   const retain = [];
   for (const row of rows) {
     const signed = signedIds.has(Number(row.id))
       || SIGNED_STATUSES.includes(row.status)
       || !!row.signed_by_customer_at || !!row.signed_by_admin_at || !!row.signed_pdf_path;
-    if (!signed && ['draft', 'sent'].includes(row.status)) {
-      cancel.push({ id: row.id, redacted: redactSnapshot(row.rendered_content) });
-    } else {
+    if (signed) {
       retain.push(row.id);
+    } else {
+      redact.push({
+        id: row.id,
+        status: row.status,
+        cancel: ['draft', 'sent'].includes(row.status),
+        redacted: redactSnapshot(row.rendered_content),
+      });
     }
   }
-  return { cancel, retain, hasSigners, hasRedactedColumn };
+  return { redact, retain, hasSigners, hasRedactedColumn };
 }
 
 /** Revoke every way into a contract: signer links and sessions, action tokens. */
@@ -118,19 +126,22 @@ async function revokeAllAccess(trx, contractId, hasSigners) {
 /**
  * Apply a plan() inside the erasure's own transaction.
  *
- * Each cancellation is claimed with a conditional update on the status that
+ * Each redaction is claimed with a conditional update on the status that
  * plan() read, so a signature landing in between leaves the contract alone
- * rather than cancelling a contract that has since been signed.
+ * rather than redacting (or cancelling) a contract that has since been
+ * signed. Only a draft or sent contract changes status; one that already
+ * ended keeps the one it has.
  */
 async function apply(trx, contractPlan, actor) {
-  if (!contractPlan) return { cancelled: [], retained: [] };
+  if (!contractPlan) return { cancelled: [], redacted: [], retained: [] };
   const history = { actor, source: 'customer.erase' };
   const cancelled = [];
+  const redacted = [];
 
-  for (const entry of contractPlan.cancel) {
-    const claim = (q) => q.where({ id: entry.id }).whereIn('status', ['draft', 'sent']);
+  for (const entry of contractPlan.redact) {
+    const claim = (q) => q.where({ id: entry.id, status: entry.status });
     const applied = await auditedUpdate(trx, 'contracts', claim, {
-      status: 'cancelled',
+      ...(entry.cancel ? { status: 'cancelled' } : {}),
       ...(entry.redacted ? { rendered_content: entry.redacted } : {}),
       ...(entry.redacted && contractPlan.hasRedactedColumn ? { rendered_content_redacted_at: stamp() } : {}),
       updated_at: stamp(),
@@ -157,13 +168,13 @@ async function apply(trx, contractPlan, actor) {
         payload: { reason: 'customer_erased' },
       });
     }
-    cancelled.push(entry.id);
+    (entry.cancel ? cancelled : redacted).push(entry.id);
   }
 
   for (const id of contractPlan.retain) {
     await revokeAllAccess(trx, id, contractPlan.hasSigners);
   }
-  return { cancelled, retained: contractPlan.retain };
+  return { cancelled, redacted, retained: contractPlan.retain };
 }
 
 module.exports = {
