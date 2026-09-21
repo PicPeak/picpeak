@@ -19,6 +19,9 @@ const repoFile = (...parts) => fs.readFileSync(path.join(__dirname, '..', '..', 
 describe('isScannerProbePath', () => {
   it.each([
     '/wp-login.php',
+    '/wp-login.php/',
+    '/xmlrpc.php/',
+    '/default.aspx/',
     '/xmlrpc.php',
     '/index.PHP',
     '/old/shell.php7',
@@ -58,6 +61,8 @@ describe('isScannerProbePath', () => {
     '/wp-administration',
     '/cgi-binary',
     '/photos.php.jpg',
+    // Known residual, kept narrow on purpose (see scannerPaths.js).
+    '/wordpress/wp-admin/',
   ])('leaves %s alone', (p) => {
     expect(isScannerProbePath(p)).toBe(false);
   });
@@ -72,7 +77,7 @@ describe('both shell-serving layers apply the rule', () => {
 
   it('frontend/nginx.conf carries the same two patterns, ahead of the static-asset regex', () => {
     const conf = repoFile('frontend', 'nginx.conf');
-    const ext = conf.indexOf('location ~* \\.(php\\d?|phtml|aspx?|jspx?|cgi)$ {');
+    const ext = conf.indexOf('location ~* \\.(php\\d?|phtml|aspx?|jspx?|cgi)/?$ {');
     const dirs = conf.indexOf('location ~* ^/(wp-admin|wp-content|wp-includes|phpmyadmin|cgi-bin)(/|$) {');
     const statics = conf.indexOf('# Cache static assets');
     expect(ext).toBeGreaterThan(-1);
