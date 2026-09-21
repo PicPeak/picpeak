@@ -26,6 +26,7 @@ const { getStoragePath } = require('../../config/storage');
 const { assertPathInside } = require('../../utils/safePath');
 const { validatePdf } = require('../../utils/pdfValidation');
 const { insertBeforeLastPage } = require('../pdf/merge');
+const { auditedInsert, auditedDelete } = require('../accountingHistory');
 
 const FOLDER = path.join('business-docs', 'attachments');
 const DELIVERIES = ['merged', 'separate'];
@@ -240,7 +241,7 @@ function loadContractAttachments(contractId, conn = db) {
 }
 
 /** Copy a template version's attachments onto a new contract (the caller's transaction). */
-async function seedContractAttachments(trx, contractId, versionId) {
+async function seedContractAttachments(trx, contractId, versionId, history = { source: 'contract.template.seed' }) {
   const rows = await trx('contract_template_version_attachments as va')
     .join('document_attachments as a', 'a.id', 'va.attachment_id')
     .where('va.version_id', versionId)
@@ -248,14 +249,14 @@ async function seedContractAttachments(trx, contractId, versionId) {
     .select('va.attachment_id', 'va.position', 'va.delivery', 'a.sha256');
   if (!rows.length) return;
   const now = new Date();
-  await trx('contract_attachment_inclusions').insert(rows.map((row) => ({
+  await auditedInsert(trx, 'contract_attachment_inclusions', rows.map((row) => ({
     contract_id: contractId, attachment_id: row.attachment_id, position: row.position, delivery: row.delivery,
     sha256: row.sha256, created_at: now, updated_at: now,
-  })));
+  })), history);
 }
 
 /** Replace a draft contract's attachments (the caller's transaction). */
-async function writeContractAttachments(trx, contractId, list) {
+async function writeContractAttachments(trx, contractId, list, history = { source: 'contract.attachments' }) {
   const rows = await sanitizeAttachmentList(list, trx);
   // An archived attachment the contract already has stays; a new one can't be added.
   const previous = new Set((await trx('contract_attachment_inclusions').where({ contract_id: contractId }))
@@ -265,12 +266,12 @@ async function writeContractAttachments(trx, contractId, list) {
     const archived = await trx('document_attachments').whereIn('id', added).andWhere({ is_active: false }).first();
     if (archived) throw new AppError(`"${archived.name}" is archived in the attachment library`, 400, 'ATTACHMENT_INVALID');
   }
-  await trx('contract_attachment_inclusions').where({ contract_id: contractId }).del();
+  await auditedDelete(trx, 'contract_attachment_inclusions', { contract_id: contractId }, history);
   if (!rows.length) return;
   const now = new Date();
-  await trx('contract_attachment_inclusions').insert(rows.map((row) => ({
+  await auditedInsert(trx, 'contract_attachment_inclusions', rows.map((row) => ({
     contract_id: contractId, ...row, created_at: now, updated_at: now,
-  })));
+  })), history);
 }
 
 // ---------------------------------------------------------------------
@@ -336,8 +337,15 @@ async function buildSendable(contract, contractBuffer, { slots = [] } = {}) {
         ...(range ? { firstPage: range.start + 1 } : {}),
       };
     }),
-    // 1-based; the signature page is always the last one.
-    signaturePage: result.lastPageIndex == null ? null : result.lastPageIndex + 1,
+    // 1-based; the signature page is always the last one. With nothing
+    // merged the merger returns the document untouched and reports no last
+    // page, so the slots — which know which page they were placed on — are
+    // the fallback. Otherwise a contract whose attachments all go out as
+    // separate files recorded a manifest that could not say where its own
+    // signatures are.
+    signaturePage: result.lastPageIndex == null
+      ? (placed.length ? placed[0].page : null)
+      : result.lastPageIndex + 1,
     ...(placed.length ? { slots: placed } : {}),
   };
   return {

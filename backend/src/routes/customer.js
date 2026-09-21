@@ -1172,6 +1172,7 @@ router.post('/documents', customerAuth, requireDocumentsFeature, documentUploadL
       links: { eventId: req.body.eventId, contractId: req.body.contractId },
       actor: { type: 'customer', id: req.customer.id, name: req.customer.email },
       quotaBytes: limits.quotaBytes,
+      maxUploadBytes: limits.maxUploadBytes,
     });
     res.status(201).json({ document: customerDocumentsService.toCustomerDto(row) });
   } catch (error) {

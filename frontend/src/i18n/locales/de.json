@@ -3009,7 +3009,7 @@
       "showLogoHint": "Verwendet das oben konfigurierte Branding-Logo.",
       "showCompanyName": "Firmennamen in der Kundenkopfzeile anzeigen",
       "showCompanyNameHint": "Ausblenden, wenn Ihr Logo den Firmennamen bereits enthält.",
-      "save": "Änderungen speichern",
+      "save": "Kopfzeilen-Einstellungen speichern",
       "saved": "Branding des Kundendashboards gespeichert",
       "error": "Einstellungen konnten nicht gespeichert werden"
     },
@@ -5574,7 +5574,10 @@
         "stillPending": "{{name}} wird noch geprüft.",
         "gone": "{{name}} ist nicht mehr mit Ihnen geteilt.",
         "purged": "{{name}} wurde entfernt.",
-        "download": "{{name}} konnte nicht heruntergeladen werden. Bitte versuchen Sie es erneut."
+        "download": "{{name}} konnte nicht heruntergeladen werden. Bitte versuchen Sie es erneut.",
+        "activeContent": "{{name}} enthält aktive Inhalte (ein Skript, eine eingebettete Datei oder eine Formularaktion) und kann nicht hochgeladen werden. Öffnen Sie die Datei, drucken Sie sie als PDF und laden Sie diese Datei hoch.",
+        "tooComplex": "{{name}} konnte nicht geprüft werden. Öffnen Sie die Datei, drucken Sie sie als PDF und laden Sie diese Datei hoch.",
+        "tooManyPages": "{{name}} hat zu viele Seiten zum Hochladen."
       }
     },
     "event": {
@@ -5700,7 +5703,8 @@
     "loadInvitationsError": "Einladungen konnten nicht geladen werden",
     "tabs": {
       "customers": "Kunden",
-      "invitations": "Einladungen"
+      "invitations": "Einladungen",
+      "groups": "Gruppen"
     },
     "search": {
       "placeholder": "Nach E-Mail, Name oder Firma suchen"
@@ -5711,7 +5715,8 @@
       "company": "Firma",
       "eventCount": "Events",
       "lastLogin": "Letzte Anmeldung",
-      "status": "Status"
+      "status": "Status",
+      "groups": "Gruppen"
     },
     "status": {
       "active": "Aktiv",
@@ -5806,7 +5811,8 @@
       "rebillsSection": "Weiterverrechnungen & Durchlaufposten",
       "noRebills": "Noch keine weiterverrechneten oder durchlaufenden Lieferantenrechnungen für diesen Kunden.",
       "companyName": "Firmenname",
-      "marketingSection": "Newsletter-Einwilligung"
+      "marketingSection": "Newsletter-Einwilligung",
+      "groupsSection": "Gruppen"
     },
     "billing": {
       "section": "Abrechnungsrhythmus",
@@ -5924,6 +5930,51 @@
       "linkSaved": "Verknüpfungen gespeichert.",
       "empty": "Noch keine Dokumente.",
       "loadError": "Dokumente konnten nicht geladen werden."
+    },
+    "groups": {
+      "title": "Gruppen",
+      "intro": "Ordne Kunden in Gruppen. Ein Kunde kann in mehreren sein, und die Übersicht lässt sich danach filtern.",
+      "new": "Neue Gruppe",
+      "name": "Name",
+      "description": "Beschreibung",
+      "color": "Farbe",
+      "customColor": "Eigene Farbe",
+      "empty": "Noch keine Gruppen. Lege eine an, um deine Kunden zu ordnen.",
+      "emptyCatalogue": "Noch keine Gruppen. Lege eine unter Kunden → Gruppen an.",
+      "emptyFiltered": "Keine Kunden in den gewählten Gruppen.",
+      "palette": {
+        "blue": "Blau",
+        "green": "Grün",
+        "amber": "Bernstein",
+        "red": "Rot",
+        "violet": "Violett",
+        "teal": "Petrol",
+        "pink": "Pink",
+        "grey": "Grau"
+      },
+      "memberCount_one": "{{count}} Kunde",
+      "memberCount_other": "{{count}} Kunden",
+      "moveUp": "Nach oben",
+      "moveDown": "Nach unten",
+      "archive": "Archivieren",
+      "archived": "Archiviert",
+      "restore": "Wiederherstellen",
+      "delete": "Löschen",
+      "deleteBlocked": "In dieser Gruppe sind noch Kunden. Archiviere sie, oder nimm sie zuerst bei diesen Kunden heraus.",
+      "confirmDelete": "„{{name}}“ löschen? Es wird kein Kunde entfernt.",
+      "created": "Gruppe angelegt",
+      "saved": "Gruppe gespeichert",
+      "deleted": "Gruppe gelöscht",
+      "reordered": "Reihenfolge gespeichert",
+      "nameRequired": "Eine Gruppe braucht einen Namen",
+      "loadError": "Die Gruppen konnten nicht geladen werden. Lade die Seite neu.",
+      "filterLabel": "Nach Gruppe filtern",
+      "clearFilter": "Zurücksetzen",
+      "none": "—",
+      "more": "+{{count}}",
+      "change": "Gruppen ändern",
+      "noneAssigned": "Dieser Kunde ist in keiner Gruppe.",
+      "assignSaved": "Gruppen gespeichert"
     }
   },
   "clients": {
@@ -7619,7 +7670,9 @@
       "countersignTypedHint": "Ihr oben eingegebener Name wird in das Unterschriftsfeld eingesetzt.",
       "downloadCertificate": "Signaturzertifikat herunterladen",
       "certificateUnavailable": "Signaturzertifikat nicht verfügbar",
-      "countersignUncertain": "Wir konnten den Server nicht erreichen und können daher nicht sagen, ob die Gegenzeichnung gespeichert wurde. Der Vertrag wurde neu geladen – prüfen Sie seinen Status, bevor Sie erneut unterschreiben."
+      "countersignUncertain": "Wir konnten den Server nicht erreichen und können daher nicht sagen, ob die Gegenzeichnung gespeichert wurde. Der Vertrag wurde neu geladen – prüfen Sie seinen Status, bevor Sie erneut unterschreiben.",
+      "attachmentMerged": "ab Seite {{page}} eingefügt",
+      "attachmentSeparate": "als separate Datei versendet"
     },
     "editor": {
       "back": "Zurück zur Liste",
@@ -8210,6 +8263,24 @@
       "title": "Anhänge",
       "download": "Herunterladen",
       "inPdf": "Teil des Vertrags-PDFs"
+    },
+    "price": {
+      "title": "Leistungen und Preis",
+      "description": "Beschreibung",
+      "quantity": "Menge",
+      "amount": "Betrag",
+      "net": "Netto",
+      "shipping": "Versand",
+      "vat": "MwSt.",
+      "total": "Gesamt",
+      "fromQuote": "Aus Offerte {{number}}",
+      "unit": {
+        "hour": "Std.",
+        "day": "Tage",
+        "piece": "Stk.",
+        "km": "km",
+        "flat": "pauschal"
+      }
     }
   },
   "crmOverview": {

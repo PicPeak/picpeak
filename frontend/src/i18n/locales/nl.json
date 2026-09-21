@@ -1185,7 +1185,7 @@
       "showLogoHint": "Gebruikt hetzelfde brandinglogo dat hierboven is geconfigureerd.",
       "showCompanyName": "Bedrijfsnaam in klantheader tonen",
       "showCompanyNameHint": "Verberg dit als je logo de bedrijfsnaam al bevat.",
-      "save": "Wijzigingen opslaan",
+      "save": "Kopregelinstellingen opslaan",
       "saved": "Branding van klantdashboard opgeslagen",
       "error": "Instellingen konden niet worden opgeslagen"
     }

@@ -22,6 +22,8 @@ import { Button, Card, CountrySelect, Input, Loading } from '../../components/co
 import { SUPPORTED_LANGUAGES } from '../../components/common/LanguageSelector';
 import { DecimalInput } from '../../components/common/DecimalInput';
 import { AssignedEventsDialog } from '../../components/admin/AssignedEventsDialog';
+import { CustomerGroupsCard } from '../../components/admin/CustomerGroupsCard';
+import { usePermissions } from '../../contexts/PermissionsContext';
 import {
   customerAdminService,
   type CustomerAccountDetail,
@@ -65,6 +67,7 @@ export const CustomerDetailPage: React.FC = () => {
   // per-customer toggle in the features card is hidden and the
   // HoursSection card never renders, regardless of customer state.
   const { flags } = useFeatureFlags();
+  const { hasPermission } = usePermissions();
 
   const { data: customer, isLoading, error } = useQuery({
     queryKey: ['admin-customer', customerId],
@@ -454,6 +457,13 @@ export const CustomerDetailPage: React.FC = () => {
           className="input w-full"
         />
       </Card>
+
+      {/* Groups (#1443) */}
+      <CustomerGroupsCard
+        customerId={customerId}
+        groups={customer.groups}
+        canManage={hasPermission('customers.groups.manage')}
+      />
 
       {/* Assigned events */}
       <Card padding="lg">

@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { verifyGalleryAccess } = require('../middleware/gallery');
 const { resolveGuest, requireGuest, signGuestToken } = require('../middleware/guestAuth');
 const feedbackService = require('../services/feedbackService');
@@ -57,7 +58,7 @@ function sanitizeEmail(value) {
  */
 router.post('/:slug/guest', verifyGalleryAccess, async (req, res) => {
   try {
-    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    const ip = rateLimitKey(req) || 'unknown';
     if (!checkRegistrationRate(ip)) {
       return res.status(429).json({ error: 'Too many registration attempts' });
     }
@@ -222,7 +223,7 @@ function checkRecoveryRate(ip) {
  */
 router.post('/:slug/guest/recover', verifyGalleryAccess, async (req, res) => {
   try {
-    const ip = req.ip || 'unknown';
+    const ip = rateLimitKey(req) || 'unknown';
     if (!checkRecoveryRate(ip)) {
       return res.status(429).json({ error: 'Too many recovery attempts' });
     }
@@ -270,7 +271,7 @@ router.post('/:slug/guest/recover', verifyGalleryAccess, async (req, res) => {
  */
 router.post('/:slug/guest/verify', verifyGalleryAccess, async (req, res) => {
   try {
-    const ip = req.ip || 'unknown';
+    const ip = rateLimitKey(req) || 'unknown';
     if (!checkRecoveryRate(ip)) {
       return res.status(429).json({ error: 'Too many verification attempts' });
     }

@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { getAdminTokenFromRequest, getGalleryTokenFromRequest } = require('../utils/tokenUtils');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 
 // What applies when app_settings has no row for a key — a fresh install has
 // none. Keyed by setting name so the admin settings read can surface the
@@ -240,7 +241,7 @@ async function createRateLimiter(store = new MemoryStore()) {
       const isAuthEndpoint = req.path.match(/\/(auth|login|gallery\/[^/]+\/verify)$/);
       return isAuthEndpoint ? currentConfig.authMaxRequests : currentConfig.maxRequests;
     },
-    keyGenerator: (req) => req.ip,
+    keyGenerator: rateLimitKey,
     skip: async (req) => {
       const currentConfig = await getRateLimitSettings();
       return shouldSkipRateLimit(req, currentConfig);
@@ -307,7 +308,7 @@ async function createAuthRateLimiter(store = new MemoryStore()) {
       return currentConfig.authMaxRequests;
     },
     skipSuccessfulRequests: true,
-    keyGenerator: (req) => req.ip,
+    keyGenerator: rateLimitKey,
     skip: async () => {
       const currentConfig = await getRateLimitSettings();
       return !currentConfig.enabled;

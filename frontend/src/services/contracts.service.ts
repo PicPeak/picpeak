@@ -176,6 +176,17 @@ export interface ContractTextSection {
 }
 
 /** A PDF generated for a contract: unsigned, signed, audit certificate… */
+/** One attachment as it went into a generated PDF, from its manifest (#1445). */
+export interface ContractDocumentAttachment {
+  attachmentId: number;
+  name: string;
+  sha256: string;
+  delivery: 'merged' | 'separate';
+  pages: number;
+  /** 1-based page the merged attachment starts on; absent when separate. */
+  firstPage?: number;
+}
+
 export interface ContractGeneratedDocument {
   id: number;
   kind: 'unsigned' | 'signed' | 'audit' | 'wet_upload' | string;
@@ -185,6 +196,15 @@ export interface ContractGeneratedDocument {
   templateVersionId: number | null;
   rendererVersion: string | null;
   parentId: number | null;
+  /**
+   * What the PDF was made of: its attachments with their own checksums, and
+   * where the signature page sits. Null for documents recorded without one.
+   */
+  manifest: {
+    attachments?: ContractDocumentAttachment[];
+    signaturePage?: number | null;
+    slots?: Array<{ key: string; page: number }>;
+  } | null;
   generatedAt: string;
 }
 
@@ -674,6 +694,35 @@ export interface PublicContractView {
   /** Attachments (#1445): merged ones are inside the PDF, separate ones
    *  download on their own. */
   attachments?: Array<{ id: number; name: string; delivery: 'merged' | 'separate'; pages: number }>;
+  /**
+   * The line items and totals frozen into the contract when it was sent
+   * (#1445) — the figures the content hash covers, and so the ones the
+   * signature is bound to. Null for a contract sent before they were
+   * frozen, and for one with no source quote.
+   */
+  commercial?: {
+    sourceQuoteNumber: string | null;
+    currency: string;
+    lineItems: Array<{
+      position: number;
+      parentPosition: number | null;
+      kind: string;
+      description: string;
+      details: string | null;
+      unit: string | null;
+      quantity: number;
+      unitPriceMinor: number;
+      discountPercent: number;
+      lineTotalMinor: number;
+    }>;
+    totals: {
+      netMinor: number;
+      vatRatePercent: number;
+      vatMinor: number;
+      shippingMinor: number;
+      grossMinor: number;
+    };
+  } | null;
 }
 
 /**
