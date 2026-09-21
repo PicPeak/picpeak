@@ -34,6 +34,7 @@
  *     Each event's hash covers the one before it, so editing a label would
  *     break the chain for every event after it. The names left there belong
  *     to a cancelled contract and are listed in the retention documentation
+ *     (https://docs.picpeak.app/features/crm/contracts#what-erasing-a-customer-keeps)
  *     rather than silently removed.
  */
 
