@@ -7961,7 +7961,9 @@
       "fileLabel": "The signed PDF",
       "uploading": "Uploading…",
       "submit": "Upload signed PDF",
-      "notCovered": "Confirm every signer the paper copy is signed by — the upload completes the contract for all of them."
+      "notCovered": "Confirm every signer the paper copy is signed by — the upload completes the contract for all of them.",
+      "refusedTitle": "Already signed in the browser",
+      "refusedBody": "At least one signer has already signed this contract in the browser. A paper copy can't replace a signature given in the browser, so the upload isn't available. Let the remaining signers sign in the browser, then counter-sign on this page."
     }
   },
   "messages": {

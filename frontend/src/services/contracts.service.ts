@@ -508,10 +508,11 @@ export const contractsService = {
 
   /**
    * The customer signers a paper copy would have to account for (#1446):
-   * everyone who has neither signed in the browser nor declined. Empty once
-   * they all have, in which case the upload needs no confirmation.
+   * everyone who has neither signed in the browser nor declined.
+   * `electronicSignaturePresent` means someone already signed in the browser,
+   * and the server refuses the upload (ELECTRONIC_SIGNATURE_PRESENT).
    */
-  async paperSignatureCoverage(id: number): Promise<{ signers: PaperSignatureSigner[] }> {
+  async paperSignatureCoverage(id: number): Promise<{ signers: PaperSignatureSigner[]; electronicSignaturePresent: boolean }> {
     const { data } = await api.get(`/admin/contracts/${id}/paper-signature-coverage`);
     return data.data || data;
   },

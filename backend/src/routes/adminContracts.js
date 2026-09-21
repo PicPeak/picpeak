@@ -668,7 +668,9 @@ router.post(
  * signers the copy carries (#1446) — `coversSignerIds`, a JSON array or a
  * comma-separated list, since this is a multipart body. The service refuses
  * the upload unless it accounts for every signer who has not signed or
- * declined, and records the answer in the event log.
+ * declined, and records the answer in the event log. Once any signer has
+ * signed in the browser the upload is refused outright
+ * (ELECTRONIC_SIGNATURE_PRESENT).
  */
 function parseCoversSignerIds(raw) {
   if (raw === undefined || raw === null || raw === '') return [];
@@ -709,8 +711,9 @@ router.post(
 );
 
 // Which customer signers an uploaded paper copy would have to cover: the
-// list the upload dialog ticks off (#1446). Empty when everyone has already
-// signed or declined, in which case the upload needs no confirmation.
+// list the upload dialog ticks off (#1446). `electronicSignaturePresent`
+// says the upload would be refused because someone already signed in the
+// browser.
 router.get(
   '/:id/paper-signature-coverage',
   requirePermission('contracts.manage'),
@@ -719,9 +722,12 @@ router.get(
     validateRequest(req);
     const signingV2 = require('../services/contract/signingV2');
     const signers = require('../services/contract/signers');
-    const rows = await signingV2.awaitingCustomerSigners(parseInt(req.params.id, 10));
+    const contractId = parseInt(req.params.id, 10);
+    const rows = await signingV2.awaitingCustomerSigners(contractId);
     return successResponse(res, {
       signers: rows.map(signers.signerToApi).map((s) => ({ id: s.id, position: s.position, name: s.name, status: s.status })),
+      // A signature given in the browser rules the paper copy out entirely.
+      electronicSignaturePresent: await signingV2.electronicSignaturePresent(contractId),
     });
   }),
 );

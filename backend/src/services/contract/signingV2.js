@@ -761,6 +761,12 @@ async function awaitingCustomerSigners(contractId, conn = db) {
   return rows.filter((r) => r.role === 'customer' && !['signed', 'declined'].includes(r.status));
 }
 
+/** Has any customer signer already signed this contract in the browser? */
+async function electronicSignaturePresent(contractId, conn = db) {
+  const rows = await signers.listSigners(contractId, conn);
+  return rows.some((r) => r.role === 'customer' && r.status === 'signed');
+}
+
 /**
  * An admin uploading a wet-signed PDF completes the contract for everyone,
  * and the server cannot read whose signatures the paper actually bears. The
@@ -773,6 +779,16 @@ async function awaitingCustomerSigners(contractId, conn = db) {
  * @returns {Promise<number[]>} the covered signer ids, in position order
  */
 async function assertPaperCoversSigners(contractId, coversSignerIds) {
+  // The upload replaces the signed PDF and completes the contract, so a
+  // signature already given in the browser would be discarded while the log
+  // records only the slots the paper covers. Once anyone has signed
+  // electronically, the admin finishes in the browser instead.
+  if (await electronicSignaturePresent(contractId)) {
+    throw new AppError(
+      'A signer has already signed this contract in the browser, so a paper copy can\'t replace it. Counter-sign in the browser instead.',
+      409, 'ELECTRONIC_SIGNATURE_PRESENT',
+    );
+  }
   const awaiting = await awaitingCustomerSigners(contractId);
   if (!awaiting.length) return [];
   const ticked = new Set((Array.isArray(coversSignerIds) ? coversSignerIds : []).map(Number).filter(Number.isFinite));
@@ -1102,6 +1118,7 @@ module.exports = {
   decline,
   awaitingCustomerSigners,
   assertPaperCoversSigners,
+  electronicSignaturePresent,
   recordWetUpload,
   countersign,
   issueCertificate,

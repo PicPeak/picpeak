@@ -187,7 +187,10 @@ export const ContractDetailPage: React.FC = () => {
     errorMessage: (err: any) => (err?.response?.data?.code === 'SIGNERS_NOT_COVERED'
       ? t('contracts.paperUpload.notCovered',
         'Confirm every signer the paper copy is signed by — the upload completes the contract for all of them.') as string
-      : err?.response?.data?.error || t('contracts.detail.uploadError', 'Upload failed') as string),
+      : err?.response?.data?.code === 'ELECTRONIC_SIGNATURE_PRESENT'
+        ? t('contracts.paperUpload.refusedBody',
+          'At least one signer has already signed this contract in the browser. A paper copy can\'t replace a signature given in the browser, so the upload isn\'t available. Let the remaining signers sign in the browser, then counter-sign on this page.') as string
+        : err?.response?.data?.error || t('contracts.detail.uploadError', 'Upload failed') as string),
     onSuccess: () => setUploadOpen(false),
   });
 
