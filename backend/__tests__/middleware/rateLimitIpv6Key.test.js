@@ -45,6 +45,13 @@ describe('rateLimitKey', () => {
     // IPv4-mapped, dotted and hex: the same client as the plain IPv4 address.
     ['::ffff:203.0.113.7', '203.0.113.7'],
     ['::ffff:cb00:7107', '203.0.113.7'],
+    // Deprecated IPv4-compatible form, dotted only — ::1 above stays loopback.
+    ['::203.0.113.7', '203.0.113.7'],
+    ['0:0:0:0:0:0:203.0.113.7', '203.0.113.7'],
+    // URI form a proxy may forward: brackets, optionally a port.
+    ['[2001:db8:1:2::1]', '2001:db8:1:2::/64'],
+    ['[2001:db8:1:2:aaaa::1]:443', '2001:db8:1:2::/64'],
+    ['[::ffff:203.0.113.7]', '203.0.113.7'],
   ])('%s → %s', (ip, key) => {
     expect(rateLimitKey({ ip })).toBe(key);
   });
@@ -58,6 +65,7 @@ describe('rateLimitKey', () => {
     expect(rateLimitKey({ ip: 'not-an-ip' })).toBe('not-an-ip');
     expect(rateLimitKey({ ip: undefined })).toBe('');
     expect(rateLimitKey({})).toBe('');
+    expect(rateLimitKey({ ip: '[not-an-ip]' })).toBe('[not-an-ip]');
   });
 });
 
@@ -88,6 +96,14 @@ describe('limiters count an IPv6 /64 as one client', () => {
       expect((await login(app, `2001:db8:1:2::${i.toString(16)}`)).status).toBe(401);
     }
     expect((await login(app, '2001:db8:1:2:dead:beef:0:1')).status).toBe(429);
+  });
+
+  it('collapses a bracketed X-Forwarded-For address to the same /64', async () => {
+    const app = await buildApp();
+    for (let i = 1; i <= 5; i++) {
+      expect((await login(app, `[2001:db8:1:2::${i.toString(16)}]`)).status).toBe(401);
+    }
+    expect((await login(app, '[2001:db8:1:2:dead:beef:0:1]:443')).status).toBe(429);
   });
 
   it('does not charge a different /64 for it', async () => {

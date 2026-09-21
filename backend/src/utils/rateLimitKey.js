@@ -13,7 +13,13 @@
  * on the same carrier share one budget. Bounded is the goal, not zero.
  *
  * IPv4-mapped addresses (::ffff:203.0.113.7) collapse to the plain IPv4 form so
- * a client cannot hold two buckets by arriving over either socket family.
+ * a client cannot hold two buckets by arriving over either socket family; the
+ * deprecated IPv4-compatible form (::203.0.113.7) does the same.
+ *
+ * A proxy may forward an IPv6 client in URI form — [2001:db8::1], or with a
+ * port, [2001:db8::1]:443 — and Express hands that through as req.ip. The
+ * brackets are stripped first, or the address fails to parse and every
+ * address in the /64 keys on its own again.
  *
  * Read req.ip only — see utils/clientIp.js for why the forwarded headers must
  * never be parsed by hand.
@@ -45,12 +51,16 @@ function ipv6Groups(text) {
  * @returns {string}
  */
 function rateLimitKey(req) {
-  const ip = (req && req.ip) || '';
+  const raw = (req && req.ip) || '';
+  const bracketed = raw.match(/^\[([^\]]+)\](?::\d+)?$/);
+  const ip = bracketed ? bracketed[1] : raw;
   const groups = ipv6Groups(ip);
-  if (!groups) return ip;
+  if (!groups) return raw;
 
   const isV4Mapped = groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff;
-  if (isV4Mapped) {
+  // Only the dotted spelling: ::1 is loopback, not the IPv4 address 0.0.0.1.
+  const isV4Compatible = groups.slice(0, 6).every((g) => g === 0) && /\.\d+$/.test(ip);
+  if (isV4Mapped || isV4Compatible) {
     return [groups[6] >> 8, groups[6] & 0xff, groups[7] >> 8, groups[7] & 0xff].join('.');
   }
   return `${groups.slice(0, 4).map((g) => g.toString(16)).join(':')}::/64`;
