@@ -157,7 +157,7 @@ test('a sent contract, its attachments and its template version come back byte f
   }
 });
 
-test('a restored profile that still names the retired PDF font path has it moved into the uploaded fonts', async () => {
+test('after a restore the retired PDF font path is moved and the standard template is checked again', async () => {
   const legacyDir = path.join(process.env.STORAGE_PATH, 'fonts');
   fs.mkdirSync(legacyDir, { recursive: true });
   fs.copyFileSync(path.resolve(__dirname, '../../assets/fonts/Jost/400.ttf'), path.join(legacyDir, 'restored.ttf'));
@@ -167,8 +167,13 @@ test('a restored profile that still names the retired PDF font path has it moved
   const { filePath } = await createPicpeak({ includePhotos: false });
   try {
     await db('business_profile').where({ id: 1 }).update({ pdf_font_ttf_path: null });
+    const defaultTemplate = require('../../src/services/contract/defaultTemplate');
+    const forget = jest.spyOn(defaultTemplate, 'forgetEnsured');
     const result = await importFromPicpeak({ picpeakPath: filePath, currentAdminId: adminId });
     expect(result.restored).toBe(true);
+    // The standard template is checked again against the restored database.
+    expect(forget).toHaveBeenCalled();
+    forget.mockRestore();
     // Moved during the restore, not at the next restart.
     expect((await db('business_profile').where({ id: 1 }).first()).pdf_font_ttf_path).toBeNull();
     expect(await db('pdf_fonts').where({ display_name: 'Custom font (earlier setting)' }).first()).toBeTruthy();

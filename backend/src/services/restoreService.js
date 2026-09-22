@@ -454,6 +454,9 @@ class RestoreService {
           `A container restart will retry via wait-for-db.sh. Error: ${migErr.message}`);
       }
 
+      // The standard contract template was checked against the database
+      // this restore replaced (#1445).
+      require('./contract/defaultTemplate').forgetEnsured();
       // A restored profile may still carry the retired PDF font path (#1445);
       // the renderer no longer reads it, so move it into the uploaded fonts
       // now rather than at the next restart.

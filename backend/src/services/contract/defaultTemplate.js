@@ -167,11 +167,17 @@ async function ensureDefaultTemplate() {
   ensured = true;
 }
 
+/** A restore replaced the database: check the standard template again on next use. */
+function forgetEnsured() {
+  ensured = false;
+}
+
 async function getDefaultTemplateId() {
   return ensureInt(await getAppSetting(DEFAULT_SETTING)) || null;
 }
 
 module.exports = {
+  forgetEnsured,
   DEFAULT_SETTING,
   SYSTEM_NAME,
   SYSTEM_TEMPLATE_REVISION,
