@@ -207,6 +207,9 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   // once nothing is left — except for photos already downloaded, which are free.
   const downloadQuota = useDownloadQuota();
   const withinDownloadLimit = !currentPhoto || downloadQuota.canDownload(currentPhoto);
+  // The keyboard shortcut's listener is only rebuilt on navigation; it reads
+  // the download handler through this, so a refreshed quota applies to D too.
+  const downloadRef = useRef<() => void>(() => {});
   
   // DevTools protection - enabled by individual setting OR legacy protection level
   const devToolsEnabled = enableDevtoolsProtection || (useEnhancedProtection && (protectionLevel === 'enhanced' || protectionLevel === 'maximum'));
@@ -288,7 +291,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
         case 'd':
         case 'D':
           if (photoAllowsDownload) {
-            handleDownload();
+            downloadRef.current();
           }
           break;
         default: {
@@ -593,6 +596,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
       filename: currentPhoto.filename,
     });
   };
+  downloadRef.current = handleDownload;
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (zoom > 1) {

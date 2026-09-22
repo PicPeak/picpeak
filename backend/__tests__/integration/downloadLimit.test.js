@@ -410,6 +410,25 @@ describe('Download limit (issue 1560)', () => {
       expect(delivered.sort()).toEqual([...photoIds].sort());
     });
 
+    it('a download from before a reset cannot release a reservation made after it', async () => {
+      const { event, photoIds } = await makeEvent({ limit: 1 });
+      const before = await quota.grantDownloads(event, [photoIds[0]], { reserve: true });
+      await quota.resetGrants(event.id);
+      const after = await quota.grantDownloads(event, [photoIds[0]], { reserve: true });
+      expect(after.ok).toBe(true);
+      await quota.settleReservation(event.id, before, []);
+      expect(await grantCount(event.id)).toBe(1);
+      expect((await quota.grantDownloads(event, [photoIds[1]])).ok).toBe(false);
+    });
+
+    it('settles what shipped even when one of the photos was deleted meanwhile', async () => {
+      const { event, photoIds } = await makeEvent({ limit: 3 });
+      const zip = await quota.grantDownloads(event, photoIds.slice(0, 2), { reserve: true });
+      await db('photos').where({ id: photoIds[0] }).del();
+      await quota.settleReservation(event.id, zip, photoIds.slice(0, 2));
+      expect(await quota.isOriginalWithheld(event, { id: photoIds[1] })).toBe(false);
+    });
+
     it('a HEAD probe of download-all takes none of the quota', async () => {
       const { event, token } = await makeEvent({ limit: 10, photos: 3 });
       const res = await request(app)

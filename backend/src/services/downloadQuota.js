@@ -189,10 +189,23 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve
       }));
       await trx('event_download_grants').insert(rows).onConflict(['event_id', 'photo_id']).ignore();
     }
+    // The rows this download holds, by row id: an admin reset deletes them,
+    // and a later download may reserve the same photo in a new row, which
+    // this one's release must not touch.
+    const held = reserve ? [...result.newIds, ...joined] : [];
+    const heldRows = [];
+    for (let i = 0; i < held.length; i += INSERT_CHUNK) {
+      const rows = await trx('event_download_grants')
+        .where('event_id', event.id)
+        .whereIn('photo_id', held.slice(i, i + INSERT_CHUNK))
+        .select('id', 'photo_id');
+      heldRows.push(...rows.map((r) => ({ id: Number(r.id), photoId: Number(r.photo_id) })));
+    }
     return {
       ok: true,
       newIds: result.newIds,
-      held: reserve ? [...result.newIds, ...joined] : [],
+      held,
+      heldRows,
     };
   });
 }
@@ -211,15 +224,27 @@ async function settleReservation(eventId, quota, deliveredIds) {
   if (!quota || !Array.isArray(quota.held)) return;
   const delivered = uniqueIds(deliveredIds);
   const deliveredSet = new Set(delivered);
-  const released = quota.held.filter((id) => !deliveredSet.has(Number(id)));
+  const released = (quota.heldRows || [])
+    .filter((row) => !deliveredSet.has(row.photoId))
+    .map((row) => row.id);
   if (delivered.length === 0 && released.length === 0) return;
   await db.transaction(async (trx) => {
-    if (trx.client.config.client === 'pg') {
+    const isPg = trx.client.config.client === 'pg';
+    if (isPg) {
       await trx('events').where({ id: eventId }).forUpdate().first();
     }
     const grantedAt = new Date().toISOString();
     for (let i = 0; i < delivered.length; i += INSERT_CHUNK) {
-      const rows = delivered.slice(i, i + INSERT_CHUNK).map((photoId) => ({
+      // A photo deleted since it shipped has nothing left to count, and on
+      // PostgreSQL its grant would fail the foreign key and roll back the
+      // whole settlement. Held against deletion until this commits.
+      const surviving = trx('photos')
+        .where('event_id', eventId)
+        .whereIn('id', delivered.slice(i, i + INSERT_CHUNK));
+      if (isPg) surviving.forShare();
+      const photoIds = (await surviving.pluck('id')).map(Number);
+      if (photoIds.length === 0) continue;
+      const rows = photoIds.map((photoId) => ({
         event_id: eventId,
         photo_id: photoId,
         guest_id: null,
@@ -233,12 +258,12 @@ async function settleReservation(eventId, quota, deliveredIds) {
       const chunk = released.slice(i, i + INSERT_CHUNK);
       await trx('event_download_grants')
         .where({ event_id: eventId, pending_holders: 1 })
-        .whereIn('photo_id', chunk)
+        .whereIn('id', chunk)
         .del();
       await trx('event_download_grants')
         .where('event_id', eventId)
         .where('pending_holders', '>', 1)
-        .whereIn('photo_id', chunk)
+        .whereIn('id', chunk)
         .decrement('pending_holders', 1);
     }
   });
