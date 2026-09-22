@@ -449,6 +449,9 @@ function assertReachable(contract, signer) {
  */
 function assertInvitable(contract, signer) {
   assertReachable(contract, signer);
+  if (contract.status === 'expired') {
+    throw new AppError('The time to sign this contract has run out. Ask the sender for a new one.', 410, 'CONTRACT_EXPIRED');
+  }
   if (contract.status !== 'sent') {
     throw new AppError('This contract is no longer waiting for signatures', 410, 'CONTRACT_NOT_SIGNABLE');
   }
@@ -556,9 +559,42 @@ async function isAccountHolder(contract, signer) {
   return fieldEncryption.hashEmail(customer.email) === signer.email_hash;
 }
 
+/**
+ * The first time a session opens the contract, the log records a `viewed`
+ * event — once per session, whatever the number of reloads or parallel
+ * requests: the conditional update on `viewed_at` is the claim, and only the
+ * request that wins it appends. Under the contract's lock and only while it
+ * is still out for signature, like `openSession`: a sealed contract's chain
+ * ends at the head its certificate prints.
+ *
+ * Recording it must not cost the signer the page, so a failure is logged
+ * (ids only) and the view is served.
+ */
+async function recordViewOnce(contractId, signer, session) {
+  if (session.viewed_at) return;
+  try {
+    await db.transaction(async (trx) => {
+      const current = await trx('contracts').where({ id: contractId }).forUpdate().first('id', 'status');
+      if (!current || current.status !== 'sent') return;
+      const claimed = await trx('contract_signing_sessions')
+        .where({ id: session.id })
+        .whereNull('viewed_at')
+        .update({ viewed_at: new Date().toISOString() });
+      if (claimed !== 1) return;
+      await signingEvents.appendEvent(trx, contractId, {
+        type: 'viewed', actorType: 'signer', actorLabel: signerName(signer), signerId: signer.id,
+        payload: { via: session.verified_via || null },
+      });
+    });
+  } catch (err) {
+    logger.warn('Could not record that a signer viewed the contract', { contractId, signerId: signer.id, message: err.message });
+  }
+}
+
 /** The full contract for a verified signer, with where the signing stands. */
 async function sessionView(sessionToken) {
   const { signer, contract, session } = await sessionContext(sessionToken);
+  await recordViewOnce(contract.id, signer, session);
   const view = await require('./publicView').buildPublicView(contract.id);
   delete view.signedCustomerIp;
   // `recipient` is the account holder's block: display name, company and the
@@ -1111,6 +1147,17 @@ async function portalSigningAccess(customer, contractId) {
     if (contract.status !== 'sent') throw new AppError('This contract is not waiting for your signature', 409, 'CONTRACT_NOT_SIGNABLE');
     return { mode: 'portal' };
   }
+  // The portal path has no link to expire, so the time to sign is checked
+  // here: an expired contract, or one whose deadline passed before the
+  // hourly job flipped it, opens nothing (#1446).
+  const expiredError = () => new AppError(
+    'The time to sign this contract has run out. Ask the sender for a new one.', 410, 'CONTRACT_EXPIRED',
+  );
+  if (contract.status === 'expired') throw expiredError();
+  if (contract.status === 'sent') {
+    const deadline = await signers.signingDeadline(contract);
+    if (deadline != null && deadline <= Date.now()) throw expiredError();
+  }
   // Only a contract still out for signature opens a session. A sealed one
   // would append a `verified` event and move the audit chain past the head
   // its already-issued certificate prints.
@@ -1193,5 +1240,9 @@ module.exports = {
   portalSigningAccess,
   adminOverview,
   revealEvidence,
+  notifyAdmin,
+  adminDashboardUrl,
+  invitationExpiry,
+  recordFollowUpFailure,
   _internal: { formatSignedAt, captionLines },
 };

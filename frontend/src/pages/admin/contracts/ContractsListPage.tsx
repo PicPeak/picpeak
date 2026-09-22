@@ -22,9 +22,10 @@ import {
   type ContractSort,
 } from '../../../services/contracts.service';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
+import { contractStatusLabel } from '../../../utils/contractStatus';
 
 const STATUSES: ContractStatus[] = [
-  'draft', 'sent', 'signed_by_customer', 'signed_by_admin', 'fully_signed', 'declined', 'cancelled',
+  'draft', 'sent', 'signed_by_customer', 'signed_by_admin', 'fully_signed', 'declined', 'cancelled', 'expired',
 ];
 
 // "Number" sorts by creation order (newest/oldest); "Issued" sorts by
@@ -175,9 +176,9 @@ export const ContractsListPage: React.FC = () => {
                               : c.status === 'signed_by_customer' || c.status === 'signed_by_admin' ? 'bg-blue-100 text-blue-800'
                               : c.status === 'sent' ? 'bg-amber-100 text-amber-800'
                               : c.status === 'declined' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
-                              : c.status === 'cancelled' ? 'bg-neutral-200 text-neutral-600'
+                              : c.status === 'cancelled' || c.status === 'expired' ? 'bg-neutral-200 text-neutral-600'
                               : 'bg-neutral-100 text-neutral-700'
-                          }`}>{t(`contracts.status.${c.status}`, c.status)}</span>
+                          }`}>{contractStatusLabel(t, c.status, c.signerProgress)}</span>
                         </td>
                       </tr>
                     ))}

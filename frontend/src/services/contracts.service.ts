@@ -49,7 +49,8 @@ export type ContractStatus =
   | 'signed_by_admin'
   | 'fully_signed'
   | 'declined'
-  | 'cancelled';
+  | 'cancelled'
+  | 'expired';
 
 // ----- Signatures v2 (#1446): signers and the signing log -------------
 
@@ -326,6 +327,8 @@ export interface ContractSummary {
   renderedContentSha256?: string | null;
   /** PDFs sent with the contract (#1445), in order. */
   attachments?: IncludedAttachment[];
+  /** List rows only: how far the customer signers have got (#1446). */
+  signerProgress?: { signed: number; total: number } | null;
   createdAt: string;
   updatedAt: string;
   inclusions?: ContractBlockInclusion[];

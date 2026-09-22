@@ -280,6 +280,14 @@ it('says a link has expired', async () => {
   expect(legacyGet).not.toHaveBeenCalled();
 });
 
+it('says the time to sign has run out once the contract expired', async () => {
+  invite.mockRejectedValue(httpError(410, { code: 'CONTRACT_EXPIRED' }));
+  renderAt(`/contract/${TOKEN}`);
+
+  expect(await screen.findByText('The time to sign has run out')).toBeInTheDocument();
+  expect(screen.queryByText('This link no longer works')).toBeNull();
+});
+
 it('stays verified after a reload, and goes back to the code step once the session ends', async () => {
   window.sessionStorage.setItem(
     `picpeak.contractSigning.session.${TOKEN}`,

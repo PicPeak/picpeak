@@ -153,6 +153,14 @@ const LinkGone: React.FC<{ code: string | undefined; issuer?: IssuerHeader | nul
           body={t('contractSigning.gone.expiredBody', 'Ask the sender to send you a new signing link.')}
         />
       );
+    case 'CONTRACT_EXPIRED':
+      return (
+        <MessagePage
+          issuer={issuer}
+          title={t('contractSigning.gone.contractExpiredTitle', 'The time to sign has run out')}
+          body={t('contractSigning.gone.contractExpiredBody', 'This contract can no longer be signed. Ask the sender for a new one if you still want to go ahead.')}
+        />
+      );
     case 'CONTRACT_WITHDRAWN':
       return (
         <MessagePage
@@ -641,6 +649,10 @@ const SignForm: React.FC<SignFormProps> = ({
         return t('contractSigning.sign.errors.notYourTurn', 'Another signer has to sign first. We\'ll email you when it\'s your turn.');
       case 'CONTRACT_NOT_SIGNABLE':
         return t('contractSigning.sign.errors.notSignable', 'This contract can no longer be signed — it may have been withdrawn or declined. Contact the sender if you have questions.');
+      case 'CONTRACT_CHANGED':
+        return t('contractSigning.sign.errors.changed', 'This contract changed after it was sent, so it can\'t be signed. Contact the sender.');
+      case 'CONTRACT_EXPIRED':
+        return t('contractSigning.sign.errors.expired', 'The time to sign this contract has run out. Ask the sender for a new one.');
       case 'SIGNATURE_REQUIRED':
         return requireDrawn
           ? t('publicContract.errorSignatureRequired', 'A drawn signature is required for this contract.')

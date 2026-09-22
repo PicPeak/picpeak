@@ -5672,7 +5672,9 @@
       "declinedHint": "Dieser Vertrag wurde abgelehnt und kann nicht mehr unterschrieben werden.",
       "opening": "Wird geöffnet…",
       "sign": "Unterschreiben",
-      "downloadCertificate": "Signaturzertifikat"
+      "downloadCertificate": "Signaturzertifikat",
+      "expired": "Die Frist zur Unterzeichnung dieses Vertrags ist abgelaufen. Bitten Sie den Absender um einen neuen.",
+      "expiredHint": "Die Frist lief ab, bevor alle unterzeichnet hatten; der Vertrag kann nicht mehr unterzeichnet werden."
     },
     "documents": {
       "title": "Dokumente",
@@ -7858,12 +7860,14 @@
     },
     "status": {
       "draft": "Entwurf",
-      "sent": "Gesendet",
-      "signed_by_customer": "Kunde unterzeichnet",
+      "sent": "Wartet auf Unterschrift",
+      "signed_by_customer": "Vom Kunden unterzeichnet · Gegenzeichnung ausstehend",
       "signed_by_admin": "Gegengezeichnet",
-      "fully_signed": "Beidseitig unterzeichnet",
-      "cancelled": "Storniert",
-      "declined": "Abgelehnt"
+      "fully_signed": "Abgeschlossen",
+      "cancelled": "Zurückgezogen",
+      "declined": "Abgelehnt",
+      "expired": "Abgelaufen",
+      "partlySigned": "Teilweise unterzeichnet ({{signed}} von {{total}})"
     },
     "list": {
       "new": "Neuer Vertrag",
@@ -8449,7 +8453,9 @@
           "countersigned": "Gegengezeichnet",
           "completed": "Abgeschlossen",
           "wet_upload": "Unterschriebenes PDF hochgeladen",
-          "revoked": "Links zurückgezogen"
+          "revoked": "Links zurückgezogen",
+          "viewed": "Vertrag geöffnet",
+          "expired": "Frist zur Unterzeichnung abgelaufen"
         },
         "actor": {
           "admin": "Admin",
@@ -8922,7 +8928,9 @@
       "expiredTitle": "Dieser Link ist abgelaufen",
       "expiredBody": "Bitten Sie den Absender, Ihnen einen neuen Link zum Unterschreiben zu senden.",
       "withdrawnTitle": "Dieser Vertrag wurde zurückgezogen",
-      "withdrawnBody": "Der Absender hat diesen Vertrag zurückgezogen, daher kann er nicht mehr unterschrieben werden. Bei Fragen wenden Sie sich bitte an den Absender."
+      "withdrawnBody": "Der Absender hat diesen Vertrag zurückgezogen, daher kann er nicht mehr unterschrieben werden. Bei Fragen wenden Sie sich bitte an den Absender.",
+      "contractExpiredTitle": "Die Frist zur Unterzeichnung ist abgelaufen",
+      "contractExpiredBody": "Dieser Vertrag kann nicht mehr unterzeichnet werden. Bitten Sie den Absender um einen neuen, wenn Sie weiterhin abschließen möchten."
     },
     "loadError": {
       "title": "Diese Seite konnte nicht geladen werden",
@@ -8987,7 +8995,9 @@
         "notSignable": "Dieser Vertrag kann nicht mehr unterschrieben werden – er wurde möglicherweise zurückgezogen oder abgelehnt. Bei Fragen wenden Sie sich an den Absender.",
         "drawOrType": "Zeichnen Sie Ihre Unterschrift in das Feld, oder geben Sie stattdessen Ihren Namen ein.",
         "tooLarge": "Ihre gezeichnete Unterschrift ist zu groß zum Speichern. Löschen Sie sie und zeichnen Sie sie erneut.",
-        "generic": "Ihre Unterschrift konnte nicht gespeichert werden. Versuchen Sie es erneut; falls es weiterhin nicht klappt, wenden Sie sich an den Absender."
+        "generic": "Ihre Unterschrift konnte nicht gespeichert werden. Versuchen Sie es erneut; falls es weiterhin nicht klappt, wenden Sie sich an den Absender.",
+        "changed": "Dieser Vertrag wurde nach dem Versand verändert und kann deshalb nicht unterzeichnet werden. Wenden Sie sich an den Absender.",
+        "expired": "Die Frist zur Unterzeichnung dieses Vertrags ist abgelaufen. Bitten Sie den Absender um einen neuen."
       },
       "modeLabel": "Wie möchten Sie unterschreiben?",
       "modeDrawn": "Zeichnen",

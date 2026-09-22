@@ -307,16 +307,95 @@ async function loadSignerContext(signerId) {
   return { signer, contract };
 }
 
+const contractExpired = () => new AppError(
+  'The time to sign this contract has run out. Ask the sender for a new one.', 410, 'CONTRACT_EXPIRED',
+);
+
 /** The signer and contract behind an invitation link. */
 async function findInvitation(token) {
   if (!TOKEN_RE.test(String(token || ''))) throw new AppError('Signing link not found', 404, 'SIGNING_LINK_INVALID');
   const invitation = await db('contract_signer_invitations').where({ token_hash: sha256(token) }).first();
   if (!invitation) throw new AppError('Signing link not found', 404, 'SIGNING_LINK_INVALID');
-  if (invitation.revoked_at) throw new AppError('This signing link has been replaced or withdrawn', 410, 'SIGNING_LINK_REVOKED');
-  if (invitation.expires_at && isPast(invitation.expires_at)) {
-    throw new AppError('This signing link has expired', 410, 'SIGNING_LINK_EXPIRED');
+  const expired = invitation.expires_at && isPast(invitation.expires_at);
+  if (invitation.revoked_at || expired) {
+    // Expiry revokes every link of the contract; the signer holding one
+    // should hear that the signing period ended, not that it was replaced.
+    const context = await loadSignerContext(invitation.signer_id).catch(() => null);
+    if (context && context.contract.status === 'expired') throw contractExpired();
   }
+  if (invitation.revoked_at) throw new AppError('This signing link has been replaced or withdrawn', 410, 'SIGNING_LINK_REVOKED');
+  if (expired) throw new AppError('This signing link has expired', 410, 'SIGNING_LINK_EXPIRED');
   return { invitation, ...(await loadSignerContext(invitation.signer_id)) };
+}
+
+/**
+ * When the time to sign a contract runs out, in epoch ms: the invitation
+ * rule (signingV2's `invitationExpiry`) applied to the whole contract —
+ * `valid_until` plus 14 days, or, with no `valid_until`, the expiry of the
+ * newest link it sent (a sequential signer invited late gets their full
+ * window), falling back to 60 days after it was sent. Null when none of
+ * those can be read.
+ */
+async function signingDeadline(contract, conn = db) {
+  if (contract.valid_until) {
+    const until = new Date(contract.valid_until).getTime();
+    if (Number.isFinite(until)) return until + 14 * 24 * 60 * 60 * 1000;
+  }
+  const latest = await conn('contract_signer_invitations as i')
+    .join('contract_signers as s', 's.id', 'i.signer_id')
+    .where('s.contract_id', contract.id)
+    .orderBy('i.id', 'desc')
+    .first('i.expires_at');
+  const linkExpiry = latest ? toMillis(latest.expires_at) : null;
+  if (linkExpiry != null) return linkExpiry;
+  const sent = toMillis(contract.sent_at);
+  return sent == null ? null : sent + 60 * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * How far the customer signers have got, per contract: `{ signed, total }`.
+ * One grouped read for a list, so a "partly signed (1 of 2)" label needs no
+ * query per row. Contracts without signers are absent from the map.
+ */
+async function customerSignerProgress(contractIds, conn = db) {
+  const map = new Map();
+  if (!contractIds.length) return map;
+  const rows = await conn('contract_signers')
+    .whereIn('contract_id', contractIds)
+    .where({ role: 'customer' })
+    .select('contract_id', 'status');
+  for (const row of rows) {
+    const id = Number(row.contract_id);
+    const entry = map.get(id) || { signed: 0, total: 0 };
+    entry.total += 1;
+    if (row.status === 'signed') entry.signed += 1;
+    map.set(id, entry);
+  }
+  return map;
+}
+
+/**
+ * Codes and sessions that ended more than `olderThanMs` ago are removed:
+ * nothing reads them once they are past, and the signing log keeps the
+ * record of every code sent and every verification. Compared in JS — SQLite
+ * keeps knex-written dates in more than one form. A row whose expiry can't
+ * be read is kept. Returns the counts removed.
+ */
+async function purgeEndedAccess(olderThanMs, now = Date.now()) {
+  const cutoff = now - olderThanMs;
+  const removed = {};
+  for (const table of ['contract_signing_otps', 'contract_signing_sessions']) {
+    const rows = await db(table).select('id', 'expires_at');
+    const ids = rows.filter((row) => {
+      const at = toMillis(row.expires_at);
+      return at != null && at <= cutoff;
+    }).map((row) => row.id);
+    removed[table] = 0;
+    for (let i = 0; i < ids.length; i += 500) {
+      removed[table] += await db(table).whereIn('id', ids.slice(i, i + 500)).del();
+    }
+  }
+  return removed;
 }
 
 // ---------------------------------------------------------------------
@@ -497,6 +576,9 @@ module.exports = {
   undoInvitation,
   revokeAccess,
   findInvitation,
+  signingDeadline,
+  customerSignerProgress,
+  purgeEndedAccess,
   issueOtp,
   discardOtp,
   retireEarlierOtps,

@@ -129,6 +129,25 @@ const CONTRACT_EMAIL_TEMPLATES = {
       body_text: 'Vertrag {{contract_number}} wurde von {{signer_name}} abgelehnt.{{#if reason}} Grund: {{reason}}{{/if}} Öffnen: {{admin_dashboard_url}}',
     },
   },
+  // #1446: the time to sign ran out (services/contract/expiry.js).
+  contract_expired_admin_notification: {
+    category: 'contracts', feature_flag: 'contracts',
+    variables: ['contract_number', 'signed_count', 'admin_dashboard_url'],
+    en: {
+      subject: 'Contract {{contract_number}} expired unsigned',
+      body_html: `<h2>Contract expired</h2><p>The time to sign contract <strong>{{contract_number}}</strong> has run out before every signer signed. Signatures already given: {{signed_count}}.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{admin_dashboard_url}}" class="button">Open in admin</a></p>
+<p style="font-size: 13px; color: #666;">Its signing links no longer work. To go ahead, make a new contract and send it.</p>`,
+      body_text: 'The time to sign contract {{contract_number}} has run out. Signatures already given: {{signed_count}}. Its links no longer work; make a new contract to go ahead. Open: {{admin_dashboard_url}}',
+    },
+    de: {
+      subject: 'Vertrag {{contract_number}} ohne alle Unterschriften abgelaufen',
+      body_html: `<h2>Vertrag abgelaufen</h2><p>Die Frist zur Unterzeichnung des Vertrags <strong>{{contract_number}}</strong> ist abgelaufen, bevor alle unterzeichnet haben. Bereits geleistete Unterschriften: {{signed_count}}.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{admin_dashboard_url}}" class="button">Im Admin-Bereich öffnen</a></p>
+<p style="font-size: 13px; color: #666;">Die Links zur Unterzeichnung funktionieren nicht mehr. Um fortzufahren, erstellen und versenden Sie einen neuen Vertrag.</p>`,
+      body_text: 'Die Frist zur Unterzeichnung des Vertrags {{contract_number}} ist abgelaufen. Bereits geleistete Unterschriften: {{signed_count}}. Die Links funktionieren nicht mehr; erstellen Sie einen neuen Vertrag. Öffnen: {{admin_dashboard_url}}',
+    },
+  },
 };
 
 // Cache the "all-seeded" state so the check is free after the first

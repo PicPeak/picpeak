@@ -1177,6 +1177,9 @@ async function startServer() {
     }
     // Reminder ladder for open document requests (#1444).
     require('./src/services/customerDocumentRequestReminderService').startDocumentRequestReminders();
+    // Contract signing sweep (#1446): expire contracts whose time to sign has
+    // run out, and remove signing codes and sessions a month after they end.
+    require('./src/services/contract/expiry').startContractSigningSweep();
     // Custom-resolution download archives (#858) are disposable renditions —
     // sweep them once their TTL passes so .download-cache doesn't grow forever.
     // Best-effort, as before the scheduler refactor: a transient DB error on

@@ -39,6 +39,14 @@ import { SignaturePadField, type SignaturePadHandle } from '../../../components/
 import { SigningOverviewCard } from './SigningOverviewCard';
 import { PaperSignatureUploadDialog } from './PaperSignatureUploadDialog';
 import { SendReviewModal } from './SendReviewModal';
+import { contractStatusLabel, type SignerProgress } from '../../../utils/contractStatus';
+
+/** How far the customer signers have got, from the signing overview (#1446). */
+function signerProgressOf(signers: { role: string; status: string }[] | undefined): SignerProgress | null {
+  const customers = (signers || []).filter((s) => s.role === 'customer');
+  if (!customers.length) return null;
+  return { signed: customers.filter((s) => s.status === 'signed').length, total: customers.length };
+}
 
 function statusBadgeClass(status: ContractStatus): string {
   return status === 'fully_signed'         ? 'bg-green-100 text-green-800'
@@ -47,6 +55,7 @@ function statusBadgeClass(status: ContractStatus): string {
     : status === 'sent'                    ? 'bg-amber-100 text-amber-800'
     : status === 'declined'                ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'
     : status === 'cancelled'               ? 'bg-neutral-200 text-neutral-600'
+    : status === 'expired'                 ? 'bg-neutral-200 text-neutral-600'
     :                                        'bg-neutral-100 text-neutral-700';
 }
 
@@ -334,7 +343,7 @@ export const ContractDetailPage: React.FC = () => {
           )}
         </h1>
         <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${statusBadgeClass(c.status)}`}>
-          {t(`contracts.status.${c.status}`, c.status)}
+          {contractStatusLabel(t, c.status, signerProgressOf(signersQuery.data?.signers))}
         </span>
       </div>
 

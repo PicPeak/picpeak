@@ -268,3 +268,140 @@ describe('the manifest is bound into the signature', () => {
     expect(fs.existsSync(stored.path)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------
+// Slice 4 — lifecycle: `viewed`, `expired`, the sweep, derived progress
+// ---------------------------------------------------------------------
+
+const daysAgo = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+const dateOnly = (iso) => iso.slice(0, 10);
+
+async function twoSigners(id, order = 'parallel') {
+  await ok(request(contractsApp).put(`/api/admin/contracts/${id}/signers`).set(auth).send({
+    order,
+    signers: [{ name: 'Anna Muster', email: customerEmail }, { name: 'Ben Muster', email: 'ben@example.com' }],
+  }));
+}
+
+describe('lifecycle', () => {
+  test('opening the contract is logged once per session, however many requests race', async () => {
+    const { id, session } = await sentWithSession();
+    await Promise.all(Array.from({ length: 5 }, () => sessionView(session)));
+    await sessionView(session);
+    const viewed = await db('contract_signing_events').where({ contract_id: id, event_type: 'viewed' });
+    expect(viewed).toHaveLength(1);
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    expect(Number(viewed[0].signer_id)).toBe(signer.id);
+    expect((await require('../../src/services/contract/signingEvents').verifyChain(id)).ok).toBe(true);
+
+    // A new session is a new opening.
+    const second = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+    await sessionView(second);
+    expect(await db('contract_signing_events').where({ contract_id: id, event_type: 'viewed' })).toHaveLength(2);
+  });
+
+  test('nothing is logged for an opening once the contract is no longer out for signature', async () => {
+    const { id, session } = await sentWithSession();
+    // Sign without opening the view first: the session is still valid and
+    // unviewed, but the contract is signed_by_customer now.
+    await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+    const before = await db('contracts').where({ id }).first();
+    expect(before.status).toBe('signed_by_customer');
+    await sessionView(session);
+    expect(await db('contract_signing_events').where({ contract_id: id, event_type: 'viewed' })).toHaveLength(0);
+    expect((await db('contracts').where({ id }).first()).audit_chain_head).toBe(before.audit_chain_head);
+  });
+
+  test('the sweep expires a contract once, however many replicas run it', async () => {
+    const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+    const id = await newContract();
+    await twoSigners(id);
+    await sendContract(id);
+    const annaLink = linkToken(await lastMail('contract_sent', customerEmail));
+    const benLink = linkToken(await lastMail('contract_sent', 'ben@example.com'));
+    const anna = await verifiedSession(annaLink, customerEmail);
+    await ok(sign(anna, { name: 'Anna Muster', mode: 'typed' }));
+    // The contract's window closed three weeks ago (valid_until + 14 days).
+    await db('contracts').where({ id }).update({ valid_until: dateOnly(daysAgo(21)) });
+    const notices = async () => db('email_queue').where({ email_type: 'contract_expired_admin_notification' });
+    const noticesBefore = (await notices()).length;
+
+    const runs = await Promise.all([runContractSigningSweep(), runContractSigningSweep()]);
+    expect(runs.reduce((sum, r) => sum + r.expired, 0)).toBeGreaterThanOrEqual(1);
+
+    expect((await db('contracts').where({ id }).first()).status).toBe('expired');
+    const expired = await db('contract_signing_events').where({ contract_id: id, event_type: 'expired' });
+    expect(expired).toHaveLength(1);
+    const annaRow = await db('contract_signers').where({ contract_id: id, position: 1 }).first();
+    expect(parsed(expired[0].payload).signedSignerIds).toEqual([annaRow.id]);
+    expect((await notices()).length).toBe(noticesBefore + 1);
+    expect((await require('../../src/services/contract/signingEvents').verifyChain(id)).ok).toBe(true);
+
+    // A third run finds nothing to do for it.
+    await runContractSigningSweep();
+    expect(await db('contract_signing_events').where({ contract_id: id, event_type: 'expired' })).toHaveLength(1);
+
+    // Every link says why it stopped working.
+    for (const link of [annaLink, benLink]) {
+      const res = await asSigner(request(signingApp).get(`/api/public/contract-signing/invite/${link}`));
+      expect(res.status).toBe(410);
+      expect(res.body.code).toBe('CONTRACT_EXPIRED');
+    }
+    expect((await asSigner(request(signingApp).get('/api/public/contract-signing/session')).set('X-Signing-Session', anna)).status).toBe(401);
+  });
+
+  test('a contract still inside its window is left alone', async () => {
+    const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+    const id = await newContract();
+    await sendContract(id);
+    await db('contracts').where({ id }).update({ valid_until: dateOnly(daysAgo(10)) });
+    await runContractSigningSweep();
+    expect((await db('contracts').where({ id }).first()).status).toBe('sent');
+  });
+
+  test('the portal path refuses once the time to sign has run out', async () => {
+    const signingV2 = require('../../src/services/contract/signingV2');
+    const customer = await db('customer_accounts').where({ id: customerId }).first();
+
+    // Past its deadline, before the hourly sweep flipped it.
+    const late = await newContract();
+    await sendContract(late);
+    await db('contracts').where({ id: late }).update({ valid_until: dateOnly(daysAgo(20)) });
+    await expect(signingV2.portalSigningAccess(customer, late)).rejects.toMatchObject({ code: 'CONTRACT_EXPIRED' });
+    expect(await db('contract_signing_events').where({ contract_id: late, event_type: 'verified' })).toHaveLength(0);
+
+    // And once it has.
+    await require('../../src/services/contract/expiry').runContractSigningSweep();
+    expect((await db('contracts').where({ id: late }).first()).status).toBe('expired');
+    await expect(signingV2.portalSigningAccess(customer, late)).rejects.toMatchObject({ code: 'CONTRACT_EXPIRED' });
+  });
+
+  test('codes and sessions are removed a month after they end, not before', async () => {
+    const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+    const { session } = await sentWithSession();
+    const signerRow = await db('contract_signing_sessions').where({ session_hash: require('crypto').createHash('sha256').update(session).digest('hex') }).first();
+    const otp = await db('contract_signing_otps').where({ signer_id: signerRow.signer_id }).orderBy('id', 'desc').first();
+    await db('contract_signing_otps').where({ id: otp.id }).update({ expires_at: daysAgo(31) });
+    await db('contract_signing_sessions').where({ id: signerRow.id }).update({ expires_at: daysAgo(29) });
+
+    await runContractSigningSweep();
+    expect(await db('contract_signing_otps').where({ id: otp.id }).first()).toBeUndefined();
+    expect(await db('contract_signing_sessions').where({ id: signerRow.id }).first()).toBeTruthy();
+
+    await db('contract_signing_sessions').where({ id: signerRow.id }).update({ expires_at: daysAgo(31) });
+    await runContractSigningSweep();
+    expect(await db('contract_signing_sessions').where({ id: signerRow.id }).first()).toBeUndefined();
+  });
+
+  test('the lists say how far the signers have got', async () => {
+    const id = await newContract();
+    await twoSigners(id);
+    await sendContract(id);
+    const anna = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+    await ok(sign(anna, { name: 'Anna Muster', mode: 'typed' }));
+    const { contracts } = await ok(request(contractsApp).get('/api/admin/contracts?pageSize=200').set(auth));
+    const row = contracts.find((c) => c.id === id);
+    expect(row.status).toBe('sent');
+    expect(row.signerProgress).toEqual({ signed: 1, total: 2 });
+  });
+});

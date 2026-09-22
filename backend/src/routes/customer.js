@@ -747,6 +747,9 @@ router.get('/contracts', customerAuth, async (req, res) => {
       for (const row of certificates) certified.add(Number(row.doc_id));
     }
 
+    // For the derived "partly signed (1 of 2)" label (#1446).
+    const progress = await require('../services/contract/signers').customerSignerProgress(rows.map((r) => r.id));
+
     res.json({
       contracts: rows.map((c) => ({
         id: c.id,
@@ -768,6 +771,7 @@ router.get('/contracts', customerAuth, async (req, res) => {
         // A signatures-v2 contract signs through a signer session, so it has
         // no action token to look for; one sent before still needs a live one.
         canSign: c.status === 'sent' && (Number(c.signing_version) === 2 || liveTokens.has(c.id)),
+        signerProgress: progress.get(Number(c.id)) || null,
       })),
     });
   } catch (error) {

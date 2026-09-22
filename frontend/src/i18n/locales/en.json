@@ -5672,7 +5672,9 @@
       "declinedHint": "This contract was declined and can no longer be signed.",
       "opening": "Opening…",
       "sign": "Sign",
-      "downloadCertificate": "Signing certificate"
+      "downloadCertificate": "Signing certificate",
+      "expired": "The time to sign this contract has run out. Ask the sender for a new one.",
+      "expiredHint": "The time to sign ran out before every signature was in, so it can no longer be signed."
     },
     "documents": {
       "title": "Documents",
@@ -7857,12 +7859,14 @@
     },
     "status": {
       "draft": "Draft",
-      "sent": "Sent",
-      "signed_by_customer": "Signed by customer",
+      "sent": "Awaiting signature",
+      "signed_by_customer": "Signed by customer · awaiting countersignature",
       "signed_by_admin": "Counter-signed",
-      "fully_signed": "Fully signed",
-      "cancelled": "Cancelled",
-      "declined": "Declined"
+      "fully_signed": "Completed",
+      "cancelled": "Withdrawn",
+      "declined": "Declined",
+      "expired": "Expired",
+      "partlySigned": "Partly signed ({{signed}} of {{total}})"
     },
     "list": {
       "new": "New contract",
@@ -8448,7 +8452,9 @@
           "countersigned": "Counter-signed",
           "completed": "Completed",
           "wet_upload": "Signed PDF uploaded",
-          "revoked": "Links withdrawn"
+          "revoked": "Links withdrawn",
+          "viewed": "Contract opened",
+          "expired": "Time to sign ran out"
         },
         "actor": {
           "admin": "Admin",
@@ -8921,7 +8927,9 @@
       "expiredTitle": "This link has expired",
       "expiredBody": "Ask the sender to send you a new signing link.",
       "withdrawnTitle": "This contract has been withdrawn",
-      "withdrawnBody": "The sender withdrew this contract, so it can no longer be signed. Contact them if you have questions."
+      "withdrawnBody": "The sender withdrew this contract, so it can no longer be signed. Contact them if you have questions.",
+      "contractExpiredTitle": "The time to sign has run out",
+      "contractExpiredBody": "This contract can no longer be signed. Ask the sender for a new one if you still want to go ahead."
     },
     "loadError": {
       "title": "We couldn't load this page",
@@ -8986,7 +8994,9 @@
         "notSignable": "This contract can no longer be signed — it may have been withdrawn or declined. Contact the sender if you have questions.",
         "drawOrType": "Draw your signature in the box, or switch to typing your name.",
         "tooLarge": "Your drawn signature is too large to save. Clear it and draw it again.",
-        "generic": "Your signature couldn't be saved. Try again; if it keeps failing, contact the sender."
+        "generic": "Your signature couldn't be saved. Try again; if it keeps failing, contact the sender.",
+        "changed": "This contract changed after it was sent, so it can't be signed. Contact the sender.",
+        "expired": "The time to sign this contract has run out. Ask the sender for a new one."
       },
       "modeLabel": "How do you want to sign?",
       "modeDrawn": "Draw",

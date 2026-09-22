@@ -252,7 +252,7 @@ test('the issuer counter-signs last; completion seals it and the chain verifies'
   const overview = await ok(request(contractsApp).get(`/api/admin/contracts/${ids.contract}/signers`).set(auth));
   expect(overview.chain).toEqual(expect.objectContaining({ ok: true }));
   expect(overview.events.map((e) => e.type)).toEqual([
-    'sent', 'invited', 'code_sent', 'verified', 'signed', 'invited', 'code_sent', 'verified', 'signed', 'countersigned', 'completed',
+    'sent', 'invited', 'code_sent', 'verified', 'viewed', 'signed', 'invited', 'code_sent', 'verified', 'signed', 'countersigned', 'completed',
   ]);
   expect(JSON.stringify(overview.signers)).not.toMatch(/ip|userAgent/i);
 

@@ -631,7 +631,7 @@ export interface CustomerInvoice {
 export interface CustomerContract {
   id: number;
   contractNumber: string;
-  status: 'sent' | 'signed_by_customer' | 'signed_by_admin' | 'fully_signed' | 'declined' | 'cancelled';
+  status: 'sent' | 'signed_by_customer' | 'signed_by_admin' | 'fully_signed' | 'declined' | 'cancelled' | 'expired';
   language: string;
   issueDate: string;
   validUntil: string | null;
@@ -647,4 +647,6 @@ export interface CustomerContract {
   hasCertificate?: boolean;
   /** Whether the customer can sign this contract from the portal. */
   canSign: boolean;
+  /** How far the customer signers have got (#1446). */
+  signerProgress?: { signed: number; total: number } | null;
 }

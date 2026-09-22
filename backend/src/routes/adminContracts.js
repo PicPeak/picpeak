@@ -351,8 +351,15 @@ router.get(
       page,
       pageSize,
     });
+    // How far the customer signers have got, for the derived "partly signed
+    // (1 of 2)" label (#1446) — derived here, never stored as a status.
+    const progress = await require('../services/contract/signers')
+      .customerSignerProgress(result.rows.map((row) => row.id));
     return successResponse(res, {
-      contracts: result.rows.map((row) => transformContract(row)),
+      contracts: result.rows.map((row) => ({
+        ...transformContract(row),
+        signerProgress: progress.get(Number(row.id)) || null,
+      })),
       total: result.total,
       page: result.page,
       pageSize: result.pageSize,
