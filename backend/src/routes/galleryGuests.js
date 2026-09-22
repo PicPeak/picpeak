@@ -15,14 +15,31 @@ const { guestNameModeOf, clearGuestCredits } = require('../services/photoCredit'
 const MAX_EMAIL_LEN = 255;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// In-memory rate limit for guest registration (20 per hour per IP). Simple
-// sliding window; on process restart the counters reset which is acceptable.
+// In-memory rate limit for guest registration, per network key (an IPv4
+// address or an IPv6 /64). Simple fixed window; on process restart the
+// counters reset, which is acceptable.
+//
+// 400 an hour (#1561). Since uploader names can be required, every guest who
+// uploads registers once, and a venue's wifi is one network key: at the old
+// 20 an hour the 21st wedding guest could not upload at all. A per-device
+// budget under this one doesn't help: the only device signal here is the
+// User-Agent, which a script rotates and which a room of phones on the same
+// OS version shares.
 const registrationAttempts = new Map();
 const REGISTRATION_WINDOW_MS = 60 * 60 * 1000;
-const REGISTRATION_MAX = 20;
+const REGISTRATION_MAX = 400;
+let registrationSweptAt = 0;
 
 function checkRegistrationRate(ip) {
   const now = Date.now();
+  // Networks that stopped registering leave their entry behind; drop the
+  // expired ones once per window.
+  if (now - registrationSweptAt > REGISTRATION_WINDOW_MS) {
+    registrationSweptAt = now;
+    for (const [key, entry] of registrationAttempts) {
+      if (now - entry.windowStart > REGISTRATION_WINDOW_MS) registrationAttempts.delete(key);
+    }
+  }
   const entry = registrationAttempts.get(ip) || { count: 0, windowStart: now };
   if (now - entry.windowStart > REGISTRATION_WINDOW_MS) {
     entry.count = 0;
