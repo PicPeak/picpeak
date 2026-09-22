@@ -303,6 +303,9 @@ async function groupsForCustomers(customerIds, conn = db) {
  * Logs nothing — the caller does that once the transaction has committed.
  */
 async function replaceCustomerGroups(trx, customerId, groupIds) {
+  // The customer row is the lock every membership write takes first
+  // (bulkAssign too), so the per-customer cap holds across replicas.
+  await lockCustomers(trx, [customerId]);
   const wanted = [...new Set((Array.isArray(groupIds) ? groupIds : [])
     .map((id) => Number(id))
     .filter((id) => Number.isInteger(id) && id > 0))];
@@ -372,6 +375,20 @@ async function setCustomerGroups(customerId, groupIds, admin = null) {
   return groupsForCustomer(customerId);
 }
 
+/**
+ * Lock the customer rows a membership change touches, in id order so two
+ * changes never wait on each other. PostgreSQL only: SQLite runs one writer
+ * at a time already.
+ */
+async function lockCustomers(trx, customerIds) {
+  if (trx.client.config.client !== 'pg' || customerIds.length === 0) return;
+  const ordered = [...customerIds].sort((x, y) => x - y);
+  for (let start = 0; start < ordered.length; start += LOOKUP_CHUNK) {
+    await trx('customer_accounts').whereIn('id', ordered.slice(start, start + LOOKUP_CHUNK))
+      .orderBy('id').forUpdate().select('id');
+  }
+}
+
 const chunks = (list, size) => {
   const out = [];
   for (let start = 0; start < list.length; start += size) out.push(list.slice(start, start + size));
@@ -419,6 +436,10 @@ async function bulkAssign({ customerIds, addGroupIds, removeGroupIds, dryRun = f
         throw new AppError(`"${archived.name}" is archived and can't be assigned. Restore it first.`, 400, 'GROUP_ARCHIVED');
       }
 
+      // Before any membership is read: two bulk changes (or a bulk change
+      // and a detail save) reading the same customer's count at once would
+      // both pass the cap.
+      await lockCustomers(trx, customers);
       const current = new Set();
       const carried = new Map();
       let found = 0;
