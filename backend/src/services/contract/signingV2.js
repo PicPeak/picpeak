@@ -38,9 +38,7 @@ const signingEvents = require('./signingEvents');
 const { hasColumnCached } = require('../../utils/schemaCache');
 const { canonicalSha256 } = require('../../utils/canonicalJson');
 const { auditedUpdate } = require('../accountingHistory');
-const {
-  adminActor, customerPublicActor, emitContractEvent, maybeStoreIp, ensureCustomerActive,
-} = require('./helpers');
+const { adminActor, customerPublicActor, emitContractEvent, maybeStoreIp } = require('./helpers');
 const { persistContractPdf, persistSignatureImage } = require('./signatureAssets');
 const consents = require('./consents');
 
@@ -330,6 +328,17 @@ async function sendInvitation(contract, row, token, template = 'contract_sent') 
 }
 
 /**
+ * Lock the contract's customer row and say whether a link may be issued.
+ * Erasure ends every way in and deactivates the account in one
+ * transaction that takes this row first; a link issued under this lock is
+ * either committed before it (and revoked by it) or refused after it.
+ */
+async function customerMayReceiveLink(trx, contract) {
+  const customer = await trx('customer_accounts').where({ id: contract.customer_account_id }).forUpdate().first('is_active');
+  return !customer || !(customer.is_active === false || customer.is_active === 0);
+}
+
+/**
  * Invite the customer signers who may sign now and haven't been invited:
  * all of them, or the next one of a sequential contract.
  */
@@ -342,6 +351,7 @@ async function inviteDue(contractId, actor = { type: 'system' }) {
     let token;
     try {
       token = await db.transaction(async (trx) => {
+        if (!(await customerMayReceiveLink(trx, contract))) return null;
         const created = await signers.createInvitation(trx, row.id, expiresAt, { fromStatuses: ['pending'] });
         await signingEvents.appendEvent(trx, contractId, {
           type: 'invited', actorType: actor.type === 'admin' ? 'admin' : 'system', actorLabel: actor.name || null, signerId: row.id,
@@ -353,6 +363,8 @@ async function inviteDue(contractId, actor = { type: 'system' }) {
       if (err.code === 'SIGNER_NOT_DUE') continue;
       throw err;
     }
+    // The customer was erased (or deactivated): nobody gets a link.
+    if (token === null) break;
     // The invitation is committed before the mail goes out; undo it when the
     // send fails, or the signer sits at `invited` with a link nobody received
     // and every later inviteDue skips them.
@@ -475,10 +487,6 @@ async function reissueInvitation(contractId, signerId, { actor, event, payload =
   if (!isV2(contract) || !OPEN_STATUSES.includes(contract.status)) {
     throw new AppError('Links can only be sent again while the contract is out for signature', 409, 'CONTRACT_NOT_SIGNABLE');
   }
-  // An erased customer's partly signed contract stays `sent` with every way
-  // in revoked; a new link must not open it again.
-  const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
-  if (customer) ensureCustomerActive(customer);
   const rows = await signers.listSigners(contractId);
   const row = rows.find((r) => r.id === Number(signerId));
   if (!row || row.role !== 'customer') throw new AppError('Signer not found', 404, 'SIGNER_NOT_FOUND');
@@ -486,6 +494,10 @@ async function reissueInvitation(contractId, signerId, { actor, event, payload =
     throw new AppError('This signer can\'t sign yet, or has already signed', 409, 'SIGNER_NOT_DUE');
   }
   const token = await db.transaction(async (trx) => {
+    // An erased customer's partly signed contract stays `sent` with every way
+    // in revoked; a new link must not open it again. Customer row first, as
+    // erasure locks it.
+    if (!(await customerMayReceiveLink(trx, contract))) throw new AppError('Customer is deactivated', 409);
     // Re-checked under the lock: an expiry or a decline committing since the
     // read above must not get a fresh link, nor an event past its seal.
     const current = await trx('contracts').where({ id: contractId }).forUpdate().first('status');

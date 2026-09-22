@@ -942,6 +942,34 @@ describe('workflow triggers and the gated invoice step', () => {
     expect(await db('invoices').where({ source_contract_id: id })).toHaveLength(1);
   });
 
+  test('prepare_contract_invoice links invoices a crashed run left unlinked, instead of failing on the converted quote', async () => {
+    const { registry } = require('../../src/services/workflows');
+    const action = registry.getAction('prepare_contract_invoice');
+    const quoteService = require('../../src/services/quoteService');
+    const contractService = require('../../src/services/contractService');
+    const quoteId = await quoteService.createQuote({
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0,
+      lineItems: [{ position: 1, quantity: 1, description: 'Shoot', unit_price_minor: 100000, discount_percent: 0, parent_position: null }],
+    }, adminId);
+    await quoteService.sendQuote(quoteId, adminId);
+    await quoteService.adminAcceptQuote(quoteId, adminId);
+    const { contractId: id } = await contractService.createFromQuote(quoteId, adminId);
+    await sendContract(id);
+    const session = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+    await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+    await ok(request(contractsApp).post(`/api/admin/contracts/${id}/countersign`).set(auth).send({ name: 'Studio Admin', mode: 'typed' }));
+
+    const ctx = { run: { entity_type: 'contract', entity_id: id, workflow_id: null }, vars: {}, db, node: { config: {} } };
+    await action(ctx);
+    const made = await db('invoices').where({ source_contract_id: id });
+    expect(made.length).toBeGreaterThan(0);
+    // The run crashed between committing the invoices and linking them.
+    await db('invoices').where({ source_contract_id: id }).update({ source_contract_id: null });
+    const again = await action({ ...ctx, vars: {} });
+    expect(again.invoice_prepared.sort()).toEqual(made.map((i) => i.id).sort());
+    expect(await db('invoices').where({ source_quote_id: quoteId })).toHaveLength(made.length);
+  });
+
   test('the built-in "contract completed" flow ships disabled, with the approval in front of the action', async () => {
     const seed = require('../../src/services/_workflowSeedBoot');
     seed._resetBootForTests();
@@ -1688,6 +1716,25 @@ describe('reminders, second pass', () => {
     expect((await db('email_queue').where({ email_type: 'contract_sent', recipient_email: customerEmail })).length).toBe(before + 1);
     // The one link mailed is the one that works.
     await ok(asSigner(request(signingApp).get(`/api/public/contract-signing/invite/${linkToken(await lastMail('contract_sent', customerEmail))}`)));
+  });
+
+  test('no invitation goes to a signer of an erased customer, however the sweep got there', async () => {
+    const signingV2 = require('../../src/services/contract/signingV2');
+    const id = await newContract();
+    await sendContract(id);
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    await require('../../src/services/contract/signers').undoInvitation(signer.id);
+    const before = (await db('email_queue').where({ email_type: 'contract_sent', recipient_email: customerEmail })).length;
+    await db('customer_accounts').where({ id: customerId }).update({ is_active: false });
+    try {
+      // The sweep selected the contract before the erasure committed.
+      expect(await signingV2.inviteDue(id)).toBe(0);
+    } finally {
+      await db('customer_accounts').where({ id: customerId }).update({ is_active: true });
+    }
+    expect((await db('email_queue').where({ email_type: 'contract_sent', recipient_email: customerEmail })).length).toBe(before);
+    expect((await db('contract_signers').where({ id: signer.id }).first()).status).toBe('pending');
+    await db('contracts').where({ id }).update({ status: 'cancelled' });
   });
 
   test('a signer whose address can\'t be read keeps the failure on the contract through every sweep', async () => {

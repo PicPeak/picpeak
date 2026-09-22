@@ -340,6 +340,20 @@ registry.registerAction('prepare_invoice', async (ctx) => {
 // (convertToInvoiceOnly does), creates the invoices on hold, and adopts the
 // ones an earlier run made instead of making them twice. A failure is on the
 // run AND on the contract (recordFollowUpFailure), where the admin looks.
+/** Link a quote-backed contract's unlinked invoices to it; returns how many. */
+async function linkQuoteInvoices(db, contractId) {
+  const contract = await db('contracts').where({ id: contractId }).first('source_quote_id');
+  if (!contract || !contract.source_quote_id) return 0;
+  const quote = await db('quotes').where({ id: contract.source_quote_id }).first('converted_contract_id');
+  // Only a quote this contract was made from: its invoices came through it.
+  if (!quote || Number(quote.converted_contract_id) !== Number(contractId)) return 0;
+  const { auditedUpdate } = require('../accountingHistory');
+  return auditedUpdate(db, 'invoices',
+    (q) => q.where({ source_quote_id: contract.source_quote_id }).whereNull('source_contract_id'),
+    { source_contract_id: contractId },
+    { actor: null, source: 'contract.convert.invoices' });
+}
+
 registry.registerAction('prepare_contract_invoice', async (ctx) => {
   const contractId = ctx.run.entity_id;
   if (ctx.run.entity_type !== 'contract' || !contractId) {
@@ -362,8 +376,14 @@ registry.registerAction('prepare_contract_invoice', async (ctx) => {
     const adminId = await resolveActor(ctx);
     await require('../contract/conversions').convertToInvoiceOnly(contractId, adminId, { draft: true });
   } catch (err) {
-    await require('../contract/signingV2').recordFollowUpFailure(contractId, 'prepare_contract_invoice', err);
-    throw err;
+    // Crash-recovery re-run: a quote-backed conversion commits the invoices
+    // (and marks the quote converted) before it links them to the contract.
+    // Link the ones this contract's quote produced, rather than failing on
+    // the converted quote for ever.
+    if (!(await linkQuoteInvoices(ctx.db, contractId))) {
+      await require('../contract/signingV2').recordFollowUpFailure(contractId, 'prepare_contract_invoice', err);
+      throw err;
+    }
   }
   const created = await ctx.db('invoices').where({ source_contract_id: contractId }).select('id');
   ctx.vars.preparedInvoiceIds = created.map((r) => r.id);

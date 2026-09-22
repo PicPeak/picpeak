@@ -87,7 +87,7 @@ async function plan(db, customerId) {
   const hasRedactedColumn = await db.schema.hasColumn('contracts', 'rendered_content_redacted_at');
   const rows = await db('contracts').where({ customer_account_id: customerId })
     .select('id', 'status', 'rendered_content', 'signed_by_customer_at', 'signed_by_admin_at', 'signed_pdf_path');
-  if (!rows.length) return { redact: [], retain: [], hasSigners, hasRedactedColumn };
+  if (!rows.length) return { customerId, redact: [], retain: [], hasSigners, hasRedactedColumn };
 
   const signedIds = hasSigners
     ? new Set((await db('contract_signers')
@@ -113,7 +113,7 @@ async function plan(db, customerId) {
       });
     }
   }
-  return { redact, retain, hasSigners, hasRedactedColumn };
+  return { customerId, redact, retain, hasSigners, hasRedactedColumn };
 }
 
 /** Revoke every way into a contract: signer links and sessions, action tokens. */
@@ -135,6 +135,10 @@ async function revokeAllAccess(trx, contractId, hasSigners) {
 async function apply(trx, contractPlan, actor) {
   if (!contractPlan) return { cancelled: [], redacted: [], retained: [] };
   const history = { actor, source: 'customer.erase' };
+  // The customer row first: an invitation or reminder holds it while it
+  // issues a link (signingV2.customerMayReceiveLink), so one in flight
+  // commits before the revocations below, and none starts after them.
+  await trx('customer_accounts').where({ id: contractPlan.customerId }).forUpdate().first('id');
   const cancelled = [];
   const redacted = [];
 
