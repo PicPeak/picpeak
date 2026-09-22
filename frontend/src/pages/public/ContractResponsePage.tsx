@@ -31,6 +31,7 @@ import { usePublicDarkMode } from '../../hooks/usePublicDarkMode';
 import { DocumentVerificationStep } from '../../components/public/DocumentVerificationStep';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { SignaturePadField, type SignaturePadHandle } from '../../components/contracts/SignaturePadField';
+import { formatMoneyMinor } from '../../utils/money';
 import { CONTRACT_CARD as CARD, ContractBody, SECTION_LABELS } from '../../components/contracts/ContractBody';
 import { OtpVerifyStep } from '../../components/contracts/OtpVerifyStep';
 import {

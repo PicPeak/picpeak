@@ -87,6 +87,8 @@ export interface ComparableVersion {
     name?: string | null;
   }>;
   attachments?: Array<{ attachmentId: number; name: string; delivery: string }>;
+  /** The declarations a signer confirms (#1446), part of a version like its clauses. */
+  consents?: Array<{ key: string; required: boolean; text: LocaleText }>;
 }
 
 export interface TextChange {
@@ -111,6 +113,8 @@ export interface VersionDiff {
   fields: Array<{ field: 'name' | 'description' | 'useCase' | 'title' | 'intro' | 'outro'; texts: TextChange[] }>;
   clauses: ClauseChange[];
   attachments: Array<{ type: 'added' | 'removed' | 'moved' | 'changed'; name: string }>;
+  /** By key: added, removed, or changed wording or `required` (then `required` is the new value). */
+  consents: Array<{ type: 'added' | 'removed' | 'changed'; key: string; required?: boolean; texts: TextChange[] }>;
   unchanged: boolean;
 }
 
@@ -224,5 +228,29 @@ export function diffVersions(before: ComparableVersion, after: ComparableVersion
     if (!stayed.has(k)) attachments.push({ type: 'moved', name: a.name });
   });
 
-  return { fields, clauses, attachments, unchanged: !fields.length && !clauses.length && !attachments.length };
+  const consents: VersionDiff['consents'] = [];
+  const beforeConsents = new Map((before.consents || []).map((c) => [c.key, c]));
+  const afterKeys = new Set((after.consents || []).map((c) => c.key));
+  for (const c of after.consents || []) {
+    const old = beforeConsents.get(c.key);
+    if (!old) {
+      consents.push({ type: 'added', key: c.key, required: c.required, texts: changes({}, c.text || {}) });
+      continue;
+    }
+    const texts = changes(old.text || {}, c.text || {});
+    if (texts.length || old.required !== c.required) {
+      consents.push({ type: 'changed', key: c.key, ...(old.required !== c.required ? { required: c.required } : {}), texts });
+    }
+  }
+  for (const c of before.consents || []) {
+    if (!afterKeys.has(c.key)) consents.push({ type: 'removed', key: c.key, texts: changes(c.text || {}, {}) });
+  }
+
+  return {
+    fields,
+    clauses,
+    attachments,
+    consents,
+    unchanged: !fields.length && !clauses.length && !attachments.length && !consents.length,
+  };
 }

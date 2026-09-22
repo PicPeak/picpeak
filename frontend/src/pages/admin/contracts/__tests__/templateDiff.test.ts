@@ -78,3 +78,33 @@ it('compares the name, description and use case when both sides carry them', () 
   // A saved version has no meta: nothing to compare there.
   expect(diffVersions(before, version([])).unchanged).toBe(true);
 });
+
+it('compares the declarations a signer confirms by key: added, removed, wording and required (#1446)', () => {
+  const acceptance = { key: 'acceptance', required: true, text: { de: 'Ich stimme zu.', en: 'I agree.' } };
+  const before = version([block(1, 'A')], {
+    consents: [acceptance, { key: 'newsletter', required: false, text: { de: 'Newsletter ja.' } }],
+  });
+  const after = version([block(1, 'A')], {
+    consents: [
+      { ...acceptance, text: { de: 'Ich stimme ausdrücklich zu.', en: 'I agree.' } },
+      { key: 'image_rights', required: true, text: { de: 'Fotos dürfen gezeigt werden.' } },
+    ],
+  });
+  const diff = diffVersions(before, after);
+  expect(diff.unchanged).toBe(false);
+  expect(diff.clauses).toEqual([]);
+  expect(diff.consents.map((c) => [c.type, c.key])).toEqual([
+    ['changed', 'acceptance'], ['added', 'image_rights'], ['removed', 'newsletter'],
+  ]);
+  const changed = diff.consents[0];
+  expect(changed.required).toBeUndefined();
+  expect(changed.texts.map((t) => t.locale)).toEqual(['de']);
+  expect(changed.texts[0].ops).toContainEqual({ type: 'add', text: 'ausdrücklich ' });
+
+  // Only `required` flipped: a change without a text diff.
+  const flipped = diffVersions(before, version([block(1, 'A')], {
+    consents: [{ ...acceptance, required: false }, before.consents![1]],
+  }));
+  expect(flipped.consents).toEqual([{ type: 'changed', key: 'acceptance', required: false, texts: [] }]);
+  expect(diffVersions(before, before).unchanged).toBe(true);
+});

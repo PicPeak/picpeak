@@ -612,3 +612,68 @@ it('edits the declarations a signer confirms and saves them with the draft (#144
     ],
   })));
 });
+
+describe('declarations in the editor state (#1445 × #1446)', () => {
+  afterEach(() => vi.useRealTimers());
+  const withConsent = () => {
+    const base = detail();
+    return {
+      ...base,
+      draft: { ...base.draft, consents: [{ key: 'acceptance', required: true, version: 1, text: { en: 'I agree.', de: 'Einverstanden.' } }] },
+    };
+  };
+
+  it('a declaration edit marks the draft unsaved and autosaves it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    get.mockResolvedValue(withConsent());
+    renderPage();
+    await screen.findByText('Leistung');
+    expect(screen.getByTestId('autosave-status')).toHaveTextContent('No unsaved changes');
+    await user.type(screen.getByLabelText('Wording (German)'), ' Ja.');
+    expect(screen.getByTestId('autosave-status')).toHaveTextContent('Unsaved changes');
+    await act(async () => { vi.advanceTimersByTime(2100); });
+    await waitFor(() => expect(saveDraft).toHaveBeenCalledTimes(1));
+    expect(saveDraft).toHaveBeenCalledWith(5, expect.objectContaining({
+      lockVersion: 3,
+      consents: [{ key: 'acceptance', required: true, text: { en: 'I agree.', de: 'Einverstanden. Ja.' } }],
+    }));
+  });
+
+  it('Undo takes back a declaration change, keystrokes in one field as one step', async () => {
+    const user = userEvent.setup();
+    get.mockResolvedValue(withConsent());
+    renderPage();
+    await screen.findByText('Leistung');
+    await user.click(screen.getByRole('checkbox', { name: 'Required to sign' }));
+    await user.type(screen.getByLabelText('Wording (English)'), ' Yes.');
+    expect(screen.getByLabelText('Wording (English)')).toHaveValue('I agree. Yes.');
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByLabelText('Wording (English)')).toHaveValue('I agree.');
+    expect(screen.getByRole('checkbox', { name: 'Required to sign' })).not.toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    expect(screen.getByRole('checkbox', { name: 'Required to sign' })).toBeChecked();
+    expect(screen.getByTestId('autosave-status')).toHaveTextContent('No unsaved changes');
+  });
+
+  it('the version compare lists changed declarations', async () => {
+    const user = userEvent.setup();
+    const published = (n: number, wording: string) => ({
+      id: 20 + n, version: n, status: n === 2 ? 'published' : 'superseded', title: 'Hochzeitsvertrag', introText: {}, outroText: {},
+      contentSha256: 'f'.repeat(64), publishedAt: '2026-09-01T10:00:00Z', createdAt: '2026-09-01T09:00:00Z', publishedBy: null,
+      items: [{ kind: 'text', blockId: null, section: 'closing', heading: 'Frist', body: { de: 'Zahlbar in 14 Tagen' }, snapshot: {} }],
+      attachments: [],
+      consents: [{ key: 'acceptance', required: true, version: n, text: { de: wording } }],
+    });
+    get.mockResolvedValue({ ...detail(), versions: [published(2, 'Ich stimme ausdrücklich zu.'), published(1, 'Ich stimme zu.')] });
+    version.mockImplementation(async (_id: number, n: number) => published(n, n === 2 ? 'Ich stimme ausdrücklich zu.' : 'Ich stimme zu.'));
+    renderPage();
+    await user.click(await screen.findByRole('button', { name: 'Compare with previous' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Changes in v2' });
+    expect(dialog).toHaveTextContent('Declarations the signer confirms');
+    expect(dialog).toHaveTextContent('acceptance');
+    expect(dialog.querySelector('ins')).toHaveTextContent('ausdrücklich');
+    expect(dialog).not.toHaveTextContent('No differences.');
+  });
+});

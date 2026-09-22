@@ -8358,7 +8358,9 @@
           "moved": "Moved",
           "changed": "Changed"
         },
-        "tooLarge": "Too large to compare here"
+        "tooLarge": "Too large to compare here",
+        "nowRequired": "now required to sign",
+        "noLongerRequired": "no longer required"
       },
       "undo": "Undo",
       "redo": "Redo",

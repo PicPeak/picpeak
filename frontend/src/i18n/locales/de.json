@@ -8359,7 +8359,9 @@
           "moved": "Verschoben",
           "changed": "Geändert"
         },
-        "tooLarge": "Zu gross für einen Vergleich hier"
+        "tooLarge": "Zu gross für einen Vergleich hier",
+        "nowRequired": "jetzt zum Unterzeichnen erforderlich",
+        "noLongerRequired": "nicht mehr erforderlich"
       },
       "undo": "Rückgängig",
       "redo": "Wiederholen",

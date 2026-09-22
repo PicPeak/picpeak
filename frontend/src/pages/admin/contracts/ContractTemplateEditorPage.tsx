@@ -157,6 +157,7 @@ const comparableOf = (draft: EditorDraft): ComparableVersion => ({
     body: item.body, snapshot: item.baseText, name: item.name,
   })),
   attachments: draft.attachments.map((a) => ({ attachmentId: a.attachmentId, name: a.name, delivery: a.delivery })),
+  consents: draft.consents,
 });
 
 /** Is the key press meant for a text field's own undo? */
@@ -484,6 +485,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
       ]);
       const comparable = (v: typeof before): ComparableVersion => ({
         title: v.title, introText: v.introText, outroText: v.outroText, items: v.items || [], attachments: v.attachments || [],
+        consents: v.consents || [],
       });
       setComparing({
         before: comparable(before),
@@ -513,7 +515,8 @@ export const ContractTemplateEditorPage: React.FC = () => {
       ]);
       const comparable = (v: typeof after | null): ComparableVersion => (v ? {
         title: v.title, introText: v.introText, outroText: v.outroText, items: v.items || [], attachments: v.attachments || [],
-      } : { title: '', introText: {}, outroText: {}, items: [], attachments: [] });
+        consents: v.consents || [],
+      } : { title: '', introText: {}, outroText: {}, items: [], attachments: [], consents: [] });
       setComparing({
         before: comparable(before),
         after: comparable(after),

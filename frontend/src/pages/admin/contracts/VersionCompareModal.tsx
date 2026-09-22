@@ -1,7 +1,8 @@
 /**
  * Two versions of a contract template side by side as changes (#1445):
  * title, intro and closing text, each clause (added / removed / moved /
- * changed, word by word), and the attachments. Used for "Compare with
+ * changed, word by word), the attachments and the declarations a signer
+ * confirms (#1446). Used for "Compare with
  * previous" in the version history and for an edit conflict (the server's
  * draft against the one in the editor).
  */
@@ -102,6 +103,29 @@ export const VersionCompareModal: React.FC<{
                 <li key={`${a.type}-${a.name}`} className="flex items-center gap-2">
                   <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${badge[a.type]}`}>{typeLabel(a.type)}</span>
                   <span className="text-neutral-800 dark:text-neutral-200">{a.name}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+        {diff.consents.length > 0 && (
+          <section className="space-y-2">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{t('contracts.templates.consents.title', 'Declarations the signer confirms')}</h3>
+            <ul className="space-y-3">
+              {diff.consents.map((c) => (
+                <li key={`${c.type}-${c.key}`} className="rounded border border-neutral-200 dark:border-neutral-700 p-2">
+                  <div className="flex flex-wrap items-center gap-2 mb-1 text-sm">
+                    <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${badge[c.type]}`}>{typeLabel(c.type)}</span>
+                    <span className="font-mono text-neutral-900 dark:text-neutral-100">{c.key}</span>
+                    {c.type === 'changed' && c.required !== undefined && (
+                      <span className="text-xs text-neutral-600 dark:text-neutral-400">
+                        {c.required
+                          ? t('contracts.templates.compare.nowRequired', 'now required to sign')
+                          : t('contracts.templates.compare.noLongerRequired', 'no longer required')}
+                      </span>
+                    )}
+                  </div>
+                  <Texts texts={c.texts} />
                 </li>
               ))}
             </ul>
