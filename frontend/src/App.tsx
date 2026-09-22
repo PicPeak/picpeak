@@ -83,6 +83,7 @@ import {
   CustomerQuoteRespondPage,
   CustomerResetPasswordPage,
   CustomerDocumentsPage,
+  CustomerDocumentPage,
   CustomerEventPage,
 } from './pages/customer';
 import { CustomerAuthProvider } from './contexts/CustomerAuthContext';
@@ -498,6 +499,7 @@ function App() {
                           <Route path="contracts/:id/sign" element={<CustomerContractSignPage />} />
                           <Route path="bills" element={<CustomerBillsPage />} />
                           <Route path="documents" element={<CustomerDocumentsPage />} />
+                          <Route path="documents/:id" element={<CustomerDocumentPage />} />
                           <Route path="events/:slug" element={<CustomerEventPage />} />
                           <Route path="profile" element={<CustomerProfilePage />} />
                         </Route>

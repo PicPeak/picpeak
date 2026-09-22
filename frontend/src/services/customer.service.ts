@@ -136,9 +136,13 @@ export interface CustomerDocument {
   rejectionReason: string | null;
   eventId: number | null;
   eventName: string | null;
+  /** For a link to the event page; the page itself re-checks access. */
+  eventSlug?: string | null;
   contractId: number | null;
   createdAt: string | null;
   sharedAt: string | null;
+  /** When the studio reviewed the customer's own upload. */
+  reviewedAt?: string | null;
 }
 
 export interface CustomerDocumentLimits {
@@ -385,6 +389,16 @@ export const customerService = {
         if (options.onProgress && e.total) options.onProgress(e.loaded / e.total);
       },
     });
+    return response.data.document;
+  },
+
+  /**
+   * One document (the document page / a deep link). A document the customer
+   * can no longer see rejects with 410 and a code — DOCUMENT_UNSHARED or
+   * DOCUMENT_REMOVED — and an unknown one with 404.
+   */
+  async getDocument(id: number): Promise<CustomerDocument> {
+    const response = await api.get<{ document: CustomerDocument }>(`/customer/documents/${id}`);
     return response.data.document;
   },
 

@@ -5580,7 +5580,8 @@
         "download": "{{name}} could not be downloaded. Please try again.",
         "activeContent": "{{name}} contains active content (a script, an embedded file or a form action) and cannot be uploaded. Open it and print it to PDF, then upload that file.",
         "tooComplex": "{{name}} could not be checked. Open it and print it to PDF, then upload that file.",
-        "tooManyPages": "{{name}} has too many pages to upload."
+        "tooManyPages": "{{name}} has too many pages to upload.",
+        "notFound": "{{name}} could not be found."
       }
     },
     "event": {
@@ -5595,6 +5596,28 @@
       "pdf": "PDF",
       "dueOn": "Due {{date}}",
       "nothingElse": "There are no documents for this event yet."
+    },
+    "document": {
+      "back": "All documents",
+      "yourPhotographer": "your photographer",
+      "unsharedTitle": "No longer shared",
+      "unsharedBody": "This document is no longer shared with you. Ask {{studio}} if you still need it.",
+      "removedTitle": "Removed",
+      "removedBody": "This document was removed and can no longer be opened. Ask {{studio}} if you still need it.",
+      "notFoundTitle": "Document not found",
+      "notFoundBody": "There is no document at this address for your account. Check that you are logged in with the right account.",
+      "disabledTitle": "Documents are not available",
+      "errorTitle": "Could not load the document",
+      "errorBody": "Please try again in a moment.",
+      "pendingBody": "This document is waiting for review. {{studio}} checks every upload before it becomes available.",
+      "rejectedBody": "This document was not accepted: {{reason}}",
+      "rejectedNoReason": "This document was not accepted. Contact {{studio}} if you are unsure why.",
+      "uploadedBy": "From",
+      "size": "Size",
+      "uploadedAt": "Uploaded",
+      "sharedAt": "Shared",
+      "reviewedAt": "Reviewed",
+      "event": "Event"
     }
   },
   "customers": {

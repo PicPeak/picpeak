@@ -240,9 +240,11 @@ function toCustomerDto(row) {
     rejectionReason: own && row.status === 'rejected' ? (row.review_note || null) : null,
     eventId: row.event_id || null,
     eventName: row.event_name || null,
+    eventSlug: row.event_slug || null,
     contractId: row.contract_id || null,
     createdAt: toIso(row.created_at) || null,
     sharedAt: own ? null : (toIso(row.shared_at) || null),
+    reviewedAt: own ? (toIso(row.reviewed_at) || null) : null,
   };
 }
 
@@ -281,7 +283,7 @@ function toAdminDto(row, views = [], adminNames = new Map()) {
 function baseQuery() {
   return db('customer_documents')
     .leftJoin('events', 'events.id', 'customer_documents.event_id')
-    .select('customer_documents.*', 'events.event_name as event_name');
+    .select('customer_documents.*', 'events.event_name as event_name', 'events.slug as event_slug');
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +313,36 @@ async function listForCustomer(customerId, { eventId = null } = {}) {
 
 async function getForCustomer(customerId, documentId) {
   return customerVisibleQuery(customerId).where('customer_documents.id', documentId).first();
+}
+
+/**
+ * What one document id means to this customer, for the document page and the
+ * download route (#1444). Unlike getForCustomer it also answers for rows the
+ * customer can no longer see, so the page can say *why* — but only for rows
+ * the customer did see once:
+ *
+ *   { state: 'visible', row }  own upload (any status) or a shared clean one
+ *   { state: 'unshared' }      shared by the studio once, no longer
+ *   { state: 'removed' }       deleted (or purged) own upload, or a deleted
+ *                              document the studio had shared
+ *   null                       everything else: another customer's id, an id
+ *                              that doesn't exist, and a studio upload that
+ *                              was never shared with them. The route answers
+ *                              the same 404 for all three, so this is no
+ *                              existence oracle.
+ */
+async function getStateForCustomer(customerId, documentId) {
+  const row = await baseQuery()
+    .where('customer_documents.customer_account_id', customerId)
+    .where('customer_documents.id', documentId)
+    .first();
+  if (!row) return null;
+  const own = row.uploader_type === 'customer';
+  if (!own && !row.shared_at) return null;
+  if (row.deleted_at || row.purged_at) return { state: 'removed' };
+  if (own) return { state: 'visible', row };
+  if (row.unshared_at || row.status !== 'clean') return { state: 'unshared' };
+  return { state: 'visible', row };
 }
 
 async function listForAdmin(customerId) {
@@ -630,6 +662,7 @@ module.exports = {
   parseOptionalId,
   listForCustomer,
   getForCustomer,
+  getStateForCustomer,
   listForAdmin,
   getForAdmin,
   getReviewCounts,

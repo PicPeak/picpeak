@@ -393,8 +393,11 @@ describe('with the documents flag on', () => {
     expect(res.status).toBe(200);
     const list = await asCustomer(request(customerApp).get('/api/customer/documents'), customerA);
     expect(list.body.documents.find((d) => d.id === sharedId)).toBeUndefined();
+    // 410 with its own code since the document page (slice 2): the customer
+    // learns it was unshared rather than that it never existed.
     const dl = await asCustomer(request(customerApp).get(`/api/customer/documents/${sharedId}/download`), customerA);
-    expect(dl.status).toBe(404);
+    expect(dl.status).toBe(410);
+    expect(dl.body.code).toBe('DOCUMENT_UNSHARED');
     await asAdmin(request(adminApp).post(`/api/admin/customers/${customerA}/documents/${sharedId}/share`));
   });
 
@@ -415,7 +418,8 @@ describe('with the documents flag on', () => {
     const list = await asCustomer(request(customerApp).get('/api/customer/documents'), customerA);
     expect(list.body.documents.find((d) => d.id === sharedId)).toBeUndefined();
     const dl = await asCustomer(request(customerApp).get(`/api/customer/documents/${sharedId}/download`), customerA);
-    expect(dl.status).toBe(404);
+    expect(dl.status).toBe(410);
+    expect(dl.body.code).toBe('DOCUMENT_REMOVED');
     const row = await db('customer_documents').where({ id: sharedId }).first();
     expect(row.deleted_at).toBeTruthy();
   });

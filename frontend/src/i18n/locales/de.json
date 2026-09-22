@@ -5580,7 +5580,8 @@
         "download": "{{name}} konnte nicht heruntergeladen werden. Bitte versuchen Sie es erneut.",
         "activeContent": "{{name}} enthält aktive Inhalte (ein Skript, eine eingebettete Datei oder eine Formularaktion) und kann nicht hochgeladen werden. Öffnen Sie die Datei, drucken Sie sie als PDF und laden Sie diese Datei hoch.",
         "tooComplex": "{{name}} konnte nicht geprüft werden. Öffnen Sie die Datei, drucken Sie sie als PDF und laden Sie diese Datei hoch.",
-        "tooManyPages": "{{name}} hat zu viele Seiten zum Hochladen."
+        "tooManyPages": "{{name}} hat zu viele Seiten zum Hochladen.",
+        "notFound": "{{name}} wurde nicht gefunden."
       }
     },
     "event": {
@@ -5595,6 +5596,28 @@
       "pdf": "PDF",
       "dueOn": "Fällig am {{date}}",
       "nothingElse": "Zu diesem Event gibt es noch keine Dokumente."
+    },
+    "document": {
+      "back": "Alle Dokumente",
+      "yourPhotographer": "Ihr Fotograf",
+      "unsharedTitle": "Nicht mehr freigegeben",
+      "unsharedBody": "Dieses Dokument ist nicht mehr für Sie freigegeben. Wenden Sie sich an {{studio}}, falls Sie es noch benötigen.",
+      "removedTitle": "Entfernt",
+      "removedBody": "Dieses Dokument wurde entfernt und kann nicht mehr geöffnet werden. Wenden Sie sich an {{studio}}, falls Sie es noch benötigen.",
+      "notFoundTitle": "Dokument nicht gefunden",
+      "notFoundBody": "Unter dieser Adresse gibt es für Ihr Konto kein Dokument. Prüfen Sie, ob Sie mit dem richtigen Konto angemeldet sind.",
+      "disabledTitle": "Dokumente sind nicht verfügbar",
+      "errorTitle": "Das Dokument konnte nicht geladen werden",
+      "errorBody": "Bitte versuchen Sie es gleich noch einmal.",
+      "pendingBody": "Dieses Dokument wartet auf die Prüfung. {{studio}} prüft jeden Upload, bevor er verfügbar wird.",
+      "rejectedBody": "Dieses Dokument wurde nicht angenommen: {{reason}}",
+      "rejectedNoReason": "Dieses Dokument wurde nicht angenommen. Wenden Sie sich an {{studio}}, wenn Sie nicht wissen, warum.",
+      "uploadedBy": "Von",
+      "size": "Größe",
+      "uploadedAt": "Hochgeladen",
+      "sharedAt": "Freigegeben",
+      "reviewedAt": "Geprüft",
+      "event": "Event"
     }
   },
   "customers": {

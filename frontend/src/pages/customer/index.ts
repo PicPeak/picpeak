@@ -11,4 +11,5 @@ export { CustomerContractSignPage } from './CustomerContractSignPage';
 export { CustomerQuoteRespondPage } from './CustomerQuoteRespondPage';
 export { CustomerResetPasswordPage } from './CustomerResetPasswordPage';
 export { CustomerDocumentsPage } from './CustomerDocumentsPage';
+export { CustomerDocumentPage } from './CustomerDocumentPage';
 export { CustomerEventPage } from './CustomerEventPage';

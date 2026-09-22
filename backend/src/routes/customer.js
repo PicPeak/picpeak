@@ -1182,13 +1182,50 @@ router.post('/documents', customerAuth, requireDocumentsFeature, documentUploadL
   }
 });
 
+// One answer per state, shared by the document page and the download. A 410
+// is only ever given for a document this customer once saw (see
+// getStateForCustomer); everything else — including another customer's id —
+// is the same 404 body.
+const DOCUMENT_GONE = {
+  unshared: { error: 'This document is no longer shared with you.', code: 'DOCUMENT_UNSHARED' },
+  removed: { error: 'This document has been removed.', code: 'DOCUMENT_REMOVED' },
+};
+
+function documentIdParam(req) {
+  const id = Number(req.params.id);
+  return Number.isInteger(id) && id > 0 && id <= 2147483647 ? id : null;
+}
+
+/** The row when visible; otherwise sends the 404/410 and returns null. */
+async function loadCustomerDocument(req, res) {
+  const id = documentIdParam(req);
+  const found = id ? await customerDocumentsService.getStateForCustomer(req.customer.id, id) : null;
+  if (found && found.state === 'visible') return found.row;
+  if (found) res.status(410).json(DOCUMENT_GONE[found.state]);
+  else res.status(404).json({ error: 'Document not found', code: 'DOCUMENT_NOT_FOUND' });
+  return null;
+}
+
+/**
+ * GET /documents/:id — one document's details, for the document page and
+ * the deep link in a notification. Pending and rejected own uploads answer
+ * 200 with their status (no download); unshared and removed ones a 410 with
+ * their own code, so the page can say which.
+ */
+router.get('/documents/:id', customerAuth, requireDocumentsFeature, async (req, res) => {
+  try {
+    const row = await loadCustomerDocument(req, res);
+    if (!row) return undefined;
+    return res.json({ document: customerDocumentsService.toCustomerDto(row) });
+  } catch (error) {
+    return sendDocumentError(res, error, 'Failed to load document');
+  }
+});
+
 router.get('/documents/:id/download', customerAuth, requireDocumentsFeature, async (req, res) => {
   try {
-    const id = Number(req.params.id);
-    const row = Number.isInteger(id) && id > 0
-      ? await customerDocumentsService.getForCustomer(req.customer.id, id)
-      : null;
-    if (!row) return res.status(404).json({ error: 'Document not found', code: 'DOCUMENT_NOT_FOUND' });
+    const row = await loadCustomerDocument(req, res);
+    if (!row) return undefined;
     if (row.status === 'pending') {
       return res.status(409).json({ error: 'This document is still being reviewed.', code: 'DOCUMENT_PENDING_REVIEW' });
     }

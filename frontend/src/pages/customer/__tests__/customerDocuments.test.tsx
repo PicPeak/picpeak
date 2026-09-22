@@ -107,6 +107,12 @@ describe('CustomerDocumentsPage', () => {
     expect(downloads[0]).toHaveAccessibleName('Download offer.pdf');
   });
 
+  it('links every row to its document page (#1444)', async () => {
+    renderPage();
+    expect(await screen.findByRole('link', { name: 'signed-contract.pdf' })).toHaveAttribute('href', '/customer/documents/1');
+    expect(screen.getByRole('link', { name: 'offer.pdf' })).toHaveAttribute('href', '/customer/documents/2');
+  });
+
   it('downloads through the service', async () => {
     renderPage();
     await userEvent.click(await screen.findByRole('button', { name: 'Download offer.pdf' }));

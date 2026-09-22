@@ -1450,6 +1450,7 @@
         "GET /events/:slug/overview",
         "GET /documents",
         "POST /documents",
+        "GET /documents/:id",
         "GET /documents/:id/download"
       ]
     },

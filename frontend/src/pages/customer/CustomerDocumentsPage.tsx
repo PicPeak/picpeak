@@ -12,6 +12,7 @@ import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { Download, FolderOpen, Upload, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 
@@ -21,7 +22,7 @@ import { formatFileSize } from '../../utils/fileSize';
 import { customerService, type CustomerDocument } from '../../services/customer.service';
 
 /** Error code from an API error. Blob responses (downloads) carry JSON too. */
-async function readErrorCode(err: any): Promise<string | undefined> {
+export async function readErrorCode(err: any): Promise<string | undefined> {
   const data = err?.response?.data;
   if (data instanceof Blob) {
     try { return JSON.parse(await data.text())?.code; } catch { return undefined; }
@@ -57,18 +58,27 @@ export function uploadErrorMessage(t: TFunction, code: string | undefined, name:
   }
 }
 
+/** A failed download, in words: the server answers each state with its own code. */
+export function downloadErrorMessage(t: TFunction, code: string | undefined, status: number | undefined, name: string): string {
+  if (code === 'DOCUMENT_PENDING_REVIEW') return t('customer.documents.errors.stillPending', '{{name}} is still being reviewed.', { name });
+  if (code === 'DOCUMENT_UNSHARED') return t('customer.documents.errors.gone', '{{name}} is no longer shared with you.', { name });
+  if (code === 'DOCUMENT_REMOVED' || code === 'DOCUMENT_PURGED') return t('customer.documents.errors.purged', '{{name}} has been removed.', { name });
+  if (status === 404) return t('customer.documents.errors.notFound', '{{name}} could not be found.', { name });
+  return t('customer.documents.errors.download', '{{name}} could not be downloaded. Please try again.', { name });
+}
+
 // The chips used hard-coded light Tailwind colours, which left the one thing
 // this page exists to communicate unreadable on the portal's dark ground.
 // `dark:` variants do NOT fix it here — the portal themes through tokens
 // rather than the class the admin shell toggles on <html> — so the chip
 // styles are token-derived in index.css instead.
-const STATUS_STYLE: Record<CustomerDocument['status'], string> = {
+export const STATUS_STYLE: Record<CustomerDocument['status'], string> = {
   clean: 'status-chip hue-success',
   pending: 'status-chip hue-warning',
   rejected: 'status-chip hue-danger',
 };
 
-function statusLabel(t: TFunction, status: CustomerDocument['status']): string {
+export function statusLabel(t: TFunction, status: CustomerDocument['status']): string {
   if (status === 'clean') return t('customer.documents.status.available', 'Available');
   if (status === 'pending') return t('customer.documents.status.pending', 'Awaiting review');
   return t('customer.documents.status.rejected', 'Rejected');
@@ -87,17 +97,7 @@ export const CustomerDocumentList: React.FC<{ documents: CustomerDocument[]; sho
     try {
       await customerService.downloadDocument(doc);
     } catch (err: any) {
-      const code = await readErrorCode(err);
-      const status = err?.response?.status;
-      toast.error(
-        code === 'DOCUMENT_PENDING_REVIEW'
-          ? t('customer.documents.errors.stillPending', '{{name}} is still being reviewed.', { name: doc.name })
-          : status === 404
-            ? t('customer.documents.errors.gone', '{{name}} is no longer shared with you.', { name: doc.name })
-            : status === 410
-              ? t('customer.documents.errors.purged', '{{name}} has been removed.', { name: doc.name })
-              : t('customer.documents.errors.download', '{{name}} could not be downloaded. Please try again.', { name: doc.name }),
-      );
+      toast.error(downloadErrorMessage(t, await readErrorCode(err), err?.response?.status, doc.name));
     } finally {
       setBusyId(null);
     }
@@ -109,7 +109,9 @@ export const CustomerDocumentList: React.FC<{ documents: CustomerDocument[]; sho
         <li key={doc.id} className="p-4 flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-medium text-theme break-all">{doc.name}</span>
+              <Link to={`/customer/documents/${doc.id}`} className="text-sm font-medium text-theme break-all hover:underline">
+                {doc.name}
+              </Link>
               <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLE[doc.status]}`}>
                 {statusLabel(t, doc.status)}
               </span>
