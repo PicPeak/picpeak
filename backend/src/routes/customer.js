@@ -1234,10 +1234,12 @@ async function loadCustomerDocument(req, res) {
   if (found) {
     res.status(410).json(DOCUMENT_GONE[found.state]);
   } else {
-    // Counted only when the id exists and is someone else's (never for an
-    // id that doesn't exist); the answer is the same 404 either way.
-    if (id) await customerDocumentAbuse.recordIfForeign(req.customer.id, id);
     res.status(404).json({ error: 'Document not found', code: 'DOCUMENT_NOT_FOUND' });
+    // Counted only when the id exists and is someone else's (never for an
+    // id that doesn't exist). After the answer and not awaited: the extra
+    // queries a foreign id costs must not show in the response time, or the
+    // latency would tell which ids exist.
+    if (id) customerDocumentAbuse.recordIfForeignLater(req.customer.id, id);
   }
   return null;
 }
@@ -1285,7 +1287,11 @@ router.delete('/documents/:id', customerAuth, requireDocumentsFeature, documentU
     return res.json({ deleted: true });
   } catch (error) {
     if (error && error.code === 'DOCUMENT_NOT_FOUND') {
-      await customerDocumentAbuse.recordIfForeign(req.customer.id, documentIdParam(req));
+      // Answered first, recorded after (see loadCustomerDocument).
+      sendDocumentError(res, error, 'Failed to delete document');
+      const id = documentIdParam(req);
+      if (id) customerDocumentAbuse.recordIfForeignLater(req.customer.id, id);
+      return undefined;
     }
     return sendDocumentError(res, error, 'Failed to delete document');
   }

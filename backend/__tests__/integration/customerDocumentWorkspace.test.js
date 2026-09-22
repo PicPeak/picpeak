@@ -657,9 +657,13 @@ describe('document abuse signals', () => {
   let owner;
   let prober;
   let foreignId;
-  const counter = (customerId, signal) => db('customer_document_abuse_counters')
-    .where({ customer_account_id: customerId, signal }).first();
-  const logged = async (type, customerId) => (await db('activity_logs').where({ activity_type: type }))
+  // Foreign-access recording runs after the 404 went out; wait for it.
+  const settle = () => require('../../src/services/customerDocumentAbuse').settled();
+  const counter = async (customerId, signal) => {
+    await settle();
+    return db('customer_document_abuse_counters').where({ customer_account_id: customerId, signal }).first();
+  };
+  const logged = async (type, customerId) => (await settle(), await db('activity_logs').where({ activity_type: type }))
     .map((r) => meta(r.metadata)).filter((m) => m.customerId === customerId);
 
   beforeAll(async () => {
@@ -678,6 +682,34 @@ describe('document abuse signals', () => {
     expect(entries).toEqual([{ customerId: prober }]);
   });
 
+  it('answers the 404 without waiting for the recording, so latency tells nothing', async () => {
+    const abuse = require('../../src/services/customerDocumentAbuse');
+    const who = await newCustomer();
+    // A recording that doesn't finish until the end of the test: the answer
+    // must not wait for it.
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const spy = jest.spyOn(abuse, 'recordIfForeign').mockImplementation(() => gate);
+    try {
+      for (const call of [
+        () => getDoc(who, foreignId),
+        () => download(who, foreignId),
+        () => asCustomer(request(customerApp).delete(`/api/customer/documents/${foreignId}`), who),
+      ]) {
+        const res = await Promise.race([
+          call(),
+          new Promise((resolve) => setTimeout(() => resolve({ status: 'timed out' }), 2000)),
+        ]);
+        expect(res.status).toBe(404);
+      }
+      expect(spy).toHaveBeenCalledTimes(3);
+    } finally {
+      release();
+      spy.mockRestore();
+      await abuse.settled();
+    }
+  });
+
   it('does not count ids that do not exist, nor the customer\'s own hidden rows', async () => {
     const quiet = await newCustomer();
     const hidden = (await adminUpload(quiet, 'never-shared.pdf')).body.document.id;
@@ -694,7 +726,10 @@ describe('document abuse signals', () => {
     try {
       const mails = () => db('email_queue').where({ email_type: 'customer_document_access_alert_admin' });
       const before = (await mails()).length;
-      for (let i = 0; i < 5; i += 1) await getDoc(loud, foreignId);
+      for (let i = 0; i < 5; i += 1) {
+        await getDoc(loud, foreignId);
+        await settle();
+      }
       const after = await mails();
       expect(after.length).toBe(before + 1);
       expect(meta(after[after.length - 1].email_data)).toMatchObject({ attempt_count: '3' });

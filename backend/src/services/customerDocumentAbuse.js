@@ -108,6 +108,26 @@ async function recordIfForeign(customerId, documentId) {
   }
 }
 
+// Recordings started after a response went out. Tracked so tests (and a
+// draining shutdown) can wait for them; never awaited on the request path.
+const inFlight = new Set();
+
+/**
+ * recordIfForeign without awaiting it: for the 404 path, where the extra
+ * queries a foreign id costs must not add to the response time.
+ */
+function recordIfForeignLater(customerId, documentId) {
+  const p = Promise.resolve(module.exports.recordIfForeign(customerId, documentId))
+    .catch((err) => logger.warn('Could not record a document abuse signal', { customerId, error: err.message }))
+    .finally(() => inFlight.delete(p));
+  inFlight.add(p);
+}
+
+/** Resolves once every recording started so far has finished. */
+async function settled() {
+  while (inFlight.size > 0) await Promise.all([...inFlight]);
+}
+
 /** 24-hour totals per signal, for System Health. */
 async function last24hCounts(now = Date.now()) {
   const out = { forbiddenAccess: 0, quotaExceeded: 0, rateLimited: 0, customersOverThreshold: 0 };
@@ -131,4 +151,6 @@ async function last24hCounts(now = Date.now()) {
   return out;
 }
 
-module.exports = { record, recordIfForeign, last24hCounts, _internal: { windowOf } };
+module.exports = {
+  record, recordIfForeign, recordIfForeignLater, settled, last24hCounts, _internal: { windowOf },
+};
