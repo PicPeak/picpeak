@@ -37,7 +37,9 @@ const signers = require('./signers');
 const signingEvents = require('./signingEvents');
 const { hasColumnCached } = require('../../utils/schemaCache');
 const { auditedUpdate } = require('../accountingHistory');
-const { adminActor, customerPublicActor, emitContractEvent, maybeStoreIp } = require('./helpers');
+const {
+  adminActor, customerPublicActor, emitContractEvent, maybeStoreIp, releaseQuoteOnDeadContract,
+} = require('./helpers');
 const { persistContractPdf, persistSignatureImage } = require('./signatureAssets');
 
 const VERSION = 2;
@@ -737,6 +739,9 @@ async function decline(sessionToken, { reason } = {}) {
     });
     await auditedUpdate(trx, 'contracts', { id: contract.id }, { status: 'declined', declined_at: now, updated_at: now },
       { actor: { type: 'customer', name: signerName(signer) }, source: 'contract.decline' });
+    // Release the source quote's converted_contract_id so a replacement
+    // contract can be created from it (issue 1588).
+    await releaseQuoteOnDeadContract(trx, contract.id, current.source_quote_id);
     await signers.revokeAccess(trx, contract.id);
     await signingEvents.appendEvent(trx, contract.id, {
       type: 'declined', actorType: 'signer', actorLabel: signerName(signer), signerId: signer.id, payload: { withReason: !!text },

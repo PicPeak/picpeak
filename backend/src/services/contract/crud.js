@@ -11,7 +11,7 @@ const { isUniqueViolation } = require('../../utils/dbErrors');
 const businessProfileService = require('../businessProfileService');
 const { ensureSystemBlocksSeeded } = require('../contractBlocksService');
 const { ensureInt } = require('../../utils/numericHelpers');
-const { adminActor, ensureCustomerActive, nextContractNumber } = require('./helpers');
+const { adminActor, ensureCustomerActive, nextContractNumber, releaseQuoteOnDeadContract } = require('./helpers');
 const { auditedInsert, auditedUpdate, auditedDelete } = require('../accountingHistory');
 
 
@@ -537,10 +537,15 @@ async function cancelContract(id, adminId) {
   if (!['draft', 'sent'].includes(contract.status)) {
     throw new AppError(`Cannot cancel a contract with status '${contract.status}'`, 409);
   }
-  await auditedUpdate(db, 'contracts', { id }, {
-    status: 'cancelled',
-    updated_at: new Date(),
-  }, { actor: adminId, source: 'contract.cancel' });
+  await db.transaction(async (trx) => {
+    await auditedUpdate(trx, 'contracts', { id }, {
+      status: 'cancelled',
+      updated_at: new Date(),
+    }, { actor: adminId, source: 'contract.cancel' });
+    // Release the source quote's converted_contract_id so a replacement
+    // contract can be created from it (issue 1588).
+    await releaseQuoteOnDeadContract(trx, id, contract.source_quote_id);
+  });
   // Invalidate any outstanding tokens.
   await db('contract_action_tokens').where({ contract_id: id, used_at: null }).update({
     expires_at: new Date(),
