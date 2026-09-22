@@ -46,14 +46,15 @@ vi.mock('../../../services/customerDocumentsAdmin.service', () => ({ customerDoc
 
 import { CustomerDocumentRequests } from '../CustomerDocumentRequests';
 
-function renderIt() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderIt(qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return render(<QueryClientProvider client={qc}><CustomerDocumentRequests customerId={5} canManage /></QueryClientProvider>);
 }
 
 describe('CustomerDocumentRequests', () => {
   it('lists requests with their status and lets only an open one be cancelled', async () => {
-    renderIt();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+    renderIt(qc);
     expect(await screen.findByText('Signed contract')).toBeInTheDocument();
     expect(screen.getByText('Waiting')).toBeInTheDocument();
     expect(screen.getByText('Received')).toBeInTheDocument();
@@ -62,6 +63,8 @@ describe('CustomerDocumentRequests', () => {
     expect(cancels).toHaveLength(1);
     await userEvent.click(cancels[0]);
     await waitFor(() => expect(svc.cancelRequest).toHaveBeenCalledWith(5, 3));
+    // The cancel is logged; the activity card refreshes with the list.
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['admin-customer-activity', 5] }));
   });
 
   it('creates a request and says the customer is emailed', async () => {

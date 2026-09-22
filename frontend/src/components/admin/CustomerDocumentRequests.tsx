@@ -62,6 +62,8 @@ export const CustomerDocumentRequests: React.FC<{ customerId: number; canManage:
       else toast.success(done);
       setTitle(''); setNote(''); setDue('');
       await qc.invalidateQueries({ queryKey });
+      // Logged, and shown by the activity card beside this one.
+      await qc.invalidateQueries({ queryKey: ['admin-customer-activity', customerId] });
     } catch (err: any) {
       toast.error(err?.response?.data?.error || t('customers.documents.actionError', 'That did not work. Please try again.'));
     } finally {
@@ -75,6 +77,8 @@ export const CustomerDocumentRequests: React.FC<{ customerId: number; canManage:
       await customerDocumentsAdminService.cancelRequest(customerId, req.id);
       toast.success(t('customers.documents.requests.cancelled', 'Request cancelled.'));
       await qc.invalidateQueries({ queryKey });
+      // Logged, and shown by the activity card beside this one.
+      await qc.invalidateQueries({ queryKey: ['admin-customer-activity', customerId] });
     } catch (err: any) {
       toast.error(err?.response?.data?.error || t('customers.documents.actionError', 'That did not work. Please try again.'));
     } finally {
