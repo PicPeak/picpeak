@@ -59,7 +59,7 @@ async function runDocumentRequestReminders(now = Date.now()) {
     .where('reminder_count', '<', ladder.length)
     .orderBy('id', 'asc')
     .select('id', 'customer_account_id', 'event_id', 'title', 'note', 'due_at', 'created_at',
-      'ladder_started_at', 'reminder_count');
+      'ladder_started_at', 'reminder_count', 'reminded_at');
 
   for (const request of open) {
     const step = Number(request.reminder_count) || 0;
@@ -72,16 +72,27 @@ async function runDocumentRequestReminders(now = Date.now()) {
     const features = await customerAccountsService.getEffectiveFeaturesForCustomer(request.customer_account_id);
     if (!features || !features.documents) continue;
 
+    const remindedAt = new Date(now).toISOString();
     const claimed = await db('customer_document_requests')
       .where({ id: request.id, status: 'open', reminder_count: step })
-      .update({ reminder_count: due, reminded_at: new Date(now).toISOString() });
+      .update({ reminder_count: due, reminded_at: remindedAt });
     if (claimed !== 1) continue;
 
     const result = await customerDocumentNotifications.notifyRequest(request, { reminder: true });
+    if (result !== 'queued') {
+      // Nothing queued (the mail could not be prepared, or the customer is
+      // not reachable right now): hand the step back, so a later run sends
+      // it instead of the ladder running out unsent. Conditional on this
+      // run's claim, so a reopen or another claim since is left alone.
+      await db('customer_document_requests')
+        .where({ id: request.id, reminder_count: due, reminded_at: remindedAt })
+        .update({ reminder_count: step, reminded_at: request.reminded_at || null });
+      continue;
+    }
     await logActivity('customer_document_request_reminded',
       { requestId: request.id, customerId: request.customer_account_id, step: due },
       request.event_id || null, { type: 'system', name: null });
-    if (result === 'queued') sent.reminded += 1;
+    sent.reminded += 1;
   }
   if (sent.reminded) logger.info(`Document requests: queued ${sent.reminded} reminder(s)`);
   return sent;

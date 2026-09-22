@@ -1221,6 +1221,28 @@ describe('document requests', () => {
     expect(await count()).toBe(1);
   });
 
+  it('hands the step back when the reminder could not be queued', async () => {
+    const { runDocumentRequestReminders } = require('../../src/services/customerDocumentRequestReminderService');
+    const notifications = require('../../src/services/customerDocumentNotifications');
+    await db('customer_document_requests').where({ customer_account_id: me, status: 'open' }).update({ status: 'cancelled' });
+    const req = (await createRequest(me, { title: 'Retry', notify: false })).body.request;
+    const count = async () => Number((await db('customer_document_requests').where({ id: req.id }).first()).reminder_count);
+    const later = Date.now() + 10 * 864e5;
+
+    for (const outcome of ['failed', 'skipped']) {
+      const spy = jest.spyOn(notifications, 'notifyRequest').mockResolvedValueOnce(outcome);
+      try {
+        expect((await runDocumentRequestReminders(later)).reminded).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await count()).toBe(0);
+    }
+
+    expect((await runDocumentRequestReminders(later)).reminded).toBe(1);
+    expect(await count()).toBe(2);
+  });
+
   it('sends no reminders when the ladder setting is empty', async () => {
     const { runDocumentRequestReminders } = require('../../src/services/customerDocumentRequestReminderService');
     await db('app_settings').where({ setting_key: 'customer_documents_request_reminder_days' })
