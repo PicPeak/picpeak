@@ -7953,7 +7953,8 @@
           "manifest": "Anlagenverzeichnis",
           "event_chain": "Protokoll der Unterzeichnung",
           "completed_artifact": "Abgeschlossenes Dokument"
-        }
+        },
+        "missingArtefact": "Fehlt – die Datei (oder der Eintrag) ist nicht mehr vorhanden"
       },
       "alreadyEventToast": "Bereits mit einem Anlass verknüpft.",
       "auditEmpty": "Noch keine Audit-Log-Einträge.",

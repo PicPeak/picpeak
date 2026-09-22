@@ -29,6 +29,7 @@ import { Button, Card, Loading } from '../../../components/common';
 import { DocumentLineageCard } from '../../../components/admin/DocumentLineageCard';
 import {
   contractsService,
+  type ContractIntegrityCheck,
   type ContractStatus,
 } from '../../../services/contracts.service';
 import { useLocalizedDate } from '../../../hooks/useLocalizedDate';
@@ -799,7 +800,7 @@ export const ContractDetailPage: React.FC = () => {
  * The query is lazy: re-hashing does file I/O on the server, and most page
  * views don't need it. The admin clicks "Verify".
  */
-const IntegrityCheckCard: React.FC<{ contractId: number }> = ({ contractId }) => {
+export const IntegrityCheckCard: React.FC<{ contractId: number }> = ({ contractId }) => {
   const { t } = useTranslation();
   const { data, isFetching, refetch, isSuccess, error } = useQuery({
     queryKey: ['contract-integrity', contractId],
@@ -823,12 +824,20 @@ const IntegrityCheckCard: React.FC<{ contractId: number }> = ({ contractId }) =>
     }
   }
 
-  const verdict = (ok: boolean | null) => (ok === true ? (
+  // A failed check without both hashes is an artefact that is gone, not
+  // one that was altered.
+  const isMissing = (c: ContractIntegrityCheck) => c.ok === false && !(c.expected && c.actual);
+  const verdict = (c: ContractIntegrityCheck) => (c.ok === true ? (
     <span className="inline-flex items-center gap-1 text-xs text-green-700 dark:text-green-300">
       <CheckCircle2 className="w-3.5 h-3.5" />
       {t('contracts.detail.integrity.match', 'Hash matches')}
     </span>
-  ) : ok === false ? (
+  ) : isMissing(c) ? (
+    <span className="inline-flex items-center gap-1 text-xs text-red-700 dark:text-red-300">
+      <XCircle className="w-3.5 h-3.5" />
+      {t('contracts.detail.integrity.missingArtefact', 'Missing — the file (or record) is gone')}
+    </span>
+  ) : c.ok === false ? (
     <span className="inline-flex items-center gap-1 text-xs text-red-700 dark:text-red-300">
       <XCircle className="w-3.5 h-3.5" />
       {t('contracts.detail.integrity.mismatch', 'Hash mismatch — file altered')}
@@ -888,9 +897,9 @@ const IntegrityCheckCard: React.FC<{ contractId: number }> = ({ contractId }) =>
                     {t(`contracts.detail.integrity.check.${c.check}`, c.check)}
                     {c.subject && <span className="ml-1 font-normal text-neutral-500">· {c.subject}</span>}
                   </span>
-                  {verdict(c.ok)}
+                  {verdict(c)}
                 </div>
-                {c.note && <p className="text-[11px] text-neutral-500">{c.note}</p>}
+                {c.note && c.note !== 'missing' && <p className="text-[11px] text-neutral-500">{c.note}</p>}
                 <dl className="grid grid-cols-[6rem_1fr] gap-x-2 gap-y-0.5 text-[11px] font-mono">
                   <dt className="text-neutral-500">{t('contracts.detail.integrity.expected', 'expected')}</dt>
                   <dd className="break-all">{c.expected || '—'}</dd>

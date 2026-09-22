@@ -7952,7 +7952,8 @@
           "manifest": "Attachment list",
           "event_chain": "Signing log",
           "completed_artifact": "Completed document"
-        }
+        },
+        "missingArtefact": "Missing — the file (or record) is gone"
       },
       "alreadyEventToast": "Already linked to an event.",
       "auditEmpty": "No audit-log entries yet.",

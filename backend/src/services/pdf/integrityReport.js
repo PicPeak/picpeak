@@ -45,10 +45,15 @@ function renderIntegrityReport({ report, locale = 'de', theme = null, issuer = {
       doc.moveDown(0.6);
 
       for (const check of report.checks) {
-        const verdict = check.ok === true ? 'integrity_ok' : check.ok === false ? 'integrity_mismatch' : 'integrity_not_checkable';
+        // A failed check without both hashes is an artefact that is gone.
+        const missing = check.ok === false && !(check.expected && check.actual);
+        const verdict = check.ok === true ? 'integrity_ok'
+          : missing ? 'integrity_missing'
+            : check.ok === false ? 'integrity_mismatch' : 'integrity_not_checkable';
+        const note = check.note && check.note !== 'missing' ? check.note : null;
         const label = t(locale, `integrity_check_${check.check}`);
         doc.font(fonts.bold).fontSize(8.5).fillColor(check.ok === false ? '#b00020' : colors.text)
-          .text(`${label}${check.subject ? ` · ${check.subject}` : ''} — ${t(locale, verdict)}${check.note ? ` (${check.note})` : ''}`, left, doc.y, { width });
+          .text(`${label}${check.subject ? ` · ${check.subject}` : ''} — ${t(locale, verdict)}${note ? ` (${note})` : ''}`, left, doc.y, { width });
         doc.font('Courier').fontSize(6.5).fillColor(colors.muted)
           .text(`${t(locale, 'integrity_expected')}: ${check.expected || '—'}`, left + 10, doc.y, { width: width - 10 })
           .text(`${t(locale, 'integrity_actual')}: ${check.actual || '—'}`, { width: width - 10 });
