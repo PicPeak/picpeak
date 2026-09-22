@@ -36,6 +36,7 @@ test('absolute paths under the storage root become relative; everything else sta
     foreign: '/app/storage/business-docs/contract/2026/C-2.pdf',
     lookalike: `${root}-old/business-docs/contract/2026/C-3.pdf`,
     relative: 'business-docs/contract/2026/C-4.pdf',
+    legacyCwd: 'storage/business-docs/contract/2026/C-6.pdf',
     cwdRelative: path.relative(process.cwd(), path.join(root, 'business-docs', 'contract', '2026', 'C-5.pdf')),
   };
   const ids = {};
@@ -63,6 +64,7 @@ test('absolute paths under the storage root become relative; everything else sta
     foreign: values.foreign,
     lookalike: values.lookalike,
     relative: values.relative,
+    legacyCwd: values.legacyCwd,
     cwdRelative: 'business-docs/contract/2026/C-5.pdf',
   });
   expect(up.contract).toEqual({
@@ -82,6 +84,7 @@ test('absolute paths under the storage root become relative; everything else sta
   expect(down.docs.under).toBe(under);
   expect(down.docs.relative).toBe(path.join(root, 'business-docs', 'contract', '2026', 'C-4.pdf'));
   expect(down.docs.foreign).toBe(values.foreign);
+  expect(down.docs.legacyCwd).toBe(values.legacyCwd);
   expect(down.contract.pdf_path).toBe(under);
 
   // And up again round-trips.

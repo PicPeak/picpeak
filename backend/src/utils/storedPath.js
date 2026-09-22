@@ -26,7 +26,7 @@
  *     segment, the candidate that exists on disk wins, last segment first;
  *   - absolute under `<cwd>/storage`, the root the contract writers used
  *     before they moved onto the shared resolver: used as it is when the file
- *     is there and has no copy under the current root.
+ *     is there, ahead of any same-named file under the current root.
  *
  * Whatever comes out stays inside the current storage root (or that legacy
  * root): a relative path with `..` segments that climb out, or an absolute
@@ -158,9 +158,12 @@ function resolveStoredPath(value) {
   const candidates = storageSuffixes(abs)
     .map((s) => path.resolve(root, s))
     .filter((c) => isInside(c, root));
+  // The file the row names, when it is still there in the legacy root, wins
+  // over a same-named file under the current root: writers reuse
+  // document-number filenames, so the two can hold different bytes.
+  if (isInside(abs, legacyRoot()) && fs.existsSync(abs)) return abs;
   const existing = candidates.find((c) => fs.existsSync(c));
   if (existing) return existing;
-  if (isInside(abs, legacyRoot()) && fs.existsSync(abs)) return abs;
   return candidates[0] || null;
 }
 

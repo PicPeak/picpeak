@@ -108,6 +108,9 @@ describe('resolveStoredPath', () => {
   it('keeps a file under <cwd>/storage, the root the contract writers used before', () => {
     const legacy = put(path.join(tmp, 'storage'), 'business-docs/contract/2025/C-0.pdf');
     expect(resolveStoredPath(legacy)).toBe(legacy);
+    // Even when the current root has a same-named (possibly different) file.
+    put(root, 'business-docs/contract/2025/C-0.pdf', 'other');
+    expect(resolveStoredPath(legacy)).toBe(legacy);
   });
 });
 
