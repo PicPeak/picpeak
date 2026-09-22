@@ -82,8 +82,13 @@ async function collectLegacyStoredFiles(knex) {
   let realLegacy;
   try { realLegacy = fs.realpathSync(legacy); } catch { return []; }
   const byAbs = new Map();
+  // Paths under the storage root other rows name, whether or not the file is
+  // there: a legacy document must not take one (a restore would hand that row
+  // the legacy document's bytes).
+  const reserved = new Set();
   for (const value of values) {
     const resolved = resolveStoredPath(value);
+    if (resolved && isInside(resolved, root)) reserved.add(toPosix(path.relative(root, resolved)));
     if (!resolved || !isInside(resolved, legacy) || covered.some((dir) => isInside(resolved, dir))) continue;
     // The readers check the realpath (resolveStoredPathStrict); so does this,
     // so a symlink inside the legacy root cannot pull an outside file into
@@ -109,7 +114,10 @@ async function collectLegacyStoredFiles(knex) {
     for (let n = 1; ; n += 1) {
       const onRoot = path.join(root, ...rel.split('/'));
       // eslint-disable-next-line no-await-in-loop
-      const clash = taken.has(rel) || (fs.existsSync(onRoot) && !(await sameBytes(onRoot, entry.abs)));
+      const onDisk = fs.existsSync(onRoot);
+      const clash = taken.has(rel)
+        || (onDisk && !(await sameBytes(onRoot, entry.abs)))
+        || (!onDisk && reserved.has(rel));
       if (!clash) break;
       rel = `${dir}/${n === 1 ? 'legacy' : `legacy-${n}`}/${base}`;
     }
