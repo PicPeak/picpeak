@@ -105,18 +105,36 @@ async function reminderSteps() {
 
 async function remindDue(now) {
   const steps = await reminderSteps();
-  if (!steps.length) return 0;
   const signingV2 = require('./signingV2');
   let sent = 0;
   const running = await db('contracts').where({ signing_version: 2 }).whereIn('status', RUNNING);
   for (const contract of running) {
     const rows = await signers.listSigners(contract.id);
+    const due = signingV2.dueSigners(contract, rows);
+    // A signer who may sign but has no link — their invitation or reminder
+    // mail failed and was undone — is invited again, or the contract would
+    // quietly expire with nobody able to sign it.
+    if (due.some((r) => r.status === 'pending')) {
+      try {
+        await signingV2.inviteDue(contract.id);
+        await signingV2.clearFollowUpFailure(contract.id, { steps: ['invitation', 'next_invitation', 'reminder'] });
+      } catch (err) {
+        await signingV2.recordFollowUpFailure(contract.id, 'invitation', err);
+      }
+    }
+    if (!steps.length) continue;
     // Only whoever may sign now: in a sequential contract, the next signer.
-    for (const row of signingV2.dueSigners(contract, rows).filter((r) => r.status === 'invited')) {
+    for (const row of due.filter((r) => r.status === 'invited')) {
       const count = Number(row.reminder_count) || 0;
       if (count >= steps.length) continue;
-      const since = toMillis(row.invited_at);
+      // From the last link, or from the send — a contract frozen after its
+      // details came in starts its ladder there.
+      const since = contract.data_collected_at
+        ? Math.max(toMillis(row.invited_at) ?? 0, toMillis(contract.sent_at) ?? 0) || null
+        : toMillis(row.invited_at);
       if (since == null || now - since < steps[count] * DAY_MS) continue;
+      // Someone on the page now keeps their session: a reminder would end it.
+      if (await signers.hasActiveSession(row.id, now)) continue;
       try {
         if ((await signingV2.sendReminder(contract.id, row.id, { expectedCount: count })).reminded) sent += 1;
       } catch (err) {

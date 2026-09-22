@@ -378,6 +378,21 @@ async function customerSignerProgress(contractIds, conn = db) {
 }
 
 /**
+ * Is the signer on the page right now? A session that is still open, or
+ * one that opened the contract within the last day. A reminder mints a new
+ * link and so ends every session — it must not cut off someone signing.
+ */
+async function hasActiveSession(signerId, now = Date.now()) {
+  const rows = await db('contract_signing_sessions').where({ signer_id: signerId }).whereNull('revoked_at')
+    .select('expires_at', 'viewed_at');
+  return rows.some((row) => {
+    const expires = toMillis(row.expires_at);
+    const viewed = toMillis(row.viewed_at);
+    return (expires != null && expires > now) || (viewed != null && now - viewed < 24 * 60 * 60 * 1000);
+  });
+}
+
+/**
  * Codes and sessions that ended more than `olderThanMs` ago are removed:
  * nothing reads them once they are past, and the signing log keeps the
  * record of every code sent and every verification. Compared in JS — SQLite
@@ -582,6 +597,7 @@ module.exports = {
   signingDeadline,
   customerSignerProgress,
   purgeEndedAccess,
+  hasActiveSession,
   issueOtp,
   discardOtp,
   retireEarlierOtps,

@@ -241,11 +241,19 @@ async function recordFollowUpFailure(contractId, step, err) {
   }
 }
 
-/** Every follow-up step went through: clear the marker. */
-async function clearFollowUpFailure(contractId) {
+/**
+ * Follow-up steps went through: clear the marker. With `steps`, only a
+ * marker one of those steps set — a clean signature must not hide an
+ * unrelated failed reminder or freeze.
+ */
+async function clearFollowUpFailure(contractId, { steps = null } = {}) {
   try {
     if (!(await hasColumnCached('contracts', 'follow_up_failed_at'))) return;
-    await auditedUpdate(db, 'contracts', (q) => q.where({ id: contractId }).whereNotNull('follow_up_failed_at'),
+    const match = (q) => {
+      q.where({ id: contractId }).whereNotNull('follow_up_failed_at');
+      if (steps) q.where((b) => { for (const step of steps) b.orWhere('follow_up_error', 'like', `${step}:%`); });
+    };
+    await auditedUpdate(db, 'contracts', match,
       { follow_up_failed_at: null, follow_up_error: null }, { source: 'contract.follow_up.cleared' });
   } catch (err) {
     logger.warn('Could not clear the failed follow-up marker', { contractId, message: err.message });
@@ -414,6 +422,11 @@ async function completeSend(contractId, {
       } : {}),
       updated_at: now,
     }, history);
+    // Frozen after the customer's details came in: the reminder ladder
+    // starts again from here, not from the details request.
+    if (sent && fromStatus === 'awaiting_data') {
+      await trx('contract_signers').where({ contract_id: contractId }).update({ reminder_count: 0, reminded_at: null });
+    }
     if (!sent) {
       throw new AppError(
         'This contract changed while it was being sent. Reload it and send again.',
@@ -996,7 +1009,9 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
       issuer_name: (profile && profile.company_name) || '',
     });
   });
-  if (!followUpFailed) await clearFollowUpFailure(contract.id);
+  if (!followUpFailed) {
+    await clearFollowUpFailure(contract.id, { steps: ['next_invitation', 'admin_notice', 'signature_receipt'] });
+  }
   // Every customer has signed: the workflow engine hears it once (its
   // dedup key carries the trigger and the contract id).
   if (outcome.customersDone) await emitContractEvent(contract, 'signed_by_customer');

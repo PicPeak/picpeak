@@ -1307,3 +1307,99 @@ describe('legal notice', () => {
     }
   });
 });
+
+describe('reminders, second pass', () => {
+  const reminded = (id) => db('contract_signing_events').where({ contract_id: id, event_type: 'reminded' });
+
+  test('a signer on the page is not reminded out of their session', async () => {
+    const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+    const { id, session } = await sentWithSession();
+    await sessionView(session);
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    await db('contract_signers').where({ id: signer.id }).update({ invited_at: daysAgo(4) });
+    await runContractSigningSweep();
+    expect(await reminded(id)).toHaveLength(0);
+    await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+
+    // An ended session that opened the contract hours ago still counts.
+    const other = await sentWithSession();
+    await sessionView(other.session);
+    const otherSigner = await db('contract_signers').where({ contract_id: other.id, role: 'customer' }).first();
+    await db('contract_signing_sessions').where({ signer_id: otherSigner.id }).update({ expires_at: daysAgo(0.1) });
+    await db('contract_signers').where({ id: otherSigner.id }).update({ invited_at: daysAgo(4) });
+    await runContractSigningSweep();
+    expect(await reminded(other.id)).toHaveLength(0);
+    // A day later it doesn't.
+    await db('contract_signing_sessions').where({ signer_id: otherSigner.id }).update({ viewed_at: daysAgo(2) });
+    await runContractSigningSweep();
+    expect(await reminded(other.id)).toHaveLength(1);
+  });
+
+  test('a reminder whose mail fails leaves the signer invitable, and the next sweep invites them again', async () => {
+    const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+    const id = await newContract();
+    await sendContract(id);
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    await db('contract_signers').where({ id: signer.id }).update({ invited_at: daysAgo(4) });
+    const emailProcessor = require('../../src/services/emailProcessor');
+    const real = emailProcessor.queueEmail;
+    const spy = jest.spyOn(emailProcessor, 'queueEmail').mockImplementation((...args) => (
+      args[2] === 'contract_signature_reminder' ? Promise.reject(new Error('queue down')) : real(...args)
+    ));
+    try {
+      await runContractSigningSweep();
+    } finally {
+      spy.mockRestore();
+    }
+    let contract = await db('contracts').where({ id }).first();
+    expect(contract.follow_up_error).toMatch(/^reminder:/);
+    expect((await db('contract_signers').where({ id: signer.id }).first()).status).toBe('pending');
+
+    const before = (await db('email_queue').where({ email_type: 'contract_sent', recipient_email: customerEmail })).length;
+    await runContractSigningSweep();
+    expect((await db('contract_signers').where({ id: signer.id }).first()).status).toBe('invited');
+    expect((await db('email_queue').where({ email_type: 'contract_sent', recipient_email: customerEmail })).length).toBe(before + 1);
+    contract = await db('contracts').where({ id }).first();
+    expect(contract.follow_up_failed_at).toBeNull();
+    // A live link again.
+    await ok(asSigner(request(signingApp).get(`/api/public/contract-signing/invite/${linkToken(await lastMail('contract_sent', customerEmail))}`)));
+  });
+
+  test('a contract frozen after its details came in starts its ladder at the freeze', async () => {
+    const { runContractSigningSweep } = require('../../src/services/contract/expiry');
+    await db('customer_accounts').where({ id: customerId }).update({ address_line1: null, address_line2: null, postal_code: null, city: null });
+    const id = await newContract();
+    await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth).send({ collectData: true }));
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    // A details reminder went out while the details were awaited.
+    await db('contract_signers').where({ id: signer.id }).update({ invited_at: daysAgo(4) });
+    await runContractSigningSweep();
+    expect(Number((await db('contract_signers').where({ id: signer.id }).first()).reminder_count)).toBe(1);
+    const session = await verifiedSession(linkToken(await lastMail('contract_data_request', customerEmail)), customerEmail);
+    await ok(asSigner(request(signingApp).post('/api/public/contract-signing/session/details')).set('X-Signing-Session', session)
+      .send({ values: { address_line1: 'Seestrasse 12', postal_code: '8001', city: 'Zürich', country_code: 'CH' } }));
+    await db('contract_signing_sessions').where({ signer_id: signer.id }).update({ revoked_at: new Date().toISOString() });
+    const frozen = await db('contract_signers').where({ id: signer.id }).first();
+    expect(Number(frozen.reminder_count)).toBe(0);
+    // The link is days old, the freeze is not: no signing reminder yet.
+    await db('contract_signers').where({ id: signer.id }).update({ invited_at: daysAgo(4) });
+    const before = (await reminded(id)).length;
+    await runContractSigningSweep();
+    expect(await reminded(id)).toHaveLength(before);
+  });
+});
+
+test('a clean signature clears only its own follow-up marker', async () => {
+  const signingV2 = require('../../src/services/contract/signingV2');
+  const id = await newContract();
+  await twoSigners(id);
+  await sendContract(id);
+  await signingV2.recordFollowUpFailure(id, 'reminder', new Error('smtp down'));
+  const ben = await verifiedSession(linkToken(await lastMail('contract_sent', 'ben@example.com')), 'ben@example.com');
+  await ok(sign(ben, { name: 'Ben Muster', mode: 'typed' }));
+  expect((await db('contracts').where({ id }).first()).follow_up_error).toMatch(/^reminder:/);
+  await signingV2.recordFollowUpFailure(id, 'signature_receipt', new Error('queue down'));
+  const anna = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+  await ok(sign(anna, { name: 'Anna Muster', mode: 'typed' }));
+  expect((await db('contracts').where({ id }).first()).follow_up_failed_at).toBeNull();
+});

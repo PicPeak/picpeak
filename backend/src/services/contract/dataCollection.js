@@ -213,7 +213,7 @@ async function freeze(contractId, adminId) {
   const signingV2 = require('./signingV2');
   try {
     await require('./sending').sendContract(contractId, adminId);
-    await signingV2.clearFollowUpFailure(contractId);
+    await signingV2.clearFollowUpFailure(contractId, { steps: ['data_freeze'] });
     return { status: 'sent', frozen: true };
   } catch (err) {
     await signingV2.recordFollowUpFailure(contractId, 'data_freeze', err);

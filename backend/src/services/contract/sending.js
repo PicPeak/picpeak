@@ -168,7 +168,7 @@ async function sendContract(id, adminId, { reviewToken = null, collectData = fal
   });
 
   // A freeze that failed after the customer's details came in is done now.
-  if (fromStatus === 'awaiting_data') await signingV2.clearFollowUpFailure(id);
+  if (fromStatus === 'awaiting_data') await signingV2.clearFollowUpFailure(id, { steps: ['data_freeze'] });
 
   try {
     await logActivity('contract_sent', { contractId: id, signersInvited: invited }, null, await adminActor(adminId));
