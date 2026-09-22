@@ -322,3 +322,16 @@ test('a render that fails leaves the contract a draft with no stored PDF (send f
   const docs = await db('generated_documents').where({ doc_type: 'contract', doc_id: contractId });
   expect(docs).toHaveLength(0);
 });
+
+test('a contract sent before snapshots existed reads its values unescaped, as its PDF printed them; a draft escapes', async () => {
+  const id = await contractService.createContract({ customerAccountId: customerId, title: 'Legacy' }, adminId);
+  await db('contracts').where({ id }).update({ event_name: '**Gala**', intro_text: 'Für {{event_name}}.' });
+  const intro = async () => {
+    const data = await contractService.getContractById(id);
+    return (await renderContext.resolveDisplayContent(data.contract, data.inclusions, data.textSections || [], 'de')).introText;
+  };
+  expect(await intro()).toBe('Für \\*\\*Gala\\*\\*.');
+  // Sent before migration 222: no rendered_content.
+  await db('contracts').where({ id }).update({ status: 'sent', sent_at: new Date().toISOString(), rendered_content: null });
+  expect(await intro()).toBe('Für **Gala**.');
+});
