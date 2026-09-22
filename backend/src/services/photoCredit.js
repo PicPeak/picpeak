@@ -182,8 +182,11 @@ async function clearGuestCredits(guestIds, trx = db) {
     .where('credit_source', 'guest')
     .update({ credit_name: null, credit_source: null, uploader_guest_id: null });
   // A manual credit keeps its text, but the link to the removed identity goes.
+  // Not a guest credit: one inserted since the update above must keep its
+  // link, so settleGuestCredit can still find and clear it.
   await trx('photos')
     .whereIn('uploader_guest_id', ids)
+    .where((q) => q.whereNull('credit_source').orWhereNot('credit_source', 'guest'))
     .update({ uploader_guest_id: null });
   return cleared;
 }

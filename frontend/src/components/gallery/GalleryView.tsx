@@ -33,6 +33,7 @@ import { GallerySidebar } from './GallerySidebar';
 import { PhotoFilterBar } from './PhotoFilterBar';
 import { UserPhotoUpload } from './UserPhotoUpload';
 import { CreditFilterChips } from './CreditFilterChips';
+import { creditGroups } from '../../utils/photoCredits';
 import { GuestNamePromptModal } from './GuestNamePromptModal';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { PeopleStrip } from './PeopleStrip';
@@ -386,6 +387,16 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   );
 
   const people = useMemo(() => peopleInScope(allPeople, scopedPhotos), [allPeople, scopedPhotos]);
+
+  // A credit filter whose name is gone from the scope (erased by "Forget me",
+  // renamed by the host) would keep emptying the grid while the chips, and
+  // with them "Everyone", are hidden. Drop it (#1561).
+  useEffect(() => {
+    if (!selectedCreditKey || !data?.photos) return;
+    if (!creditGroups(scopedPhotos).some((group) => group.key === selectedCreditKey)) {
+      setSelectedCreditKey(null);
+    }
+  }, [selectedCreditKey, scopedPhotos, data?.photos]);
 
   // The strip comes from /people, but FILTERING uses photo.person_ids, which
   // rides on the one-shot /photos response. During a backfill those drift
