@@ -105,6 +105,7 @@ async function create(customerId, input, admin) {
     status: 'open',
     created_by_admin_id: admin.id,
     reminder_count: 0,
+    ladder_started_at: now,
     created_at: now,
     updated_at: now,
   }).returning('id');
@@ -168,13 +169,21 @@ async function fulfilInTransaction(trx, customerId, requestId, documentId) {
 
 /**
  * The document that answered a request was rejected or deleted: the request
- * is open again, so "Needs action" and the reminders pick it up once more.
+ * is open again, so "Needs action" and the reminders pick it up once more —
+ * with the ladder starting over from now, not from the original request.
  */
 async function reopenForDocument(documentId, conn = db) {
   const now = new Date().toISOString();
   return conn('customer_document_requests')
     .where({ fulfilled_document_id: documentId, status: 'fulfilled' })
-    .update({ status: 'open', fulfilled_document_id: null, fulfilled_at: null, updated_at: now });
+    .update({
+      status: 'open',
+      fulfilled_document_id: null,
+      fulfilled_at: null,
+      reminder_count: 0,
+      ladder_started_at: now,
+      updated_at: now,
+    });
 }
 
 module.exports = {

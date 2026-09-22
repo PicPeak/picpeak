@@ -13,6 +13,9 @@
  *     reminder_count        steps of the ladder already sent. The reminder
  *                           job claims a step with a conditional update on
  *                           this column, so two replicas never both send it.
+ *     ladder_started_at     what the ladder's days count from: the request's
+ *                           creation, and again when it is reopened (the
+ *                           answering upload was rejected or deleted).
  *
  * Setting `customer_documents_request_reminder_days` (default "3,7"): days
  * after the request at which a reminder goes out; empty turns reminders off.
@@ -51,11 +54,19 @@ exports.up = async function (knex) {
         .references('id').inTable('admin_users').onDelete('SET NULL');
       t.timestamp('reminded_at');
       t.integer('reminder_count').notNullable().defaultTo(0);
+      t.timestamp('ladder_started_at');
       t.timestamp('created_at').defaultTo(knex.fn.now());
       t.timestamp('updated_at').defaultTo(knex.fn.now());
       t.index(['customer_account_id', 'status'], 'customer_document_requests_owner_idx');
       t.index(['status'], 'customer_document_requests_status_idx');
     });
+  }
+
+  // An install that ran an earlier cut of this migration has the table
+  // without the column.
+  if (await knex.schema.hasTable('customer_document_requests')
+    && !(await knex.schema.hasColumn('customer_document_requests', 'ladder_started_at'))) {
+    await knex.schema.alterTable('customer_document_requests', (t) => { t.timestamp('ladder_started_at'); });
   }
 
   if (await knex.schema.hasTable('app_settings')) {

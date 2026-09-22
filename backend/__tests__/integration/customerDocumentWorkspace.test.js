@@ -1033,13 +1033,76 @@ describe('document requests', () => {
     }
   });
 
+  it('catches an overdue request up with one reminder, not one per run', async () => {
+    const { runDocumentRequestReminders } = require('../../src/services/customerDocumentRequestReminderService');
+    await db('customer_document_requests').where({ customer_account_id: me, status: 'open' }).update({ status: 'cancelled' });
+    const req = (await createRequest(me, { title: 'Overdue', notify: false })).body.request;
+    const reminders = async () => (await mails('customer_document_request_reminder', 'requests-me@example.com')).length;
+    const before = await reminders();
+    const later = Date.now() + 10 * 864e5;
+    await runDocumentRequestReminders(later);
+    await runDocumentRequestReminders(later + 3600e3);
+    expect(await reminders()).toBe(before + 1);
+    expect(Number((await db('customer_document_requests').where({ id: req.id }).first()).reminder_count)).toBe(2);
+  });
+
+  it('restarts the ladder when a rejected upload reopens the request', async () => {
+    const { runDocumentRequestReminders } = require('../../src/services/customerDocumentRequestReminderService');
+    await db('customer_document_requests').where({ customer_account_id: me, status: 'open' }).update({ status: 'cancelled' });
+    const req = (await createRequest(me, { title: 'Again', notify: false })).body.request;
+    // Old, with the ladder used up, then answered.
+    const old = new Date(Date.now() - 30 * 864e5).toISOString();
+    await db('customer_document_requests').where({ id: req.id })
+      .update({ created_at: old, ladder_started_at: old, reminder_count: 2 });
+    const up = await uploadAs(me, 'again.pdf', { requestId: req.id });
+    await asAdmin(request(adminApp).post(adminDoc(me, up.body.document.id, '/review'))).send({ status: 'rejected' });
+    const row = await db('customer_document_requests').where({ id: req.id }).first();
+    expect(row.status).toBe('open');
+    expect(Number(row.reminder_count)).toBe(0);
+
+    const reminders = async () => (await mails('customer_document_request_reminder', 'requests-me@example.com')).length;
+    const before = await reminders();
+    await runDocumentRequestReminders(Date.now() + 864e5);
+    expect(await reminders()).toBe(before);
+    await runDocumentRequestReminders(Date.now() + 3.1 * 864e5);
+    expect(await reminders()).toBe(before + 1);
+  });
+
+  it('uses up no step while documents are off, globally or for the customer', async () => {
+    const { runDocumentRequestReminders } = require('../../src/services/customerDocumentRequestReminderService');
+    await db('customer_document_requests').where({ customer_account_id: me, status: 'open' }).update({ status: 'cancelled' });
+    const req = (await createRequest(me, { title: 'Paused', notify: false })).body.request;
+    const count = async () => Number((await db('customer_document_requests').where({ id: req.id }).first()).reminder_count);
+    const later = Date.now() + 4 * 864e5;
+
+    await setFlag('documents', false);
+    try {
+      await runDocumentRequestReminders(later);
+    } finally {
+      await setFlag('documents', true);
+    }
+    expect(await count()).toBe(0);
+
+    await db('customer_accounts').where({ id: me }).update({ feature_documents: 0 });
+    try {
+      await runDocumentRequestReminders(later);
+    } finally {
+      await db('customer_accounts').where({ id: me }).update({ feature_documents: 1 });
+    }
+    expect(await count()).toBe(0);
+
+    await runDocumentRequestReminders(later);
+    expect(await count()).toBe(1);
+  });
+
   it('sends no reminders when the ladder setting is empty', async () => {
     const { runDocumentRequestReminders } = require('../../src/services/customerDocumentRequestReminderService');
     await db('app_settings').where({ setting_key: 'customer_documents_request_reminder_days' })
       .update({ setting_value: JSON.stringify('') });
     try {
-      await createRequest(me, { title: 'Quiet' });
+      const quiet = (await createRequest(me, { title: 'Quiet' })).body.request;
       expect(await runDocumentRequestReminders(Date.now() + 100 * 864e5)).toEqual({ reminded: 0 });
+      expect(Number((await db('customer_document_requests').where({ id: quiet.id }).first()).reminder_count)).toBe(0);
     } finally {
       await db('app_settings').where({ setting_key: 'customer_documents_request_reminder_days' })
         .update({ setting_value: JSON.stringify('3,7') });
