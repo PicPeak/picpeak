@@ -671,7 +671,13 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
         ip_address: req.ip,
         user_agent: req.headers['user-agent'],
         action: 'download_all'
-      });
+      })
+        // The archive is complete by now; a failed log write must not reach
+        // the catch below, which would destroy a response still draining.
+        .catch((err) => logger.warn('Gallery download log write failed', {
+          eventId: req.event.id,
+          error: err?.code || err?.name || 'Error',
+        }));
       // Exactly the photos that made it into this archive (#895) — skipped
       // (missing/corrupt) sources don't count.
       if (appendedIds.length > 0) {
@@ -851,7 +857,13 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
         ip_address: req.ip,
         user_agent: req.headers['user-agent'],
         action: 'download_selected'
-      });
+      })
+        // The archive is complete by now; a failed log write must not reach
+        // the catch below, which would destroy a response still draining.
+        .catch((err) => logger.warn('Gallery download log write failed', {
+          eventId: req.event.id,
+          error: err?.code || err?.name || 'Error',
+        }));
       // Exactly the photos that made it into this archive (#895) — skipped
       // (missing/corrupt) sources don't count.
       if (appendedIds.length > 0) {
