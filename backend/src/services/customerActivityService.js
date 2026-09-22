@@ -36,7 +36,7 @@ const CUSTOMER_TYPES = [
 ];
 
 // Metadata fields a timeline row may show. Everything else stays in the log.
-const SAFE_META = ['documentId', 'status', 'eventId', 'requestId', 'count', 'uploaderType'];
+const SAFE_META = ['documentId', 'status', 'eventId', 'requestId', 'count', 'step', 'uploaderType'];
 
 function whereCustomerId(q, customerId) {
   if (isPostgreSQL()) {

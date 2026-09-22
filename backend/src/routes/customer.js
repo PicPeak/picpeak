@@ -32,6 +32,7 @@ const customerAccountsService = require('../services/customerAccountsService');
 const customerDocumentsService = require('../services/customerDocumentsService');
 const customerDocumentNotifications = require('../services/customerDocumentNotifications');
 const customerDocumentAbuse = require('../services/customerDocumentAbuse');
+const customerDocumentRequestsService = require('../services/customerDocumentRequestsService');
 const customerPortalService = require('../services/customerPortalService');
 const publicDocumentViews = require('../services/publicDocumentViews');
 const { clientIpForAudit } = require('../utils/clientIp');
@@ -1152,7 +1153,7 @@ router.get('/documents', customerAuth, requireDocumentsFeature, async (req, res)
 });
 
 /**
- * POST /documents  multipart: file (PDF), eventId?, contractId?
+ * POST /documents  multipart: file (PDF), eventId?, contractId?, requestId?
  *
  * The file stays `pending` — not downloadable — until the studio has
  * reviewed it. Quota is checked before multer (no bytes written when it is
@@ -1172,11 +1173,21 @@ router.post('/documents', customerAuth, requireDocumentsFeature, documentUploadL
     // The quota is counted again where the row is written, in the same
     // transaction: the check above runs before the body arrives, so uploads
     // landing together would otherwise all measure the same "before".
+    // requestId answers a document request (slice 10): anything that isn't
+    // an open request of this customer is the request's 404.
+    let requestId = null;
+    if (req.body.requestId !== undefined && req.body.requestId !== '') {
+      requestId = /^\d{1,10}$/.test(String(req.body.requestId)) ? Number(req.body.requestId) : -1;
+      if (requestId < 1) {
+        return res.status(404).json({ error: 'Document request not found', code: 'DOCUMENT_REQUEST_NOT_FOUND' });
+      }
+    }
     const row = await customerDocumentsService.createDocument({
       customerId: req.customer.id,
       uploaderType: 'customer',
       uploaderId: req.customer.id,
       file,
+      requestId,
       links: { eventId: req.body.eventId, contractId: req.body.contractId },
       actor: { type: 'customer', id: req.customer.id, name: req.customer.email },
       quotaBytes: limits.quotaBytes,
@@ -1223,6 +1234,18 @@ async function loadCustomerDocument(req, res) {
   }
   return null;
 }
+
+/**
+ * GET /document-requests — what the studio has asked this customer for and
+ * is still waiting on (slice 10).
+ */
+router.get('/document-requests', customerAuth, requireDocumentsFeature, async (req, res) => {
+  try {
+    res.json({ requests: await customerDocumentRequestsService.listOpenForCustomer(req.customer.id) });
+  } catch (error) {
+    errorResponse(res, error, 500, 'Failed to load document requests');
+  }
+});
 
 /**
  * GET /documents/:id — one document's details, for the document page and

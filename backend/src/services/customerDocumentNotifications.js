@@ -9,6 +9,9 @@
  *   customer_document_reviewed         → the customer, when their upload is
  *                                        rejected (an accepted upload needs no
  *                                        mail)
+ *   customer_document_requested /      → the customer, when the studio asks
+ *   customer_document_request_reminder   for a document, and on each step of
+ *                                        the reminder ladder
  *
  * Every mail is queued AFTER the write it reports has committed, and a
  * failure to queue never undoes that write: the caller gets 'failed' back
@@ -151,17 +154,50 @@ async function notifyRejected(doc) {
 }
 
 /**
- * Workflow hooks (document.shared / document.uploaded). Best effort: the
+ * The studio asked the customer for a document (slice 10), or — with
+ * `reminder: true` — a step of the reminder ladder came due. The link opens
+ * the documents page with the request preselected.
+ */
+async function notifyRequest(request, { reminder = false, notify } = {}) {
+  const ids = { requestId: request.id, customerId: request.customer_account_id };
+  try {
+    if (notify === false) return 'skipped';
+    const customer = await reachableCustomer(request.customer_account_id);
+    if (!customer) return 'skipped';
+    const base = await frontendBase();
+    return await queue(reminder ? 'customer_document_request_reminder' : 'customer_document_requested', customer.email, {
+      customer_name: customerDisplayName(customer),
+      business_name: await businessName(),
+      request_title: request.title,
+      request_note: request.note || '',
+      // Formatted here: the queue only formats its own date variables.
+      due_date: request.due_at
+        ? await require('../utils/dateFormatter').formatDate(request.due_at, customer.preferred_language || 'en')
+        : '',
+      upload_link: `${base}/customer/documents?request=${request.id}`,
+      __language: customer.preferred_language || undefined,
+    }, ids, { respectBusinessHours: true });
+  } catch (err) {
+    logger.warn('Could not prepare the document-request mail', { ...ids, error: err.message });
+    return 'failed';
+  }
+}
+
+/**
+ * Workflow hooks (document.shared / document.uploaded / document.requested). Best effort: the
  * engine is feature-gated and never throws into the caller. An automated
  * follow-up built on these triggers gets the engine's own approval gate; the
  * admin's click on Share is the approval for the direct mail above.
  */
 async function emitDocumentWorkflow(trigger, doc, dedupSuffix = null) {
+  const isRequest = trigger === 'document.requested';
   try {
     await require('./workflows').emitWorkflowEvent(trigger, {
-      entityType: 'customer_document',
+      entityType: isRequest ? 'customer_document_request' : 'customer_document',
       entityId: doc.id,
-      payload: { customerAccountId: doc.customer_account_id, documentId: doc.id, eventId: doc.event_id || null },
+      payload: isRequest
+        ? { customerAccountId: doc.customer_account_id, requestId: doc.id, eventId: doc.event_id || null }
+        : { customerAccountId: doc.customer_account_id, documentId: doc.id, eventId: doc.event_id || null },
       dedupSuffix,
     });
   } catch (err) {
@@ -169,4 +205,6 @@ async function emitDocumentWorkflow(trigger, doc, dedupSuffix = null) {
   }
 }
 
-module.exports = { notifyShared, notifyUploaded, notifyRejected, emitDocumentWorkflow };
+module.exports = {
+  notifyShared, notifyUploaded, notifyRejected, notifyRequest, emitDocumentWorkflow,
+};

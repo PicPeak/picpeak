@@ -147,6 +147,17 @@ export interface CustomerDocument {
   canDelete?: boolean;
 }
 
+/** A document the studio asked for and is still waiting on (#1444). */
+export interface CustomerDocumentRequest {
+  id: number;
+  title: string;
+  note: string | null;
+  dueAt: string | null;
+  status: 'open';
+  eventId: number | null;
+  createdAt: string | null;
+}
+
 export interface CustomerDocumentLimits {
   maxUploadBytes: number;
   quotaBytes: number;
@@ -169,6 +180,8 @@ export interface CustomerDashboard {
     }>;
     /** The customer's own rejected uploads — upload a corrected one, or delete it. */
     documents?: Array<{ id: number; name: string; reviewNote: string | null }>;
+    /** Documents the studio asked for; `link` preselects the request on the upload. */
+    documentRequests?: Array<{ id: number; title: string; note: string | null; dueAt: string | null; link: string }>;
   };
   /** Newest first, from the same visibility rules as the lists they link to. */
   recent?: CustomerRecentItem[];
@@ -208,6 +221,8 @@ export interface CustomerEventOverview {
 
 export interface UploadOptions {
   eventId?: number | null;
+  /** Answers a document request; the server marks it fulfilled with the upload. */
+  requestId?: number | null;
   signal?: AbortSignal;
   onProgress?: (fraction: number) => void;
 }
@@ -402,6 +417,7 @@ export const customerService = {
     const form = new FormData();
     form.append('file', file);
     if (options.eventId) form.append('eventId', String(options.eventId));
+    if (options.requestId) form.append('requestId', String(options.requestId));
     const response = await api.post<{ document: CustomerDocument }>('/customer/documents', form, {
       signal: options.signal,
       onUploadProgress: (e: AxiosProgressEvent) => {
@@ -419,6 +435,11 @@ export const customerService = {
   async getDocument(id: number): Promise<CustomerDocument> {
     const response = await api.get<{ document: CustomerDocument }>(`/customer/documents/${id}`);
     return response.data.document;
+  },
+
+  async listDocumentRequests(): Promise<CustomerDocumentRequest[]> {
+    const response = await api.get<{ requests: CustomerDocumentRequest[] }>('/customer/document-requests');
+    return response.data.requests;
   },
 
   /** Deletes one of the customer's own uploads. */

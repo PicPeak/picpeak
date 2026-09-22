@@ -33,6 +33,7 @@ const { toIso } = require('../utils/dateNormalize');
 const { AppError, NotFoundError, ValidationError } = require('../utils/errors');
 const { filterOwnedEventIds, ownedProjectIds } = require('../middleware/ownership');
 const documentScanService = require('./documentScanService');
+const customerDocumentRequestsService = require('./customerDocumentRequestsService');
 const logger = require('../utils/logger');
 
 const STORAGE_PREFIX = 'business-docs/customer-documents';
@@ -419,9 +420,15 @@ async function getReviewCounts() {
  */
 async function createDocument({
   customerId, uploaderType, uploaderId, file, links, share = false, admin = null, actor,
-  quotaBytes = null, maxUploadBytes = null,
+  quotaBytes = null, maxUploadBytes = null, requestId = null,
 }) {
-  const resolved = await resolveLinks(customerId, links || {}, { admin });
+  // An upload answering a document request (slice 10): the request must be
+  // this customer's and still open — checked here to fail fast, and again,
+  // conditionally, inside the write transaction.
+  const request = requestId ? await customerDocumentRequestsService.getOpen(customerId, requestId) : null;
+  const linkInput = { ...(links || {}) };
+  if (request && !linkInput.eventId && request.event_id) linkInput.eventId = request.event_id;
+  const resolved = await resolveLinks(customerId, linkInput, { admin });
   const { size } = await assertPdf(file.path, { maxBytes: maxUploadBytes });
   const sha256 = await sha256OfFile(file.path);
   const verdict = await documentScanService.scanFile(file.path);
@@ -459,7 +466,7 @@ async function createDocument({
           throw new AppError('This file would exceed your document storage.', 413, 'QUOTA_EXCEEDED');
         }
       }
-      return trx('customer_documents').insert({
+      const rows = await trx('customer_documents').insert({
         customer_account_id: customerId,
         event_id: resolved.eventId,
         project_id: resolved.projectId,
@@ -482,8 +489,11 @@ async function createDocument({
         created_at: now,
         updated_at: now,
       }).returning('id');
+      const newId = typeof rows[0] === 'object' && rows[0] !== null ? rows[0].id : rows[0];
+      if (request) await customerDocumentRequestsService.fulfilInTransaction(trx, customerId, request.id, newId);
+      return newId;
     });
-    id = typeof inserted[0] === 'object' && inserted[0] !== null ? inserted[0].id : inserted[0];
+    id = inserted;
   } catch (err) {
     await storage.delete(key).catch(() => {});
     throw err;
@@ -492,6 +502,10 @@ async function createDocument({
   await logActivity('customer_document_uploaded',
     { documentId: id, customerId, uploaderType, sizeBytes: size, status },
     resolved.eventId, actor);
+  if (request) {
+    await logActivity('customer_document_request_fulfilled',
+      { requestId: request.id, documentId: id, customerId }, resolved.eventId, actor);
+  }
   const row = await db('customer_documents').where({ id }).first();
   // Shared on the way in: a share like any other, so the timeline shows it.
   if (row.shared_at) {
@@ -528,6 +542,8 @@ async function review(customerId, documentId, { status, note }, admin) {
   // A rejected file is never left shared.
   if (status === 'rejected' && isShared(row)) update.unshared_at = now;
   await db('customer_documents').where({ id: row.id }).update(update);
+  // A request it answered is open again: the customer still owes it.
+  if (status === 'rejected') await customerDocumentRequestsService.reopenForDocument(row.id);
   await logActivity('customer_document_reviewed',
     { documentId: row.id, customerId, status }, row.event_id, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
   return db('customer_documents').where({ id: row.id }).first();
@@ -574,6 +590,7 @@ async function softDelete(customerId, documentId, admin) {
     unshared_at: row.unshared_at || (row.shared_at ? now : null),
     updated_at: now,
   });
+  await customerDocumentRequestsService.reopenForDocument(row.id);
   await logActivity('customer_document_deleted',
     { documentId: row.id, customerId }, row.event_id, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
 }
@@ -606,6 +623,7 @@ async function softDeleteByCustomer(customerId, documentId, actor) {
     if (current && current.contract_id && !current.deleted_at) assertNotContractLinked(current);
     throw new AppError('Document not found', 404, 'DOCUMENT_NOT_FOUND');
   }
+  await customerDocumentRequestsService.reopenForDocument(row.id);
   await logActivity('customer_document_deleted',
     { documentId: row.id, customerId }, row.event_id, actor);
 }
@@ -680,6 +698,9 @@ async function markErasedForCustomer(customerId, trx) {
     .whereNotNull('shared_at')
     .whereNull('unshared_at')
     .update({ unshared_at: now, updated_at: now });
+  // Document requests (migration 243) are the studio's notes about what it
+  // asked this customer for — their data too, and no contractual record.
+  await trx('customer_document_requests').where({ customer_account_id: customerId }).del();
   return doomed;
 }
 

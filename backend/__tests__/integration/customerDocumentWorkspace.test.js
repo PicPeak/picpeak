@@ -845,3 +845,113 @@ describe('malware scanner (fake clamd)', () => {
     expect((await db('customer_documents').where({ id }).first()).status).toBe('pending');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Slice 10 — document requests and the reminder ladder
+// ---------------------------------------------------------------------------
+
+describe('document requests', () => {
+  let me;
+  let other;
+  const createRequest = (customerId, body) => asAdmin(request(adminApp)
+    .post(`/api/admin/customers/${customerId}/document-requests`)).send(body);
+  const mails = (type, to) => db('email_queue').where({ email_type: type, recipient_email: to }).orderBy('id');
+
+  beforeAll(async () => {
+    me = await newCustomer({ email: 'requests-me@example.com', preferred_language: 'en' });
+    other = await newCustomer({ email: 'requests-other@example.com' });
+  });
+
+  it('creates a request, mails the customer a link to the upload and lists it under Needs action', async () => {
+    const res = await createRequest(me, { title: 'Signed contract', note: 'Page 3 too', dueAt: '2026-10-01T00:00:00.000Z' });
+    expect(res.status).toBe(201);
+    expect(res.body.request).toMatchObject({ title: 'Signed contract', status: 'open', reminderCount: 0 });
+    expect(res.body.notification).toBe('queued');
+    const mail = (await mails('customer_document_requested', 'requests-me@example.com'))[0];
+    expect(meta(mail.email_data).upload_link).toMatch(new RegExp(`/customer/documents\\?request=${res.body.request.id}$`));
+
+    const list = await asCustomer(request(customerApp).get('/api/customer/document-requests'), me);
+    expect(list.body.requests.map((r) => r.id)).toEqual([res.body.request.id]);
+    const dash = await asCustomer(request(customerApp).get('/api/customer/dashboard'), me);
+    expect(dash.body.needsAction.documentRequests).toEqual([expect.objectContaining({
+      id: res.body.request.id, title: 'Signed contract', link: `/customer/documents?request=${res.body.request.id}`,
+    })]);
+  });
+
+  it('is fulfilled by an upload that names it, in the same write', async () => {
+    const req = (await createRequest(me, { title: 'ID copy' })).body.request;
+    const up = await uploadAs(me, 'id.pdf', { requestId: req.id });
+    expect(up.status).toBe(201);
+    const row = await db('customer_document_requests').where({ id: req.id }).first();
+    expect(row.status).toBe('fulfilled');
+    expect(Number(row.fulfilled_document_id)).toBe(up.body.document.id);
+    const list = await asCustomer(request(customerApp).get('/api/customer/document-requests'), me);
+    expect(list.body.requests.some((r) => r.id === req.id)).toBe(false);
+
+    // Rejecting the upload opens the request again: the customer still owes it.
+    await asAdmin(request(adminApp).post(adminDoc(me, up.body.document.id, '/review'))).send({ status: 'rejected' });
+    expect((await db('customer_document_requests').where({ id: req.id }).first()).status).toBe('open');
+  });
+
+  it('refuses another customer\'s request, a cancelled one and a bogus id with 404, and stores nothing', async () => {
+    const theirs = (await createRequest(other, { title: 'Theirs' })).body.request;
+    const cancelled = (await createRequest(me, { title: 'Never mind' })).body.request;
+    const cancel = await asAdmin(request(adminApp).delete(`/api/admin/customers/${me}/document-requests/${cancelled.id}`));
+    expect(cancel.status).toBe(200);
+    const before = Number((await db('customer_documents').count({ c: '*' }).first()).c);
+    for (const requestId of [theirs.id, cancelled.id, 'abc', 99999999]) {
+      const res = await uploadAs(me, 'x.pdf', { requestId });
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('DOCUMENT_REQUEST_NOT_FOUND');
+    }
+    expect(Number((await db('customer_documents').count({ c: '*' }).first()).c)).toBe(before);
+    expect((await db('customer_document_requests').where({ id: theirs.id }).first()).status).toBe('open');
+    // The admin side scopes the same way.
+    const wrong = await asAdmin(request(adminApp).delete(`/api/admin/customers/${me}/document-requests/${theirs.id}`));
+    expect(wrong.status).toBe(404);
+  });
+
+  it('reminds on each step of the ladder once, and never after fulfil or cancel', async () => {
+    const { runDocumentRequestReminders } = require('../../src/services/customerDocumentRequestReminderService');
+    await db('customer_document_requests').where({ customer_account_id: me, status: 'open' })
+      .update({ status: 'cancelled' });
+    const open = (await createRequest(me, { title: 'Ladder' })).body.request;
+    const done = (await createRequest(me, { title: 'Done already' })).body.request;
+    await uploadAs(me, 'done.pdf', { requestId: done.id });
+    const gone = (await createRequest(me, { title: 'Cancelled' })).body.request;
+    await asAdmin(request(adminApp).delete(`/api/admin/customers/${me}/document-requests/${gone.id}`));
+
+    const reminders = async () => (await mails('customer_document_request_reminder', 'requests-me@example.com')).length;
+    const day = 864e5;
+    const created = Date.now();
+    expect((await runDocumentRequestReminders(created + 2 * day)).reminded).toBe(0);
+    // Day 3: the first step, once — two runs together still send one.
+    await Promise.all([runDocumentRequestReminders(created + 3.1 * day), runDocumentRequestReminders(created + 3.1 * day)]);
+    expect(await reminders()).toBe(1);
+    await runDocumentRequestReminders(created + 4 * day);
+    expect(await reminders()).toBe(1);
+    // Day 7: the second step.
+    await runDocumentRequestReminders(created + 7.5 * day);
+    expect(await reminders()).toBe(2);
+    // The ladder is used up.
+    await runDocumentRequestReminders(created + 30 * day);
+    expect(await reminders()).toBe(2);
+    expect(Number((await db('customer_document_requests').where({ id: open.id }).first()).reminder_count)).toBe(2);
+    for (const id of [done.id, gone.id]) {
+      expect(Number((await db('customer_document_requests').where({ id }).first()).reminder_count)).toBe(0);
+    }
+  });
+
+  it('sends no reminders when the ladder setting is empty', async () => {
+    const { runDocumentRequestReminders } = require('../../src/services/customerDocumentRequestReminderService');
+    await db('app_settings').where({ setting_key: 'customer_documents_request_reminder_days' })
+      .update({ setting_value: JSON.stringify('') });
+    try {
+      await createRequest(me, { title: 'Quiet' });
+      expect(await runDocumentRequestReminders(Date.now() + 100 * 864e5)).toEqual({ reminded: 0 });
+    } finally {
+      await db('app_settings').where({ setting_key: 'customer_documents_request_reminder_days' })
+        .update({ setting_value: JSON.stringify('3,7') });
+    }
+  });
+});

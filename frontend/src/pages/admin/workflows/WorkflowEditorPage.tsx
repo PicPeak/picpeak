@@ -34,7 +34,7 @@ const TRIGGERS = [
   'event.date_approaching',
   'gallery.published', 'gallery.expiring', 'gallery.expired', 'gallery.revealed',
   'customer.created',
-  'document.shared', 'document.uploaded',
+  'document.shared', 'document.uploaded', 'document.requested',
 ];
 
 const COLORS: Record<string, string> = {

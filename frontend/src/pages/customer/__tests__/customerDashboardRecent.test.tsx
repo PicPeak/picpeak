@@ -40,6 +40,7 @@ const dashboard: CustomerDashboard = {
   needsAction: {
     quotes: [], contracts: [], invoices: [],
     documents: [{ id: 7, name: 'passport-scan.pdf', reviewNote: 'Too blurry' }],
+    documentRequests: [{ id: 2, title: 'Signed contract', note: null, dueAt: null, link: '/customer/documents?request=2' }],
   },
   recent: [
     { kind: 'document_shared', id: 3, title: 'offer.pdf', at: '2026-09-20T10:00:00Z', link: '/customer/documents/3' },
@@ -85,5 +86,12 @@ describe('CustomerDashboardPage — Recent', () => {
     expect(needs).toHaveTextContent('passport-scan.pdf was not accepted — upload a corrected version');
     expect(needs).toHaveTextContent('Too blurry');
     expect(within(needs).getByRole('link', { name: 'View document' })).toHaveAttribute('href', '/customer/documents/7');
+  });
+
+  it('lists a document the photographer asked for, linking to the upload with it preselected', async () => {
+    renderPage();
+    const needs = await screen.findByRole('region', { name: 'Needs your attention' });
+    expect(needs).toHaveTextContent('Please upload: Signed contract');
+    expect(within(needs).getByRole('link', { name: 'Upload' })).toHaveAttribute('href', '/customer/documents?request=2');
   });
 });

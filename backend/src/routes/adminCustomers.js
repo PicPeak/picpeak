@@ -35,6 +35,7 @@ const { getAppSetting } = require('../utils/appSettings');
 const customerDocumentsService = require('../services/customerDocumentsService');
 const customerDocumentNotifications = require('../services/customerDocumentNotifications');
 const customerActivityService = require('../services/customerActivityService');
+const customerDocumentRequestsService = require('../services/customerDocumentRequestsService');
 const customerGroupsService = require('../services/customerGroupsService');
 const { receivePdfUpload, discardTempFile, sendPdfAttachment } = require('../middleware/customerDocumentUpload');
 
@@ -1171,6 +1172,51 @@ router.delete('/:id/documents/:docId', documentItemGuards, handleAsync(async (re
   const customerId = await loadDocumentCustomer(req);
   await customerDocumentsService.softDelete(customerId, parseInt(req.params.docId, 10), req.admin);
   successResponse(res, { deleted: true });
+}));
+
+// ---- document requests (#1444 slice 10) -----------------------------------
+// The studio asks the customer for a document. Same guards as the documents.
+// A request of another customer is the same 404 as an unknown one.
+const requestItemGuards = [...documentGuards, param('requestId').isInt({ min: 1 })];
+
+router.get('/:id/document-requests', documentGuards, handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  successResponse(res, { requests: await customerDocumentRequestsService.listForAdmin(customerId) });
+}));
+
+// body: title, note?, dueAt?, eventId?, contractId?, notify? (default true)
+router.post('/:id/document-requests', [
+  ...documentGuards,
+  body('title').isString().trim().isLength({ min: 1, max: 200 }),
+  body('note').optional({ nullable: true }).isString().isLength({ max: 1000 }),
+  body('dueAt').optional({ nullable: true }).isISO8601(),
+  body('eventId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('contractId').optional({ nullable: true }).isInt({ min: 1 }),
+  body('notify').optional({ nullable: true }).isBoolean(),
+], handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  const row = await customerDocumentRequestsService.create(customerId, req.body, req.admin);
+  const notification = await customerDocumentNotifications.notifyRequest(row, { notify: parseNotify(req.body.notify) });
+  await customerDocumentNotifications.emitDocumentWorkflow('document.requested', row);
+  successResponse(res, { request: customerDocumentRequestsService.toAdminDto(row), notification }, 201);
+}));
+
+router.patch('/:id/document-requests/:requestId', [
+  ...requestItemGuards,
+  body('title').optional().isString().trim().isLength({ min: 1, max: 200 }),
+  body('note').optional({ nullable: true }).isString().isLength({ max: 1000 }),
+  body('dueAt').optional({ nullable: true }).isISO8601(),
+], handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  const row = await customerDocumentRequestsService.update(customerId, parseInt(req.params.requestId, 10), req.body);
+  successResponse(res, { request: customerDocumentRequestsService.toAdminDto(row) });
+}));
+
+// Cancel. The row stays, with status cancelled.
+router.delete('/:id/document-requests/:requestId', requestItemGuards, handleAsync(async (req, res) => {
+  const customerId = await loadDocumentCustomer(req);
+  await customerDocumentRequestsService.cancel(customerId, parseInt(req.params.requestId, 10), req.admin);
+  successResponse(res, { cancelled: true });
 }));
 
 module.exports = router;

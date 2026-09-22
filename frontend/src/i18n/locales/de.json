@@ -3835,7 +3835,11 @@
       "customerDocumentQuotaExceeded": "Ein Kunden-Upload wurde abgewiesen: Speicher voll",
       "customerDocumentRateLimited": "Ein Kunde hat das Upload-Limit für Dokumente erreicht",
       "customerDocumentForbiddenAccessAlert": "Wiederholte Zugriffe auf fremde Dokumente ({{count}} in einer Stunde)",
-      "customerDocumentScanCleared": "Ein Kundendokument hat die Sicherheitsprüfung bestanden"
+      "customerDocumentScanCleared": "Ein Kundendokument hat die Sicherheitsprüfung bestanden",
+      "customerDocumentRequestCreated": "Dokument bei einem Kunden angefordert",
+      "customerDocumentRequestCancelled": "Dokumentanforderung zurückgezogen",
+      "customerDocumentRequestFulfilled": "Kunde hat eine Dokumentanforderung erfüllt",
+      "customerDocumentRequestReminded": "Erinnerung zu einer Dokumentanforderung gesendet"
     },
     "notificationToasts": {
       "markedAllRead": "Alle Benachrichtigungen als gelesen markiert",
@@ -4159,7 +4163,11 @@
       "customer_document_quota_exceeded": "Ein Kunden-Upload wurde abgewiesen: Speicher voll",
       "customer_document_rate_limited": "Ein Kunde hat das Upload-Limit für Dokumente erreicht",
       "customer_document_forbidden_access_alert": "Wiederholte Zugriffe auf fremde Dokumente ({{count}} in einer Stunde)",
-      "customer_document_scan_cleared": "Ein Kundendokument hat die Sicherheitsprüfung bestanden"
+      "customer_document_scan_cleared": "Ein Kundendokument hat die Sicherheitsprüfung bestanden",
+      "customer_document_request_created": "Dokument bei einem Kunden angefordert",
+      "customer_document_request_cancelled": "Dokumentanforderung zurückgezogen",
+      "customer_document_request_fulfilled": "Kunde hat eine Dokumentanforderung erfüllt",
+      "customer_document_request_reminded": "Erinnerung zu einer Dokumentanforderung gesendet"
     },
     "people": {
       "title": "Personen in dieser Galerie",
@@ -5422,7 +5430,9 @@
         "quoteSent": "Angebot {{title}} wurde Ihnen zugestellt",
         "invoiceSent": "Rechnung {{title}} wurde Ihnen zugestellt",
         "galleryAssigned": "Die Galerie {{title}} steht Ihnen jetzt zur Verfügung"
-      }
+      },
+      "documentRequested": "Bitte hochladen: {{title}}",
+      "uploadDocument": "Hochladen"
     },
     "layout": {
       "greeting": "Hallo, {{name}}"
@@ -5630,13 +5640,22 @@
         "tooManyPages": "{{name}} hat zu viele Seiten zum Hochladen.",
         "notFound": "{{name}} wurde nicht gefunden.",
         "contractLinked": "{{name}} gehört zu einem Vertrag und kann nicht gelöscht werden. Wenden Sie sich an Ihren Fotografen, wenn es entfernt werden soll.",
-        "delete": "{{name}} konnte nicht gelöscht werden. Bitte versuchen Sie es erneut."
+        "delete": "{{name}} konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
+        "requestGone": "Die Anforderung für {{name}} ist nicht mehr offen. Laden Sie die Datei ohne Anforderung hoch oder fragen Sie Ihren Fotografen."
       },
       "deleteTitle": "Dieses Dokument löschen?",
       "deleteBody": "{{name}} wird aus Ihren Dokumenten entfernt. Ihr Fotograf hat es möglicherweise bereits heruntergeladen.",
       "delete": "Löschen",
       "deleteAria": "{{name}} löschen",
-      "deleted": "{{name}} wurde gelöscht."
+      "deleted": "{{name}} wurde gelöscht.",
+      "requests": {
+        "title": "Von Ihrem Fotografen angefordert",
+        "due": "Benötigt bis {{date}}",
+        "upload": "Für diese Anforderung hochladen",
+        "uploadAria": "Eine Datei für {{title}} hochladen",
+        "selected": "Dieser Upload beantwortet: {{title}}",
+        "clear": "Nicht für diese Anforderung"
+      }
     },
     "event": {
       "notFound": "Dieses Event wurde nicht gefunden, oder Sie haben keinen Zugriff mehr darauf.",
@@ -6018,7 +6037,26 @@
       "projectLabel": "Projekt",
       "notified": "Der Kunde erhält eine E-Mail.",
       "notifyFailed": "Die E-Mail an den Kunden konnte nicht eingeplant werden.",
-      "notifyCustomer": "Kunden per E-Mail benachrichtigen"
+      "notifyCustomer": "Kunden per E-Mail benachrichtigen",
+      "requests": {
+        "title": "Beim Kunden angefordert",
+        "hint": "Fordern Sie ein Dokument beim Kunden an. Es erscheint in seinem Portal unter „Braucht Ihre Aufmerksamkeit“, bis er es hochlädt, mit Erinnerungen nach den in Einstellungen → CRM festgelegten Tagen.",
+        "titleLabel": "Was benötigen Sie?",
+        "noteLabel": "Hinweis für den Kunden (optional)",
+        "dueLabel": "Benötigt bis (optional)",
+        "create": "Dokument anfordern",
+        "created": "Anforderung gesendet.",
+        "cancel": "Anforderung zurückziehen",
+        "cancelled": "Anforderung zurückgezogen.",
+        "empty": "Noch nichts angefordert.",
+        "status": {
+          "open": "Ausstehend",
+          "fulfilled": "Erhalten",
+          "cancelled": "Zurückgezogen"
+        },
+        "meta": "Angefordert am {{date}} · {{reminders}} Erinnerung(en) gesendet",
+        "due": "Benötigt bis {{date}}"
+      }
     },
     "groups": {
       "title": "Gruppen",
@@ -7566,6 +7604,9 @@
     },
     "customer_documents_forbidden_alert_threshold": {
       "label": "Alarm nach Zugriffsversuchen auf fremde Dokumente (pro Stunde)"
+    },
+    "customer_documents_request_reminder_days": {
+      "label": "An angeforderte Dokumente erinnern nach (Tage, durch Komma getrennt; leer = aus)"
     }
   },
   "quoteResponse": {

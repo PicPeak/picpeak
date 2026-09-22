@@ -1175,6 +1175,8 @@ async function startServer() {
       }
       require('./src/services/customerDocumentRescanService').startCustomerDocumentRescan();
     }
+    // Reminder ladder for open document requests (#1444).
+    require('./src/services/customerDocumentRequestReminderService').startDocumentRequestReminders();
     // Custom-resolution download archives (#858) are disposable renditions —
     // sweep them once their TTL passes so .download-cache doesn't grow forever.
     // Best-effort, as before the scheduler refactor: a transient DB error on

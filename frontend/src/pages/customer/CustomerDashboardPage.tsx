@@ -62,7 +62,9 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
   const { t } = useTranslation();
   const { format: fmtDate } = useLocalizedDate();
   const documents = items.documents ?? [];
-  const total = items.quotes.length + items.contracts.length + items.invoices.length + documents.length;
+  const requests = items.documentRequests ?? [];
+  const total = items.quotes.length + items.contracts.length + items.invoices.length
+    + documents.length + requests.length;
   if (total === 0) return null;
 
   return (
@@ -112,6 +114,21 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
             </span>
             <Link to="/customer/bills" className="text-sm underline text-theme">
               {t('customer.dashboard.viewInvoice', 'View invoice')}
+            </Link>
+          </li>
+        ))}
+        {requests.map((r) => (
+          <li key={`r-${r.id}`} className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-sm text-theme break-words">
+              {t('customer.dashboard.documentRequested', 'Please upload: {{title}}', { title: r.title })}
+              {r.dueAt && (
+                <span className="block text-xs text-muted-theme">
+                  {t('customer.documents.requests.due', 'Needed by {{date}}', { date: fmtDate(r.dueAt) })}
+                </span>
+              )}
+            </span>
+            <Link to={r.link} className="text-sm underline text-theme">
+              {t('customer.dashboard.uploadDocument', 'Upload')}
             </Link>
           </li>
         ))}

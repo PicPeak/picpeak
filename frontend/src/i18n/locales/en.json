@@ -3363,7 +3363,11 @@
       "customerDocumentQuotaExceeded": "A customer upload was refused: storage full",
       "customerDocumentRateLimited": "A customer hit the document upload limit",
       "customerDocumentForbiddenAccessAlert": "Repeated attempts on other customers' documents ({{count}} in an hour)",
-      "customerDocumentScanCleared": "A customer document passed the security check"
+      "customerDocumentScanCleared": "A customer document passed the security check",
+      "customerDocumentRequestCreated": "Document requested from a customer",
+      "customerDocumentRequestCancelled": "Document request cancelled",
+      "customerDocumentRequestFulfilled": "Customer answered a document request",
+      "customerDocumentRequestReminded": "Reminder sent for a document request"
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
@@ -3689,7 +3693,11 @@
       "customer_document_quota_exceeded": "A customer upload was refused: storage full",
       "customer_document_rate_limited": "A customer hit the document upload limit",
       "customer_document_forbidden_access_alert": "Repeated attempts on other customers' documents ({{count}} in an hour)",
-      "customer_document_scan_cleared": "A customer document passed the security check"
+      "customer_document_scan_cleared": "A customer document passed the security check",
+      "customer_document_request_created": "Document requested from a customer",
+      "customer_document_request_cancelled": "Document request cancelled",
+      "customer_document_request_fulfilled": "Customer answered a document request",
+      "customer_document_request_reminded": "Reminder sent for a document request"
     },
     "people": {
       "title": "People in this gallery",
@@ -5422,7 +5430,9 @@
         "quoteSent": "Quote {{title}} was sent to you",
         "invoiceSent": "Invoice {{title}} was sent to you",
         "galleryAssigned": "Gallery {{title}} is now available to you"
-      }
+      },
+      "documentRequested": "Please upload: {{title}}",
+      "uploadDocument": "Upload"
     },
     "layout": {
       "greeting": "Hi, {{name}}"
@@ -5630,13 +5640,22 @@
         "tooManyPages": "{{name}} has too many pages to upload.",
         "notFound": "{{name}} could not be found.",
         "contractLinked": "{{name}} is part of a contract and cannot be deleted. Contact your photographer if it should be removed.",
-        "delete": "{{name}} could not be deleted. Please try again."
+        "delete": "{{name}} could not be deleted. Please try again.",
+        "requestGone": "The request for {{name}} is no longer open. Upload it without choosing a request, or ask your photographer."
       },
       "deleteTitle": "Delete this document?",
       "deleteBody": "{{name}} will be removed from your documents. Your photographer may already have downloaded it.",
       "delete": "Delete",
       "deleteAria": "Delete {{name}}",
-      "deleted": "{{name}} was deleted."
+      "deleted": "{{name}} was deleted.",
+      "requests": {
+        "title": "Requested by your photographer",
+        "due": "Needed by {{date}}",
+        "upload": "Upload for this request",
+        "uploadAria": "Upload a file for {{title}}",
+        "selected": "This upload answers: {{title}}",
+        "clear": "Not for this request"
+      }
     },
     "event": {
       "notFound": "This event was not found, or you no longer have access to it.",
@@ -6018,7 +6037,26 @@
       "projectLabel": "Project",
       "notified": "The customer gets an email.",
       "notifyFailed": "The email to the customer could not be queued.",
-      "notifyCustomer": "Notify the customer by email"
+      "notifyCustomer": "Notify the customer by email",
+      "requests": {
+        "title": "Requested from the customer",
+        "hint": "Ask the customer for a document. It shows under \"Needs your attention\" in their portal until they upload it, with reminders after the days set in Settings → CRM.",
+        "titleLabel": "What do you need?",
+        "noteLabel": "Note for the customer (optional)",
+        "dueLabel": "Needed by (optional)",
+        "create": "Request document",
+        "created": "Request sent.",
+        "cancel": "Cancel request",
+        "cancelled": "Request cancelled.",
+        "empty": "Nothing requested yet.",
+        "status": {
+          "open": "Waiting",
+          "fulfilled": "Received",
+          "cancelled": "Cancelled"
+        },
+        "meta": "Requested {{date}} · {{reminders}} reminder(s) sent",
+        "due": "Needed by {{date}}"
+      }
     },
     "groups": {
       "title": "Groups",
@@ -7565,6 +7603,9 @@
     },
     "customer_documents_forbidden_alert_threshold": {
       "label": "Alert after attempts on other customers' documents (per hour)"
+    },
+    "customer_documents_request_reminder_days": {
+      "label": "Remind about requested documents after (days, comma-separated; empty = off)"
     }
   },
   "quoteResponse": {

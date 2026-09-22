@@ -63,7 +63,9 @@ const money = (v) => Number(v) || 0;
 
 async function needsActionFor(customerId, features) {
   const today = todayDateOnly();
-  const out = { quotes: [], contracts: [], invoices: [], documents: [] };
+  const out = {
+    quotes: [], contracts: [], invoices: [], documents: [], documentRequests: [],
+  };
 
   if (features.quotes) {
     const rows = await db('quotes')
@@ -137,8 +139,21 @@ async function needsActionFor(customerId, features) {
       .orderBy('id', 'desc')
       .select('id', 'original_name', 'review_note');
     out.documents = rows.map((d) => ({ id: d.id, name: d.original_name, reviewNote: d.review_note || null }));
+    // What the studio asked for and is still waiting on (slice 10).
+    out.documentRequests = (await db('customer_document_requests')
+      .where({ customer_account_id: customerId, status: 'open' })
+      .orderBy('id', 'desc')
+      .select('id', 'title', 'note', 'due_at'))
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        note: r.note || null,
+        dueAt: toIso(r.due_at) || null,
+        link: `/customer/documents?request=${r.id}`,
+      }));
   } else {
     out.documents = [];
+    out.documentRequests = [];
   }
 
   return out;

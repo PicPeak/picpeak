@@ -28,7 +28,8 @@ function loggedDocumentTypes() {
   const types = new Set();
   for (const file of sourceFiles(SRC)) {
     const text = fs.readFileSync(file, 'utf8');
-    for (const m of text.matchAll(/logActivity\(([\s\S]{0,160})/g)) {
+    // The first argument only (a literal, or a ternary of two).
+    for (const m of text.matchAll(/logActivity\(\s*([^,]+),/g)) {
       for (const lit of m[1].matchAll(/'(customer_document_[a-z_]+)'/g)) types.add(lit[1]);
     }
   }
@@ -45,6 +46,7 @@ describe('customer document activity labels', () => {
       'customer_document_uploaded', 'customer_document_shared', 'customer_document_unshared',
       'customer_document_reviewed', 'customer_document_linked', 'customer_document_deleted',
       'customer_document_downloaded', 'customer_document_scan_rejected',
+      'customer_document_request_created', 'customer_document_request_reminded',
     ]));
   });
 

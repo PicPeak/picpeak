@@ -80,6 +80,7 @@ const SETTING_KEYS = [
   'customer_documents_retention_days',
   'customer_documents_notify_on_share',
   'customer_documents_forbidden_alert_threshold',
+  'customer_documents_request_reminder_days',
 ];
 
 export const CrmSettingsPage: React.FC = () => {
@@ -523,6 +524,12 @@ export const CrmSettingsPage: React.FC = () => {
             label={t('crmSettings.customer_documents_forbidden_alert_threshold.label', 'Alert after attempts on other customers\' documents (per hour)') as string}
             value={values.customer_documents_forbidden_alert_threshold ?? 20}
             onChange={(e) => setVal('customer_documents_forbidden_alert_threshold', Number(e.target.value))} />
+        </div>
+        <div className="mt-3">
+          <Input
+            label={t('crmSettings.customer_documents_request_reminder_days.label', 'Remind about requested documents after (days, comma-separated; empty = off)') as string}
+            value={values.customer_documents_request_reminder_days ?? '3,7'}
+            onChange={(e) => setVal('customer_documents_request_reminder_days', e.target.value)} />
         </div>
       </Card>
       )}

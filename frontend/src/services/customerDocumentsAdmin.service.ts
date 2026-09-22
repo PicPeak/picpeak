@@ -49,7 +49,25 @@ export interface DocumentLinks {
   contractId: number | null;
 }
 
+/** A document the studio asked the customer for (#1444 slice 10). */
+export interface AdminDocumentRequest {
+  id: number;
+  title: string;
+  note: string | null;
+  dueAt: string | null;
+  status: 'open' | 'fulfilled' | 'cancelled';
+  eventId: number | null;
+  contractId: number | null;
+  fulfilledDocumentId: number | null;
+  fulfilledAt: string | null;
+  cancelledAt: string | null;
+  reminderCount: number;
+  remindedAt: string | null;
+  createdAt: string | null;
+}
+
 const base = (customerId: number) => `/admin/customers/${customerId}/documents`;
+const requestsBase = (customerId: number) => `/admin/customers/${customerId}/document-requests`;
 
 export const customerDocumentsAdminService = {
   async list(customerId: number): Promise<{
@@ -98,6 +116,23 @@ export const customerDocumentsAdminService = {
 
   async remove(customerId: number, documentId: number): Promise<void> {
     await api.delete(`${base(customerId)}/${documentId}`);
+  },
+
+  async listRequests(customerId: number): Promise<AdminDocumentRequest[]> {
+    const { data } = await api.get(requestsBase(customerId));
+    return data.requests;
+  },
+
+  async createRequest(
+    customerId: number,
+    body: { title: string; note?: string | null; dueAt?: string | null },
+  ): Promise<{ request: AdminDocumentRequest; notification?: DocumentNotification }> {
+    const { data } = await api.post(requestsBase(customerId), body);
+    return data;
+  },
+
+  async cancelRequest(customerId: number, requestId: number): Promise<void> {
+    await api.delete(`${requestsBase(customerId)}/${requestId}`);
   },
 
   /** Download as an attachment — the file may come from the customer and is never opened inline. */

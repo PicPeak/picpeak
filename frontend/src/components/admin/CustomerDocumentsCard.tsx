@@ -20,6 +20,7 @@ import {
 import { Button, Card, Loading, useConfirm } from '../common';
 import { PermissionGate } from './PermissionGate';
 import { ProjectSelect } from './ProjectSelect';
+import { CustomerDocumentRequests } from './CustomerDocumentRequests';
 import { usePermissions } from '../../contexts/PermissionsContext';
 import { useFeatureFlags } from '../../contexts/FeatureFlagsContext';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
@@ -504,6 +505,10 @@ export const CustomerDocumentsCard: React.FC<Props> = ({ customerId, events }) =
           })}
         </ul>
       )}
+
+      <PermissionGate permission={PERMISSION}>
+        <CustomerDocumentRequests customerId={customerId} canManage={canManage} />
+      </PermissionGate>
     </Card>
   );
 };

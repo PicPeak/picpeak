@@ -597,6 +597,62 @@ Zur Weiterleitung an das Inkasso / für die Betreibung.`,
       body_text: '{{customer_name}} hat in der letzten Stunde im Portal {{attempt_count}} Dokumente angefordert, die anderen Kunden gehören. Alle Zugriffe wurden abgewiesen.\n\nDas kann ein veralteter Link sein, sieht aber auch so aus, als würden Dokumentnummern ausprobiert. Falls es weitergeht, können Sie das Konto im Kundendatensatz deaktivieren.\n\n{{admin_link}}',
     },
   },
+  customer_document_requested: {
+    category: 'customers', feature_flag: 'documents',
+    variables: ['customer_name', 'business_name', 'request_title', 'request_note', 'due_date', 'upload_link'],
+    en: {
+      subject: 'Please send us a document: {{request_title}}',
+      body_html: `<h2>A document is needed</h2>
+<p>Dear {{customer_name}},</p>
+<p>Please upload the following document in your customer portal: <strong>{{request_title}}</strong>.</p>
+{{#if request_note}}<p>{{request_note}}</p>{{/if}}
+{{#if due_date}}<p>Please send it by {{due_date}}.</p>{{/if}}
+<p style="text-align: center; margin: 30px 0;"><a href="{{upload_link}}" class="button">Upload the document</a></p>
+<p style="font-size: 13px; color: #666;">You will be asked to sign in first.</p>
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Dear {{customer_name}},\n\nPlease upload the following document in your customer portal: {{request_title}}.{{#if request_note}}\n\n{{request_note}}{{/if}}{{#if due_date}}\n\nPlease send it by {{due_date}}.{{/if}}\n\nUpload: {{upload_link}}\n(You will be asked to sign in first.){{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+    de: {
+      subject: 'Bitte senden Sie uns ein Dokument: {{request_title}}',
+      body_html: `<h2>Ein Dokument wird benötigt</h2>
+<p>Guten Tag {{customer_name}},</p>
+<p>bitte laden Sie das folgende Dokument in Ihrem Kundenportal hoch: <strong>{{request_title}}</strong>.</p>
+{{#if request_note}}<p>{{request_note}}</p>{{/if}}
+{{#if due_date}}<p>Bitte senden Sie es bis {{due_date}}.</p>{{/if}}
+<p style="text-align: center; margin: 30px 0;"><a href="{{upload_link}}" class="button">Dokument hochladen</a></p>
+<p style="font-size: 13px; color: #666;">Sie werden zuerst gebeten, sich anzumelden.</p>
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Guten Tag {{customer_name}},\n\nbitte laden Sie das folgende Dokument in Ihrem Kundenportal hoch: {{request_title}}.{{#if request_note}}\n\n{{request_note}}{{/if}}{{#if due_date}}\n\nBitte senden Sie es bis {{due_date}}.{{/if}}\n\nHochladen: {{upload_link}}\n(Sie werden zuerst gebeten, sich anzumelden.){{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+  },
+  customer_document_request_reminder: {
+    category: 'customers', feature_flag: 'documents',
+    variables: ['customer_name', 'business_name', 'request_title', 'request_note', 'due_date', 'upload_link'],
+    en: {
+      subject: 'Reminder: {{request_title}}',
+      body_html: `<h2>Still needed</h2>
+<p>Dear {{customer_name}},</p>
+<p>We are still waiting for <strong>{{request_title}}</strong>. Please upload it in your customer portal.</p>
+{{#if request_note}}<p>{{request_note}}</p>{{/if}}
+{{#if due_date}}<p>Please send it by {{due_date}}.</p>{{/if}}
+<p style="text-align: center; margin: 30px 0;"><a href="{{upload_link}}" class="button">Upload the document</a></p>
+<p style="font-size: 13px; color: #666;">If you have already sent it, you can ignore this reminder.</p>
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Dear {{customer_name}},\n\nWe are still waiting for {{request_title}}. Please upload it in your customer portal.{{#if request_note}}\n\n{{request_note}}{{/if}}{{#if due_date}}\n\nPlease send it by {{due_date}}.{{/if}}\n\nUpload: {{upload_link}}\n\nIf you have already sent it, you can ignore this reminder.{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+    de: {
+      subject: 'Erinnerung: {{request_title}}',
+      body_html: `<h2>Noch ausstehend</h2>
+<p>Guten Tag {{customer_name}},</p>
+<p>wir warten noch auf <strong>{{request_title}}</strong>. Bitte laden Sie das Dokument in Ihrem Kundenportal hoch.</p>
+{{#if request_note}}<p>{{request_note}}</p>{{/if}}
+{{#if due_date}}<p>Bitte senden Sie es bis {{due_date}}.</p>{{/if}}
+<p style="text-align: center; margin: 30px 0;"><a href="{{upload_link}}" class="button">Dokument hochladen</a></p>
+<p style="font-size: 13px; color: #666;">Falls Sie es bereits gesendet haben, können Sie diese Erinnerung ignorieren.</p>
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Guten Tag {{customer_name}},\n\nwir warten noch auf {{request_title}}. Bitte laden Sie das Dokument in Ihrem Kundenportal hoch.{{#if request_note}}\n\n{{request_note}}{{/if}}{{#if due_date}}\n\nBitte senden Sie es bis {{due_date}}.{{/if}}\n\nHochladen: {{upload_link}}\n\nFalls Sie es bereits gesendet haben, können Sie diese Erinnerung ignorieren.{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+  },
 };
 
 let _seeded = false;

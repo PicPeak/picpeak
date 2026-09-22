@@ -12,8 +12,8 @@ import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
-import { Download, FolderOpen, Trash2, Upload, X } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Download, FolderOpen, Inbox, Trash2, Upload, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 import { Button, Card, Loading, useConfirm } from '../../components/common';
@@ -51,6 +51,8 @@ export function uploadErrorMessage(t: TFunction, code: string | undefined, name:
       return t('customer.documents.errors.tooManyPages', '{{name}} has too many pages to upload.', { name });
     case 'QUOTA_EXCEEDED':
       return t('customer.documents.errors.quota', 'There is not enough room for {{name}}. Ask your photographer to remove older documents.', { name });
+    case 'DOCUMENT_REQUEST_NOT_FOUND':
+      return t('customer.documents.errors.requestGone', 'The request for {{name}} is no longer open. Upload it without choosing a request, or ask your photographer.', { name });
     case 'UPLOAD_RATE_LIMITED':
       return t('customer.documents.errors.rateLimited', 'Too many uploads in a short time. Wait a few minutes, then try {{name}} again.', { name });
     default:
@@ -209,6 +211,7 @@ export const CustomerDocumentList: React.FC<{ documents: CustomerDocument[]; sho
 
 export const CustomerDocumentsPage: React.FC = () => {
   const { t } = useTranslation();
+  const { format: fmtDate } = useLocalizedDate();
   const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['customer-documents'],
@@ -217,6 +220,17 @@ export const CustomerDocumentsPage: React.FC = () => {
   const { data: events } = useQuery({
     queryKey: ['customer-events'],
     queryFn: () => customerService.listEvents(),
+  });
+  // What the studio asked for (slice 10). `?request=<id>` — the link in the
+  // request mail and on the dashboard — preselects one for the upload.
+  const { data: requests = [] } = useQuery({
+    queryKey: ['customer-document-requests'],
+    queryFn: () => customerService.listDocumentRequests(),
+  });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [requestId, setRequestId] = useState<number | null>(() => {
+    const n = Number(searchParams.get('request'));
+    return Number.isInteger(n) && n > 0 ? n : null;
   });
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -244,6 +258,15 @@ export const CustomerDocumentsPage: React.FC = () => {
   const documents = data?.documents ?? [];
   const limits = data?.limits;
   const uploading = progress !== null;
+  const selectedRequest = requests.find((r) => r.id === requestId) || null;
+
+  const selectRequest = (id: number | null) => {
+    setRequestId(id);
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set('request', String(id)); else next.delete('request');
+    setSearchParams(next, { replace: true });
+    if (id) inputRef.current?.focus();
+  };
 
   const chooseFile = (next: File | null) => {
     setResult(null);
@@ -271,9 +294,15 @@ export const CustomerDocumentsPage: React.FC = () => {
     try {
       await customerService.uploadDocument(file, {
         eventId: eventId ? Number(eventId) : null,
+        requestId: selectedRequest ? selectedRequest.id : null,
         signal: controller.signal,
         onProgress: setProgress,
       });
+      if (selectedRequest) {
+        selectRequest(null);
+        await queryClient.invalidateQueries({ queryKey: ['customer-document-requests'] });
+        await queryClient.invalidateQueries({ queryKey: ['customer-dashboard'] });
+      }
       setResult({
         kind: 'success',
         message: t('customer.documents.uploaded', '{{name}} was received. It becomes available once your photographer has reviewed it.', { name: file.name }),
@@ -305,8 +334,53 @@ export const CustomerDocumentsPage: React.FC = () => {
         </p>
       </div>
 
+      {requests.length > 0 && (
+        <Card padding="none" className="mb-4">
+          <h2 className="px-4 pt-4 pb-2 text-base font-semibold text-theme flex items-center gap-2">
+            <Inbox className="w-5 h-5" />
+            {t('customer.documents.requests.title', 'Requested by your photographer')}
+          </h2>
+          <ul className="divide-y" style={{ borderColor: 'var(--color-surface-border)' }}>
+            {requests.map((r) => (
+              <li key={r.id} className="p-4 flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-theme break-words">{r.title}</p>
+                  {r.note && <p className="text-xs text-muted-theme mt-1 break-words">{r.note}</p>}
+                  {r.dueAt && (
+                    <p className="text-xs text-muted-theme mt-1">
+                      {t('customer.documents.requests.due', 'Needed by {{date}}', { date: fmtDate(r.dueAt) })}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant={r.id === requestId ? 'primary' : 'outline'}
+                  size="sm"
+                  disabled={uploading}
+                  onClick={() => selectRequest(r.id)}
+                  leftIcon={<Upload className="w-4 h-4" />}
+                  aria-label={t('customer.documents.requests.uploadAria', 'Upload a file for {{title}}', { title: r.title })}
+                >
+                  {t('customer.documents.requests.upload', 'Upload for this request')}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       <Card padding="lg" className="mb-4">
         <h2 className="text-base font-semibold text-theme mb-1">{t('customer.documents.uploadTitle', 'Send a document')}</h2>
+        {selectedRequest && (
+          <p className="text-sm text-theme mb-2 flex items-center gap-2 flex-wrap">
+            <span className="break-words">
+              {t('customer.documents.requests.selected', 'This upload answers: {{title}}', { title: selectedRequest.title })}
+            </span>
+            <button type="button" className="underline text-muted-theme text-xs" onClick={() => selectRequest(null)} disabled={uploading}>
+              {t('customer.documents.requests.clear', 'Not for this request')}
+            </button>
+          </p>
+        )}
         <p className="text-xs text-muted-theme mb-3">
           {limits
             ? t('customer.documents.uploadHint', 'PDF only, up to {{size}} per file. {{used}} of {{quota}} used.', {
