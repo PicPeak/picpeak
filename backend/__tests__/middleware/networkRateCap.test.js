@@ -86,6 +86,32 @@ describe('secure image network cap', () => {
     expect((await get(app, '203.0.113.8', ua(1))).status).toBe(200);
   });
 
+  it('does not charge a device for requests the network cap refused', async () => {
+    const app = buildApp();
+    for (let i = 0; i < 6; i++) await get(app, '203.0.113.7', ua(i));
+    // A fresh device on the exhausted network: refused every time, but it
+    // never spends its own budget, so it collects no violations and no block.
+    for (let i = 0; i < 12; i++) {
+      expect((await get(app, '203.0.113.7', ua(50))).status).toBe(429);
+    }
+    expect(secureImageMiddleware.rateLimitViolations.size).toBe(0);
+    expect(secureImageMiddleware.blockedFingerprints.size).toBe(0);
+  });
+
+  it('keeps the five-minute and hourly windows through cleanup', () => {
+    const now = Date.now();
+    secureImageService.checkRateLimit('k_300000', 100, 300000);
+    secureImageService.checkRateLimit('k_60000', 100, 60000);
+    const spy = jest.spyOn(Date, 'now').mockReturnValue(now + 120000);
+    try {
+      secureImageService.cleanup();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(secureImageService.rateLimitCache.get('k_300000')).toHaveLength(1);
+    expect(secureImageService.rateLimitCache.has('k_60000')).toBe(false);
+  });
+
   it('lets a room of guests on one network browse under the cap', async () => {
     const app = buildApp();
     // Two guests, three images each: within 3 per device and 6 per network.
