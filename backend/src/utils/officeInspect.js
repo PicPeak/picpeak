@@ -79,6 +79,13 @@ const ACTIVE_ENTRY = [
 // only its container was checked.
 const EMBEDDINGS = /^(word|xl|ppt)\/embeddings\//i;
 const IMAGE_EXT = /\.(png|jpe?g|gif|bmp|emf|wmf|tiff?|svg)$/i;
+// A picture's name is only a name: an OLE compound file or a zip (another
+// package) behind it is an object.
+const OLE_MAGIC = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+// Content types and relationship types of code and embedded objects.
+const ACTIVE_TYPE = /macroEnabled|vbaProject|vbaData|activeX|oleObject|\.package\b/i;
+const ACTIVE_RELATIONSHIP = /\/(oleObject|package|control|activeXControl\w*|vbaProject\w*|wordVbaData|keyMapCustomizations)$/i;
 
 // An ODF link that leaves the package: any URL scheme (not only http/file —
 // vnd.sun.star.script: and macro: run code on click), a network path, an
@@ -102,13 +109,86 @@ function decodeXml(value) {
   });
 }
 
+/**
+ * Every start tag and its attributes, read the way an XML parser reads them:
+ * comments, CDATA sections and processing instructions skipped whole, quoted
+ * values taken as one token, so text inside a comment or another value can't
+ * hide a real attribute (or fake one). A DTD is refused — OOXML and ODF
+ * parts have none, and entities declared in one could spell any value — and
+ * so is anything malformed, which no office suite reads either.
+ *
+ * Yields { name, attrs: [{ name, value }] }, names with their namespace
+ * prefix and values decoded.
+ */
+function* xmlElements(xml) {
+  const malformed = () => notValid('The document contains a part that is not well-formed XML');
+  const attr = /\s*([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)')|\s*(\/?>)/y;
+  const tagName = /[^\s/>]+/y;
+  let i = 0;
+  for (;;) {
+    const lt = xml.indexOf('<', i);
+    if (lt < 0) return;
+    const skipTo = (end, from) => {
+      const at = xml.indexOf(end, from);
+      if (at < 0) throw malformed();
+      return at + end.length;
+    };
+    if (xml.startsWith('<!--', lt)) { i = skipTo('-->', lt + 4); continue; }
+    if (xml.startsWith('<![CDATA[', lt)) { i = skipTo(']]>', lt + 9); continue; }
+    if (xml.startsWith('<?', lt)) { i = skipTo('?>', lt + 2); continue; }
+    if (xml[lt + 1] === '!') throw notValid('The document contains a DTD, which office documents do not use');
+    if (xml[lt + 1] === '/') { i = skipTo('>', lt + 2); continue; }
+    tagName.lastIndex = lt + 1;
+    const element = tagName.exec(xml);
+    if (!element) throw malformed();
+    let j = tagName.lastIndex;
+    const attrs = [];
+    for (;;) {
+      attr.lastIndex = j;
+      const m = attr.exec(xml);
+      if (!m) throw malformed();
+      j = attr.lastIndex;
+      if (m[4]) break;
+      const raw = m[2] !== undefined ? m[2] : m[3];
+      if (raw.includes('<')) throw malformed();
+      attrs.push({ name: m[1], value: decodeXml(raw) });
+    }
+    yield { name: element[0], attrs };
+    i = j;
+  }
+}
+
+const localName = (name) => name.slice(name.indexOf(':') + 1).toLowerCase();
+
 // Decoded values of every attribute with this local name, whatever its
 // namespace prefix (`xlink:href`, `x:href` with x bound to xlink, …).
-function* attributeValues(xml, localName) {
-  const re = /([A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)\s*=\s*(["'])([\s\S]*?)\3/g;
-  for (const m of xml.matchAll(re)) {
-    if (m[2].toLowerCase() === localName.toLowerCase()) yield decodeXml(m[4]);
+function* attributeValues(xml, name) {
+  for (const el of xmlElements(xml)) {
+    for (const a of el.attrs) if (localName(a.name) === name.toLowerCase()) yield a.value;
   }
+}
+
+/** One element's attribute by local name, or undefined. */
+const attrOf = (el, name) => {
+  const a = el.attrs.find((x) => localName(x.name) === name.toLowerCase());
+  return a ? a.value : undefined;
+};
+
+/** The first `n` bytes of an entry, without inflating the rest. */
+async function readHead(zip, name, n) {
+  const stream = await zip.stream(name);
+  const chunks = [];
+  let total = 0;
+  try {
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+      total += chunk.length;
+      if (total >= n) break;
+    }
+  } finally {
+    stream.destroy();
+  }
+  return Buffer.concat(chunks).subarray(0, n);
 }
 
 async function readPart(zip, name, limit) {
@@ -221,21 +301,44 @@ async function inspectOffice(file, format, limits = {}) {
 
     if (OOXML_MAIN[format]) {
       if (!entries['[Content_Types].xml']) throw notValid('The file is not a valid document of this type');
-      const types = await readPart(zip, '[Content_Types].xml', lim.maxPartBytes);
-      if (/macroEnabled/i.test(types)) throw active('Macro-enabled documents cannot be uploaded');
+      const types = [...xmlElements(await readPart(zip, '[Content_Types].xml', lim.maxPartBytes))];
       const main = OOXML_MAIN[format];
-      const override = new RegExp(
-        `<Override\\b[^>]*PartName="${main.part.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}"[^>]*>`, 'i',
-      );
-      const match = types.match(override);
-      if (!match || !match[0].includes(`ContentType="${main.type}"`)) {
+      const typeFor = (el) => String(attrOf(el, 'ContentType') || '').trim();
+      const kind = (el) => localName(el.name);
+      if (types.some((el) => ['default', 'override'].includes(kind(el)) && ACTIVE_TYPE.test(typeFor(el)))) {
+        throw active('Macro-enabled documents and embedded objects cannot be uploaded');
+      }
+      const mainOverrides = types.filter((el) => kind(el) === 'override'
+        && String(attrOf(el, 'PartName') || '').trim().toLowerCase() === main.part.toLowerCase());
+      if (mainOverrides.length !== 1 || typeFor(mainOverrides[0]) !== main.type) {
         throw notValid('The file is not a valid document of this type');
+      }
+      // A part under embeddings/ declared as anything but a picture is an
+      // object, whatever its file name says (object1.png typed oleObject).
+      const defaults = new Map(types.filter((el) => kind(el) === 'default')
+        .map((el) => [String(attrOf(el, 'Extension') || '').trim().toLowerCase(), typeFor(el)]));
+      const overrides = new Map(types.filter((el) => kind(el) === 'override')
+        .map((el) => [String(attrOf(el, 'PartName') || '').trim().toLowerCase(), typeFor(el)]));
+      for (const name of names) {
+        if (!EMBEDDINGS.test(name) || entries[name].isDirectory) continue;
+        const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
+        const declaredType = overrides.get(`/${name}`.toLowerCase()) ?? defaults.get(ext) ?? '';
+        if (!/^image\//i.test(declaredType)) throw active('The document contains an embedded document');
+        const head = await readHead(zip, name, 8);
+        if (OLE_MAGIC.equals(head.subarray(0, 8)) || head.subarray(0, 4).equals(ZIP_MAGIC)) {
+          throw active('The document contains an embedded document');
+        }
       }
       for (const name of names) {
         if (!/\.rels$/i.test(name) || entries[name].isDirectory) continue;
-        const rels = await readPart(zip, name, lim.maxPartBytes);
-        if ([...attributeValues(rels, 'TargetMode')].some((v) => v.trim().toLowerCase() === 'external')) {
-          throw active('The document links to external content (such as a remote template) and cannot be uploaded');
+        for (const el of xmlElements(await readPart(zip, name, lim.maxPartBytes))) {
+          if (localName(el.name) !== 'relationship') continue;
+          if (String(attrOf(el, 'TargetMode') || '').trim().toLowerCase() === 'external') {
+            throw active('The document links to external content (such as a remote template) and cannot be uploaded');
+          }
+          if (ACTIVE_RELATIONSHIP.test(String(attrOf(el, 'Type') || '').trim())) {
+            throw active('The document contains macros or embedded objects');
+          }
         }
       }
     } else {
