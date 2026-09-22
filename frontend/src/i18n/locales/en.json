@@ -5647,7 +5647,8 @@
         "officeActiveContent": "{{name}} contains macros, embedded code or links to outside content and cannot be uploaded. Save it as PDF and upload that file.",
         "documentEncrypted": "{{name}} is password-protected. Remove the password and upload it again.",
         "documentTooComplex": "{{name}} could not be checked. Save it as PDF and upload that file.",
-        "notText": "{{name}} is not a plain UTF-8 text file. Save it as UTF-8 text and upload it again."
+        "notText": "{{name}} is not a plain UTF-8 text file. Save it as UTF-8 text and upload it again.",
+        "checkUnavailable": "{{name}} cannot be checked right now. Please try again later."
       },
       "deleteTitle": "Delete this document?",
       "deleteBody": "{{name}} will be removed from your documents. Your photographer may already have downloaded it.",

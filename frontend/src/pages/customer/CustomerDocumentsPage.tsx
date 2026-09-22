@@ -51,6 +51,8 @@ export function uploadErrorMessage(
       return t('customer.documents.errors.documentEncrypted', '{{name}} is password-protected. Remove the password and upload it again.', { name });
     case 'DOCUMENT_TOO_COMPLEX':
       return t('customer.documents.errors.documentTooComplex', '{{name}} could not be checked. Save it as PDF and upload that file.', { name });
+    case 'DOCUMENT_CHECK_UNAVAILABLE':
+      return t('customer.documents.errors.checkUnavailable', '{{name}} cannot be checked right now. Please try again later.', { name });
     case 'DOCUMENT_NOT_TEXT':
       return t('customer.documents.errors.notText', '{{name}} is not a plain UTF-8 text file. Save it as UTF-8 text and upload it again.', { name });
     case 'PDF_ENCRYPTED':

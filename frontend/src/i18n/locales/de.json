@@ -5647,7 +5647,8 @@
         "officeActiveContent": "{{name}} enthält Makros, eingebetteten Code oder Verweise auf externe Inhalte und kann nicht hochgeladen werden. Speichern Sie sie als PDF und laden Sie diese Datei hoch.",
         "documentEncrypted": "{{name}} ist passwortgeschützt. Entfernen Sie das Passwort und laden Sie die Datei erneut hoch.",
         "documentTooComplex": "{{name}} konnte nicht geprüft werden. Speichern Sie sie als PDF und laden Sie diese Datei hoch.",
-        "notText": "{{name}} ist keine reine UTF-8-Textdatei. Speichern Sie sie als UTF-8-Text und laden Sie sie erneut hoch."
+        "notText": "{{name}} ist keine reine UTF-8-Textdatei. Speichern Sie sie als UTF-8-Text und laden Sie sie erneut hoch.",
+        "checkUnavailable": "{{name}} kann gerade nicht geprüft werden. Bitte versuchen Sie es später erneut."
       },
       "deleteTitle": "Dieses Dokument löschen?",
       "deleteBody": "{{name}} wird aus Ihren Dokumenten entfernt. Ihr Fotograf hat es möglicherweise bereits heruntergeladen.",

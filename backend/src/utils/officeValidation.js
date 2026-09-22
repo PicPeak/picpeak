@@ -11,7 +11,6 @@
 const path = require('path');
 const { Worker } = require('worker_threads');
 const { AppError } = require('./errors');
-const { inspectOffice } = require('./officeInspect');
 
 const WORKER_HEAP_MB = 256;
 const WORKER_TIMEOUT_MS = 30000;
@@ -44,7 +43,8 @@ const tooComplex = () => new AppError(
  * @param {'docx'|'xlsx'|'odt'|'ods'} format
  * @returns {Promise<{ entries: number, expandedBytes: number }>}
  * Throws a 400 AppError with a stable code (DOCUMENT_NOT_VALID,
- * DOCUMENT_ACTIVE_CONTENT, DOCUMENT_ENCRYPTED, DOCUMENT_TOO_COMPLEX).
+ * DOCUMENT_ACTIVE_CONTENT, DOCUMENT_ENCRYPTED, DOCUMENT_TOO_COMPLEX), or a
+ * 422 DOCUMENT_CHECK_UNAVAILABLE when no worker can be started.
  */
 async function validateOffice(file, format, { limits = {}, heapMb = WORKER_HEAP_MB, timeoutMs = WORKER_TIMEOUT_MS } = {}) {
   await acquire();
@@ -57,12 +57,10 @@ async function validateOffice(file, format, { limits = {}, heapMb = WORKER_HEAP_
           resourceLimits: { maxOldGenerationSizeMb: heapMb, maxYoungGenerationSizeMb: Math.min(64, heapMb) },
         });
       } catch (_) {
-        // No worker available (an unusual runtime): run here rather than
-        // refusing every upload. The checks never inflate more than the
-        // parts they read.
-        inspectOffice(file, format, limits).then(resolve, (err) => reject(
-          new AppError(err.message, err.statusCode || 400, err.code || 'DOCUMENT_NOT_VALID'),
-        ));
+        // No worker available (an unusual runtime). Inspecting here would run
+        // without the heap and time budget the worker gives, so the upload
+        // is refused as "try again later" rather than checked unbudgeted.
+        reject(new AppError('The document cannot be checked right now. Please try again later.', 422, 'DOCUMENT_CHECK_UNAVAILABLE'));
         return;
       }
       let settled = false;

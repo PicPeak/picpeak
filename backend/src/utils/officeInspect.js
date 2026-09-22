@@ -14,9 +14,13 @@
  *   - the wrong document type for the extension: OOXML must declare the
  *     expected main part in [Content_Types].xml, ODF must start with a
  *     `mimetype` entry holding the expected value
- *   - macros and embedded code: vbaProject.bin / vbaData.xml, *.bin under
- *     word/embeddings or xl/embeddings, activeX parts, ODF Basic/ and
- *     Scripts/ — and macro-enabled main parts (docm/xlsm renamed .docx)
+ *   - macros and embedded code: vbaProject.bin / vbaData.xml, anything but a
+ *     picture under word|xl|ppt/embeddings (an OLE .bin, a .docm, an .xlsm,
+ *     another document), activeX parts, ODF Basic/ and Scripts/, ODF
+ *     "Object N/" sub-documents — and macro-enabled main parts (docm/xlsm
+ *     renamed .docx)
+ *   - an ODF xlink:href in content.xml or styles.xml that points outside the
+ *     package (http:, https:, file:, ftp:, a network, parent or absolute path)
  *   - any relationship with TargetMode="External": remote-template injection
  *     loads code from a URL named in the rels. This refuses documents with
  *     plain external hyperlinks too; see the note in documentFormats.js.
@@ -35,6 +39,8 @@ const DEFAULTS = {
   maxExpandedBytes: 200 * 1024 * 1024,
   // Budget for the few XML parts actually read.
   maxPartBytes: 4 * 1024 * 1024,
+  // txt / csv when the caller passes no cap (the upload limit's default).
+  maxTextBytes: 25 * 1024 * 1024,
 };
 
 const OOXML_MAIN = {
@@ -60,11 +66,24 @@ const tooComplex = (msg) => new InspectError(msg, 'DOCUMENT_TOO_COMPLEX');
 const ACTIVE_ENTRY = [
   /(^|\/)vbaProject\.bin$/i,
   /(^|\/)vbaData\.xml$/i,
-  /^(word|xl|ppt)\/embeddings\/.*\.bin$/i,
   /^(word|xl|ppt)\/activeX\//i,
   /^Basic\//,
   /^Scripts\//,
+  // ODF embedded sub-documents ("Object 1/content.xml"): another document,
+  // with its own macros and links, that nothing here inspects.
+  /^Object \d+\//,
 ];
+
+// OOXML embeddings may be pictures; anything else in there — an OLE .bin,
+// a .docm or .xlsm, another .docx — is a document inside the document, and
+// only its container was checked.
+const EMBEDDINGS = /^(word|xl|ppt)\/embeddings\//i;
+const IMAGE_EXT = /\.(png|jpe?g|gif|bmp|emf|wmf|tiff?|svg)$/i;
+
+// An ODF link that leaves the package: a URL scheme, a network path, a
+// parent-directory or absolute path. Package-internal links ("Pictures/x",
+// "./Object 1", "#bookmark") stay allowed.
+const EXTERNAL_HREF = /^\s*(https?:|file:|ftp:|\/\/|\\\\|\.\.[/\\]|\/|[A-Za-z]:[/\\])/i;
 
 async function readPart(zip, name, limit) {
   const stream = await zip.stream(name);
@@ -81,12 +100,23 @@ async function readPart(zip, name, limit) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-async function startsWithZipSignature(file) {
+/**
+ * The zip signature at byte 0, and the name of the FIRST entry in the file
+ * (the first local header) — the real order, which ODF's "mimetype comes
+ * first" rule is about. The reader's entry map is an object, and an object
+ * puts integer-like keys ("0") before every other key whatever the archive
+ * order was.
+ */
+async function readFirstEntry(file) {
   const fh = await fs.promises.open(file, 'r');
   try {
-    const buf = Buffer.alloc(4);
-    await fh.read(buf, 0, 4, 0);
-    return buf.equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    const head = Buffer.alloc(30);
+    const { bytesRead } = await fh.read(head, 0, 30, 0);
+    if (bytesRead < 30 || head.readUInt32LE(0) !== 0x04034b50) return { zip: false, firstName: null };
+    const nameLength = head.readUInt16LE(26);
+    const name = Buffer.alloc(nameLength);
+    await fh.read(name, 0, nameLength, 30);
+    return { zip: true, firstName: name.toString('utf8') };
   } finally {
     await fh.close();
   }
@@ -99,7 +129,8 @@ async function startsWithZipSignature(file) {
 async function inspectOffice(file, format, limits = {}) {
   const lim = { ...DEFAULTS, ...limits };
   if (!OOXML_MAIN[format] && !ODF_MIMETYPE[format]) throw notValid('Unsupported format');
-  if (!(await startsWithZipSignature(file))) throw notValid('The file is not a valid document of this type');
+  const first = await readFirstEntry(file);
+  if (!first.zip) throw notValid('The file is not a valid document of this type');
 
   let zip;
   try {
@@ -122,6 +153,9 @@ async function inspectOffice(file, format, limits = {}) {
       }
       if (ACTIVE_ENTRY.some((re) => re.test(name))) {
         throw active('The document contains macros or embedded code');
+      }
+      if (EMBEDDINGS.test(name) && !entry.isDirectory && !IMAGE_EXT.test(name)) {
+        throw active('The document contains an embedded document');
       }
       if (!entry.isDirectory) declared += Number(entry.size) || 0;
       if (declared > lim.maxExpandedBytes) throw tooComplex('The document expands to more than can be checked');
@@ -147,11 +181,20 @@ async function inspectOffice(file, format, limits = {}) {
         }
       }
     } else {
-      if (names[0] !== 'mimetype' || entries.mimetype.isDirectory) {
+      if (first.firstName !== 'mimetype' || !entries.mimetype || entries.mimetype.isDirectory) {
         throw notValid('The file is not a valid document of this type');
       }
       const mimetype = (await readPart(zip, 'mimetype', 256)).trim();
       if (mimetype !== ODF_MIMETYPE[format]) throw notValid('The file is not a valid document of this type');
+      for (const part of ['content.xml', 'styles.xml']) {
+        if (!entries[part] || entries[part].isDirectory) continue;
+        const xml = await readPart(zip, part, lim.maxPartBytes);
+        for (const m of xml.matchAll(/xlink:href\s*=\s*(["'])(.*?)\1/gi)) {
+          if (EXTERNAL_HREF.test(m[2])) {
+            throw active('The document links to external content and cannot be uploaded');
+          }
+        }
+      }
       if (entries['META-INF/manifest.xml']) {
         const manifest = await readPart(zip, 'META-INF/manifest.xml', lim.maxPartBytes);
         if (/encryption-data/i.test(manifest)) {
@@ -171,15 +214,32 @@ async function inspectOffice(file, format, limits = {}) {
  * formula for whoever opens it in a spreadsheet — documented, not rewritten.
  */
 async function inspectText(file, limits = {}) {
-  const buf = await fs.promises.readFile(file);
-  if (limits.maxBytes && buf.length > limits.maxBytes) throw tooComplex('The file is too large');
-  if (buf.includes(0)) throw new InspectError('The file is not a text file', 'DOCUMENT_NOT_TEXT');
+  // Streamed, and never more than the cap read: the file is not held in
+  // memory whole, and a file larger than allowed stops being read.
+  const cap = limits.maxBytes || DEFAULTS.maxTextBytes;
+  const decoder = new TextDecoder('utf-8', { fatal: true });
+  let bytes = 0;
+  const stream = fs.createReadStream(file, { highWaterMark: 64 * 1024 });
   try {
-    new TextDecoder('utf-8', { fatal: true }).decode(buf);
-  } catch (_) {
-    throw new InspectError('The file is not UTF-8 text', 'DOCUMENT_NOT_TEXT');
+    for await (const chunk of stream) {
+      bytes += chunk.length;
+      if (bytes > cap) throw tooComplex('The file is too large');
+      if (chunk.includes(0)) throw new InspectError('The file is not a text file', 'DOCUMENT_NOT_TEXT');
+      try {
+        decoder.decode(chunk, { stream: true });
+      } catch (_) {
+        throw new InspectError('The file is not UTF-8 text', 'DOCUMENT_NOT_TEXT');
+      }
+    }
+    try {
+      decoder.decode();
+    } catch (_) {
+      throw new InspectError('The file is not UTF-8 text', 'DOCUMENT_NOT_TEXT');
+    }
+  } finally {
+    stream.destroy();
   }
-  return { bytes: buf.length };
+  return { bytes };
 }
 
 module.exports = { inspectOffice, inspectText, InspectError, DEFAULTS, _internal: { OOXML_MAIN, ODF_MIMETYPE } };
