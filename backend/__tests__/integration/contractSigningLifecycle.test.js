@@ -1450,3 +1450,37 @@ test('a clean signature clears only its own follow-up marker', async () => {
   await ok(sign(anna, { name: 'Anna Muster', mode: 'typed' }));
   expect((await db('contracts').where({ id }).first()).follow_up_failed_at).toBeNull();
 });
+
+test('cancelling is conditional: a status that changed in between is never overwritten', async () => {
+  const id = await newContract();
+  await sendContract(id);
+  const head = (await db('contracts').where({ id }).first()).audit_chain_head;
+  // The signature lands between the cancel's read and its write.
+  let flipped = false;
+  const onQuery = (q) => {
+    if (flipped || !/select/i.test(q.sql) || !/contracts/.test(q.sql) || /contract_/.test(q.sql)) return;
+    flipped = true;
+    db('contracts').where({ id }).update({ status: 'signed_by_customer' }).then(() => {}, () => {});
+  };
+  db.on('query', onQuery);
+  let res;
+  try {
+    res = await request(contractsApp).post(`/api/admin/contracts/${id}/cancel`).set(auth);
+  } finally {
+    db.removeListener('query', onQuery);
+  }
+  expect(res.status).toBe(409);
+  expect(res.body.code).toBe('CONTRACT_NOT_CANCELLABLE');
+  const after = await db('contracts').where({ id }).first();
+  expect(after.status).toBe('signed_by_customer');
+  expect(after.audit_chain_head).toBe(head);
+  expect(await db('contract_signing_events').where({ contract_id: id, event_type: 'revoked' })).toHaveLength(0);
+
+  // An expired contract can't be cancelled either.
+  const expired = await newContract();
+  await sendContract(expired);
+  await db('contracts').where({ id: expired }).update({ status: 'expired' });
+  const refused = await request(contractsApp).post(`/api/admin/contracts/${expired}/cancel`).set(auth);
+  expect(refused.body.code).toBe('CONTRACT_NOT_CANCELLABLE');
+  expect((await db('contracts').where({ id: expired }).first()).status).toBe('expired');
+});

@@ -534,13 +534,19 @@ async function updateContract(id, payload, adminId) {
 async function cancelContract(id, adminId) {
   const contract = await db('contracts').where({ id }).first();
   if (!contract) throw new AppError('Contract not found', 404);
-  if (!['draft', 'sent', 'awaiting_data'].includes(contract.status)) {
-    throw new AppError(`Cannot cancel a contract with status '${contract.status}'`, 409);
-  }
-  await auditedUpdate(db, 'contracts', { id }, {
+  const cancellable = ['draft', 'sent', 'awaiting_data'];
+  const refused = (status) => new AppError(`Cannot cancel a contract with status '${status}'`, 409, 'CONTRACT_NOT_CANCELLABLE');
+  if (!cancellable.includes(contract.status)) throw refused(contract.status);
+  // Conditional: a signature, an expiry or a seal landing since the read
+  // above must not be overwritten — nor get a `revoked` event after it.
+  const cancelled = await auditedUpdate(db, 'contracts', (q) => q.where({ id }).whereIn('status', cancellable), {
     status: 'cancelled',
-    updated_at: new Date(),
+    updated_at: new Date().toISOString(),
   }, { actor: adminId, source: 'contract.cancel' });
+  if (!cancelled) {
+    const now = await db('contracts').where({ id }).first('status');
+    throw refused(now ? now.status : contract.status);
+  }
   // Invalidate any outstanding tokens.
   await db('contract_action_tokens').where({ contract_id: id, used_at: null }).update({
     expires_at: new Date(),
