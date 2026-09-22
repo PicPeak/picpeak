@@ -1052,7 +1052,10 @@ describe('integrity report', () => {
     await db('generated_documents').where({ id: certificate.id }).update({ kind: 'audit' });
     await db('contract_signers').where({ id: signer.id }).update({ signature_path: null });
     expect(await failing(id)).toEqual(['signature_image']);
-    await db('contract_signers').where({ id: signer.id }).update({ signature_path: signer.signature_path });
+    await db('contract_signers').where({ id: signer.id }).update({ signature_sha256: null });
+    expect(await failing(id)).toEqual(['signature_image']);
+    await db('contract_signers').where({ id: signer.id })
+      .update({ signature_path: signer.signature_path, signature_sha256: signer.signature_sha256 });
     await db('contracts').where({ id }).update({ signed_pdf_path: null });
     expect(await failing(id)).toEqual(['completed_artifact', 'signed_pdf']);
     await db('contracts').where({ id }).update({ signed_pdf_path: contract.signed_pdf_path });
@@ -1095,6 +1098,7 @@ describe('enumeration and replay signals', () => {
 
   beforeEach(async () => {
     await signals().flush();
+    signals()._internal.forgetClientSetting();
     await db('contract_signing_signals').del();
     await db('contract_signing_alerts').del();
   });
@@ -1203,6 +1207,7 @@ describe('enumeration and replay signals', () => {
 
   test('with "store IP" off, the overall threshold still alerts', async () => {
     await setSetting('crm_contracts_store_ip', false);
+    signals()._internal.forgetClientSetting();
     await setSetting('crm_contracts_alert_unknown_tokens_per_hour', 4);
     try {
       for (let i = 0; i < 4; i += 1) {
@@ -1214,6 +1219,7 @@ describe('enumeration and replay signals', () => {
       expect((await signals().summary()).mode).toBe('global');
     } finally {
       await setSetting('crm_contracts_store_ip', true);
+      signals()._internal.forgetClientSetting();
       await setSetting('crm_contracts_alert_unknown_tokens_per_hour', 200);
     }
     expect((await signals().summary()).mode).toBe('per_client');
@@ -1230,6 +1236,18 @@ describe('enumeration and replay signals', () => {
     expect(Number(total.n)).toBe(MAX_KEYS + 50);
     const overflow = await db('contract_signing_signals').where({ kind: 'otp_failure' }).whereNull('contract_id').first();
     expect(Number(overflow.count)).toBe(50);
+  });
+
+  test('a flood of refusals reads the "store IP" setting once, not once per signal', async () => {
+    signals()._internal.reset();
+    const helpers = require('../../src/services/contract/helpers');
+    const spy = jest.spyOn(helpers, 'maybeStoreIp');
+    try {
+      await Promise.all(Array.from({ length: 100 }, () => signals().record('rate_limited', { clientKey: '203.0.113.99' })));
+      expect(spy.mock.calls.length).toBeLessThanOrEqual(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test('a batch that keeps failing to store is dropped after three tries', async () => {
@@ -1250,6 +1268,7 @@ describe('enumeration and replay signals', () => {
 
   test('with "store IP" off, no client is kept at all', async () => {
     await setSetting('crm_contracts_store_ip', false);
+    signals()._internal.forgetClientSetting();
     try {
       await fromIp(request(signingApp).get(`/api/public/contract-signing/invite/${unknownToken()}`), '203.0.113.60');
       await new Promise((resolve) => setImmediate(resolve));
@@ -1259,6 +1278,7 @@ describe('enumeration and replay signals', () => {
       expect(rows.every((r) => r.ip_hash === null)).toBe(true);
     } finally {
       await setSetting('crm_contracts_store_ip', true);
+      signals()._internal.forgetClientSetting();
     }
   });
 });

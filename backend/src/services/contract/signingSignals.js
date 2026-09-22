@@ -93,10 +93,24 @@ async function clientsCounted() {
   return !!(await maybeStoreIp('0.0.0.0'));
 }
 
+// Whether clients are counted, read at most once a minute and shared by
+// every signal in flight: a flood of refused requests must not become a
+// settings read each. A change of the setting applies within the minute.
+const CLIENT_SETTING_TTL_MS = 60 * 1000;
+let clientSetting = null;
+function clientsCountedShared() {
+  const now = Date.now();
+  if (!clientSetting || now - clientSetting.at > CLIENT_SETTING_TTL_MS) {
+    // A failed read counts no client: the private choice.
+    clientSetting = { at: now, counted: clientsCounted().catch(() => false) };
+  }
+  return clientSetting.counted;
+}
+
 /** The client as the signals see it, or null when IPs are not to be kept. */
 async function clientOf(clientKey) {
-  const { maybeStoreIp } = require('./helpers');
-  return (await maybeStoreIp(clientKey)) ? ipHash(clientKey) : null;
+  if (!clientKey) return null;
+  return (await clientsCountedShared()) ? ipHash(clientKey) : null;
 }
 
 /** Count one signal. Never throws: a signal is never worth a failed request. */
@@ -254,6 +268,10 @@ module.exports = {
   stopSigningSignals: () => task.stop(),
   MAX_KEYS,
   _internal: {
-    ipHash, hourOf, pendingSize: () => pending.size, reset: () => { pending = new Map(); failedFlushes = 0; },
+    ipHash,
+    hourOf,
+    pendingSize: () => pending.size,
+    reset: () => { pending = new Map(); failedFlushes = 0; clientSetting = null; },
+    forgetClientSetting: () => { clientSetting = null; },
   },
 };

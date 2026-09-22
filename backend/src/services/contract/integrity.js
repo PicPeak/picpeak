@@ -94,7 +94,9 @@ async function integrityReport(contractId, { adminId = null } = {}) {
 
   const rows = await db('contract_signers').where({ contract_id: contractId }).orderBy('position', 'asc');
   for (const row of rows) {
-    if (!row.signature_sha256 && !row.signature_path) continue;
+    // A drawn signature on record has an image, even with both columns gone.
+    const drawn = row.status === 'signed' && row.signature_mode === 'drawn';
+    if (!row.signature_sha256 && !row.signature_path && !drawn) continue;
     checks.push(compare('signature_image', row.signature_sha256, fileSha(row.signature_path), { subject: row.slot_key }));
   }
 
