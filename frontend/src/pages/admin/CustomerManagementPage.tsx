@@ -14,7 +14,7 @@
  * picker (customers don't have roles — access is boolean per event,
  * managed via the event form's CustomerAccountPicker).
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -91,9 +91,21 @@ export const CustomerManagementPage: React.FC = () => {
   // one per keystroke. Filtering is client-side over the fetched list.
   const debouncedTerm = searchParams.get('q') || '';
   const [searchTerm, setSearchTerm] = useState(debouncedTerm);
+  // The last `q` this box wrote. A `q` that differs from it came from outside
+  // — Back/Forward, a pasted link — and replaces what the box shows; our own
+  // write echoing back is ignored, so text typed after it isn't clobbered.
+  const writtenTerm = useRef(debouncedTerm);
+  useEffect(() => {
+    if (debouncedTerm === writtenTerm.current) return;
+    writtenTerm.current = debouncedTerm;
+    setSearchTerm(debouncedTerm);
+  }, [debouncedTerm]);
   useEffect(() => {
     if (searchTerm === debouncedTerm) return undefined;
-    const handle = window.setTimeout(() => updateParams({ q: searchTerm }, true), 250);
+    const handle = window.setTimeout(() => {
+      writtenTerm.current = searchTerm;
+      updateParams({ q: searchTerm }, true);
+    }, 250);
     return () => window.clearTimeout(handle);
   }, [searchTerm, debouncedTerm, updateParams]);
   // Single state drives the unified create/invite modal. Both header
@@ -145,6 +157,7 @@ export const CustomerManagementPage: React.FC = () => {
     updateParams({ groups: next.join(','), ungrouped: null, match: next.length >= 2 ? searchParams.get('match') : null });
   };
   const clearFilters = () => {
+    writtenTerm.current = '';
     setSearchTerm('');
     updateParams({ q: null, groups: null, match: null, ungrouped: null, status: null });
   };

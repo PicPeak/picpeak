@@ -14,7 +14,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 vi.mock('react-i18next', async () => {
@@ -108,6 +108,11 @@ const customer = (id: number, email: string, groups: unknown[] = []) => ({
 /** The query string the page has written, for the URL assertions. */
 const LocationProbe = () => <output data-testid="location">{useLocation().search}</output>;
 const currentSearch = () => screen.getByTestId('location').textContent;
+/** Stands in for Back/Forward or a pasted link: a navigation the page didn't make. */
+const NavigateProbe = () => {
+  const navigate = useNavigate();
+  return <button type="button" onClick={() => navigate('/admin/clients/accounts?q=second')}>external-nav</button>;
+};
 
 /** renderPage, plus a way to make the catalogue query see a changed catalogue. */
 function renderPageWithClient(url = '/admin/clients/accounts') {
@@ -117,6 +122,7 @@ function renderPageWithClient(url = '/admin/clients/accounts') {
       <MemoryRouter initialEntries={[url]}>
         <CustomerManagementPage />
         <LocationProbe />
+        <NavigateProbe />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -281,6 +287,23 @@ describe('filters in the URL', () => {
     await waitFor(() => expect(currentSearch()).toBe(''));
     expect(screen.getByPlaceholderText('Search by email, name, or company')).toHaveValue('');
     await waitFor(() => expect(list).toHaveBeenLastCalledWith(listArgs()));
+  });
+
+  it('shows a q that arrives by navigation in the search box, and does not overwrite it', async () => {
+    const user = userEvent.setup();
+    renderPage('/admin/clients/accounts?q=first');
+    const box = screen.getByPlaceholderText('Search by email, name, or company');
+    expect(box).toHaveValue('first');
+
+    await user.click(screen.getByRole('button', { name: 'external-nav' }));
+    await waitFor(() => expect(box).toHaveValue('second'));
+    // Past the debounce: the box did not write its old value back.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(currentSearch()).toBe('?q=second');
+
+    // Typing still reaches the URL.
+    await user.type(box, 'x');
+    await waitFor(() => expect(currentSearch()).toBe('?q=secondx'));
   });
 
   it('keeps the tab in the URL', async () => {
