@@ -95,6 +95,11 @@ export const ContractEditorPage: React.FC = () => {
   // The contract the form was filled from. A refetch (window focus, a save
   // elsewhere on the page) must not overwrite what is being edited.
   const hydratedFor = useRef<number | null>(null);
+  const hydratedLock = useRef<number | null>(null);
+  const baseline = useRef<string | null>(null);
+  const captureBaseline = useRef(false);
+  const [hydrations, setHydrations] = useState(0);
+  const formSnapshotRef = useRef<string>('');
   const summaryRef = useRef<HTMLDivElement>(null);
   // One key per attempt to create this draft, kept across retries until a
   // create succeeds. When a response is lost after the server committed, the
@@ -193,6 +198,11 @@ export const ContractEditorPage: React.FC = () => {
   // again when the admin takes the other version after a conflict.
   const hydrate = (c: NonNullable<typeof existing>['contract']) => {
     hydratedFor.current = c.id;
+    hydratedLock.current = c.lockVersion ?? null;
+    // The form as filled from the server, captured once the state settles:
+    // "unchanged since loading" is what lets a newer server copy replace it.
+    captureBaseline.current = true;
+    setHydrations((n) => n + 1);
     setCustomerAccountId(c.customerAccountId);
     setCustomerLabel(
       c.customer.companyName
@@ -232,8 +242,16 @@ export const ContractEditorPage: React.FC = () => {
     })));
   };
   useEffect(() => {
-    if (!existing || hydratedFor.current === existing.contract.id) return;
-    hydrate(existing.contract);
+    if (!existing) return;
+    if (hydratedFor.current !== existing.contract.id) {
+      hydrate(existing.contract);
+      return;
+    }
+    // A newer server copy (saved elsewhere) replaces a form nobody has
+    // touched, so a stale cache can't lead into a conflict of its own making.
+    const serverLock = existing.contract.lockVersion ?? 0;
+    const untouched = baseline.current !== null && baseline.current === formSnapshotRef.current;
+    if (serverLock > (hydratedLock.current ?? 0) && untouched && !conflict) hydrate(existing.contract);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing]);
 
@@ -263,6 +281,13 @@ export const ContractEditorPage: React.FC = () => {
   // `blocks` after a load) must not wipe the summary before anyone read it.
   const formSnapshot = JSON.stringify([customerAccountId, title, eventName, eventDate, eventTimeStart,
     eventTimeEnd, introText, outroText, language, issueDate, validUntil, projectId, blocks, attachments]);
+  formSnapshotRef.current = formSnapshot;
+  // The form as the last hydration left it (see hydrate).
+  useEffect(() => {
+    if (!captureBaseline.current) return;
+    captureBaseline.current = false;
+    baseline.current = formSnapshot;
+  }, [formSnapshot, hydrations]);
   const errorFormSnapshotRef = useRef<string | null>(null);
   useEffect(() => {
     if (!saveError) {

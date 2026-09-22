@@ -111,6 +111,18 @@ describe('ContractEditorPage conflict', () => {
     expect(screen.queryByText('Changed by someone else.')).not.toBeInTheDocument();
   });
 
+  it('a newer server copy replaces an untouched form, so no conflict of its own making follows', async () => {
+    get.mockResolvedValue(contract(2, 'Alter Titel'));
+    update.mockResolvedValue({});
+    const client = renderEditor();
+    await waitFor(() => expect(titleField().value).toBe('Alter Titel'));
+    get.mockResolvedValue(contract(3, 'Neuer Titel'));
+    await client.refetchQueries({ queryKey: ['contract', 9] });
+    await waitFor(() => expect(titleField().value).toBe('Neuer Titel'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(9, expect.objectContaining({ lockVersion: 3 })));
+  });
+
   it('a background refetch does not overwrite what is being typed', async () => {
     get.mockResolvedValue(contract(2, 'Alter Titel'));
     const client = renderEditor();
