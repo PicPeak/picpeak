@@ -1528,6 +1528,11 @@ router.put('/general', adminAuth, requirePermission('settings.edit'), async (req
       settings.general_site_url = siteUrl;
     }
 
+    // Customer documents (#1444): checked and normalised before storing.
+    const documentSettingsError = require('../utils/customerDocumentSettings')
+      .normaliseCustomerDocumentSettings(settings);
+    if (documentSettingsError) return res.status(400).json({ error: documentSettingsError });
+
     const publicSiteKeysTouched = Object.keys(settings).some((key) => key.startsWith('general_public_site_'));
 
     if (Object.prototype.hasOwnProperty.call(settings, 'general_max_files_per_upload')) {

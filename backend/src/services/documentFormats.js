@@ -69,13 +69,17 @@ const FORMATS = {
 };
 
 const ALL_FORMATS = Object.keys(FORMATS);
+
+// Own keys only: FORMATS['constructor'] is Object's constructor, and a
+// setting or file name must never select that.
+const isFormat = (name) => typeof name === 'string' && Object.hasOwn(FORMATS, name);
 const DEFAULT_ALLOWED = ['pdf'];
 
 /** The formats this install accepts: the setting, filtered to the allowlist. */
 async function getAllowedFormats() {
   const raw = await getAppSetting('customer_documents_allowed_formats', DEFAULT_ALLOWED);
   const list = Array.isArray(raw) ? raw : String(raw || '').split(',');
-  const allowed = [...new Set(list.map((f) => String(f).trim().toLowerCase()))].filter((f) => FORMATS[f]);
+  const allowed = [...new Set(list.map((f) => String(f).trim().toLowerCase()))].filter(isFormat);
   return allowed.length > 0 ? allowed : DEFAULT_ALLOWED;
 }
 
@@ -84,7 +88,7 @@ function formatForName(name) {
   const m = /\.([A-Za-z0-9]+)$/.exec(String(name || ''));
   if (!m) return null;
   const key = m[1].toLowerCase();
-  return FORMATS[key] ? key : null;
+  return isFormat(key) ? key : null;
 }
 
 /** The format of a stored document, from its generated storage key. */
@@ -94,13 +98,14 @@ function formatForStorageKey(key) {
 
 /** Download content type — from the registry, never from the upload. */
 function contentTypeFor(format) {
-  return (FORMATS[format] || FORMATS.pdf).contentType;
+  return (isFormat(format) ? FORMATS[format] : FORMATS.pdf).contentType;
 }
 
 module.exports = {
   FORMATS,
   ALL_FORMATS,
   DEFAULT_ALLOWED,
+  isFormat,
   getAllowedFormats,
   formatForName,
   formatForStorageKey,

@@ -87,7 +87,7 @@ const isShared = (row) => !!row.shared_at && !row.unshared_at;
  * the name ends in.
  */
 function cleanDisplayName(originalName, format = 'pdf') {
-  const ext = documentFormats.FORMATS[format] ? documentFormats.FORMATS[format].ext : '.pdf';
+  const ext = documentFormats.isFormat(format) ? documentFormats.FORMATS[format].ext : '.pdf';
   let base = path.basename(String(originalName || ''))
     // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1F\x7F]/g, '')
