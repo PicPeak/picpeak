@@ -401,6 +401,38 @@ describe('v1 original downloads (issue 1473)', () => {
       expect(Number(unreadCount)).toBe(1);
     });
 
+    it('does not lose an increment another replica wrote in between', async () => {
+      // Replica B bumps the row between replica A's read and write; A's
+      // compare-and-set misses, re-reads and counts on top of B's value.
+      const { recordSingleDownload } = require('../../src/services/apiDownloadNotifications');
+      await db('activity_logs').delete();
+      const md = { via: 'api_v1', token_id: Number(readTokenId), token_name: readTokenName, count: 3, window_started_at: Date.now() };
+      const inserted = await db('activity_logs').insert({
+        activity_type: 'api_photos_downloaded', actor_type: 'system', event_id: eventId,
+        metadata: JSON.stringify(md), created_at: new Date().toISOString(),
+      }).returning('id');
+      const row = { id: inserted[0]?.id ?? inserted[0] };
+      let raced = false;
+      const origQuery = db.client.query.bind(db.client);
+      db.client.query = async (conn, obj) => {
+        if (!raced && /^update/i.test(obj.sql || '') && /activity_logs/.test(obj.sql || '')) {
+          raced = true;
+          await origQuery(conn, db('activity_logs').where({ id: row.id })
+            .update({ metadata: JSON.stringify({ ...md, count: md.count + 5 }) }).toSQL().toNative());
+        }
+        return origQuery(conn, obj);
+      };
+      try {
+        await recordSingleDownload({ tokenId: md.token_id, tokenName: md.token_name, eventId, actor: null });
+      } finally {
+        db.client.query = origQuery;
+      }
+      expect(raced).toBe(true);
+      const [after] = await db('activity_logs').where({ id: row.id });
+      const afterMd = typeof after.metadata === 'string' ? JSON.parse(after.metadata) : after.metadata;
+      expect(afterMd.count).toBe(md.count + 6);
+    });
+
     it('opens a new entry once the hour is over', async () => {
       const [row] = await db('activity_logs').where({ activity_type: 'api_photos_downloaded' });
       const md = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
@@ -505,6 +537,29 @@ describe('v1 original downloads (issue 1473)', () => {
         expect(Object.keys(await readZip(res.body))).toEqual(['IMG_0001.png']);
       } finally {
         await db('photos').where({ id: photos.png }).update({ average_rating: 0 });
+      }
+    });
+
+    it('filters colour labels by the event\'s active feedback mode, like the list', async () => {
+      // A shared-mode tag is stored under a reserved identifier; without the
+      // mode both routes fell back to 'simple' and ignored it.
+      await db('event_feedback_settings').insert({ event_id: eventId, feedback_enabled: 1, identity_mode: 'shared' });
+      await db('photo_feedback').insert({
+        photo_id: photos.png, event_id: eventId, feedback_type: 'color_label', color_label: 'green',
+        guest_identifier: '__shared__', is_hidden: 0, created_at: new Date().toISOString(),
+      });
+      try {
+        const list = await request(app).get(`/api/v1/events/${eventId}/photos?color_labels=green`)
+          .set('Authorization', `Bearer ${readToken}`);
+        expect(list.status).toBe(200);
+        expect(list.body.photos.map((p) => Number(p.id))).toEqual([Number(photos.png)]);
+
+        const res = await get(`/api/v1/events/${eventId}/photos/download?color_labels=green`);
+        expect(res.status).toBe(200);
+        expect(Object.keys(await readZip(res.body))).toEqual(['IMG_0001.png']);
+      } finally {
+        await db('photo_feedback').where({ event_id: eventId }).delete();
+        await db('event_feedback_settings').where({ event_id: eventId }).delete();
       }
     });
 

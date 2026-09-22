@@ -44,6 +44,7 @@ const downloadZipService = require('../../services/downloadZipService');
 const { PhotoFilterBuilder } = require('../../utils/photoFilterBuilder');
 const { PhotoExportService } = require('../../services/photoExportService');
 const { mergeMarks } = require('../../services/markMerge');
+const feedbackService = require('../../services/feedbackService');
 const archiver = require('archiver');
 const { getStorage } = require('../../services/storage');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../../services/photoResolver');
@@ -827,6 +828,10 @@ router.get(
       const limit = req.query.limit || 50;
       const markSource = req.query.mark_source || 'either';
       const filters = buildPhotoFilters(req);
+      // Which colour-label set the event currently uses (#1197): a dormant
+      // set left behind by a mode switch must not answer a colour filter.
+      const { identity_mode: identityMode } =
+        await feedbackService.getEventFeedbackSettings(eventId);
 
       // Two-step on purpose: PhotoFilterBuilder knows how to FILTER on marks
       // but its select list carries none of them, while
@@ -835,7 +840,8 @@ router.get(
       // which also keeps the per-colour tally query bounded by page size.
       const filterBuilder = new PhotoFilterBuilder(
         db('photos').select('photos.id'),
-        eventId
+        eventId,
+        identityMode
       );
       filterBuilder
         .applyFilters(filters)
@@ -844,8 +850,8 @@ router.get(
 
       const [idRows, countResult, summary] = await Promise.all([
         filterBuilder.getQuery(),
-        PhotoFilterBuilder.buildCountQuery(db, eventId, filters),
-        PhotoFilterBuilder.getSummary(db, eventId)
+        PhotoFilterBuilder.buildCountQuery(db, eventId, filters, identityMode),
+        PhotoFilterBuilder.getSummary(db, eventId, identityMode)
       ]);
 
       const pageIds = idRows.map(r => r.id);
@@ -1166,6 +1172,15 @@ router.get(
     let guard = null;
     let archive = null;
     let cancelled = false;
+    // Registered before the preflight: a client that leaves during the
+    // selection queries or size stats has closed before any archive exists,
+    // and a listener added later would never fire.
+    res.on('close', () => {
+      if (res.writableFinished || cancelled) return;
+      cancelled = true;
+      if (guard) guard.destroyAll();
+      if (archive) archive.abort();
+    });
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -1193,9 +1208,11 @@ router.get(
         }
       }
 
-      // Same filter path and order as GET /events/:id/photos.
+      // Same filter path, colour-label set and order as GET /events/:id/photos.
+      const { identity_mode: identityMode } =
+        await feedbackService.getEventFeedbackSettings(event.id);
       const selection = () => {
-        const builder = new PhotoFilterBuilder(db('photos'), event.id);
+        const builder = new PhotoFilterBuilder(db('photos'), event.id, identityMode);
         builder.applyFilters(buildPhotoFilters(req));
         if (ids) builder.getQuery().whereIn('photos.id', ids);
         return builder;
@@ -1249,6 +1266,7 @@ router.get(
       res.setHeader('X-Content-Type-Options', 'nosniff');
       // A probe, not a download: no archive, nothing read, nothing logged.
       if (req.method === 'HEAD') return res.end();
+      if (cancelled) return;
 
       // Photos and videos are already compressed; deflating them again costs
       // CPU for nothing.
@@ -1275,13 +1293,6 @@ router.get(
       };
       guard = createArchiveStreamGuard({ onFatalError: abortArchive });
       archive.on('error', abortArchive);
-      res.on('close', () => {
-        if (!res.writableFinished && !cancelled) {
-          cancelled = true;
-          guard.destroyAll();
-          archive.abort();
-        }
-      });
       archive.pipe(res);
 
       const missingIds = [];
