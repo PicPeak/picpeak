@@ -3340,7 +3340,11 @@
       "bulkDeleteCompleted_other": "Bulk delete completed: {{count}} events removed",
       "bulkArchiveCompleted_one": "Bulk archive completed: {{count}} event archived",
       "bulkArchiveCompleted_other": "Bulk archive completed: {{count}} events archived",
-      "cssTemplateRemoteUrlsRemoved": "Remote URLs removed from {{count}} CSS template(s) — see the release notes"
+      "cssTemplateRemoteUrlsRemoved": "Remote URLs removed from {{count}} CSS template(s) — see the release notes",
+      "apiPhotoDownloaded": "Original downloaded from {{eventName}} with API token #{{token_id}}",
+      "apiPhotosDownloaded_one": "API token “{{token_name}}” downloaded {{count}} original from {{eventName}}",
+      "apiPhotosDownloaded_other": "API token “{{token_name}}” downloaded {{count}} originals from {{eventName}}",
+      "apiPhotosZipDownloaded": "API token “{{token_name}}” downloaded a ZIP of {{photo_count}} originals from {{eventName}}"
     },
     "notificationToasts": {
       "markedAllRead": "All notifications marked as read",
@@ -3653,7 +3657,11 @@
       "newsletter_completed": "Newsletter finished — {{sent}} sent, {{failed}} failed",
       "newsletter_deleted": "Newsletter campaign deleted",
       "customer_marketing_opt_out": "Customer newsletter consent changed",
-      "css_template_remote_urls_removed": "Remote URLs removed from {{count}} CSS template(s) — see the release notes"
+      "css_template_remote_urls_removed": "Remote URLs removed from {{count}} CSS template(s) — see the release notes",
+      "api_photo_downloaded": "Original downloaded from {{eventName}} with API token #{{token_id}}",
+      "api_photos_downloaded_one": "API token “{{token_name}}” downloaded {{count}} original from {{eventName}}",
+      "api_photos_downloaded_other": "API token “{{token_name}}” downloaded {{count}} originals from {{eventName}}",
+      "api_photos_zip_downloaded": "API token “{{token_name}}” downloaded a ZIP of {{photo_count}} originals from {{eventName}}"
     },
     "people": {
       "title": "People in this gallery",

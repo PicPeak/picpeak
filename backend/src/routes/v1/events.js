@@ -56,6 +56,7 @@ const {
 const { resolvePhotoContentType } = require('../../utils/photoContentType');
 const { pipeStreamToResponse } = require('../../utils/streamResponse');
 const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
+const { recordSingleDownload } = require('../../services/apiDownloadNotifications');
 
 const router = express.Router();
 
@@ -1193,6 +1194,8 @@ router.get(
         logActivity('api_photos_zip_downloaded', {
           via: 'api_v1',
           token_id: req.apiToken.id,
+          // The bell entry names the token; the admin chose that label.
+          token_name: req.apiToken.name,
           photo_count: appended,
           missing_count: missingIds.length
         }, event.id, downloadActor(req));
@@ -1289,11 +1292,19 @@ router.get(
 
       res.on('finish', () => {
         if (res.statusCode >= 400) return;
+        // The audit row, ids only. The bell leaves these out and shows the
+        // token/event/hour summary instead (apiDownloadNotifications).
         logActivity('api_photo_downloaded', {
           via: 'api_v1',
           token_id: req.apiToken.id,
           photo_id: photo.id
         }, event.id, downloadActor(req));
+        recordSingleDownload({
+          tokenId: req.apiToken.id,
+          tokenName: req.apiToken.name,
+          eventId: event.id,
+          actor: downloadActor(req)
+        });
       });
       pipeStreamToResponse(source.stream, res, { context: `v1 original ${photo.id}` });
     } catch (error) {

@@ -28,6 +28,14 @@ process.env.TEST_DATABASE_PATH = path.join(
 );
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'v1dl-test-secret';
 
+// The bell route sits behind the admin session; stand in the super admin the
+// suite creates so its real permission check runs.
+const mockAdmin = { id: null, username: 'dl-root', roleName: 'super_admin' };
+jest.mock('../../src/middleware/auth', () => ({
+  ...jest.requireActual('../../src/middleware/auth'),
+  adminAuth: (req, _res, next) => { req.admin = { ...mockAdmin }; next(); },
+}));
+
 const request = require('supertest');
 const express = require('express');
 const bcrypt = require('bcrypt');
@@ -71,7 +79,7 @@ describe('v1 original downloads (issue 1473)', () => {
   let db; let cleanup; let app; let storageRoot;
   let superId; let adminId; let editorId;
   let readToken; let noScopeToken; let editorToken; let foreignAdminToken;
-  let revokedToken; let expiredToken; let readTokenId;
+  let revokedToken; let expiredToken; let readTokenId; let readTokenName;
   let eventId; let otherEventId; let archivedEventId; let capEventId; let editorEventId;
   const photos = {};
   const bytes = {};
@@ -92,15 +100,16 @@ describe('v1 original downloads (issue 1473)', () => {
 
   const mkToken = async (ownerId, scopes, extra = {}) => {
     const { plaintext, hashed } = generateApiToken();
+    const suffix = crypto.randomBytes(3).toString('hex');
     const r = await db('api_tokens').insert({
-      name: `tok-${ownerId}-${scopes}-${crypto.randomBytes(3).toString('hex')}`,
+      name: `tok-${ownerId}-${scopes}-${suffix}`,
       hashed_token: hashed,
       scopes,
       created_by: ownerId,
       created_at: new Date().toISOString(),
       ...extra,
     }).returning('id');
-    return { plaintext, id: r[0]?.id ?? r[0] };
+    return { plaintext, id: r[0]?.id ?? r[0], name: `tok-${ownerId}-${scopes}-${suffix}` };
   };
 
   const mkEvent = async (slug, createdBy, extra = {}) => {
@@ -154,10 +163,11 @@ describe('v1 original downloads (issue 1473)', () => {
     await seedMinimal(db);
 
     superId = await mkAdmin('dl-root', 'super_admin');
+    mockAdmin.id = superId;
     adminId = await mkAdmin('dl-admin', 'admin');
     editorId = await mkAdmin('dl-editor', 'editor');
 
-    ({ plaintext: readToken, id: readTokenId } = await mkToken(superId, 'read'));
+    ({ plaintext: readToken, id: readTokenId, name: readTokenName } = await mkToken(superId, 'read'));
     ({ plaintext: noScopeToken } = await mkToken(superId, 'none'));
     ({ plaintext: editorToken } = await mkToken(editorId, 'admin'));
     ({ plaintext: foreignAdminToken } = await mkToken(adminId, 'admin'));
@@ -203,6 +213,7 @@ describe('v1 original downloads (issue 1473)', () => {
     app = express();
     app.use(express.json());
     app.use('/api/v1', require('../../src/routes/v1/events'));
+    app.use('/api/admin/notifications', require('../../src/routes/adminNotifications'));
   }, 120000);
 
   afterAll(async () => { if (cleanup) await cleanup(); });
@@ -337,6 +348,68 @@ describe('v1 original downloads (issue 1473)', () => {
     expect(await db('activity_logs').where({ event_id: eventId })).toHaveLength(0);
   });
 
+  describe('notification bell', () => {
+    const bell = async () => {
+      const res = await request(app).get('/api/admin/notifications?limit=100');
+      expect(res.status).toBe(200);
+      return res.body;
+    };
+
+    it('shows 50 single downloads as one entry per token/event/hour, with the count', async () => {
+      await db('activity_logs').delete();
+      for (let i = 0; i < 50; i += 1) {
+        const res = await get(`/api/v1/events/${eventId}/photos/${photos.png}/download`);
+        expect(res.status).toBe(200);
+      }
+      // The audit stays complete: one row per request.
+      const audit = await waitFor(async () => {
+        const r = await db('activity_logs').where({ event_id: eventId, activity_type: 'api_photo_downloaded' });
+        return r.length === 50 ? r : null;
+      });
+      expect(audit).toHaveLength(50);
+      await waitFor(async () => {
+        const [row] = await db('activity_logs').where({ activity_type: 'api_photos_downloaded' });
+        const md = row && (typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata);
+        return md && md.count === 50;
+      });
+
+      const { notifications, unreadCount } = await bell();
+      expect(notifications.map((n) => n.type)).toEqual(['api_photos_downloaded']);
+      expect(notifications[0].eventId).toBe(Number(eventId));
+      expect(notifications[0].metadata).toMatchObject({
+        token_id: Number(readTokenId), token_name: readTokenName, count: 50,
+      });
+      expect(Number(unreadCount)).toBe(1);
+    });
+
+    it('opens a new entry once the hour is over', async () => {
+      const [row] = await db('activity_logs').where({ activity_type: 'api_photos_downloaded' });
+      const md = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+      await db('activity_logs').where({ id: row.id })
+        .update({ metadata: JSON.stringify({ ...md, window_started_at: Date.now() - 61 * 60 * 1000 }) });
+
+      await get(`/api/v1/events/${eventId}/photos/${photos.png}/download`);
+      const rows = await waitFor(async () => {
+        const r = await db('activity_logs').where({ activity_type: 'api_photos_downloaded' });
+        return r.length === 2 ? r : null;
+      });
+      expect(rows).toHaveLength(2);
+    });
+
+    it('shows a ZIP as one entry', async () => {
+      await db('activity_logs').delete();
+      const res = await get(`/api/v1/events/${eventId}/photos/download?ids=${photos.png},${photos.video}`);
+      expect(res.status).toBe(200);
+      await waitFor(async () => (await db('activity_logs')).length > 0);
+      await new Promise((r) => setTimeout(r, 100));
+
+      const { notifications } = await bell();
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0].type).toBe('api_photos_zip_downloaded');
+      expect(notifications[0].metadata).toMatchObject({ photo_count: 2, token_name: readTokenName });
+    });
+  });
+
   describe('ZIP of originals', () => {
     it('streams every original, stored uncompressed, with deduped names and a missing-file manifest', async () => {
       await db('activity_logs').where({ event_id: eventId }).delete();
@@ -372,7 +445,9 @@ describe('v1 original downloads (issue 1473)', () => {
       });
       expect(rows).toHaveLength(1);
       const metadata = typeof rows[0].metadata === 'string' ? JSON.parse(rows[0].metadata) : rows[0].metadata;
-      expect(metadata).toEqual({ via: 'api_v1', token_id: Number(readTokenId), photo_count: 4, missing_count: 1 });
+      expect(metadata).toEqual({
+        via: 'api_v1', token_id: Number(readTokenId), token_name: readTokenName, photo_count: 4, missing_count: 1,
+      });
       expect(await db('access_logs').where({ event_id: eventId })).toHaveLength(0);
     });
 

@@ -3,6 +3,8 @@ const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
 const logger = require('../utils/logger');
+// Per-request audit rows that have a summary row of their own in the bell.
+const { BELL_EXCLUDED_ACTIVITY_TYPES } = require('../services/apiDownloadNotifications');
 const router = express.Router();
 
 // Get notifications (unread activity logs)
@@ -16,6 +18,7 @@ router.get('/', adminAuth, requirePermission(['settings.view', 'notifications.vi
         'events.event_name'
       )
       .leftJoin('events', 'activity_logs.event_id', 'events.id')
+      .whereNotIn('activity_logs.activity_type', BELL_EXCLUDED_ACTIVITY_TYPES)
       .orderBy('activity_logs.created_at', 'desc')
       .limit(parseInt(limit));
     
@@ -52,6 +55,7 @@ router.get('/', adminAuth, requirePermission(['settings.view', 'notifications.vi
     // Get unread count
     const unreadCount = await db('activity_logs')
       .whereNull('read_at')
+      .whereNotIn('activity_type', BELL_EXCLUDED_ACTIVITY_TYPES)
       .count('id as count')
       .first();
 
