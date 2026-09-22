@@ -499,10 +499,11 @@ router.get(
 router.post(
   '/:id/send',
   requirePermission('contracts.manage'),
-  [param('id').isInt({ min: 1 })],
+  [param('id').isInt({ min: 1 }), body('reviewToken').optional({ nullable: true }).isString().isLength({ min: 64, max: 64 })],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const result = await contractService.sendContract(parseInt(req.params.id, 10), req.admin?.id);
+    const result = await contractService.sendContract(parseInt(req.params.id, 10), req.admin?.id,
+      { reviewToken: req.body && req.body.reviewToken ? req.body.reviewToken : null });
     return successResponse(res, result);
   }),
 );

@@ -122,11 +122,23 @@ export const ContractDetailPage: React.FC = () => {
   // Send goes through the review (#1445): it opens here and sends from there.
   const [reviewing, setReviewing] = useState(false);
   const sendMutation = useMutationWithToast({
-    mutationFn: () => contractsService.send(numericId as number),
+    mutationFn: (reviewToken?: string) => contractsService.send(numericId as number, reviewToken),
     onSuccess: () => setReviewing(false),
     successMessage: t('contracts.detail.sentToast', 'Contract sent.') as string,
     invalidateKeys: [['contract', numericId], ['contract-signers', numericId]],
-    errorMessage: t('contracts.detail.sendError', 'Send failed') as string,
+    errorMessage: (err: unknown) => {
+      const data = (err as { response?: { data?: { code?: string; error?: string } } })?.response?.data;
+      if (data?.code === 'CONTRACT_REVIEW_STALE') {
+        return t('contracts.detail.review.stale', 'The contract changed since this review. Check the updated review, then send.') as string;
+      }
+      return data?.error || (t('contracts.detail.sendError', 'Send failed') as string);
+    },
+    onError: (err: unknown) => {
+      // Changed elsewhere: show the review of what would go out now.
+      if ((err as { response?: { data?: { code?: string } } })?.response?.data?.code === 'CONTRACT_REVIEW_STALE') {
+        void queryClient.invalidateQueries({ queryKey: ['contract-send-preview', numericId] });
+      }
+    },
   });
 
   const cancelMutation = useMutationWithToast({
@@ -744,7 +756,7 @@ export const ContractDetailPage: React.FC = () => {
         <SendReviewModal
           contractId={numericId}
           onClose={() => setReviewing(false)}
-          onSend={() => sendMutation.mutate()}
+          onSend={(reviewToken) => sendMutation.mutate(reviewToken)}
           onPreviewPdf={handlePdfPreview}
           sending={sendMutation.isPending}
         />

@@ -15,6 +15,7 @@ const { db } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { unknownPlaceholders, CONTRACT_PLACEHOLDERS } = require('../../utils/placeholders');
+const { canonicalSha256 } = require('../../utils/canonicalJson');
 
 const problem = (code, severity, message, extra = {}) => ({ code, severity, message, ...extra });
 
@@ -107,14 +108,21 @@ async function buildSendPreview(contractId) {
     if (row) template = { id: row.id, name: row.name, version: ensureInt(row.version_number) };
   }
 
-  return {
+  const review = {
     content,
     signingOrder: contract.signing_order || 'parallel',
     signers,
     attachments,
     totals: content.commercial ? { currency: content.commercial.currency, ...content.commercial.totals } : null,
     template,
+  };
+  return {
+    ...review,
     problems,
+    // What was reviewed, as a hash: the send compares it with the contract
+    // as it stands then, so a change made elsewhere while the review was open
+    // (the text, a signer, an attachment, the customer) needs a new review.
+    reviewToken: canonicalSha256(review),
   };
 }
 

@@ -28,7 +28,7 @@ async function renderContractPdfBuffer(contractId) {
  * with a signature slot per signer, persist it, and invite the signers
  * (signatures v2, #1446 — each signer gets their own link).
  */
-async function sendContract(id, adminId) {
+async function sendContract(id, adminId, { reviewToken = null } = {}) {
   // Self-heal: dev installs that ran migration 130 BEFORE we added
   // contract_fully_signed to the seed list won't have all three
   // contract templates in email_templates. Insert any missing rows
@@ -41,6 +41,13 @@ async function sendContract(id, adminId) {
 
   if (!['draft'].includes(contract.status)) {
     throw new AppError(`Cannot send a contract with status '${contract.status}'`, 409);
+  }
+  // Sent from the pre-send review (#1445): only what was reviewed goes out.
+  if (reviewToken) {
+    const { buildSendPreview } = require('./sendPreview');
+    if ((await buildSendPreview(id)).reviewToken !== reviewToken) {
+      throw new AppError('The contract changed since the review. Review it again before sending.', 409, 'CONTRACT_REVIEW_STALE');
+    }
   }
 
   const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();

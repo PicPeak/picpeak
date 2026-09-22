@@ -45,6 +45,7 @@ const review = (problems: unknown[] = []) => ({
   totals: { currency: 'CHF', netMinor: 200000, vatRatePercent: 8.1, vatMinor: 16200, shippingMinor: 0, grossMinor: 216200 },
   template: { id: 2, name: 'Wedding', version: 3 },
   problems,
+  reviewToken: 'b'.repeat(64),
 });
 
 function renderModal(onSend = vi.fn()) {
@@ -69,7 +70,7 @@ it('shows signers, attachments, price and template, and says who the send goes t
   expect(dialog).toHaveTextContent('Wedding, version 3');
   expect(dialog).toHaveTextContent(/Total.*2.162.00/);
   await user.click(screen.getByRole('button', { name: 'Send to 2 signers' }));
-  expect(onSend).toHaveBeenCalled();
+  expect(onSend).toHaveBeenCalledWith('b'.repeat(64));
 });
 
 it('an error blocks the send; a warning does not', async () => {

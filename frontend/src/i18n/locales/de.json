@@ -8014,6 +8014,7 @@
         "sending": "Wird gesendet…",
         "sendTo_one": "An {{count}} Unterzeichnende senden",
         "sendTo_other": "An {{count}} Unterzeichnende senden",
+        "stale": "Der Vertrag wurde seit dieser Prüfung geändert. Prüfen Sie die aktualisierte Übersicht und senden Sie dann.",
         "problems": {
           "CONTRACT_NOT_DRAFT": "Nur ein Entwurf kann gesendet werden.",
           "CUSTOMER_MISSING": "Der Kunde existiert nicht mehr.",

@@ -453,8 +453,9 @@ export const contractsService = {
     return data.data || data;
   },
 
-  async send(id: number): Promise<{ token: string; pdfPath: string | null }> {
-    const { data } = await api.post(`/admin/contracts/${id}/send`);
+  /** `reviewToken`: the pre-send review's; the send is refused if the contract changed since. */
+  async send(id: number, reviewToken?: string): Promise<{ token: string; pdfPath: string | null }> {
+    const { data } = await api.post(`/admin/contracts/${id}/send`, reviewToken ? { reviewToken } : undefined);
     return data.data || data;
   },
 
@@ -746,6 +747,8 @@ export interface ContractSendPreview {
   totals: (NonNullable<PublicContractView['commercial']>['totals'] & { currency: string }) | null;
   template: { id: number; name: string; version: number } | null;
   problems: Array<{ code: string; severity: 'error' | 'warning'; message: string; attachmentId?: number; keys?: string[] }>;
+  /** What was reviewed; sending with it is refused if the contract changed since. */
+  reviewToken: string;
 }
 
 /**

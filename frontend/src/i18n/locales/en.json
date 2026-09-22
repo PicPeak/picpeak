@@ -8013,6 +8013,7 @@
         "sending": "Sending…",
         "sendTo_one": "Send to {{count}} signer",
         "sendTo_other": "Send to {{count}} signers",
+        "stale": "The contract changed since this review. Check the updated review, then send.",
         "problems": {
           "CONTRACT_NOT_DRAFT": "Only a draft can be sent.",
           "CUSTOMER_MISSING": "The customer no longer exists.",

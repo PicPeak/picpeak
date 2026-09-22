@@ -22,7 +22,8 @@ const heading = 'text-sm font-semibold text-neutral-900 dark:text-neutral-100 mb
 export const SendReviewModal: React.FC<{
   contractId: number;
   onClose: () => void;
-  onSend: () => void;
+  /** Called with the review's token: the server refuses the send if the contract changed since. */
+  onSend: (reviewToken: string) => void;
   onPreviewPdf: () => void;
   sending: boolean;
 }> = ({ contractId, onClose, onSend, onPreviewPdf, sending }) => {
@@ -46,7 +47,7 @@ export const SendReviewModal: React.FC<{
   const footer = (
     <>
       <Button variant="outline" onClick={onClose}>{t('common.cancel', 'Cancel')}</Button>
-      <Button onClick={onSend} disabled={!review || errors.length > 0 || sending}>
+      <Button onClick={() => { if (review) onSend(review.reviewToken); }} disabled={!review || errors.length > 0 || sending}>
         {sending
           ? t('contracts.detail.review.sending', 'Sending…')
           : t('contracts.detail.review.sendTo', 'Send to {{count}} signers', { count: invited })}

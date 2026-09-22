@@ -175,3 +175,20 @@ test('a placeholder-looking customer value is not reported; an unknown placehold
     await db('customer_accounts').where({ id: customerId }).update({ company_name: null });
   }
 });
+
+test('a send from the review is refused when the contract changed since, and goes out with a fresh review', async () => {
+  const { contractId } = await contractFromQuoteWithAttachment();
+  const reviewed = await ok(request(contractsApp).get(`/api/admin/contracts/${contractId}/send-preview`).set(auth));
+  expect(reviewed.reviewToken).toMatch(/^[0-9a-f]{64}$/);
+  // Edited elsewhere while the review was open.
+  await db('contracts').where({ id: contractId }).update({ intro_text: 'Geändert' });
+  const refused = await request(contractsApp).post(`/api/admin/contracts/${contractId}/send`).set(auth)
+    .send({ reviewToken: reviewed.reviewToken });
+  expect(refused.status).toBe(409);
+  expect(refused.body.code).toBe('CONTRACT_REVIEW_STALE');
+  expect((await db('contracts').where({ id: contractId }).first()).status).toBe('draft');
+
+  const fresh = await ok(request(contractsApp).get(`/api/admin/contracts/${contractId}/send-preview`).set(auth));
+  await ok(request(contractsApp).post(`/api/admin/contracts/${contractId}/send`).set(auth).send({ reviewToken: fresh.reviewToken }));
+  expect((await db('contracts').where({ id: contractId }).first()).status).toBe('sent');
+});
