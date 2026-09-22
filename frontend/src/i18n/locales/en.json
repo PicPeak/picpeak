@@ -5691,7 +5691,9 @@
       "downloadCertificate": "Signing certificate",
       "expired": "The time to sign this contract has run out. Ask the sender for a new one.",
       "expiredHint": "The time to sign ran out before every signature was in, so it can no longer be signed.",
-      "completeDetails": "Complete my details"
+      "completeDetails": "Complete my details",
+      "signedWaiting": "You've signed — waiting for the others.",
+      "turnAfter": "Your turn comes after {{name}}."
     },
     "documents": {
       "title": "Documents",

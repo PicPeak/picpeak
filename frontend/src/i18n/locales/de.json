@@ -5691,7 +5691,9 @@
       "downloadCertificate": "Signaturzertifikat",
       "expired": "Die Frist zur Unterzeichnung dieses Vertrags ist abgelaufen. Bitten Sie den Absender um einen neuen.",
       "expiredHint": "Die Frist lief ab, bevor alle unterzeichnet hatten; der Vertrag kann nicht mehr unterzeichnet werden.",
-      "completeDetails": "Meine Angaben ergänzen"
+      "completeDetails": "Meine Angaben ergänzen",
+      "signedWaiting": "Sie haben unterzeichnet – es fehlen noch die anderen.",
+      "turnAfter": "Sie sind nach {{name}} an der Reihe."
     },
     "documents": {
       "title": "Dokumente",

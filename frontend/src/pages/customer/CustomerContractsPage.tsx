@@ -259,6 +259,18 @@ const ContractRow: React.FC<{ c: CustomerContract }> = ({ c }) => {
             {t('customer.contracts.declinedHint', 'This contract was declined and can no longer be signed.')}
           </p>
         )}
+        {c.status === 'sent' && c.signerState === 'signed' && (
+          <p className="text-xs text-muted-theme mt-0.5">
+            {t('customer.contracts.signedWaiting', 'You\'ve signed — waiting for the others.')}
+          </p>
+        )}
+        {c.status === 'sent' && c.signerState === 'waiting' && (
+          <p className="text-xs text-muted-theme mt-0.5">
+            {c.waitingFor
+              ? t('customer.contracts.turnAfter', 'Your turn comes after {{name}}.', { name: c.waitingFor })
+              : t('contractSigning.waiting.title', 'It isn\'t your turn yet')}
+          </p>
+        )}
         {c.status === 'expired' && (
           <p className="text-xs text-muted-theme mt-0.5">
             {t('customer.contracts.expiredHint', 'The time to sign ran out before every signature was in, so it can no longer be signed.')}

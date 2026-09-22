@@ -651,4 +651,8 @@ export interface CustomerContract {
   signerProgress?: { signed: number; total: number } | null;
   /** The contract waits for the customer's details before it is prepared (#1446). */
   canCompleteDetails?: boolean;
+  /** Where this customer stands as a signer (#1446): signed, not their turn yet… */
+  signerState?: 'signed' | 'declined' | 'waiting' | 'not_signer' | null;
+  /** Who signs before them in a sequential contract. */
+  waitingFor?: string | null;
 }

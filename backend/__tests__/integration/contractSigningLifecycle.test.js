@@ -1523,3 +1523,39 @@ test('an open session can\'t sign past the deadline before the sweep has run', a
   expect(res.status).toBe(410);
   expect((await db('contract_signers').where({ contract_id: id, role: 'customer' }).first()).status).toBe('invited');
 });
+
+test('the portal offers Sign only when it is the customer\'s turn and they haven\'t answered', async () => {
+  const jwt = require('jsonwebtoken');
+  const express = require('express');
+  const portal = express();
+  portal.use(express.json());
+  portal.use(require('cookie-parser')());
+  portal.use('/api/customer', require('../../src/routes/customer'));
+  portal.use(require('../../src/middleware/errorHandler').errorHandler);
+  const cookie = `customer_token=${jwt.sign({ type: 'customer', customerId, iat: Math.floor(Date.now() / 1000) - 5 },
+    process.env.JWT_SECRET, { algorithm: 'HS256', issuer: 'picpeak-auth', expiresIn: '1h' })}`;
+  const listed = async (id) => (await ok(request(portal).get('/api/customer/contracts').set('Cookie', cookie)))
+    .contracts.find((c) => c.id === id);
+  const detail = async (id) => ok(request(portal).get(`/api/customer/contracts/${id}`).set('Cookie', cookie));
+
+  // Parallel: Anna may sign; once she has, the list says so instead.
+  const parallel = await newContract();
+  await twoSigners(parallel);
+  await sendContract(parallel);
+  expect(await listed(parallel)).toEqual(expect.objectContaining({ canSign: true, signerState: null }));
+  const anna = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+  await ok(sign(anna, { name: 'Anna Muster', mode: 'typed' }));
+  expect(await listed(parallel)).toEqual(expect.objectContaining({
+    status: 'sent', canSign: false, signerState: 'signed', signerProgress: { signed: 1, total: 2 },
+  }));
+  expect(await detail(parallel)).toEqual(expect.objectContaining({ canSign: false, signerState: 'signed' }));
+
+  // Sequential with Anna second: not her turn while Ben hasn't signed.
+  const sequential = await newContract();
+  await ok(request(contractsApp).put(`/api/admin/contracts/${sequential}/signers`).set(auth).send({
+    order: 'sequential', signers: [{ name: 'Ben Muster', email: 'ben@example.com' }, { name: 'Anna Muster', email: customerEmail }],
+  }));
+  await sendContract(sequential);
+  expect(await listed(sequential)).toEqual(expect.objectContaining({ canSign: false, signerState: 'waiting', waitingFor: 'Ben Muster' }));
+  expect((await detail(sequential)).canSign).toBe(false);
+});

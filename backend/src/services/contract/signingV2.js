@@ -1404,6 +1404,38 @@ async function portalSigningAccess(customer, contractId) {
   return { mode: 'session', sessionToken: session.token, expiresAt: session.expiresAt };
 }
 
+/**
+ * Where the signed-in customer stands on each of their v2 contracts that
+ * is out for signature (#1446), for the portal's Sign button: their signer
+ * row is the one `portalSigningAccess` opens a session for (same email
+ * hash). `{ canSign, state, waitingFor }` — state is `signed`, `declined`,
+ * `waiting` (another signer is due first; `waitingFor` names them),
+ * `not_signer`, or null when they may sign now.
+ */
+async function portalSignerStates(customer, contracts) {
+  const out = new Map();
+  const open = contracts.filter((c) => isV2(c) && c.status === 'sent');
+  if (!open.length) return out;
+  const emailHash = fieldEncryption.hashEmail(customer.email);
+  const rows = await db('contract_signers').whereIn('contract_id', open.map((c) => c.id)).orderBy('position', 'asc');
+  for (const contract of open) {
+    const mine = rows.filter((r) => Number(r.contract_id) === Number(contract.id));
+    const row = mine.find((r) => r.role === 'customer' && r.email_hash === emailHash);
+    if (!row) { out.set(contract.id, { canSign: false, state: 'not_signer', waitingFor: null }); continue; }
+    if (row.status === 'signed' || row.status === 'declined') {
+      out.set(contract.id, { canSign: false, state: row.status, waitingFor: null });
+      continue;
+    }
+    const due = signers.signersDue(contract, mine);
+    if (!due.some((r) => r.id === row.id)) {
+      out.set(contract.id, { canSign: false, state: 'waiting', waitingFor: due.length ? signerName(due[0]) : null });
+      continue;
+    }
+    out.set(contract.id, { canSign: true, state: null, waitingFor: null });
+  }
+  return out;
+}
+
 async function adminOverview(contractId) {
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
@@ -1470,6 +1502,7 @@ module.exports = {
   issueCertificate,
   clearFollowUpFailure,
   portalSigningAccess,
+  portalSignerStates,
   adminOverview,
   revealEvidence,
   notifyAdmin,
