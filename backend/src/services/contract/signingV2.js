@@ -36,6 +36,7 @@ const { ensureContractEmailTemplatesSeeded } = require('../contractEmailTemplate
 const signers = require('./signers');
 const signingEvents = require('./signingEvents');
 const { hasColumnCached } = require('../../utils/schemaCache');
+const { canonicalSha256 } = require('../../utils/canonicalJson');
 const { auditedUpdate } = require('../accountingHistory');
 const { adminActor, customerPublicActor, emitContractEvent, maybeStoreIp } = require('./helpers');
 const { persistContractPdf, persistSignatureImage } = require('./signatureAssets');
@@ -120,6 +121,32 @@ async function unsignedManifest(contractId, conn) {
   } catch (_) {
     return null;
   }
+}
+
+/**
+ * What a signature is bound to, re-read under the contract's lock (#1446):
+ * the frozen content recomputed against its stored sha256, and the
+ * attachment manifest stored with the sent PDF recomputed against the
+ * sha256 frozen at send. Either one disagreeing means the record changed
+ * after it went out, and nobody signs it — nothing is written.
+ *
+ * Contracts sent before the manifest hash existed carry none and are not
+ * checked for it. Returns the manifest sha256 the signature is bound to.
+ */
+function assertUnchangedSinceSend(contract, manifest) {
+  const changed = () => new AppError(
+    'This contract changed after it was sent, so it can\'t be signed. Please contact the sender.',
+    409, 'CONTRACT_CHANGED',
+  );
+  if (contract.rendered_content && contract.rendered_content_sha256 && !contract.rendered_content_redacted_at) {
+    const { parseContentSnapshot } = require('./renderContext');
+    const snapshot = parseContentSnapshot(contract.rendered_content);
+    if (!snapshot || canonicalSha256(snapshot) !== contract.rendered_content_sha256) throw changed();
+  }
+  if (!contract.attachment_manifest_sha256) return null;
+  const actual = require('./attachments').manifestSha256(manifest);
+  if (actual !== contract.attachment_manifest_sha256) throw changed();
+  return actual;
 }
 
 function slotFrom(manifest, key) {
@@ -336,6 +363,7 @@ async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = 
       ...(freeze ? {
         rendered_content: freeze.renderedContent,
         rendered_content_sha256: freeze.contentSha256,
+        attachment_manifest_sha256: freeze.manifestSha256 || null,
       } : {}),
       updated_at: now,
     }, history);
@@ -351,7 +379,11 @@ async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = 
       actorType: 'admin',
       actorLabel: actor.name || null,
       artifactSha256: pdfSha256,
-      payload: { contentSha256: contract.rendered_content_sha256 || null, order: contract.signing_order || 'parallel' },
+      payload: {
+        contentSha256: contract.rendered_content_sha256 || null,
+        manifestSha256: contract.attachment_manifest_sha256 || null,
+        order: contract.signing_order || 'parallel',
+      },
     });
   });
   return inviteDue(contractId, actor);
@@ -537,6 +569,16 @@ async function sessionView(sessionToken) {
   if (view.recipient && !(await isAccountHolder(contract, signer))) {
     view.recipient = { displayName: view.recipient.displayName, companyName: null, email: null };
   }
+  // What the signature is bound to (#1446): the content hash, and every
+  // attachment as the manifest recorded it at send, with its own hash.
+  view.contentSha256 = contract.rendered_content_sha256 || null;
+  const recorded = await unsignedManifest(contract.id, db);
+  view.manifest = {
+    sha256: contract.attachment_manifest_sha256 || null,
+    attachments: ((recorded && recorded.attachments) || []).map((a) => ({
+      attachmentId: Number(a.attachmentId), name: a.name, delivery: a.delivery, pages: Number(a.pages), sha256: a.sha256,
+    })),
+  };
   const rows = await signers.listSigners(contract.id);
   const due = signers.signersDue(contract, rows).some((r) => r.id === signer.id);
   const canSign = contract.status === 'sent' && signer.status === 'invited' && due;
@@ -650,8 +692,10 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
       }
       if (row.status !== 'invited') throw new AppError('This signing link is no longer valid.', 409, 'CONTRACT_NOT_SIGNABLE');
 
+      const recorded = await unsignedManifest(contract.id, trx);
+      const manifestSha256 = assertUnchangedSinceSend(current, recorded);
       const base = currentPdf(current);
-      const slot = slotFrom(await unsignedManifest(contract.id, trx), row.slot_key);
+      const slot = slotFrom(recorded, row.slot_key);
       const stamped = await pdfStampService.stampSlot({
         pdfBuffer: base,
         slot,
@@ -674,6 +718,7 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
         signature_sha256: imageBytes ? sha256(imageBytes) : null,
         consent_version: CONSENT_VERSION,
         content_sha256: current.rendered_content_sha256 || null,
+        manifest_sha256: manifestSha256,
         document_sha256: sha256(base),
         ip_enc: keepEvidence ? fieldEncryption.encrypt(ip) : null,
         user_agent_enc: keepEvidence && userAgent ? fieldEncryption.encrypt(String(userAgent).slice(0, 512)) : null,
@@ -700,7 +745,7 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
         artifactSha256: stored.sha256,
         payload: {
           mode, via, slot: row.slot_key, documentSha256: sha256(base),
-          contentSha256: current.rendered_content_sha256 || null, consentVersion: CONSENT_VERSION,
+          contentSha256: current.rendered_content_sha256 || null, manifestSha256, consentVersion: CONSENT_VERSION,
         },
       });
       return { customersDone };
@@ -876,8 +921,9 @@ async function countersign(contractId, input, { ip = null, userAgent = null, adm
       const issuer = await trx('contract_signers').where({ contract_id: contractId, role: 'issuer' }).first();
       if (!issuer || issuer.status === 'signed') throw new AppError('This contract is already counter-signed.', 409, 'ALREADY_SIGNED');
 
-      const base = currentPdf(current);
       const manifest = await unsignedManifest(contractId, trx);
+      const manifestSha256 = assertUnchangedSinceSend(current, manifest);
+      const base = currentPdf(current);
       const slot = slotFrom(manifest, issuer.slot_key);
       let pdf = await pdfStampService.stampSlot({
         pdfBuffer: base,
@@ -915,6 +961,7 @@ async function countersign(contractId, input, { ip = null, userAgent = null, adm
         signature_path: signaturePath,
         signature_sha256: imageBytes ? sha256(imageBytes) : null,
         content_sha256: current.rendered_content_sha256 || null,
+        manifest_sha256: manifestSha256,
         document_sha256: sha256(base),
         ip_enc: storedIp !== null ? fieldEncryption.encrypt(ip) : null,
         user_agent_enc: storedIp !== null && userAgent ? fieldEncryption.encrypt(String(userAgent).slice(0, 512)) : null,
@@ -932,7 +979,7 @@ async function countersign(contractId, input, { ip = null, userAgent = null, adm
       }, { actor: adminId, source: 'contract.sign.admin' });
       await signingEvents.appendEvent(trx, contractId, {
         type: 'countersigned', actorType: 'admin', actorLabel: actor.name || name, signerId: issuer.id,
-        artifactSha256: stored.sha256, payload: { mode, slot: issuer.slot_key, documentSha256: sha256(base) },
+        artifactSha256: stored.sha256, payload: { mode, slot: issuer.slot_key, documentSha256: sha256(base), manifestSha256 },
       });
       await signingEvents.appendEvent(trx, contractId, {
         type: 'completed', actorType: 'system', artifactSha256: stored.sha256, payload: { signedPdfSha256: stored.sha256 },
@@ -973,6 +1020,7 @@ async function issueCertificate(contractId, signedSha) {
     const chain = await signingEvents.verifyChain(contractId);
     const profile = (await db('business_profile').where({ id: 1 }).first()) || {};
     const fontOptions = await stampFontOptions();
+    const recorded = await unsignedManifest(contractId, db);
     const { renderSigningCertificate } = require('../pdf/signingCertificate');
     const { buffer } = await renderSigningCertificate({
       contract,
@@ -986,7 +1034,13 @@ async function issueCertificate(contractId, signedSha) {
         documentSha256: row.document_sha256,
       })),
       events,
-      hashes: { content: contract.rendered_content_sha256, unsigned: contract.pdf_sha256, signed: signedSha },
+      hashes: {
+        content: contract.rendered_content_sha256,
+        manifest: contract.attachment_manifest_sha256 || null,
+        unsigned: contract.pdf_sha256,
+        signed: signedSha,
+      },
+      attachments: (recorded && recorded.attachments) || [],
       chainHead: chain.head,
       locale: contract.language || 'de',
       theme: fontOptions.theme,

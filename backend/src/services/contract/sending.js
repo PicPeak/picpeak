@@ -123,6 +123,9 @@ async function sendContract(id, adminId, { reviewToken = null } = {}) {
   const freeze = {
     renderedContent,
     contentSha256,
+    // The attachments that go with it — merged or separate — bound into the
+    // signature beside the content (#1446).
+    manifestSha256: attachments.manifestSha256(sendable.manifest),
     inclusions: refreshed.inclusions
       .filter((inc) => inc.included === true || inc.included === 1 || inc.included === '1')
       .map((inc) => ({

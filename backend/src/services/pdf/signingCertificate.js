@@ -21,7 +21,7 @@ function iso(value) {
 }
 
 function renderSigningCertificate({
-  contract, signers = [], events = [], hashes = {}, chainHead = null,
+  contract, signers = [], events = [], hashes = {}, attachments = [], chainHead = null,
   locale = 'de', theme = null, issuer = {}, generatedAt = null,
 }) {
   const pdfService = require('../pdfService');
@@ -87,6 +87,14 @@ function renderSigningCertificate({
       row(t(locale, 'cert_title_label'), contract.title);
       row(t(locale, 'audit_issued_at'), iso(contract.sent_at));
       row(t(locale, 'cert_content_sha'), hashes.content, { mono: true });
+      // The attachments the signature is bound to, each with its own hash,
+      // and the manifest hash over all of them (#1446).
+      attachments.forEach((a, index) => {
+        row(`${t(locale, 'cert_attachment')} ${index + 1}`,
+          `${a.name} · ${t(locale, `cert_delivery_${a.delivery === 'separate' ? 'separate' : 'merged'}`)} · ${Number(a.pages) || 0} ${t(locale, 'cert_pages')}`);
+        row(t(locale, 'cert_attachment_sha'), a.sha256, { mono: true });
+      });
+      row(t(locale, 'cert_manifest_sha'), hashes.manifest, { mono: true });
       row(t(locale, 'cert_unsigned_sha'), hashes.unsigned, { mono: true });
       row(t(locale, 'cert_signed_sha'), hashes.signed, { mono: true });
 

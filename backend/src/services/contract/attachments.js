@@ -22,6 +22,7 @@ const { db, logActivity } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
 const { isUniqueViolation } = require('../../utils/dbErrors');
 const { ensureInt } = require('../../utils/numericHelpers');
+const { canonicalSha256 } = require('../../utils/canonicalJson');
 const { getStoragePath } = require('../../config/storage');
 const { assertPathInside } = require('../../utils/safePath');
 const { validatePdf } = require('../../utils/pdfValidation');
@@ -387,6 +388,25 @@ async function verifyContractAttachments(contractId) {
   });
 }
 
+/**
+ * The sha256 a signature is bound to for the attachments (#1446): the
+ * manifest's attachment list, canonical and with every number coerced — the
+ * manifest is stored as JSON text, but the values it was built from come
+ * out of PostgreSQL and SQLite in different shapes, and the same contract
+ * has to hash the same on both.
+ */
+function manifestSha256(manifest) {
+  const list = manifest && Array.isArray(manifest.attachments) ? manifest.attachments : [];
+  return canonicalSha256(list.map((a) => ({
+    attachmentId: ensureInt(a.attachmentId),
+    name: String(a.name || ''),
+    sha256: String(a.sha256 || ''),
+    delivery: String(a.delivery || ''),
+    pages: ensureInt(a.pages),
+    ...(a.firstPage != null ? { firstPage: ensureInt(a.firstPage) } : {}),
+  })));
+}
+
 /** One of a contract's attachments, for the customer or admin to download. */
 async function openContractAttachment(contractId, attachmentId) {
   const row = await db('contract_attachment_inclusions as ci')
@@ -426,6 +446,7 @@ module.exports = {
   writeContractAttachments,
   buildSendable,
   verifyContractAttachments,
+  manifestSha256,
   openContractAttachment,
   inclusionToApi,
   downloadName,
