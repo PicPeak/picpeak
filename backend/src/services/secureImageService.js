@@ -10,6 +10,7 @@ class SecureImageService {
     this.tokenCache = new Map();
     this.sessionTokens = new Map();
     this.rateLimitCache = new Map();
+    this.rateLimitWindows = new Map();
     this.cleanupTimer = null;
   }
 
@@ -29,6 +30,7 @@ class SecureImageService {
     this.tokenCache.clear();
     this.sessionTokens.clear();
     this.rateLimitCache.clear();
+    this.rateLimitWindows.clear();
   }
 
   /**
@@ -185,26 +187,30 @@ class SecureImageService {
    * Rate limiting for image requests
    */
   checkRateLimit(clientId, limit = 50, windowMs = 60000) {
-    const now = Date.now();
-    const windowStart = now - windowMs;
-    
-    if (!this.rateLimitCache.has(clientId)) {
-      this.rateLimitCache.set(clientId, []);
-    }
-    
-    const requests = this.rateLimitCache.get(clientId);
-    
-    // Remove old requests outside the window
-    const recentRequests = requests.filter(timestamp => timestamp > windowStart);
-    this.rateLimitCache.set(clientId, recentRequests);
-    
-    if (recentRequests.length >= limit) {
-      return false;
-    }
-    
-    // Add current request
-    recentRequests.push(now);
+    if (!this.peekRateLimit(clientId, limit, windowMs)) return false;
+    this.recordRateLimit(clientId, windowMs);
     return true;
+  }
+
+  /**
+   * Whether one more request fits the window, without counting it. With
+   * recordRateLimit() a caller checks several windows before charging any,
+   * so a request refused by one window does not spend the others.
+   */
+  peekRateLimit(clientId, limit, windowMs) {
+    const windowStart = Date.now() - windowMs;
+    const recentRequests = (this.rateLimitCache.get(clientId) || [])
+      .filter(timestamp => timestamp > windowStart);
+    this.rateLimitCache.set(clientId, recentRequests);
+    // cleanup() prunes each key by its own window, not a fixed minute.
+    this.rateLimitWindows.set(clientId, windowMs);
+    return recentRequests.length < limit;
+  }
+
+  recordRateLimit(clientId, windowMs) {
+    if (!this.rateLimitCache.has(clientId)) this.rateLimitCache.set(clientId, []);
+    this.rateLimitWindows.set(clientId, windowMs);
+    this.rateLimitCache.get(clientId).push(Date.now());
   }
 
   /**
@@ -473,9 +479,13 @@ class SecureImageService {
       if (data.expiresAt <= now) this.tokenCache.delete(token);
     }
     for (const [clientId, requests] of this.rateLimitCache.entries()) {
-      const recent = requests.filter(timestamp => timestamp > now - 60000);
+      // A fixed minute here emptied the five-minute and hourly windows every
+      // minute, so only the per-minute limits ever held.
+      const windowMs = this.rateLimitWindows.get(clientId) || 60000;
+      const recent = requests.filter(timestamp => timestamp > now - windowMs);
       if (recent.length === 0) {
         this.rateLimitCache.delete(clientId);
+        this.rateLimitWindows.delete(clientId);
       } else {
         this.rateLimitCache.set(clientId, recent);
       }
