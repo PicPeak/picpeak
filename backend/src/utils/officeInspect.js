@@ -17,8 +17,9 @@
  *   - macros and embedded code: vbaProject.bin / vbaData.xml, anything but a
  *     picture under word|xl|ppt/embeddings (an OLE .bin, a .docm, an .xlsm,
  *     another document), activeX parts, ODF Basic/ and Scripts/, ODF
- *     "Object N/" sub-documents — and macro-enabled main parts (docm/xlsm
- *     renamed .docx)
+ *     sub-documents under any directory, embedded-object, script and macro
+ *     event elements — and macro-enabled main parts (docm/xlsm renamed
+ *     .docx), OLE/package/control relationships and content types
  *   - an ODF xlink:href in content.xml or styles.xml that points outside the
  *     package (http:, https:, file:, ftp:, a network, parent or absolute path)
  *   - any relationship with TargetMode="External": remote-template injection
@@ -83,6 +84,10 @@ const IMAGE_EXT = /\.(png|jpe?g|gif|bmp|emf|wmf|tiff?|svg)$/i;
 // package) behind it is an object.
 const OLE_MAGIC = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
 const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+// ODF: the parts that make a directory a (sub-)document, and the elements
+// that embed an object, a script or a macro binding.
+const ODF_DOCUMENT_PART = /(^|\/)(content|styles|meta|settings)\.xml$/i;
+const ODF_ACTIVE_ELEMENT = new Set(['object', 'object-ole', 'applet', 'plugin', 'script', 'event-listener']);
 // Content types and relationship types of code and embedded objects.
 const ACTIVE_TYPE = /macroEnabled|vbaProject|vbaData|activeX|oleObject|\.package\b/i;
 const ACTIVE_RELATIONSHIP = /\/(oleObject|package|control|activeXControl\w*|vbaProject\w*|wordVbaData|keyMapCustomizations)$/i;
@@ -159,14 +164,6 @@ function* xmlElements(xml) {
 }
 
 const localName = (name) => name.slice(name.indexOf(':') + 1).toLowerCase();
-
-// Decoded values of every attribute with this local name, whatever its
-// namespace prefix (`xlink:href`, `x:href` with x bound to xlink, …).
-function* attributeValues(xml, name) {
-  for (const el of xmlElements(xml)) {
-    for (const a of el.attrs) if (localName(a.name) === name.toLowerCase()) yield a.value;
-  }
-}
 
 /** One element's attribute by local name, or undefined. */
 const attrOf = (el, name) => {
@@ -347,19 +344,39 @@ async function inspectOffice(file, format, limits = {}) {
       }
       const mimetype = (await readPart(zip, 'mimetype', 256)).trim();
       if (mimetype !== ODF_MIMETYPE[format]) throw notValid('The file is not a valid document of this type');
+      // A sub-document can live under any directory name, not only
+      // "Object N/": its own content.xml is one that nothing here reads.
+      for (const name of names) {
+        if (name.includes('/') && !name.startsWith('META-INF/') && ODF_DOCUMENT_PART.test(name)) {
+          throw active('The document contains an embedded document');
+        }
+      }
       for (const part of ['content.xml', 'styles.xml']) {
         if (!entries[part] || entries[part].isDirectory) continue;
-        const xml = await readPart(zip, part, lim.maxPartBytes);
-        for (const href of attributeValues(xml, 'href')) {
-          if (EXTERNAL_HREF.test(href) || EXTERNAL_HREF.test(href.replace(/%2e/gi, '.').replace(/%2f/gi, '/').replace(/%5c/gi, '\\'))) {
-            throw active('The document links to external content and cannot be uploaded');
+        for (const el of xmlElements(await readPart(zip, part, lim.maxPartBytes))) {
+          if (ODF_ACTIVE_ELEMENT.has(localName(el.name))) {
+            throw active('The document contains embedded objects, scripts or macro bindings');
+          }
+          for (const a of el.attrs) {
+            if (localName(a.name) !== 'href') continue;
+            const href = a.value;
+            if (EXTERNAL_HREF.test(href) || EXTERNAL_HREF.test(href.replace(/%2e/gi, '.').replace(/%2f/gi, '/').replace(/%5c/gi, '\\'))) {
+              throw active('The document links to external content and cannot be uploaded');
+            }
           }
         }
       }
       if (entries['META-INF/manifest.xml']) {
-        const manifest = await readPart(zip, 'META-INF/manifest.xml', lim.maxPartBytes);
-        if (/encryption-data/i.test(manifest)) {
-          throw new InspectError('Password-protected documents cannot be uploaded', 'DOCUMENT_ENCRYPTED');
+        for (const el of xmlElements(await readPart(zip, 'META-INF/manifest.xml', lim.maxPartBytes))) {
+          if (localName(el.name) === 'encryption-data') {
+            throw new InspectError('Password-protected documents cannot be uploaded', 'DOCUMENT_ENCRYPTED');
+          }
+          if (localName(el.name) !== 'file-entry') continue;
+          const fullPath = String(attrOf(el, 'full-path') || '').trim();
+          const mediaType = String(attrOf(el, 'media-type') || '').trim();
+          if (fullPath !== '/' && /^application\/vnd\.(oasis\.opendocument|sun\.xml\.(writer|calc|draw|impress|math))/i.test(mediaType)) {
+            throw active('The document contains an embedded document');
+          }
         }
       }
     }

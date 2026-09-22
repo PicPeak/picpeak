@@ -189,6 +189,42 @@ describe('ODF', () => {
     expect(await code(inspectOffice(await odt([], content), 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
   });
 
+  it('refuses a sub-document under any directory name', async () => {
+    for (const dir of ['embedded', 'Pictures/doc', 'Obj 1']) {
+      const file = await odt([[`${dir}/content.xml`, '<office:document-content/>']],
+        `<office:document-content><draw:object xlink:href="./${dir}"/></office:document-content>`);
+      expect(await code(inspectOffice(file, 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+    }
+  });
+
+  it.each([
+    '<draw:frame><draw:object xlink:href="./x"/></draw:frame>',
+    '<draw:frame><draw:object-ole xlink:href="./Object 1"/></draw:frame>',
+    '<office:event-listeners><script:event-listener script:language="ooo:script" script:event-name="dom:load" script:macro-name="Standard.Module1.Run"/></office:event-listeners>',
+    '<text:p><text:script script:language="javascript">x()</text:script></text:p>',
+  ])('refuses an embedding or script element: %s', async (body) => {
+    const file = await odt([], `<office:document-content>${body}</office:document-content>`);
+    expect(await code(inspectOffice(file, 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('refuses a manifest entry that declares an embedded document', async () => {
+    const manifest = '<manifest:manifest><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/>'
+      + '<manifest:file-entry manifest:full-path="Object 9" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/></manifest:manifest>';
+    const file = await odt([['META-INF/manifest.xml', manifest]]);
+    expect(await code(inspectOffice(file, 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('allows what LibreOffice writes into an ordinary document', async () => {
+    const content = '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:script="urn:oasis:names:tc:opendocument:xmlns:script:1.0">'
+      + '<office:scripts/><office:body><office:text><text:p>Hi</text:p></office:text></office:body></office:document-content>';
+    const manifest = '<?xml version="1.0" encoding="UTF-8"?><manifest:manifest><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/>'
+      + '<manifest:file-entry manifest:full-path="Configurations2/" manifest:media-type="application/vnd.sun.xml.ui.configuration"/>'
+      + '<manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>'
+      + '<manifest:file-entry manifest:full-path="Thumbnails/thumbnail.png" manifest:media-type="image/png"/></manifest:manifest>';
+    const file = await odt([['META-INF/manifest.xml', manifest], ['Thumbnails/thumbnail.png', 'png'], ['meta.xml', '<office:document-meta/>']], content);
+    expect(await code(inspectOffice(file, 'odt'))).toBe('ok');
+  });
+
   it('refuses one in styles.xml too', async () => {
     const file = await odt([['styles.xml', '<office:document-styles><draw:image xlink:href=\'https://x/y.png\'/></office:document-styles>']]);
     expect(await code(inspectOffice(file, 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
