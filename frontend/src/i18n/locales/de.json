@@ -8561,7 +8561,22 @@
         "documentSha": "SHA-256 des unterschriebenen Dokuments"
       },
       "followUpFailed": "Ein Schritt nach der Unterschrift ist fehlgeschlagen",
-      "followUpFailedBody": "Die Unterschrift selbst ist erfasst. Seit {{date}} ist ein Schritt offen: {{error}}. Mit «Signierten Vertrag erneut senden» wird er nochmals ausgeführt, oder Sie senden der nächsten Person ihren Link.",
+      "followUpFailedBody": "Die Unterschrift selbst ist erfasst. Seit {{date}} ist ein Schritt offen: {{step}}. Mit «Signierten Vertrag erneut senden» wird er nochmals ausgeführt.",
+      "followUp": {
+        "invitationTitle": "Die Einladungs-E-Mail konnte nicht eingereiht werden",
+        "invitationBody": "Seit {{date}}. Sie wird innerhalb einer Stunde automatisch erneut versucht.",
+        "unreadableBody": "Seit {{date}}: Die E-Mail-Adresse der unterzeichnenden Person kann nicht gelesen werden. Prüfen Sie den Schlüssel für Signaturnachweise und senden Sie den Link dann erneut.",
+        "reminderTitle": "Eine Erinnerungs-E-Mail konnte nicht eingereiht werden",
+        "reminderBody": "Seit {{date}}. Die unterzeichnende Person erhält innerhalb einer Stunde automatisch einen neuen Link.",
+        "freezeTitle": "Der Vertrag konnte nicht mit den Angaben des Kunden erstellt werden",
+        "freezeBody": "Seit {{date}}. Die Angaben sind gespeichert; schliessen Sie den Versand ab, um es erneut zu versuchen.",
+        "stepAdminNotice": "die E-Mail, die Sie über die Unterschrift informiert",
+        "stepReceipt": "die Empfangsbestätigung an die unterzeichnende Person",
+        "stepCompletion": "das Signaturzertifikat oder die Abschluss-E-Mails",
+        "invoiceTitle": "Die Rechnung zu diesem Vertrag konnte nicht vorbereitet werden",
+        "genericTitle": "Ein Schritt ist fehlgeschlagen",
+        "genericBody": "Seit {{date}}. Die Einzelheiten stehen im Server-Log."
+      },
       "reminded": "Eine Erinnerung mit neuem Link wurde an {{email}} gesendet.",
       "remindNotDue": "Diese Person kann jetzt nicht erinnert werden: Sie ist noch nicht an der Reihe oder hat bereits geantwortet.",
       "remindError": "Die Erinnerung konnte nicht gesendet werden. Versuchen Sie es erneut.",

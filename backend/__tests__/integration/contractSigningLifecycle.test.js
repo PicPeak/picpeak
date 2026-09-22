@@ -1979,6 +1979,38 @@ describe('a failed invitation after the send committed', () => {
     expect((await db('contracts').where({ id }).first()).follow_up_error).toMatch(/^reminder:/);
   });
 
+  test('the marker keeps the step and a safe code, never the error\'s text', async () => {
+    const id = await newContract();
+    const emailProcessor = require('../../src/services/emailProcessor');
+    const real = emailProcessor.queueEmail;
+    const raw = 'insert into "email_queue" ("recipient_email") values ($1) - new row violates check constraint "email_queue_x"';
+    const spy = jest.spyOn(emailProcessor, 'queueEmail').mockImplementation((...args) => (
+      args[2] === 'contract_sent' ? Promise.reject(Object.assign(new Error(raw), { code: '23514' })) : real(...args)
+    ));
+    try {
+      await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth));
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await db('contracts').where({ id }).first()).follow_up_error).toBe('invitation:FAILED');
+    const overview = await ok(request(contractsApp).get(`/api/admin/contracts/${id}/signers`).set(auth));
+    expect(overview.followUp).toEqual({ failedAt: expect.anything(), step: 'invitation', code: null });
+    expect(JSON.stringify(overview)).not.toContain('email_queue');
+
+    // An application code is safe to show, and says what to do.
+    const { AppError } = require('../../src/utils/errors');
+    await require('../../src/services/contract/signingV2')
+      .recordFollowUpFailure(id, 'invitation', new AppError('unreadable', 500, 'SIGNER_EMAIL_UNREADABLE'));
+    expect((await ok(request(contractsApp).get(`/api/admin/contracts/${id}/signers`).set(auth))).followUp)
+      .toEqual(expect.objectContaining({ step: 'invitation', code: 'SIGNER_EMAIL_UNREADABLE' }));
+
+    // A row written before the marker was reduced still holds raw text: none of it goes out.
+    await db('contracts').where({ id }).update({ follow_up_error: `reminder: ${raw}` });
+    const legacy = await ok(request(contractsApp).get(`/api/admin/contracts/${id}/signers`).set(auth));
+    expect(legacy.followUp).toEqual(expect.objectContaining({ step: 'reminder', code: null }));
+    expect(JSON.stringify(legacy)).not.toContain('email_queue');
+  });
+
   test('a clean send carries no warning', async () => {
     const id = await newContract();
     const res = await sendContract(id);

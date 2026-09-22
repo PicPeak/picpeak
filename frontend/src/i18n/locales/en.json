@@ -8560,7 +8560,22 @@
         "documentSha": "Signed document SHA-256"
       },
       "followUpFailed": "A step after the signature didn't go through",
-      "followUpFailedBody": "The signature itself is on record. Since {{date}} one step is still outstanding: {{error}}. Use \"Re-send the signed contract\" to run it again, or send the next signer their link.",
+      "followUpFailedBody": "The signature itself is on record. Since {{date}} one step is still outstanding: {{step}}. Use \"Re-send the signed contract\" to run it again.",
+      "followUp": {
+        "invitationTitle": "The invitation email couldn't be queued",
+        "invitationBody": "Since {{date}}. It is retried automatically within the hour.",
+        "unreadableBody": "Since {{date}}: the signer's email address can't be read. Check the evidence key, then send the link again.",
+        "reminderTitle": "A reminder email couldn't be queued",
+        "reminderBody": "Since {{date}}. The signer gets a new link automatically within the hour.",
+        "freezeTitle": "The contract couldn't be prepared with the customer's details",
+        "freezeBody": "Since {{date}}. The details are saved; finish sending to try again.",
+        "stepAdminNotice": "the email telling you about the signature",
+        "stepReceipt": "the signer's receipt email",
+        "stepCompletion": "the signing certificate or the completion emails",
+        "invoiceTitle": "The invoice for this contract couldn't be prepared",
+        "genericTitle": "A step didn't go through",
+        "genericBody": "Since {{date}}. The details are in the server log."
+      },
       "reminded": "A reminder with a new link was sent to {{email}}.",
       "remindNotDue": "This signer can't be reminded now: it isn't their turn yet, or they have already answered.",
       "remindError": "The reminder couldn't be sent. Try again.",

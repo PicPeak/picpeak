@@ -573,7 +573,7 @@ test('a step that fails after the signature is recorded on the contract, and cle
   expect(sealed.follow_up_failed_at).toBeTruthy();
   expect(sealed.follow_up_error).toMatch(/completion/);
   const overview = await ok(request(contractsApp).get(`/api/admin/contracts/${id}/signers`).set(auth));
-  expect(overview.followUp).toEqual(expect.objectContaining({ error: expect.stringMatching(/completion/) }));
+  expect(overview.followUp).toEqual(expect.objectContaining({ step: 'completion', code: null }));
 
   // Re-sending runs the step again and clears the marker.
   expect((await request(contractsApp).post(`/api/admin/contracts/${id}/resend-signed`).set(auth)).status).toBe(200);

@@ -223,20 +223,30 @@ async function notifyAdmin(templateKey, data) {
   }
 }
 
+// What of an error may reach the admin's page: an application code such as
+// SIGNER_EMAIL_UNREADABLE. A message can be a raw SQL statement or a mail
+// server's reply; it goes to the server log only.
+const SAFE_FAILURE_CODE = /^[A-Z][A-Z0-9_]{1,63}$/;
+
+function safeFailureCode(err) {
+  return err && typeof err.code === 'string' && SAFE_FAILURE_CODE.test(err.code) ? err.code : null;
+}
+
 /**
- * A step after the committed signature failed — the next signer's
- * invitation, the certificate, the completion emails. The signature itself
- * stands, so this can't throw; it records what failed on the contract, where
- * the signing overview shows it and the admin can run the step again
- * ("Re-send the signed contract" re-issues a missing certificate).
+ * A step that failed after its change committed — an invitation, a
+ * reminder, the freeze after collected details, or what follows a
+ * signature (the next signer's invitation, the certificate, the completion
+ * emails). What committed stands, so this can't throw; it records the step
+ * and a safe code on the contract, where the signing overview shows it and
+ * the admin can run the step again. The error's detail is logged, not stored.
  */
 async function recordFollowUpFailure(contractId, step, err) {
-  logger.error('A step after the signature failed', { contractId, step, message: err && err.message });
+  logger.error('A contract follow-up step failed', { contractId, step, code: err && err.code, message: err && err.message });
   try {
     if (!(await hasColumnCached('contracts', 'follow_up_failed_at'))) return;
     await auditedUpdate(db, 'contracts', { id: contractId }, {
       follow_up_failed_at: new Date().toISOString(),
-      follow_up_error: `${step}: ${String((err && err.message) || 'unknown').slice(0, 500)}`,
+      follow_up_error: `${step}:${safeFailureCode(err) || 'FAILED'}`,
     }, { source: `contract.follow_up.${step}` });
   } catch (markErr) {
     logger.warn('Could not record the failed follow-up step', { contractId, message: markErr.message });
@@ -1516,6 +1526,12 @@ async function portalSignerStates(customer, contracts) {
   return out;
 }
 
+function followUpToApi(contract) {
+  const match = /^([a-z_]{1,64}):\s*(.*)$/s.exec(contract.follow_up_error || '');
+  const code = match && SAFE_FAILURE_CODE.test(match[2]) && match[2] !== 'FAILED' ? match[2] : null;
+  return { failedAt: contract.follow_up_failed_at, step: match ? match[1] : null, code };
+}
+
 async function adminOverview(contractId) {
   const contract = await db('contracts').where({ id: contractId }).first();
   if (!contract) throw new AppError('Contract not found', 404);
@@ -1524,10 +1540,10 @@ async function adminOverview(contractId) {
   return {
     version: contract.signing_version == null ? null : Number(contract.signing_version),
     order: contract.signing_order || 'parallel',
-    // A step after a signature that failed and is worth an admin's attention.
-    followUp: contract.follow_up_failed_at
-      ? { failedAt: contract.follow_up_failed_at, error: contract.follow_up_error || null }
-      : null,
+    // A follow-up step that failed and is worth an admin's attention: which
+    // step and a safe code, never the stored text itself — rows written
+    // before the marker was reduced to that still carry raw error messages.
+    followUp: contract.follow_up_failed_at ? followUpToApi(contract) : null,
     signers: rows.map(signers.signerToApi),
     events: events.map((e) => ({
       seq: e.seq, type: e.type, actorType: e.actorType, actorLabel: e.actorLabel, signerId: e.signerId,

@@ -20,6 +20,7 @@ import { useMutationWithToast } from '../../../hooks';
 import {
   contractsService,
   type ContractSigner,
+  type ContractSigningFollowUp,
   type ContractSignersOverview,
   type ContractStatus,
 } from '../../../services/contracts.service';
@@ -40,6 +41,57 @@ interface SigningOverviewCardProps {
 export const SigningOverviewCard: React.FC<SigningOverviewCardProps> = ({ contractId, contractStatus, overview }) => {
   const { t } = useTranslation();
   const { formatDateTime } = useLocalizedDate();
+
+  // The failed step in words. Only the step and a safe code come from the
+  // server; the error's own text stays in the server log.
+  const followUpMessage = (followUp: ContractSigningFollowUp, date: string): { title: string; body: string } => {
+    const unreadable = followUp.code === 'SIGNER_EMAIL_UNREADABLE';
+    switch (followUp.step) {
+      case 'invitation':
+      case 'next_invitation':
+        return {
+          title: t('contracts.signers.followUp.invitationTitle', 'The invitation email couldn\'t be queued'),
+          body: unreadable
+            ? t('contracts.signers.followUp.unreadableBody', 'Since {{date}}: the signer\'s email address can\'t be read. Check the evidence key, then send the link again.', { date })
+            : t('contracts.signers.followUp.invitationBody', 'Since {{date}}. It is retried automatically within the hour.', { date }),
+        };
+      case 'reminder':
+        return {
+          title: t('contracts.signers.followUp.reminderTitle', 'A reminder email couldn\'t be queued'),
+          body: t('contracts.signers.followUp.reminderBody', 'Since {{date}}. The signer gets a new link automatically within the hour.', { date }),
+        };
+      case 'data_freeze':
+        return {
+          title: t('contracts.signers.followUp.freezeTitle', 'The contract couldn\'t be prepared with the customer\'s details'),
+          body: t('contracts.signers.followUp.freezeBody', 'Since {{date}}. The details are saved; finish sending to try again.', { date }),
+        };
+      case 'admin_notice':
+      case 'signature_receipt':
+      case 'completion': {
+        const stepLabel = {
+          admin_notice: t('contracts.signers.followUp.stepAdminNotice', 'the email telling you about the signature'),
+          signature_receipt: t('contracts.signers.followUp.stepReceipt', 'the signer\'s receipt email'),
+          completion: t('contracts.signers.followUp.stepCompletion', 'the signing certificate or the completion emails'),
+        }[followUp.step];
+        return {
+          title: t('contracts.signers.followUpFailed', 'A step after the signature didn\'t go through'),
+          body: t('contracts.signers.followUpFailedBody',
+            'The signature itself is on record. Since {{date}} one step is still outstanding: {{step}}. Use "Re-send the signed contract" to run it again.',
+            { date, step: stepLabel }),
+        };
+      }
+      case 'prepare_contract_invoice':
+        return {
+          title: t('contracts.signers.followUp.invoiceTitle', 'The invoice for this contract couldn\'t be prepared'),
+          body: t('contracts.signers.followUp.genericBody', 'Since {{date}}. The details are in the server log.', { date }),
+        };
+      default:
+        return {
+          title: t('contracts.signers.followUp.genericTitle', 'A step didn\'t go through'),
+          body: t('contracts.signers.followUp.genericBody', 'Since {{date}}. The details are in the server log.', { date }),
+        };
+    }
+  };
   const signers = [...overview.signers].sort((a, b) => a.position - b.position);
   const nameOf = (id: number | null) => (id == null ? null : signers.find((s) => s.id === id)?.name || null);
 
@@ -115,25 +167,22 @@ export const SigningOverviewCard: React.FC<SigningOverviewCardProps> = ({ contra
             {t('contracts.signers.countersignLater', 'You counter-sign here once every customer signer has signed.')}
           </p>
         )}
-        {overview.followUp && (
-          <div
-            role="alert"
-            className="mb-3 p-3 rounded-md text-sm border border-amber-300 bg-amber-50 text-amber-900
-              dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
-          >
-            <p className="font-medium flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              {t('contracts.signers.followUpFailed', 'A step after the signature didn\'t go through')}
-            </p>
-            <p className="mt-1">
-              {t(
-                'contracts.signers.followUpFailedBody',
-                'The signature itself is on record. Since {{date}} one step is still outstanding: {{error}}. Use "Re-send the signed contract" to run it again, or send the next signer their link.',
-                { date: formatDateTime(overview.followUp.failedAt), error: overview.followUp.error || '—' },
-              )}
-            </p>
-          </div>
-        )}
+        {overview.followUp && (() => {
+          const { title, body } = followUpMessage(overview.followUp, formatDateTime(overview.followUp.failedAt));
+          return (
+            <div
+              role="alert"
+              className="mb-3 p-3 rounded-md text-sm border border-amber-300 bg-amber-50 text-amber-900
+                dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+            >
+              <p className="font-medium flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                {title}
+              </p>
+              <p className="mt-1">{body}</p>
+            </div>
+          );
+        })()}
         <ol className="divide-y divide-neutral-200 dark:divide-neutral-700">
           {signers.map((s) => {
             const via = viaLabel(s.verifiedVia);

@@ -130,10 +130,12 @@ export interface ContractSigningChain {
   reason: string | null;
 }
 
-/** A step after a signature that failed: the invitation, certificate or emails. */
+/** A follow-up step that failed: an invitation, a reminder, the freeze, or what follows a signature.
+ *  Only the step and a safe code: the error's text stays in the server log. */
 export interface ContractSigningFollowUp {
   failedAt: string;
-  error: string | null;
+  step: string | null;
+  code: string | null;
 }
 
 export interface ContractSignersOverview {

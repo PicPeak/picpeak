@@ -87,3 +87,49 @@ test('offers a new link to the first signer while their details are collected', 
   expect(screen.getByRole('button', { name: 'Send the link again' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Send reminder' })).toBeInTheDocument();
 });
+
+describe('a failed follow-up step', () => {
+  const renderWith = (followUp: Record<string, unknown>) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SigningOverviewCard
+          contractId={7}
+          contractStatus="sent"
+          overview={{ version: 2, order: 'parallel', followUp, signers: [signer], events: [], chain: null } as never}
+        />
+      </QueryClientProvider>,
+    );
+    return screen.getByRole('alert');
+  };
+
+  test('an invitation failure says the email is retried, not that a signature exists', () => {
+    const alert = renderWith({ failedAt: '2026-09-22T10:00:00Z', step: 'invitation', code: null });
+    expect(alert).toHaveTextContent("The invitation email couldn't be queued");
+    expect(alert).toHaveTextContent('It is retried automatically within the hour.');
+    expect(alert).not.toHaveTextContent(/signature/i);
+    expect(document.body.textContent).not.toContain('MISSING:');
+  });
+
+  test('an unreadable address says what to check', () => {
+    const alert = renderWith({ failedAt: '2026-09-22T10:00:00Z', step: 'next_invitation', code: 'SIGNER_EMAIL_UNREADABLE' });
+    expect(alert).toHaveTextContent("the signer's email address can't be read. Check the evidence key");
+  });
+
+  test('a step after the signature names the step in words', () => {
+    const alert = renderWith({ failedAt: '2026-09-22T10:00:00Z', step: 'completion', code: null });
+    expect(alert).toHaveTextContent("A step after the signature didn't go through");
+    expect(alert).toHaveTextContent('the signing certificate or the completion emails');
+    expect(document.body.textContent).not.toContain('MISSING:');
+  });
+
+  test.each([
+    ['reminder', "A reminder email couldn't be queued"],
+    ['data_freeze', "The contract couldn't be prepared with the customer's details"],
+    ['prepare_contract_invoice', "The invoice for this contract couldn't be prepared"],
+    ['something_new', "A step didn't go through"],
+  ])('the %s step has its own message', (step, text) => {
+    expect(renderWith({ failedAt: '2026-09-22T10:00:00Z', step, code: null })).toHaveTextContent(text);
+    expect(document.body.textContent).not.toContain('MISSING:');
+  });
+});
