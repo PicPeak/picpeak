@@ -1044,6 +1044,53 @@ describe('enumeration and replay signals', () => {
     }
   });
 
+  test('with "store IP" off, the overall threshold still alerts', async () => {
+    await setSetting('crm_contracts_store_ip', false);
+    await setSetting('crm_contracts_alert_unknown_tokens_per_hour', 4);
+    try {
+      for (let i = 0; i < 4; i += 1) {
+        await fromIp(request(signingApp).get(`/api/public/contract-signing/invite/${unknownToken()}`), `203.0.113.${100 + i}`);
+      }
+      await signals().flush();
+      expect(await signals().checkThresholds()).toEqual(['unknown_token:global']);
+      expect(await signals().checkThresholds()).toEqual([]);
+      expect((await signals().summary()).mode).toBe('global');
+    } finally {
+      await setSetting('crm_contracts_store_ip', true);
+      await setSetting('crm_contracts_alert_unknown_tokens_per_hour', 200);
+    }
+    expect((await signals().summary()).mode).toBe('per_client');
+  });
+
+  test('the in-memory counts are capped, and past the cap still count overall', async () => {
+    const { MAX_KEYS } = signals();
+    signals()._internal.reset();
+    const at = Date.now();
+    await Promise.all(Array.from({ length: MAX_KEYS + 50 }, (_, i) => signals().record('otp_failure', { contractId: i + 1, at })));
+    expect(signals()._internal.pendingSize()).toBeLessThanOrEqual(MAX_KEYS + 1);
+    await signals().flush();
+    const total = await db('contract_signing_signals').where({ kind: 'otp_failure' }).sum({ n: 'count' }).first();
+    expect(Number(total.n)).toBe(MAX_KEYS + 50);
+    const overflow = await db('contract_signing_signals').where({ kind: 'otp_failure' }).whereNull('contract_id').first();
+    expect(Number(overflow.count)).toBe(50);
+  });
+
+  test('a batch that keeps failing to store is dropped after three tries', async () => {
+    signals()._internal.reset();
+    await signals().record('stale_token', {});
+    // The store refuses: the table is gone for the moment.
+    await db.schema.renameTable('contract_signing_signals', 'contract_signing_signals_away');
+    try {
+      await expect(signals().flush()).rejects.toThrow();
+      expect(signals()._internal.pendingSize()).toBe(1);
+      await expect(signals().flush()).rejects.toThrow();
+      await expect(signals().flush()).rejects.toThrow();
+      expect(signals()._internal.pendingSize()).toBe(0);
+    } finally {
+      await db.schema.renameTable('contract_signing_signals_away', 'contract_signing_signals');
+    }
+  });
+
   test('with "store IP" off, no client is kept at all', async () => {
     await setSetting('crm_contracts_store_ip', false);
     try {

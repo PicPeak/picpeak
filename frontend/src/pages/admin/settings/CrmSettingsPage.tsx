@@ -75,6 +75,7 @@ const SETTING_KEYS = [
   // Alert thresholds for probing of the signing links (#1446).
   'crm_contracts_alert_unknown_tokens_per_ip',
   'crm_contracts_alert_otp_failures_per_contract',
+  'crm_contracts_alert_unknown_tokens_per_hour',
   // The legal notice frozen into every contract at send (#1446), { en, de }.
   'crm_contracts_legal_notice',
   // Dashboard CRM-overview tile visibility (per-tile). Default ON;
@@ -527,6 +528,10 @@ export const CrmSettingsPage: React.FC = () => {
             label={t('crmSettings.crm_contracts_alert_unknown_tokens_per_ip.label', 'Alert after unknown signing links per client and hour') as string}
             value={values.crm_contracts_alert_unknown_tokens_per_ip ?? 20}
             onChange={(e) => setVal('crm_contracts_alert_unknown_tokens_per_ip', Number(e.target.value))} />
+          <Input type="number" min={1} max={100000}
+            label={t('crmSettings.crm_contracts_alert_unknown_tokens_per_hour.label', 'Alert after unknown signing links per hour, all visitors together') as string}
+            value={values.crm_contracts_alert_unknown_tokens_per_hour ?? 200}
+            onChange={(e) => setVal('crm_contracts_alert_unknown_tokens_per_hour', Number(e.target.value))} />
           <Input type="number" min={1} max={10000}
             label={t('crmSettings.crm_contracts_alert_otp_failures_per_contract.label', 'Alert after wrong codes per contract and hour') as string}
             value={values.crm_contracts_alert_otp_failures_per_contract ?? 10}

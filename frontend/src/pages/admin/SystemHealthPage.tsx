@@ -334,6 +334,13 @@ export const SystemHealthPage: React.FC = () => {
                   {t('systemHealth.signingSignals.alerts', '{{count}} alert(s) sent to the business email in the last 24 hours.', { count: data.signingSignals.alerts.length })}
                 </p>
               )}
+              {data.signingSignals.mode && (
+                <p className="text-sm mt-1 text-neutral-600 dark:text-neutral-400">
+                  {data.signingSignals.mode === 'global'
+                    ? t('systemHealth.signingSignals.modeGlobal', 'IP addresses are not stored, so unknown links are counted across all visitors together.')
+                    : t('systemHealth.signingSignals.modePerClient', 'Unknown links are counted per visitor (as a keyed hash of the address) and across all visitors together.')}
+                </p>
+              )}
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
                 {t('systemHealth.signingSignals.hint', 'Counted per hour without storing any address, token or code. A threshold crossed mails you once per kind and hour; thresholds are in Settings → CRM.')}
               </p>

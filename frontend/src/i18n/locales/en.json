@@ -734,7 +734,9 @@
         "cross_contract": "Files requested from the wrong contract"
       },
       "alerts": "{{count}} alert(s) sent to the business email in the last 24 hours.",
-      "hint": "Counted per hour without storing any address, token or code. A threshold crossed mails you once per kind and hour; thresholds are in Settings → CRM."
+      "hint": "Counted per hour without storing any address, token or code. A threshold crossed mails you once per kind and hour; thresholds are in Settings → CRM.",
+      "modeGlobal": "IP addresses are not stored, so unknown links are counted across all visitors together.",
+      "modePerClient": "Unknown links are counted per visitor (as a keyed hash of the address) and across all visitors together."
     }
   },
   "common": {
@@ -7726,6 +7728,9 @@
       "labelEn": "Legal notice on signed contracts (English)",
       "placeholder": "Empty: the standard notice (simple electronic signature, not for contracts that need written form).",
       "help": "Frozen into each contract when it is sent, shown on the signing page and printed on the signing certificate. Changing it affects only contracts sent afterwards."
+    },
+    "crm_contracts_alert_unknown_tokens_per_hour": {
+      "label": "Alert after unknown signing links per hour, all visitors together"
     },
     "customer_documents_notify_on_share": {
       "label": "Email the customer when a document is shared with them (default for the checkbox on the customer record)"

@@ -73,6 +73,8 @@ export interface SystemHealthFailures {
   /** Enumeration / replay signals on the signing links, last 24 h (#1446). */
   signingSignals?: {
     since: string;
+    /** per_client: addresses may be kept (hashed); global: only overall counts. */
+    mode?: 'per_client' | 'global';
     byKind: Record<string, number>;
     alerts: Array<{ hour: string; kind: string; count: number }>;
   } | null;

@@ -734,7 +734,9 @@
         "cross_contract": "Dateien vom falschen Vertrag angefordert"
       },
       "alerts": "{{count}} Alarm(e) in den letzten 24 Stunden an die Geschäfts-E-Mail gesendet.",
-      "hint": "Pro Stunde gezählt, ohne Adresse, Link oder Code zu speichern. Eine überschrittene Schwelle meldet sich einmal pro Art und Stunde; die Schwellen finden Sie unter Einstellungen → CRM."
+      "hint": "Pro Stunde gezählt, ohne Adresse, Link oder Code zu speichern. Eine überschrittene Schwelle meldet sich einmal pro Art und Stunde; die Schwellen finden Sie unter Einstellungen → CRM.",
+      "modeGlobal": "IP-Adressen werden nicht gespeichert, daher werden unbekannte Links über alle Besucher zusammen gezählt.",
+      "modePerClient": "Unbekannte Links werden pro Besucher (als verschlüsselter Hash der Adresse) und über alle Besucher zusammen gezählt."
     }
   },
   "common": {
@@ -7727,6 +7729,9 @@
       "labelEn": "Rechtlicher Hinweis zu unterzeichneten Verträgen (Englisch)",
       "placeholder": "Leer: der Standardhinweis (einfache elektronische Signatur, nicht für Verträge mit gesetzlicher Schriftform).",
       "help": "Wird beim Versand in jeden Vertrag eingefroren, auf der Unterzeichnungsseite angezeigt und im Prüfprotokoll gedruckt. Eine Änderung betrifft nur später versandte Verträge."
+    },
+    "crm_contracts_alert_unknown_tokens_per_hour": {
+      "label": "Alarm ab unbekannten Unterzeichnungslinks pro Stunde, alle Besucher zusammen"
     },
     "customer_documents_notify_on_share": {
       "label": "Kunden per E-Mail benachrichtigen, wenn ein Dokument freigegeben wird (Voreinstellung für das Kontrollkästchen im Kundendatensatz)"
