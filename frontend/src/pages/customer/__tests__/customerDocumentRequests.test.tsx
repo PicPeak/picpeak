@@ -32,7 +32,13 @@ vi.mock('react-i18next', async () => {
 });
 vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('../../../hooks/useLocalizedDate', () => ({
-  useLocalizedDate: () => ({ format: (d: string) => String(d).slice(0, 10), formatDateTime: (d: string) => String(d) }),
+  useLocalizedDate: () => ({
+    // A Date as its local day, the way date-fns formats one.
+    format: (d: string | Date) => (d instanceof Date
+      ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      : String(d).slice(0, 10)),
+    formatDateTime: (d: string) => String(d),
+  }),
 }));
 
 const { svc } = vi.hoisted(() => ({

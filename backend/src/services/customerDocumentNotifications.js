@@ -170,9 +170,12 @@ async function notifyRequest(request, { reminder = false, notify } = {}) {
       business_name: await businessName(),
       request_title: request.title,
       request_note: request.note || '',
-      // Formatted here: the queue only formats its own date variables.
+      // Formatted here: the queue only formats its own date variables. A
+      // calendar day, named by its UTC date as the portal shows it — the
+      // server's timezone would move it a day either side.
       due_date: request.due_at
-        ? await require('../utils/dateFormatter').formatDate(request.due_at, customer.preferred_language || 'en')
+        ? await require('../utils/dateFormatter').formatDate(
+          new Date(request.due_at).toISOString().slice(0, 10), customer.preferred_language || 'en')
         : '',
       upload_link: `${base}/customer/documents?request=${request.id}`,
       __language: customer.preferred_language || undefined,

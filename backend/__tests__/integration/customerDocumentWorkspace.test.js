@@ -1108,6 +1108,20 @@ describe('document requests', () => {
     })]);
   });
 
+  it('names the deadline in the mail by its calendar day, not the server\'s clock', async () => {
+    // Formatted from the UTC date, as a date-only string the formatter reads
+    // as that day in any timezone (a jest sandbox can't switch TZ itself).
+    const dateFormatter = require('../../src/utils/dateFormatter');
+    const spy = jest.spyOn(dateFormatter, 'formatDate');
+    try {
+      const res = await createRequest(me, { title: 'Deadline', dueAt: '2026-09-22T12:00:00.000Z' });
+      expect(spy).toHaveBeenCalledWith('2026-09-22', 'en');
+      await db('customer_document_requests').where({ id: res.body.request.id }).update({ status: 'cancelled' });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('is fulfilled by an upload that names it, in the same write', async () => {
     const req = (await createRequest(me, { title: 'ID copy' })).body.request;
     const up = await uploadAs(me, 'id.pdf', { requestId: req.id });

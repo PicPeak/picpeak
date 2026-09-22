@@ -24,6 +24,7 @@ import {
   acceptFor, allowedFormatOf, formatList, normaliseFormats,
 } from '../../utils/documentFormats';
 import { customerService, type CustomerDocument } from '../../services/customer.service';
+import { calendarDay } from '../../utils/calendarDay';
 
 /** Error code from an API error. Blob responses (downloads) carry JSON too. */
 export async function readErrorCode(err: any): Promise<string | undefined> {
@@ -378,7 +379,7 @@ export const CustomerDocumentsPage: React.FC = () => {
                   {r.note && <p className="text-xs text-muted-theme mt-1 break-words">{r.note}</p>}
                   {r.dueAt && (
                     <p className="text-xs text-muted-theme mt-1">
-                      {t('customer.documents.requests.due', 'Needed by {{date}}', { date: fmtDate(r.dueAt) })}
+                      {t('customer.documents.requests.due', 'Needed by {{date}}', { date: fmtDate(calendarDay(r.dueAt)) })}
                     </p>
                   )}
                 </div>

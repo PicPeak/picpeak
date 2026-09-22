@@ -37,6 +37,7 @@ import {
 } from '../../services/customer.service';
 import { galleryService } from '../../services/gallery.service';
 import { storeGalleryToken, setActiveGallerySlug } from '../../utils/galleryAuthStorage';
+import { calendarDay } from '../../utils/calendarDay';
 
 type SortKey = 'newest' | 'oldest' | 'name';
 
@@ -123,7 +124,7 @@ const NeedsAction: React.FC<{ items: CustomerDashboard['needsAction'] }> = ({ it
               {t('customer.dashboard.documentRequested', 'Please upload: {{title}}', { title: r.title })}
               {r.dueAt && (
                 <span className="block text-xs text-muted-theme">
-                  {t('customer.documents.requests.due', 'Needed by {{date}}', { date: fmtDate(r.dueAt) })}
+                  {t('customer.documents.requests.due', 'Needed by {{date}}', { date: fmtDate(calendarDay(r.dueAt)) })}
                 </span>
               )}
             </span>

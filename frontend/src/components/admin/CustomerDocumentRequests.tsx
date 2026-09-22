@@ -19,6 +19,7 @@ import {
   customerDocumentsAdminService,
   type AdminDocumentRequest,
 } from '../../services/customerDocumentsAdmin.service';
+import { calendarDay } from '../../utils/calendarDay';
 
 const inputClass = 'h-9 w-full rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 px-2 text-sm text-neutral-900 dark:text-neutral-100';
 
@@ -50,10 +51,9 @@ export const CustomerDocumentRequests: React.FC<{ customerId: number; canManage:
       const { notification } = await customerDocumentsAdminService.createRequest(customerId, {
         title: title.trim(),
         note: note.trim() || null,
-        // A calendar date, anchored at noon UTC: the mail formats it in the
-        // server's timezone and every page in the viewer's, and noon names the
-        // same day in all of them from UTC-11 to UTC+11. The admin's own end
-        // of day was already the next day in UTC west of Greenwich.
+        // A calendar day, stored at noon UTC and always shown by its UTC date
+        // (calendarDay; the mail does the same). The admin's own end of day
+        // was already the next day in UTC west of Greenwich.
         dueAt: due ? `${due}T12:00:00.000Z` : null,
       });
       const done = t('customers.documents.requests.created', 'Request sent.');
@@ -142,7 +142,7 @@ export const CustomerDocumentRequests: React.FC<{ customerId: number; canManage:
                     date: req.createdAt ? fmtDate(req.createdAt) : '',
                     reminders: req.reminderCount,
                   })}
-                  {req.dueAt && <>{' · '}{t('customers.documents.requests.due', 'Needed by {{date}}', { date: fmtDate(req.dueAt) })}</>}
+                  {req.dueAt && <>{' · '}{t('customers.documents.requests.due', 'Needed by {{date}}', { date: fmtDate(calendarDay(req.dueAt)) })}</>}
                 </p>
               </div>
               {req.status === 'open' && (

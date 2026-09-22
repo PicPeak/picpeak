@@ -76,6 +76,9 @@ async function formatDate(date, language = 'en') {
         year: 'numeric'
       });
     case 'YYYY-MM-DD':
+      // A date-only string is already that day; its local midnight in UTC
+      // would be the day before east of Greenwich.
+      if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
       return dateObj.toISOString().split('T')[0];
     case 'DD.MM.YYYY':
       return dateObj.toLocaleDateString('de-DE', {
