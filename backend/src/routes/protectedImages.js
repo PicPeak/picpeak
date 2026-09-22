@@ -75,8 +75,10 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     // Create client fingerprint
     const clientFingerprint = secureImageService.createClientFingerprint(req);
     
-    // Check rate limiting
-    if (!secureImageService.checkRateLimit(clientFingerprint, 30, 60000)) {
+    // Check rate limiting. Keyed on the rate-limit fingerprint, where an IPv6
+    // /64 is one client (issue 1564); the per-address one would reset the
+    // budget on every address in the /64.
+    if (!secureImageService.checkRateLimit(secureImageService.createRateLimitFingerprint(req), 30, 60000)) {
       return res.status(429).json({ error: 'Rate limit exceeded' });
     }
     
