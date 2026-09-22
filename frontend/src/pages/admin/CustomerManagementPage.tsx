@@ -43,6 +43,15 @@ type TabType = 'customers' | 'invitations' | 'groups';
 const TABS: TabType[] = ['customers', 'invitations', 'groups'];
 const STATUSES: CustomerStatusFilter[] = ['all', 'active', 'inactive'];
 
+/**
+ * An email address that may wrap only after "@" and ".": a <wbr> follows
+ * each, so a narrow cell breaks "sofia.romano@example.com" into readable
+ * parts instead of in the middle of a word.
+ */
+const breakableEmail = (email: string) => email.split(/(?<=[@.])/).map((part, index) => (
+  <React.Fragment key={index}>{index > 0 && <wbr />}{part}</React.Fragment>
+));
+
 /** `groups=1,2` → [1, 2]; anything that isn't a positive integer is dropped. */
 const parseIds = (value: string | null) => [...new Set((value || '').split(',')
   .map((id) => Number(id.trim()))
@@ -479,9 +488,10 @@ export const CustomerManagementPage: React.FC = () => {
                     <tr className="text-left text-neutral-500 dark:text-neutral-400">
                       {/* The email is always under the name. On a phone the row
                           is that cell alone, with the groups and the status
-                          under it; below xl (the card is ~760px beside the CRM
-                          sub-navigation) Company and Last login step aside so
-                          Status and the row action stay in view. */}
+                          under it; below 2xl (at 1440 the card is ~760px beside
+                          the sidebar and the CRM sub-navigation) Company and
+                          Last login step aside and the row action is an icon,
+                          so Status and the action stay in view. */}
                       <th className="px-3 py-2 font-medium">
                         {/* The selection checkbox lives in the name cell, so it
                             is there on a phone too, where the other columns
@@ -498,10 +508,10 @@ export const CustomerManagementPage: React.FC = () => {
                           {t('customers.table.name', 'Name')}
                         </span>
                       </th>
-                      <th className="hidden xl:table-cell px-3 py-2 font-medium">{t('customers.table.company', 'Company')}</th>
+                      <th className="hidden 2xl:table-cell px-3 py-2 font-medium">{t('customers.table.company', 'Company')}</th>
                       <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.groups', 'Groups')}</th>
                       <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.eventCount', 'Events')}</th>
-                      <th className="hidden xl:table-cell px-3 py-2 font-medium">{t('customers.table.lastLogin', 'Last login')}</th>
+                      <th className="hidden 2xl:table-cell px-3 py-2 font-medium">{t('customers.table.lastLogin', 'Last login')}</th>
                       <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.status', 'Status')}</th>
                       <th className="hidden sm:table-cell px-3 py-2"></th>
                     </tr>
@@ -509,7 +519,7 @@ export const CustomerManagementPage: React.FC = () => {
                   <tbody>
                     {filteredCustomers.map((c) => (
                       <tr key={c.id} className="border-t border-neutral-200 dark:border-neutral-700">
-                        <td className="px-3 py-3">
+                        <td className="px-3 py-3 min-w-[12rem]">
                           <span className="inline-flex items-center gap-2">
                             {canManageGroups && (
                               <input
@@ -525,14 +535,14 @@ export const CustomerManagementPage: React.FC = () => {
                           </span>
                           {/* The email sits under the name at every width, so no
                               column of its own takes space from Status and the
-                              row action; it only breaks inside the address
-                              when it can't fit otherwise. Below xl the company
+                              row action. It may break only after "@" and ".",
+                              never inside a word. Below 2xl the company
                               follows it, where the Company column is hidden. */}
-                          <span className="mt-0.5 block text-xs text-neutral-500 dark:text-neutral-400 [overflow-wrap:anywhere]">
-                            {c.email}
+                          <span className="mt-0.5 block text-xs text-neutral-500 dark:text-neutral-400">
+                            {breakableEmail(c.email)}
                           </span>
                           {c.companyName && (
-                            <span className="block text-xs text-neutral-500 dark:text-neutral-400 xl:hidden">{c.companyName}</span>
+                            <span className="block text-xs text-neutral-500 dark:text-neutral-400 2xl:hidden">{c.companyName}</span>
                           )}
                           {/* Phone only: the groups sit under the name, where the
                               Groups column is hidden. */}
@@ -545,23 +555,28 @@ export const CustomerManagementPage: React.FC = () => {
                               groups and state without scrolling sideways. */}
                           <span className="mt-1 flex sm:hidden">{renderStatus(c)}</span>
                         </td>
-                        <td className="hidden xl:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.companyName || '—'}</td>
+                        <td className="hidden 2xl:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.companyName || '—'}</td>
                         <td className="hidden sm:table-cell px-3 py-3"><CustomerGroupChipList groups={c.groups} /></td>
                         <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.eventCount ?? 0}</td>
-                        <td className="hidden xl:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
+                        <td className="hidden 2xl:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
                         <td className="hidden sm:table-cell px-3 py-3">
                           {renderStatus(c)}
                         </td>
                         <td className="hidden sm:table-cell px-3 py-3 text-right">
                           {c.isActive && (
+                            // Icon-only below 2xl, where the card is too narrow
+                            // for the label beside everything else; the name
+                            // and the tooltip still say what it does.
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              leftIcon={<Trash2 className="w-4 h-4" />}
+                              aria-label={t('customers.deactivate.buttonLabel', 'Deactivate {{email}}', { email: c.email })}
+                              title={t('customers.deactivate.buttonLabel', 'Deactivate {{email}}', { email: c.email })}
                               onClick={() => setConfirm({ kind: 'deactivate', id: c.id, name: c.email })}
                             >
-                              {t('customers.deactivate.button', 'Deactivate')}
+                              <Trash2 className="w-4 h-4" aria-hidden="true" />
+                              <span className="ml-2 hidden 2xl:inline">{t('customers.deactivate.button', 'Deactivate')}</span>
                             </Button>
                           )}
                         </td>

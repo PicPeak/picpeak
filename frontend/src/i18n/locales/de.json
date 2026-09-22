@@ -5752,7 +5752,8 @@
       "title": "Kunde deaktivieren?",
       "body": "Der Kunde kann sich nicht mehr anmelden. Sie können ihn später erneut einladen.",
       "success": "Kunde deaktiviert",
-      "error": "Kunde konnte nicht deaktiviert werden"
+      "error": "Kunde konnte nicht deaktiviert werden",
+      "buttonLabel": "{{email}} deaktivieren"
     },
     "cancelInvitation": {
       "title": "Einladung stornieren?",

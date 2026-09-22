@@ -5752,7 +5752,8 @@
       "title": "Deactivate customer?",
       "body": "They will no longer be able to log in. You can re-invite them later.",
       "success": "Customer deactivated",
-      "error": "Could not deactivate customer"
+      "error": "Could not deactivate customer",
+      "buttonLabel": "Deactivate {{email}}"
     },
     "cancelInvitation": {
       "title": "Cancel invitation?",

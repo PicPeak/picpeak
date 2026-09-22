@@ -229,17 +229,21 @@ describe('the overview', () => {
     for (const name of ['Groups', 'Events', 'Status']) {
       expect(byName(name)?.className).toContain('hidden sm:table-cell');
     }
-    // …and below xl Company and Last login step aside as well.
-    expect(byName('Company')?.className).toContain('hidden xl:table-cell');
-    expect(byName('Last login')?.className).toContain('hidden xl:table-cell');
+    // …and below 2xl (1440 leaves the card ~760px) Company and Last login
+    // step aside as well.
+    expect(byName('Company')?.className).toContain('hidden 2xl:table-cell');
+    expect(byName('Last login')?.className).toContain('hidden 2xl:table-cell');
 
     const nameCell = screen.getByText('grouped@example.com').closest('td');
     expect(nameCell).toBe(screen.getByText('grouped@example.com').closest('tr')?.querySelector('td'));
-    // The address breaks inside itself only as a last resort.
-    expect(screen.getByText('grouped@example.com').className).toContain('[overflow-wrap:anywhere]');
-    expect(screen.getByText('grouped@example.com').className).not.toContain('break-all');
+    // The address may break only after "@" and ".", never inside a word.
+    const address = screen.getByText('grouped@example.com');
+    expect(address.className).not.toMatch(/break-all|overflow-wrap:anywhere/);
+    expect([...address.childNodes].map((node) => (node.nodeName === 'WBR' ? '|' : node.textContent)).join(''))
+      .toBe('grouped@|example.|com');
+    expect(nameCell?.className).toContain('min-w-');
     // The company follows it where the Company column is hidden.
-    const companyCopy = [...(nameCell?.querySelectorAll('.xl\\:hidden') ?? [])].map((el) => el.textContent);
+    const companyCopy = [...(nameCell?.querySelectorAll('[class~="2xl:hidden"]') ?? [])].map((el) => el.textContent);
     expect(companyCopy).toContain('Acme');
     // The email comes before the chips and the status in the name cell.
     const text = nameCell?.textContent || '';
@@ -254,8 +258,11 @@ describe('the overview', () => {
     expect(phoneCopy).toContain('Passive — admin only');
     // The row action and the status stay columns from sm up.
     const row = nameCell?.closest('tr');
-    expect(within(row as HTMLElement).getByRole('button', { name: /Deactivate/ }).closest('td')?.className)
-      .toContain('sm:table-cell');
+    const action = within(row as HTMLElement).getByRole('button', { name: 'Deactivate grouped@example.com' });
+    expect(action.closest('td')?.className).toContain('sm:table-cell');
+    // Icon-only below 2xl, with the same name as a tooltip.
+    expect(action).toHaveAttribute('title', 'Deactivate grouped@example.com');
+    expect(within(action).getByText('Deactivate').className).toContain('hidden 2xl:inline');
   });
 
   it('drops a selected group from the filter once it is archived, instead of filtering by it with nothing to switch it off', async () => {
