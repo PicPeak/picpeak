@@ -799,14 +799,20 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       photo_count: selectedPhotos.size
     });
     
-    // Download each selected photo. A limit refusal stops the loop: it has
-    // already said why, and every later photo would be refused the same way.
-    try {
+    // Download limit (issue 1560): one zip, which the server grants whole or
+    // not at all. Photo by photo, a refusal halfway through would already have
+    // charged the ones before it. A refusal keeps the selection to trim.
+    if (downloadQuota.limited) {
+      try {
+        await galleryService.downloadSelectedPhotos(slug, selectedPhotosList.map((p) => p.id));
+      } catch (error) {
+        if (!isDownloadLimitError(error)) throw error;
+        return;
+      }
+    } else {
       for (const photo of selectedPhotosList) {
         await galleryService.downloadPhoto(slug, photo.id, photo.filename);
       }
-    } catch (error) {
-      if (!isDownloadLimitError(error)) throw error;
     }
     
     // Clear selection after download

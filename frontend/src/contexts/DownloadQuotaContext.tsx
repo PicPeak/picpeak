@@ -48,19 +48,28 @@ export const DownloadQuotaProvider: React.FC<DownloadQuotaProviderProps> = ({ sl
 
   // A download (or a refusal) changes what is left; re-read the payload so
   // the counter and the per-photo "already downloaded" state follow.
+  // Registered for unlimited galleries too: a limit an admin sets while the
+  // gallery is open first shows up as a refusal.
   useEffect(() => {
-    if (!limited) return undefined;
     const onChanged = (e: Event) => {
       if ((e as CustomEvent<{ slug?: string }>).detail?.slug !== slug) return;
       queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
     };
     // A refusal decided from the cached quota: it may be stale.
     const onShown = () => queryClient.invalidateQueries({ queryKey: ['gallery-photos', slug] });
+    // Controls disabled at the limit cannot be clicked to ask again; coming
+    // back to the tab re-reads a limited gallery's quota (an admin may have
+    // reset it meanwhile).
+    const onVisible = () => {
+      if (limited && document.visibilityState === 'visible') onShown();
+    };
     window.addEventListener(DOWNLOAD_QUOTA_CHANGED_EVENT, onChanged);
     window.addEventListener(DOWNLOAD_LIMIT_SHOWN_EVENT, onShown);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.removeEventListener(DOWNLOAD_QUOTA_CHANGED_EVENT, onChanged);
       window.removeEventListener(DOWNLOAD_LIMIT_SHOWN_EVENT, onShown);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [limited, slug, queryClient]);
 

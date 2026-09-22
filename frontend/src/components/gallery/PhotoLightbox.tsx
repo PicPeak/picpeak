@@ -1039,8 +1039,11 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
             {photoAllowsDownload && (
               <button
                 onClick={handleDownload}
-                disabled={!withinDownloadLimit}
-                className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                // aria-disabled, not disabled: the click still reaches the
+                // handler, which explains the refusal and re-reads the quota
+                // an admin may have reset since.
+                aria-disabled={!withinDownloadLimit || undefined}
+                className={`p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors${withinDownloadLimit ? '' : ' opacity-50 cursor-not-allowed'}`}
                 aria-label="Download photo"
                 title={withinDownloadLimit
                   ? undefined
