@@ -95,7 +95,7 @@ export const BulkGroupAssignModal: React.FC<BulkGroupAssignModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <Card className="w-full max-w-md" role="dialog" aria-modal="true" aria-labelledby="bulk-group-title">
+      <Card className="w-full max-w-md max-h-full overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="bulk-group-title">
         <div className="p-6">
           <div className="mb-4 flex items-center justify-between">
             <h2 id="bulk-group-title" className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
