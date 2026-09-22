@@ -162,6 +162,9 @@ const errorHandler = (err, req, res, next) => {
     });
   }
 
+  // A busy service says when to come back (e.g. PDF_RENDER_BUSY).
+  if (error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
+
   // Format and send response
   const isDev = process.env.NODE_ENV === 'development';
   const response = isDev ? formatDevError(error) : formatProdError(error, operational);

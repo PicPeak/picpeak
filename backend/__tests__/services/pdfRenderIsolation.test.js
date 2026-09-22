@@ -102,3 +102,53 @@ test('the renderer\'s warnings reach the server\'s logger', async () => {
   }));
   expect(warn).toHaveBeenCalledWith('PDFKit failed to embed logo image', expect.anything());
 });
+
+describe('limits around the worker (#1445 review)', () => {
+  const slow = () => contractContext({
+    sections: [{ section: 'scope', blocks: Array.from({ length: 20 }, (_, i) => ({ name: `§${i}`, body: 'Lorem ipsum dolor sit amet. '.repeat(20000) })) }],
+  });
+
+  test('a worker that cannot start refuses the render and logs why — no unbounded fallback', async () => {
+    const workerThreads = require('worker_threads');
+    const error = jest.spyOn(logger, 'error').mockImplementation(() => {});
+    jest.spyOn(workerThreads, 'Worker').mockImplementation(() => { throw new Error('no threads here'); });
+    const inProcess = jest.spyOn(pdfService._raw, 'renderContract');
+    await expect(renderInWorker('contract', contractContext()))
+      .rejects.toMatchObject({ statusCode: 422, code: 'PDF_RENDER_FAILED' });
+    expect(error).toHaveBeenCalledWith('PDF render worker could not be started', expect.objectContaining({ err: 'no threads here' }));
+    expect(inProcess).not.toHaveBeenCalled();
+  });
+
+  test('a full queue refuses with 503 PDF_RENDER_BUSY and a Retry-After; waiting counts against the timeout', async () => {
+    const { MAX_WAITING } = require('../../src/services/pdf/renderIsolation');
+    const started = Date.now();
+    const renders = Array.from({ length: 2 + MAX_WAITING }, () => renderInWorker('contract', slow(), { timeoutMs: 400 })
+      .then(() => 'ok', (err) => err.code));
+    await expect(renderInWorker('contract', slow(), { timeoutMs: 400 }))
+      .rejects.toMatchObject({ statusCode: 503, code: 'PDF_RENDER_BUSY', retryAfter: expect.any(Number) });
+    const results = await Promise.all(renders);
+    // Nothing waited past its own timeout: queued renders gave up at 400 ms too.
+    expect(results.every((r) => r === 'PDF_RENDER_FAILED')).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  test('a merge gets a memory ceiling that grows with its input', () => {
+    const { _internal } = require('../../src/services/pdf/renderIsolation');
+    const mb = (n) => new Uint8Array(n * 1024 * 1024);
+    expect(_internal.mergeInputBytes('insertBeforeLastPage', { documentBuffer: mb(1), inserts: [mb(19), mb(19)] })).toBe(39 * 1024 * 1024);
+    expect(_internal.mergeInputBytes('contract', {})).toBe(0);
+    // The largest contract the attachment checks accept (20 x 20 MB) stays within 1 GB + 2 GB.
+    expect(_internal.RSS_CEILING_BYTES + _internal.MERGE_RSS_FACTOR * 400 * 1024 * 1024).toBeLessThanOrEqual(3 * 1024 * 1024 * 1024);
+  });
+});
+
+test('the error handler sends Retry-After for a busy render', () => {
+  const { errorHandler } = require('../../src/middleware/errorHandler');
+  const { AppError } = require('../../src/utils/errors');
+  const err = Object.assign(new AppError('busy', 503, 'PDF_RENDER_BUSY'), { retryAfter: 10 });
+  const headers = {};
+  const res = { headersSent: false, setHeader: (k, v) => { headers[k] = v; }, status() { return this; }, json: jest.fn() };
+  jest.spyOn(logger, 'warn').mockImplementation(() => {});
+  errorHandler(err, { originalUrl: '/x', method: 'POST' }, res, () => {});
+  expect(headers['Retry-After']).toBe('10');
+});
