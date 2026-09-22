@@ -82,28 +82,38 @@ function recipientFields(customer) {
 
 /**
  * What a send depends on that no contract lock covers (#1445): the customer's
- * printed fields and the signer rows. Neither bumps contracts.lock_version,
- * so the send takes this when it renders and compares it again, rows locked,
- * inside the transaction that marks the contract sent.
+ * printed fields and whether it is active, the signer rows, the issuer
+ * (business profile) and the settings the placeholders and dates read. None
+ * of them bumps contracts.lock_version, so the send takes this when it
+ * renders and compares it again, rows locked, inside the transaction that
+ * marks the contract sent.
  */
-function sendInputsSha256(customer, signerRows) {
-  const plain = (value) => JSON.parse(JSON.stringify(value === undefined ? null : value));
-  return require('../../utils/canonicalJson').canonicalSha256({
-    customer: plain(recipientFields(customer)),
-    signers: plain(signerRows),
-  });
-}
+const SEND_SETTINGS = [
+  'crm_payment_default_net_days', 'crm_invoices_skonto_percent_default',
+  'crm_invoices_skonto_business_days', 'general_date_format',
+];
 
-/** The same, read now; `lock` takes row locks on PostgreSQL (SQLite writes one at a time). */
-async function readSendInputsSha256(conn, contract, { lock = false } = {}) {
+/**
+ * The inputs' sha256, read through `conn`. `lock` takes row locks on
+ * PostgreSQL (SQLite writes one at a time); `signerRows` stands in for the
+ * signer rows when the caller already holds the ones it renders with.
+ */
+async function readSendInputsSha256(conn, contract, { lock = false, signerRows = null } = {}) {
   const locking = lock && conn.client.config.client === 'pg';
-  const customerQuery = conn('customer_accounts').where({ id: contract.customer_account_id });
-  const signerQuery = listSigners(contract.id, conn);
-  if (locking) {
-    customerQuery.forUpdate();
-    signerQuery.forUpdate();
-  }
-  return sendInputsSha256(await customerQuery.first(), await signerQuery);
+  const locked = (query) => (locking ? query.forUpdate() : query);
+  const customer = await locked(conn('customer_accounts').where({ id: contract.customer_account_id })).first();
+  const rows = signerRows || await locked(listSigners(contract.id, conn));
+  const profile = await locked(conn('business_profile').where({ id: 1 })).first();
+  const settings = await locked(conn('app_settings').whereIn('setting_key', SEND_SETTINGS)
+    .select('setting_key', 'setting_value').orderBy('setting_key', 'asc'));
+  const plain = (value) => JSON.parse(JSON.stringify(value === undefined ? null : value));
+  const { updated_at: _u, ...issuer } = profile || {};
+  return require('../../utils/canonicalJson').canonicalSha256({
+    customer: plain(customer ? { ...recipientFields(customer), is_active: !!customer.is_active } : null),
+    signers: plain(rows),
+    issuer: plain(profile ? issuer : null),
+    settings: plain(settings),
+  });
 }
 
 function sanitizeSigners(list) {
@@ -463,7 +473,6 @@ module.exports = {
   signerToApi,
   listSigners,
   recipientFields,
-  sendInputsSha256,
   readSendInputsSha256,
   setSigners,
   ensureSigners,

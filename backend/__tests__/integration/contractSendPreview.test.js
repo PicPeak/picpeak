@@ -230,6 +230,12 @@ test('the review covers the dates and the customer address, and a save during th
 
 test.each([
   ['the customer', () => db('customer_accounts').where({ id: customerId }).update({ company_name: 'Unreviewed AG' })],
+  ['the customer\'s active flag', () => db('customer_accounts').where({ id: customerId }).update({ is_active: false })],
+  ['the issuer', () => db('business_profile').where({ id: 1 }).update({ address_line1: 'Unreviewed 9' })],
+  ['a payment setting', async () => {
+    const { upsertAppSetting } = require('../../src/utils/appSettings');
+    await upsertAppSetting('crm_payment_default_net_days', '7', 'number');
+  }],
   ['a signer', (contractId) => db('contract_signers').where({ contract_id: contractId, role: 'customer' })
     .update({ email_enc: require('../../src/utils/fieldEncryption').encrypt('someone-else@example.com') })],
 ])('%s changed after the review check still stops the send', async (_what, change) => {
@@ -250,6 +256,27 @@ test.each([
     expect((await db('contracts').where({ id: contractId }).first()).status).toBe('draft');
   } finally {
     spy.mockRestore();
-    await db('customer_accounts').where({ id: customerId }).update({ company_name: null });
+    await db('customer_accounts').where({ id: customerId }).update({ company_name: null, is_active: true });
+    await db('app_settings').where({ setting_key: 'crm_payment_default_net_days' }).del();
+  }
+});
+
+test('a customer deactivated before the review check refuses the send even with a matching token', async () => {
+  const { contractId } = await contractFromQuoteWithAttachment();
+  const reviewed = await ok(request(contractsApp).get(`/api/admin/contracts/${contractId}/send-preview`).set(auth));
+  const sendPreview = require('../../src/services/contract/sendPreview');
+  const real = sendPreview.buildSendPreview;
+  // Deactivated just before the recheck; the token alone doesn't cover it.
+  const spy = jest.spyOn(sendPreview, 'buildSendPreview').mockImplementation(async (id) => {
+    await db('customer_accounts').where({ id: customerId }).update({ is_active: false });
+    return { ...(await real(id)), reviewToken: reviewed.reviewToken };
+  });
+  try {
+    const res = await request(contractsApp).post(`/api/admin/contracts/${contractId}/send`).set(auth).send({ reviewToken: reviewed.reviewToken });
+    expect(res.status).toBe(409);
+    expect((await db('contracts').where({ id: contractId }).first()).status).toBe('draft');
+  } finally {
+    spy.mockRestore();
+    await db('customer_accounts').where({ id: customerId }).update({ is_active: true });
   }
 });

@@ -54,8 +54,7 @@ async function sendContract(id, adminId, { reviewToken = null } = {}) {
   // The customer and signers this send renders with: compared again, rows
   // locked, when the contract is marked sent (completeSend). Taken before the
   // review check below, so what that check read lies between the two reads.
-  const sendInputs = require('./signers').sendInputsSha256(
-    await db('customer_accounts').where({ id: contract.customer_account_id }).first(), signerRows);
+  const sendInputs = await require('./signers').readSendInputsSha256(db, contract, { signerRows });
 
   const refreshed = await getContractById(id);
 
@@ -68,6 +67,12 @@ async function sendContract(id, adminId, { reviewToken = null } = {}) {
     const current = await buildSendPreview(id);
     if (current.reviewToken !== reviewToken || current.lockVersion !== ensureIntOr(refreshed.contract.lock_version)) {
       throw new AppError('The contract changed since the review. Review it again before sending.', 409, 'CONTRACT_REVIEW_STALE');
+    }
+    // A problem that arose since (the customer deactivated) is not in the
+    // token: the review's own errors refuse the send as the dialog would.
+    const blocking = current.problems.filter((p) => p.severity === 'error');
+    if (blocking.length) {
+      throw new AppError(blocking.map((p) => p.message).join(' · '), 409, 'CONTRACT_REVIEW_STALE');
     }
   }
 
