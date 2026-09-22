@@ -5977,7 +5977,13 @@
       "ungrouped": "Ohne Gruppe",
       "matchLabel": "Kunden in",
       "matchAny": "Einer davon",
-      "matchAll": "Allen davon"
+      "matchAll": "Allen davon",
+      "moreLabel_one": "{{count}} weitere Gruppe anzeigen",
+      "moreLabel_other": "{{count}} weitere Gruppen anzeigen",
+      "less": "Weniger",
+      "lessLabel": "Weniger Gruppen anzeigen",
+      "lowContrastLight": "Diese Farbe ist im hellen Modus schwer zu erkennen.",
+      "lowContrastDark": "Diese Farbe ist im dunklen Modus schwer zu erkennen."
     },
     "emptyFiltered": "Keine Kunden entsprechen diesen Filtern.",
     "clearFilters": "Filter zurücksetzen",

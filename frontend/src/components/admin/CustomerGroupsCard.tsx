@@ -17,7 +17,7 @@ import { Tags } from 'lucide-react';
 import { Button, Card } from '../common';
 import { useMutationWithToast } from '../../hooks';
 import { customerAdminService, type CustomerGroup } from '../../services/customerAdmin.service';
-import { CustomerGroupChip } from './CustomerGroupChips';
+import { CustomerGroupChip, GroupDot } from './CustomerGroupChips';
 
 interface CustomerGroupsCardProps {
   customerId: number;
@@ -101,7 +101,7 @@ export const CustomerGroupsCard: React.FC<CustomerGroupsCardProps> = ({ customer
                           : current.filter((id) => id !== group.id)
                       ))}
                     />
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: group.color }} aria-hidden="true" />
+                    <GroupDot color={group.color} className="h-2.5 w-2.5" />
                     <span>{group.name}</span>
                     {group.isArchived && (
                       <span className="text-xs text-neutral-500 dark:text-neutral-400">

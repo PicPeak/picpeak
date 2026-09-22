@@ -6,12 +6,23 @@
  * contrast, in either theme, and to a screen reader. That also means an admin
  * can pick any colour without making a chip unreadable.
  */
-import React from 'react';
+import React, { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Archive, X } from 'lucide-react';
 import type { CustomerGroup, CustomerGroupMatch } from '../../services/customerAdmin.service';
 
-const dot = (color: string) => ({ backgroundColor: color });
+/**
+ * The colour dot. The 1px ring contrasts with both themes' surfaces, so a
+ * colour close to the background (white in light mode, near-black in dark)
+ * still shows as a dot instead of vanishing.
+ */
+export const GroupDot: React.FC<{ color: string; className?: string }> = ({ color, className = 'h-2 w-2' }) => (
+  <span
+    className={`${className} shrink-0 rounded-full ring-1 ring-black/15 dark:ring-white/25`}
+    style={{ backgroundColor: color }}
+    aria-hidden="true"
+  />
+);
 
 interface CustomerGroupChipProps {
   group: CustomerGroup;
@@ -26,7 +37,7 @@ export const CustomerGroupChip: React.FC<CustomerGroupChipProps> = ({ group, cla
       className={`inline-flex max-w-full items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-2 py-0.5 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200 ${className}`}
       title={group.description || group.name}
     >
-      <span className="h-2 w-2 shrink-0 rounded-full" style={dot(group.color)} aria-hidden="true" />
+      <GroupDot color={group.color} />
       <span className="truncate">{group.name}</span>
       {group.isArchived && (
         <Archive
@@ -44,9 +55,15 @@ interface CustomerGroupChipListProps {
   max?: number;
 }
 
-/** The groups on one customer, wrapping rather than stretching the row. */
+/**
+ * The groups on one customer, wrapping rather than stretching the row.
+ * Beyond `max`, a "+n" button reveals the rest in place — reachable by
+ * keyboard, and named for a screen reader — and hides them again.
+ */
 export const CustomerGroupChipList: React.FC<CustomerGroupChipListProps> = ({ groups, max = 3 }) => {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const restId = useId();
   if (!groups || groups.length === 0) {
     return <span className="text-xs text-neutral-400">{t('customers.groups.none', '—')}</span>;
   }
@@ -56,12 +73,27 @@ export const CustomerGroupChipList: React.FC<CustomerGroupChipListProps> = ({ gr
     <span className="flex flex-wrap items-center gap-1">
       {shown.map((group) => <CustomerGroupChip key={group.id} group={group} />)}
       {rest.length > 0 && (
-        <span
-          className="text-xs text-neutral-500 dark:text-neutral-400"
-          title={rest.map((group) => group.name).join(', ')}
-        >
-          {t('customers.groups.more', '+{{count}}', { count: rest.length })}
-        </span>
+        <>
+          <span id={restId} className="contents" hidden={!expanded}>
+            {expanded && rest.map((group) => <CustomerGroupChip key={group.id} group={group} />)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            aria-controls={restId}
+            aria-label={expanded
+              ? t('customers.groups.lessLabel', 'Show fewer groups')
+              : t('customers.groups.moreLabel', {
+                count: rest.length,
+                defaultValue_one: 'Show {{count}} more group',
+                defaultValue_other: 'Show {{count}} more groups',
+              })}
+            className="rounded px-1 text-xs text-neutral-500 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:text-neutral-400"
+          >
+            {expanded ? t('customers.groups.less', 'Less') : t('customers.groups.more', '+{{count}}', { count: rest.length })}
+          </button>
+        </>
       )}
     </span>
   );
@@ -130,7 +162,7 @@ export const CustomerGroupFilter: React.FC<CustomerGroupFilterProps> = ({
             aria-pressed={active}
             className={pillClass(active)}
           >
-            <span className="h-2 w-2 rounded-full" style={dot(group.color)} aria-hidden="true" />
+            <GroupDot color={group.color} />
             {group.name}
             {group.memberCount !== undefined && (
               <span className={active ? 'opacity-70' : 'text-neutral-400'}>{group.memberCount}</span>

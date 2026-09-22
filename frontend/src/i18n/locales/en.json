@@ -5977,7 +5977,13 @@
       "ungrouped": "Ungrouped",
       "matchLabel": "Customers in",
       "matchAny": "Any of them",
-      "matchAll": "All of them"
+      "matchAll": "All of them",
+      "moreLabel_one": "Show {{count}} more group",
+      "moreLabel_other": "Show {{count}} more groups",
+      "less": "Less",
+      "lessLabel": "Show fewer groups",
+      "lowContrastLight": "This colour is hard to see in light mode.",
+      "lowContrastDark": "This colour is hard to see in dark mode."
     },
     "emptyFiltered": "No customers match these filters.",
     "clearFilters": "Clear filters",

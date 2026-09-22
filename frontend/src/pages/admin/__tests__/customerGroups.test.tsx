@@ -12,7 +12,7 @@
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -466,5 +466,22 @@ describe('the catalogue tab', () => {
     await waitFor(() => expect(createGroup).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Corporate', color: expect.stringMatching(/^#[0-9A-F]{6}$/) }),
     ));
+  });
+
+  it('warns about a colour that is hard to see in one theme, and not about the palette', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await openGroupsTab(user);
+    await user.click(await screen.findByRole('button', { name: 'New group' }));
+    const custom = screen.getByLabelText('Custom colour');
+
+    for (const name of ['Blue', 'Green', 'Amber', 'Red', 'Violet', 'Teal', 'Pink', 'Grey']) {
+      await user.click(screen.getByRole('button', { name }));
+      expect(screen.queryByText(/hard to see/)).toBeNull();
+    }
+    fireEvent.input(custom, { target: { value: '#ffffff' } });
+    expect(await screen.findByText('This colour is hard to see in light mode.')).toBeInTheDocument();
+    fireEvent.input(custom, { target: { value: '#000000' } });
+    expect(await screen.findByText('This colour is hard to see in dark mode.')).toBeInTheDocument();
   });
 });

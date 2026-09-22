@@ -18,6 +18,8 @@ import { toast } from 'react-toastify';
 import { Button, Card, Input, Loading } from '../common';
 import { useMutationWithToast } from '../../hooks';
 import { customerAdminService, type CustomerGroup } from '../../services/customerAdmin.service';
+import { contrastRatio } from '../../utils/contrast';
+import { GroupDot } from './CustomerGroupChips';
 
 /**
  * Eight colours that stay distinguishable on both themes' surfaces. The field
@@ -223,7 +225,7 @@ export const CustomerGroupsPanel: React.FC<{ canManage: boolean }> = ({ canManag
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-3">
-                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: group.color }} aria-hidden="true" />
+                  <GroupDot color={group.color} className="h-3 w-3" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-neutral-900 dark:text-neutral-100">
                       {group.name}
@@ -359,6 +361,32 @@ const ColorPicker: React.FC<{ value: string; onChange: (color: string) => void }
           className="h-6 w-10 cursor-pointer rounded border border-neutral-200 bg-transparent dark:border-neutral-700"
         />
       </div>
+      {/* Advice, not a refusal: the name carries the meaning and the dot has
+          a ring, so any colour is safe — some are just hard to make out. */}
+      {lowContrastTheme(value) && (
+        <p className="mt-1 text-xs text-amber-700 dark:text-amber-400" role="status">
+          {lowContrastTheme(value) === 'light'
+            ? t('customers.groups.lowContrastLight', 'This colour is hard to see in light mode.')
+            : t('customers.groups.lowContrastDark', 'This colour is hard to see in dark mode.')}
+        </p>
+      )}
     </div>
   );
 };
+
+// The card surfaces a dot sits on (--color-surface in index.css).
+const LIGHT_SURFACE = '#FFFFFF';
+const DARK_SURFACE = '#171717';
+// Below this a dot is hard to make out on the surface. Lower than the 3:1
+// WCAG asks of non-text controls: the dot is not what carries the meaning
+// (the name is), and 3:1 against the dark surface would flag half of the
+// palette above, which is meant to be the safe choice.
+const MIN_DOT_CONTRAST = 2;
+
+/** The theme in which `color` is hard to see, if any. */
+function lowContrastTheme(color: string): 'light' | 'dark' | null {
+  if (!/^#[0-9a-f]{6}$/i.test(color)) return null;
+  if (contrastRatio(color, LIGHT_SURFACE) < MIN_DOT_CONTRAST) return 'light';
+  if (contrastRatio(color, DARK_SURFACE) < MIN_DOT_CONTRAST) return 'dark';
+  return null;
+}

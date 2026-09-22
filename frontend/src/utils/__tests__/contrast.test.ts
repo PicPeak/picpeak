@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getReadableForeground, relativeLuminance } from '../contrast';
+import { contrastRatio, getReadableForeground, relativeLuminance } from '../contrast';
 
 describe('getReadableForeground', () => {
   describe('against the legacy hardcoded #ffffff fallback', () => {
@@ -64,5 +64,18 @@ describe('relativeLuminance', () => {
 
   it('returns 0 for unparseable input (defensive)', () => {
     expect(relativeLuminance('not-a-hex')).toBe(0);
+  });
+});
+
+describe('contrastRatio', () => {
+  it('is 1 for the same colour and 21 for black on white, in either order', () => {
+    expect(contrastRatio('#FFFFFF', '#FFFFFF')).toBe(1);
+    expect(contrastRatio('#000000', '#FFFFFF')).toBeCloseTo(21, 5);
+    expect(contrastRatio('#FFFFFF', '#000000')).toBeCloseTo(21, 5);
+  });
+
+  it('matches a known mid-tone pair', () => {
+    // tailwind blue-600 on white, as published by WebAIM's checker.
+    expect(contrastRatio('#2563EB', '#FFFFFF')).toBeCloseTo(5.17, 2);
   });
 });

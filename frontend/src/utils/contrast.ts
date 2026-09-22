@@ -29,6 +29,16 @@ export function relativeLuminance(hex: string): number {
 }
 
 /**
+ * WCAG 2.x contrast ratio between two colours, from 1 (identical) to 21
+ * (black on white). https://www.w3.org/TR/WCAG21/#dfn-contrast-ratio
+ */
+export function contrastRatio(hexA: string, hexB: string): number {
+  const a = relativeLuminance(hexA);
+  const b = relativeLuminance(hexB);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+/**
  * Return '#ffffff' or '#000000' for text/icons painted on top of the
  * supplied background. Uses a relative-luminance threshold of 0.5:
  *   L >= 0.5  → background is "light" → return '#000000'

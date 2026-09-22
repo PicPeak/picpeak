@@ -36,6 +36,7 @@ import {
 } from '../../services/customerAdmin.service';
 import { businessProfileService } from '../../services/businessProfile.service';
 import { usePermissions } from '../../contexts/PermissionsContext';
+import { GroupDot } from './CustomerGroupChips';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface Props {
@@ -406,7 +407,7 @@ export const InlineCustomerCreate: React.FC<Props> = ({ onCreated, onCancel, mod
                         : current.filter((id) => id !== group.id)
                     ))}
                   />
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: group.color }} aria-hidden="true" />
+                  <GroupDot color={group.color} className="h-2.5 w-2.5" />
                   <span>{group.name}</span>
                 </label>
               </li>
