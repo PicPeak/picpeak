@@ -19,7 +19,9 @@
  *     another document), activeX parts, ODF Basic/ and Scripts/, ODF
  *     sub-documents under any directory, embedded-object, script and macro
  *     event elements — and macro-enabled main parts (docm/xlsm renamed
- *     .docx), OLE/package/control relationships and content types
+ *     .docx), OLE/package/control/externalLink relationships and content
+ *     types, and Word fields that run a program or load a file (DDE,
+ *     DDEAUTO, INCLUDETEXT, INCLUDEPICTURE, QUOTE character codes)
  *   - an ODF xlink:href in content.xml or styles.xml that points outside the
  *     package (http:, https:, file:, ftp:, a network, parent or absolute path)
  *   - any relationship with TargetMode="External": remote-template injection
@@ -88,9 +90,13 @@ const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 // that embed an object, a script or a macro binding.
 const ODF_DOCUMENT_PART = /(^|\/)(content|styles|meta|settings)\.xml$/i;
 const ODF_ACTIVE_ELEMENT = new Set(['object', 'object-ole', 'applet', 'plugin', 'script', 'event-listener']);
+// Word parts that hold fields (body, headers, footers, notes, comments,
+// the glossary), and the field types refused in them.
+const WORD_TEXT_PART = /^word\/(glossary\/)?[^/]+\.xml$/i;
+const ACTIVE_FIELD = /\b(DDE|DDEAUTO|INCLUDETEXT|INCLUDEPICTURE)\b|\bQUOTE\s+\d/i;
 // Content types and relationship types of code and embedded objects.
 const ACTIVE_TYPE = /macroEnabled|vbaProject|vbaData|activeX|oleObject|\.package\b/i;
-const ACTIVE_RELATIONSHIP = /\/(oleObject|package|control|activeXControl\w*|vbaProject\w*|wordVbaData|keyMapCustomizations)$/i;
+const ACTIVE_RELATIONSHIP = /\/(oleObject|package|control|activeXControl\w*|vbaProject\w*|wordVbaData|keyMapCustomizations|externalLink)$/i;
 
 // An ODF link that leaves the package: any URL scheme (not only http/file —
 // vnd.sun.star.script: and macro: run code on click), a network path, an
@@ -115,61 +121,109 @@ function decodeXml(value) {
 }
 
 /**
- * Every start tag and its attributes, read the way an XML parser reads them:
- * comments, CDATA sections and processing instructions skipped whole, quoted
- * values taken as one token, so text inside a comment or another value can't
- * hide a real attribute (or fake one). A DTD is refused — OOXML and ODF
- * parts have none, and entities declared in one could spell any value — and
- * so is anything malformed, which no office suite reads either.
+ * A part as tokens, read the way an XML parser reads it: comments and
+ * processing instructions skipped whole, quoted values taken as one token, so
+ * text inside a comment or another value can't hide a real attribute (or
+ * fake one). A DTD is refused — OOXML and ODF parts have none, and entities
+ * declared in one could spell any value — and so is anything malformed,
+ * which no office suite reads either.
  *
- * Yields { name, attrs: [{ name, value }] }, names with their namespace
- * prefix and values decoded.
+ * Yields { kind: 'open', name, attrs: [{ name, value }] }, { kind: 'close',
+ * name } and { kind: 'text', text }: names with their namespace prefix,
+ * values and text decoded. Namespace declarations (xmlns, xmlns:x) are not
+ * attributes and are left out, so `xmlns:TargetMode` can't stand in for
+ * TargetMode.
  */
-function* xmlElements(xml) {
+function* xmlTokens(xml) {
   const malformed = () => notValid('The document contains a part that is not well-formed XML');
   const attr = /\s*([^\s=/>]+)\s*=\s*(?:"([^"]*)"|'([^']*)')|\s*(\/?>)/y;
   const tagName = /[^\s/>]+/y;
+  const skipTo = (end, from) => {
+    const at = xml.indexOf(end, from);
+    if (at < 0) throw malformed();
+    return at + end.length;
+  };
   let i = 0;
   for (;;) {
     const lt = xml.indexOf('<', i);
+    if (lt > i || (lt < 0 && i < xml.length)) yield { kind: 'text', text: decodeXml(xml.slice(i, lt < 0 ? undefined : lt)) };
     if (lt < 0) return;
-    const skipTo = (end, from) => {
-      const at = xml.indexOf(end, from);
-      if (at < 0) throw malformed();
-      return at + end.length;
-    };
     if (xml.startsWith('<!--', lt)) { i = skipTo('-->', lt + 4); continue; }
-    if (xml.startsWith('<![CDATA[', lt)) { i = skipTo(']]>', lt + 9); continue; }
+    if (xml.startsWith('<![CDATA[', lt)) {
+      i = skipTo(']]>', lt + 9);
+      yield { kind: 'text', text: xml.slice(lt + 9, i - 3) };
+      continue;
+    }
     if (xml.startsWith('<?', lt)) { i = skipTo('?>', lt + 2); continue; }
     if (xml[lt + 1] === '!') throw notValid('The document contains a DTD, which office documents do not use');
-    if (xml[lt + 1] === '/') { i = skipTo('>', lt + 2); continue; }
+    if (xml[lt + 1] === '/') {
+      i = skipTo('>', lt + 2);
+      yield { kind: 'close', name: xml.slice(lt + 2, i - 1).trim() };
+      continue;
+    }
     tagName.lastIndex = lt + 1;
     const element = tagName.exec(xml);
     if (!element) throw malformed();
     let j = tagName.lastIndex;
     const attrs = [];
+    let selfClosing = false;
     for (;;) {
       attr.lastIndex = j;
       const m = attr.exec(xml);
       if (!m) throw malformed();
       j = attr.lastIndex;
-      if (m[4]) break;
+      if (m[4]) { selfClosing = m[4] === '/>'; break; }
       const raw = m[2] !== undefined ? m[2] : m[3];
       if (raw.includes('<')) throw malformed();
+      if (m[1] === 'xmlns' || m[1].startsWith('xmlns:')) continue;
       attrs.push({ name: m[1], value: decodeXml(raw) });
     }
-    yield { name: element[0], attrs };
+    yield { kind: 'open', name: element[0], attrs };
+    if (selfClosing) yield { kind: 'close', name: element[0] };
     i = j;
   }
 }
 
+/** Every start tag, as { name, attrs }. */
+function* xmlElements(xml) {
+  for (const t of xmlTokens(xml)) if (t.kind === 'open') yield t;
+}
+
 const localName = (name) => name.slice(name.indexOf(':') + 1).toLowerCase();
 
-/** One element's attribute by local name, or undefined. */
+/**
+ * An element's attribute exactly as named (unprefixed, as OOXML reads it),
+ * or undefined. For a positive check: this is the value Office uses.
+ */
 const attrOf = (el, name) => {
-  const a = el.attrs.find((x) => localName(x.name) === name.toLowerCase());
+  const a = el.attrs.find((x) => x.name === name);
   return a ? a.value : undefined;
 };
+
+/**
+ * Every value of an attribute with this local name, under any prefix. For a
+ * refusal: whichever one a reader takes, all of them were checked.
+ */
+const attrsOf = (el, name) => el.attrs
+  .filter((x) => localName(x.name) === name.toLowerCase())
+  .map((x) => String(x.value).trim());
+
+/** Every field instruction in a WordprocessingML part, run text joined. */
+function fieldInstructions(xml) {
+  let out = '';
+  let depth = 0;
+  for (const t of xmlTokens(xml)) {
+    if (t.kind === 'open') {
+      if (localName(t.name) === 'instrtext') depth += 1;
+      if (localName(t.name) === 'fldsimple') out += ` ${attrsOf(t, 'instr').join(' ')} `;
+    } else if (t.kind === 'close') {
+      if (localName(t.name) === 'instrtext' && depth > 0) depth -= 1;
+    } else if (depth > 0) {
+      out += t.text;
+    }
+  }
+  return out;
+}
 
 /** The first `n` bytes of an entry, without inflating the rest. */
 async function readHead(zip, name, n) {
@@ -302,7 +356,8 @@ async function inspectOffice(file, format, limits = {}) {
       const main = OOXML_MAIN[format];
       const typeFor = (el) => String(attrOf(el, 'ContentType') || '').trim();
       const kind = (el) => localName(el.name);
-      if (types.some((el) => ['default', 'override'].includes(kind(el)) && ACTIVE_TYPE.test(typeFor(el)))) {
+      if (types.some((el) => ['default', 'override'].includes(kind(el))
+        && attrsOf(el, 'ContentType').some((type) => ACTIVE_TYPE.test(type)))) {
         throw active('Macro-enabled documents and embedded objects cannot be uploaded');
       }
       const mainOverrides = types.filter((el) => kind(el) === 'override'
@@ -330,12 +385,23 @@ async function inspectOffice(file, format, limits = {}) {
         if (!/\.rels$/i.test(name) || entries[name].isDirectory) continue;
         for (const el of xmlElements(await readPart(zip, name, lim.maxPartBytes))) {
           if (localName(el.name) !== 'relationship') continue;
-          if (String(attrOf(el, 'TargetMode') || '').trim().toLowerCase() === 'external') {
+          if (attrsOf(el, 'TargetMode').some((mode) => mode.toLowerCase() === 'external')) {
             throw active('The document links to external content (such as a remote template) and cannot be uploaded');
           }
-          if (ACTIVE_RELATIONSHIP.test(String(attrOf(el, 'Type') || '').trim())) {
+          if (attrsOf(el, 'Type').some((type) => ACTIVE_RELATIONSHIP.test(type))) {
             throw active('The document contains macros or embedded objects');
           }
+        }
+      }
+      // Word fields that run a program or fetch content: DDE/DDEAUTO start
+      // another application, INCLUDETEXT/INCLUDEPICTURE load a file or URL,
+      // and QUOTE with character codes is how a DDE field gets spelled out
+      // of nested fields. A field's instruction can be split across runs,
+      // so each part's instructions are read as one string.
+      for (const name of names) {
+        if (!WORD_TEXT_PART.test(name) || entries[name].isDirectory) continue;
+        if (ACTIVE_FIELD.test(fieldInstructions(await readPart(zip, name, lim.maxPartBytes)))) {
+          throw active('The document contains fields that run programs or load outside content');
         }
       }
     } else {
@@ -372,9 +438,9 @@ async function inspectOffice(file, format, limits = {}) {
             throw new InspectError('Password-protected documents cannot be uploaded', 'DOCUMENT_ENCRYPTED');
           }
           if (localName(el.name) !== 'file-entry') continue;
-          const fullPath = String(attrOf(el, 'full-path') || '').trim();
-          const mediaType = String(attrOf(el, 'media-type') || '').trim();
-          if (fullPath !== '/' && /^application\/vnd\.(oasis\.opendocument|sun\.xml\.(writer|calc|draw|impress|math))/i.test(mediaType)) {
+          const embedded = attrsOf(el, 'media-type')
+            .some((type) => /^application\/vnd\.(oasis\.opendocument|sun\.xml\.(writer|calc|draw|impress|math))/i.test(type));
+          if (embedded && attrsOf(el, 'full-path').some((p) => p !== '/')) {
             throw active('The document contains an embedded document');
           }
         }
