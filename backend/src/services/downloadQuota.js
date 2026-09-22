@@ -12,8 +12,8 @@
  * waits for the connection the transaction itself holds.
  */
 
-const crypto = require('crypto');
 const { db } = require('../database/db');
+const logger = require('../utils/logger');
 
 const INSERT_CHUNK = 200; // 4 bound values per row, under SQLite's 999.
 
@@ -40,8 +40,9 @@ async function grantedPhotoIds(eventId, photoIds = null, conn = db, { deliveredO
     .join('photos', 'photos.id', 'event_download_grants.photo_id')
     .where('event_download_grants.event_id', eventId)
     .where('photos.event_id', eventId);
-  // A reserved row belongs to a zip still streaming: counted, not yet handed over.
-  if (deliveredOnly) query = query.whereNull('event_download_grants.reservation');
+  // A pending row belongs to a download still in flight: counted, not yet
+  // handed over.
+  if (deliveredOnly) query = query.where('event_download_grants.pending_holders', 0);
   if (photoIds) {
     if (photoIds.length === 0) return new Set();
     query = query.whereIn('event_download_grants.photo_id', photoIds);
@@ -91,22 +92,22 @@ async function checkDownloads(event, photoIds, { isAdminPreview = false } = {}) 
 
 /**
  * Grant every photo in `photoIds`, or none of them. Returns
- * { ok: true, newIds, reservation } — newIds being the photos this call
- * counted for the first time — or { ok: false, limit, used, remaining }.
- * Admin previews and unlimited events are a no-op.
+ * { ok: true, newIds, held } — newIds being the photos this call counted for
+ * the first time — or { ok: false, limit, used, remaining }. Admin previews
+ * and unlimited events are a no-op.
  *
- * `reserve` is for a zip that grants its whole set before streaming: its new
- * rows are tagged with a reservation id, and when the response ends
- * settleReservation keeps what it shipped and gives back the rest. A
- * single-shot download that finds a reserved row delivers the photo now, so
- * it clears the tag and the zip can no longer take that slot back. Another
- * zip leaves the tag alone: it has not delivered anything yet either.
+ * `reserve` is for a download that grants before it knows whether its bytes
+ * will go out (every route does: the grant has to land before the first
+ * byte). Its rows stay pending, holding their slot, until settleWhenDone
+ * records what was delivered and gives back the rest. A pending row another
+ * download reserved is joined rather than taken over, so the slot is only
+ * given back once no download that could still deliver it holds it. Without
+ * `reserve` the grant is delivered at once.
  */
 async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve = false } = {}) {
   if (isAdminPreview || !downloadLimitOf(event)) return { ok: true, newIds: [] };
   const ids = uniqueIds(photoIds);
   if (ids.length === 0) return { ok: true, newIds: [] };
-  const reservation = reserve ? crypto.randomUUID() : null;
 
   return db.transaction(async (trx) => {
     // SQLite runs one write transaction at a time; Postgres needs the row lock.
@@ -122,13 +123,20 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve
     if (!result.ok) return result;
 
     const fresh = new Set(result.newIds);
-    const reused = reserve ? [] : ids.filter((id) => !fresh.has(id));
+    const reused = ids.filter((id) => !fresh.has(id));
+    const joined = [];
     for (let i = 0; i < reused.length; i += INSERT_CHUNK) {
-      await trx('event_download_grants')
+      const chunk = trx('event_download_grants')
         .where('event_id', event.id)
         .whereIn('photo_id', reused.slice(i, i + INSERT_CHUNK))
-        .whereNotNull('reservation')
-        .update({ reservation: null });
+        .where('pending_holders', '>', 0);
+      if (reserve) {
+        const rows = await chunk.clone().select('photo_id');
+        joined.push(...rows.map((r) => Number(r.photo_id)));
+        await chunk.increment('pending_holders', 1);
+      } else {
+        await chunk.update({ pending_holders: 0 });
+      }
     }
 
     const grantedAt = new Date().toISOString();
@@ -138,59 +146,92 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve
         photo_id: photoId,
         guest_id: null,
         granted_at: grantedAt,
-        reservation,
+        pending_holders: reserve ? 1 : 0,
       }));
       await trx('event_download_grants').insert(rows).onConflict(['event_id', 'photo_id']).ignore();
     }
-    return { ok: true, newIds: result.newIds, reservation };
+    return {
+      ok: true,
+      newIds: result.newIds,
+      held: reserve ? [...result.newIds, ...joined] : [],
+    };
   });
 }
 
 /**
- * End of a zip that granted with `reserve` (issue 1560). What it shipped
- * becomes a delivered grant — recreated if an overlapping zip gave the slot
- * back in the meantime, because the photo did go out. What it counted for the
- * first time and never shipped (a missing source, a cancelled download) is
- * given back, but only while the row still carries this zip's reservation: a
- * single download that delivered the photo meanwhile cleared it.
+ * The end of a reserved download (issue 1560). What it delivered becomes a
+ * delivered grant — recreated if the slot was given back in the meantime,
+ * because the photo did go out. For what it held and did not deliver (a
+ * missing source, a cancelled download) it lets go: the slot is given back
+ * when it was the last holder, and a row some other download has delivered
+ * meanwhile is left alone.
  *
  * Under the same event lock as grantDownloads.
  */
-async function settleReservation(eventId, quota, shippedIds) {
-  if (!quota || !quota.reservation) return;
-  const shipped = uniqueIds(shippedIds);
-  const unshipped = undeliveredGrants(quota, shipped);
-  if (shipped.length === 0 && unshipped.length === 0) return;
+async function settleReservation(eventId, quota, deliveredIds) {
+  if (!quota || !Array.isArray(quota.held)) return;
+  const delivered = uniqueIds(deliveredIds);
+  const deliveredSet = new Set(delivered);
+  const released = quota.held.filter((id) => !deliveredSet.has(Number(id)));
+  if (delivered.length === 0 && released.length === 0) return;
   await db.transaction(async (trx) => {
     if (trx.client.config.client === 'pg') {
       await trx('events').where({ id: eventId }).forUpdate().first();
     }
     const grantedAt = new Date().toISOString();
-    for (let i = 0; i < shipped.length; i += INSERT_CHUNK) {
-      const rows = shipped.slice(i, i + INSERT_CHUNK).map((photoId) => ({
+    for (let i = 0; i < delivered.length; i += INSERT_CHUNK) {
+      const rows = delivered.slice(i, i + INSERT_CHUNK).map((photoId) => ({
         event_id: eventId,
         photo_id: photoId,
         guest_id: null,
         granted_at: grantedAt,
-        reservation: null,
+        pending_holders: 0,
       }));
       await trx('event_download_grants').insert(rows)
-        .onConflict(['event_id', 'photo_id']).merge(['reservation']);
+        .onConflict(['event_id', 'photo_id']).merge(['pending_holders']);
     }
-    for (let i = 0; i < unshipped.length; i += INSERT_CHUNK) {
+    for (let i = 0; i < released.length; i += INSERT_CHUNK) {
+      const chunk = released.slice(i, i + INSERT_CHUNK);
       await trx('event_download_grants')
-        .where({ event_id: eventId, reservation: quota.reservation })
-        .whereIn('photo_id', unshipped.slice(i, i + INSERT_CHUNK))
+        .where({ event_id: eventId, pending_holders: 1 })
+        .whereIn('photo_id', chunk)
         .del();
+      await trx('event_download_grants')
+        .where('event_id', eventId)
+        .where('pending_holders', '>', 1)
+        .whereIn('photo_id', chunk)
+        .decrement('pending_holders', 1);
     }
   });
 }
 
-/** The undelivered part of a grant: counted by this request, never appended. */
-function undeliveredGrants(quota, deliveredIds) {
-  if (!quota || !Array.isArray(quota.newIds) || quota.newIds.length === 0) return [];
-  const delivered = new Set((deliveredIds || []).map(Number));
-  return quota.newIds.filter((id) => !delivered.has(Number(id)));
+/**
+ * Settle a reserved grant once the response is over, with whatever
+ * `deliveredIds()` then reports. Handles a response that closed before this
+ * was registered — a guest who gave up while the grant was being recorded.
+ */
+function settleWhenDone(res, eventId, quota, deliveredIds) {
+  if (!quota || !Array.isArray(quota.held)) return;
+  let settled = false;
+  const settle = () => {
+    if (settled) return;
+    settled = true;
+    settleReservation(eventId, quota, deliveredIds()).catch((err) => logger.warn('Could not settle download grants', {
+      eventId, error: err.message,
+    }));
+  };
+  res.once('close', settle);
+  if (res.destroyed || res.closed) settle();
+}
+
+/**
+ * For a single response carrying `photoIds` whole: delivered once its body
+ * started going out with a success status. An error before the first byte
+ * gives the slots back; a transfer cut off midway does not, since the bytes
+ * that went out cannot be taken back.
+ */
+function responseDelivered(res, photoIds) {
+  return () => (res.headersSent && res.statusCode < 400 ? photoIds : []);
 }
 
 /** The response body every download path sends when the limit refuses a request. */
@@ -233,6 +274,7 @@ module.exports = {
   downloadLimitError,
   resetGrants,
   settleReservation,
-  undeliveredGrants,
+  settleWhenDone,
+  responseDelivered,
   isOriginalWithheld,
 };

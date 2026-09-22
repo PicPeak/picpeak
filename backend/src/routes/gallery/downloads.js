@@ -31,7 +31,7 @@ const { buildContentDisposition } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
 const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
 const {
-  downloadLimitOf, grantDownloads, checkDownloads, downloadLimitError, settleReservation,
+  downloadLimitOf, grantDownloads, checkDownloads, downloadLimitError, settleWhenDone, responseDelivered,
 } = require('../../services/downloadQuota');
 const fs = require('fs');
 /**
@@ -41,13 +41,9 @@ const fs = require('fs');
  * missing source, or everything left when the guest cancels. Entries carry
  * their photoId into archiver's 'entry' event.
  */
-function releaseUnshipped(req, res, quota) {
+function releaseUnshipped(res, eventId, quota) {
   const shipped = [];
-  res.once('close', () => {
-    settleReservation(req.event.id, quota, shipped).catch((err) => logger.warn('Could not settle download grants', {
-      eventId: req.event.id, error: err.message,
-    }));
-  });
+  settleWhenDone(res, eventId, quota, () => shipped);
   return {
     track(archive) {
       archive.on('entry', (entry) => {
@@ -184,14 +180,18 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
     }
 
     // Download limit (issue 1560). Checked here so a refused request does no
-    // work and bumps no counter; the grant itself is recorded below, once the
-    // bytes are actually in hand, so a photo whose file is missing never uses
-    // up a slot. A photo this gallery already received is free again.
+    // work and bumps no counter; the grant itself is recorded below, before
+    // the first byte, and settled when the response ends — a photo whose
+    // bytes never started going out gets its slot back. A photo this gallery
+    // already received is free again.
     const limitCheck = await checkDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
     if (!limitCheck.ok) return res.status(403).json(downloadLimitError(limitCheck));
     const grantThisPhoto = async () => {
-      const quota = await grantDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview });
-      if (quota.ok) return true;
+      const quota = await grantDownloads(req.event, [photo.id], { isAdminPreview: req.isAdminPreview, reserve: true });
+      if (quota.ok) {
+        settleWhenDone(res, req.event.id, quota, responseDelivered(res, [photo.id]));
+        return true;
+      }
       // Lost a race with another device between the check and here.
       res.status(403).json(downloadLimitError(quota));
       return false;
@@ -346,6 +346,10 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
       // the outer catch can do nothing but throw ERR_HTTP_HEADERS_SENT, and in
       // the non-range case it would send its 500 JSON underneath the staged
       // image/jpeg attachment headers — a .jpg file full of JSON.
+      // Granted before the stream opens: nothing can error unobserved while
+      // the grant is recorded, and a failed open settles it as undelivered.
+      if (!(await grantThisPhoto())) return;
+
       let stream;
       try {
         stream = range
@@ -366,11 +370,6 @@ router.get('/:slug/download/:photoId', verifyGalleryAccess, denySlideshowToken, 
         return gone
           ? res.status(404).json({ error: 'Photo file not found' })
           : res.status(500).json({ error: 'Failed to download photo' });
-      }
-
-      if (!(await grantThisPhoto())) {
-        stream.destroy?.();
-        return;
       }
 
       if (range) {
@@ -580,7 +579,9 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // before the zip headers go out.
     const quota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview, reserve: true });
     if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
-    const releaseAll = releaseUnshipped(req, res, quota);
+    const releaseAll = releaseUnshipped(res, req.event.id, quota);
+    // The guest left while the grant was being recorded: nothing to stream.
+    if (res.destroyed || res.closed) return;
 
     // Count unique types
     const uniqueTypes = new Set(photos.map(p => p.type)).size;
@@ -792,7 +793,9 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // what gets zipped, so it is what gets granted. All or nothing.
     const selectedQuota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview, reserve: true });
     if (!selectedQuota.ok) return res.status(403).json(downloadLimitError(selectedQuota));
-    const releaseSelected = releaseUnshipped(req, res, selectedQuota);
+    const releaseSelected = releaseUnshipped(res, req.event.id, selectedQuota);
+    // The guest left while the grant was being recorded: nothing to stream.
+    if (res.destroyed || res.closed) return;
 
     const archiveName = `${req.event.slug}-selected.zip`;
     res.setHeader('Content-Type', 'application/zip');
@@ -1097,8 +1100,9 @@ router.get('/:slug/download-jobs/:token/file', verifyGalleryAccess, denySlidesho
         res.set({ 'Content-Type': 'application/zip', 'Content-Length': stat.size });
         return res.end();
       }
-      const quota = await grantDownloads(req.event, deliveredIds);
+      const quota = await grantDownloads(req.event, deliveredIds, { reserve: true });
       if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
+      settleWhenDone(res, req.event.id, quota, responseDelivered(res, deliveredIds));
     }
 
     // Stats parity with the other bulk paths (#895): only count once the

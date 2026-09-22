@@ -299,14 +299,38 @@ describe('Download limit (issue 1560)', () => {
       expect(await quota.isOriginalWithheld(event, { id: photoIds[1] })).toBe(false);
     });
 
-    it('a zip that shipped a photo after an overlapping zip gave its slot back still counts it', async () => {
-      const { event, photoIds } = await makeEvent({ limit: 3 });
+    it('a slot stays charged while another zip can still deliver it', async () => {
+      const { event, photoIds } = await makeEvent({ limit: 1 });
       const a = await quota.grantDownloads(event, [photoIds[0]], { reserve: true });
       const b = await quota.grantDownloads(event, [photoIds[0]], { reserve: true });
       await quota.settleReservation(event.id, a, []);
+      // b may still ship it, so nothing else fits yet.
+      expect((await quota.grantDownloads(event, [photoIds[1]])).ok).toBe(false);
+      await quota.settleReservation(event.id, b, []);
       expect(await grantCount(event.id)).toBe(0);
-      await quota.settleReservation(event.id, b, [photoIds[0]]);
-      expect([...(await quota.grantedPhotoIds(event.id))]).toEqual([photoIds[0]]);
+    });
+
+    it('a single download settles as delivered only once its bytes went out', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 2 });
+      await db('photos').where({ id: photoIds[0] }).update({ path: `${event.slug}/missing.jpg` });
+      await request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[0]}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+      await request(app)
+        .get(`/api/gallery/${event.slug}/download/${photoIds[1]}`)
+        .set('Authorization', `Bearer ${token}`)
+        .buffer(true).parse(drain)
+        .expect(200);
+      expect(await eventuallyGrantCount(event.id, 1)).toBe(1);
+      // Settled after the response closed.
+      let withheld = true;
+      for (let i = 0; i < 50 && withheld; i += 1) {
+        withheld = await quota.isOriginalWithheld(event, { id: photoIds[1] });
+        if (withheld) await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(withheld).toBe(false);
+      expect([...(await quota.grantedPhotoIds(event.id))]).toEqual([photoIds[1]]);
     });
 
     it('a HEAD probe of download-all takes none of the quota', async () => {
