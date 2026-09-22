@@ -2143,10 +2143,9 @@ async function renderInvoiceToBuffer(context) {
  *   - For each section: bold heading from t('section_<key>'), then each
  *     block rendered as a paragraph (block.name bold, then block.body).
  *   - outro_text paragraph.
- *   - Two-column signature block at the bottom of the closing page.
- *     If signature PNGs exist in context.signatures.{customer,admin}.signaturePath
- *     they're stamped into the box; otherwise blank lines for handwritten
- *     wet-signing.
+ *   - Two-column signature block at the bottom of the closing page, with
+ *     the signer's name and date under each box. Signature images are
+ *     stamped in afterwards by pdfStampService, never by this renderer.
  */
 /**
  * Render a contract. Resolves `{ buffer, slots }`: where each signature slot
