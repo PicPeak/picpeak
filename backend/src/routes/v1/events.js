@@ -1435,6 +1435,12 @@ router.get(
 
       const source = await openOriginal(event, photo);
       if (!source) return fileMissing();
+      // A client that left while the read was opening has already closed,
+      // so pipeStreamToResponse's cleanup would never run for this stream.
+      if (res.destroyed) {
+        source.stream.destroy();
+        return;
+      }
       setOriginalHeaders(res, photo, source.size);
 
       res.on('finish', () => {

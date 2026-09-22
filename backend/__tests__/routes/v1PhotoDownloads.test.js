@@ -447,6 +447,27 @@ describe('v1 original downloads (issue 1473)', () => {
       expect(rows).toHaveLength(2);
     });
 
+    it('finds its open entry behind any number of other tokens\' entries', async () => {
+      const { recordSingleDownload } = require('../../src/services/apiDownloadNotifications');
+      await db('activity_logs').delete();
+      const summary = (tokenId, count) => ({
+        activity_type: 'api_photos_downloaded', actor_type: 'system', event_id: eventId,
+        metadata: JSON.stringify({ via: 'api_v1', token_id: tokenId, token_name: `t${tokenId}`, count, window_started_at: Date.now() }),
+        created_at: new Date().toISOString(),
+      });
+      await db('activity_logs').insert(summary(Number(readTokenId), 1));
+      // Seventy newer open windows of other tokens on the same event.
+      for (let i = 0; i < 70; i += 1) await db('activity_logs').insert(summary(900000 + i, 1));
+
+      await recordSingleDownload({ tokenId: Number(readTokenId), tokenName: readTokenName, eventId, actor: null });
+
+      const rows = await db('activity_logs').where({ activity_type: 'api_photos_downloaded' });
+      expect(rows).toHaveLength(71);
+      const mine = rows.map((r) => (typeof r.metadata === 'string' ? JSON.parse(r.metadata) : r.metadata))
+        .filter((md) => md.token_id === Number(readTokenId));
+      expect(mine).toEqual([expect.objectContaining({ count: 2 })]);
+    });
+
     it('shows a ZIP as one entry', async () => {
       await db('activity_logs').delete();
       const res = await get(`/api/v1/events/${eventId}/photos/download?ids=${photos.png},${photos.video}`);

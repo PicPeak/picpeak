@@ -38,24 +38,47 @@ function parseMetadata(raw) {
   }
 }
 
+// Summary rows read per page while looking for the caller's open window.
+const LOOKUP_PAGE = 50;
+
+/**
+ * The token's still-open summary row for this event, or null. Rows are read
+ * newest first; each row's window starts when it is created, so the first
+ * closed window ends the search — every older row is closed too. Other
+ * tokens' open rows are skipped however many there are.
+ *
+ * The metadata column is json on some installs and text on others; both cast
+ * to the exact text that was stored, which the update below compares on.
+ */
+async function findOpenSummary(tokenId, eventId, now) {
+  let beforeId = null;
+  for (;;) {
+    const query = db('activity_logs')
+      .where({ activity_type: SUMMARY_TYPE, event_id: eventId })
+      .orderBy('id', 'desc')
+      .limit(LOOKUP_PAGE)
+      .select('id', db.raw('CAST(metadata AS TEXT) AS metadata_text'));
+    if (beforeId !== null) query.where('id', '<', beforeId);
+    const rows = await query;
+    for (const row of rows) {
+      const metadata = parseMetadata(row.metadata_text);
+      if (!(now - Number(metadata.window_started_at) < SUMMARY_WINDOW_MS)) return null;
+      if (Number(metadata.token_id) === Number(tokenId)) {
+        return { id: row.id, text: row.metadata_text, metadata };
+      }
+    }
+    if (rows.length < LOOKUP_PAGE) return null;
+    beforeId = rows[rows.length - 1].id;
+  }
+}
+
 // Attempts at the compare-and-set below before giving up on one increment.
 const MAX_BUMP_ATTEMPTS = 5;
 
 async function bumpSummary({ tokenId, tokenName, eventId, actor }) {
   for (let attempt = 0; attempt < MAX_BUMP_ATTEMPTS; attempt += 1) {
     const now = Date.now();
-    // The metadata column is json on some installs and text on others; both
-    // cast to the exact text that was stored, which the update compares on.
-    const recent = await db('activity_logs')
-      .where({ activity_type: SUMMARY_TYPE, event_id: eventId })
-      .orderBy('id', 'desc')
-      .limit(20)
-      .select('id', db.raw('CAST(metadata AS TEXT) AS metadata_text'));
-    const open = recent
-      .map((row) => ({ id: row.id, text: row.metadata_text, metadata: parseMetadata(row.metadata_text) }))
-      .find(({ metadata }) => Number(metadata.token_id) === Number(tokenId)
-        && now - Number(metadata.window_started_at) < SUMMARY_WINDOW_MS);
-
+    const open = await findOpenSummary(tokenId, eventId, now);
     if (!open) {
       await logActivity(SUMMARY_TYPE, {
         via: 'api_v1',
