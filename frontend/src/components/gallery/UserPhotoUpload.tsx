@@ -67,6 +67,17 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
       setIdentity(identityContext.identity);
     }
   }, [identityContext, identityContext?.identity, slug]);
+  // Outside the provider (the pre-reveal upload view) nothing else follows
+  // another tab signing in or out, so listen for it here.
+  useEffect(() => {
+    if (!askName || !slug || (identityContext && identityContext.slug === slug)) return undefined;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key && event.key !== `guest_token_${slug}` && event.key !== `guest_identity_${slug}`) return;
+      setIdentity(getGuestIdentity(slug));
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [askName, slug, identityContext]);
   const [files, setFiles] = useState<File[]>(() => carried?.files ?? []);
   const [uploading, setUploading] = useState(false);
   const submittingRef = useRef(false);
@@ -190,7 +201,17 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   // when there is none yet. Returns false when the upload must not start.
   const resolveUploader = async (): Promise<{ ok: boolean; token: string | null }> => {
     if (!askName || !slug) return { ok: true, token: null };
-    if (identity) return { ok: true, token: getGuestToken(slug) };
+    if (identity) {
+      // The token sent is whatever this device holds now; if that is no
+      // longer the guest the dialog shows, show the current one and let the
+      // guest confirm with another click rather than credit someone else.
+      const stored = getGuestIdentity(slug);
+      if (!stored || stored.id !== identity.id) {
+        setIdentity(stored);
+        return { ok: false, token: null };
+      }
+      return { ok: true, token: getGuestToken(slug) };
+    }
 
     const name = nameInput.trim();
     if (!name) {

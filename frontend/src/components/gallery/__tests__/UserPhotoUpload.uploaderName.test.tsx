@@ -189,6 +189,23 @@ describe('UserPhotoUpload uploader name', () => {
     await waitFor(() => expect(onUploadComplete).toHaveBeenCalledWith(['u1', 'u2']));
   });
 
+  it('follows another tab switching the guest, and never uploads under a name it does not show', async () => {
+    storeGuestIdentity(SLUG, { id: 9, name: 'Anna', email: null, identifier: 'g-9' }, 'anna.token.x');
+    const user = userEvent.setup();
+    const { container } = render(
+      <UserPhotoUpload eventId={7} categoryId={null} onUploadComplete={vi.fn()} onClose={vi.fn()} slug={SLUG} nameMode="required" />
+    );
+    await pickFile(container, user);
+    // Another tab switches to Bea; the storage event is lost (or late).
+    storeGuestIdentity(SLUG, { id: 10, name: 'Bea', email: null, identifier: 'g-10' }, 'bea.token.x');
+    await user.click(screen.getByRole('button', { name: /common\.upload/ }));
+    expect(uploads()).toHaveLength(0);
+    // Now showing Bea, the next click is a confirmed upload as Bea.
+    await user.click(screen.getByRole('button', { name: /common\.upload/ }));
+    await waitFor(() => expect(uploads()).toHaveLength(1));
+    expect(uploads()[0].config.headers['x-guest-token']).toBe('bea.token.x');
+  });
+
   it('keeps the selected files when the gallery signs a stale guest out', async () => {
     storeGuestIdentity(SLUG, { id: 9, name: 'Bea', email: null, identifier: 'g-9' }, 'stale.token.x');
     postState.upload = () => Promise.reject(Object.assign(new Error('400'), {
