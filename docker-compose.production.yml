@@ -128,6 +128,9 @@ services:
       - FACE_ML_URL=${FACE_ML_URL:-http://picpeak-ml:8000}
       - FACE_ML_TOKEN=${FACE_ML_TOKEN:-}
       - FACE_PROCESSOR_CONCURRENCY=${FACE_PROCESSOR_CONCURRENCY:-}
+      # CLAMAV_HOST / _PORT / _TIMEOUT_MS / _MAX_BYTES (#1444, malware scanner
+      # for customer documents) reach the backend through env_file too. With
+      # the opt-in `clamav` service below, set CLAMAV_HOST=clamav in .env.
       # PICPEAK_EVIDENCE_KEY (#1446) reaches the backend through env_file
       # above. It encrypts contract signers' names, email addresses and IP
       # addresses at rest. Unset, a key is generated into
@@ -213,6 +216,20 @@ services:
       retries: 3
       start_period: 40s
 
+  # Optional malware scanner for customer documents (#1444). Gated behind the
+  # `clamav` profile: `docker compose --profile clamav up -d`, then set
+  # CLAMAV_HOST=clamav in .env. Needs about 1 GB of RAM; no published port.
+  clamav:
+    image: clamav/clamav:stable
+    container_name: picpeak-clamav
+    profiles:
+      - clamav
+    volumes:
+      - clamav-db:/var/lib/clamav
+    networks:
+      - picpeak-network
+    restart: unless-stopped
+
   frontend:
     # Use pre-built image from GitHub Container Registry
     # Uses same channel as backend for consistency
@@ -278,6 +295,9 @@ volumes:
   picpeak-db-secret:
     driver: local
   picpeak-redis-secret:
+    driver: local
+  # ClamAV signature database (opt-in `clamav` profile); re-downloadable.
+  clamav-db:
     driver: local
 
 networks:
