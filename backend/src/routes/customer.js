@@ -758,7 +758,8 @@ router.get('/contracts', customerAuth, async (req, res) => {
         language: c.language,
         issueDate: c.issue_date,
         validUntil: c.valid_until,
-        title: c.title,
+        // Before the freeze (#1446) the number is all that is shown.
+        title: c.status === 'awaiting_data' ? null : c.title,
         sentAt: c.sent_at,
         signedByCustomerAt: c.signed_by_customer_at,
         signedByAdminAt: c.signed_by_admin_at,
@@ -817,6 +818,9 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
     if (contract.status === 'draft') {
       return res.status(404).json({ error: 'Contract not found' });
     }
+    // Collecting the customer's details first (#1446): nothing is frozen, and
+    // rendering on demand would hand out the unfrozen contract.
+    if (contract.status === 'awaiting_data') return sendNotReady(res);
     // Prefer the wet-signed PDF when present, otherwise the system-
     // generated PDF (signed in-browser, stamped, or unsigned).
     const path = require('path');
@@ -857,6 +861,7 @@ router.get('/contracts/:id/certificate', customerAuth, async (req, res) => {
       .where({ id: parseInt(req.params.id, 10), customer_account_id: req.customer.id })
       .first();
     if (!contract || contract.status === 'draft') return res.status(404).json({ error: 'Contract not found' });
+    if (contract.status === 'awaiting_data') return sendNotReady(res);
     const { readCertificate } = require('../services/contract/signatureAssets');
     const { fileName, buffer } = await readCertificate(contract.id);
     res.set('Content-Type', 'application/pdf');
@@ -888,7 +893,19 @@ async function ownedDocument(req, res, { table, featureKey, label, notFound }) {
     res.status(404).json({ error: notFound });
     return null;
   }
+  // A contract still collecting the customer's details (#1446) has no
+  // frozen content yet: its clauses and price are not shown anywhere.
+  if (table === 'contracts' && row.status === 'awaiting_data') {
+    sendNotReady(res);
+    return null;
+  }
   return row;
+}
+
+function sendNotReady(res) {
+  return res.status(409).json({
+    error: 'This contract is being prepared. Complete your details first.', code: 'CONTRACT_NOT_READY',
+  });
 }
 
 const CONTRACT = { table: 'contracts', featureKey: 'contracts', label: 'Contracts', notFound: 'Contract not found' };

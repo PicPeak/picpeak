@@ -1081,6 +1081,62 @@ describe('collect-then-freeze', () => {
     expect((await sign(session, { name: 'Anna Muster', mode: 'typed' })).status).toBe(409);
   });
 
+  test('no route of the portal or the signing session shows the unfrozen contract', async () => {
+    await db('customer_accounts').where({ id: customerId }).update({ address_line1: null, address_line2: null, postal_code: null, city: null });
+    const quoteService = require('../../src/services/quoteService');
+    const contractService = require('../../src/services/contractService');
+    const quoteId = await quoteService.createQuote({
+      customerAccountId: customerId, currency: 'CHF', vatRate: 0, eventName: 'Hidden shoot',
+      lineItems: [{ position: 1, quantity: 1, description: 'Hidden line', unit_price_minor: 987654, discount_percent: 0, parent_position: null }],
+    }, adminId);
+    await quoteService.sendQuote(quoteId, adminId);
+    await quoteService.adminAcceptQuote(quoteId, adminId);
+    const { contractId: id } = await contractService.createFromQuote(quoteId, adminId);
+    await db('contracts').where({ id }).update({ title: 'SECRET-TITLE', intro_text: 'SECRET-INTRO' });
+    const { contract: draft } = await ok(request(contractsApp).get(`/api/admin/contracts/${id}`).set(auth));
+    // A stretch of clause text the page would show (no placeholders in it).
+    const clauseText = draft.inclusions.map((i) => (i.included && i.block && i.block.bodyTextDe) || '')
+      .map((body) => body.replace(/\*\*/g, '').slice(20, 60)).find((part) => part.length === 40 && !part.includes('{'));
+    expect(clauseText).toBeTruthy();
+    await ok(request(contractsApp).post(`/api/admin/contracts/${id}/send`).set(auth).send({ collectData: true }));
+    const session = await verifiedSession(linkToken(await lastMail('contract_data_request', customerEmail)), customerEmail);
+
+    const jwt = require('jsonwebtoken');
+    const express = require('express');
+    const portal = express();
+    portal.use(express.json());
+    portal.use(require('cookie-parser')());
+    portal.use('/api/customer', require('../../src/routes/customer'));
+    portal.use(require('../../src/middleware/errorHandler').errorHandler);
+    const cookie = `customer_token=${jwt.sign({ type: 'customer', customerId, iat: Math.floor(Date.now() / 1000) - 5 },
+      process.env.JWT_SECRET, { algorithm: 'HS256', issuer: 'picpeak-auth', expiresIn: '1h' })}`;
+    const asCustomer = (req) => req.set('Cookie', cookie);
+    const asSession = (req) => asSigner(req).set('X-Signing-Session', session);
+
+    const responses = [
+      await asCustomer(request(portal).get('/api/customer/contracts')),
+      await asCustomer(request(portal).get(`/api/customer/contracts/${id}`)),
+      await asCustomer(request(portal).get(`/api/customer/contracts/${id}/pdf`)),
+      await asCustomer(request(portal).get(`/api/customer/contracts/${id}/certificate`)),
+      await asCustomer(request(portal).post(`/api/customer/contracts/${id}/sign`).send({ name: 'Anna', accepted: true })),
+      await asSession(request(signingApp).get('/api/public/contract-signing/session')),
+      await asSession(request(signingApp).get('/api/public/contract-signing/session/pdf')),
+      await asSession(request(signingApp).get('/api/public/contract-signing/session/attachments/1')),
+      await asSession(request(signingApp).post('/api/public/contract-signing/session/sign')).send({ name: 'Anna', mode: 'typed', accepted: true }),
+    ];
+    const secrets = ['SECRET-TITLE', 'SECRET-INTRO', 'Hidden line', '987654', '9876.54', '9’876.54', '%PDF'];
+    secrets.push(clauseText);
+    for (const res of responses) {
+      const text = `${res.text || ''}${Buffer.isBuffer(res.body) ? res.body.toString('latin1') : ''}`;
+      for (const secret of secrets) expect(text).not.toContain(secret);
+    }
+    // The single contract routes refuse outright.
+    expect(responses.slice(1, 4).map((r) => r.status)).toEqual([409, 409, 409]);
+    expect(responses[1].body.code).toBe('CONTRACT_NOT_READY');
+    const listed = responses[0].body.contracts.find((c) => c.id === id);
+    expect(listed).toEqual(expect.objectContaining({ status: 'awaiting_data', title: null, hasPdf: false, canCompleteDetails: true }));
+  });
+
   test('the co-signer has no way in while details are collected', async () => {
     const id = await requested();
     const second = (await db('contract_signers').where({ contract_id: id, position: 2 }).first());

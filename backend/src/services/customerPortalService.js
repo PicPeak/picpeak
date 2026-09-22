@@ -341,7 +341,8 @@ async function getEventOverview(customerId, slug) {
         id: c.id,
         contractNumber: c.contract_number,
         status: c.status,
-        title: c.title || null,
+        // Nothing of a contract still collecting details (#1446) but its number.
+        title: c.status === 'awaiting_data' ? null : (c.title || null),
         issueDate: toDateOnly(c.issue_date),
         hasPdf: !!c.pdf_path,
         hasSignedPdf: !!c.signed_pdf_path,
