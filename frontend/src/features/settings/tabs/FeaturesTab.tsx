@@ -241,7 +241,7 @@ export const FeaturesTab: React.FC = () => {
             title={t('settings.features.documents.title', 'Customer documents')}
             description={t(
               'settings.features.documents.description',
-              'Share PDFs with a customer in their portal and receive PDFs from them. Customer uploads stay unavailable until you mark them clean on the customer record. PDF only; size and storage limits apply.',
+              'Share documents with a customer in their portal and receive documents from them. Customer uploads stay unavailable until you mark them clean on the customer record. PDF by default; more file types, size and storage limits under Settings → CRM.',
             )}
             status="new"
             statusLabel={statusLabel('new')}

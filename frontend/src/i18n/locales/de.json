@@ -3009,7 +3009,7 @@
       },
       "documents": {
         "title": "Kundendokumente",
-        "description": "PDFs mit einem Kunden in seinem Portal teilen und PDFs von ihm empfangen. Kunden-Uploads bleiben gesperrt, bis Sie sie im Kundendatensatz als unbedenklich markieren. Nur PDF; es gelten Grössen- und Speicherlimits."
+        "description": "Teilen Sie Dokumente im Portal mit einem Kunden und erhalten Sie Dokumente von ihm. Kunden-Uploads bleiben gesperrt, bis Sie sie im Kundendatensatz als sauber markieren. Standardmäßig PDF; weitere Dateitypen, Größen- und Speichergrenzen unter Einstellungen → CRM."
       }
     },
     "customerSurface": {
