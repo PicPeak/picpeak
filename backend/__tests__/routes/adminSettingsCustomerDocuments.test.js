@@ -17,10 +17,9 @@ const {
 
 let db; let cleanup; let app; let tok;
 const put = (body) => request(app).put('/api/admin/settings/general').set('Authorization', `Bearer ${tok}`).send(body);
-const stored = async (key) => {
-  const row = await db('app_settings').where({ setting_key: key }).first();
-  return row ? JSON.parse(row.setting_value) : undefined;
-};
+// Read the way the code does: setting_value is text on SQLite and json on
+// PostgreSQL, where the driver hands back the parsed value.
+const stored = (key) => require('../../src/utils/appSettings').getAppSetting(key);
 
 beforeAll(async () => {
   ({ db, cleanup } = await bootCrmDb());
@@ -82,9 +81,10 @@ describe('customer document settings', () => {
 });
 
 describe('format lookups use own keys only', () => {
-  const formats = require('../../src/services/documentFormats');
-
   it('never treats an inherited property name as a format', async () => {
+    // Required here, not at collect time: loading it opens the database,
+    // which bootCrmDb has to point at this suite's file first.
+    const formats = require('../../src/services/documentFormats');
     for (const name of ['x.constructor', 'x.toString', 'x.__proto__', 'x.hasOwnProperty']) {
       expect(formats.formatForName(name)).toBeNull();
     }
