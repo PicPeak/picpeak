@@ -241,9 +241,10 @@ export const ContractTemplateEditorPage: React.FC = () => {
     else setProblem(message || fallback);
   };
 
-  const showCheck = (result: TemplatePublishCheck) => {
+  /** `checked`: the draft the result is for — taken before the request, since the fields stay editable while it runs. */
+  const showCheck = (result: TemplatePublishCheck, checked: string = serialize(draftRef.current)) => {
     setCheck(result);
-    setCheckedSerial(serialize(draftRef.current));
+    setCheckedSerial(checked);
   };
 
   /**
@@ -337,13 +338,17 @@ export const ContractTemplateEditorPage: React.FC = () => {
   /** Save, then run the check on what was saved. Null when either failed. */
   const runCheck = async (): Promise<{ saved: ContractTemplateDetail | null; result: TemplatePublishCheck } | null> => {
     let saved: ContractTemplateDetail | null = null;
+    // An edit made from here on is not in what the server checks: the result
+    // then shows as stale. (Taken before the save, so at worst an edit made
+    // while an earlier save finished counts as unchecked too.)
+    const checked = serialize(draftRef.current);
     if (dirty || !detail?.draft) {
       saved = await saveNow();
       if (!saved) return null;
     }
     try {
       const result = await contractTemplatesService.check(templateId);
-      showCheck(result);
+      showCheck(result, checked);
       return { saved, result };
     } catch (err) {
       fail(err, t('contracts.templates.check.failed', 'The check could not be run.') as string);

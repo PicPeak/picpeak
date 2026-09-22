@@ -236,6 +236,19 @@ it('"Go to" opens the clause in the finding\'s language and focuses its text', a
   expect(name).toHaveValue('Hochzeit 2027');
 });
 
+it('an edit made while the check runs marks its result as stale', async () => {
+  const user = userEvent.setup();
+  let answer: (value: typeof clean) => void = () => {};
+  check.mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+  renderPage();
+  await screen.findByText('Leistung');
+  await user.click(screen.getByRole('button', { name: 'Check' }));
+  await waitFor(() => expect(check).toHaveBeenCalled());
+  await user.type(screen.getByDisplayValue('Hallo'), '!');
+  await act(async () => { answer(clean); });
+  expect(await screen.findByText('Changed since the check — check again')).toBeInTheDocument();
+});
+
 it('a clean check publishes; warnings alone do not block', async () => {
   const user = userEvent.setup();
   check.mockResolvedValue({
