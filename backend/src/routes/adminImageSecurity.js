@@ -5,6 +5,7 @@ const { requirePermission } = require('../middleware/permissions');
 const { requireEventOwnership, scopeEventsQuery } = require('../middleware/ownership');
 const secureImageMiddleware = require('../middleware/secureImageMiddleware');
 const logger = require('../utils/logger');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 const { decodeSettingValue } = require('./adminEvents/helpers');
 
 const router = express.Router();
@@ -356,9 +357,15 @@ router.post('/block-ip', adminAuth, requirePermission('image_security.manage'), 
       return res.status(400).json({ error: 'IP address required' });
     }
 
+    // The middleware checks the list against rateLimitKey (issue 1564), so
+    // an entry has to be stored in that form: blocking an IPv6 address blocks
+    // its /64, and an IPv4-mapped address is stored as the dotted IPv4 one.
+    // Unblocking normalises the same way, so either spelling removes it.
+    const listKey = rateLimitKey({ ip: String(ip).trim() }) || ip;
+
     if (action === 'block') {
       // Add to blocked IPs in middleware
-      secureImageMiddleware.suspiciousIPs.add(ip);
+      secureImageMiddleware.suspiciousIPs.add(listKey);
       
       logger.warn('IP manually blocked by admin', {
         ip,
@@ -367,7 +374,7 @@ router.post('/block-ip', adminAuth, requirePermission('image_security.manage'), 
       });
     } else if (action === 'unblock') {
       // Remove from blocked IPs
-      secureImageMiddleware.suspiciousIPs.delete(ip);
+      secureImageMiddleware.suspiciousIPs.delete(listKey);
       
       logger.info('IP manually unblocked by admin', {
         ip,

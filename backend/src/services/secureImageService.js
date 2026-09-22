@@ -3,6 +3,7 @@ const sharp = require('sharp');
 const { db } = require('../database/db');
 const fs = require('fs').promises;
 const logger = require('../utils/logger');
+const { rateLimitKey } = require('../utils/rateLimitKey');
 
 class SecureImageService {
   constructor() {
@@ -144,11 +145,30 @@ class SecureImageService {
   }
 
   /**
-   * Create client fingerprint from request
+   * Create client fingerprint from request.
+   *
+   * Binds a secure image token to the device it was minted for, so it keys
+   * on the full address. Rate limits and block lists use
+   * createRateLimitFingerprint() instead (issue 1564).
    */
   createClientFingerprint(req) {
+    return this.fingerprintFor(req, req.ip);
+  }
+
+  /**
+   * The same fingerprint with the address collapsed by rateLimitKey: an IPv6
+   * /64 is one client, so rotating through it neither resets the image rate
+   * limit nor escapes a block. For a plain IPv4 client it equals
+   * createClientFingerprint(), so nothing changes there. Never use it for
+   * token binding: that would let every device in the /64 use one token.
+   */
+  createRateLimitFingerprint(req) {
+    return this.fingerprintFor(req, rateLimitKey(req) || req.ip);
+  }
+
+  fingerprintFor(req, address) {
     const components = [
-      req.ip,
+      address,
       req.get('User-Agent') || '',
       req.get('Accept-Language') || '',
       req.get('Accept-Encoding') || ''
