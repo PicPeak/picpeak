@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CONTRACT_LOCALES, type ContractLocale, type LocaleText } from '../../../services/contractTemplates.service';
 import { PlaceholderPicker, placeholderLang, useContractPlaceholders } from './PlaceholderPicker';
-import { applyCondition, readCondition, unwrapCondition, type ClauseCondition } from './clauseCondition';
+import { applyCondition, readCondition, type ClauseCondition } from './clauseCondition';
 
 export const fieldClass = 'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-neutral-900 w-full px-3 py-2 rounded-md border border-neutral-300 dark:border-neutral-600 '
   + 'bg-white dark:bg-neutral-800 text-sm text-neutral-900 dark:text-neutral-100';
@@ -96,17 +96,21 @@ export const ClauseConditionField: React.FC<{
   const { t, i18n } = useTranslation();
   const lang = placeholderLang(i18n.language);
   const options = useContractPlaceholders().filter((p) => p.conditional);
-  const hasOwnText = Object.values(body).some((text) => typeof text === 'string' && text.trim() !== '');
-  const current = readCondition(hasOwnText ? body : {});
+  // What the clause says per language: its own text where it has one, the
+  // library's elsewhere — the backend merges them the same way, so a rule
+  // must wrap every language, inherited ones included.
+  const own = Object.fromEntries(Object.entries(body)
+    .filter(([, text]) => typeof text === 'string' && text.trim() !== '')) as LocaleText;
+  const hasOwnText = Object.keys(own).length > 0;
+  const effective: LocaleText = { ...baseText, ...own };
+  const current = readCondition(hasOwnText ? effective : {});
   const set = (next: ClauseCondition | null) => {
-    const source = hasOwnText ? body : baseText;
-    const written = applyCondition(source, next);
-    // Rule removed from a block whose text is the library's: back to the library text.
-    const plain = unwrapCondition(written);
-    const isLibrary = !next && Object.keys(baseText).length > 0
-      && Object.keys(plain).length === Object.keys(baseText).length
-      && Object.entries(baseText).every(([locale, text]) => plain[locale as ContractLocale] === text);
-    onChange(isLibrary ? {} : written);
+    const written = applyCondition(effective, next);
+    // Only what differs from the library is the clause's own text; a rule
+    // removed from library text leaves nothing of its own.
+    const kept = Object.fromEntries(Object.entries(written)
+      .filter(([locale, text]) => text !== baseText[locale as ContractLocale])) as LocaleText;
+    onChange(kept);
   };
   const key = current && current !== 'mixed' ? current.key : '';
   const kind = current && current !== 'mixed' ? current.kind : 'if';

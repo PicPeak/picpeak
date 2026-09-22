@@ -273,6 +273,35 @@ it('"Show only if…" wraps the clause in every language and saves it', async ()
   })));
 });
 
+it('"Show only if…" also wraps a language the clause inherits from the library', async () => {
+  const user = userEvent.setup();
+  const own = detail();
+  own.draft.items = [{
+    ...own.draft.items[0],
+    body: { de: 'Eigener Text' } as Record<string, string>,
+    block: { ...own.draft.items[0].block, bodies: { de: 'Bibliothekstext', en: 'Library text' } },
+  }];
+  get.mockResolvedValue(own);
+  renderPage();
+  await screen.findByText('Leistung');
+  if (!screen.queryByRole('combobox', { name: 'Show only if…' })) await user.click(screen.getByRole('button', { name: 'Text' }));
+  await user.selectOptions(await screen.findByRole('combobox', { name: 'Show only if…' }), 'event_date');
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(saveDraft).toHaveBeenCalledWith(5, expect.objectContaining({
+    items: [{ kind: 'block', blockId: 7, body: {
+      de: '{{#if event_date}}Eigener Text{{/if}}',
+      en: '{{#if event_date}}Library text{{/if}}',
+    } }],
+  })));
+
+  // Removed again: the inherited language goes back to the library, the own text stays.
+  await user.selectOptions(await screen.findByRole('combobox', { name: 'Show only if…' }), '');
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(saveDraft).toHaveBeenLastCalledWith(5, expect.objectContaining({
+    items: [{ kind: 'block', blockId: 7, body: { de: 'Eigener Text' } }],
+  })));
+});
+
 it('the version history names the publisher and compares a version with the one before', async () => {
   const user = userEvent.setup();
   const published = (n: number, text: string) => ({
