@@ -806,6 +806,13 @@ async function reactivateCustomer(id, reactivatedByAdminId) {
  *   - Set `is_active=false` and bump `password_changed_at` so any
  *     outstanding tokens die immediately.
  *   - Delete pending invitations + reset tokens for this customer.
+ *   - Cancel every `email_queue` row still pending for this customer's
+ *     address (so nothing queued before the erasure goes out after it), and
+ *     redact the variables + recipient on every row for this address that
+ *     isn't already gone — sent, failed or just-cancelled — so the archive
+ *     and any backup stop carrying their data (#1593). Matched on the
+ *     address as stored *before* this function rewrites it to the sentinel
+ *     below.
  *
  * What we keep:
  *   - The customer_accounts row itself (anonymized).
@@ -828,6 +835,20 @@ async function eraseCustomer(id, erasedByAdminId) {
   const sentinelEmail = `deleted-${id}-${crypto.randomBytes(4).toString('hex')}@deleted.invalid`;
 
   await db.transaction(async (trx) => {
+    // email_queue (#1593): cancel what hasn't gone out yet, then redact the
+    // variables + recipient on every row for this address that isn't
+    // already gone (sent, failed, or the row just cancelled above) — done
+    // ahead of the customer_accounts update below so the match is still
+    // against the real address, not the sentinel.
+    await trx('email_queue').where('recipient_email', customer.email).where('status', 'pending')
+      .update({ status: 'cancelled' });
+    await trx('email_queue').where('recipient_email', customer.email)
+      .whereIn('status', ['sent', 'failed', 'cancelled'])
+      .update({
+        recipient_email: sentinelEmail,
+        email_data: JSON.stringify({ redacted: true, reason: 'customer_erased' }),
+      });
+
     await auditedUpdate(trx, 'customer_accounts', { id }, {
       email: sentinelEmail,
       salutation: null,
