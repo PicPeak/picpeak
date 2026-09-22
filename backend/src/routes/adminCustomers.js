@@ -284,11 +284,13 @@ router.get('/', [
   query('status').optional().isIn(['active', 'inactive', 'all']),
 ], handleAsync(async (req, res) => {
   validateRequest(req);
+  // Ungrouped wins over any group ids, so they are not even read then.
+  const ungrouped = req.query.ungrouped === 'true' || req.query.ungrouped === '1';
   const customers = await customerAccountsService.listCustomers({
     search: req.query.search,
-    groupIds: parseGroupIds(req.query.groupIds),
+    groupIds: ungrouped ? [] : parseGroupIds(req.query.groupIds),
     groupMatch: req.query.groupMatch || 'any',
-    ungrouped: req.query.ungrouped === 'true' || req.query.ungrouped === '1',
+    ungrouped,
     status: req.query.status || 'all',
   });
   const groupsByCustomer = await customerGroupsService.groupsForCustomers(customers.map((c) => c.id));

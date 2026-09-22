@@ -866,6 +866,8 @@ describe('the per-customer group cap', () => {
     // The repeated form counts the same, after dropping duplicates.
     const repeated = ids.slice(0, 100).map((id) => `groupIds=${id}`).join('&');
     expect((await listCustomers(`?${repeated}&groupIds=1`)).status).toBe(200);
+    // Ungrouped wins over group ids, so their number doesn't matter then.
+    expect((await listCustomers(`?ungrouped=true&groupIds=${ids.join(',')}`)).status).toBe(200);
   });
 
   it('refuses a bulk add that takes a customer past 100 groups, previews the refusal, and writes nothing', async () => {
