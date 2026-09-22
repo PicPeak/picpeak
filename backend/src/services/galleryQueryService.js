@@ -396,9 +396,13 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
   // usage is gallery data and only goes to an authenticated viewer. The
   // granted set lets the UI price a selection (already-downloaded photos are
   // free again) and decides which photos may still load their original.
-  const downloadQuota = await getQuota(event);
+  // An admin preview is exempt from the limit, so it gets the payload of an
+  // unlimited gallery: otherwise the UI would refuse downloads the server
+  // lets through.
+  const eventQuota = await getQuota(event);
+  const downloadQuota = adminPreview ? null : eventQuota;
   const grantedIds = downloadQuota ? await grantedPhotoIds(event.id) : new Set();
-  const withholdOriginals = !!downloadQuota && !adminPreview;
+  const withholdOriginals = !!downloadQuota;
 
   return {
     pagination: { page, limit: limit || total, total, has_more: !!limit && page * limit < total },
@@ -457,7 +461,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
       // A limited gallery always streams its zip (routes/gallery/downloads.js),
       // and the client must fetch it rather than navigate to it so a refusal
       // can be shown instead of landing as a broken download.
-      download_zip_ready: !downloadQuota && !!(event.download_zip_path && event.download_zip_generated_at),
+      download_zip_ready: !eventQuota && !!(event.download_zip_path && event.download_zip_generated_at),
       // Mirror of the admin-side toggle so the lightbox can decide
       // whether to surface original camera filenames (#508).
       use_original_filenames: useOriginalFilenames,

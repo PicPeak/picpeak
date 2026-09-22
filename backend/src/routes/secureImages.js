@@ -10,7 +10,7 @@ const logger = require('../utils/logger');
 const { formatBoolean } = require('../utils/dbCompat');
 const { parseBooleanInput } = require('../utils/parsers');
 const { resolvePhotoFilePath, resolvePhotoStorageKey } = require('../services/photoResolver');
-const { withLocalCopy } = require('../services/imageProcessor');
+const { withLocalCopy, ensurePreviewImage } = require('../services/imageProcessor');
 const { getStorage } = require('../services/storage');
 const {
   getUseOriginalFilenames,
@@ -18,7 +18,7 @@ const {
 } = require('../services/downloadFilenameService');
 const { buildContentDisposition } = require('../utils/filenameSanitizer');
 const { isPhotoHiddenFromViewer, canSeeHiddenPhotos } = require('../utils/photoVisibility');
-const { grantDownloads, downloadLimitError } = require('../services/downloadQuota');
+const { grantDownloads, downloadLimitError, isOriginalWithheld } = require('../services/downloadQuota');
 
 const router = express.Router();
 
@@ -70,7 +70,8 @@ router.post('/:slug/generate-token', async (req, res, next) => {
       revealBypass: bypassesReveal(req),
       // TOCTOU: a client's token keeps serving a photo hidden after minting;
       // a guest's stops the moment it's hidden (checked at the serve route).
-      clientBypass: canSeeHiddenPhotos(req.accessLevel)
+      clientBypass: canSeeHiddenPhotos(req.accessLevel),
+      downloadLimitExempt: Boolean(req.isAdminPreview)
     };
 
     const token = secureImageService.generateSecureToken(
@@ -212,7 +213,19 @@ router.get('/:slug/secure/:photoId/:token',
       // Resolve photo through storage backend (managed) or fall back to local
       // path (external reference mode). secureImageService needs a local file,
       // so we materialize a tmp copy via withLocalCopy in S3 mode.
-      const storageKey = resolvePhotoStorageKey(event, photo);
+      let storageKey = resolvePhotoStorageKey(event, photo);
+      let contentType = resolvePhotoContentType(photo);
+
+      // Download limit (issue 1560): while the original is withheld, serve
+      // the preview tier here as well. Basic protection returns the source
+      // bytes unchanged, so this route would otherwise hand out the original.
+      if (await isOriginalWithheld(event, photo, { isAdminPreview: Boolean(tokenValidation.data?.downloadLimitExempt) })) {
+        storageKey = await ensurePreviewImage(photo);
+        if (!storageKey) {
+          return res.status(404).json({ error: 'Preview not available' });
+        }
+        contentType = storageKey.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+      }
 
       // Get protection settings for this event
       const protectionSettings = {
@@ -247,7 +260,7 @@ router.get('/:slug/secure/:photoId/:token',
 
       // Set content type and security headers
       res.set({
-        'Content-Type': resolvePhotoContentType(photo),
+        'Content-Type': contentType,
         'Content-Length': processedImage.length,
         'X-Protection-Level': protectionSettings.protectionLevel,
         'X-Remaining-Uses': tokenValidation.remaining

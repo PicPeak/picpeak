@@ -12,6 +12,7 @@
  * waits for the connection the transaction itself holds.
  */
 
+const crypto = require('crypto');
 const { db } = require('../database/db');
 
 const INSERT_CHUNK = 200; // 4 bound values per row, under SQLite's 999.
@@ -88,14 +89,21 @@ async function checkDownloads(event, photoIds, { isAdminPreview = false } = {}) 
 
 /**
  * Grant every photo in `photoIds`, or none of them. Returns
- * { ok: true, newIds } — newIds being the photos this call counted for the
- * first time — or { ok: false, limit, used, remaining }. Admin previews and
- * unlimited events are a no-op.
+ * { ok: true, newIds, reservation } — newIds being the photos this call
+ * counted for the first time — or { ok: false, limit, used, remaining }.
+ * Admin previews and unlimited events are a no-op.
+ *
+ * `reserve` is for a zip that grants its whole set before streaming: its new
+ * rows are tagged with a reservation id, so revokeGrants can give back the
+ * ones it never shipped. Any later request that finds such a row already
+ * granted clears the tag — it may deliver the photo, and the aborted zip
+ * must then not take that slot back.
  */
-async function grantDownloads(event, photoIds, { isAdminPreview = false } = {}) {
+async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve = false } = {}) {
   if (isAdminPreview || !downloadLimitOf(event)) return { ok: true, newIds: [] };
   const ids = uniqueIds(photoIds);
   if (ids.length === 0) return { ok: true, newIds: [] };
+  const reservation = reserve ? crypto.randomUUID() : null;
 
   return db.transaction(async (trx) => {
     // SQLite runs one write transaction at a time; Postgres needs the row lock.
@@ -110,6 +118,16 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false } = {}) 
     const result = await evaluate(current, ids, trx);
     if (!result.ok) return result;
 
+    const fresh = new Set(result.newIds);
+    const reused = ids.filter((id) => !fresh.has(id));
+    for (let i = 0; i < reused.length; i += INSERT_CHUNK) {
+      await trx('event_download_grants')
+        .where('event_id', event.id)
+        .whereIn('photo_id', reused.slice(i, i + INSERT_CHUNK))
+        .whereNotNull('reservation')
+        .update({ reservation: null });
+    }
+
     const grantedAt = new Date().toISOString();
     for (let i = 0; i < result.newIds.length; i += INSERT_CHUNK) {
       const rows = result.newIds.slice(i, i + INSERT_CHUNK).map((photoId) => ({
@@ -117,10 +135,11 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false } = {}) 
         photo_id: photoId,
         guest_id: null,
         granted_at: grantedAt,
+        reservation,
       }));
       await trx('event_download_grants').insert(rows).onConflict(['event_id', 'photo_id']).ignore();
     }
-    return { ok: true, newIds: result.newIds };
+    return { ok: true, newIds: result.newIds, reservation };
   });
 }
 
@@ -128,13 +147,21 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false } = {}) 
  * Give back slots a download took but did not deliver: a zip grants its whole
  * set before streaming, and a photo whose source turns out to be missing is
  * skipped rather than failing the archive. Only pass photos the same request
- * counted for the first time (grantDownloads' newIds) — a photo granted by an
- * earlier download stays granted.
+ * counted for the first time (grantDownloads' newIds) together with its
+ * reservation — a photo granted by an earlier download, or reused by another
+ * request since, stays granted.
  */
-async function revokeGrants(eventId, photoIds) {
+async function revokeGrants(eventId, photoIds, reservation) {
   const ids = uniqueIds(photoIds);
-  if (ids.length === 0) return 0;
-  return db('event_download_grants').where('event_id', eventId).whereIn('photo_id', ids).del();
+  if (ids.length === 0 || !reservation) return 0;
+  let removed = 0;
+  for (let i = 0; i < ids.length; i += INSERT_CHUNK) {
+    removed += await db('event_download_grants')
+      .where({ event_id: eventId, reservation })
+      .whereIn('photo_id', ids.slice(i, i + INSERT_CHUNK))
+      .del();
+  }
+  return removed;
 }
 
 /** The undelivered part of a grant: counted by this request, never appended. */

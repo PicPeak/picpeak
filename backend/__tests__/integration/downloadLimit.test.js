@@ -28,6 +28,16 @@ const { bootCrmDb, seedMinimal } = require('./helpers/crmDb');
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'download-limit-test-secret';
 
+// A deterministic fingerprint, so a token minted below verifies on the
+// secure-image serve route.
+jest.mock('../../src/middleware/secureImageMiddleware', () => ({
+  secureImageAccess: (req, _res, next) => {
+    req.clientInfo = { fingerprint: 'test-fp', ip: '127.0.0.1', userAgent: 'jest' };
+    next();
+  },
+  getSecurityStatus: (_req, res) => res.json({ ok: true }),
+}));
+
 describe('Download limit (issue 1560)', () => {
   let db;
   let cleanup;
@@ -123,6 +133,7 @@ describe('Download limit (issue 1560)', () => {
     app.use(cookieParser());
     app.use('/api/gallery', require('../../src/routes/gallery'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
+    app.use('/api/secure-images', require('../../src/routes/secureImages'));
   }, 120000);
 
   afterAll(async () => {
@@ -261,6 +272,18 @@ describe('Download limit (issue 1560)', () => {
       expect((await quota.grantedPhotoIds(event.id)).has(photoIds[1])).toBe(false);
     });
 
+    it('an aborted zip cannot take back a slot another download reused', async () => {
+      const { event, photoIds } = await makeEvent({ limit: 3 });
+      const zip = await quota.grantDownloads(event, photoIds.slice(0, 2), { reserve: true });
+      expect(zip.ok).toBe(true);
+      // A single download of the first photo while the zip is still streaming.
+      expect((await quota.grantDownloads(event, [photoIds[0]])).newIds).toEqual([]);
+      // The zip is cancelled before either photo went out.
+      expect(await quota.revokeGrants(event.id, zip.newIds, zip.reservation)).toBe(1);
+      expect(await grantCount(event.id)).toBe(1);
+      expect(await quota.revokeGrants(event.id, [photoIds[0]], null)).toBe(0);
+    });
+
     it('download-all is refused while the gallery holds more photos than remain', async () => {
       const { event, token } = await makeEvent({ limit: 3, photos: 4 });
       const res = await request(app)
@@ -295,6 +318,36 @@ describe('Download limit (issue 1560)', () => {
       // PostgreSQL returns COUNT as a string, SQLite as a number.
       const { c } = await db('download_jobs').where({ event_id: event.id }).count('id as c').first();
       expect(Number(c)).toBe(0);
+    });
+  });
+
+  describe('prepared archives', () => {
+    it('a ready job reports when the limit would now refuse it', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 2, photos: 3 });
+      const jobToken = 'a'.repeat(64);
+      await db('download_jobs').insert({
+        token: jobToken,
+        event_id: event.id,
+        resolution: 'original',
+        photo_ids: JSON.stringify(photoIds.slice(0, 2)),
+        delivered_photo_ids: JSON.stringify(photoIds.slice(0, 2)),
+        dedup_key: 'b'.repeat(64),
+        status: 'ready',
+        zip_path: 'download-jobs/x.zip',
+        photo_count: 2,
+        expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
+        created_at: new Date().toISOString(),
+      });
+      const status = () => request(app)
+        .get(`/api/gallery/${event.slug}/download-jobs/${jobToken}`)
+        .set('Authorization', `Bearer ${token}`);
+
+      expect((await status()).body.download_limit_reached).toBeUndefined();
+      // Another viewer takes a slot while the archive waits.
+      await quota.grantDownloads(event, [photoIds[2]]);
+      const res = await status();
+      expect(res.status).toBe(200);
+      expect(res.body.download_limit_reached).toMatchObject({ code: 'DOWNLOAD_LIMIT_REACHED', remaining: 1 });
     });
   });
 
@@ -356,6 +409,39 @@ describe('Download limit (issue 1560)', () => {
         .expect(200);
     });
 
+    it('the secure-image route serves the preview, not the original, of a non-granted image', async () => {
+      const { event, photoIds } = await makeEvent({ limit: 2 });
+      await db('events').where({ id: event.id }).update({ protection_level: 'basic', require_password: 0 });
+      const secureImageService = require('../../src/services/secureImageService');
+      const mint = (photoId, extra = {}) => secureImageService.generateSecureToken(
+        photoId,
+        `gallery_public_${event.id}_${Date.now()}`,
+        {
+          clientFingerprint: 'test-fp', maxUses: 100, expiresIn: 3600,
+          galleryAccess: require('../../src/services/galleryAccessService').grant({ id: event.id }, 'public'),
+          ...extra,
+        },
+      );
+      const view = (photoId, token) => request(app)
+        .get(`/api/secure-images/${event.slug}/secure/${photoId}/${token}`)
+        .buffer(true)
+        .parse((res, cb) => { const c = []; res.on('data', (d) => c.push(d)); res.on('end', () => cb(null, Buffer.concat(c))); });
+
+      // Basic protection hands out the source bytes unchanged — the original.
+      const withheld = await view(photoIds[1], mint(photoIds[1]));
+      expect(withheld.status).toBe(200);
+      expect(Buffer.compare(withheld.body, jpeg)).not.toBe(0);
+
+      const exempt = await view(photoIds[1], mint(photoIds[1], { downloadLimitExempt: true }));
+      expect(exempt.status).toBe(200);
+      expect(Buffer.compare(exempt.body, jpeg)).toBe(0);
+
+      await quota.grantDownloads(event, [photoIds[0]]);
+      const granted = await view(photoIds[0], mint(photoIds[0]));
+      expect(granted.status).toBe(200);
+      expect(Buffer.compare(granted.body, jpeg)).toBe(0);
+    });
+
     it('the preview route does not bounce back to a withheld original', async () => {
       const { event, photoIds, token } = await makeEvent({ limit: 1 });
       // A photo row whose source is gone: the preview cannot be generated.
@@ -385,6 +471,16 @@ describe('Download limit (issue 1560)', () => {
       expect(byId[photoIds[1]].download_granted).toBe(false);
       expect(byId[photoIds[1]].url).toContain(`/preview/${photoIds[1]}`);
       expect(byId[photoIds[1]].preview_url).toContain(`/preview/${photoIds[1]}`);
+    });
+
+    it('reports an admin preview as unlimited, since the limit exempts it', async () => {
+      const { event } = await makeEvent({ limit: 1 });
+      await quota.grantDownloads(event, (await db('photos').where({ event_id: event.id }).pluck('id')).slice(0, 1));
+      const res = await request(app)
+        .get(`/api/gallery/${event.slug}/photos?admin_preview=1`)
+        .set('Cookie', [`admin_token=${adminToken}`]);
+      expect(res.status).toBe(200);
+      expect(res.body.event).toMatchObject({ download_limit: null, downloads_remaining: null });
     });
 
     it('reports an unlimited gallery as such', async () => {

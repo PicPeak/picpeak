@@ -6,7 +6,10 @@ import { Button, Card } from '../common';
 import { galleryService } from '../../services/gallery.service';
 import type { DownloadResolutionChoice, DownloadJobStatus } from '../../types';
 import { useDownloadQuota } from '../../contexts/DownloadQuotaContext';
-import { isDownloadLimitError, type QuotaPhoto } from '../../utils/downloadLimit';
+import {
+  isDownloadLimitError, isGalleryLimited, notifyDownloadQuotaChanged, showDownloadLimitReached,
+  type QuotaPhoto,
+} from '../../utils/downloadLimit';
 import { DownloadQuotaNotice } from './DownloadQuotaNotice';
 
 /**
@@ -128,11 +131,29 @@ export const DownloadResolutionModal: React.FC<DownloadResolutionModalProps> = (
     }
   }, [slug, selected, photoIds, poll, t, standardResolution, onClose]);
 
-  const download = useCallback(() => {
-    if (!tokenRef.current) return;
-    galleryService.downloadJobFile(slug, tokenRef.current, filename);
+  const download = useCallback(async () => {
+    const token = tokenRef.current;
+    if (!token) return;
+    // Download limit (issue 1560): the file is a browser navigation, which
+    // cannot show why it was refused. Ask first — another viewer may have
+    // used up the quota while this archive was being prepared.
+    if (isGalleryLimited(slug)) {
+      try {
+        const state = await galleryService.getDownloadJob(slug, token);
+        if (state.download_limit_reached) {
+          showDownloadLimitReached(state.download_limit_reached);
+          notifyDownloadQuotaChanged(slug);
+          setError(t('gallery.downloadLimit.reached', 'Download limit reached. Please contact your photographer for more downloads.'));
+          setPhase('error');
+          return;
+        }
+      } catch {
+        // The file route still enforces the limit; let it decide.
+      }
+    }
+    galleryService.downloadJobFile(slug, token, filename);
     onClose();
-  }, [slug, filename, onClose]);
+  }, [slug, filename, onClose, t]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

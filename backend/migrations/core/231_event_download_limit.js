@@ -12,7 +12,9 @@
  *                             "used" into a count and a repeated download into
  *                             a no-op insert. guest_id is nullable and unused
  *                             for now; it keeps a per-guest quota from needing
- *                             a second migration.
+ *                             a second migration. reservation tags the rows a
+ *                             zip granted before streaming, so an aborted zip
+ *                             gives back only its own undelivered slots.
  *
  * Both FKs cascade on PostgreSQL. PicPeak does not enable foreign keys on
  * SQLite, so the event delete paths clear the table explicitly and the quota
@@ -40,6 +42,9 @@ exports.up = async function up(knex) {
       t.unique(['event_id', 'photo_id'], 'event_download_grants_event_photo_uniq');
     });
   }
+  await addColumnIfNotExists(knex, 'event_download_grants', 'reservation', (table) => {
+    table.string('reservation', 36).nullable();
+  });
 };
 
 exports.down = async function down(knex) {

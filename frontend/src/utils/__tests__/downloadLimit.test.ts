@@ -54,6 +54,11 @@ describe('quota arithmetic', () => {
     // Already-downloaded photos ride along for free.
     expect(quotaAllows(quota, [{ id: 1, download_granted: true }, { id: 10 }])).toBe(true);
   });
+
+  it('does not charge photos the server drops for a category with downloads off', () => {
+    const quota = quotaFromEvent({ download_limit: 10, downloads_used: 9, downloads_remaining: 1 });
+    expect(quotaAllows(quota, [{ id: 10 }, { id: 11, category_allow_downloads: false }])).toBe(true);
+  });
 });
 
 describe('readDownloadLimitError', () => {

@@ -253,6 +253,8 @@ export interface DownloadJobState {
   photo_count: number;
   size_bytes: number | null;
   error?: string;
+  /** Set on a ready job the download limit would now refuse (issue 1560). */
+  download_limit_reached?: { limit?: number; used?: number; remaining?: number };
 }
 
 export interface PhotoCategory {

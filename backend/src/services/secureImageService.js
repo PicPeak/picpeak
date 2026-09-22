@@ -47,6 +47,9 @@ class SecureImageService {
       // delivering a photo hidden AFTER minting (TOCTOU). A guest's token
       // carries false, so it stops the moment the photo is hidden.
       clientBypass = false,
+      // Whether the minter was an admin preview, which a download limit
+      // exempts (issue 1560) — the serve route has no gallery session to ask.
+      downloadLimitExempt = false,
       galleryAccess = null
     } = options;
 
@@ -64,6 +67,7 @@ class SecureImageService {
       protectionLevel,
       revealBypass,
       clientBypass,
+      downloadLimitExempt,
       galleryAccess,
       createdAt: Date.now()
     };

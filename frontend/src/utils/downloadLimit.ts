@@ -131,6 +131,7 @@ export async function withDownloadLimit<T>(slug: string, run: () => Promise<T>):
 export interface QuotaPhoto {
   id: number;
   download_granted?: boolean;
+  category_allow_downloads?: boolean;
 }
 
 export interface DownloadQuota {
@@ -158,9 +159,13 @@ export function quotaFromEvent(event?: {
   };
 }
 
-/** How many quota slots downloading these photos costs: granted ones are free. */
+/**
+ * How many quota slots downloading these photos costs: granted ones are free,
+ * and a photo in a category with downloads off is dropped by the server
+ * before anything is granted.
+ */
 export const downloadCost = (photos: QuotaPhoto[]): number =>
-  photos.filter((photo) => !photo.download_granted).length;
+  photos.filter((photo) => !photo.download_granted && photo.category_allow_downloads !== false).length;
 
 /** Whether the quota allows downloading all of these photos in one go. */
 export function quotaAllows(quota: DownloadQuota, photos: QuotaPhoto[]): boolean {

@@ -546,7 +546,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
 
     // Download limit (issue 1560): the whole archive or nothing, decided
     // before the zip headers go out.
-    const quota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview });
+    const quota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview, reserve: true });
     if (!quota.ok) return res.status(403).json(downloadLimitError(quota));
 
     // Count unique types
@@ -664,7 +664,7 @@ router.get('/:slug/download-all', verifyGalleryAccess, denySlideshowToken, block
     // but never shipped, so they get their slots back.
     const allUndelivered = undeliveredGrants(quota, appendedIds);
     if (allUndelivered.length > 0) {
-      revokeGrants(req.event.id, allUndelivered).catch((err) => logger.warn('Could not release undelivered download grants', {
+      revokeGrants(req.event.id, allUndelivered, quota.reservation).catch((err) => logger.warn('Could not release undelivered download grants', {
         eventId: req.event.id, error: err.message,
       }));
     }
@@ -762,7 +762,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
 
     // Download limit (issue 1560): the resolved, visibility-filtered set is
     // what gets zipped, so it is what gets granted. All or nothing.
-    const selectedQuota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview });
+    const selectedQuota = await grantDownloads(req.event, photos.map((p) => p.id), { isAdminPreview: req.isAdminPreview, reserve: true });
     if (!selectedQuota.ok) return res.status(403).json(downloadLimitError(selectedQuota));
 
     const archiveName = `${req.event.slug}-selected.zip`;
@@ -860,7 +860,7 @@ router.post('/:slug/download-selected', verifyGalleryAccess, denySlideshowToken,
     // Download limit (issue 1560): same release as download-all.
     const selectedUndelivered = undeliveredGrants(selectedQuota, appendedIds);
     if (selectedUndelivered.length > 0) {
-      revokeGrants(req.event.id, selectedUndelivered).catch((err) => logger.warn('Could not release undelivered download grants', {
+      revokeGrants(req.event.id, selectedUndelivered, selectedQuota.reservation).catch((err) => logger.warn('Could not release undelivered download grants', {
         eventId: req.event.id, error: err.message,
       }));
     }
@@ -984,12 +984,25 @@ router.get('/:slug/download-jobs/:token', verifyGalleryAccess, denySlideshowToke
     if (!job || job.event_id !== req.event.id) {
       return res.status(404).json({ error: 'Download job not found' });
     }
+    // Download limit (issue 1560). The file itself goes out through a browser
+    // navigation, which cannot surface a refusal — so a ready job says here
+    // whether it would still fit, and the client asks before it navigates.
+    let limitReached;
+    if (job.status === 'ready' && downloadLimitOf(req.event) && !req.isAdminPreview) {
+      let ids = [];
+      try {
+        ids = JSON.parse(job.delivered_photo_ids || job.photo_ids || '[]');
+      } catch (_) { /* malformed row — the file route refuses it */ }
+      const check = await checkDownloads(req.event, Array.isArray(ids) ? ids : []);
+      if (!check.ok) limitReached = downloadLimitError(check);
+    }
     res.json({
       status: job.status,
       resolution: job.resolution,
       photo_count: job.photo_count || 0,
       size_bytes: job.size_bytes || null,
       error: job.status === 'failed' ? (job.error || 'Preparation failed') : undefined,
+      download_limit_reached: limitReached,
     });
   } catch (error) {
     errorResponse(res, error, 500, 'Failed to read download job');
