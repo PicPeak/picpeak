@@ -92,6 +92,8 @@ function recipientFields(customer) {
 const SEND_SETTINGS = [
   'crm_payment_default_net_days', 'crm_invoices_skonto_percent_default',
   'crm_invoices_skonto_business_days', 'general_date_format',
+  // The PDF's logo when the business profile names none (resolveLogoFile).
+  'branding_logo_path', 'branding_logo_url',
 ];
 
 /**

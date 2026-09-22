@@ -240,6 +240,10 @@ test.each([
     const now = new Date().toISOString();
     await db('pdf_themes').insert({ scope: 'contract', settings: JSON.stringify({ titleSize: 22 }), created_at: now, updated_at: now });
   }],
+  ['the branding logo', async () => {
+    const { upsertAppSetting } = require('../../src/utils/appSettings');
+    await upsertAppSetting('branding_logo_url', '/uploads/logos/other.png', 'string');
+  }],
   ['a signer', (contractId) => db('contract_signers').where({ contract_id: contractId, role: 'customer' })
     .update({ email_enc: require('../../src/utils/fieldEncryption').encrypt('someone-else@example.com') })],
 ])('%s changed after the review check still stops the send', async (_what, change) => {
@@ -263,6 +267,7 @@ test.each([
     await db('customer_accounts').where({ id: customerId }).update({ company_name: null, is_active: true });
     await db('app_settings').where({ setting_key: 'crm_payment_default_net_days' }).del();
     await db('pdf_themes').where({ scope: 'contract' }).del();
+    await db('app_settings').where({ setting_key: 'branding_logo_url' }).del();
   }
 });
 
