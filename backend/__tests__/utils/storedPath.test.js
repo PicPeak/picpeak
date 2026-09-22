@@ -134,6 +134,11 @@ describe('relocateStoredPath (restore)', () => {
     expect(relocateStoredPath(value, (rel) => rel === 'storage/business-docs/a.pdf')).toBe('storage/business-docs/a.pdf');
   });
 
+  it('keeps a legacy-root path whose file is still there, whatever the archive carries', () => {
+    const legacy = put(path.join(tmp, 'storage'), 'business-docs/quote/2026/Q-1.pdf');
+    expect(relocateStoredPath(legacy, () => true)).toBe(legacy);
+  });
+
   it('keeps the value when the archive carries none of its candidates', () => {
     const legacy = path.join(tmp, 'storage', 'business-docs', 'contract', '2026', 'C-1.pdf');
     expect(relocateStoredPath(legacy, () => false)).toBe(legacy);
