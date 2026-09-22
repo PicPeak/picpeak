@@ -63,6 +63,21 @@ describe('OOXML embeddings', () => {
   );
 });
 
+describe('OOXML external relationships', () => {
+  const rels = (mode) => ['word/_rels/settings.xml.rels',
+    `<Relationships><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/attachedTemplate" Target="https://evil.example/t.dotm" TargetMode=${mode}/></Relationships>`];
+
+  it.each(['"External"', "'External'", '"&#69;xternal"', '"&#x45;xternal"', '"Ext&#101;rnal"', '" External "'])(
+    'refuses TargetMode=%s', async (mode) => {
+      expect(await code(inspectOffice(await docx([rels(mode)]), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+    },
+  );
+
+  it('allows internal relationships', async () => {
+    expect(await code(inspectOffice(await docx([rels('"Internal"')]), 'docx'))).toBe('ok');
+  });
+});
+
 describe('ODF', () => {
   it('refuses an embedded sub-document (Object N/)', async () => {
     const file = await odt([['Object 1/content.xml', '<office:document-content/>']]);
@@ -72,8 +87,15 @@ describe('ODF', () => {
   it.each([
     'https://evil.example/t.ott', 'http://x', 'file:///etc/passwd', 'ftp://x/y', '../../secret.odt',
     '/etc/passwd', '//server/share/x', 'C:\\\\Windows\\\\x',
+    '&#104;ttps://evil.example/t.ott', 'https&#x3a;//x', 'vnd.sun.star.script:Lib.Mod.run?language=Basic',
+    'macro:///Standard.Module1.Main', 'smb://server/x', './../secret.odt', 'Pictures/%2e%2e/%2e%2e/x',
   ])('refuses an xlink:href to %s in content.xml', async (href) => {
     const content = `<office:document-content><text:a xlink:href="${href}">x</text:a></office:document-content>`;
+    expect(await code(inspectOffice(await odt([], content), 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('refuses an href under any prefix bound to xlink', async () => {
+    const content = '<office:document-content xmlns:x="http://www.w3.org/1999/xlink"><text:a x:href="https://x">x</text:a></office:document-content>';
     expect(await code(inspectOffice(await odt([], content), 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
   });
 

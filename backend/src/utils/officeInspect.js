@@ -80,10 +80,36 @@ const ACTIVE_ENTRY = [
 const EMBEDDINGS = /^(word|xl|ppt)\/embeddings\//i;
 const IMAGE_EXT = /\.(png|jpe?g|gif|bmp|emf|wmf|tiff?|svg)$/i;
 
-// An ODF link that leaves the package: a URL scheme, a network path, a
-// parent-directory or absolute path. Package-internal links ("Pictures/x",
-// "./Object 1", "#bookmark") stay allowed.
-const EXTERNAL_HREF = /^\s*(https?:|file:|ftp:|\/\/|\\\\|\.\.[/\\]|\/|[A-Za-z]:[/\\])/i;
+// An ODF link that leaves the package: any URL scheme (not only http/file —
+// vnd.sun.star.script: and macro: run code on click), a network path, an
+// absolute path, or a parent-directory segment anywhere in it. Package-
+// internal links ("Pictures/x", "./Object 1", "#bookmark") stay allowed.
+const EXTERNAL_HREF = /^\s*([A-Za-z][A-Za-z0-9+.-]*:|\/|\\)|(^|[/\\])\.\.([/\\]|$)/;
+
+// Attribute values as an XML consumer reads them: character references and
+// the predefined entities decoded. Matching the raw text instead lets
+// `TargetMode="&#69;xternal"` or `xlink:href="&#104;ttps://…"` through.
+function decodeXml(value) {
+  return value.replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos);/gi, (whole, ref) => {
+    const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[ref.toLowerCase()];
+    if (named) return named;
+    const cp = ref[1] === 'x' || ref[1] === 'X' ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+    try {
+      return String.fromCodePoint(cp);
+    } catch (_) {
+      return whole;
+    }
+  });
+}
+
+// Decoded values of every attribute with this local name, whatever its
+// namespace prefix (`xlink:href`, `x:href` with x bound to xlink, …).
+function* attributeValues(xml, localName) {
+  const re = /([A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)\s*=\s*(["'])([\s\S]*?)\3/g;
+  for (const m of xml.matchAll(re)) {
+    if (m[2].toLowerCase() === localName.toLowerCase()) yield decodeXml(m[4]);
+  }
+}
 
 async function readPart(zip, name, limit) {
   const stream = await zip.stream(name);
@@ -176,7 +202,7 @@ async function inspectOffice(file, format, limits = {}) {
       for (const name of names) {
         if (!/\.rels$/i.test(name) || entries[name].isDirectory) continue;
         const rels = await readPart(zip, name, lim.maxPartBytes);
-        if (/TargetMode\s*=\s*["']External["']/i.test(rels)) {
+        if ([...attributeValues(rels, 'TargetMode')].some((v) => v.trim().toLowerCase() === 'external')) {
           throw active('The document links to external content (such as a remote template) and cannot be uploaded');
         }
       }
@@ -189,8 +215,8 @@ async function inspectOffice(file, format, limits = {}) {
       for (const part of ['content.xml', 'styles.xml']) {
         if (!entries[part] || entries[part].isDirectory) continue;
         const xml = await readPart(zip, part, lim.maxPartBytes);
-        for (const m of xml.matchAll(/xlink:href\s*=\s*(["'])(.*?)\1/gi)) {
-          if (EXTERNAL_HREF.test(m[2])) {
+        for (const href of attributeValues(xml, 'href')) {
+          if (EXTERNAL_HREF.test(href) || EXTERNAL_HREF.test(href.replace(/%2e/gi, '.').replace(/%2f/gi, '/').replace(/%5c/gi, '\\'))) {
             throw active('The document links to external content and cannot be uploaded');
           }
         }
