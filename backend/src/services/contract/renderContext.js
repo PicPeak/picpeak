@@ -252,13 +252,11 @@ async function buildRenderContext(contract, inclusions) {
         name: contract.signed_customer_name,
         signedAt: contract.signed_by_customer_at,
         ip: contract.signed_customer_ip,
-        signaturePath: contract.signed_customer_signature_path,
       } : null,
       admin: contract.signed_admin_name ? {
         name: contract.signed_admin_name,
         signedAt: contract.signed_by_admin_at,
         ip: contract.signed_admin_ip,
-        signaturePath: contract.signed_admin_signature_path,
       } : null,
     },
     // Audit-trail evidence appended to the rendered PDF as a final
