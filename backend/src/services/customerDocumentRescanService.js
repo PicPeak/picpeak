@@ -11,6 +11,13 @@
  * scan_claimed_until (an epoch-ms lease), so two workers never scan the same
  * row, and the verdict is written only while the row is still `pending` —
  * an admin's manual decision in the meantime wins over the scan.
+ *
+ * A file the scanner could not decide on (larger than CLAMAV_MAX_BYTES,
+ * clamd erroring on it) keeps a lease a day long instead of losing it, so
+ * the next runs move on to other rows rather than fetching the same
+ * unscannable files every hour. A rejection goes through the same
+ * afterRejection as an admin's: a request it answered reopens and the
+ * customer is told.
  */
 
 const fs = require('fs');
@@ -27,6 +34,8 @@ const customerDocumentsService = require('./customerDocumentsService');
 
 // Long enough for a clamd timeout plus the copy out of S3.
 const LEASE_MS = 10 * 60 * 1000;
+// A file the scanner couldn't decide on is tried again after this long.
+const RETRY_AFTER_MS = 24 * 60 * 60 * 1000;
 const BATCH = 100;
 
 const task = scheduledTask(runCustomerDocumentRescan, { schedule: '40 * * * *' });
@@ -47,12 +56,15 @@ async function localCopy(row) {
   return { file, cleanup: () => fs.promises.unlink(file).catch(() => {}) };
 }
 
-async function rescanRow(row, now) {
+async function rescanRow(row) {
+  // The lease is measured from the claim, not from when the run started: a
+  // long run must not hand out leases that are already half spent.
+  const claimAt = Date.now();
   const claimed = await db('customer_documents')
     .where({ id: row.id, status: 'pending' })
     .whereNull('deleted_at')
-    .andWhere((q) => q.whereNull('scan_claimed_until').orWhere('scan_claimed_until', '<', now))
-    .update({ scan_claimed_until: now + LEASE_MS });
+    .andWhere((q) => q.whereNull('scan_claimed_until').orWhere('scan_claimed_until', '<', claimAt))
+    .update({ scan_claimed_until: claimAt + LEASE_MS });
   if (claimed !== 1) return null;
 
   let verdict = 'pending';
@@ -68,8 +80,9 @@ async function rescanRow(row, now) {
 
   const stamp = new Date().toISOString();
   if (verdict === 'pending') {
-    // Release the lease so the next run tries again.
-    await db('customer_documents').where({ id: row.id }).update({ scan_claimed_until: null });
+    // Back off: tried again in a day, and the rows behind it get their turn.
+    await db('customer_documents').where({ id: row.id, status: 'pending' })
+      .update({ scan_claimed_until: Date.now() + RETRY_AFTER_MS });
     return 'pending';
   }
   const update = verdict === 'clean'
@@ -90,6 +103,9 @@ async function rescanRow(row, now) {
   }
   await logActivity(verdict === 'clean' ? 'customer_document_scan_cleared' : 'customer_document_scan_rejected',
     { documentId: row.id, customerId: row.customer_account_id }, row.event_id || null, { type: 'system', name: null });
+  if (verdict === 'rejected') {
+    await customerDocumentsService.afterRejection(await db('customer_documents').where({ id: row.id }).first());
+  }
   return verdict;
 }
 
@@ -106,7 +122,7 @@ async function runCustomerDocumentRescan(now = Date.now()) {
     .limit(BATCH)
     .select('id', 'customer_account_id', 'event_id', 'storage_key');
   for (const row of rows) {
-    const verdict = await rescanRow(row, now);
+    const verdict = await rescanRow(row);
     if (verdict) result[verdict] += 1;
   }
   if (result.clean || result.rejected) {

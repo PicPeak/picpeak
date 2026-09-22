@@ -581,11 +581,23 @@ async function review(customerId, documentId, { status, note }, admin) {
   // A rejected file is never left shared.
   if (status === 'rejected' && isShared(row)) update.unshared_at = now;
   await db('customer_documents').where({ id: row.id }).update(update);
-  // A request it answered is open again: the customer still owes it.
-  if (status === 'rejected') await customerDocumentRequestsService.reopenForDocument(row.id);
   await logActivity('customer_document_reviewed',
     { documentId: row.id, customerId, status }, row.event_id, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
   return db('customer_documents').where({ id: row.id }).first();
+}
+
+/**
+ * What follows a rejection, whoever made it — an admin's review or the
+ * scanner's re-scan: a document request the file answered is open again
+ * (the customer still owes it), and the customer is told about their own
+ * upload. Call after the rejection is written. Resolves with what happened
+ * to the mail ('queued' | 'skipped' | 'failed').
+ */
+async function afterRejection(row) {
+  await customerDocumentRequestsService.reopenForDocument(row.id);
+  // Required here: the notifications module reaches customerAccountsService,
+  // which requires this one.
+  return require('./customerDocumentNotifications').notifyRejected(row);
 }
 
 async function updateLinks(customerId, documentId, links, admin) {
@@ -795,6 +807,7 @@ module.exports = {
   createDocument,
   setShared,
   review,
+  afterRejection,
   updateLinks,
   softDelete,
   softDeleteByCustomer,

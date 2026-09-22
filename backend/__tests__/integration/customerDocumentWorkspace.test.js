@@ -874,6 +874,62 @@ describe('malware scanner (fake clamd)', () => {
     expect(row.scan_claimed_until).toBeFalsy();
   });
 
+  it('backs off from files it cannot decide on, so the rows behind them are reached', async () => {
+    const fsx = require('fs');
+    const pathx = require('path');
+    const who = await newCustomer();
+    const now = new Date().toISOString();
+    // Park every pending row from earlier tests out of the way.
+    await db('customer_documents').where({ status: 'pending' }).update({ scan_claimed_until: Date.now() + 864e5 * 365 });
+    const insertRow = async (content) => {
+      const key = `business-docs/customer-documents/${who}/${randomUUID()}.pdf`;
+      const abs = pathx.join(process.env.STORAGE_PATH, key);
+      fsx.mkdirSync(pathx.dirname(abs), { recursive: true });
+      fsx.writeFileSync(abs, content);
+      return idOf(await db('customer_documents').insert({
+        customer_account_id: who, uploader_type: 'customer', uploader_id: who, original_name: 'x.pdf',
+        storage_key: key, mime_type: 'application/pdf', size_bytes: content.length, sha256: 'x',
+        status: 'pending', created_at: now, updated_at: now,
+      }).returning('id'));
+    };
+    for (let i = 0; i < 101; i += 1) await insertRow('UNSCANNABLE');
+    const good = await insertRow('fine');
+    const seen = [];
+    documentScanService.registerScanner(async (p) => {
+      seen.push(p);
+      return require('fs').readFileSync(p, 'utf8') === 'fine' ? 'clean' : 'pending';
+    });
+    const first = await runCustomerDocumentRescan();
+    expect(first).toEqual({ clean: 0, rejected: 0, pending: 100 });
+    const second = await runCustomerDocumentRescan();
+    expect(second.clean).toBe(1);
+    expect((await db('customer_documents').where({ id: good }).first()).status).toBe('clean');
+    // Each unscannable file was fetched once, not again in the second run.
+    expect(seen).toHaveLength(102);
+    // Backed off for a day, measured from the claim.
+    const parked = await db('customer_documents').where({ customer_account_id: who, status: 'pending' }).first();
+    expect(Number(parked.scan_claimed_until)).toBeGreaterThan(Date.now() + 23 * 3600e3);
+    await db('customer_documents').where({ customer_account_id: who }).update({ deleted_at: now });
+  });
+
+  it('a scanner rejection reopens the request the file answered and tells the customer', async () => {
+    const who = await newCustomer({ email: 'rescan-reject@example.com' });
+    const req = (await asAdmin(request(adminApp).post(`/api/admin/customers/${who}/document-requests`))
+      .send({ title: 'Signed form', notify: false })).body.request;
+    const up = await uploadAs(who, 'answer.pdf', { requestId: req.id });
+    expect(up.status).toBe(201);
+    expect((await db('customer_document_requests').where({ id: req.id }).first()).status).toBe('fulfilled');
+    const stored = await db('customer_documents').where({ id: up.body.document.id }).first('storage_key');
+    require('fs').writeFileSync(require('path').join(process.env.STORAGE_PATH, stored.storage_key), INFECTED);
+
+    useClamd();
+    await runCustomerDocumentRescan();
+    expect((await db('customer_documents').where({ id: up.body.document.id }).first()).status).toBe('rejected');
+    expect((await db('customer_document_requests').where({ id: req.id }).first()).status).toBe('open');
+    const mails = await db('email_queue').where({ email_type: 'customer_document_reviewed', recipient_email: 'rescan-reject@example.com' });
+    expect(mails).toHaveLength(1);
+  });
+
   it('does nothing while no scanner is registered', async () => {
     const id = (await uploadAs(me, 'waits.pdf')).body.document.id;
     expect(await runCustomerDocumentRescan()).toEqual({ clean: 0, rejected: 0, pending: 0 });

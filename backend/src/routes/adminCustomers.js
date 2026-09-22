@@ -1151,10 +1151,10 @@ router.post('/:id/documents/:docId/review', [
     status: req.body.status,
     note: req.body.note,
   }, req.admin);
-  // Only a rejection of the customer's own upload is mailed; an accepted
-  // upload needs no mail.
+  // Only a rejection of the customer's own upload is mailed (and reopens a
+  // request it answered); an accepted upload needs no mail.
   const notification = row.status === 'rejected'
-    ? await customerDocumentNotifications.notifyRejected(row)
+    ? await customerDocumentsService.afterRejection(row)
     : 'skipped';
   successResponse(res, { status: req.body.status, notification });
 }));
