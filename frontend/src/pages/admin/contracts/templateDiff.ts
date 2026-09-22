@@ -74,6 +74,11 @@ export function diffWords(before: string, after: string): WordOp[] {
 
 /** The parts of a version the comparison reads (a draft in the editor has the same shape). */
 export interface ComparableVersion {
+  /**
+   * The template's own name, description and use case — only an editor draft
+   * has them (a saved version doesn't); compared when both sides do.
+   */
+  meta?: { name: string; description: string; useCase: string };
   title: string;
   introText: LocaleText;
   outroText: LocaleText;
@@ -103,9 +108,9 @@ export interface ClauseChange {
 }
 
 export interface VersionDiff {
-  fields: Array<{ field: 'title' | 'intro' | 'outro'; texts: TextChange[] }>;
+  fields: Array<{ field: 'name' | 'description' | 'useCase' | 'title' | 'intro' | 'outro'; texts: TextChange[] }>;
   clauses: ClauseChange[];
-  attachments: Array<{ type: 'added' | 'removed' | 'changed'; name: string }>;
+  attachments: Array<{ type: 'added' | 'removed' | 'moved' | 'changed'; name: string }>;
   unchanged: boolean;
 }
 
@@ -140,6 +145,12 @@ function textChanges(before: LocaleText, after: LocaleText, budget: DiffBudget):
 export function diffVersions(before: ComparableVersion, after: ComparableVersion, budget: DiffBudget = { cells: TOTAL_CELLS }): VersionDiff {
   const changes = (x: LocaleText, y: LocaleText) => textChanges(x, y, budget);
   const fields: VersionDiff['fields'] = [];
+  if (before.meta && after.meta) {
+    for (const field of ['name', 'description', 'useCase'] as const) {
+      const texts = changes({ de: before.meta[field] || '' }, { de: after.meta[field] || '' });
+      if (texts.length) fields.push({ field, texts });
+    }
+  }
   const title = changes({ de: before.title || '' }, { de: after.title || '' });
   if (title.length) fields.push({ field: 'title', texts: title });
   const intro = changes(before.introText || {}, after.introText || {});
@@ -203,6 +214,15 @@ export function diffVersions(before: ComparableVersion, after: ComparableVersion
     else if (old.delivery !== a.delivery) attachments.push({ type: 'changed', name: a.name });
   }
   for (const [id, a] of beforeAtt) if (!afterAtt.has(id)) attachments.push({ type: 'removed', name: a.name });
+  // Order is part of a version (it is the merged PDF's page order): of the
+  // attachments on both sides, those outside the longest run that kept its
+  // order moved.
+  const keptBefore = (before.attachments || []).filter((a) => afterAtt.has(a.attachmentId)).map((a) => a.attachmentId);
+  const keptAfter = (after.attachments || []).filter((a) => beforeAtt.has(a.attachmentId));
+  const stayed = new Set(lcs(keptAfter.map((a) => a.attachmentId), keptBefore, (x, y) => x === y).map(([k]) => k));
+  keptAfter.forEach((a, k) => {
+    if (!stayed.has(k)) attachments.push({ type: 'moved', name: a.name });
+  });
 
   return { fields, clauses, attachments, unchanged: !fields.length && !clauses.length && !attachments.length };
 }

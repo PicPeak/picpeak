@@ -50,6 +50,9 @@ export const VersionCompareModal: React.FC<{
   const { t } = useTranslation();
   const diff = useMemo(() => diffVersions(before, after), [before, after]);
   const fieldLabel = {
+    name: t('contracts.templates.name', 'Name'),
+    description: t('contracts.templates.description', 'Description'),
+    useCase: t('contracts.templates.useCase', 'Use case'),
     title: t('contracts.templates.docTitle', 'Contract title'),
     intro: t('contracts.templates.introText', 'Intro text'),
     outro: t('contracts.templates.outroText', 'Closing text'),

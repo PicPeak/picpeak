@@ -62,3 +62,19 @@ it('past its total budget a comparison marks the remaining texts too large inste
   expect(clauses[0].texts[0].tooLarge).toBeUndefined();
   expect(clauses[1].texts[0]).toEqual({ locale: 'de', ops: [], tooLarge: true });
 });
+
+it('reports attachments that changed order', () => {
+  const agb = { attachmentId: 1, name: 'AGB', delivery: 'merged' };
+  const privacy = { attachmentId: 2, name: 'Datenschutz', delivery: 'merged' };
+  const diff = diffVersions(version([], { attachments: [agb, privacy] }), version([], { attachments: [privacy, agb] }));
+  expect(diff.unchanged).toBe(false);
+  expect(diff.attachments).toEqual([{ type: 'moved', name: 'Datenschutz' }]);
+});
+
+it('compares the name, description and use case when both sides carry them', () => {
+  const meta = { name: 'Hochzeit', description: '', useCase: 'wedding' };
+  const before = version([], { meta });
+  expect(diffVersions(before, version([], { meta: { ...meta, name: 'Hochzeit 2027' } })).fields.map((f) => f.field)).toEqual(['name']);
+  // A saved version has no meta: nothing to compare there.
+  expect(diffVersions(before, version([])).unchanged).toBe(true);
+});

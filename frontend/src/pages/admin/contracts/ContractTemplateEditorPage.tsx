@@ -135,6 +135,7 @@ function payloadOf(draft: EditorDraft): Omit<ContractTemplateDraftPayload, 'lock
 const serialize = (draft: EditorDraft) => JSON.stringify(payloadOf(draft));
 
 const comparableOf = (draft: EditorDraft): ComparableVersion => ({
+  meta: { name: draft.name.trim(), description: draft.description.trim(), useCase: draft.useCase.trim() },
   title: draft.title,
   introText: draft.intro,
   outroText: draft.outro,
