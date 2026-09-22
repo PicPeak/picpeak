@@ -1570,7 +1570,7 @@ async function emailAddOnChange(quoteId, change) {
       cc: quote.cc_pdf_email || undefined,
       attachments: quote.pdf_path ? [{
         filename: `${quote.quote_number}.pdf`,
-        contentPath: resolveStoredPath(quote.pdf_path),
+        contentPath: resolveStoredPath(quote.pdf_path) || quote.pdf_path,
         contentType: 'application/pdf',
       }] : undefined,
     });

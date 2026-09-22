@@ -476,7 +476,7 @@ async function recordAdminCountersignature(contractId, { name, ip, userAgent, si
   if (newStatus === 'fully_signed' && fullySignedAttachment) {
     try {
       const refetched = await db('contracts').where({ id: contract.id }).first();
-      const attachmentPath = resolveStoredPath(fullySignedAttachment);
+      const attachmentPath = resolveStoredPath(fullySignedAttachment) || fullySignedAttachment;
 
       const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
       const profile = (await businessProfileService.getProfile()).profile || {};
@@ -856,9 +856,12 @@ async function rerenderAndResend(contractId, adminId) {
     auditCertPath = await persistAuditCertificate(refetched);
   }
 
+  // A value that can't be placed goes through as recorded: the email
+  // processor refuses it and fails the send, where a null contentPath would
+  // be dropped and the email sent without the signed PDF.
   const attachments = [{
     filename: `${refetched.contract_number}-signed.pdf`,
-    contentPath: resolveStoredPath(attachmentPath),
+    contentPath: resolveStoredPath(attachmentPath) || attachmentPath,
     contentType: 'application/pdf',
   }];
   if (auditCertPath) {

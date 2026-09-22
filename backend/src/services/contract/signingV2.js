@@ -287,7 +287,7 @@ async function bestEffortLog(type, meta, actor) {
 async function invitationAttachments(contract) {
   const list = [];
   if ((await getAppSetting('crm_contracts_pdf_attachment_enabled')) !== false && contract.pdf_path) {
-    list.push({ filename: `${contract.contract_number}.pdf`, contentPath: resolveStoredPath(contract.pdf_path), contentType: 'application/pdf' });
+    list.push({ filename: `${contract.contract_number}.pdf`, contentPath: resolveStoredPath(contract.pdf_path) || contract.pdf_path, contentType: 'application/pdf' });
   }
   const attachments = require('./attachments');
   for (const row of await attachments.loadContractAttachments(contract.id)) {
@@ -1430,7 +1430,7 @@ async function sendCompletedEmails(contractId, certificatePath) {
   {
     const contract = await db('contracts').where({ id: contractId }).first();
     const attachments = [{
-      filename: `${contract.contract_number}-signed.pdf`, contentPath: resolveStoredPath(contract.signed_pdf_path), contentType: 'application/pdf',
+      filename: `${contract.contract_number}-signed.pdf`, contentPath: resolveStoredPath(contract.signed_pdf_path) || contract.signed_pdf_path, contentType: 'application/pdf',
     }];
     if (certificatePath) {
       attachments.push({ filename: `${contract.contract_number}-certificate.pdf`, contentPath: certificatePath, contentType: 'application/pdf' });
