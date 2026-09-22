@@ -1158,6 +1158,18 @@ describe('document requests', () => {
     expect((await db('customer_document_requests').where({ id: req.id }).first()).status).toBe('open');
   });
 
+  it('does not reopen the request when the rejected answer was accepted before the follow-up ran', async () => {
+    const svc = require('../../src/services/customerDocumentsService');
+    const req = (await createRequest(me, { title: 'Race' })).body.request;
+    const id = (await uploadAs(me, 'race.pdf', { requestId: req.id })).body.document.id;
+    const stale = { ...(await db('customer_documents').where({ id }).first()), status: 'rejected' };
+    await db('customer_documents').where({ id }).update({ status: 'rejected' });
+    await db('customer_documents').where({ id }).update({ status: 'clean' });
+    expect(await svc.afterRejection(stale)).not.toBe('queued');
+    expect((await db('customer_document_requests').where({ id: req.id }).first()).status).toBe('fulfilled');
+    await db('customer_document_requests').where({ id: req.id }).update({ status: 'cancelled' });
+  });
+
   it('is fulfilled again when a rejected answer is accepted after all, unless another answered it since', async () => {
     const review = (id, status) => asAdmin(request(adminApp).post(adminDoc(me, id, '/review'))).send({ status });
     const reqRow = (id) => db('customer_document_requests').where({ id }).first();

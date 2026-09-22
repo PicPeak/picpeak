@@ -112,7 +112,10 @@ const ACTIVE_RELATIONSHIP = /\/(oleObject|package|control|activeXControl\w*|vbaP
 // Spreadsheet formulas that reach outside the file or run code when the
 // workbook recalculates: web requests, pictures by URL, real-time data and
 // DLL calls, links. A pipe outside a string is DDE (app|topic!item).
-const ACTIVE_FORMULA = /\b(?:_xlfn\.|_xludf\.)?(WEBSERVICE|IMAGE|RTD|CALL|REGISTER(?:\.ID)?|EXEC|HYPERLINK|FILTERXML)\s*\(/i;
+const ACTIVE_FORMULA = /\b(?:_xlfn\.|_xludf\.)?(WEBSERVICE|IMAGE|RTD|CALL|REGISTER(?:\.ID)?|EXEC|HYPERLINK|FILTERXML|DDE)\s*\(/i;
+// ODF attributes that hold a formula or expression (table:formula,
+// table:expression, text:formula, conditions, validations).
+const ODF_FORMULA_ATTR = new Set(['formula', 'expression', 'condition', 'condition-source', 'base-cell-address']);
 const FORMULA_ELEMENTS = new Set(['f', 'formula', 'formula1', 'formula2', 'definedname']);
 
 // An ODF link that leaves the package: any URL scheme (not only http/file —
@@ -494,6 +497,9 @@ async function inspectOffice(file, format, limits = {}) {
             throw active('The document contains embedded objects, scripts or macro bindings');
           }
           for (const a of el.attrs) {
+            if (ODF_FORMULA_ATTR.has(localName(a.name)) && ACTIVE_FORMULA.test(a.value)) {
+              throw active('The document contains formulas that reach outside the file');
+            }
             if (localName(a.name) !== 'href') continue;
             const href = a.value;
             if (EXTERNAL_HREF.test(href) || EXTERNAL_HREF.test(href.replace(/%2e/gi, '.').replace(/%2f/gi, '/').replace(/%5c/gi, '\\'))) {

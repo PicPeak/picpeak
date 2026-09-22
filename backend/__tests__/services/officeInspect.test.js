@@ -318,6 +318,20 @@ describe('ODF', () => {
     expect(await code(inspectOffice(file, 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
   });
 
+  it.each([
+    '<table:table-cell table:formula="of:=COM.MICROSOFT.WEBSERVICE(&quot;https://e.invalid&quot;)"/>',
+    '<table:named-expressions><table:named-expression table:name="x" table:expression="of:=DDE(&quot;soffice&quot;;&quot;x&quot;;&quot;A1&quot;)"/></table:named-expressions>',
+    '<table:table-cell table:formula="of:=HYPERLINK(&quot;https://e.invalid&quot;)"/>',
+  ])('refuses an outside-reaching ODF formula: %s', async (body) => {
+    const file = await odt([], `<office:document-content>${body}</office:document-content>`);
+    expect(await code(inspectOffice(file, 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('allows an ordinary ODF formula', async () => {
+    const file = await odt([], '<office:document-content><table:table-cell table:formula="of:=SUM([.A1:.A9])"/></office:document-content>');
+    expect(await code(inspectOffice(file, 'odt'))).toBe('ok');
+  });
+
   it('refuses a manifest entry that declares an embedded document', async () => {
     const manifest = '<manifest:manifest><manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.text"/>'
       + '<manifest:file-entry manifest:full-path="Object 9" manifest:media-type="application/vnd.oasis.opendocument.spreadsheet"/></manifest:manifest>';

@@ -622,6 +622,11 @@ async function review(customerId, documentId, { status, note }, admin) {
  * to the mail ('queued' | 'skipped' | 'failed').
  */
 async function afterRejection(row) {
+  // Read again: accepted since (a review racing a re-scan), there is nothing
+  // to follow up, and the reopen below re-checks it in its own write.
+  const current = row && await db('customer_documents').where({ id: row.id }).first();
+  if (!current || current.status !== 'rejected') return 'skipped';
+  row = current;
   await customerDocumentRequestsService.reopenForDocument(row.id);
   // Required here: the notifications module reaches customerAccountsService,
   // which requires this one.

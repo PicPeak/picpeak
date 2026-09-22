@@ -186,6 +186,12 @@ async function reopenForDocument(documentId, conn = db) {
   const now = new Date().toISOString();
   return conn('customer_document_requests')
     .where({ fulfilled_document_id: documentId, status: 'fulfilled' })
+    // Only while the document is still rejected or deleted: an acceptance
+    // landing between the rejection and this write wins.
+    .whereExists(function stillUnanswered() {
+      this.from('customer_documents').where('customer_documents.id', documentId)
+        .andWhere((q) => q.where('customer_documents.status', 'rejected').orWhereNotNull('customer_documents.deleted_at'));
+    })
     .update({
       status: 'open',
       fulfilled_at: null,
