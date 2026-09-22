@@ -199,16 +199,19 @@ function sanitizeThemeSettings(input, { availableFamilies = [] } = {}) {
 /**
  * A stored settings row, re-checked on the way out (#1445): a value the
  * current rules refuse — a hand-edited row, a bound tightened since — is
- * dropped key by key instead of reaching the renderer. `availableFamilies`
- * should include archived uploaded fonts, so a theme still naming one keeps
- * it (and the document falls back visibly, FONT_MISSING).
+ * dropped key by key instead of reaching the renderer. A font family is kept
+ * whenever it is a well-formed name, even one no longer available (an
+ * archived upload, a removed bundle): the document then falls back to
+ * Helvetica visibly — the template check reports FONT_MISSING — instead of
+ * the setting vanishing without a word.
  */
-function sanitizeStoredSettings(stored, { availableFamilies = [] } = {}) {
+function sanitizeStoredSettings(stored) {
   const src = parseSettings(stored);
   const out = {};
   for (const [key, value] of Object.entries(src)) {
     try {
-      Object.assign(out, sanitizeThemeSettings({ [key]: value }, { availableFamilies }));
+      const families = key === 'fontFamily' && FONT_FAMILY.test(String(value)) ? [String(value)] : [];
+      Object.assign(out, sanitizeThemeSettings({ [key]: value }, { availableFamilies: families }));
     } catch (_) { /* dropped */ }
   }
   return out;

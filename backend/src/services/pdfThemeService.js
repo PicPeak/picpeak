@@ -35,11 +35,9 @@ async function loadRows() {
   const rows = await db('pdf_themes').select('scope', 'settings', 'updated_at');
   const byScope = {};
   const updatedAt = {};
-  // Stored rows are checked again on read; an archived uploaded font stays a
-  // valid name here, so its absence shows as a fallback, not a silent change.
-  const families = [...availableFamilies(), ...(await uploadedFonts.allFamilies())];
+  // Stored rows are checked again on read (theme.sanitizeStoredSettings).
   for (const row of rows) {
-    byScope[row.scope] = themeModel.sanitizeStoredSettings(row.settings, { availableFamilies: families });
+    byScope[row.scope] = themeModel.sanitizeStoredSettings(row.settings);
     updatedAt[row.scope] = row.updated_at || null;
   }
   return { byScope, updatedAt };

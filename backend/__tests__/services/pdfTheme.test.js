@@ -168,7 +168,8 @@ test('a stored row is re-checked on read: values the rules refuse are dropped ke
   const stored = JSON.stringify({
     titleSize: 99, colors: { accent: '#123456' }, bodySize: 11, layout: { margins: { left: 5 } }, fontFamily: 'Gone', footer: { mode: 'none' },
   });
-  expect(theme.sanitizeStoredSettings(stored, { availableFamilies: ['Jost'] }))
-    .toEqual({ colors: { accent: '#123456' }, bodySize: 11, footer: { mode: 'none', text: '' } });
-  expect(theme.sanitizeStoredSettings('{"fontFamily":"upload-3"}', { availableFamilies: ['upload-3'] })).toEqual({ fontFamily: 'upload-3' });
+  // A font that is gone stays named, so the fallback is reported rather than silent.
+  expect(theme.sanitizeStoredSettings(stored))
+    .toEqual({ colors: { accent: '#123456' }, bodySize: 11, fontFamily: 'Gone', footer: { mode: 'none', text: '' } });
+  expect(theme.sanitizeStoredSettings('{"fontFamily":"../../etc"}')).toEqual({});
 });

@@ -69,12 +69,6 @@ async function uploadedFamilies() {
   return rows.map((row) => ({ family: familyOf(row.id), name: row.display_name }));
 }
 
-/** Every uploaded family name, archived ones included. */
-async function allFamilies() {
-  if (!(await db.schema.hasTable('pdf_fonts'))) return [];
-  return (await db('pdf_fonts').select('id')).map((row) => familyOf(row.id));
-}
-
 /** Write checked bytes once, named by their content. */
 function writeFile(buffer, info) {
   const storageKey = path.join(FOLDER, `${info.sha256}.${info.format}`);
@@ -283,7 +277,6 @@ module.exports = {
   idOfFamily,
   listFonts,
   uploadedFamilies,
-  allFamilies,
   storeFont,
   archiveFont,
   fontFilesFor,
