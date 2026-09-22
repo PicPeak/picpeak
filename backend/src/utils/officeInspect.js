@@ -123,7 +123,39 @@ async function readPart(zip, name, limit) {
     }
     chunks.push(chunk);
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return decodeText(Buffer.concat(chunks));
+}
+
+// Encodings whose bytes spell ASCII the way UTF-8 does, so the checks below
+// see every attribute an XML consumer sees.
+const ASCII_COMPATIBLE = /^(utf-?8|us-ascii|ascii|iso-8859-\d+|latin-?1|windows-125\d)$/i;
+
+/**
+ * A part as text, decoded the way an XML consumer would: UTF-16 by its BOM,
+ * UTF-8 otherwise. Anything else — UTF-16 without a BOM, UTF-32, UTF-7,
+ * EBCDIC — is refused, because read as UTF-8 it hides its attributes from
+ * the checks while Office reads them fine.
+ */
+function decodeText(buf) {
+  let text;
+  if (buf.length >= 4 && (buf.readUInt32LE(0) === 0x0000feff || buf.readUInt32BE(0) === 0x0000feff)) {
+    throw notValid('The document uses a text encoding that cannot be checked');
+  } else if (buf[0] === 0xff && buf[1] === 0xfe) {
+    text = buf.subarray(2).toString('utf16le');
+  } else if (buf[0] === 0xfe && buf[1] === 0xff) {
+    const le = Buffer.from(buf.subarray(2));
+    if (le.length % 2) throw notValid('The document uses a text encoding that cannot be checked');
+    le.swap16();
+    text = le.toString('utf16le');
+  } else {
+    text = buf.toString('utf8');
+    const declared = text.match(/^\uFEFF?\s*<\?xml[^>]*?\bencoding\s*=\s*["']([^"']*)["']/);
+    if (declared && !ASCII_COMPATIBLE.test(declared[1].trim())) {
+      throw notValid('The document uses a text encoding that cannot be checked');
+    }
+  }
+  if (text.includes('\0')) throw notValid('The document uses a text encoding that cannot be checked');
+  return text;
 }
 
 /**

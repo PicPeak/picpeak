@@ -73,6 +73,33 @@ describe('OOXML external relationships', () => {
     },
   );
 
+  const relsXml = '<?xml version="1.0" encoding="UTF-16"?><Relationships><Relationship Id="r1" Target="https://evil.example/t.dotm" TargetMode="External"/></Relationships>';
+  const utf16be = (text) => {
+    const buf = Buffer.from(text, 'utf16le');
+    buf.swap16();
+    return buf;
+  };
+
+  it('reads a UTF-16 part by its byte-order mark, little- or big-endian', async () => {
+    const le = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(relsXml, 'utf16le')]);
+    const be = Buffer.concat([Buffer.from([0xfe, 0xff]), utf16be(relsXml)]);
+    for (const bytes of [le, be]) {
+      expect(await code(inspectOffice(await docx([['word/_rels/settings.xml.rels', bytes]]), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+    }
+  });
+
+  it('refuses a part in an encoding the check cannot read', async () => {
+    const noBom = Buffer.from(relsXml, 'utf16le');
+    const utf7 = '<?xml version="1.0" encoding="UTF-7"?><Relationships/>';
+    const utf32 = Buffer.concat([Buffer.from([0xff, 0xfe, 0, 0]), Buffer.from('<a/>', 'utf16le')]);
+    for (const bytes of [noBom, utf7, utf32]) {
+      expect(await code(inspectOffice(await docx([['word/_rels/settings.xml.rels', bytes]]), 'docx'))).toBe('DOCUMENT_NOT_VALID');
+    }
+    const odtUtf16 = Buffer.concat([Buffer.from([0xff, 0xfe]),
+      Buffer.from('<office:document-content><text:a xlink:href="https://x">x</text:a></office:document-content>', 'utf16le')]);
+    expect(await code(inspectOffice(await odt([], odtUtf16), 'odt'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
   it('allows internal relationships', async () => {
     expect(await code(inspectOffice(await docx([rels('"Internal"')]), 'docx'))).toBe('ok');
   });
