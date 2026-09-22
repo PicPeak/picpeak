@@ -42,6 +42,9 @@ const DEFAULTS = {
   maxExpandedBytes: 200 * 1024 * 1024,
   // Budget for the few XML parts actually read.
   maxPartBytes: 4 * 1024 * 1024,
+  // A Word part read for its fields: the body of a long document is larger
+  // than the package parts above.
+  maxWordPartBytes: 32 * 1024 * 1024,
   // txt / csv when the caller passes no cap (the upload limit's default).
   maxTextBytes: 25 * 1024 * 1024,
 };
@@ -90,10 +93,13 @@ const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 // that embed an object, a script or a macro binding.
 const ODF_DOCUMENT_PART = /(^|\/)(content|styles|meta|settings)\.xml$/i;
 const ODF_ACTIVE_ELEMENT = new Set(['object', 'object-ole', 'applet', 'plugin', 'script', 'event-listener']);
-// Word parts that hold fields (body, headers, footers, notes, comments,
-// the glossary), and the field types refused in them.
-const WORD_TEXT_PART = /^word\/(glossary\/)?[^/]+\.xml$/i;
-const ACTIVE_FIELD = /\b(DDE|DDEAUTO|INCLUDETEXT|INCLUDEPICTURE)\b|\bQUOTE\s+\d/i;
+// Word: every XML part may hold fields — Word finds headers, footers and
+// notes through relationships, not by path — except the package's own
+// bookkeeping. Field names refused: DDE/DDEAUTO start another program,
+// INCLUDETEXT/INCLUDEPICTURE/IMPORT/LINK load a file or URL, and QUOTE with
+// character codes spells text out of numbers.
+const WORD_SKIPPED_PART = /(^|\/)_rels\/|^\[Content_Types\]\.xml$|^docProps\/|^customXml\//i;
+const ACTIVE_FIELD = /^\s*(DDE|DDEAUTO|INCLUDETEXT|INCLUDEPICTURE|IMPORT|LINK)\b|^\s*QUOTE\s+\d/i;
 // Content types and relationship types of code and embedded objects.
 const ACTIVE_TYPE = /macroEnabled|vbaProject|vbaData|activeX|oleObject|\.package\b/i;
 const ACTIVE_RELATIONSHIP = /\/(oleObject|package|control|activeXControl\w*|vbaProject\w*|wordVbaData|keyMapCustomizations|externalLink)$/i;
@@ -208,21 +214,47 @@ const attrsOf = (el, name) => el.attrs
   .filter((x) => localName(x.name) === name.toLowerCase())
   .map((x) => String(x.value).trim());
 
-/** Every field instruction in a WordprocessingML part, run text joined. */
+/**
+ * Every field instruction in a WordprocessingML part, one string per field:
+ * a complex field's instrText runs joined between its begin and its
+ * separate/end, a simple field's instr attribute on its own. A field whose
+ * name is itself a nested field (`{ {QUOTE 68 68 69} … }`, `{ {IF …} … }`)
+ * is computed when Word updates it, so it can't be checked and is refused.
+ */
 function fieldInstructions(xml) {
-  let out = '';
-  let depth = 0;
+  const done = [];
+  const stack = [];
+  let loose = '';
+  let inInstr = 0;
   for (const t of xmlTokens(xml)) {
     if (t.kind === 'open') {
-      if (localName(t.name) === 'instrtext') depth += 1;
-      if (localName(t.name) === 'fldsimple') out += ` ${attrsOf(t, 'instr').join(' ')} `;
+      const name = localName(t.name);
+      if (name === 'fldsimple') done.push(...attrsOf(t, 'instr'));
+      else if (name === 'instrtext') inInstr += 1;
+      else if (name === 'fldchar') {
+        const type = (attrsOf(t, 'fldCharType')[0] || '').toLowerCase();
+        if (type === 'begin') {
+          const outer = stack[stack.length - 1];
+          if (outer && !outer.closed && outer.instr.trim() === '') {
+            throw active('The document contains a field whose type is computed');
+          }
+          stack.push({ instr: '', closed: false });
+        } else if (type === 'separate' && stack.length) {
+          stack[stack.length - 1].closed = true;
+        } else if (type === 'end' && stack.length) {
+          done.push(stack.pop().instr);
+        }
+      }
     } else if (t.kind === 'close') {
-      if (localName(t.name) === 'instrtext' && depth > 0) depth -= 1;
-    } else if (depth > 0) {
-      out += t.text;
+      if (localName(t.name) === 'instrtext' && inInstr > 0) inInstr -= 1;
+    } else if (inInstr > 0) {
+      const top = stack[stack.length - 1];
+      if (top && !top.closed) top.instr += t.text;
+      else loose += t.text;
     }
   }
-  return out;
+  // Unterminated fields and instrText outside any field are checked too.
+  return [...done, ...stack.map((f) => f.instr), loose];
 }
 
 /** The first `n` bytes of an entry, without inflating the rest. */
@@ -393,14 +425,11 @@ async function inspectOffice(file, format, limits = {}) {
           }
         }
       }
-      // Word fields that run a program or fetch content: DDE/DDEAUTO start
-      // another application, INCLUDETEXT/INCLUDEPICTURE load a file or URL,
-      // and QUOTE with character codes is how a DDE field gets spelled out
-      // of nested fields. A field's instruction can be split across runs,
-      // so each part's instructions are read as one string.
+      // Word fields that run a program or fetch content (ACTIVE_FIELD).
       for (const name of names) {
-        if (!WORD_TEXT_PART.test(name) || entries[name].isDirectory) continue;
-        if (ACTIVE_FIELD.test(fieldInstructions(await readPart(zip, name, lim.maxPartBytes)))) {
+        if (format !== 'docx' || !/\.xml$/i.test(name) || WORD_SKIPPED_PART.test(name) || entries[name].isDirectory) continue;
+        const fields = fieldInstructions(await readPart(zip, name, lim.maxWordPartBytes));
+        if (fields.some((instr) => ACTIVE_FIELD.test(instr))) {
           throw active('The document contains fields that run programs or load outside content');
         }
       }

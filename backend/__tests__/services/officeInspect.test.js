@@ -198,12 +198,30 @@ describe('Word fields', () => {
     expect(await code(inspectOffice(await withBody(inner), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
   });
 
-  it('reads headers and footers too', async () => {
-    expect(await code(inspectOffice(await withBody(run(' DDE x'), 'word/header1.xml'), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  const fld = (type) => `<w:r><w:fldChar w:fldCharType="${type}"/></w:r>`;
+  const field = (instr) => `${fld('begin')}${run(instr)}${fld('separate')}<w:r><w:t>1</w:t></w:r>${fld('end')}`;
+
+  it.each(['word/header1.xml', 'word/headers/header1.xml', 'word/footer2.xml', 'custom/part.xml'])(
+    'reads every Word part, wherever it lives: %s', async (part) => {
+      expect(await code(inspectOffice(await withBody(field(' INCLUDETEXT "x.docx"'), part), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+    },
+  );
+
+  it('checks each field on its own, so an ordinary one before it hides nothing', async () => {
+    const inner = `${fld('begin')}${run('PAGE')}${fld('end')}${fld('begin')}${run('DDEAUTO c:\\x.exe')}${fld('end')}`;
+    expect(await code(inspectOffice(await withBody(inner), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+    expect(await code(inspectOffice(await withBody(field(' LINK Excel.Sheet.8 "C:\\\\a.xls" ')), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
   });
 
-  it('allows ordinary fields, and the words as text', async () => {
-    const inner = `${run(' PAGE ')}<w:fldSimple w:instr=" DATE \\@ &quot;d.M.yyyy&quot; "/><w:r><w:t>DDE and QUOTE 1 in plain text</w:t></w:r>`;
+  it('refuses a field whose type is itself a field', async () => {
+    const inner = `${fld('begin')}${fld('begin')}${run(' IF 1 = 1 "DD" ')}${fld('end')}${run('EAUTO c:\\x.exe')}${fld('end')}`;
+    expect(await code(inspectOffice(await withBody(inner), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
+
+  it('allows ordinary fields, nested ones, and the words as text or arguments', async () => {
+    const inner = `${field(' PAGE ')}<w:fldSimple w:instr=" DATE \\@ &quot;d.M.yyyy&quot; "/>`
+      + `${fld('begin')}${run(' IF ')}${field(' MERGEFIELD Name ')}${run(' = "x" "DDE" ')}${fld('end')}`
+      + `${field(' HYPERLINK \\l "DDE_notes" ')}<w:r><w:t>DDE and QUOTE 1 in plain text</w:t></w:r>`;
     expect(await code(inspectOffice(await withBody(inner), 'docx'))).toBe('ok');
   });
 });
