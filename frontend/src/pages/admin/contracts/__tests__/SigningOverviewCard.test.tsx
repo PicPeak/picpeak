@@ -72,3 +72,18 @@ test('sends a reminder to a signer who has a link, and says how often they were 
   await waitFor(() => expect(remindSigner).toHaveBeenCalledWith(7, 21));
   expect(document.body.textContent).not.toContain('MISSING:');
 });
+
+test('offers a new link to the first signer while their details are collected', () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <SigningOverviewCard
+        contractId={7}
+        contractStatus="awaiting_data"
+        overview={{ version: 2, order: 'parallel', followUp: null, signers: [signer], events: [], chain: null } as never}
+      />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByRole('button', { name: 'Send the link again' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Send reminder' })).toBeInTheDocument();
+});

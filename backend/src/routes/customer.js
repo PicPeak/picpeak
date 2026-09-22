@@ -726,7 +726,7 @@ router.get('/contracts', customerAuth, async (req, res) => {
         'issue_date', 'valid_until', 'title',
         'sent_at', 'signed_by_customer_at', 'signed_by_admin_at',
         'signed_customer_name', 'signed_admin_name',
-        'pdf_path', 'signed_pdf_path', 'signing_version', 'signing_order',
+        'pdf_path', 'signed_pdf_path', 'signing_version', 'signing_order', 'data_request',
       );
 
     // Whether each contract can still be signed. The list used to carry the
@@ -763,7 +763,7 @@ router.get('/contracts', customerAuth, async (req, res) => {
         issueDate: c.issue_date,
         validUntil: c.valid_until,
         // Before the freeze (#1446) the number is all that is shown.
-        title: c.status === 'awaiting_data' ? null : c.title,
+        title: neverFrozen(c) ? null : c.title,
         sentAt: c.sent_at,
         signedByCustomerAt: c.signed_by_customer_at,
         signedByAdminAt: c.signed_by_admin_at,
@@ -828,7 +828,7 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
     }
     // Collecting the customer's details first (#1446): nothing is frozen, and
     // rendering on demand would hand out the unfrozen contract.
-    if (contract.status === 'awaiting_data') return sendNotReady(res);
+    if (neverFrozen(contract)) return sendUnfrozen(res, contract);
     // Prefer the wet-signed PDF when present, otherwise the system-
     // generated PDF (signed in-browser, stamped, or unsigned).
     const path = require('path');
@@ -869,7 +869,7 @@ router.get('/contracts/:id/certificate', customerAuth, async (req, res) => {
       .where({ id: parseInt(req.params.id, 10), customer_account_id: req.customer.id })
       .first();
     if (!contract || contract.status === 'draft') return res.status(404).json({ error: 'Contract not found' });
-    if (contract.status === 'awaiting_data') return sendNotReady(res);
+    if (neverFrozen(contract)) return sendUnfrozen(res, contract);
     const { readCertificate } = require('../services/contract/signatureAssets');
     const { fileName, buffer } = await readCertificate(contract.id);
     res.set('Content-Type', 'application/pdf');
@@ -903,14 +903,24 @@ async function ownedDocument(req, res, { table, featureKey, label, notFound }) {
   }
   // A contract still collecting the customer's details (#1446) has no
   // frozen content yet: its clauses and price are not shown anywhere.
-  if (table === 'contracts' && row.status === 'awaiting_data') {
-    sendNotReady(res);
+  // Nor once it expired or was cancelled before the details came in.
+  if (table === 'contracts' && neverFrozen(row)) {
+    sendUnfrozen(res, row);
     return null;
   }
   return row;
 }
 
-function sendNotReady(res) {
+/**
+ * A contract that asked for the customer's details and was never sent with
+ * them (#1446): still waiting, or expired or cancelled while it waited.
+ */
+function neverFrozen(contract) {
+  return contract.status === 'awaiting_data' || (!!contract.data_request && !contract.sent_at);
+}
+
+function sendUnfrozen(res, contract) {
+  if (contract.status !== 'awaiting_data') return res.status(404).json({ error: 'Contract not found' });
   return res.status(409).json({
     error: 'This contract is being prepared. Complete your details first.', code: 'CONTRACT_NOT_READY',
   });

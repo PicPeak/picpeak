@@ -45,6 +45,12 @@ const stopContractSigningSweep = () => task.stop();
 async function expireContract(contract, now) {
   const stamp = new Date(now).toISOString();
   const signedSignerIds = await db.transaction(async (trx) => {
+    // Re-read under the lock: a link re-issued since the candidates were
+    // read moves a deadline that runs from the latest link.
+    const current = await trx('contracts').where({ id: contract.id }).forUpdate().first();
+    if (!current || current.status !== contract.status) return null;
+    const deadline = await signers.signingDeadline(current, trx);
+    if (deadline == null || deadline > now) return null;
     const flipped = await auditedUpdate(trx, 'contracts', { id: contract.id, status: contract.status },
       { status: 'expired', updated_at: stamp }, { actor: { type: 'system' }, source: 'contract.expire' });
     if (!flipped) return null;

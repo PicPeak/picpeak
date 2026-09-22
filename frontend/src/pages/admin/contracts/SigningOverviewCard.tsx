@@ -137,7 +137,9 @@ export const SigningOverviewCard: React.FC<SigningOverviewCardProps> = ({ contra
         <ol className="divide-y divide-neutral-200 dark:divide-neutral-700">
           {signers.map((s) => {
             const via = viaLabel(s.verifiedVia);
-            const canResend = s.role === 'customer' && s.status === 'invited' && contractStatus === 'sent';
+            // While details are collected, the first signer's link is the details link.
+            const canResend = s.role === 'customer' && s.status === 'invited'
+              && (contractStatus === 'sent' || contractStatus === 'awaiting_data');
             return (
               <li key={s.id} className="py-2 flex flex-wrap items-start gap-3 text-sm">
                 <span className="w-5 text-neutral-500 dark:text-neutral-400">{s.position}.</span>

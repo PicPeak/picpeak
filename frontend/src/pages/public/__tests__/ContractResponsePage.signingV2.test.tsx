@@ -607,6 +607,37 @@ it('asks for the details first, shows nothing of the contract, then opens it', a
   }));
 });
 
+it('shows the details as saved when a refresh after a lost response says they arrived', async () => {
+  const user = userEvent.setup();
+  window.sessionStorage.setItem(
+    'picpeak.contractSigning.session.portal',
+    JSON.stringify({ sessionToken: SESSION_TOKEN, expiresAt: '2099-01-01T00:00:00.000Z' }),
+  );
+  const awaiting = (submitted: boolean) => ({
+    contract: {
+      contractNumber: 'V-2026-0007',
+      status: 'awaiting_data',
+      language: 'en',
+      issuer: { companyName: 'Studio Licht', logoUrl: null, logoUrlDark: null },
+      dataRequest: {
+        fields: ['address_line1', 'postal_code', 'city', 'country_code'],
+        required: ['address_line1', 'postal_code', 'city', 'country_code'],
+        values: { address_line1: 'Seestrasse 12', postal_code: '8001', city: 'Zürich', country_code: 'CH' },
+        submitted,
+      },
+      signing: { status: 'invited', verifiedVia: 'portal', canSign: false, canDecline: false, waitingForOthers: false },
+    },
+  });
+  session.mockResolvedValueOnce(awaiting(false)).mockResolvedValue(awaiting(true));
+  // No status: the request may or may not have arrived.
+  submitDetails.mockRejectedValueOnce(new Error('Network Error'));
+  renderAt('/contract/signing');
+
+  await user.click(await screen.findByRole('button', { name: 'Save my details and prepare the contract' }));
+  expect(await screen.findByRole('heading', { name: 'Your details are saved' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save my details and prepare the contract' })).toBeNull();
+});
+
 it('prints the frozen legal notice under the contract and on the sign step (#1446 slice 12)', async () => {
   const user = userEvent.setup();
   window.sessionStorage.setItem(

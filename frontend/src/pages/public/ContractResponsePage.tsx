@@ -368,7 +368,10 @@ const DetailsForm: React.FC<{
   const [values, setValues] = useState<Record<string, string>>(() => ({ ...request.values }));
   const [invalid, setInvalid] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(request.submitted);
+  // The server's word wins: a refresh after a lost response may say the
+  // details already arrived.
+  const [saved, setPending] = useState(false);
+  const pending = saved || request.submitted;
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus(); }, [pending]);
 

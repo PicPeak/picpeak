@@ -367,6 +367,19 @@ describe('lifecycle', () => {
     expect((await asSigner(request(signingApp).get('/api/public/contract-signing/session')).set('X-Signing-Session', anna)).status).toBe(401);
   });
 
+  test('a link re-issued after the candidates were read keeps the contract open', async () => {
+    const { expireContract } = require('../../src/services/contract/expiry');
+    const id = await newContract();
+    await sendContract(id);
+    const stale = await db('contracts').where({ id }).first();
+    // The sweep read it as due (its link ran out); a resend since moved the deadline.
+    const signingV2 = require('../../src/services/contract/signingV2');
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    await signingV2.resendInvitation(id, signer.id, adminId);
+    expect(await expireContract(stale, Date.now() + 24 * 60 * 60 * 1000)).toBe(false);
+    expect((await db('contracts').where({ id }).first()).status).toBe('sent');
+  });
+
   test('a contract still inside its window is left alone', async () => {
     const { runContractSigningSweep } = require('../../src/services/contract/expiry');
     const id = await newContract();
@@ -1241,6 +1254,21 @@ describe('collect-then-freeze', () => {
     expect(responses[1].body.code).toBe('CONTRACT_NOT_READY');
     const listed = responses[0].body.contracts.find((c) => c.id === id);
     expect(listed).toEqual(expect.objectContaining({ status: 'awaiting_data', title: null, hasPdf: false, canCompleteDetails: true }));
+
+    // Expired while it waited: still never frozen, still nothing to show.
+    await db('contracts').where({ id }).update({ status: 'expired' });
+    const after = [
+      await asCustomer(request(portal).get('/api/customer/contracts')),
+      await asCustomer(request(portal).get(`/api/customer/contracts/${id}`)),
+      await asCustomer(request(portal).get(`/api/customer/contracts/${id}/pdf`)),
+      await asCustomer(request(portal).get(`/api/customer/contracts/${id}/certificate`)),
+    ];
+    for (const res of after) {
+      const text = `${res.text || ''}${Buffer.isBuffer(res.body) ? res.body.toString('latin1') : ''}`;
+      for (const secret of secrets) expect(text).not.toContain(secret);
+    }
+    expect(after.slice(1).map((r) => r.status)).toEqual([404, 404, 404]);
+    expect(after[0].body.contracts.find((c) => c.id === id)).toEqual(expect.objectContaining({ status: 'expired', title: null }));
   });
 
   test('the co-signer has no way in while details are collected', async () => {
