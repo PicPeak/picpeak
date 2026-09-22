@@ -402,6 +402,11 @@ function abortStreamingArchive({ archive, guard, res, err, eventId, route }) {
   guard.destroyAll();
   archive.unpipe(res);
   archive.abort();
+  // abort() waits for the entry being copied, and an archive.file() source
+  // (external photos) is not in the guard: with nothing reading the archive
+  // any more it would stay paused with its descriptor open. Discard the
+  // rest instead, so that entry runs to its end and closes.
+  archive.resume();
   res.destroy(err instanceof Error ? err : new Error('archive failed'));
 }
 
