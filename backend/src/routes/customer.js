@@ -30,6 +30,7 @@ const rateLimit = require('express-rate-limit');
 const { receivePdfUpload, discardTempFile, sendPdfAttachment } = require('../middleware/customerDocumentUpload');
 const customerAccountsService = require('../services/customerAccountsService');
 const customerDocumentsService = require('../services/customerDocumentsService');
+const customerDocumentNotifications = require('../services/customerDocumentNotifications');
 const customerPortalService = require('../services/customerPortalService');
 const publicDocumentViews = require('../services/publicDocumentViews');
 const { clientIpForAudit } = require('../utils/clientIp');
@@ -1174,6 +1175,9 @@ router.post('/documents', customerAuth, requireDocumentsFeature, documentUploadL
       quotaBytes: limits.quotaBytes,
       maxUploadBytes: limits.maxUploadBytes,
     });
+    // After the row is written; neither can fail the upload.
+    await customerDocumentNotifications.notifyUploaded(row);
+    await customerDocumentNotifications.emitDocumentWorkflow('document.uploaded', row);
     res.status(201).json({ document: customerDocumentsService.toCustomerDto(row) });
   } catch (error) {
     sendDocumentError(res, error, 'Failed to upload document');

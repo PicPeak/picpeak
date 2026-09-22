@@ -500,6 +500,7 @@ async function setShared(customerId, documentId, shared, admin) {
     : { unshared_at: now, updated_at: now });
   await logActivity(shared ? 'customer_document_shared' : 'customer_document_unshared',
     { documentId: row.id, customerId }, row.event_id, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
+  return db('customer_documents').where({ id: row.id }).first();
 }
 
 async function review(customerId, documentId, { status, note }, admin) {
@@ -518,6 +519,7 @@ async function review(customerId, documentId, { status, note }, admin) {
   await db('customer_documents').where({ id: row.id }).update(update);
   await logActivity('customer_document_reviewed',
     { documentId: row.id, customerId, status }, row.event_id, { type: 'admin', id: admin.id, name: admin.username || 'admin' });
+  return db('customer_documents').where({ id: row.id }).first();
 }
 
 async function updateLinks(customerId, documentId, links, admin) {

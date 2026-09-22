@@ -27,7 +27,8 @@ vi.mock('react-i18next', async () => {
   };
 });
 
-vi.mock('react-toastify', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+const toastMock = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), warning: vi.fn() }));
+vi.mock('react-toastify', () => ({ toast: toastMock }));
 const env = vi.hoisted(() => ({
   projects: false,
   permissions: null as null | string[],
@@ -67,12 +68,17 @@ const makeDoc = (over: Partial<AdminCustomerDocument>): AdminCustomerDocument =>
 });
 
 let docs: AdminCustomerDocument[] = [];
+let notifyOnShare = true;
 const removeSpy = vi.fn(async () => undefined);
 const setLinksSpy = vi.fn(async () => undefined);
+const shareSpy = vi.fn(async (): Promise<string | undefined> => 'queued');
 
 vi.mock('../../../services/customerDocumentsAdmin.service', () => ({
   customerDocumentsAdminService: {
-    list: vi.fn(async () => ({ documents: docs, limits: { maxUploadBytes: 1, quotaBytes: 1, usedBytes: 0 } })),
+    list: vi.fn(async () => ({
+      documents: docs, limits: { maxUploadBytes: 1, quotaBytes: 1, usedBytes: 0 }, settings: { notifyOnShare },
+    })),
+    share: (...a: unknown[]) => shareSpy(...(a as [])),
     remove: (...a: unknown[]) => removeSpy(...(a as [])),
     setLinks: (...a: unknown[]) => setLinksSpy(...(a as [])),
   },
@@ -165,5 +171,41 @@ describe('CustomerDocumentsCard — project link (#1444)', () => {
     expect(screen.queryByRole('combobox', { name: 'Project' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Save links' }));
     await waitFor(() => expect(setLinksSpy).toHaveBeenCalledWith(5, 9, { eventId: null, projectId: 3, contractId: null }));
+  });
+});
+
+describe('CustomerDocumentsCard — share notification (#1444)', () => {
+  beforeEach(() => {
+    shareSpy.mockClear();
+    toastMock.success.mockClear();
+    toastMock.warning.mockClear();
+    env.projects = false;
+    env.permissions = null;
+  });
+
+  it('defaults the notify checkbox to the setting and sends the choice with a share', async () => {
+    notifyOnShare = false;
+    docs = [makeDoc({ id: 11, shared: false })];
+    renderCard();
+    const box = await screen.findByRole('checkbox', { name: 'Notify the customer by email' });
+    await waitFor(() => expect(box).not.toBeChecked());
+    await userEvent.click(screen.getByRole('button', { name: /^Share$/ }));
+    await waitFor(() => expect(shareSpy).toHaveBeenCalledWith(5, 11, false));
+
+    await userEvent.click(box);
+    await userEvent.click(screen.getByRole('button', { name: /^Share$/ }));
+    await waitFor(() => expect(shareSpy).toHaveBeenLastCalledWith(5, 11, true));
+    notifyOnShare = true;
+  });
+
+  it('says so when the share went through but the email could not be queued', async () => {
+    shareSpy.mockResolvedValueOnce('failed');
+    docs = [makeDoc({ id: 12, shared: false })];
+    renderCard();
+    await userEvent.click(await screen.findByRole('button', { name: /^Share$/ }));
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalledWith(
+      'Shared with the customer. The email to the customer could not be queued.',
+    ));
+    expect(toastMock.success).not.toHaveBeenCalled();
   });
 });

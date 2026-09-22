@@ -507,6 +507,76 @@ Rechnung {{invoice_number}}{{#if event_name}} ({{event_name}}){{/if}} ist nach {
 Zur Weiterleitung an das Inkasso / für die Betreibung.`,
     },
   },
+  // Customer documents (#1444, plan slice 3). The links lead to the portal
+  // login and from there to the document; no token is ever put in them.
+  customer_document_shared: {
+    category: 'customers', feature_flag: 'documents',
+    variables: ['customer_name', 'business_name', 'document_title', 'event_name', 'document_link', 'dashboard_link'],
+    en: {
+      subject: 'A new document is waiting for you: {{document_title}}',
+      body_html: `<h2>New document</h2>
+<p>Dear {{customer_name}},</p>
+<p>A document has been shared with you in your customer portal: <strong>{{document_title}}</strong>{{#if event_name}} for "{{event_name}}"{{/if}}.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{document_link}}" class="button">Open document</a></p>
+<p style="font-size: 13px; color: #666;">You will be asked to sign in first. All your documents are in your portal: {{dashboard_link}}</p>
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Dear {{customer_name}},\n\nA document has been shared with you in your customer portal: {{document_title}}{{#if event_name}} for "{{event_name}}"{{/if}}.\n\nOpen it: {{document_link}}\n(You will be asked to sign in first.)\n\nAll your documents: {{dashboard_link}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+    de: {
+      subject: 'Ein neues Dokument wartet auf Sie: {{document_title}}',
+      body_html: `<h2>Neues Dokument</h2>
+<p>Guten Tag {{customer_name}},</p>
+<p>in Ihrem Kundenportal wurde ein Dokument für Sie freigegeben: <strong>{{document_title}}</strong>{{#if event_name}} für "{{event_name}}"{{/if}}.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{document_link}}" class="button">Dokument öffnen</a></p>
+<p style="font-size: 13px; color: #666;">Sie werden zuerst gebeten, sich anzumelden. Alle Ihre Dokumente finden Sie im Portal: {{dashboard_link}}</p>
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Guten Tag {{customer_name}},\n\nin Ihrem Kundenportal wurde ein Dokument für Sie freigegeben: {{document_title}}{{#if event_name}} für "{{event_name}}"{{/if}}.\n\nÖffnen: {{document_link}}\n(Sie werden zuerst gebeten, sich anzumelden.)\n\nAlle Ihre Dokumente: {{dashboard_link}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+  },
+  customer_document_uploaded_admin: {
+    category: 'customers', feature_flag: 'documents',
+    variables: ['customer_name', 'document_title', 'admin_link'],
+    en: {
+      subject: '{{customer_name}} uploaded a document: {{document_title}}',
+      body_html: `<h2>New customer upload</h2>
+<p>{{customer_name}} uploaded <strong>{{document_title}}</strong> in the customer portal. It stays unavailable to them until it has been reviewed.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{admin_link}}" class="button">Review in admin</a></p>`,
+      body_text: '{{customer_name}} uploaded {{document_title}} in the customer portal. It stays unavailable to them until it has been reviewed.\n\nReview: {{admin_link}}',
+    },
+    de: {
+      subject: '{{customer_name}} hat ein Dokument hochgeladen: {{document_title}}',
+      body_html: `<h2>Neuer Kunden-Upload</h2>
+<p>{{customer_name}} hat im Kundenportal <strong>{{document_title}}</strong> hochgeladen. Das Dokument bleibt für den Kunden gesperrt, bis es geprüft wurde.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{admin_link}}" class="button">Im Admin-Bereich prüfen</a></p>`,
+      body_text: '{{customer_name}} hat im Kundenportal {{document_title}} hochgeladen. Das Dokument bleibt für den Kunden gesperrt, bis es geprüft wurde.\n\nPrüfen: {{admin_link}}',
+    },
+  },
+  customer_document_reviewed: {
+    category: 'customers', feature_flag: 'documents',
+    variables: ['customer_name', 'business_name', 'document_title', 'review_note', 'document_link'],
+    en: {
+      subject: 'Your document was not accepted: {{document_title}}',
+      body_html: `<h2>Document not accepted</h2>
+<p>Dear {{customer_name}},</p>
+<p>The document you uploaded, <strong>{{document_title}}</strong>, was not accepted.</p>
+{{#if review_note}}<p><strong>Reason:</strong> {{review_note}}</p>{{/if}}
+<p>You can upload a corrected version in your customer portal.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{document_link}}" class="button">Open document</a></p>
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Dear {{customer_name}},\n\nThe document you uploaded, {{document_title}}, was not accepted.{{#if review_note}}\nReason: {{review_note}}{{/if}}\n\nYou can upload a corrected version in your customer portal: {{document_link}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+    de: {
+      subject: 'Ihr Dokument wurde nicht angenommen: {{document_title}}',
+      body_html: `<h2>Dokument nicht angenommen</h2>
+<p>Guten Tag {{customer_name}},</p>
+<p>das von Ihnen hochgeladene Dokument <strong>{{document_title}}</strong> wurde nicht angenommen.</p>
+{{#if review_note}}<p><strong>Begründung:</strong> {{review_note}}</p>{{/if}}
+<p>Sie können in Ihrem Kundenportal eine korrigierte Fassung hochladen.</p>
+<p style="text-align: center; margin: 30px 0;"><a href="{{document_link}}" class="button">Dokument öffnen</a></p>
+{{#if business_name}}<p>{{business_name}}</p>{{/if}}`,
+      body_text: 'Guten Tag {{customer_name}},\n\ndas von Ihnen hochgeladene Dokument {{document_title}} wurde nicht angenommen.{{#if review_note}}\nBegründung: {{review_note}}{{/if}}\n\nSie können in Ihrem Kundenportal eine korrigierte Fassung hochladen: {{document_link}}{{#if business_name}}\n\n{{business_name}}{{/if}}',
+    },
+  },
 };
 
 let _seeded = false;

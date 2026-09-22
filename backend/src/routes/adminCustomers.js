@@ -31,7 +31,9 @@ const combinedBillingService = require('../services/combinedBillingService');
 const invoiceService = require('../services/invoiceService');
 const { IDENTITY_PRESERVING_NORMALIZE_EMAIL } = require('../utils/emailNormalization');
 const { NotFoundError, AppError } = require('../utils/errors');
+const { getAppSetting } = require('../utils/appSettings');
 const customerDocumentsService = require('../services/customerDocumentsService');
+const customerDocumentNotifications = require('../services/customerDocumentNotifications');
 const customerGroupsService = require('../services/customerGroupsService');
 const { receivePdfUpload, discardTempFile, sendPdfAttachment } = require('../middleware/customerDocumentUpload');
 
@@ -1017,6 +1019,13 @@ const documentGuards = [
 const documentItemGuards = [...documentGuards, param('docId').isInt({ min: 1 })];
 const adminActor = (admin) => ({ type: 'admin', id: admin.id, name: admin.username || 'admin' });
 
+/** Multipart sends strings; JSON sends booleans. Anything else: no choice made. */
+function parseNotify(value) {
+  if (value === true || value === 'true' || value === '1') return true;
+  if (value === false || value === 'false' || value === '0') return false;
+  return undefined;
+}
+
 async function loadDocumentCustomer(req) {
   validateRequest(req);
   const customerId = parseInt(req.params.id, 10);
@@ -1030,10 +1039,12 @@ router.get('/:id/documents', documentGuards, handleAsync(async (req, res) => {
   const documents = await customerDocumentsService.listForAdmin(customerId);
   const limits = await customerDocumentsService.getLimits();
   const usedBytes = await customerDocumentsService.getUsageBytes(customerId);
-  successResponse(res, { documents, limits: { ...limits, usedBytes } });
+  // The default for the card's "Notify the customer" checkbox.
+  const notifyOnShare = (await getAppSetting('customer_documents_notify_on_share', true)) !== false;
+  successResponse(res, { documents, limits: { ...limits, usedBytes }, settings: { notifyOnShare } });
 }));
 
-// multipart: file (PDF), share?, eventId?, projectId?, contractId?
+// multipart: file (PDF), share?, notify?, eventId?, projectId?, contractId?
 // Admin uploads are recorded clean by the uploading admin and don't count
 // against the customer's quota; the per-file size cap applies.
 router.post('/:id/documents', documentGuards, handleAsync(async (req, res) => {
@@ -1055,7 +1066,14 @@ router.post('/:id/documents', documentGuards, handleAsync(async (req, res) => {
       actor: adminActor(req.admin),
       maxUploadBytes: limits.maxUploadBytes,
     });
-    return successResponse(res, { document: { id: row.id, status: row.status } }, 201);
+    // Only a share that was recorded is announced: an upload the scanner
+    // left pending is shared (and announced) once it is clean.
+    let notification = 'skipped';
+    if (row.shared_at) {
+      notification = await customerDocumentNotifications.notifyShared(row, { notify: parseNotify(req.body.notify) });
+      await customerDocumentNotifications.emitDocumentWorkflow('document.shared', row, String(row.shared_at));
+    }
+    return successResponse(res, { document: { id: row.id, status: row.status }, notification }, 201);
   } finally {
     discardTempFile(file);
   }
@@ -1073,10 +1091,18 @@ router.patch('/:id/documents/:docId', [
   successResponse(res, { updated: true });
 }));
 
-router.post('/:id/documents/:docId/share', documentItemGuards, handleAsync(async (req, res) => {
+// notify?: boolean — whether to email the customer; left out, the
+// customer_documents_notify_on_share setting decides. `notification` in the
+// answer says what happened: queued, skipped, or failed (shared anyway).
+router.post('/:id/documents/:docId/share', [
+  ...documentItemGuards,
+  body('notify').optional({ nullable: true }).isBoolean(),
+], handleAsync(async (req, res) => {
   const customerId = await loadDocumentCustomer(req);
-  await customerDocumentsService.setShared(customerId, parseInt(req.params.docId, 10), true, req.admin);
-  successResponse(res, { shared: true });
+  const row = await customerDocumentsService.setShared(customerId, parseInt(req.params.docId, 10), true, req.admin);
+  const notification = await customerDocumentNotifications.notifyShared(row, { notify: parseNotify(req.body.notify) });
+  await customerDocumentNotifications.emitDocumentWorkflow('document.shared', row, String(row.shared_at));
+  successResponse(res, { shared: true, notification });
 }));
 
 router.post('/:id/documents/:docId/unshare', documentItemGuards, handleAsync(async (req, res) => {
@@ -1092,11 +1118,16 @@ router.post('/:id/documents/:docId/review', [
   body('note').optional({ nullable: true }).isString().isLength({ max: 500 }),
 ], handleAsync(async (req, res) => {
   const customerId = await loadDocumentCustomer(req);
-  await customerDocumentsService.review(customerId, parseInt(req.params.docId, 10), {
+  const row = await customerDocumentsService.review(customerId, parseInt(req.params.docId, 10), {
     status: req.body.status,
     note: req.body.note,
   }, req.admin);
-  successResponse(res, { status: req.body.status });
+  // Only a rejection of the customer's own upload is mailed; an accepted
+  // upload needs no mail.
+  const notification = row.status === 'rejected'
+    ? await customerDocumentNotifications.notifyRejected(row)
+    : 'skipped';
+  successResponse(res, { status: req.body.status, notification });
 }));
 
 // Admins can download any non-deleted document, pending ones included —

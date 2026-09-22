@@ -5968,7 +5968,10 @@
       "linkedTitle": "Linked to a contract",
       "linkedBody": "{{name}} is linked to a contract, so it is kept as part of the contractual record and cannot be deleted. Unlink it from the contract first, then delete it.",
       "unlinkContract": "Unlink from contract",
-      "projectLabel": "Project"
+      "projectLabel": "Project",
+      "notified": "The customer gets an email.",
+      "notifyFailed": "The email to the customer could not be queued.",
+      "notifyCustomer": "Notify the customer by email"
     },
     "groups": {
       "title": "Groups",
@@ -7344,7 +7347,9 @@
       "contracts": "Contracts",
       "quotesTos": "Terms of Service / AGB step",
       "dashboardOverview": "Dashboard CRM overview",
-      "dashboardOverviewHint": "Hide CRM overview tiles on the admin dashboard. All tiles render by default; uncheck to hide."
+      "dashboardOverviewHint": "Hide CRM overview tiles on the admin dashboard. All tiles render by default; uncheck to hide.",
+      "documents": "Customer documents",
+      "documentsHint": "Documents exchanged with customers in their portal. Customer uploads stay unavailable to them until reviewed."
     },
     "paymentDefaults": {
       "help": "Pre-filled on every new quote and invoice. The editor still lets you pick a different combination per document.",
@@ -7488,6 +7493,18 @@
     },
     "crm_overview_show_invoices": {
       "label": "Invoices pipeline (per-status)"
+    },
+    "customer_documents_notify_on_share": {
+      "label": "Email the customer when a document is shared with them (default for the checkbox on the customer record)"
+    },
+    "customer_documents_max_upload_size_mb": {
+      "label": "Largest file (MB)"
+    },
+    "customer_documents_quota_mb": {
+      "label": "Storage per customer (MB)"
+    },
+    "customer_documents_retention_days": {
+      "label": "Keep rejected and deleted files (days)"
     }
   },
   "quoteResponse": {

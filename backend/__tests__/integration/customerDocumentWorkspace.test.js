@@ -39,7 +39,8 @@ const asCustomer = (req, id) => req.set('Cookie', cookieFor(id));
 const asAdmin = (req, tok = superTok) => req.set('Authorization', `Bearer ${tok}`);
 const idOf = (inserted) => (typeof inserted[0] === 'object' ? inserted[0].id : inserted[0]);
 const nowIso = () => new Date().toISOString();
-// activity_logs.metadata is JSON text on SQLite and jsonb on PostgreSQL.
+// activity_logs.metadata and email_queue.email_data are JSON text on SQLite
+// and json(b) on PostgreSQL.
 const meta = (v) => (typeof v === 'string' ? JSON.parse(v) : v);
 
 async function setFlag(key, on) {
@@ -394,5 +395,131 @@ describe('event page documents follow the deal', () => {
       .send({ eventId: null, projectId: foreignProject, contractId: null });
     expect(patch.status).toBe(400);
     expect((await db('customer_documents').where({ id: own.body.document.id }).first()).project_id).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 3 — notifications and workflow hooks
+// ---------------------------------------------------------------------------
+
+describe('document notifications', () => {
+  let me;
+  const queued = (type, recipient) => db('email_queue').where({ email_type: type, recipient_email: recipient }).orderBy('id');
+  const share = (customerId, id, body = {}) => asAdmin(request(adminApp).post(adminDoc(customerId, id, '/share'))).send(body);
+  const setSetting = (key, value) => db('app_settings').where({ setting_key: key })
+    .update({ setting_value: JSON.stringify(value) });
+
+  beforeAll(async () => {
+    me = await newCustomer({ email: 'notify-me@example.com', preferred_language: 'de', display_name: 'Nora' });
+    await db('business_profile').update({ email: 'studio@example.com', company_name: 'Studio Nord' });
+  });
+
+  it('queues the share mail in the customer\'s language with a plain link to the document', async () => {
+    const up = await adminUpload(me, 'Vertrag.pdf');
+    const res = await share(me, up.body.document.id);
+    expect(res.status).toBe(200);
+    expect(res.body.notification).toBe('queued');
+
+    const rows = await queued('customer_document_shared', 'notify-me@example.com');
+    expect(rows).toHaveLength(1);
+    const data = meta(rows[0].email_data);
+    expect(data).toMatchObject({
+      customer_name: 'Nora', business_name: 'Studio Nord', document_title: 'Vertrag.pdf', __language: 'de',
+    });
+    expect(data.document_link).toMatch(new RegExp(`/customer/documents/${up.body.document.id}$`));
+    // No token, no query string, nothing that could sign the customer in.
+    const raw = JSON.stringify(data);
+    expect(raw).not.toMatch(/token|jwt|eyJ[A-Za-z0-9_-]{10,}/i);
+    expect(data.document_link).not.toContain('?');
+  });
+
+  it('skips the mail for notify:false, the setting off, an inactive or passive customer, or documents off for them', async () => {
+    const answer = (res) => res.body.notification;
+    const before = (await queued('customer_document_shared', 'notify-me@example.com')).length;
+
+    const a = await adminUpload(me, 'a.pdf');
+    expect(answer(await share(me, a.body.document.id, { notify: false }))).toBe('skipped');
+
+    await setSetting('customer_documents_notify_on_share', false);
+    const b = await adminUpload(me, 'b.pdf');
+    expect(answer(await share(me, b.body.document.id))).toBe('skipped');
+    // An explicit choice wins over the setting.
+    const b2 = await adminUpload(me, 'b2.pdf');
+    expect(answer(await share(me, b2.body.document.id, { notify: true }))).toBe('queued');
+    await setSetting('customer_documents_notify_on_share', true);
+
+    for (const change of [{ is_active: 0 }, { password_hash: null }, { feature_documents: 0 }]) {
+      const saved = await db('customer_accounts').where({ id: me }).first('is_active', 'password_hash', 'feature_documents');
+      await db('customer_accounts').where({ id: me }).update(change);
+      const c = await adminUpload(me, 'c.pdf');
+      expect(answer(await share(me, c.body.document.id))).toBe('skipped');
+      await db('customer_accounts').where({ id: me }).update(saved);
+    }
+    expect((await queued('customer_document_shared', 'notify-me@example.com')).length).toBe(before + 1);
+  });
+
+  it('keeps the share when the mail cannot be queued, and says so', async () => {
+    const emailProcessor = require('../../src/services/emailProcessor');
+    const spy = jest.spyOn(emailProcessor, 'queueEmail').mockRejectedValueOnce(new Error('queue down'));
+    try {
+      const up = await adminUpload(me, 'fails.pdf');
+      const res = await share(me, up.body.document.id);
+      expect(res.status).toBe(200);
+      expect(res.body.notification).toBe('failed');
+      const row = await db('customer_documents').where({ id: up.body.document.id }).first();
+      expect(row.shared_at).toBeTruthy();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('announces an upload shared on the way in, honouring notify', async () => {
+    const before = (await queued('customer_document_shared', 'notify-me@example.com')).length;
+    const quiet = await adminUpload(me, 'quiet.pdf', { share: 'true', notify: 'false' });
+    expect(quiet.body.notification).toBe('skipped');
+    const loud = await adminUpload(me, 'loud.pdf', { share: 'true' });
+    expect(loud.body.notification).toBe('queued');
+    expect((await queued('customer_document_shared', 'notify-me@example.com')).length).toBe(before + 1);
+  });
+
+  it('tells the business address about a customer upload', async () => {
+    const up = await uploadAs(me, 'from-customer.pdf');
+    expect(up.status).toBe(201);
+    const rows = await queued('customer_document_uploaded_admin', 'studio@example.com');
+    const data = rows.map((r) => meta(r.email_data)).find((d) => d.document_title === 'from-customer.pdf');
+    expect(data).toMatchObject({ customer_name: 'Nora' });
+    expect(data.admin_link).toMatch(new RegExp(`/admin/clients/accounts/${me}$`));
+  });
+
+  it('mails a rejection with its note, and nothing for an accepted upload', async () => {
+    const rejectedUp = await uploadAs(me, 'wrong.pdf');
+    const acceptedUp = await uploadAs(me, 'right.pdf');
+    const before = (await queued('customer_document_reviewed', 'notify-me@example.com')).length;
+    await asAdmin(request(adminApp).post(adminDoc(me, acceptedUp.body.document.id, '/review'))).send({ status: 'clean' });
+    const res = await asAdmin(request(adminApp).post(adminDoc(me, rejectedUp.body.document.id, '/review')))
+      .send({ status: 'rejected', note: 'Unterschrift fehlt' });
+    expect(res.body.notification).toBe('queued');
+    const rows = await queued('customer_document_reviewed', 'notify-me@example.com');
+    expect(rows).toHaveLength(before + 1);
+    expect(meta(rows[rows.length - 1].email_data)).toMatchObject({
+      document_title: 'wrong.pdf', review_note: 'Unterschrift fehlt', __language: 'de',
+    });
+  });
+
+  it('emits document.shared and document.uploaded for workflows', async () => {
+    const workflows = require('../../src/services/workflows');
+    const spy = jest.spyOn(workflows, 'emitWorkflowEvent').mockResolvedValue([]);
+    try {
+      const up = await adminUpload(me, 'wf.pdf');
+      await share(me, up.body.document.id);
+      const own = await uploadAs(me, 'wf-own.pdf');
+      const calls = spy.mock.calls.map(([trigger, opts]) => [trigger, opts.entityId, opts.payload]);
+      expect(calls).toEqual(expect.arrayContaining([
+        ['document.shared', up.body.document.id, { customerAccountId: me, documentId: up.body.document.id, eventId: null }],
+        ['document.uploaded', own.body.document.id, { customerAccountId: me, documentId: own.body.document.id, eventId: null }],
+      ]));
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

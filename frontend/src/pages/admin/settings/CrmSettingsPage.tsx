@@ -74,6 +74,11 @@ const SETTING_KEYS = [
   'crm_overview_show_outstanding',
   'crm_overview_show_quotes',
   'crm_overview_show_invoices',
+  // Customer documents in the portal (#1444, migrations 225 + 240).
+  'customer_documents_max_upload_size_mb',
+  'customer_documents_quota_mb',
+  'customer_documents_retention_days',
+  'customer_documents_notify_on_share',
 ];
 
 export const CrmSettingsPage: React.FC = () => {
@@ -92,7 +97,8 @@ export const CrmSettingsPage: React.FC = () => {
   const workflowsLive = !!flags.workflows;
   const showContracts = !!flags.contracts;
   const showDashboardOverview = !!(flags.quotes || flags.bills);
-  const anySection = showQuotes || showInvoices || showContracts || showDashboardOverview;
+  const showDocuments = !!flags.documents;
+  const anySection = showQuotes || showInvoices || showContracts || showDashboardOverview || showDocuments;
   const { data, isLoading } = useQuery({
     queryKey: ['settings', 'crm'],
     queryFn: async () => {
@@ -483,6 +489,36 @@ export const CrmSettingsPage: React.FC = () => {
           {t('crmSettings.crm_contracts_number_format.help',
             'Supported tokens: {YEAR}, {MONTH}, {SEQ:04d}. Example: LBM-C-{YEAR}-{SEQ:04d} → LBM-C-2026-0001.')}
         </p>
+      </Card>
+      )}
+
+      {showDocuments && (
+      /* Customer documents (#1444). The limits are read by
+         customerDocumentsService.getLimits / getRetentionDays, which fall
+         back to their defaults for an empty or invalid value. */
+      <Card>
+        <h3 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+          {t('crmSettings.section.documents', 'Customer documents')}
+        </h3>
+        <p className="text-xs text-neutral-500 mb-3">
+          {t('crmSettings.section.documentsHint',
+            'Documents exchanged with customers in their portal. Customer uploads stay unavailable to them until reviewed.')}
+        </p>
+        {checkboxDefaultOn('customer_documents_notify_on_share', 'Email the customer when a document is shared with them (default for the checkbox on the customer record)')}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+          <Input type="number" min={1} max={500}
+            label={t('crmSettings.customer_documents_max_upload_size_mb.label', 'Largest file (MB)') as string}
+            value={values.customer_documents_max_upload_size_mb ?? 25}
+            onChange={(e) => setVal('customer_documents_max_upload_size_mb', Number(e.target.value))} />
+          <Input type="number" min={1} max={100000}
+            label={t('crmSettings.customer_documents_quota_mb.label', 'Storage per customer (MB)') as string}
+            value={values.customer_documents_quota_mb ?? 250}
+            onChange={(e) => setVal('customer_documents_quota_mb', Number(e.target.value))} />
+          <Input type="number" min={1} max={3650}
+            label={t('crmSettings.customer_documents_retention_days.label', 'Keep rejected and deleted files (days)') as string}
+            value={values.customer_documents_retention_days ?? 30}
+            onChange={(e) => setVal('customer_documents_retention_days', Number(e.target.value))} />
+        </div>
       </Card>
       )}
 

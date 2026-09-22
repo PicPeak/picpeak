@@ -5968,7 +5968,10 @@
       "linkedTitle": "Mit einem Vertrag verknüpft",
       "linkedBody": "{{name}} ist mit einem Vertrag verknüpft und wird deshalb als Teil der Vertragsunterlagen aufbewahrt und kann nicht gelöscht werden. Lösen Sie es zuerst vom Vertrag und löschen Sie es dann.",
       "unlinkContract": "Vom Vertrag lösen",
-      "projectLabel": "Projekt"
+      "projectLabel": "Projekt",
+      "notified": "Der Kunde erhält eine E-Mail.",
+      "notifyFailed": "Die E-Mail an den Kunden konnte nicht eingeplant werden.",
+      "notifyCustomer": "Kunden per E-Mail benachrichtigen"
     },
     "groups": {
       "title": "Gruppen",
@@ -7345,7 +7348,9 @@
       "contracts": "Verträge",
       "quotesTos": "AGB-Schritt",
       "dashboardOverview": "CRM-Übersicht im Dashboard",
-      "dashboardOverviewHint": "CRM-Übersichtskacheln im Admin-Dashboard ausblenden. Alle Kacheln werden standardmäßig angezeigt; zum Ausblenden abwählen."
+      "dashboardOverviewHint": "CRM-Übersichtskacheln im Admin-Dashboard ausblenden. Alle Kacheln werden standardmäßig angezeigt; zum Ausblenden abwählen.",
+      "documents": "Kundendokumente",
+      "documentsHint": "Dokumente, die Sie im Kundenportal mit Kunden austauschen. Uploads von Kunden bleiben für sie gesperrt, bis sie geprüft wurden."
     },
     "installmentDefaults": {
       "help": "Vorbelegung der Trigger für neue Zeilen im Teilzahlungs-Panel. Pro-Dokument-Anpassungen überschreiben; bestehende Dokumente behalten ihren gespeicherten Plan.",
@@ -7489,6 +7494,18 @@
     },
     "crm_overview_show_invoices": {
       "label": "Rechnungs-Pipeline (nach Status)"
+    },
+    "customer_documents_notify_on_share": {
+      "label": "Kunden per E-Mail benachrichtigen, wenn ein Dokument freigegeben wird (Voreinstellung für das Kontrollkästchen im Kundendatensatz)"
+    },
+    "customer_documents_max_upload_size_mb": {
+      "label": "Größte Datei (MB)"
+    },
+    "customer_documents_quota_mb": {
+      "label": "Speicher pro Kunde (MB)"
+    },
+    "customer_documents_retention_days": {
+      "label": "Abgelehnte und gelöschte Dateien aufbewahren (Tage)"
     }
   },
   "quoteResponse": {
