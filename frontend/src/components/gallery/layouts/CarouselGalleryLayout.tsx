@@ -83,6 +83,7 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
   const canQuickComment = Boolean(feedbackEnabled && feedbackOptions?.allowComments && onOpenPhotoWithFeedback);
 
   if (!currentPhoto) return null;
+  const currentPhotoAtLimit = !downloadQuota.canDownload(currentPhoto);
 
   return (
     <div className="photo-grid relative">
@@ -163,11 +164,9 @@ export const CarouselGalleryLayout: React.FC<BaseGalleryLayoutProps> = ({
                 variant="ghost"
                 size="sm"
                 onClick={(e) => onDownload(currentPhoto, e)}
-                className={`text-white hover:bg-white/20${currentPhoto && !downloadQuota.canDownload(currentPhoto) ? ' opacity-50 cursor-not-allowed' : ''}`}
-                aria-disabled={(currentPhoto && !downloadQuota.canDownload(currentPhoto)) || undefined}
-                title={currentPhoto && !downloadQuota.canDownload(currentPhoto)
-                  ? downloadLimitReachedMessage()
-                  : 'Download photo'}
+                className={`text-white hover:bg-white/20${currentPhotoAtLimit ? ' opacity-50 cursor-not-allowed' : ''}`}
+                aria-disabled={currentPhotoAtLimit || undefined}
+                title={currentPhotoAtLimit ? downloadLimitReachedMessage() : 'Download photo'}
               >
                 <Download className="w-5 h-5" />
               </Button>

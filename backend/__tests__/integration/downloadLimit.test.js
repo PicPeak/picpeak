@@ -292,8 +292,9 @@ describe('Download limit (issue 1560)', () => {
         .send({ resolution: 'original' });
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('DOWNLOAD_LIMIT_REACHED');
-      expect(await db('download_jobs').where({ event_id: event.id }).count('id as c').first())
-        .toEqual({ c: 0 });
+      // PostgreSQL returns COUNT as a string, SQLite as a number.
+      const { c } = await db('download_jobs').where({ event_id: event.id }).count('id as c').first();
+      expect(Number(c)).toBe(0);
     });
   });
 
