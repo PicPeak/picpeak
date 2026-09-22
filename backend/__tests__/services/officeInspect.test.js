@@ -201,11 +201,20 @@ describe('Word fields', () => {
   const fld = (type) => `<w:r><w:fldChar w:fldCharType="${type}"/></w:r>`;
   const field = (instr) => `${fld('begin')}${run(instr)}${fld('separate')}<w:r><w:t>1</w:t></w:r>${fld('end')}`;
 
-  it.each(['word/header1.xml', 'word/headers/header1.xml', 'word/footer2.xml', 'custom/part.xml'])(
+  it.each(['word/header1.xml', 'word/headers/header1.xml', 'word/footer2.xml', 'custom/part.xml', 'customXml/header1.xml'])(
     'reads every Word part, wherever it lives: %s', async (part) => {
       expect(await code(inspectOffice(await withBody(field(' INCLUDETEXT "x.docx"'), part), 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
     },
   );
+
+  it('reads a part by its declared type, whatever its extension', async () => {
+    const types = CT.replace('<Override', '<Override PartName="/word/header1.dat" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override');
+    const file = await zipFile([
+      ['[Content_Types].xml', types], ['word/document.xml', body('')],
+      ['word/header1.dat', body(field(' INCLUDETEXT "x.docx"'))],
+    ]);
+    expect(await code(inspectOffice(file, 'docx'))).toBe('DOCUMENT_ACTIVE_CONTENT');
+  });
 
   it('checks each field on its own, so an ordinary one before it hides nothing', async () => {
     const inner = `${fld('begin')}${run('PAGE')}${fld('end')}${fld('begin')}${run('DDEAUTO c:\\x.exe')}${fld('end')}`;
@@ -256,6 +265,9 @@ describe('ODF', () => {
   });
 
   it.each([
+    '<text:dde-connection-decls><text:dde-connection-decl office:name="L" office:dde-application="soffice" office:dde-topic="C:/x.ods" office:dde-item="A1" office:automatic-update="true"/></text:dde-connection-decls>',
+    '<text:p><text:dde-connection text:connection-name="L">1</text:dde-connection></text:p>',
+    '<table:table><table:table-row><table:table-cell><office:dde-source office:dde-application="soffice" office:dde-topic="x" office:dde-item="A1"/></table:table-cell></table:table-row></table:table>',
     '<draw:frame><draw:object xlink:href="./x"/></draw:frame>',
     '<draw:frame><draw:object-ole xlink:href="./Object 1"/></draw:frame>',
     '<office:event-listeners><script:event-listener script:language="ooo:script" script:event-name="dom:load" script:macro-name="Standard.Module1.Run"/></office:event-listeners>',

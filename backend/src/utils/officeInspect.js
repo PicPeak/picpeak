@@ -92,13 +92,16 @@ const ZIP_MAGIC = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
 // ODF: the parts that make a directory a (sub-)document, and the elements
 // that embed an object, a script or a macro binding.
 const ODF_DOCUMENT_PART = /(^|\/)(content|styles|meta|settings)\.xml$/i;
-const ODF_ACTIVE_ELEMENT = new Set(['object', 'object-ole', 'applet', 'plugin', 'script', 'event-listener']);
-// Word: every XML part may hold fields — Word finds headers, footers and
-// notes through relationships, not by path — except the package's own
-// bookkeeping. Field names refused: DDE/DDEAUTO start another program,
+const ODF_ACTIVE_ELEMENT = new Set([
+  'object', 'object-ole', 'applet', 'plugin', 'script', 'event-listener',
+  // DDE: a live link to another application's data, updated on open.
+  'dde-connection-decl', 'dde-connection', 'dde-source', 'dde-link',
+]);
+// Word: every part declared as XML may hold fields — Word finds headers,
+// footers and notes through relationships and content types, not by path or
+// extension. Field names refused: DDE/DDEAUTO start another program,
 // INCLUDETEXT/INCLUDEPICTURE/IMPORT/LINK load a file or URL, and QUOTE with
 // character codes spells text out of numbers.
-const WORD_SKIPPED_PART = /(^|\/)_rels\/|^\[Content_Types\]\.xml$|^docProps\/|^customXml\//i;
 const ACTIVE_FIELD = /^\s*(DDE|DDEAUTO|INCLUDETEXT|INCLUDEPICTURE|IMPORT|LINK)\b|^\s*QUOTE\s+\d/i;
 // Content types and relationship types of code and embedded objects.
 const ACTIVE_TYPE = /macroEnabled|vbaProject|vbaData|activeX|oleObject|\.package\b/i;
@@ -425,9 +428,15 @@ async function inspectOffice(file, format, limits = {}) {
           }
         }
       }
-      // Word fields that run a program or fetch content (ACTIVE_FIELD).
+      // Word fields that run a program or fetch content (ACTIVE_FIELD), in
+      // every part declared as XML except relationships — and in an
+      // undeclared .xml part too, which Word's repair may still load.
       for (const name of names) {
-        if (format !== 'docx' || !/\.xml$/i.test(name) || WORD_SKIPPED_PART.test(name) || entries[name].isDirectory) continue;
+        if (format !== 'docx' || entries[name].isDirectory || name === '[Content_Types].xml') continue;
+        const partType = overrides.get(`/${name}`.toLowerCase())
+          ?? defaults.get(name.slice(name.lastIndexOf('.') + 1).toLowerCase());
+        const xmlPart = partType === undefined ? /\.xml$/i.test(name) : /xml$/i.test(partType);
+        if (!xmlPart || /relationships\+xml$/i.test(partType || '') || /\.rels$/i.test(name)) continue;
         const fields = fieldInstructions(await readPart(zip, name, lim.maxWordPartBytes));
         if (fields.some((instr) => ACTIVE_FIELD.test(instr))) {
           throw active('The document contains fields that run programs or load outside content');
