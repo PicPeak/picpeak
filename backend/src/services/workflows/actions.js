@@ -102,9 +102,8 @@ registry.registerAction('escalate_to_collections', async (ctx) => {
 
   const attachments = [];
   try {
-    const fs = require('fs');
-    const invoicePdf = require('../../utils/storedPath').resolveStoredPath(invoice.pdf_path);
-    if (invoicePdf && fs.existsSync(invoicePdf)) {
+    const invoicePdf = require('../../utils/storedDocumentPdf').invoicePdfFile(invoice.pdf_path);
+    if (invoicePdf) {
       attachments.push({ filename: `${invoice.invoice_number}.pdf`, contentPath: invoicePdf, contentType: 'application/pdf' });
     }
   } catch (_) { /* attachment is best-effort */ }

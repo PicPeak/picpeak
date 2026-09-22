@@ -17,6 +17,10 @@ const { buildSignatureStamps, persistAuditCertificate, persistContractPdf, persi
 const { getContractById } = require('./crud');
 const { auditedUpdate } = require('../accountingHistory');
 const { resolveStoredPath, toStoredPath } = require('../../utils/storedPath');
+const { resolveStoredPathStrict, contractPdfRoots } = require('../../utils/safePath');
+
+/** A contract file this module opens: symlinks followed, null when missing, 403 outside. */
+const contractFile = (stored) => resolveStoredPathStrict(stored, contractPdfRoots());
 
 // The change history's actor for a signature or upload through the emailed
 // link. The token row names only the contract, not who holds the link.
@@ -153,7 +157,7 @@ async function recordCustomerSignature({ token, name, ip, signatureDataUrl, acce
   // stays untouched on disk.
   const refreshed = await getContractById(contract.id);
   try {
-    const unsignedPdf = resolveStoredPath(refreshed.contract.pdf_path);
+    const unsignedPdf = contractFile(refreshed.contract.pdf_path);
     if (!unsignedPdf || !fs.existsSync(unsignedPdf)) {
       throw new Error(`Unsigned PDF missing on disk at ${refreshed.contract.pdf_path}`);
     }
@@ -329,7 +333,7 @@ async function recordAdminCountersignature(contractId, { name, ip, signatureData
     if (!signaturePath) {
       throw new Error('Admin signature image missing; cannot stamp the counter-signed PDF');
     }
-    const unsignedPdf = resolveStoredPath(refreshed.contract.pdf_path);
+    const unsignedPdf = contractFile(refreshed.contract.pdf_path);
     if (!unsignedPdf || !fs.existsSync(unsignedPdf)) {
       throw new Error(`Unsigned PDF missing on disk at ${refreshed.contract.pdf_path}`);
     }
@@ -698,7 +702,7 @@ async function rerenderAndResend(contractId, adminId) {
     // the customer originally agreed to and side-steps the silent re-
     // render failure that left signed_pdf_path NULL on prior contracts.
     const refreshed = await getContractById(contract.id);
-    const unsignedPdf = resolveStoredPath(refreshed.contract.pdf_path);
+    const unsignedPdf = contractFile(refreshed.contract.pdf_path);
     if (!unsignedPdf || !fs.existsSync(unsignedPdf)) {
       throw new AppError(
         `Unsigned PDF missing on disk at ${refreshed.contract.pdf_path}; cannot re-stamp.`,
@@ -872,7 +876,7 @@ async function restampSignatures(contractId, { customerSignatureDataUrl, adminSi
   // already points at an uploaded PDF we still produce a stamped copy
   // on disk for the audit trail, but signed_pdf_path is not updated.
   const refreshed = await getContractById(contract.id);
-  const unsignedPdf = resolveStoredPath(refreshed.contract.pdf_path);
+  const unsignedPdf = contractFile(refreshed.contract.pdf_path);
   if (!unsignedPdf || !fs.existsSync(unsignedPdf)) {
     throw new AppError(
       `Unsigned PDF missing on disk at ${refreshed.contract.pdf_path}; cannot re-stamp.`,
@@ -1054,11 +1058,14 @@ async function verifyIntegrity(id) {
   if (!contract) throw new AppError('Contract not found', 404);
 
   // The stored path may be storage-relative or recorded under another storage
-  // root (a restore); storedPath.js places it on this install's root.
+  // root (a restore); it is placed on this install's root with symlinks
+  // followed, and one that can't be placed inside the contract folders counts
+  // as missing rather than being hashed.
   const checkLeg = (filePath, expected) => {
-    const file = resolveStoredPath(filePath);
-    const present = !!file && fs.existsSync(file);
-    const actual = present ? sha256OfFile(file) : null;
+    let file = null;
+    try { file = contractFile(filePath); } catch (_) { file = null; }
+    const actual = file ? sha256OfFile(file) : null;
+    const present = !!actual;
     return {
       path: filePath || null,
       present,

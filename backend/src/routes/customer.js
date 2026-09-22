@@ -19,8 +19,7 @@ const crypto = require('crypto');
 const { body, param, validationResult } = require('express-validator');
 const { db, logActivity } = require('../database/db');
 const { getBcryptRounds, MAX_PASSWORD_LENGTH } = require('../utils/passwordValidation');
-const { assertContractPdfPath } = require('../utils/safePath');
-const { resolveStoredPath } = require('../utils/storedPath');
+const { resolveStoredPathStrict, contractPdfRoots } = require('../utils/safePath');
 const logger = require('../utils/logger');
 const { errorResponse, safeValidationErrors } = require('../utils/routeHelpers');
 const { getClientIp } = require('../utils/requestIp');
@@ -768,8 +767,12 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
     // generated PDF (signed in-browser, stamped, or unsigned).
     const path = require('path');
     const fs = require('fs');
-    const filePath = resolveStoredPath(contract.signed_pdf_path || contract.pdf_path);
-    if (!filePath || !fs.existsSync(filePath)) {
+    // Same containment the admin and public contract routes apply, with
+    // symlinks followed: a stored path outside the contract folders is
+    // refused with 403 (a bad row must not become an arbitrary-file read);
+    // only a file that is simply missing falls back to rendering.
+    const filePath = resolveStoredPathStrict(contract.signed_pdf_path || contract.pdf_path, contractPdfRoots());
+    if (!filePath) {
       // Render on-demand so customers who hit the link before the
       // first send still get something usable.
       const contractService = require('../services/contractService');
@@ -778,14 +781,11 @@ router.get('/contracts/:id/pdf', customerAuth, async (req, res) => {
       res.set('Content-Disposition', `inline; filename="${contract.contract_number}.pdf"`);
       return res.send(buf);
     }
-    // Same containment the admin and public contract routes apply: the DB
-    // path is written by the service layer today, but a bad row must not
-    // turn this into an arbitrary-file read.
-    const safePath = assertContractPdfPath(filePath);
     res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', `inline; filename="${path.basename(safePath)}"`);
-    fs.createReadStream(safePath).pipe(res);
+    res.set('Content-Disposition', `inline; filename="${path.basename(filePath)}"`);
+    fs.createReadStream(filePath).pipe(res);
   } catch (error) {
+    if (error && error.statusCode === 403) return res.status(403).json({ error: error.message, code: error.code });
     errorResponse(res, error, 500, 'Failed to render contract PDF');
   }
 });

@@ -280,12 +280,17 @@ async function renderInvoicePdfBuffer(invoiceId) {
   // Imported (historical) invoices store the original PDF on disk
   // — short-circuit the renderer and stream the file untouched so
   // legal documents stay byte-identical to the source. Path is
-  // stored relative to STORAGE_PATH; storedPath.js also places an
-  // absolute one, and refuses one outside the storage root.
+  // stored relative to STORAGE_PATH. The file goes to the customer, so
+  // it must be one the import route wrote: inside invoice-imports, with
+  // symlinks followed. Anything else (a crafted restore naming the
+  // evidence key, say) is refused with 403.
   if (data.invoice.imported_pdf_path) {
     const fs = require('fs');
-    const { resolveStoredPath } = require('../../utils/storedPath');
-    const candidate = resolveStoredPath(String(data.invoice.imported_pdf_path).trim());
+    const path = require('path');
+    const { getStoragePath } = require('../../config/storage');
+    const { resolveStoredPathStrict } = require('../../utils/safePath');
+    const candidate = resolveStoredPathStrict(String(data.invoice.imported_pdf_path).trim(),
+      [path.join(getStoragePath(), 'business-docs', 'invoice-imports')]);
     let found = null;
     try { found = candidate && fs.statSync(candidate).isFile() ? candidate : null; } catch { found = null; }
     if (!found) {

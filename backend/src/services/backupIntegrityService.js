@@ -52,7 +52,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { db } = require('../database/db');
 const logger = require('../utils/logger');
-const { resolveStoredPath } = require('../utils/storedPath');
+const { resolveStoredPathStrict } = require('../utils/safePath');
 
 /**
  * Every column the verifier walks, declared once so the test suite
@@ -140,14 +140,14 @@ async function verifyDocumentArtefacts(options = {}) {
       const storedPath = row[check.pathColumn];
       // Stored paths can be absolute (older rows, possibly recorded by
       // another install before a restore) or relative-to-storage (newer
-      // rows). storedPath.js places both on this install's storage root;
-      // a value it cannot place there counts as missing.
-      const absPath = resolveStoredPath(storedPath);
-
-      let exists = false;
+      // rows). Both are placed on this install's storage root and
+      // symlinks are followed; a value that cannot be placed inside it
+      // (or links out of it) counts as missing rather than being hashed.
+      let absPath = null;
       try {
-        exists = !!absPath && fs.existsSync(absPath);
-      } catch (_) { exists = false; }
+        absPath = resolveStoredPathStrict(storedPath);
+      } catch (_) { absPath = null; }
+      const exists = !!absPath;
 
       if (!exists) {
         missing.push({

@@ -29,8 +29,14 @@
  * Whatever comes out stays inside the current storage root (or that legacy
  * root): a relative path with `..` segments that climb out, or an absolute
  * path with no storage folder in it, resolves to null and the caller refuses
- * it. The check is lexical; readers that stream a file still run it through
- * `assertPathInside`, which follows symlinks.
+ * it. The check here is lexical. Readers that open a file use
+ * `resolveStoredPathStrict` / `assertStoredPathInside` (safePath.js), which
+ * add `assertPathInside` on the realpath against the folder the file belongs
+ * in. The lexical form alone is used only where no bytes are read from the
+ * row's target: an existence check before a strict read, email attachment
+ * paths (checked strictly by emailProcessor when the email is sent), the
+ * event-logo unlink (unlink removes a symlink, not its target), and cleanup
+ * of files this process just wrote.
  *
  * Nothing here changes a file's bytes or a stored hash: only which path the
  * row names for the same file.

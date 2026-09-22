@@ -170,15 +170,17 @@ router.get(
 
     const fs = require('fs');
     const path = require('path');
-    const { assertContractPdfPath } = require('../utils/safePath');
-    const { resolveStoredPath } = require('../utils/storedPath');
-    const filePath = resolveStoredPath(contract.signed_pdf_path || contract.pdf_path);
+    const { resolveStoredPathStrict, contractPdfRoots } = require('../utils/safePath');
+    // Defence-in-depth, symlinks followed: a stored path outside the contract
+    // storage roots throws AppError 403, which the error middleware returns
+    // as is. Only a file that is simply missing falls back to rendering.
+    const filePath = resolveStoredPathStrict(contract.signed_pdf_path || contract.pdf_path, contractPdfRoots());
     // Content-Disposition: attachment + Referrer-Policy: no-referrer
     // so the long-lived contract token doesn't leak via referer
     // headers if the customer opens the PDF in an external viewer
     // that loads remote resources.
     res.set('Referrer-Policy', 'no-referrer');
-    if (!filePath || !fs.existsSync(filePath)) {
+    if (!filePath) {
       // Render on-demand so the link works even if the on-disk
       // file was wiped (cleanup, S3 sync, etc.).
       const buf = await contractService.renderContractPdfBuffer(contract.id);
@@ -186,13 +188,9 @@ router.get(
       res.set('Content-Disposition', `attachment; filename="${contract.contract_number}.pdf"`);
       return res.send(buf);
     }
-    // Defence-in-depth: reject if filePath resolves outside the contract
-    // storage roots. assertContractPdfPath throws AppError which the error
-    // middleware converts to a clean 403/404.
-    const safePath = assertContractPdfPath(filePath);
     res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', `attachment; filename="${path.basename(safePath)}"`);
-    return fs.createReadStream(safePath).pipe(res);
+    res.set('Content-Disposition', `attachment; filename="${path.basename(filePath)}"`);
+    return fs.createReadStream(filePath).pipe(res);
   }),
 );
 
