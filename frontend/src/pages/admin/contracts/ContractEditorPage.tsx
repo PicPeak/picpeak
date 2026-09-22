@@ -97,7 +97,9 @@ export const ContractEditorPage: React.FC = () => {
   const hydratedFor = useRef<number | null>(null);
   const hydratedLock = useRef<number | null>(null);
   const baseline = useRef<string | null>(null);
-  const captureBaseline = useRef(false);
+  // The hydration whose render the baseline is taken from (see hydrate).
+  const captureBaseline = useRef<number | null>(null);
+  const hydrationCount = useRef(0);
   const [hydrations, setHydrations] = useState(0);
   const formSnapshotRef = useRef<string>('');
   const summaryRef = useRef<HTMLDivElement>(null);
@@ -201,8 +203,12 @@ export const ContractEditorPage: React.FC = () => {
     hydratedLock.current = c.lockVersion ?? null;
     // The form as filled from the server, captured once the state settles:
     // "unchanged since loading" is what lets a newer server copy replace it.
-    captureBaseline.current = true;
-    setHydrations((n) => n + 1);
+    // Keyed to this hydration's count, which commits in the same render as
+    // the fields below: an effect that runs before that render (on a mount
+    // with the contract already cached) must not take the empty form.
+    hydrationCount.current += 1;
+    captureBaseline.current = hydrationCount.current;
+    setHydrations(hydrationCount.current);
     setCustomerAccountId(c.customerAccountId);
     setCustomerLabel(
       c.customer.companyName
@@ -284,8 +290,8 @@ export const ContractEditorPage: React.FC = () => {
   formSnapshotRef.current = formSnapshot;
   // The form as the last hydration left it (see hydrate).
   useEffect(() => {
-    if (!captureBaseline.current) return;
-    captureBaseline.current = false;
+    if (captureBaseline.current === null || captureBaseline.current !== hydrations) return;
+    captureBaseline.current = null;
     baseline.current = formSnapshot;
   }, [formSnapshot, hydrations]);
   const errorFormSnapshotRef = useRef<string | null>(null);

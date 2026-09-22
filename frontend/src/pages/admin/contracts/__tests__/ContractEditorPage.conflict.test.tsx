@@ -58,8 +58,9 @@ const conflictError = () => Object.assign(new Error('409'), {
   isAxiosError: true, request: {}, response: { status: 409, data: { code: 'CONTRACT_CONFLICT', error: 'changed elsewhere' } },
 });
 
-function renderEditor() {
+function renderEditor(cached?: unknown) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  if (cached) client.setQueryData(['contract', 9], cached);
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={['/admin/clients/contracts/9/edit']}>
@@ -121,6 +122,16 @@ describe('ContractEditorPage conflict', () => {
     await waitFor(() => expect(titleField().value).toBe('Neuer Titel'));
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(update).toHaveBeenCalledWith(9, expect.objectContaining({ lockVersion: 3 })));
+  });
+
+  it('opened with the contract already cached, a newer server copy still replaces the untouched form', async () => {
+    get.mockResolvedValue(contract(2, 'Alter Titel'));
+    update.mockResolvedValue({});
+    const client = renderEditor(contract(2, 'Alter Titel'));
+    await waitFor(() => expect(titleField().value).toBe('Alter Titel'));
+    get.mockResolvedValue(contract(3, 'Neuer Titel'));
+    await client.refetchQueries({ queryKey: ['contract', 9] });
+    await waitFor(() => expect(titleField().value).toBe('Neuer Titel'));
   });
 
   it('a background refetch does not overwrite what is being typed', async () => {
