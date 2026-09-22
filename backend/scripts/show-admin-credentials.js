@@ -6,7 +6,7 @@
 
 const bcrypt = require('bcrypt');
 const { db } = require('../src/database/db');
-const { generateReadablePassword } = require('../src/utils/passwordGenerator');
+const { generateSecurePassword } = require('../src/utils/passwordGenerator');
 
 async function showAdminCredentials(resetPassword = false) {
   try {
@@ -28,17 +28,11 @@ async function showAdminCredentials(resetPassword = false) {
     
     if (resetPassword) {
       // Generate new password
-      const newPassword = generateReadablePassword();
+      const newPassword = generateSecurePassword(16);
       const passwordHash = await bcrypt.hash(newPassword, 12);
       
       // Update password
-      await db('admin_users')
-        .where('id', admin.id)
-        .update({
-          password_hash: passwordHash,
-          must_change_password: true,
-          updated_at: new Date()
-        });
+      await require('../src/services/adminPasswordReset').setAdminPasswordForReset(admin.id, passwordHash);
 
       console.log(`Password: ${newPassword}`);
       console.log('\n⚠️  IMPORTANT:');

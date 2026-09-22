@@ -238,6 +238,12 @@ async function getAdminUserById(id) {
  * @returns {Promise<object>} Updated user
  */
 async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
+  // Account status has dedicated activate/deactivate operations with a
+  // stronger permission and self/last-super-admin safeguards. Reject the
+  // field before applying any part of a mixed profile update.
+  if (Object.prototype.hasOwnProperty.call(updates, 'is_active')) {
+    throw new ValidationError('Use the activate or deactivate action to change account status');
+  }
   const user = await db('admin_users').where('id', id).first();
   if (!user) {
     throw new NotFoundError('Admin user', id);
@@ -311,10 +317,6 @@ async function updateAdminUser(id, updates, updatedById, requestingAdmin = {}) {
     }
 
     allowedUpdates.role_id = updates.role_id;
-  }
-
-  if (updates.is_active !== undefined) {
-    allowedUpdates.is_active = formatBoolean(updates.is_active);
   }
 
   allowedUpdates.updated_at = new Date();
@@ -502,12 +504,9 @@ async function resetAdminPassword(id, resetById) {
   const newPassword = generateSecurePassword(16);
   const passwordHash = await bcrypt.hash(newPassword, getBcryptRounds());
 
-  await db('admin_users').where('id', id).update({
-    password_hash: passwordHash,
-    must_change_password: formatBoolean(true),
-    password_changed_at: new Date(),
-    updated_at: new Date()
-  });
+  // Recovery invalidates every existing API credential permanently, even
+  // after the owner completes the required interactive password change.
+  await require('./adminPasswordReset').setAdminPasswordForReset(id, passwordHash);
 
   // Queue password reset email
   await queueEmail(null, user.email, 'admin_password_reset', {

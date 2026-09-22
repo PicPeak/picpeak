@@ -32,7 +32,10 @@ const bcrypt = require('bcrypt');
 // but Jest's CJS runtime cannot — v5 is the battle-tested major and its
 // protocol coverage (discovery, PKCE, full ID-token validation) is identical
 // for our flow.
-const { Issuer, generators } = require('openid-client');
+const { Issuer, generators, custom } = require('openid-client');
+const { integrationRequestOptions } = require('../utils/integrationHttp');
+class RestrictedIssuer extends Issuer {}
+RestrictedIssuer[custom.http_options] = integrationRequestOptions;
 const { db } = require('../database/db');
 const { getAppSetting, upsertAppSetting } = require('../utils/appSettings');
 const { formatBoolean } = require('../utils/dbCompat');
@@ -220,17 +223,19 @@ async function getClient(cfg) {
   // the worker that handled the settings request — the others must detect
   // the change through the key, or they keep signing with the old secret.
   const secretFp = crypto.createHash('sha256').update(cfg.clientSecret || '').digest('hex').slice(0, 16);
-  const key = `${cfg.issuerUrl}|${cfg.clientId}|${secretFp}`;
+  const key = `${cfg.issuerUrl}|${cfg.clientId}|${secretFp}|${process.env.INTEGRATION_PRIVATE_ORIGINS || ''}`;
   if (_clientCache && _clientCache.key === key) {
     return _clientCache;
   }
-  const issuer = await Issuer.discover(cfg.issuerUrl);
+  const issuer = await RestrictedIssuer.discover(cfg.issuerUrl);
+  issuer[custom.http_options] = integrationRequestOptions;
   const client = new issuer.Client({
     client_id: cfg.clientId,
     client_secret: cfg.clientSecret,
     redirect_uris: [await getRedirectUri()],
     response_types: ['code'],
   });
+  client[custom.http_options] = integrationRequestOptions;
   _clientCache = { key, client, issuerMetadata: issuer.metadata };
   return _clientCache;
 }

@@ -1,5 +1,12 @@
 const logger = require('../utils/logger');
 
+// Published examples are public signing keys, regardless of their length.
+const INSECURE_JWT_SECRETS = new Set([
+  'your-secret-key',
+  'your_very_long_random_jwt_secret_here',
+  'your-very-secure-jwt-secret-at-least-32-characters-long-example123456'
+]);
+
 /**
  * Validates required environment variables are set
  * Exits the process if critical variables are missing
@@ -32,14 +39,13 @@ function validateEnvironment() {
     
     // Additional validation for JWT_SECRET
     if (name === 'JWT_SECRET' && value) {
-      // Check for the insecure default value
-      if (value === 'your-secret-key') {
-        errors.push('CRITICAL: JWT_SECRET is set to the insecure default value. Please set a secure secret key.');
+      if (INSECURE_JWT_SECRETS.has(value.trim())) {
+        errors.push('JWT_SECRET is a public example value. Configure a unique, randomly generated secret.');
       }
       
       // Check minimum length (should be at least 32 characters for security)
-      if (value.length < 32) {
-        warnings.push(`JWT_SECRET should be at least 32 characters long for better security (current: ${value.length} characters)`);
+      if (value.trim().length < 32) {
+        errors.push('JWT_SECRET must contain at least 32 characters. Generate a unique secret with openssl rand -hex 32.');
       }
     }
   });
@@ -76,6 +82,7 @@ function validateEnvironment() {
     
     // Exit with error code
     process.exit(1);
+    return;
   }
 
   // Log successful validation

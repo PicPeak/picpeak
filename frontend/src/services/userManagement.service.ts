@@ -102,7 +102,6 @@ interface CreateInvitationResponse {
 
 interface UpdateUserData {
   roleId?: number;
-  isActive?: boolean;
 }
 
 interface UpdateUserResponse {
@@ -191,7 +190,6 @@ export const userManagementService = {
     // Convert camelCase to snake_case for backend API
     const payload: Record<string, unknown> = {};
     if (data.roleId !== undefined) payload.role_id = data.roleId;
-    if (data.isActive !== undefined) payload.is_active = data.isActive;
     const response = await api.put<UpdateUserResponse>(`/admin/users/${id}`, payload);
     return transformUser(response.data.user);
   },

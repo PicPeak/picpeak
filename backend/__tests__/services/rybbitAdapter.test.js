@@ -1,3 +1,5 @@
+// Adapter contract tests stub transport; egress is exercised with real sockets separately.
+jest.mock('../../src/utils/integrationHttp', () => ({ integrationFetch: (...args) => global.fetch(...args) }));
 /**
  * Tests for the Rybbit metrics-API adapter (#663 Phase 1). Mirrors the
  * `umamiAdapter` test contract: missing config / URL shape / encoding /

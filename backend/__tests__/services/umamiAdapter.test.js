@@ -1,3 +1,5 @@
+// Adapter contract tests stub transport; egress is exercised with real sockets separately.
+jest.mock('../../src/utils/integrationHttp', () => ({ integrationFetch: (...args) => global.fetch(...args) }));
 /**
  * Adapter-style tests for the Umami metrics client (#663 Phase 1, replaces
  * the old `umamiClient.test.js` from #662 — same contract, new shape).

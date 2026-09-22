@@ -204,7 +204,11 @@ async function buildOgMetadata(slug, requestPath) {
   const title = titleParts.join(' — ');
 
   let description;
-  if (event.welcome_message) {
+  // Only explicitly password-free galleries may publish their welcome text.
+  // Missing/legacy values default to private, as they do in gallery auth.
+  const isPasswordFree = [false, 0, '0'].includes(event.require_password);
+  const { isGalleryHidden } = require('../utils/revealMode');
+  if (isPasswordFree && !isGalleryHidden(event) && event.welcome_message) {
     description = String(event.welcome_message).replace(/\s+/g, ' ').trim().slice(0, 200);
   } else if (eventDate) {
     description = `Photo gallery from ${eventName} on ${eventDate}.`;
@@ -222,7 +226,6 @@ async function buildOgMetadata(slug, requestPath) {
   // Reveal mode (#838): while the gallery is hidden from guests, social
   // crawlers must not get the hero photo either — fall back to the brand
   // logo like the opt-out case.
-  const { isGalleryHidden } = require('../utils/revealMode');
   if (event.og_image_share_enabled && event.hero_photo_id && !isGalleryHidden(event)) {
     const heroPhoto = await db('photos')
       .where({ id: event.hero_photo_id, event_id: event.id })

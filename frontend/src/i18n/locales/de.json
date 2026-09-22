@@ -8021,6 +8021,9 @@
     }
   },
   "messages": {
+    "remoteContentBlocked": "Externe Bilder sind zum Schutz deiner Privatsphäre blockiert.",
+    "loadRemoteContent": "Externe Bilder laden",
+    "emailBody": "E-Mail-Inhalt",
     "title": "Nachrichten",
     "subtitle": "Gesendete, automatische und eingehende E-Mails — an einem Ort.",
     "sync": "Abrufen",

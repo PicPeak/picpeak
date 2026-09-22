@@ -4,27 +4,10 @@ const { db } = require('../database/db');
 const logger = require('../utils/logger');
 const { rateLimitKey } = require('../utils/rateLimitKey');
 
-/**
- * Generate a unique identifier for the guest.
- *
- * In guest identity mode, `req.guest.identifier` is a server-issued UUID
- * unique per person per event (set by the resolveGuest middleware). When
- * present it takes precedence, so rate limits and deduplication become
- * per-person instead of per-device.
- *
- * In simple (legacy) mode, the identifier falls back to a hash of IP + UA,
- * matching prior behavior.
- */
+const { anonymousFeedbackIdentifier } = require('../utils/anonymousFeedbackIdentity');
+
 function generateGuestIdentifier(req) {
-  if (req.guest && req.guest.identifier) {
-    return req.guest.identifier;
-  }
-  const ip = req.ip || req.connection.remoteAddress || 'unknown';
-  const userAgent = req.headers['user-agent'] || 'unknown';
-  return crypto
-    .createHash('sha256')
-    .update(`${ip}:${userAgent}`)
-    .digest('hex');
+  return req.guest?.identifier || anonymousFeedbackIdentifier(req);
 }
 
 /**
@@ -75,126 +58,69 @@ async function getRateLimitSettings() {
   }
 }
 
-/**
- * Check if action is rate limited
+/** Reserve budget before processing feedback. The event row serializes
+ * reservations on PostgreSQL, including requests handled by other servers.
+ * SQLite serializes writers; a busy/error response fails closed.
  */
-async function checkRateLimit(identifier, eventId, actionType) {
-  try {
-    const settings = await getRateLimitSettings();
-    const limit = settings[actionType] || { max: 100, window: 3600 };
-    
-    // Clean old entries (older than window)
+async function consumeFeedbackLimit(req, actionType) {
+  const eventId = req.event?.id;
+  if (!eventId) throw new Error('Authenticated event context required');
+  const settings = await getRateLimitSettings();
+  const configured = settings[actionType] || DEFAULT_RATE_LIMITS[actionType];
+  const fallback = DEFAULT_RATE_LIMITS[actionType] || { max: 100, window: 3600 };
+  const limit = {
+    max: Number.isSafeInteger(configured?.max) && configured.max > 0 ? configured.max : fallback.max,
+    window: Number.isSafeInteger(configured?.window) && configured.window > 0 ? configured.window : fallback.window
+  };
+  const identifier = generateGuestIdentifier(req);
+  const ip = rateLimitKey(req) || 'unknown';
+  const ipIdentifier = crypto.createHash('sha256').update(`feedback-ip:${ip}`).digest('hex');
+  const budgets = [
+    { identifier, max: limit.max },
+    // Accommodate shared event Wi-Fi while bounding cookie/identity churn.
+    { identifier: ipIdentifier, max: Math.max(200, limit.max * 10) }
+  ];
+  return db.transaction(async (trx) => {
+    let eventQuery = trx('events').where({ id: eventId }).select('id');
+    if (trx.client.config.client === 'pg') eventQuery = eventQuery.forUpdate();
+    if (!(await eventQuery.first())) throw new Error('Event no longer available');
     const cutoff = new Date(Date.now() - limit.window * 1000);
-    await db('feedback_rate_limits')
-      .where('window_start', '<', cutoff)
-      .delete();
-    
-    // Count recent actions
-    const recentActions = await db('feedback_rate_limits')
-      .where({
-        identifier,
-        event_id: eventId,
-        action_type: actionType
-      })
-      .where('window_start', '>', cutoff)
-      .sum('action_count as total')
-      .first();
-    
-    const currentCount = recentActions?.total || 0;
-    
-    if (currentCount >= limit.max) {
-      return {
-        limited: true,
-        limit: limit.max,
-        window: limit.window,
-        current: currentCount,
-        resetAt: new Date(Date.now() + limit.window * 1000)
-      };
+    await trx('feedback_rate_limits').where({ event_id: eventId, action_type: actionType })
+      .where('window_start', '<', cutoff).delete();
+    let remaining = limit.max;
+    for (const budget of budgets) {
+      const row = await trx('feedback_rate_limits')
+        .where({ identifier: budget.identifier, event_id: eventId, action_type: actionType })
+        .where('window_start', '>=', cutoff).sum('action_count as total').first();
+      const used = Number(row?.total || 0);
+      if (used >= budget.max) return { limited: true, limit: limit.max, remaining: 0, window: limit.window };
+      if (budget.identifier === identifier) remaining = limit.max - used - 1;
     }
-    
-    return {
-      limited: false,
-      limit: limit.max,
-      window: limit.window,
-      current: currentCount,
-      remaining: limit.max - currentCount
-    };
-  } catch (error) {
-    logger.error('Error checking rate limit:', error);
-    // Allow action on error to avoid blocking legitimate users
-    return { limited: false };
-  }
+    await trx('feedback_rate_limits').insert(budgets.map(budget => ({
+      identifier: budget.identifier, event_id: eventId, action_type: actionType,
+      action_count: 1, window_start: new Date()
+    })));
+    return { limited: false, limit: limit.max, remaining, window: limit.window };
+  });
 }
 
-/**
- * Record an action for rate limiting
- */
-async function recordAction(identifier, eventId, actionType) {
-  try {
-    await db('feedback_rate_limits').insert({
-      identifier,
-      event_id: eventId,
-      action_type: actionType,
-      action_count: 1,
-      window_start: new Date()
-    });
-  } catch (error) {
-    logger.error('Error recording rate limit action:', error);
-  }
-}
-
-/**
- * Middleware factory for feedback rate limiting
- */
 function feedbackRateLimit(actionType) {
   return async (req, res, next) => {
     try {
-      // Extract event ID from params, body or event object (set by verifyGalleryAccess)
-      const eventId = req.params.eventId || req.body?.event_id || req.event?.id;
-      if (!eventId) {
-        return res.status(400).json({ error: 'Event ID required' });
-      }
-      
-      // Generate guest identifier
-      const identifier = generateGuestIdentifier(req);
-      req.guestIdentifier = identifier;
-      
-      // Check rate limit
-      const rateLimitStatus = await checkRateLimit(identifier, eventId, actionType);
-      
-      // Set rate limit headers
+      const status = await consumeFeedbackLimit(req, actionType);
       res.set({
-        'X-RateLimit-Limit': rateLimitStatus.limit,
-        'X-RateLimit-Remaining': rateLimitStatus.remaining || 0,
-        'X-RateLimit-Reset': rateLimitStatus.resetAt ? rateLimitStatus.resetAt.toISOString() : new Date().toISOString()
+        'X-RateLimit-Limit': status.limit,
+        'X-RateLimit-Remaining': status.remaining,
+        'X-RateLimit-Reset': new Date(Date.now() + status.window * 1000).toISOString()
       });
-      
-      if (rateLimitStatus.limited) {
-        logger.warn(`Rate limit exceeded for ${actionType}`, {
-          identifier: identifier.substring(0, 16) + '...',
-          eventId,
-          actionType
-        });
-        
-        return res.status(429).json({
-          error: 'Too many requests',
-          message: 'Rate limit exceeded. Please try again later.',
-          retryAfter: rateLimitStatus.window
-        });
+      if (status.limited) {
+        res.setHeader('Retry-After', status.window);
+        return res.status(429).json({ error: 'Too many requests', retryAfter: status.window });
       }
-      
-      // Record the action after successful processing
-      res.on('finish', async () => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          await recordAction(identifier, eventId, actionType);
-        }
-      });
-      
-      next();
+      return next();
     } catch (error) {
-      logger.error('Error in rate limit middleware:', error);
-      // Allow request to proceed on error
-      next();
+      logger.error('Feedback rate-limit reservation failed', { error: error.message });
+      return res.status(503).json({ error: 'Feedback is temporarily unavailable', code: 'FEEDBACK_LIMIT_UNAVAILABLE' });
     }
   };
 }
@@ -264,6 +190,5 @@ module.exports = {
   feedbackRateLimit,
   strictRateLimit,
   generateGuestIdentifier,
-  checkRateLimit,
-  recordAction
+  consumeFeedbackLimit
 };
