@@ -465,6 +465,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
                 ) : (
                   <div className="space-y-3">
                     <Input
+                      themed
                       label={nameMode === 'required' ? t('upload.yourName') : t('upload.yourNameOptional')}
                       value={nameInput}
                       onChange={(e) => { setNameInput(e.target.value); setNameError(undefined); }}
@@ -477,6 +478,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
                     />
                     {requireEmail && (
                       <Input
+                        themed
                         type="email"
                         label={t('gallery.guestPrompt.emailLabelRequired', 'Email')}
                         value={emailInput}

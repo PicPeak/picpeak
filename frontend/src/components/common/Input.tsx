@@ -7,6 +7,10 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   helperText?: string;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
+  // Inside a gallery: label and helper text follow the gallery theme's text
+  // tokens. The `dark:` variants below only answer the admin's dark mode, so
+  // on a dark gallery theme the admin label colour is dark grey on near-black.
+  themed?: boolean;
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
@@ -18,6 +22,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
       helperText,
       leftIcon,
       rightIcon,
+      themed = false,
       id,
       ...props
     },
@@ -30,7 +35,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1.5"
+            className={clsx(
+              'block text-sm font-medium mb-1.5',
+              themed ? 'text-theme' : 'text-neutral-700 dark:text-neutral-300'
+            )}
           >
             {label}
           </label>
@@ -69,7 +77,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           </p>
         )}
         {helperText && !error && (
-          <p id={`${inputId}-helper`} className="mt-1.5 text-sm text-neutral-500 dark:text-neutral-400">
+          <p
+            id={`${inputId}-helper`}
+            className={clsx('mt-1.5 text-sm', themed ? 'text-muted-theme' : 'text-neutral-500 dark:text-neutral-400')}
+          >
             {helperText}
           </p>
         )}

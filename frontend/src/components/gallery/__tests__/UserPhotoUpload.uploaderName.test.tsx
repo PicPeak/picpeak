@@ -89,6 +89,19 @@ describe('UserPhotoUpload uploader name', () => {
     expect(uploads()[0].config.headers['x-guest-token']).toBeUndefined();
   });
 
+  it('labels the name and email fields with the gallery theme text, not the admin grey', () => {
+    // The admin label is neutral-700 with a dark: variant that only the admin
+    // dark mode switches; on a dark gallery theme it was dark grey on black.
+    render(
+      <UserPhotoUpload eventId={7} categoryId={null} onUploadComplete={vi.fn()} onClose={vi.fn()} slug={SLUG} nameMode="required" requireEmail />
+    );
+    for (const field of [screen.getByLabelText(/upload\.yourName/), screen.getByLabelText(/emailLabelRequired|Email/)]) {
+      const label = document.querySelector(`label[for="${field.id}"]`) as HTMLElement;
+      expect(label.className).toContain('text-theme');
+      expect(label.className).not.toContain('text-neutral-700');
+    }
+  });
+
   it('requires a name, registers it first, then sends the guest token with the upload', async () => {
     const user = userEvent.setup();
     const { container } = render(
