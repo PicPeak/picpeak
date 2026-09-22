@@ -275,6 +275,8 @@ describe('Photo credits (issue 1561)', () => {
       expect(creditFromMetadata({ creator: ['Cora', 'Dan'], Copyright: 'X' })).toBe('Cora, Dan');
       expect(creditFromMetadata({ Copyright: '© 2026 Studio Lumen. All rights reserved.' })).toBe('Studio Lumen');
       expect(creditFromMetadata({ Artist: '   ', Copyright: '' })).toBeNull();
+      // The admin filter's "no credit" token is not a name.
+      expect(creditFromMetadata({ Artist: '__none__', creator: 'Cora' })).toBe('Cora');
     });
 
     it('the worker reads it for an admin upload, never for a guest upload', async () => {
@@ -447,6 +449,23 @@ describe('Photo credits (issue 1561)', () => {
         .set('x-guest-token', bea.body.token);
       expect(forget.status).toBe(200);
       expect((await db('photos').where({ id: beaPhoto }).first()).credit_name).toBeNull();
+    });
+
+    it('an upload that lands after its guest was erased keeps no name', async () => {
+      const { event, token } = await makeEvent();
+      const anna = await register(event, token, 'Anna');
+      const credit = { credit_name: 'Anna', credit_source: 'guest', uploader_guest_id: anna.body.guest.id };
+      // Erased while the upload was still transferring.
+      await admin(request(app).delete(`/api/admin/events/${event.id}/guests/${anna.body.guest.id}`)).expect(200);
+      const [row] = await db('photos').insert({
+        event_id: event.id, filename: 'late.jpg', path: `${event.slug}/late.jpg`, type: 'individual',
+        uploaded_by: 'guest', uploaded_at: new Date().toISOString(), ...credit,
+      }).returning('id');
+      const photoId = row?.id ?? row;
+
+      await require('../../src/services/photoCredit').settleGuestCredit(photoId, credit);
+      expect(await db('photos').where({ id: photoId }).first())
+        .toMatchObject({ credit_name: null, credit_source: null, uploader_guest_id: null });
     });
 
     it('a merge moves the uploads to the survivor under their name', async () => {

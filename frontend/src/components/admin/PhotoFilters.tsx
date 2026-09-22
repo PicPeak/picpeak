@@ -89,7 +89,9 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
           </select>
         </div>
 
-        {onCreditChange && credits.length > 0 && (
+        {/* Kept while a name is selected: clearing the last credited name
+            empties the list, and the filter would stay on with no way out. */}
+        {onCreditChange && (credits.length > 0 || !!selectedCredit) && (
           <div className="flex items-center gap-2">
             <UserRound className="w-5 h-5 text-neutral-400" aria-hidden="true" />
             <select
@@ -104,7 +106,11 @@ export const PhotoFilters: React.FC<PhotoFiltersProps> = ({
                   {credit.name} ({credit.count})
                 </option>
               ))}
-              {creditNoneCount > 0 && (
+              {selectedCredit && selectedCredit !== creditNoneValue
+                && !credits.some((credit) => credit.name === selectedCredit) && (
+                <option value={selectedCredit}>{selectedCredit} (0)</option>
+              )}
+              {(creditNoneCount > 0 || selectedCredit === creditNoneValue) && (
                 <option value={creditNoneValue}>
                   {t('admin.photos.credit.filterNone')} ({creditNoneCount})
                 </option>

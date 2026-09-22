@@ -659,6 +659,9 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
     // empties the grid with no control left to clear it.
     setSelectedPersonIds([]);
     setPeopleMatchAny(false);
+    // Same for a credit name (#1561): the chips hide a name with no photos
+    // in the new scope, and with it the only way to clear the filter.
+    setSelectedCreditKey(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [setSelectedPhotos]);
 
@@ -671,6 +674,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
       setSelectedPhotos(new Set());
       setSelectedPersonIds([]);
       setPeopleMatchAny(false);
+      setSelectedCreditKey(null);
     };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);

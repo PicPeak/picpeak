@@ -30,10 +30,16 @@ const { sanitizeName } = require('../utils/personName');
 
 const CREDIT_SOURCES = Object.freeze(['guest', 'exif', 'manual']);
 const GUEST_NAME_MODES = Object.freeze(['off', 'optional', 'required']);
-// Filter value for "photos without a credit". Not a name anyone can have: the
-// sanitiser keeps underscores, but no ingest path produces this exact string
-// and an exact-match filter on it would at worst find a photo so named.
+// Filter value for "photos without a credit". Not a name anyone can have:
+// creditName() refuses it on every write path.
 const CREDIT_NONE = '__none__';
+
+// A credit name. The sanitiser keeps underscores, so the filter token itself
+// has to be refused here or a photo could be credited to "__none__".
+function creditName(raw) {
+  const name = sanitizeName(raw);
+  return name === CREDIT_NONE ? '' : name;
+}
 
 function guestNameModeOf(event) {
   const mode = event && event.guest_name_mode;
@@ -79,7 +85,7 @@ function creditFromMetadata(meta) {
     nameFromCopyright(xmpText(meta.Copyright)),
   ];
   for (const candidate of candidates) {
-    const name = sanitizeName(candidate);
+    const name = creditName(candidate);
     if (name) return name;
   }
   return null;
@@ -116,7 +122,7 @@ async function extractExifCredit(filePath) {
  * guest who left the optional name empty).
  */
 function guestCreditFields(guest) {
-  const name = guest ? sanitizeName(guest.name) : '';
+  const name = guest ? creditName(guest.name) : '';
   if (!guest || !name) return {};
   return { credit_name: name, credit_source: 'guest', uploader_guest_id: guest.id };
 }
@@ -156,7 +162,7 @@ function creditOpenForExif(photo) {
 function manualCreditFields(raw) {
   if (raw === null || raw === undefined) return { credit_name: null, credit_source: 'manual' };
   if (typeof raw !== 'string') return null;
-  const name = sanitizeName(raw);
+  const name = creditName(raw);
   return { credit_name: name || null, credit_source: 'manual' };
 }
 
@@ -183,13 +189,34 @@ async function clearGuestCredits(guestIds, trx = db) {
 }
 
 /**
+ * An upload captures its credit before the file arrives, which can take
+ * minutes. A guest erased in that window has already had clearGuestCredits
+ * run, so the row inserted afterwards would carry the erased name. Called
+ * after the insert: erasure marks the guest deleted before it clears, so
+ * either this sees the deletion or the clear sees this row.
+ */
+async function settleGuestCredit(photoId, credit) {
+  const guestId = credit && Number(credit.uploader_guest_id);
+  if (!photoId || !Number.isFinite(guestId)) return;
+  const guest = await db('gallery_guests').where({ id: guestId }).first('is_deleted');
+  const gone = !guest || guest.is_deleted === true || Number(guest.is_deleted) === 1;
+  if (!gone) return;
+  await db('photos')
+    .where({ id: photoId, uploader_guest_id: guestId, credit_source: 'guest' })
+    .update({ credit_name: null, credit_source: null, uploader_guest_id: null });
+  await db('photos')
+    .where({ id: photoId, uploader_guest_id: guestId })
+    .update({ uploader_guest_id: null });
+}
+
+/**
  * A guest merge (#1210) folds duplicates into one identity. Their uploads
  * follow, and take the survivor's name so the "By" filter lists one person.
  */
 async function reassignGuestCredits(fromGuestIds, toGuest, trx = db) {
   const ids = (Array.isArray(fromGuestIds) ? fromGuestIds : [fromGuestIds]).map(Number).filter(Number.isFinite);
   if (ids.length === 0 || !toGuest) return 0;
-  const name = sanitizeName(toGuest.name);
+  const name = creditName(toGuest.name);
   // Guest credits first, while they can still be told apart by their ids.
   if (name) {
     await trx('photos')
@@ -204,6 +231,7 @@ async function reassignGuestCredits(fromGuestIds, toGuest, trx = db) {
 
 module.exports = {
   clearGuestCredits,
+  settleGuestCredit,
   reassignGuestCredits,
   CREDIT_SOURCES,
   CREDIT_NONE,

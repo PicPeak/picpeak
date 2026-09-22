@@ -12,7 +12,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
 import { UserPhotoUpload } from '../UserPhotoUpload';
+import { GuestIdentityProvider } from '../../../contexts/GuestIdentityContext';
 import { getGuestIdentity, storeGuestIdentity, clearGuestIdentity } from '../../../utils/guestIdentityStorage';
 
 vi.mock('react-i18next', async () => {
@@ -34,18 +37,19 @@ type Call = { url: string; body: any; config: any };
 const postState = vi.hoisted(() => ({
   calls: [] as Array<{ url: string; body: any; config: any }>,
   upload: (async () => ({ data: { upload_id: 'u1', count: 1 } })) as (...a: any[]) => Promise<any>,
+  registerGate: null as Promise<void> | null,
 }));
 vi.mock('../../../config/api', () => ({
   api: {
     post: (url: string, body: any, config: any) => {
       postState.calls.push({ url, body, config });
       if (url.endsWith('/guest')) {
-        return Promise.resolve({
+        return (postState.registerGate || Promise.resolve()).then(() => ({
           data: {
             guest: { id: 42, name: body.name, email: null, identifier: 'g-42' },
             token: 'header.eyJ0eXBlIjoiZ3Vlc3QifQ.sig',
           },
-        });
+        }));
       }
       return postState.upload(url, body, config);
     },
@@ -68,6 +72,7 @@ describe('UserPhotoUpload uploader name', () => {
   beforeEach(() => {
     postState.calls = [];
     postState.upload = async () => ({ data: { upload_id: 'u1', count: 1 } });
+    postState.registerGate = null;
     clearGuestIdentity(SLUG);
   });
   afterEach(() => vi.clearAllMocks());
@@ -127,6 +132,43 @@ describe('UserPhotoUpload uploader name', () => {
     await user.click(screen.getByRole('button', { name: 'upload.notYou' }));
     expect(screen.getByLabelText(/upload\.yourName/)).toBeInTheDocument();
     expect(getGuestIdentity(SLUG)).toBeNull();
+  });
+
+  it('registers once however often Upload is clicked while the name is being saved', async () => {
+    let release!: () => void;
+    postState.registerGate = new Promise<void>((resolve) => { release = resolve; });
+    const user = userEvent.setup();
+    const { container } = render(
+      <UserPhotoUpload eventId={7} categoryId={null} onUploadComplete={vi.fn()} onClose={vi.fn()} slug={SLUG} nameMode="required" />
+    );
+    await pickFile(container, user);
+    await user.type(screen.getByLabelText(/upload\.yourName/), 'Anna');
+    const uploadButton = screen.getByRole('button', { name: /common\.upload/ });
+    await user.click(uploadButton);
+    await user.click(uploadButton);
+    release();
+    await waitFor(() => expect(uploads()).toHaveLength(1));
+    expect(postState.calls.filter((c) => c.url.endsWith('/guest'))).toHaveLength(1);
+  });
+
+  it('keeps the selected files when the gallery signs a stale guest out', async () => {
+    storeGuestIdentity(SLUG, { id: 9, name: 'Bea', email: null, identifier: 'g-9' }, 'stale.token.x');
+    postState.upload = () => Promise.reject(Object.assign(new Error('400'), {
+      response: { status: 400, data: { error: 'name', code: 'UPLOADER_NAME_REQUIRED' } },
+    }));
+    const user = userEvent.setup();
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <GuestIdentityProvider slug={SLUG} identityMode="guest">
+          <UserPhotoUpload eventId={7} categoryId={null} onUploadComplete={vi.fn()} onClose={vi.fn()} slug={SLUG} nameMode="required" />
+        </GuestIdentityProvider>
+      </QueryClientProvider>
+    );
+    await pickFile(container, user);
+    await user.click(screen.getByRole('button', { name: /common\.upload/ }));
+    await waitFor(() => expect(screen.getByLabelText(/upload\.yourName/)).toBeInTheDocument());
+    expect(screen.getByText('upload.nameRequired')).toBeInTheDocument();
+    expect(screen.getByText('a.png')).toBeInTheDocument();
   });
 
   it('brings the name field back when the server no longer knows the stored guest', async () => {

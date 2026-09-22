@@ -592,8 +592,6 @@ router.delete(
       if (!guest) return;
 
       const result = await feedbackService.anonymizeGuestFeedback(guestId);
-      // The denormalised uploader name must not outlive the guest (#1561).
-      const creditsCleared = await clearGuestCredits(guestId);
 
       await db('gallery_guests').where({ id: guestId }).update({
         is_deleted: true,
@@ -601,6 +599,10 @@ router.delete(
         email: null,
         last_seen_at: db.fn.now(),
       });
+      // The denormalised uploader name must not outlive the guest (#1561).
+      // After the soft delete: an upload still in flight checks for it once
+      // its row is in (photoCredit.settleGuestCredit).
+      const creditsCleared = await clearGuestCredits(guestId);
 
       await logActivity(
         'guest_deleted',

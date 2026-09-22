@@ -12,7 +12,7 @@ import { AdminAuthenticatedImage } from './AdminAuthenticatedImage';
 import { AdminAuthenticatedVideo } from './AdminAuthenticatedVideo';
 import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { COLOR_LABELS, COLOR_LABEL_SWATCHES, type ColorLabel, type KeybindMode } from '../../services/feedback.service';
-import { resolveFeedbackKey, colorShortcutHints } from '../../utils/feedbackKeybinds';
+import { resolveFeedbackKey, colorShortcutHints, isTypingTarget } from '../../utils/feedbackKeybinds';
 import { useTranslation } from 'react-i18next';
 import { useMutationWithToast, useModal } from '../../hooks';
 
@@ -232,11 +232,13 @@ const AdminPhotoViewerContent: React.FC<ViewerContentProps> = ({
         case 'Escape':
           onClose();
           break;
+        // Not while typing: the arrows move the caret in the credit field,
+        // and switching photos would drop the unsaved edit.
         case 'ArrowLeft':
-          goToPrevious();
+          if (!isTypingTarget(e.target)) goToPrevious();
           break;
         case 'ArrowRight':
-          goToNext();
+          if (!isTypingTarget(e.target)) goToNext();
           break;
         default: {
           // Proofing shortcuts for the photographer's own marks (#1044

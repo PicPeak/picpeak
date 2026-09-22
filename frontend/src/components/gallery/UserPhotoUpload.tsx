@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Upload, X, CheckCircle, Loader2, UserRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'react-toastify';
@@ -30,6 +30,12 @@ interface UserPhotoUploadProps {
   requireEmail?: boolean;
 }
 
+// Signing an established identity out re-keys everything under the
+// GuestIdentityProvider, this dialog included, so its state would be lost.
+// What must survive that remount is parked here, per gallery, and picked up
+// by the next mount.
+const carriedOver = new Map<string, { files: File[]; nameError?: string }>();
+
 export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   eventId,
   categoryId,
@@ -44,9 +50,14 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
   const identityContext = useGuestIdentityOptional();
   const askName = nameMode !== 'off' && !!slug;
   const [identity, setIdentity] = useState<GuestIdentity | null>(() => (askName ? getGuestIdentity(slug) : null));
+  const [carried] = useState(() => {
+    const state = slug ? carriedOver.get(slug) : undefined;
+    if (slug) carriedOver.delete(slug);
+    return state;
+  });
   const [nameInput, setNameInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
-  const [nameError, setNameError] = useState<string | undefined>();
+  const [nameError, setNameError] = useState<string | undefined>(carried?.nameError);
   const [emailError, setEmailError] = useState<string | undefined>();
 
   // The gallery may switch identity underneath the dialog (another tab,
@@ -56,8 +67,9 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
       setIdentity(identityContext.identity);
     }
   }, [identityContext, identityContext?.identity, slug]);
-  const [files, setFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<File[]>(() => carried?.files ?? []);
   const [uploading, setUploading] = useState(false);
+  const submittingRef = useRef(false);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   // Per-file processing state — flips to true once axios reports
   // bytes-on-wire for that file, so the UI can show "Processing…"
@@ -215,25 +227,37 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
 
   // "Not you?": drop the identity on this device only. The guest row and its
   // feedback stay; this is the shared-phone case, not "forget me".
-  const handleNotYou = () => {
+  const handleNotYou = (nameErrorAfter?: string, keepFiles: File[] = files) => {
     if (!slug) return;
     if (identityContext && identityContext.slug === slug) {
+      // Only a switch away from an established identity remounts the dialog.
+      if (identityContext.identity) carriedOver.set(slug, { files: keepFiles, nameError: nameErrorAfter });
       identityContext.signOut();
     } else {
       clearGuestIdentity(slug);
     }
     setIdentity(null);
+    setNameError(nameErrorAfter);
   };
 
   const handleUpload = async () => {
     if (files.length === 0) return;
 
+    // Claimed before registering: a second click while the name is being
+    // saved would register another guest and send the whole batch twice. A
+    // ref, because both clicks can land before `uploading` re-renders.
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setNameError(undefined);
     setEmailError(undefined);
-    const uploader = await resolveUploader();
-    if (!uploader.ok) return;
-
     setUploading(true);
+    const uploader = await resolveUploader();
+    if (!uploader.ok) {
+      submittingRef.current = false;
+      setUploading(false);
+      return;
+    }
+
     let successCount = 0;
     let failedCount = 0;
     // The 202 hands back the id of the upload group the files were queued
@@ -327,8 +351,10 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
         if (error.response?.data?.code === 'UPLOADER_NAME_REQUIRED') {
           failedCount += files.length - index;
           stoppedForName = true;
-          handleNotYou();
-          setNameError(t('upload.nameRequired'));
+          // The files before this one went through; keep only the rest.
+          const unsent = files.slice(index);
+          handleNotYou(t('upload.nameRequired'), unsent);
+          setFiles(unsent);
           break;
         }
         // Upload error handled - user notified via UI
@@ -340,6 +366,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
       }
     }
 
+    submittingRef.current = false;
     setUploading(false);
 
     if (successCount > 0) {
@@ -391,7 +418,7 @@ export const UserPhotoUpload: React.FC<UserPhotoUploadProps> = ({
                     </p>
                     <button
                       type="button"
-                      onClick={handleNotYou}
+                      onClick={() => handleNotYou()}
                       disabled={uploading}
                       className="text-xs font-medium text-accent hover:underline flex-shrink-0"
                     >

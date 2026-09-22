@@ -7,7 +7,7 @@ const { processUploadedVideo, extractVideoMetadata, isVideoMimeType } = require(
 const { getStorage } = require('./storage');
 const { resolvePhotoStorageKey } = require('./photoResolver');
 const logger = require('../utils/logger');
-const { resolveCredit, creditOpenForExif } = require('./photoCredit');
+const { resolveCredit, creditOpenForExif, settleGuestCredit } = require('./photoCredit');
 
 function normalizeFiles(files) {
   // Handle null, undefined, or falsy values
@@ -465,6 +465,7 @@ async function queueFilesForProcessing(files, options = {}) {
         throw capRefusal();
       }
       const photoId = inserted[0]?.id || inserted[0];
+      await settleGuestCredit(photoId, credit);
 
       queued.push({
         id: photoId,

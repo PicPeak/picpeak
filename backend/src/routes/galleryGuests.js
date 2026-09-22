@@ -167,8 +167,6 @@ router.delete('/:slug/guest/me', verifyGalleryAccess, resolveGuest, requireGuest
     }
 
     await feedbackService.anonymizeGuestFeedback(req.guest.id);
-    // Their name on the photos they uploaded goes with them (#1561).
-    await clearGuestCredits(req.guest.id);
 
     await db('gallery_guests')
       .where({ id: req.guest.id })
@@ -178,6 +176,9 @@ router.delete('/:slug/guest/me', verifyGalleryAccess, resolveGuest, requireGuest
         email: null,
         last_seen_at: db.fn.now(),
       });
+    // Their name on the photos they uploaded goes with them (#1561). After
+    // the soft delete, so an upload still in flight sees it.
+    await clearGuestCredits(req.guest.id);
 
     logger.info('Guest self-forgot', {
       eventId: req.event.id,
