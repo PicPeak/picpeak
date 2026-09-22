@@ -838,3 +838,96 @@ describe('workflow triggers and the gated invoice step', () => {
     expect(intoAction.from_handle).toBe('confirm');
   });
 });
+
+// ---------------------------------------------------------------------
+// Slice 8 — the integrity report
+// ---------------------------------------------------------------------
+
+describe('integrity report', () => {
+  const PNG = `data:image/png;base64,${'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='}`;
+  const report = async (id) => ok(request(contractsApp).get(`/api/admin/contracts/${id}/verify-integrity`).set(auth));
+  const failing = async (id) => (await report(id)).checks.filter((c) => c.ok === false).map((c) => c.check).sort();
+
+  function flipByte(file) {
+    const bytes = fs.readFileSync(file);
+    const original = Buffer.from(bytes);
+    bytes[Math.floor(bytes.length / 2)] ^= 0xff;
+    fs.writeFileSync(file, bytes);
+    return () => fs.writeFileSync(file, original);
+  }
+
+  test('each artefact altered in turn fails exactly its own check', async () => {
+    const attachments = require('../../src/services/contract/attachments');
+    const terms = await libraryAttachment('Integrity terms');
+    const id = await newContract();
+    await db.transaction((trx) => attachments.writeContractAttachments(trx, id, [
+      { attachmentId: terms.id, delivery: 'separate' },
+    ]));
+    await sendContract(id);
+    const session = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+    await ok(sign(session, { name: 'Anna Muster', mode: 'drawn', signatureDataUrl: PNG }));
+    await ok(request(contractsApp).post(`/api/admin/contracts/${id}/countersign`).set(auth).send({ name: 'Studio Admin', mode: 'typed' }));
+
+    const clean = await report(id);
+    expect(clean.ok).toBe(true);
+    expect(clean.checks.map((c) => c.check)).toEqual([
+      'unsigned_pdf', 'signed_pdf', 'certificate', 'signature_image', 'content', 'attachment', 'manifest',
+      'event_chain', 'completed_artifact',
+    ]);
+    const logged = await db('activity_logs').where({ activity_type: 'contract_integrity_verified' }).orderBy('id', 'desc').first();
+    expect(parsed(logged.metadata)).toEqual({ contractId: id, ok: true, failed: [] });
+
+    const contract = await db('contracts').where({ id }).first();
+    const certificate = await db('generated_documents').where({ doc_type: 'contract', doc_id: id, kind: 'audit' }).first();
+    const signer = await db('contract_signers').where({ contract_id: id, role: 'customer' }).first();
+    const library = await db('document_attachments').where({ id: terms.id }).first();
+    const files = [
+      [contract.pdf_path, ['unsigned_pdf']],
+      [contract.signed_pdf_path, ['completed_artifact', 'signed_pdf']],
+      [certificate.path, ['certificate']],
+      [signer.signature_path, ['signature_image']],
+      [attachments.readStoredFile(library).absolute, ['attachment']],
+    ];
+    for (const [file, expected] of files) {
+      const restore = flipByte(file);
+      expect(await failing(id)).toEqual(expected);
+      restore();
+    }
+
+    // The frozen content, in the database.
+    const snapshot = parsed(contract.rendered_content);
+    await db('contracts').where({ id }).update({ rendered_content: JSON.stringify({ ...snapshot, title: 'Other' }) });
+    expect(await failing(id)).toEqual(['content']);
+    await db('contracts').where({ id }).update({ rendered_content: contract.rendered_content });
+
+    // The manifest recorded with the sent PDF.
+    const unsigned = await db('generated_documents').where({ doc_type: 'contract', doc_id: id, kind: 'unsigned' }).first();
+    const manifest = parsed(unsigned.manifest);
+    manifest.attachments[0].pages += 1;
+    await db('generated_documents').where({ id: unsigned.id }).update({ manifest: JSON.stringify(manifest) });
+    expect(await failing(id)).toEqual(['manifest']);
+    await db('generated_documents').where({ id: unsigned.id }).update({ manifest: unsigned.manifest });
+
+    // One event of the log, and where the chain breaks.
+    const event = await db('contract_signing_events').where({ contract_id: id, seq: 2 }).first();
+    await db('contract_signing_events').where({ id: event.id }).update({ actor_label: 'someone else' });
+    const broken = await report(id);
+    expect(broken.checks.filter((c) => c.ok === false).map((c) => c.check)).toEqual(['event_chain']);
+    expect(broken.checks.find((c) => c.check === 'event_chain').brokenAt).toBe(2);
+    await db('contract_signing_events').where({ id: event.id }).update({ actor_label: event.actor_label });
+    expect((await report(id)).ok).toBe(true);
+
+    // The same report as a PDF.
+    const pdf = await request(contractsApp).get(`/api/admin/contracts/${id}/verify-integrity?format=pdf`).set(auth)
+      .buffer(true).parse((res, cb) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+    expect(pdf.headers['content-disposition']).toMatch(/^attachment;/);
+    expect(pdf.body.slice(0, 5).toString()).toBe('%PDF-');
+    expect((await PDFDocument.load(pdf.body)).getPageCount()).toBe(1);
+  });
+});

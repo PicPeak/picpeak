@@ -50,7 +50,7 @@ const {
 const { renderContractPdfBuffer, sendContract } = sending;
 const {
   recordCustomerSignature, recordAdminCountersignature, attachSignedPdfUpload,
-  rerenderAndResend, restampSignatures, getAuditTrail, verifyIntegrity,
+  rerenderAndResend, restampSignatures, getAuditTrail,
 } = signatures;
 const { createFromQuote, convertToEvent, convertToInvoiceOnly } = conversions;
 
@@ -72,7 +72,6 @@ module.exports = {
   rerenderAndResend,
   restampSignatures,
   getAuditTrail,
-  verifyIntegrity,
   // Exported for tests + the public-route preview endpoint.
   _internal: {
     nextContractNumber,

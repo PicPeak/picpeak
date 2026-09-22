@@ -26,9 +26,25 @@ export interface ContractIntegrityLeg {
   match: boolean;
 }
 
+/** One item of the integrity report (#1446). `ok: null` = not checkable. */
+export interface ContractIntegrityCheck {
+  check: 'unsigned_pdf' | 'signed_pdf' | 'certificate' | 'signature_image' | 'content'
+    | 'attachment' | 'manifest' | 'event_chain' | 'completed_artifact';
+  subject: string | null;
+  ok: boolean | null;
+  expected: string | null;
+  actual: string | null;
+  note: string | null;
+  brokenAt?: number | null;
+}
+
 export interface ContractIntegrityResult {
   unsigned: ContractIntegrityLeg;
   signed: ContractIntegrityLeg;
+  /** The itemised report (#1446). */
+  ok?: boolean;
+  generatedAt?: string;
+  checks?: ContractIntegrityCheck[];
 }
 
 /** Shape of one row from /admin/contracts/:id/audit-trail. */
@@ -573,6 +589,12 @@ export const contractsService = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return data.data || data;
+  },
+
+  /** The integrity report as a one-page PDF (#1446). */
+  async integrityReportUrl(id: number): Promise<string> {
+    const res = await api.get(`/admin/contracts/${id}/verify-integrity`, { params: { format: 'pdf' }, responseType: 'blob' });
+    return URL.createObjectURL(res.data);
   },
 
   /** The signing certificate, once the contract has one. */

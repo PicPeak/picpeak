@@ -870,14 +870,31 @@ router.get(
 // 131). Lets the admin confirm a contract PDF on disk still matches
 // what was issued, catching backup-corruption / manual-edit cases
 // without needing to drop to a shell.
+// The itemised integrity report (#1446): every artefact re-hashed against
+// what was recorded, the event chain, the manifest. `?format=pdf` renders it
+// as a one-page report. Each run is logged with its overall result.
 router.get(
   '/:id/verify-integrity',
   requirePermission('contracts.view'),
-  [param('id').isInt({ min: 1 })],
+  [param('id').isInt({ min: 1 }), query('format').optional().isIn(['json', 'pdf'])],
   handleAsync(async (req, res) => {
     validateRequest(req);
-    const result = await contractService.verifyIntegrity(parseInt(req.params.id, 10));
-    return successResponse(res, result);
+    const report = await require('../services/contract/integrity')
+      .integrityReport(parseInt(req.params.id, 10), { adminId: req.admin?.id });
+    if (req.query.format !== 'pdf') return successResponse(res, report);
+    const contract = await db('contracts').where({ id: report.contractId }).first('language');
+    const profile = (await db('business_profile').where({ id: 1 }).first()) || {};
+    const theme = await require('../services/pdfThemeService').resolveTheme('contract');
+    const buffer = await require('../services/pdf/integrityReport').renderIntegrityReport({
+      report,
+      locale: (contract && contract.language) || 'de',
+      theme,
+      issuer: { pdfFontTtfPath: profile.pdf_font_ttf_path || null, pdfFontFamily: profile.pdf_font_family || null, companyName: profile.company_name || null },
+    });
+    res.set('Content-Type', 'application/pdf');
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Content-Disposition', buildContentDisposition(`${report.contractNumber}-integrity.pdf`, 'attachment'));
+    return res.send(buffer);
   }),
 );
 

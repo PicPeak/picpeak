@@ -1114,50 +1114,6 @@ async function getAuditTrail(contractId) {
   });
 }
 
-/**
- * Re-hash the two on-disk PDFs and compare against the stored hashes
- * (pdf_sha256 / signed_pdf_sha256 from migration 131). Lets the admin
- * confirm that backups, manual moves, or storage corruption haven't
- * silently altered the issued document.
- *
- * Each leg of the response carries:
- *   - `path`: the stored path string (so the UI can show what was
- *     checked even when it's missing)
- *   - `present`: file exists on disk
- *   - `expected`: the SHA-256 column value (null if never persisted)
- *   - `actual`: the freshly-computed hash, or null when file missing
- *   - `match`: true iff both hashes exist AND they're equal
- *
- * The customer already has both expected hashes via the audit
- * certificate the signing flow ships as a second email attachment, so
- * they can verify independently with `shasum -a 256`. This endpoint
- * is the admin-side equivalent — single click instead of dropping to
- * a shell.
- */
-async function verifyIntegrity(id) {
-  const contract = await db('contracts')
-    .where({ id })
-    .select('id', 'pdf_path', 'pdf_sha256', 'signed_pdf_path', 'signed_pdf_sha256')
-    .first();
-  if (!contract) throw new AppError('Contract not found', 404);
-
-  const checkLeg = (filePath, expected) => {
-    const present = !!filePath && fs.existsSync(filePath);
-    const actual = present ? sha256OfFile(filePath) : null;
-    return {
-      path: filePath || null,
-      present,
-      expected: expected || null,
-      actual,
-      match: !!(expected && actual && expected === actual),
-    };
-  };
-
-  return {
-    unsigned: checkLeg(contract.pdf_path, contract.pdf_sha256),
-    signed: checkLeg(contract.signed_pdf_path, contract.signed_pdf_sha256),
-  };
-}
 module.exports = {
   recordCustomerSignature,
   recordAdminCountersignature,
@@ -1165,5 +1121,4 @@ module.exports = {
   rerenderAndResend,
   restampSignatures,
   getAuditTrail,
-  verifyIntegrity,
 };
