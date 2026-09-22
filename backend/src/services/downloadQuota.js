@@ -19,6 +19,20 @@ const INSERT_CHUNK = 200; // 4 bound values per row, under SQLite's 999.
 
 const MAX_LIMIT = 2147483647; // events.download_limit is a signed 32-bit int.
 
+// A pending grant settles when its response ends. One whose process died
+// first never will, so after this long it stops counting and is swept. Far
+// longer than any download: a live one expiring would free a slot early.
+const PENDING_TTL_MS = 24 * 3600 * 1000;
+const pendingCutoff = () => new Date(Date.now() - PENDING_TTL_MS).toISOString();
+
+// Delivered, or pending and recent enough that its download may still be live.
+function whereLive(query) {
+  const cutoff = pendingCutoff();
+  return query.where((q) => q
+    .where('event_download_grants.pending_holders', 0)
+    .orWhere('event_download_grants.granted_at', '>=', cutoff));
+}
+
 /** A stored or submitted limit as a positive integer, or null for unlimited. */
 function normaliseDownloadLimit(value) {
   const limit = Number(value);
@@ -36,10 +50,10 @@ function downloadLimitOf(event) {
  * not run the ON DELETE CASCADE.
  */
 async function grantedPhotoIds(eventId, photoIds = null, conn = db, { deliveredOnly = false } = {}) {
-  let query = conn('event_download_grants')
+  let query = whereLive(conn('event_download_grants')
     .join('photos', 'photos.id', 'event_download_grants.photo_id')
     .where('event_download_grants.event_id', eventId)
-    .where('photos.event_id', eventId);
+    .where('photos.event_id', eventId));
   // A pending row belongs to a download still in flight: counted, not yet
   // handed over.
   if (deliveredOnly) query = query.where('event_download_grants.pending_holders', 0);
@@ -52,10 +66,10 @@ async function grantedPhotoIds(eventId, photoIds = null, conn = db, { deliveredO
 }
 
 async function countGrants(eventId, conn = db) {
-  const row = await conn('event_download_grants')
+  const row = await whereLive(conn('event_download_grants')
     .join('photos', 'photos.id', 'event_download_grants.photo_id')
     .where('event_download_grants.event_id', eventId)
-    .where('photos.event_id', eventId)
+    .where('photos.event_id', eventId))
     .count('event_download_grants.id as count')
     .first();
   return parseInt(row && row.count, 10) || 0;
@@ -105,9 +119,15 @@ async function checkDownloads(event, photoIds, { isAdminPreview = false } = {}) 
  * `reserve` the grant is delivered at once.
  */
 async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve = false } = {}) {
-  if (isAdminPreview || !downloadLimitOf(event)) return { ok: true, newIds: [] };
+  if (isAdminPreview) return { ok: true, newIds: [] };
   const ids = uniqueIds(photoIds);
   if (ids.length === 0) return { ok: true, newIds: [] };
+  // Unlimited as loaded — but the request may have been loaded before an
+  // admin set a limit, and no byte has gone out yet. Re-read before skipping.
+  if (!downloadLimitOf(event)) {
+    const fresh = await db('events').where({ id: event.id }).first('download_limit');
+    if (!downloadLimitOf(fresh)) return { ok: true, newIds: [] };
+  }
 
   return db.transaction(async (trx) => {
     // SQLite runs one write transaction at a time; Postgres needs the row lock.
@@ -118,6 +138,14 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve
     // between the request's event load and here must be honoured.
     const current = await trx('events').where({ id: event.id }).first('id', 'download_limit');
     if (!downloadLimitOf(current)) return { ok: true, newIds: [] };
+
+    // Pending grants whose download never settled (the process died) no
+    // longer count; clear them so the rows below can take their place.
+    await trx('event_download_grants')
+      .where('event_id', event.id)
+      .where('pending_holders', '>', 0)
+      .where('granted_at', '<', pendingCutoff())
+      .del();
 
     const result = await evaluate(current, ids, trx);
     if (!result.ok) return result;
@@ -133,7 +161,11 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve
       if (reserve) {
         const rows = await chunk.clone().select('photo_id');
         joined.push(...rows.map((r) => Number(r.photo_id)));
-        await chunk.increment('pending_holders', 1);
+        // Joining restarts the clock: this download is live.
+        await chunk.update({
+          pending_holders: trx.raw('pending_holders + 1'),
+          granted_at: new Date().toISOString(),
+        });
       } else {
         await chunk.update({ pending_holders: 0 });
       }

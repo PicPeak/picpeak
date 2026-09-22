@@ -8,7 +8,7 @@ const { db, logActivity } = require('../../database/db');
 const { adminAuth } = require('../../middleware/auth');
 const { requirePermission } = require('../../middleware/permissions');
 const { errorResponse } = require('../../utils/routeHelpers');
-const { requireEventOwnership } = require('../../middleware/ownership');
+const { requireEventOwnership, scopeEventsListQuery } = require('../../middleware/ownership');
 const { getQuota, resetGrants } = require('../../services/downloadQuota');
 
 async function loadOwnedEvent(req) {
@@ -28,9 +28,12 @@ function usageBody(event, quota) {
 }
 
 module.exports = (router) => {
-  router.get('/:id/download-limit', adminAuth, requirePermission('events.view'), requireEventOwnership, async (req, res) => {
+  // Read with the event details' visibility (GET /:id), so a role that sees
+  // every event reads the usage of one it does not own; resetting it stays
+  // with the owner.
+  router.get('/:id/download-limit', adminAuth, requirePermission('events.view'), async (req, res) => {
     try {
-      const event = await loadOwnedEvent(req);
+      const event = await scopeEventsListQuery(db('events').where('id', req.params.id), req.admin).first();
       if (!event) return res.status(404).json({ error: 'Event not found' });
       res.json(usageBody(event, await getQuota(event)));
     } catch (error) {

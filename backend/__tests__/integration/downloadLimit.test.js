@@ -333,6 +333,24 @@ describe('Download limit (issue 1560)', () => {
       expect([...(await quota.grantedPhotoIds(event.id))]).toEqual([photoIds[1]]);
     });
 
+    it('a pending grant whose download never settled stops counting after a day', async () => {
+      const { event, photoIds } = await makeEvent({ limit: 1 });
+      await quota.grantDownloads(event, [photoIds[0]], { reserve: true });
+      expect((await quota.grantDownloads(event, [photoIds[1]])).ok).toBe(false);
+      // The process died mid-download: the row was never settled.
+      await db('event_download_grants').where({ event_id: event.id })
+        .update({ granted_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString() });
+      expect((await quota.getQuota(event)).remaining).toBe(1);
+      expect((await quota.grantDownloads(event, [photoIds[1]])).ok).toBe(true);
+      expect([...(await quota.grantedPhotoIds(event.id))]).toEqual([photoIds[1]]);
+    });
+
+    it('honours a limit set after an unlimited request loaded the event', async () => {
+      const { event, photoIds } = await makeEvent({ limit: null });
+      await db('events').where({ id: event.id }).update({ download_limit: 1 });
+      expect((await quota.grantDownloads(event, photoIds.slice(0, 2))).ok).toBe(false);
+    });
+
     it('a HEAD probe of download-all takes none of the quota', async () => {
       const { event, token } = await makeEvent({ limit: 10, photos: 3 });
       const res = await request(app)
@@ -589,6 +607,38 @@ describe('Download limit (issue 1560)', () => {
       expect(reset.status).toBe(200);
       expect(reset.body).toEqual({ download_limit: 2, downloads_used: 0, downloads_remaining: 2 });
       expect(await grantCount(event.id)).toBe(0);
+    });
+
+    it('lets a role that sees every event read the usage of one it does not own, not reset it', async () => {
+      const { event, photoIds } = await makeEvent({ limit: 2 });
+      await quota.grantDownloads(event, photoIds.slice(0, 1));
+      const owner = await db('admin_users').where({ username: 'limit-admin' }).first();
+      await db('events').where({ id: event.id }).update({ created_by: owner.id });
+      const adminRole = await db('roles').where({ name: 'admin' }).first();
+      const [otherId] = await db('admin_users').insert({
+        username: `limit-other-${event.id}`,
+        email: `limit-other-${event.id}@example.com`,
+        password_hash: 'x',
+        role_id: adminRole.id,
+        is_active: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).returning('id').then((r) => [r[0]?.id || r[0]]);
+      const otherToken = jwt.sign(
+        { id: otherId, username: `limit-other-${event.id}`, type: 'admin', role: 'admin', loginTime: Date.now() },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h', issuer: 'picpeak-auth' }
+      );
+
+      const usage = await request(app)
+        .get(`/api/admin/events/${event.id}/download-limit`)
+        .set('Authorization', `Bearer ${otherToken}`);
+      expect(usage.status).toBe(200);
+      expect(usage.body.downloads_used).toBe(1);
+      const reset = await request(app)
+        .post(`/api/admin/events/${event.id}/download-limit/reset`)
+        .set('Authorization', `Bearer ${otherToken}`);
+      expect(reset.status).toBe(403);
     });
 
     it('accepts and clears the limit through the event update', async () => {
