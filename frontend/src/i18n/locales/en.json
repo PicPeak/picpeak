@@ -7693,6 +7693,9 @@
     "crm_overview_show_invoices": {
       "label": "Invoices pipeline (per-status)"
     },
+    "crm_contracts_notify_each_signature": {
+      "label": "Email me every time a signer signs (not only when everyone has)"
+    },
     "customer_documents_notify_on_share": {
       "label": "Email the customer when a document is shared with them (default for the checkbox on the customer record)"
     },
@@ -8999,7 +9002,11 @@
       "issuerNext": "Everyone has signed. The contract is now counter-signed, and you'll get the final PDF by email.",
       "othersPending": "The contract is complete once everyone has signed. We'll email you the final PDF then.",
       "title": "Thank you — you have signed the contract.",
-      "signedAt": "Signed on {{date}}"
+      "signedAt": "Signed on {{date}}",
+      "theSender": "The sender",
+      "countersignNext": "{{business}} will countersign; you'll get the final copy and its signing certificate by email.",
+      "confirmationSent": "We have sent you a confirmation by email.",
+      "portalCertificate": "Your contracts and certificates"
     },
     "sign": {
       "errors": {
@@ -9022,7 +9029,12 @@
         "check": "Check again",
         "checking": "Checking…",
         "resend": "Send my signature again"
-      }
+      },
+      "stepTitle": "Sign contract no. {{number}}",
+      "stepIntro": "You are signing exactly the contract you just read. Check the summary, confirm the declarations and sign.",
+      "back": "Back to the contract",
+      "otherOptions": "Other options",
+      "submitBinding": "Sign contract no. {{number}} bindingly"
     },
     "otp": {
       "errors": {
@@ -9051,6 +9063,20 @@
       "required": "(required)",
       "optional": "(optional)",
       "missing": "Tick every required declaration to sign."
+    },
+    "review": {
+      "step": "Step 1 of 2 — read the contract",
+      "readyTitle": "Read everything?",
+      "readyBody": "Next you confirm the declarations and sign. Nothing is signed until you press the final button.",
+      "continue": "Continue to signing"
+    },
+    "summary": {
+      "number": "Contract",
+      "title": "Title",
+      "parties": "Parties",
+      "total": "Total",
+      "attachments": "Attachments",
+      "hash": "Content fingerprint (SHA-256)"
     }
   }
 }

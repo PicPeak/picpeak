@@ -7694,6 +7694,9 @@
     "crm_overview_show_invoices": {
       "label": "Rechnungs-Pipeline (nach Status)"
     },
+    "crm_contracts_notify_each_signature": {
+      "label": "Mich bei jeder einzelnen Unterschrift benachrichtigen (nicht erst, wenn alle unterzeichnet haben)"
+    },
     "customer_documents_notify_on_share": {
       "label": "Kunden per E-Mail benachrichtigen, wenn ein Dokument freigegeben wird (Voreinstellung für das Kontrollkästchen im Kundendatensatz)"
     },
@@ -9000,7 +9003,11 @@
       "issuerNext": "Alle haben unterschrieben. Der Vertrag wird jetzt gegengezeichnet, und Sie erhalten das endgültige PDF per E-Mail.",
       "othersPending": "Der Vertrag ist vollständig, sobald alle unterschrieben haben. Wir senden Ihnen dann das endgültige PDF per E-Mail.",
       "title": "Vielen Dank – Sie haben den Vertrag unterschrieben.",
-      "signedAt": "Unterschrieben am {{date}}"
+      "signedAt": "Unterschrieben am {{date}}",
+      "theSender": "Der Absender",
+      "countersignNext": "{{business}} zeichnet gegen; Sie erhalten die endgültige Fassung und das Prüfprotokoll per E-Mail.",
+      "confirmationSent": "Wir haben Ihnen eine Bestätigung per E-Mail gesendet.",
+      "portalCertificate": "Ihre Verträge und Prüfprotokolle"
     },
     "sign": {
       "errors": {
@@ -9023,7 +9030,12 @@
         "check": "Erneut prüfen",
         "checking": "Wird geprüft …",
         "resend": "Unterschrift erneut senden"
-      }
+      },
+      "stepTitle": "Vertrag Nr. {{number}} unterzeichnen",
+      "stepIntro": "Sie unterzeichnen genau den Vertrag, den Sie eben gelesen haben. Prüfen Sie die Zusammenfassung, bestätigen Sie die Erklärungen und unterzeichnen Sie.",
+      "back": "Zurück zum Vertrag",
+      "otherOptions": "Weitere Möglichkeiten",
+      "submitBinding": "Vertrag Nr. {{number}} verbindlich unterzeichnen"
     },
     "otp": {
       "errors": {
@@ -9052,6 +9064,20 @@
       "required": "(erforderlich)",
       "optional": "(freiwillig)",
       "missing": "Setzen Sie bei jeder erforderlichen Erklärung ein Häkchen, um zu unterzeichnen."
+    },
+    "review": {
+      "step": "Schritt 1 von 2 – Vertrag lesen",
+      "readyTitle": "Alles gelesen?",
+      "readyBody": "Als Nächstes bestätigen Sie die Erklärungen und unterzeichnen. Unterzeichnet ist erst, wenn Sie die letzte Schaltfläche drücken.",
+      "continue": "Weiter zur Unterzeichnung"
+    },
+    "summary": {
+      "number": "Vertrag",
+      "title": "Titel",
+      "parties": "Parteien",
+      "total": "Gesamtbetrag",
+      "attachments": "Anlagen",
+      "hash": "Inhalts-Fingerabdruck (SHA-256)"
     }
   }
 }

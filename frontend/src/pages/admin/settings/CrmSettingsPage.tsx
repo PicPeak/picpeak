@@ -66,6 +66,9 @@ const SETTING_KEYS = [
   'crm_contracts_require_drawn_signature',
   'crm_contracts_allow_pdf_upload',
   'crm_contracts_store_ip',
+  // Signatures (#1446): an admin notice for every signature, not only once
+  // every customer has signed. Default on.
+  'crm_contracts_notify_each_signature',
   // Dashboard CRM-overview tile visibility (per-tile). Default ON;
   // explicit false hides the tile. Stored as one boolean per tile so
   // admins can mix-and-match — e.g. someone who only bills hourly
@@ -495,6 +498,7 @@ export const CrmSettingsPage: React.FC = () => {
           {t('crmSettings.crm_contracts_store_ip.help',
             "When off, the customer's and admin's IP at signing time is NOT recorded into the contract row or the public sign-page audit confirmation. Per GDPR data-minimisation principle some operators prefer this — but IP is corroborating identity evidence if the contract is challenged, so we recommend keeping it on.")}
         </p>
+        {checkboxDefaultOn('crm_contracts_notify_each_signature', 'Email me every time a signer signs (not only when everyone has)')}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
           <Input type="number" min={1} max={365}
             label={t('crmSettings.crm_contracts_default_valid_days.label', 'Signing window (days)') as string}

@@ -37,6 +37,11 @@ async function setFlag(key, value) {
   require('../../src/middleware/requireFeatureFlag').invalidateFeatureFlagCache();
 }
 
+async function setSetting(key, value) {
+  const { upsertAppSetting } = require('../../src/utils/appSettings');
+  await upsertAppSetting(key, JSON.stringify(value), 'crm');
+}
+
 async function ok(req, status = [200, 201]) {
   const res = await req;
   if (!status.includes(res.status)) throw new Error(`${res.status} ${JSON.stringify(res.body)}`);
@@ -589,5 +594,67 @@ describe('consents', () => {
     expect(signer.status).toBe('signed');
     expect(signer.consent_version).toBe('v1');
     expect(await db('contract_signer_consents').where({ signer_id: signer.id })).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------
+// Slice 6 — the signer's receipt and the admin's notice per signature
+// ---------------------------------------------------------------------
+
+describe('notices', () => {
+  const adminNotices = () => db('email_queue').where({ email_type: 'contract_signed_admin_notification', recipient_email: 'studio@example.com' });
+
+  test('each signer gets a receipt straight away, and the admin hears about every signature', async () => {
+    const id = await newContract();
+    await twoSigners(id);
+    await sendContract(id);
+    const before = (await adminNotices()).length;
+    const ben = await verifiedSession(linkToken(await lastMail('contract_sent', 'ben@example.com')), 'ben@example.com');
+    await ok(sign(ben, { name: 'Ben Muster', mode: 'typed' }));
+
+    const receipt = await lastMail('contract_signature_received', 'ben@example.com');
+    const contract = await db('contracts').where({ id }).first();
+    expect(receipt).toEqual(expect.objectContaining({
+      contract_number: contract.contract_number, customer_name: 'Ben Muster', issuer_name: 'Studio Test',
+    }));
+    expect(receipt.signed_at).toBeTruthy();
+    expect(receipt.attachments).toBeUndefined();
+    // Not everyone has signed, and the admin hears about it anyway.
+    expect((await adminNotices()).length).toBe(before + 1);
+  });
+
+  test('with per-signature notices off, the admin hears only once everyone has signed', async () => {
+    await setSetting('crm_contracts_notify_each_signature', false);
+    try {
+      const id = await newContract();
+      await twoSigners(id);
+      await sendContract(id);
+      const before = (await adminNotices()).length;
+      const ben = await verifiedSession(linkToken(await lastMail('contract_sent', 'ben@example.com')), 'ben@example.com');
+      await ok(sign(ben, { name: 'Ben Muster', mode: 'typed' }));
+      expect((await adminNotices()).length).toBe(before);
+      const anna = await verifiedSession(linkToken(await lastMail('contract_sent', customerEmail)), customerEmail);
+      await ok(sign(anna, { name: 'Anna Muster', mode: 'typed' }));
+      expect((await adminNotices()).length).toBe(before + 1);
+    } finally {
+      await setSetting('crm_contracts_notify_each_signature', true);
+    }
+  });
+
+  test('a receipt that fails to queue never fails the signature', async () => {
+    const { id, session } = await sentWithSession();
+    const emailProcessor = require('../../src/services/emailProcessor');
+    const real = emailProcessor.queueEmail;
+    const spy = jest.spyOn(emailProcessor, 'queueEmail').mockImplementation((...args) => (
+      args[2] === 'contract_signature_received' ? Promise.reject(new Error('queue down')) : real(...args)
+    ));
+    try {
+      await ok(sign(session, { name: 'Anna Muster', mode: 'typed' }));
+    } finally {
+      spy.mockRestore();
+    }
+    const contract = await db('contracts').where({ id }).first();
+    expect(contract.status).toBe('signed_by_customer');
+    expect(contract.follow_up_error).toMatch(/^signature_receipt:/);
   });
 });

@@ -129,6 +129,30 @@ const CONTRACT_EMAIL_TEMPLATES = {
       body_text: 'Vertrag {{contract_number}} wurde von {{signer_name}} abgelehnt.{{#if reason}} Grund: {{reason}}{{/if}} Öffnen: {{admin_dashboard_url}}',
     },
   },
+  // #1446: the signer's receipt, right after their own signature. No
+  // attachment: the final copy follows once everyone has signed.
+  contract_signature_received: {
+    category: 'contracts', feature_flag: 'contracts',
+    variables: ['contract_number', 'customer_name', 'title', 'signed_at', 'issuer_name'],
+    en: {
+      subject: 'We received your signature on contract {{contract_number}}',
+      body_html: `<h2>Signature received</h2>
+<p>Dear {{customer_name}},</p>
+<p>your signature on contract {{contract_number}}{{#if title}} — "{{title}}"{{/if}} was recorded on {{signed_at}}.</p>
+<p>Once every signer has signed{{#if issuer_name}} and {{issuer_name}} has counter-signed{{/if}}, you will receive the final contract and its signing certificate by email.</p>
+<p style="font-size: 13px; color: #666;">If you did not sign this contract, reply to this email straight away.</p>`,
+      body_text: 'Your signature on contract {{contract_number}} was recorded on {{signed_at}}. Once everyone has signed, you will receive the final contract and its signing certificate by email. If you did not sign it, reply to this email straight away.',
+    },
+    de: {
+      subject: 'Ihre Unterschrift zum Vertrag {{contract_number}} ist eingegangen',
+      body_html: `<h2>Unterschrift eingegangen</h2>
+<p>Sehr geehrte/r {{customer_name}},</p>
+<p>Ihre Unterschrift zum Vertrag {{contract_number}}{{#if title}} – „{{title}}"{{/if}} wurde am {{signed_at}} erfasst.</p>
+<p>Sobald alle unterzeichnet haben{{#if issuer_name}} und {{issuer_name}} gegengezeichnet hat{{/if}}, erhalten Sie den endgültigen Vertrag und das Prüfprotokoll per E-Mail.</p>
+<p style="font-size: 13px; color: #666;">Falls Sie diesen Vertrag nicht unterzeichnet haben, antworten Sie bitte umgehend auf diese E-Mail.</p>`,
+      body_text: 'Ihre Unterschrift zum Vertrag {{contract_number}} wurde am {{signed_at}} erfasst. Sobald alle unterzeichnet haben, erhalten Sie den endgültigen Vertrag und das Prüfprotokoll per E-Mail. Falls Sie ihn nicht unterzeichnet haben, antworten Sie bitte umgehend auf diese E-Mail.',
+    },
+  },
   // #1446: the time to sign ran out (services/contract/expiry.js).
   contract_expired_admin_notification: {
     category: 'contracts', feature_flag: 'contracts',

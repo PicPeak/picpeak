@@ -832,21 +832,40 @@ async function sign(sessionToken, input, { ip = null, userAgent = null } = {}) {
   // Committed: contract_signers.signature_path and contracts.signed_pdf_path
   // point at those files now, so nothing below may delete them — a failed
   // notice would otherwise take the signature and the signed PDF with it.
-  try {
-    if (outcome.customersDone) {
-      await notifyAdmin('contract_signed_admin_notification', {
-        contract_number: contract.contract_number,
-        customer_email: signerEmail(signer),
-        signed_customer_name: name,
-        admin_dashboard_url: await adminDashboardUrl(contract.id),
-      });
-    } else {
-      await inviteDue(contract.id);
+  // Each step is its own: one failing is recorded and the others still run.
+  let followUpFailed = false;
+  const step = async (label, run) => {
+    try {
+      await run();
+    } catch (err) {
+      followUpFailed = true;
+      await recordFollowUpFailure(contract.id, label, err);
     }
-    await clearFollowUpFailure(contract.id);
-  } catch (err) {
-    await recordFollowUpFailure(contract.id, outcome.customersDone ? 'admin_notice' : 'next_invitation', err);
+  };
+  if (!outcome.customersDone) await step('next_invitation', () => inviteDue(contract.id));
+  // The admin hears about every signature (#1446) unless switched off, and
+  // always once every customer has signed.
+  const notifyEach = (await getAppSetting('crm_contracts_notify_each_signature')) !== false;
+  if (outcome.customersDone || notifyEach) {
+    await step('admin_notice', async () => notifyAdmin('contract_signed_admin_notification', {
+      contract_number: contract.contract_number,
+      customer_email: signerEmail(signer),
+      signed_customer_name: name,
+      admin_dashboard_url: await adminDashboardUrl(contract.id),
+    }));
   }
+  // The signer's own receipt, straight away.
+  await step('signature_receipt', async () => {
+    const profile = await db('business_profile').where({ id: 1 }).first();
+    await emailProcessor.queueEmail(null, signerEmail(signer), 'contract_signature_received', {
+      contract_number: contract.contract_number,
+      customer_name: name,
+      title: contract.title || '',
+      signed_at: formatSignedAt(signedAt, dateFormat),
+      issuer_name: (profile && profile.company_name) || '',
+    });
+  });
+  if (!followUpFailed) await clearFollowUpFailure(contract.id);
   await bestEffortLog('contract_signed_by_customer', { contractId: contract.id, signerId: signer.id }, customerPublicActor());
   return { status: outcome.customersDone ? 'signed_by_customer' : 'sent', signedAt };
 }
