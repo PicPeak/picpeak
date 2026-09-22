@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Migration 230: a name on a photo (issue 1561).
+ * Migration 232: a name on a photo (issue 1561).
  *
  * One mechanism for every source of a credit, so the guest-uploader name and
  * the photographer credit share one column, one filter and one export path:
