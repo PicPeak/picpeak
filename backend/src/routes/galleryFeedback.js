@@ -67,7 +67,7 @@ router.get('/:slug/photos/:photoId/feedback',
     try {
       const { photoId } = req.params;
       const event = req.event;
-      const guestIdentifier = generateGuestIdentifier(req);
+      const guestIdentifier = await generateGuestIdentifier(req);
       
       // Get feedback settings
       const settings = await feedbackService.getEventFeedbackSettings(event.id);
@@ -229,7 +229,7 @@ router.post('/:slug/photos/:photoId/feedback',
         }
       }
 
-      const guestIdentifier = generateGuestIdentifier(req);
+      const guestIdentifier = await generateGuestIdentifier(req);
 
       // Check if specific feedback type is allowed
       const feedbackType = req.body.feedback_type;
@@ -485,7 +485,7 @@ router.get('/:slug/my-feedback',
       if (req.guest?.id) {
         query.where('photo_feedback.guest_id', req.guest.id);
       } else {
-        const guestIdentifier = generateGuestIdentifier(req);
+        const guestIdentifier = await generateGuestIdentifier(req);
         query.where('photo_feedback.guest_identifier', guestIdentifier);
       }
 

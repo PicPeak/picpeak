@@ -1,0 +1,172 @@
+/**
+ * Legacy anonymous feedback identity adoption (#1584).
+ *
+ * PR #1571 replaced the anonymous guest identifier — sha256("ip:userAgent")
+ * — with a signed `picpeak_feedback` cookie. Rows written under the old hash
+ * were never migrated, so a returning anonymous guest was a stranger to
+ * their own likes/ratings/favourites: the duplicate check in
+ * feedbackService.submitFeedback only ever looks at the new identity.
+ *
+ * anonymousFeedbackIdentifier() now adopts the legacy row(s) onto the new
+ * cookie identity the first time it issues a fresh cookie for a request
+ * (see backend/src/utils/anonymousFeedbackIdentity.js).
+ */
+const request = require('supertest');
+const jwt = require('jsonwebtoken');
+const knex = require('knex');
+const crypto = require('crypto');
+const { randomUUID } = require('crypto');
+const { bootCrmDb, seedMinimal, buildRouteApp } = require('./helpers/crmDb');
+
+const pgUrl = process.env.PICPEAK_PG_TEST_URL;
+let db; let cleanup; let app; let eventId; let photoId; let token; let owner; let schema;
+
+const IP = '203.0.113.77';
+const USER_AGENT = 'legacy-guest-browser/1.0';
+// Must match the pre-#1571 generateGuestIdentifier exactly: sha256(`${ip}:${userAgent}`).
+const legacyIdentifier = () => crypto.createHash('sha256').update(`${IP}:${USER_AGENT}`).digest('hex');
+
+beforeAll(async () => {
+  if (pgUrl) {
+    schema = `feedback_identity_${randomUUID().replace(/-/g, '')}`;
+    owner = knex({ client: 'pg', connection: pgUrl });
+    await owner.schema.createSchema(schema);
+    process.env.DATABASE_CLIENT = 'pg';
+    jest.doMock('../../knexfile', () => ({ client: 'pg', connection: pgUrl, searchPath: [schema] }));
+  }
+  ({ db, cleanup } = await bootCrmDb());
+  await seedMinimal(db);
+  const [event] = await db('events').insert({ slug: 'legacy-identity', event_type: 'wedding', event_name: 'Legacy Identity',
+    event_date: '2026-09-16', host_email: 'h@example.test', admin_email: 'a@example.test',
+    password_hash: 'unused', share_link: '/gallery/legacy-identity/share', is_active: true, is_archived: false, is_draft: false }).returning('id');
+  eventId = event.id ?? event;
+  const [photo] = await db('photos').insert({ event_id: eventId, filename: 'legacy.jpg', path: 'legacy.jpg', type: 'individual' }).returning('id');
+  photoId = photo.id ?? photo;
+  await db('event_feedback_settings').insert({ event_id: eventId, feedback_enabled: true, identity_mode: 'simple',
+    allow_likes: true, allow_favorites: true, moderate_comments: false, require_moderation: false });
+  app = buildRouteApp('/api/gallery', require('../../src/routes/galleryFeedback'));
+  token = jwt.sign({ eventId, eventSlug: 'legacy-identity', type: 'gallery', jti: randomUUID() }, process.env.JWT_SECRET,
+    { issuer: 'picpeak-auth', expiresIn: '1h' });
+});
+
+afterAll(async () => {
+  if (cleanup) await cleanup();
+  if (owner) { await owner.schema.dropSchema(schema, true); await owner.destroy(); }
+});
+
+beforeEach(async () => { await db('photo_feedback').where({ photo_id: photoId }).delete(); });
+
+const seedLegacyRow = (feedbackType, guestIdentifier = legacyIdentifier()) => {
+  const now = new Date().toISOString();
+  return db('photo_feedback').insert({
+    photo_id: photoId, event_id: eventId, feedback_type: feedbackType,
+    guest_identifier: guestIdentifier, is_hidden: false, is_approved: true,
+    created_at: now, updated_at: now,
+  }).returning('id').then(([row]) => row.id ?? row);
+};
+
+test('re-keys a legacy IP+UA row onto the new cookie identity on first contact, and the duplicate check sees it', async () => {
+  const legacyRowId = await seedLegacyRow('like');
+
+  const client = request.agent(app);
+  // Same IP + User-Agent as the legacy hash, but no picpeak_feedback cookie:
+  // this is exactly the request shape of a returning anonymous guest after
+  // the #1571 upgrade. Read-only, so it isolates adoption from submission.
+  const getRes = await client
+    .get(`/api/gallery/legacy-identity/photos/${photoId}/feedback`)
+    .set('Authorization', `Bearer ${token}`)
+    .set('User-Agent', USER_AGENT)
+    .set('X-Forwarded-For', IP)
+    .expect(200);
+
+  // A fresh cookie was issued (no valid one was presented).
+  expect(getRes.headers['set-cookie']?.[0]).toContain('picpeak_feedback');
+
+  // The legacy row is now filed under the new cookie identity, not the old hash.
+  const rekeyed = await db('photo_feedback').where({ id: legacyRowId }).first();
+  expect(rekeyed.guest_identifier).not.toBe(legacyIdentifier());
+  expect(rekeyed.guest_identifier).toMatch(/^[a-f0-9]{64}$/);
+
+  // Submitting 'like' again, now carrying the adopted cookie: submitFeedback's
+  // duplicate check found the (re-keyed) existing row and toggled it off —
+  // it did NOT fail to see the old row and insert a second one. Before the
+  // fix this was exactly the "count goes up by two" bug from #1584.
+  const postRes = await client
+    .post(`/api/gallery/legacy-identity/photos/${photoId}/feedback`)
+    .set('Authorization', `Bearer ${token}`)
+    .set('User-Agent', USER_AGENT)
+    .set('X-Forwarded-For', IP)
+    .send({ feedback_type: 'like' })
+    .expect(200);
+  expect(postRes.body).toMatchObject({ success: true, removed: true });
+
+  const likeRows = await db('photo_feedback').where({ photo_id: photoId, feedback_type: 'like' });
+  expect(likeRows).toHaveLength(0); // toggled off — never duplicated to 2
+});
+
+test('a second like from the now-adopted identity is recognized as the same guest, not a stranger', async () => {
+  await seedLegacyRow('rating');
+  await db('photo_feedback').where({ photo_id: photoId, feedback_type: 'rating' }).update({ rating: 4 });
+
+  const client = request.agent(app);
+  // First contact adopts the legacy rating row onto a fresh cookie.
+  await client
+    .get(`/api/gallery/legacy-identity/photos/${photoId}/feedback`)
+    .set('Authorization', `Bearer ${token}`)
+    .set('User-Agent', USER_AGENT)
+    .set('X-Forwarded-For', IP)
+    .expect(200);
+
+  // Submitting the SAME rating again, now carrying the adopted cookie, must
+  // be recognized as a duplicate of the guest's own existing row — not
+  // inserted as a second row for what the app-level dedup treats as a
+  // one-per-guest-per-photo value.
+  const res = await client
+    .post(`/api/gallery/legacy-identity/photos/${photoId}/feedback`)
+    .set('Authorization', `Bearer ${token}`)
+    .set('User-Agent', USER_AGENT)
+    .set('X-Forwarded-For', IP)
+    .send({ feedback_type: 'rating', rating: 4 })
+    .expect(200);
+
+  expect(res.body).toMatchObject({ success: true, exists: true });
+  const ratingRows = await db('photo_feedback').where({ photo_id: photoId, feedback_type: 'rating' });
+  expect(ratingRows).toHaveLength(1); // still just the one, adopted row
+});
+
+test('leaves a legacy row alone when the new identity already holds a row for that photo/action', async () => {
+  const { anonymousFeedbackIdentifier } = require('../../src/utils/anonymousFeedbackIdentity');
+
+  // Force a deterministic new identity so we can pre-seed a collision under
+  // it: the identity a fresh cookie mints depends on a random subject.
+  const fixedSubject = 'b'.repeat(32);
+  const randomBytesSpy = jest.spyOn(crypto, 'randomBytes').mockReturnValue(Buffer.from(fixedSubject, 'hex'));
+  try {
+    const expectedIdentifier = crypto.createHmac('sha256', process.env.JWT_SECRET)
+      .update(`feedback:${eventId}:${fixedSubject}`).digest('hex');
+
+    const legacyRowId = await seedLegacyRow('favorite');
+    const collisionRowId = await seedLegacyRow('favorite', expectedIdentifier);
+
+    const req = {
+      event: { id: eventId }, ip: IP, headers: { 'user-agent': USER_AGENT },
+      cookies: {}, res: { cookie: jest.fn() },
+    };
+    const identifier = await anonymousFeedbackIdentifier(req);
+    expect(identifier).toBe(expectedIdentifier);
+
+    // Neither row was touched: no merge, no delete, no crash from the
+    // collision — the legacy row is simply left orphaned, same as before
+    // #1571 for a guest whose IP/UA never matched again.
+    const legacyAfter = await db('photo_feedback').where({ id: legacyRowId }).first();
+    expect(legacyAfter.guest_identifier).toBe(legacyIdentifier());
+
+    const collisionAfter = await db('photo_feedback').where({ id: collisionRowId }).first();
+    expect(collisionAfter.guest_identifier).toBe(expectedIdentifier);
+
+    const total = await db('photo_feedback').where({ photo_id: photoId, feedback_type: 'favorite' });
+    expect(total).toHaveLength(2);
+  } finally {
+    randomBytesSpy.mockRestore();
+  }
+});
