@@ -181,12 +181,12 @@ async function applyStoredPathMap(knex, map, verify, { onlyUnreadable = false } 
   const entries = [];
   for (const [value, rel] of Object.entries(map)) {
     if (typeof value !== 'string' || !value || !isPlaceablePath(rel)) continue;
-    // Without a restored database the row is the live one: while its own file
-    // is still readable, that file is newer than the archived copy.
-    if (onlyUnreadable) {
-      const current = resolveStoredPath(value);
-      if (current && fs.existsSync(current)) continue;
-    }
+    // Without a restored database the row is the live one: while the file it
+    // literally names is still there, that file is newer than the archived
+    // copy. (Not resolveStoredPath: its suffix fallback may find a different
+    // document at the unmapped path.) The map's values are legacy-root paths,
+    // absolute or relative to the working directory.
+    if (onlyUnreadable && fs.existsSync(path.isAbsolute(value) ? value : path.resolve(process.cwd(), value))) continue;
     // eslint-disable-next-line no-await-in-loop
     if (await verify(rel)) entries.push([value, rel]);
   }

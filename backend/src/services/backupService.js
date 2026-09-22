@@ -696,7 +696,13 @@ async function getFilesToBackupInternal(configOrIncludeArchived = true) {
     // The walker's exclusions apply to every name below the backup path.
     const below = legacy.rel.slice(target.path.length).split('/').filter(Boolean);
     if (below.some((name) => isExcludedName(name, excludePatterns))) continue;
-    const stats = await fs.stat(legacy.abs);
+    let stats;
+    try {
+      stats = await fs.stat(legacy.abs);
+    } catch (error) {
+      logger.warn(`Skipping a document stored outside the storage root that is no longer readable: ${error.code || error.message}`);
+      continue;
+    }
     files.push({
       path: legacy.abs,
       relativePath: legacy.rel.split('/').join(path.sep),

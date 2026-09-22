@@ -200,6 +200,9 @@ describe('legacy-root documents in archives', () => {
     const map = { [live]: 'business-docs/inbound/2026/legacy/live.pdf' };
     expect(await applyStoredPathMap(db, map, async () => true, { onlyUnreadable: true })).toBe(0);
     fs.rmSync(live);
+    // A different document at the unmapped suffix is a resolver fallback, not
+    // the row's own file.
+    write(path.join(root, 'business-docs', 'inbound', '2026', 'live.pdf'), 'OTHER');
     expect(await applyStoredPathMap(db, map, async () => true, { onlyUnreadable: true })).toBe(1);
   });
 
