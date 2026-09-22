@@ -227,3 +227,29 @@ test('the review covers the dates and the customer address, and a save during th
     await db('customer_accounts').where({ id: customerId }).update({ [addressKey]: before[addressKey] });
   }
 });
+
+test.each([
+  ['the customer', () => db('customer_accounts').where({ id: customerId }).update({ company_name: 'Unreviewed AG' })],
+  ['a signer', (contractId) => db('contract_signers').where({ contract_id: contractId, role: 'customer' })
+    .update({ email_enc: require('../../src/utils/fieldEncryption').encrypt('someone-else@example.com') })],
+])('%s changed after the review check still stops the send', async (_what, change) => {
+  const { contractId } = await contractFromQuoteWithAttachment();
+  const reviewed = await ok(request(contractsApp).get(`/api/admin/contracts/${contractId}/send-preview`).set(auth));
+  const sendPreview = require('../../src/services/contract/sendPreview');
+  const real = sendPreview.buildSendPreview;
+  // The check passes, then the edit lands: neither bumps the contract's lock.
+  const spy = jest.spyOn(sendPreview, 'buildSendPreview').mockImplementation(async (id) => {
+    const out = await real(id);
+    await change(contractId);
+    return out;
+  });
+  try {
+    const res = await request(contractsApp).post(`/api/admin/contracts/${contractId}/send`).set(auth).send({ reviewToken: reviewed.reviewToken });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('CONTRACT_CHANGED');
+    expect((await db('contracts').where({ id: contractId }).first()).status).toBe('draft');
+  } finally {
+    spy.mockRestore();
+    await db('customer_accounts').where({ id: customerId }).update({ company_name: null });
+  }
+});

@@ -50,7 +50,12 @@ async function sendContract(id, adminId, { reviewToken = null } = {}) {
   // The signers (#1446): the ones set on the draft, or the contract's
   // customer; each gets a slot on the signature page, the issuer last.
   const signingV2 = require('./signingV2');
-  const { slots: signatureSlots } = await signingV2.prepareSend(contract);
+  const { rows: signerRows, slots: signatureSlots } = await signingV2.prepareSend(contract);
+  // The customer and signers this send renders with: compared again, rows
+  // locked, when the contract is marked sent (completeSend). Taken before the
+  // review check below, so what that check read lies between the two reads.
+  const sendInputs = require('./signers').sendInputsSha256(
+    await db('customer_accounts').where({ id: contract.customer_account_id }).first(), signerRows);
 
   const refreshed = await getContractById(id);
 
@@ -140,7 +145,7 @@ async function sendContract(id, adminId, { reviewToken = null } = {}) {
   // Marks the contract sent, starts the event log and emails each signer
   // who may sign now their own link.
   const invited = await signingV2.completeSend(id, {
-    pdfPath, pdfSha256, adminId, freeze, lockVersion: refreshed.contract.lock_version,
+    pdfPath, pdfSha256, adminId, freeze, lockVersion: refreshed.contract.lock_version, sendInputs,
   });
 
   try {

@@ -120,8 +120,7 @@ async function buildSendPreview(contractId) {
   // Not shown here but printed in the PDF or deciding the signing window:
   // the dates, the lock (any saved change), and the customer's address.
   const lockVersion = contract.lock_version == null ? 1 : Number(contract.lock_version);
-  const recipient = customer ? Object.fromEntries(Object.entries(customer)
-    .filter(([key]) => /name|email|address|postal|city|country|company|phone|vat|salutation|title|attention/i.test(key) && !/hash/i.test(key))) : null;
+  const recipient = require('./signers').recipientFields(customer);
   const fingerprint = {
     ...review, lockVersion, issueDate: contract.issue_date || null, validUntil: contract.valid_until || null, recipient,
   };

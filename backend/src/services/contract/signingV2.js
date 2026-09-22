@@ -285,7 +285,7 @@ async function prepareSend(contract) {
 }
 
 /** After the send stored the PDF: mark it sent, log it, invite the signers. */
-async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = null, lockVersion = null }) {
+async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = null, lockVersion = null, sendInputs = null }) {
   const actor = await adminActor(adminId);
   await db.transaction(async (trx) => {
     const now = new Date();
@@ -303,6 +303,15 @@ async function completeSend(contractId, { pdfPath, pdfSha256, adminId, freeze = 
     if (!draft) {
       throw new AppError(
         'This contract changed while it was being sent. Reload it and send again.',
+        409, 'CONTRACT_CHANGED',
+      );
+    }
+    // The customer and the signers are not under the contract's lock: still
+    // the ones the PDF was rendered with (and the review checked), read with
+    // their rows locked until this commits.
+    if (sendInputs && await signers.readSendInputsSha256(trx, draft, { lock: true }) !== sendInputs) {
+      throw new AppError(
+        'The customer or the signers changed while the contract was being sent. Reload it and send again.',
         409, 'CONTRACT_CHANGED',
       );
     }

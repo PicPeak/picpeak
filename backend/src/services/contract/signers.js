@@ -73,6 +73,39 @@ function listSigners(contractId, conn = db) {
   return conn('contract_signers').where({ contract_id: contractId }).orderBy('position', 'asc');
 }
 
+/** The customer's columns a contract prints (recipient block, salutation, signer defaults). */
+const RECIPIENT_FIELD = /name|email|address|postal|city|country|company|phone|vat|salutation|title|attention/i;
+function recipientFields(customer) {
+  return customer ? Object.fromEntries(Object.entries(customer)
+    .filter(([key]) => RECIPIENT_FIELD.test(key) && !/hash/i.test(key))) : null;
+}
+
+/**
+ * What a send depends on that no contract lock covers (#1445): the customer's
+ * printed fields and the signer rows. Neither bumps contracts.lock_version,
+ * so the send takes this when it renders and compares it again, rows locked,
+ * inside the transaction that marks the contract sent.
+ */
+function sendInputsSha256(customer, signerRows) {
+  const plain = (value) => JSON.parse(JSON.stringify(value === undefined ? null : value));
+  return require('../../utils/canonicalJson').canonicalSha256({
+    customer: plain(recipientFields(customer)),
+    signers: plain(signerRows),
+  });
+}
+
+/** The same, read now; `lock` takes row locks on PostgreSQL (SQLite writes one at a time). */
+async function readSendInputsSha256(conn, contract, { lock = false } = {}) {
+  const locking = lock && conn.client.config.client === 'pg';
+  const customerQuery = conn('customer_accounts').where({ id: contract.customer_account_id });
+  const signerQuery = listSigners(contract.id, conn);
+  if (locking) {
+    customerQuery.forUpdate();
+    signerQuery.forUpdate();
+  }
+  return sendInputsSha256(await customerQuery.first(), await signerQuery);
+}
+
 function sanitizeSigners(list) {
   if (!Array.isArray(list) || list.length < 1 || list.length > MAX_CUSTOMER_SIGNERS) {
     throw new AppError(`A contract needs between 1 and ${MAX_CUSTOMER_SIGNERS} customer signers`, 400, 'SIGNERS_INVALID');
@@ -429,6 +462,9 @@ module.exports = {
   customerName,
   signerToApi,
   listSigners,
+  recipientFields,
+  sendInputsSha256,
+  readSendInputsSha256,
   setSigners,
   ensureSigners,
   signersDue,
