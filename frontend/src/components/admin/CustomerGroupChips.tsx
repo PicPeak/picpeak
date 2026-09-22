@@ -53,6 +53,12 @@ interface CustomerGroupChipListProps {
   groups?: CustomerGroup[];
   /** Beyond this many, the rest collapse into "+n". Keeps a row readable. */
   max?: number;
+  /**
+   * False where the list sits inside another control (a picker's option
+   * button): the "+n" is then plain text with the names as a tooltip, since
+   * a button can't hold a button.
+   */
+  expandable?: boolean;
 }
 
 /**
@@ -60,7 +66,7 @@ interface CustomerGroupChipListProps {
  * Beyond `max`, a "+n" button reveals the rest in place — reachable by
  * keyboard, and named for a screen reader — and hides them again.
  */
-export const CustomerGroupChipList: React.FC<CustomerGroupChipListProps> = ({ groups, max = 3 }) => {
+export const CustomerGroupChipList: React.FC<CustomerGroupChipListProps> = ({ groups, max = 3, expandable = true }) => {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const restId = useId();
@@ -72,7 +78,12 @@ export const CustomerGroupChipList: React.FC<CustomerGroupChipListProps> = ({ gr
   return (
     <span className="flex flex-wrap items-center gap-1">
       {shown.map((group) => <CustomerGroupChip key={group.id} group={group} />)}
-      {rest.length > 0 && (
+      {rest.length > 0 && !expandable && (
+        <span className="text-xs text-neutral-500 dark:text-neutral-400" title={rest.map((group) => group.name).join(', ')}>
+          {t('customers.groups.more', '+{{count}}', { count: rest.length })}
+        </span>
+      )}
+      {rest.length > 0 && expandable && (
         <>
           <span id={restId} className="contents" hidden={!expanded}>
             {expanded && rest.map((group) => <CustomerGroupChip key={group.id} group={group} />)}

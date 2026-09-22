@@ -14,6 +14,7 @@ const { adminAuth } = require('../middleware/auth');
 const { requirePermission, userHasAnyPermission } = require('../middleware/permissions');
 const { handleAsync, validateRequest, successResponse } = require('../utils/routeHelpers');
 const projectService = require('../services/projectService');
+const customerGroupsService = require('../services/customerGroupsService');
 const { db } = require('../database/db');
 const { ownedProjectsSubquery, requireProjectOwnership, filterOwnedEventIds } = require('../middleware/ownership');
 const { ForbiddenError } = require('../utils/errors');
@@ -184,6 +185,11 @@ router.get('/:id/overview', requirePermission('events.view'), requireProjectOwne
     contracts: await userHasAnyPermission(req.admin.id, ['contracts.view']),
   };
   const overview = await projectService.getProjectOverview(parseInt(req.params.id, 10), perms, req.admin);
+  // The customer's groups (#1443), only for an admin who may read customers:
+  // this route is guarded by events.view.
+  if (overview?.project?.customerAccountId && await userHasAnyPermission(req.admin.id, ['customers.view'])) {
+    overview.project.customerGroups = await customerGroupsService.groupsForCustomer(overview.project.customerAccountId);
+  }
   return successResponse(res, overview);
 }));
 

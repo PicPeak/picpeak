@@ -28,6 +28,7 @@ import { useMutationWithToast } from '../../../hooks';
 import { formatMoneyMinor } from '../../../utils/money';
 import { useFeatureFlags, type FeatureKey } from '../../../contexts/FeatureFlagsContext';
 import { usePermissions } from '../../../contexts/PermissionsContext';
+import { CustomerGroupChipList } from '../../../components/admin/CustomerGroupChips';
 
 type FeedKind = 'email' | 'quote' | 'contract' | 'invoice' | 'gallery' | 'hours';
 
@@ -284,6 +285,11 @@ export const ProjectCockpitPage: React.FC = () => {
             )}
             <p className="text-sm text-neutral-600 dark:text-neutral-400 mt-1">
               {project.customerEmail || t('projects.noCustomer', 'No single customer')}
+              {project.customerGroups && project.customerGroups.length > 0 && (
+                <span className="ml-2 inline-flex align-middle">
+                  <CustomerGroupChipList groups={project.customerGroups} max={2} />
+                </span>
+              )}
               {' · '}
               {t('projects.eventCount', '{{count}} events', { count: data.events.length })}
               {' · '}

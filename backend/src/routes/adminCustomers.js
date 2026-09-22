@@ -305,7 +305,11 @@ router.get('/search', [
   validateRequest(req);
   const term = req.query.email || req.query.q || '';
   const results = await customerAccountsService.searchCustomers(term);
-  res.json({ customers: results.map(transformCustomer) });
+  // Groups (#1443), so a picker shows the segment without opening the record.
+  const groupsByCustomer = await customerGroupsService.groupsForCustomers(results.map((c) => c.id));
+  res.json({
+    customers: results.map((c) => transformCustomer({ ...c, groups: groupsByCustomer.get(Number(c.id)) || [] })),
+  });
 }));
 
 // ---- invitations --------------------------------------------------------

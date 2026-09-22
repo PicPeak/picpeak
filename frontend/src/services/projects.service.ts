@@ -6,6 +6,7 @@
  * the contracts/bills service shape: `data.data || data` unwrap.
  */
 import { api } from '../config/api';
+import type { CustomerGroup } from './customerAdmin.service';
 
 export type ProjectStatus = 'active' | 'archived' | string;
 
@@ -20,6 +21,8 @@ export interface ProjectSummary {
   name: string;
   customerAccountId: number | null;
   customerEmail: string | null;
+  /** The customer's groups (#1443); only on the cockpit, with customers.view. */
+  customerGroups?: CustomerGroup[];
   status: ProjectStatus;
   eventCount?: number;
   valuation?: ProjectValuation;

@@ -11,7 +11,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, UserPlus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { customerAdminService, type CustomerAccountSummary } from '../../services/customerAdmin.service';
+import { customerAdminService, type CustomerAccountSummary, type CustomerGroup } from '../../services/customerAdmin.service';
+import { CustomerGroupChipList } from './CustomerGroupChips';
 import { useFeatureEnabled } from '../../contexts/FeatureFlagsContext';
 import { usePermission } from '../../hooks/usePermission';
 import { InlineCustomerCreate } from './InlineCustomerCreate';
@@ -20,6 +21,8 @@ export interface SelectedCustomer {
   id: number;
   email: string;
   displayName: string | null;
+  /** Their customer groups (#1443), when the admin may read customers. */
+  groups?: CustomerGroup[];
 }
 
 interface Props {
@@ -117,7 +120,7 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
   }, []);
 
   const select = (c: CustomerAccountSummary) => {
-    onChange([...value, { id: c.id, email: c.email, displayName: c.displayName }]);
+    onChange([...value, { id: c.id, email: c.email, displayName: c.displayName, groups: c.groups }]);
     setQuery('');
     setResults([]);
     setIsOpen(false);
@@ -175,6 +178,7 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
               {c.displayName?.trim() && c.email !== c.displayName && (
                 <span className="text-neutral-500 dark:text-neutral-400">· {c.email}</span>
               )}
+              {c.groups && c.groups.length > 0 && <CustomerGroupChipList groups={c.groups} max={2} />}
               {!disabled && (
                 <button
                   type="button"
@@ -255,6 +259,9 @@ export const CustomerAccountPicker: React.FC<Props> = ({ value, onChange, disabl
                   >
                     <UserPlus className="w-4 h-4 text-neutral-500 dark:text-neutral-400 flex-shrink-0" />
                     <span className="flex-1 truncate">{labelFor(r)}</span>
+                    {r.groups && r.groups.length > 0 && (
+                      <CustomerGroupChipList groups={r.groups} max={2} expandable={false} />
+                    )}
                   </button>
                 </li>
               ))}

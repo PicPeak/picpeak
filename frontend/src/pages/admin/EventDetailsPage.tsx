@@ -17,6 +17,7 @@ import { cssTemplatesService, type EnabledTemplate } from '../../services/cssTem
 import { ThemeConfig, GALLERY_THEME_PRESETS } from '../../types/theme.types';
 import { safeParseDate } from './event-details/utils';
 import { INITIAL_EDIT_FORM, type EditFormState, type EventDetailsTab } from './event-details/types';
+import type { CustomerGroup } from '../../services/customerAdmin.service';
 import { EventDetailsHeader } from './event-details/EventDetailsHeader';
 import { EventTabs } from './event-details/EventTabs';
 import { OverviewTab } from './event-details/OverviewTab';
@@ -456,8 +457,9 @@ export const EventDetailsPage: React.FC = () => {
       // Customer accounts (#354). The backend returns
       // `customer_accounts: [{ id, email, display_name, ... }]`; map to
       // the picker's shape.
-      customer_accounts: ((event as { customer_accounts?: Array<{ id: number; email: string; display_name?: string | null }> }).customer_accounts || [])
-        .map((c) => ({ id: c.id, email: c.email, displayName: c.display_name ?? null })),
+      // `groups` only comes with customers.view (#1443).
+      customer_accounts: ((event as { customer_accounts?: Array<{ id: number; email: string; display_name?: string | null; groups?: CustomerGroup[] }> }).customer_accounts || [])
+        .map((c) => ({ id: c.id, email: c.email, displayName: c.display_name ?? null, groups: c.groups })),
       // Per-event social-share opt-in (#474). Coerce explicitly so
       // SQLite's 0/1 and Postgres's true/false both render the switch
       // in the right state on first paint.
