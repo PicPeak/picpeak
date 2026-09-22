@@ -126,5 +126,31 @@ describe('GET /admin/system-health/failures — the signing evidence key (#1446)
     expect(evidenceKey.storedKeyIds.deadbeef).toBe(6);
     // Never the key itself.
     expect(JSON.stringify(evidenceKey)).not.toContain(process.env.PICPEAK_EVIDENCE_KEY);
+    expect(evidenceKey.unreadableValues).toBe(6);
+    expect(evidenceKey.valuesUnderOlderKeys).toBe(0);
+  });
+
+  it('tells values under an older key it can still read from unreadable ones (key ring)', async () => {
+    // Written under key "a…", which is now an old key the ring holds.
+    process.env.PICPEAK_EVIDENCE_KEY = 'a'.repeat(64);
+    fieldEncryption._resetForTests();
+    const oldKeyId = fieldEncryption.keyInfo().keyId;
+    await signer(1);
+    process.env.PICPEAK_EVIDENCE_KEY = 'b'.repeat(64);
+    process.env.PICPEAK_EVIDENCE_KEYS_OLD = 'a'.repeat(64);
+    fieldEncryption._resetForTests();
+    try {
+      await signer(2);
+      await signer(3, { foreignKeyId: 'deadbeef' });
+      const evidenceKey = await health();
+      expect(evidenceKey.readableKeyIds).toEqual([evidenceKey.keyId, oldKeyId]);
+      expect(evidenceKey.storedValuesUnderCurrentKey).toBe(3);
+      expect(evidenceKey.valuesUnderOlderKeys).toBe(3);
+      expect(evidenceKey.unreadableValues).toBe(3);
+      expect(JSON.stringify(evidenceKey)).not.toContain('a'.repeat(64));
+    } finally {
+      delete process.env.PICPEAK_EVIDENCE_KEYS_OLD;
+      fieldEncryption._resetForTests();
+    }
   });
 });

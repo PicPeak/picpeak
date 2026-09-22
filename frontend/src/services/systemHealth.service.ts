@@ -59,6 +59,12 @@ export interface SystemHealthFailures {
     storedValues?: number;
     /** How many of them the current key can still read. */
     storedValuesUnderCurrentKey?: number;
+    /** Key ids the server can still open (#1446 key ring), the current one first. */
+    readableKeyIds?: string[];
+    /** Values under a key the server no longer has. */
+    unreadableValues?: number;
+    /** Values under an older key that can still be read — rotation pending. */
+    valuesUnderOlderKeys?: number;
     /** Values per key id, including `unreadable` for anything unparseable. */
     storedKeyIds?: Record<string, number>;
     /** True when there was more evidence than this endpoint reads. */

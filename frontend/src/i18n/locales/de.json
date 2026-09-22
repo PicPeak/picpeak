@@ -720,7 +720,8 @@
       "unreadable": "Die Schlüsseldatei kann nicht gelesen werden. Stellen Sie sie aus einem Backup wieder her, sonst lassen sich gespeicherte Signaturnachweise nicht entschlüsseln.",
       "id": "Schlüssel-ID {{id}}",
       "hint": "IP-Adressen und Browser der Unterzeichnenden werden mit diesem Schlüssel verschlüsselt gespeichert. Ohne ihn lassen sich diese Nachweise nicht lesen; Unterschriften und PDFs bleiben gültig.",
-      "mismatch": "Bereits gespeicherte Nachweise wurden mit dem Schlüssel {{stored}} verschlüsselt und können nicht mehr gelesen werden – die betroffenen Namen und E-Mail-Adressen der Unterzeichner bleiben leer. Betroffen sind {{unreadable}} von {{total}} gespeicherten Werten. Legen Sie den früheren Schlüssel zurück, oder rechnen Sie bei zuvor unterschriebenen Verträgen mit leeren Namen."
+      "mismatch": "Bereits gespeicherte Nachweise wurden mit dem Schlüssel {{stored}} verschlüsselt und können nicht mehr gelesen werden – die betroffenen Namen und E-Mail-Adressen der Unterzeichner bleiben leer. Betroffen sind {{unreadable}} von {{total}} gespeicherten Werten. Legen Sie den früheren Schlüssel zurück, oder rechnen Sie bei zuvor unterschriebenen Verträgen mit leeren Namen.",
+      "olderKeys": "{{count}} von {{total}} gespeicherten Werten liegen noch unter einem älteren, weiterhin lesbaren Schlüssel. Führen Sie scripts/rotate-evidence-key.js aus, um sie auf den aktuellen Schlüssel zu übertragen, und behalten Sie den älteren Schlüssel, bis das Skript keine mehr meldet."
     }
   },
   "common": {

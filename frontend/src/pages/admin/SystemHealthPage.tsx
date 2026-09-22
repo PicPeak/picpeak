@@ -281,15 +281,23 @@ export const SystemHealthPage: React.FC = () => {
                   <span className="font-mono"> · {t('systemHealth.evidenceKey.id', 'Key ID {{id}}', { id: data.evidenceKey.keyId })}</span>
                 )}
               </p>
-              {data.evidenceKey.matchesStored === false && (
+              {data.evidenceKey.matchesStored === false && (data.evidenceKey.unreadableValues ?? 1) > 0 && (
                 <p role="alert" className="text-sm mt-1 text-red-700 dark:text-red-300">
                   {t('systemHealth.evidenceKey.mismatch',
                     'Evidence already stored was written under key {{stored}}, so it can no longer be read — and those signer names and email addresses come back empty. {{unreadable}} of {{total}} stored values are affected. Put the earlier key back, or expect blank names on contracts signed before.',
                     {
                       stored: data.evidenceKey.storedKeyId || '—',
-                      unreadable: (data.evidenceKey.storedValues ?? 0) - (data.evidenceKey.storedValuesUnderCurrentKey ?? 0),
+                      unreadable: data.evidenceKey.unreadableValues
+                        ?? (data.evidenceKey.storedValues ?? 0) - (data.evidenceKey.storedValuesUnderCurrentKey ?? 0),
                       total: data.evidenceKey.storedValues ?? 0,
                     })}
+                </p>
+              )}
+              {(data.evidenceKey.valuesUnderOlderKeys ?? 0) > 0 && (
+                <p className="text-sm mt-1 text-amber-700 dark:text-amber-300">
+                  {t('systemHealth.evidenceKey.olderKeys',
+                    '{{count}} of {{total}} stored values are still under an older key that can be read. Run scripts/rotate-evidence-key.js to move them to the current key, and keep the older key until it reports none left.',
+                    { count: data.evidenceKey.valuesUnderOlderKeys, total: data.evidenceKey.storedValues ?? 0 })}
                 </p>
               )}
               <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">

@@ -66,7 +66,16 @@ async function evidenceKeyUsage(currentKeyId) {
   }
   const underCurrent = byKeyId[currentKeyId] || 0;
   const otherKeyIds = Object.keys(byKeyId).filter((id) => id !== currentKeyId).sort();
+  // The key ring (#1446): older keys that are still available open their
+  // values; only values under a key nobody has any more are unreadable.
+  const readable = new Set(fieldEncryption.ringKeyIds());
+  const unreadableValues = Object.entries(byKeyId)
+    .filter(([id]) => !readable.has(id))
+    .reduce((sum, [, count]) => sum + count, 0);
   return {
+    readableKeyIds: [...readable],
+    unreadableValues,
+    valuesUnderOlderKeys: values - underCurrent - unreadableValues,
     // Kept for the panel that already reads these two: the newest key id in
     // use, and whether it is the current one.
     storedKeyId: otherKeyIds.length ? otherKeyIds[0] : (values ? currentKeyId : null),

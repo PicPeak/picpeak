@@ -720,7 +720,8 @@
       "unreadable": "The key file can't be read. Restore it from a backup, otherwise stored signing evidence can't be decrypted.",
       "id": "Key ID {{id}}",
       "hint": "Signers' IP addresses and browsers are stored encrypted with this key. Without it that evidence can't be read; the signatures and PDFs stay valid.",
-      "mismatch": "Evidence already stored was written under key {{stored}}, so it can no longer be read — and those signer names and email addresses come back empty. {{unreadable}} of {{total}} stored values are affected. Put the earlier key back, or expect blank names on contracts signed before."
+      "mismatch": "Evidence already stored was written under key {{stored}}, so it can no longer be read — and those signer names and email addresses come back empty. {{unreadable}} of {{total}} stored values are affected. Put the earlier key back, or expect blank names on contracts signed before.",
+      "olderKeys": "{{count}} of {{total}} stored values are still under an older key that can be read. Run scripts/rotate-evidence-key.js to move them to the current key, and keep the older key until it reports none left."
     }
   },
   "common": {

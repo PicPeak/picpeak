@@ -136,7 +136,9 @@ services:
       # addresses at rest. Unset, a key is generated into
       # storage/business-docs/keys/evidence.key — that is inside the backup
       # path, but it is then the only copy of it, so back it up with the
-      # database. See docs/ENVIRONMENT_VARIABLES.md.
+      # database. See docs/ENVIRONMENT_VARIABLES.md. While rotating it,
+      # PICPEAK_EVIDENCE_KEYS_OLD (same env_file) keeps the earlier keys
+      # readable until scripts/rotate-evidence-key.js reports none left.
     volumes:
       # Defaulted so a .env that simply does not set these still works. Without
       # them compose aborts with "invalid spec: :/app/storage: empty section

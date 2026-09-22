@@ -96,6 +96,8 @@ services:
       # storage/business-docs/keys/evidence.key — inside the backup path, but
       # then the only copy. See docs/ENVIRONMENT_VARIABLES.md.
       - PICPEAK_EVIDENCE_KEY=${PICPEAK_EVIDENCE_KEY:-}
+      # Earlier evidence keys, only while rotating (scripts/rotate-evidence-key.js).
+      - PICPEAK_EVIDENCE_KEYS_OLD=${PICPEAK_EVIDENCE_KEYS_OLD:-}
       # Optional product usage (#1110); remains off until explicit in-app consent.
       - USAGE_COLLECTOR_URL=${USAGE_COLLECTOR_URL:-https://usage.picpeak.app}
       - USAGE_ENCRYPTION_KEY=${USAGE_ENCRYPTION_KEY:-}
