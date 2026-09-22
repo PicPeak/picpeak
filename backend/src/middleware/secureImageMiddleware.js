@@ -183,6 +183,7 @@ class SecureImageMiddleware {
           this.blockedFingerprints.add(clientInfo.rateLimitFingerprint);
           logger.warn('Client fingerprint blocked due to repeated violations', {
             fingerprint: clientInfo.fingerprint,
+            rateLimitFingerprint: clientInfo.rateLimitFingerprint,
             violations: violations + 1
           });
         }
@@ -340,6 +341,7 @@ class SecureImageMiddleware {
       this.suspiciousIPs.add(clientInfo.rateLimitAddress);
       logger.warn('IP added to suspicious list', {
         ip: clientInfo.ip,
+        listKey: clientInfo.rateLimitAddress,
         fingerprint: clientInfo.fingerprint,
         flags: existing + 1
       });

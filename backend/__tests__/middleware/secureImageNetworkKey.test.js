@@ -114,6 +114,20 @@ describe('admin IP block list (adminImageSecurity.js)', () => {
     expect([...blocked.suspiciousIPs].sort()).toEqual(['2001:db8:1:2::/64', '203.0.113.9']);
   });
 
+  it('accepts a /64 in the CIDR form the list stores', async () => {
+    await request(app).post('/sec/block-ip').send({ ip: '2001:db8:1:2::/64' }).expect(200);
+    expect([...blocked.suspiciousIPs]).toEqual(['2001:db8:1:2::/64']);
+    await request(app).post('/sec/block-ip').send({ ip: '2001:db8:1:2:0::/64', action: 'unblock' }).expect(200);
+    expect(blocked.suspiciousIPs.size).toBe(0);
+  });
+
+  it('refuses input that is not an address instead of reporting it blocked', async () => {
+    for (const ip of ['not-an-ip', '203.0.113.0/24', '2001:db8::/48', { a: 1 }, '   ']) {
+      await request(app).post('/sec/block-ip').send({ ip }).expect(400);
+    }
+    expect(blocked.suspiciousIPs.size).toBe(0);
+  });
+
   it('unblocks by any address in the /64', async () => {
     await request(app).post('/sec/block-ip').send({ ip: '2001:db8:1:2::5' }).expect(200);
     await request(app).post('/sec/block-ip').send({ ip: '2001:db8:1:2::9', action: 'unblock' }).expect(200);

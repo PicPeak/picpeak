@@ -1,4 +1,5 @@
 const express = require('express');
+const net = require('net');
 const { db } = require('../database/db');
 const { adminAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/permissions');
@@ -361,7 +362,16 @@ router.post('/block-ip', adminAuth, requirePermission('image_security.manage'), 
     // an entry has to be stored in that form: blocking an IPv6 address blocks
     // its /64, and an IPv4-mapped address is stored as the dotted IPv4 one.
     // Unblocking normalises the same way, so either spelling removes it.
-    const listKey = rateLimitKey({ ip: String(ip).trim() }) || ip;
+    // A /64 in CIDR form (as the list stores it) is accepted too; anything
+    // else that is not an address would be stored and never match, so it is
+    // refused instead of reported as blocked.
+    const text = typeof ip === 'string' ? ip.trim() : '';
+    const cidr = text.match(/^(.+)\/64$/);
+    const address = cidr ? cidr[1] : text;
+    if (net.isIP(address) === 0 || (cidr && net.isIPv6(address) === false)) {
+      return res.status(400).json({ error: 'Invalid IP address' });
+    }
+    const listKey = rateLimitKey({ ip: address });
 
     if (action === 'block') {
       // Add to blocked IPs in middleware
