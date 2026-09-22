@@ -23,10 +23,13 @@ process.env.TEST_DATABASE_PATH = path.join(
   fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-gzipfail-')), 'db.sqlite',
 );
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'gzipfail-test-secret';
+// External (reference) photos are read by archiver itself via archive.file().
+process.env.EXTERNAL_MEDIA_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'picpeak-gzipfail-ext-'));
 
 const { Readable } = require('stream');
 
 const SLUG = 'zip-failure';
+const MIXED_SLUG = 'zip-mixed';
 const mockBodies = new Map();
 const mockMode = { value: 'mid' };
 
@@ -37,7 +40,9 @@ const mockStorage = {
     const body = mockBodies.get(key);
     const failing = key.endsWith('/b.jpg');
     const slow = key.endsWith('/a.jpg');
-    return Readable.from((async function* read() {
+    // Let archiver queue the external file (stat first) ahead of this read.
+    if (failing && mockMode.value === 'late') await new Promise((r) => setTimeout(r, 50));
+    const stream = Readable.from((async function* read() {
       if (failing && mockMode.value === 'early') {
         await new Promise((r) => setImmediate(r));
         throw Object.assign(new Error('socket reset by peer'), { code: 'ECONNRESET' });
@@ -50,6 +55,12 @@ const mockStorage = {
       }
       yield body.subarray(32 * 1024);
     })());
+    // 'late': the socket dies while the read is still queued and unread,
+    // as an S3 connection reset does.
+    if (failing && mockMode.value === 'late') {
+      setTimeout(() => stream.destroy(Object.assign(new Error('socket reset by peer'), { code: 'ECONNRESET' })), 30);
+    }
+    return stream;
   }),
   exists: jest.fn(async () => true),
   delete: jest.fn(async () => undefined),
@@ -99,6 +110,30 @@ describe('gallery ZIP with a failing storage read', () => {
       photoIds.push(r[0]?.id ?? r[0]);
     }
 
+    // A mixed-source gallery: a large external file ahead of a failing S3 read.
+    const mixed = await db('events').insert({
+      slug: MIXED_SLUG, event_type: 'wedding', event_name: 'Zip mixed', event_date: '2026-08-01',
+      host_email: 'h@example.com', admin_email: 'a@example.com', password_hash: 'x',
+      share_link: `/gallery/${MIXED_SLUG}/s`, share_token: 'zip-mixed-share',
+      expires_at: new Date(Date.now() + 7 * 864e5).toISOString(),
+      is_active: 1, is_archived: 0, is_draft: 0, require_password: 0, allow_downloads: 1,
+      created_at: new Date().toISOString(),
+    }).returning('id');
+    const mixedId = mixed[0]?.id ?? mixed[0];
+    fs.writeFileSync(path.join(process.env.EXTERNAL_MEDIA_ROOT, 'big.mov'), crypto.randomBytes(16 * 1024 * 1024));
+    await db('photos').insert({
+      event_id: mixedId, filename: 'big.mov', path: 'big.mov', type: 'individual',
+      source_origin: 'external', external_relpath: 'big.mov', media_type: 'video',
+      mime_type: 'video/quicktime', size_bytes: 16 * 1024 * 1024,
+      uploaded_at: new Date().toISOString(),
+    });
+    mockBodies.set(`events/active/${MIXED_SLUG}/b.jpg`, crypto.randomBytes(256 * 1024));
+    await db('photos').insert({
+      event_id: mixedId, filename: 'b.jpg', path: `${MIXED_SLUG}/b.jpg`, type: 'individual',
+      source_origin: 'managed', mime_type: 'image/jpeg', size_bytes: 256 * 1024,
+      uploaded_at: new Date(Date.now() - 1000).toISOString(),
+    });
+
     app = express();
     app.use(express.json());
     app.use(cookieParser());
@@ -145,6 +180,25 @@ describe('gallery ZIP with a failing storage read', () => {
     ['download-all', () => ['GET', `/api/gallery/${SLUG}/download-all`, null]],
     ['download-selected', () => ['POST', `/api/gallery/${SLUG}/download-selected`, { photo_ids: photoIds }]],
   ];
+
+  // Open descriptors of this process (macOS and Linux both expose /dev/fd).
+  const openFds = () => fs.readdirSync('/dev/fd').length;
+
+  it('closes an external file being copied when a queued read fails', async () => {
+    // archive.file() sources are not in the stream guard. Unpiping the
+    // archive on abort left the active one paused with its descriptor open.
+    // 'late': the queued read fails once the external copy is under way.
+    mockMode.value = 'late';
+    const before = openFds();
+    // A slow client keeps the external copy running when the read fails.
+    expect(await outcome('GET', `/api/gallery/${MIXED_SLUG}/download-all`, null, 10000, { pauseMs: 5 })).toBe('aborted');
+    let after = openFds();
+    for (let i = 0; i < 40 && after > before; i += 1) {
+      await new Promise((r) => setTimeout(r, 50));
+      after = openFds();
+    }
+    expect(after).toBeLessThanOrEqual(before);
+  });
 
   describe.each(cases)('%s', (_name, args) => {
     it('breaks the connection when a read fails mid-copy', async () => {
