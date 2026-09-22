@@ -86,7 +86,7 @@ const SETTING_KEYS = [
 ];
 
 export const CrmSettingsPage: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { flags } = useFeatureFlags();
   // Show each section only when the corresponding master flag is on —
   // configuring Skonto on quotes is pointless when quotes itself is
@@ -103,6 +103,20 @@ export const CrmSettingsPage: React.FC = () => {
   const showDashboardOverview = !!(flags.quotes || flags.bills);
   const showDocuments = !!flags.documents;
   const anySection = showQuotes || showInvoices || showContracts || showDashboardOverview || showDocuments;
+  // The subtitle names what this tab configures on this install: a
+  // documents-only install has no quotes or invoices to fine-tune.
+  const subtitleAreas = [
+    showQuotes && t('crmSettings.areas.quotes', 'quotes'),
+    showInvoices && t('crmSettings.areas.invoices', 'invoices'),
+    showContracts && t('crmSettings.areas.contracts', 'contracts'),
+    showDocuments && t('crmSettings.areas.documents', 'customer documents'),
+  ].filter((a): a is string => !!a);
+  const subtitle = subtitleAreas.length
+    ? t('crmSettings.subtitleFor', 'Settings for {{areas}}.', {
+      areas: new Intl.ListFormat(i18n.language || 'en', { style: 'long', type: 'conjunction' }).format(subtitleAreas),
+      interpolation: { escapeValue: false },
+    })
+    : t('crmSettings.subtitle', 'Fine-tune quote and invoice behaviour.');
   const { data, isLoading } = useQuery({
     queryKey: ['settings', 'crm'],
     queryFn: async () => {
@@ -188,7 +202,7 @@ export const CrmSettingsPage: React.FC = () => {
           stays. */}
       <div className="flex items-center justify-between gap-4">
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          {t('crmSettings.subtitle', 'Fine-tune quote and invoice behaviour.')}
+          {subtitle}
         </p>
         <Button onClick={() => saveAll.mutate()} disabled={saveAll.isPending || !anySection}>
           <SaveIcon className="w-4 h-4 mr-1" />{t('common.save', 'Save')}

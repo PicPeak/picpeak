@@ -7440,6 +7440,13 @@
     "savedToast": "CRM settings saved.",
     "title": "CRM settings",
     "subtitle": "Fine-tune quote and invoice behaviour.",
+    "subtitleFor": "Settings for {{areas}}.",
+    "areas": {
+      "quotes": "quotes",
+      "invoices": "invoices",
+      "contracts": "contracts",
+      "documents": "customer documents"
+    },
     "emptyState": "No CRM features are currently enabled. Turn on Quotes, Invoices, or Contracts in Settings → Features to see the matching configuration here.",
     "section": {
       "quotes": "Quotes",
