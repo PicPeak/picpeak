@@ -378,6 +378,14 @@ async function readFirstEntry(file) {
 }
 
 /**
+ * BEST-EFFORT. This is a denylist of the known active-content and
+ * outside-content mechanisms of four large formats, not a proof that a file
+ * is inert: it does not detect every mechanism they have (mail-merge data
+ * connections, add-in manifests, VML and SVG content, form data sources and
+ * others pass). That is why docx/xlsx/odt/ods are off by default
+ * (customer_documents_allowed_formats = ["pdf"], migration 244) and the
+ * setting's help text says so. Don't treat a pass here as "safe to open".
+ *
  * @param {string} file     local path of the upload
  * @param {'docx'|'xlsx'|'odt'|'ods'} format
  */

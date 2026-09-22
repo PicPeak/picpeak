@@ -7617,7 +7617,7 @@
     },
     "customer_documents_allowed_formats": {
       "label": "Dateitypen, die Kunden hochladen können",
-      "help": "Jede Datei wird anhand ihres Inhalts geprüft. Word- und Excel-Dateien mit Makros, eingebettetem Code oder Verweisen auf externe Inhalte (auch Weblinks) werden abgewiesen. CSV-Dateien werden unverändert weitergegeben: Eine Formel darin wird ausgeführt, wenn jemand die Datei in einer Tabellenkalkulation öffnet."
+      "help": "Jede Datei wird anhand ihres Inhalts geprüft. Standardmäßig ist nur PDF erlaubt. Die Prüfung von Word-, Excel- und OpenDocument-Dateien erfolgt nach bestem Bemühen: Sie weist Makros, eingebettete Objekte und die bekannten Wege zu externen Inhalten (auch Weblinks) ab, erkennt aber nicht jeden Mechanismus für aktive Inhalte, den diese Formate bieten. Aktivieren Sie sie nur für Kunden, denen Sie vertrauen, und öffnen Sie solche Dateien mit Vorsicht. CSV-Dateien werden unverändert weitergegeben: Eine Formel darin wird ausgeführt, wenn jemand die Datei in einer Tabellenkalkulation öffnet."
     }
   },
   "quoteResponse": {

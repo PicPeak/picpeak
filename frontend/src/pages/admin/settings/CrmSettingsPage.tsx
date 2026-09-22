@@ -536,7 +536,7 @@ export const CrmSettingsPage: React.FC = () => {
           </legend>
           <p className="text-xs text-neutral-500 mb-2">
             {t('crmSettings.customer_documents_allowed_formats.help',
-              'Every file is checked by its content. Word and Excel files with macros, embedded code or links to outside content (including web links) are refused. CSV files are passed on as they are: a formula in one runs when someone opens it in a spreadsheet.')}
+              'Every file is checked by its content. PDF is the only type on by default. The check of Word, Excel and OpenDocument files is best-effort: it refuses macros, embedded objects and the known ways of linking to outside content (including web links), but it does not detect every active-content mechanism these formats have. Turn them on only for customers you trust, and open such files with care. CSV files are passed on as they are: a formula in one runs when someone opens it in a spreadsheet.')}
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             {ALL_DOCUMENT_FORMATS.map((f) => {
