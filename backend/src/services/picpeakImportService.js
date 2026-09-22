@@ -23,7 +23,6 @@ const { pipeline } = require('stream/promises');
 const { Transform, Writable } = require('stream');
 const { assertZipEntriesWithin } = require('../utils/safePath');
 const { STORED_PATH_COLUMNS, relocateStoredPath } = require('../utils/storedPath');
-const { isPlaceablePath } = require('../utils/legacyStoredFiles');
 const { db } = require('../database/db');
 const knexConfig = require('../../knexfile');
 const { getStoragePath } = require('../config/storage');
@@ -467,23 +466,14 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
 // two roots are called. When a path has more than one candidate suffix, the
 // one the archive actually carries under files/ wins. Values that are already
 // relative, or name nothing under a storage folder, are left as they are.
-//
-// `storedPathMap` (manifest.stored_path_map) names the exact archived path for
-// documents the source read from its legacy root (legacyStoredFiles.js); a
-// mapped value takes it when the archive carries that file.
-function relocateStoredPaths(table, rows, filesDir, storedPathMap = null) {
+function relocateStoredPaths(table, rows, filesDir) {
   const columns = STORED_PATH_COLUMNS.filter((c) => c.table === table).map((c) => c.column);
   if (!columns.length) return rows;
   const inArchive = (rel) => fs.existsSync(path.join(filesDir, ...rel.split('/')));
-  const mapped = (value) => {
-    if (!storedPathMap || !Object.prototype.hasOwnProperty.call(storedPathMap, value)) return null;
-    const rel = storedPathMap[value];
-    return isPlaceablePath(rel) && inArchive(rel) ? rel : null;
-  };
   return rows.map((row) => {
     const out = { ...row };
     for (const col of columns) {
-      if (typeof out[col] === 'string') out[col] = mapped(out[col]) || relocateStoredPath(out[col], inArchive);
+      if (typeof out[col] === 'string') out[col] = relocateStoredPath(out[col], inArchive);
     }
     return out;
   });
@@ -493,7 +483,7 @@ function relocateStoredPaths(table, rows, filesDir, storedPathMap = null) {
 // session_replication_role=replica on the trx connection, reset before commit;
 // sqlite: defer_foreign_keys so checks run at commit). knex_migrations is never
 // in the data set, so the target's schema/migration state is left intact.
-async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine = false, storedPathMap = null } = {}) {
+async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine = false } = {}) {
   await db.transaction(async (trx) => {
     if (isPostgres()) {
       try {
@@ -565,7 +555,7 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
         toSerialise = new Set();
       }
       prepared = serialiseJsonColumns(prepared, toSerialise);
-      prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'), storedPathMap);
+      prepared = relocateStoredPaths(table, prepared, path.join(path.dirname(dataDir), 'files'));
       await trx.batchInsert(table, prepared, 100);
     }
 
@@ -697,9 +687,7 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
       logger.warn(`[picpeak-import] ignoring ${skipped.length} backup table(s) not present in this DB (or protected): ${skipped.join(', ')}`);
     }
 
-    const storedPathMap = manifest.stored_path_map && typeof manifest.stored_path_map === 'object'
-      && !Array.isArray(manifest.stored_path_map) ? manifest.stored_path_map : null;
-    await replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine, storedPathMap });
+    await replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine });
 
     // Post-commit fixups (must NOT run inside the restore transaction):
     //  - resync Postgres identity sequences left behind by the explicit-id

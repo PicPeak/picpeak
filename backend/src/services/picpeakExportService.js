@@ -24,6 +24,7 @@ const knexConfig = require('../../knexfile');
 const { getStoragePath } = require('../config/storage');
 const logger = require('../utils/logger');
 const { collectLegacyStoredFiles, storedPathMap } = require('../utils/legacyStoredFiles');
+const { STORED_PATH_COLUMNS } = require('../utils/storedPath');
 const packageJson = require('../../package.json');
 
 // Bump only on a breaking change to the on-disk layout below.
@@ -111,10 +112,25 @@ async function getLatestMigration() {
 // pg. A select works on both engines with no extra dependency. Rows are DB
 // metadata (blobs live on disk under files/), so holding a table in memory is
 // fine for the instance sizes PicPeak targets.
-async function writeTableNdjson(table, dataDir) {
+// `pathMap` ({ stored value: archived path }, legacy-root documents) is
+// applied to the stored-path columns as the rows are written, so the archive
+// names each document where its bytes are, for any importer.
+async function writeTableNdjson(table, dataDir, pathMap = null) {
   const outPath = path.join(dataDir, `${table}.ndjson`);
   const hash = crypto.createHash('sha256');
-  const rows = await db(table).select('*');
+  const pathColumns = pathMap
+    ? STORED_PATH_COLUMNS.filter((c) => c.table === table).map((c) => c.column)
+    : [];
+  const rows = (await db(table).select('*')).map((row) => {
+    if (!pathColumns.length) return row;
+    const out = { ...row };
+    for (const col of pathColumns) {
+      if (typeof out[col] === 'string' && Object.prototype.hasOwnProperty.call(pathMap, out[col])) {
+        out[col] = pathMap[out[col]];
+      }
+    }
+    return out;
+  });
   const lines = rows.map((row) => {
     // photo_faces / event_people are excluded from the export (#1074), so a
     // restored install has no face data — but `photos.face_status = 'done'`
@@ -180,10 +196,16 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
 
   try {
     // 1. Dump every table to NDJSON, tracking counts + checksums.
+    // Documents a row names in the legacy root (<cwd>/storage) when that is
+    // not the storage root: the file walk below never sees them. They go into
+    // the archive under a storage-relative path, and the rows are written
+    // naming that path (writeTableNdjson).
+    const legacyFiles = includeFiles ? await collectLegacyStoredFiles(db) : [];
+    const pathMap = legacyFiles.length ? storedPathMap(legacyFiles) : null;
     const tables = await listDataTables();
     const tableMeta = {};
     for (const table of tables) {
-      tableMeta[table] = await writeTableNdjson(table, dataDir);
+      tableMeta[table] = await writeTableNdjson(table, dataDir, pathMap);
     }
 
     // 2. Gather the non-recalculable blobs (PDFs, business-docs, uploads, and
@@ -193,10 +215,6 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
     // correct. Copying every business doc through /tmp and back would only risk
     // filling the temp disk.
     const files = includeFiles ? await collectFiles(includePhotos) : [];
-    // Documents a row names in the legacy root (<cwd>/storage) when that is
-    // not the storage root: collectFiles never sees them. They are archived
-    // under the storage-relative path the manifest maps their rows to.
-    const legacyFiles = includeFiles ? await collectLegacyStoredFiles(db) : [];
     for (const f of legacyFiles) files.push({ abs: f.abs, rel: f.rel.split('/').join(path.sep) });
 
     // 3. Manifest — everything the importer needs to validate + reconstruct.
@@ -212,9 +230,6 @@ async function createPicpeak({ includePhotos = false, includeFiles = true, outDi
       options: { includePhotos: !!includePhotos, includeFiles: !!includeFiles },
       tables: tableMeta,
       file_count: files.length,
-      // { stored value: storage-relative path under files/ } for the legacy
-      // documents above; the importer rewrites those rows to it.
-      ...(legacyFiles.length ? { stored_path_map: storedPathMap(legacyFiles) } : {}),
       // NOTE: contains secrets (SMTP password, admin hashes, API keys) in plain
       // text — the download surface must warn about this.
       contains_secrets: true,

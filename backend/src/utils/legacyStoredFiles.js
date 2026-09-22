@@ -14,8 +14,8 @@
  *
  * `collectLegacyStoredFiles` lists the ones a row actually names (never the
  * whole directory), each with the storage-relative path it is archived under,
- * and `applyStoredPathMap` rewrites the rows after a restore so they name that
- * path. The archived path keeps the file's storage suffix, so it lands in the
+ * and `applyStoredPathMap` rewrites the rows after a backup restore so they
+ * name that path (a .picpeak export writes the rows that way directly). The archived path keeps the file's storage suffix, so it lands in the
  * same folder it came from (the per-type read roots in safePath.js allow it).
  * When the configured root already holds a different file at that suffix, the
  * legacy one goes to a `legacy/` folder next to it instead; writers reuse
@@ -60,7 +60,7 @@ function isPlaceablePath(rel) {
  * Every legacy-root file a stored-path column names, when the legacy root is
  * outside the storage root's document folders (nothing to do otherwise).
  *
- * @returns {Promise<Array<{ abs: string, rel: string, values: string[] }>>}
+ * @returns {Promise<Array<{ abs: string, rel: string, values: string[], sha256: string }>>}
  *   `rel` is POSIX, relative to the storage root; `values` are the stored
  *   values that name the file.
  */
@@ -114,7 +114,8 @@ async function collectLegacyStoredFiles(knex) {
       rel = `${dir}/${n === 1 ? 'legacy' : `legacy-${n}`}/${base}`;
     }
     taken.add(rel);
-    out.push({ abs: entry.abs, rel, values: entry.values });
+    // eslint-disable-next-line no-await-in-loop
+    out.push({ abs: entry.abs, rel, values: entry.values, sha256: await fileHash(entry.abs) });
   }
   return out;
 }
@@ -126,18 +127,44 @@ function storedPathMap(files) {
   return map;
 }
 
+/** { rel: sha256 } for a manifest, so a restore can check the bytes. */
+function storedPathChecksums(files) {
+  const sums = {};
+  for (const f of files) if (f.sha256) sums[f.rel] = f.sha256;
+  return sums;
+}
+
+/**
+ * True when `file` holds exactly the bytes `sha256` names. A restore checks
+ * this before pointing a row at a mapped path: a file that merely exists
+ * there may be a different document (a partial restore, or one written
+ * since the backup).
+ */
+async function holdsBytes(file, sha256) {
+  if (typeof sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(sha256)) return false;
+  try {
+    if (!fs.statSync(file).isFile()) return false;
+    return (await fileHash(file)) === sha256;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Rewrite the rows a restored archive's map names to the storage-relative
- * path the file was archived under. Entries whose file is not under this
- * storage root (`exists(rel)` false), or whose target is not a plain
- * storage-relative path (a tampered manifest), are skipped.
+ * path the file was archived under. Entries whose file is not there with the
+ * archived bytes (`verify(rel)` resolving false), or whose target is not a
+ * plain storage-relative path (a tampered manifest), are skipped.
  *
  * @returns {Promise<number>} rows updated
  */
-async function applyStoredPathMap(knex, map, exists) {
+async function applyStoredPathMap(knex, map, verify) {
   if (!map || typeof map !== 'object') return 0;
-  const entries = Object.entries(map)
-    .filter(([value, rel]) => typeof value === 'string' && value && isPlaceablePath(rel) && exists(rel));
+  const entries = [];
+  for (const [value, rel] of Object.entries(map)) {
+    // eslint-disable-next-line no-await-in-loop
+    if (typeof value === 'string' && value && isPlaceablePath(rel) && await verify(rel)) entries.push([value, rel]);
+  }
   if (!entries.length) return 0;
   let updated = 0;
   for (const { table, column } of STORED_PATH_COLUMNS) {
@@ -154,6 +181,8 @@ async function applyStoredPathMap(knex, map, exists) {
 module.exports = {
   collectLegacyStoredFiles,
   storedPathMap,
+  storedPathChecksums,
+  holdsBytes,
   applyStoredPathMap,
   isPlaceablePath,
 };
