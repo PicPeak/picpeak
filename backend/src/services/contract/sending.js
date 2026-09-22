@@ -163,9 +163,21 @@ async function sendContract(id, adminId, { reviewToken = null, collectData = fal
 
   // Marks the contract sent, starts the event log and emails each signer
   // who may sign now their own link.
-  const invited = await signingV2.completeSend(id, {
-    pdfPath, pdfSha256, adminId, freeze, lockVersion: refreshed.contract.lock_version, sendInputs, fromStatus,
-  });
+  let invited;
+  try {
+    invited = await signingV2.completeSend(id, {
+      pdfPath, pdfSha256, adminId, freeze, lockVersion: refreshed.contract.lock_version, sendInputs, fromStatus,
+    });
+  } catch (err) {
+    // After collected details, a send that committed and then failed to
+    // invite a co-signer is still a finished freeze: the failure is recorded,
+    // the hourly sweep invites whoever is left pending, and the first signer
+    // below still hears the contract is ready.
+    const current = fromStatus === 'awaiting_data' ? await db('contracts').where({ id }).first('status') : null;
+    if (!current || current.status === fromStatus) throw err;
+    await signingV2.recordFollowUpFailure(id, 'invitation', err);
+    invited = 0;
+  }
 
   // A freeze that failed after the customer's details came in is done now.
   if (fromStatus === 'awaiting_data') await signingV2.clearFollowUpFailure(id, { steps: ['data_freeze'] });

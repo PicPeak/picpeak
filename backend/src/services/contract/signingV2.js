@@ -38,7 +38,9 @@ const signingEvents = require('./signingEvents');
 const { hasColumnCached } = require('../../utils/schemaCache');
 const { canonicalSha256 } = require('../../utils/canonicalJson');
 const { auditedUpdate } = require('../accountingHistory');
-const { adminActor, customerPublicActor, emitContractEvent, maybeStoreIp } = require('./helpers');
+const {
+  adminActor, customerPublicActor, emitContractEvent, maybeStoreIp, ensureCustomerActive,
+} = require('./helpers');
 const { persistContractPdf, persistSignatureImage } = require('./signatureAssets');
 const consents = require('./consents');
 
@@ -473,6 +475,10 @@ async function reissueInvitation(contractId, signerId, { actor, event, payload =
   if (!isV2(contract) || !OPEN_STATUSES.includes(contract.status)) {
     throw new AppError('Links can only be sent again while the contract is out for signature', 409, 'CONTRACT_NOT_SIGNABLE');
   }
+  // An erased customer's partly signed contract stays `sent` with every way
+  // in revoked; a new link must not open it again.
+  const customer = await db('customer_accounts').where({ id: contract.customer_account_id }).first();
+  if (customer) ensureCustomerActive(customer);
   const rows = await signers.listSigners(contractId);
   const row = rows.find((r) => r.id === Number(signerId));
   if (!row || row.role !== 'customer') throw new AppError('Signer not found', 404, 'SIGNER_NOT_FOUND');

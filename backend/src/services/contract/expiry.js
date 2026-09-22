@@ -110,10 +110,21 @@ async function reminderSteps() {
 }
 
 async function remindDue(now) {
+  // With contracts switched off the signing routes refuse every link, so a
+  // mail with a new one would only use up a step.
+  const { isFeatureEnabled } = require('../../middleware/requireFeatureFlag');
+  if (!(await isFeatureEnabled('contracts'))) return 0;
   const steps = await reminderSteps();
   const signingV2 = require('./signingV2');
   let sent = 0;
-  const running = await db('contracts').where({ signing_version: 2 }).whereIn('status', RUNNING);
+  // Not for an erased (or deactivated) customer: erasure keeps a partly
+  // signed contract `sent` but ends every way in, and a new link would
+  // open it again.
+  const running = await db('contracts as c')
+    .leftJoin('customer_accounts as a', 'a.id', 'c.customer_account_id')
+    .where('c.signing_version', 2).whereIn('c.status', RUNNING)
+    .where((q) => q.whereNot('a.is_active', false).orWhereNull('a.is_active'))
+    .select('c.*');
   for (const contract of running) {
     const rows = await signers.listSigners(contract.id);
     const due = signingV2.dueSigners(contract, rows);
@@ -140,9 +151,13 @@ async function remindDue(now) {
       if (count >= steps.length) continue;
       // From the last link, or from the send — a contract frozen after its
       // details came in starts its ladder there.
-      const since = contract.data_collected_at
-        ? Math.max(toMillis(row.invited_at) ?? 0, toMillis(contract.sent_at) ?? 0) || null
-        : toMillis(row.invited_at);
+      // `reminded_at` moves with the claim, before the new link is written:
+      // a replica reading in between must not see the old link's age.
+      const since = Math.max(
+        toMillis(row.invited_at) ?? 0,
+        toMillis(row.reminded_at) ?? 0,
+        contract.data_collected_at ? (toMillis(contract.sent_at) ?? 0) : 0,
+      ) || null;
       if (since == null || now - since < steps[count] * DAY_MS) continue;
       // Someone on the page now keeps their session: a reminder would end it.
       if (await signers.hasActiveSession(row.id, now)) continue;
