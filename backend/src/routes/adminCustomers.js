@@ -447,27 +447,30 @@ router.post('/', [
 ], handleAsync(async (req, res) => {
   validateRequest(req);
   const groupIds = [...new Set(req.body.groupIds || [])];
-  // Everything that could refuse the groups is checked before the customer
-  // exists, so a refusal never leaves a customer without the groups the
-  // admin picked.
+  // The permission is checked before anything is written. The friendly group
+  // check runs first too, but what holds is the transaction below: the
+  // customer and its memberships are inserted together, so a group archived
+  // or deleted in between refuses both and leaves no customer behind — a
+  // retry doesn't then trip over "email exists".
   if (groupIds.length > 0) {
     if (!await userHasAnyPermission(req.admin.id, ['customers.groups.manage'])) {
       throw new AppError('Placing a customer in a group needs the customers.groups.manage permission', 403, 'GROUPS_PERMISSION_REQUIRED');
     }
     await customerGroupsService.assertAssignable(groupIds);
   }
-  // createDirect emits customer.created before the memberships below exist.
-  // A workflow condition reads membership when it is evaluated, so a delayed
-  // node sees the groups and an immediate one does not; moving the emit out
-  // of createDirect would change that, and is a separate change.
+  // createDirect emits customer.created after its transaction commits, with
+  // the memberships already in place.
+  let change = null;
   const { id } = await customerAccountsService.createDirect({
     email: req.body.email,
     prefill: req.body.prefill,
     createdByAdminId: req.admin.id,
+    withinTransaction: groupIds.length > 0
+      ? async (trx, customerId) => { change = await customerGroupsService.replaceCustomerGroups(trx, customerId, groupIds); }
+      : null,
   });
-  const groups = groupIds.length > 0
-    ? await customerGroupsService.setCustomerGroups(id, groupIds, req.admin)
-    : [];
+  if (change) await customerGroupsService.logCustomerGroupsAssigned(id, change, req.admin);
+  const groups = groupIds.length > 0 ? await customerGroupsService.groupsForCustomer(id) : [];
   const customer = await customerAccountsService.getCustomerById(id);
   successResponse(res, { customer: transformCustomer({ ...customer, groups }) }, 201);
 }));

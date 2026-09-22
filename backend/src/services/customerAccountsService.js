@@ -220,10 +220,15 @@ async function createInvitation({ email, invitedById, prefill }) {
  * Race-guarded against duplicate emails the same way createInvitation
  * is — a real duplicate throws ConflictError.
  *
- * @param {{ email, prefill, createdByAdminId }} args
+ * `withinTransaction(trx, id)` runs in the transaction that inserts the
+ * customer, so a caller can attach more to the new row atomically — if it
+ * throws, the customer is not created either. It must use `trx` only: on
+ * SQLite the global connection is held by the transaction.
+ *
+ * @param {{ email, prefill, createdByAdminId, withinTransaction? }} args
  * @returns {Promise<{ id }>} The new customer's id.
  */
-async function createDirect({ email, prefill, createdByAdminId }) {
+async function createDirect({ email, prefill, createdByAdminId, withinTransaction = null }) {
   const normalisedEmail = String(email || '').trim().toLowerCase();
   if (!normalisedEmail) throw new ValidationError('Email is required');
 
@@ -247,32 +252,36 @@ async function createDirect({ email, prefill, createdByAdminId }) {
   const sanitised = sanitisePrefill(prefill) || {};
   const preferredLanguage = sanitised.preferred_language || defaultPreferredLanguage;
 
-  const [inserted] = await auditedInsert(db, 'customer_accounts', {
-    email: normalisedEmail,
-    salutation: sanitised.salutation || null,
-    first_name: sanitised.first_name || null,
-    last_name: sanitised.last_name || null,
-    display_name: sanitised.display_name || null,
-    phone: sanitised.phone || null,
-    company_name: sanitised.company_name || null,
-    vat_id: sanitised.vat_id || null,
-    address_line1: sanitised.address_line1 || null,
-    address_line2: sanitised.address_line2 || null,
-    postal_code: sanitised.postal_code || null,
-    city: sanitised.city || null,
-    state: sanitised.state || null,
-    country_code: sanitised.country_code || null,
-    country_name: sanitised.country_name || null,
-    preferred_language: preferredLanguage,
-    password_hash: null,
-    is_active: formatBoolean(true),
-    must_change_password: formatBoolean(false),
-    password_changed_at: null,
-    created_by_admin_id: createdByAdminId || null,
-    created_at: new Date(),
-    updated_at: new Date(),
-  }, { actor: createdByAdminId || null, source: 'customer.create' });
-  const id = inserted?.id || inserted;
+  let id;
+  await db.transaction(async (trx) => {
+    const [inserted] = await auditedInsert(trx, 'customer_accounts', {
+      email: normalisedEmail,
+      salutation: sanitised.salutation || null,
+      first_name: sanitised.first_name || null,
+      last_name: sanitised.last_name || null,
+      display_name: sanitised.display_name || null,
+      phone: sanitised.phone || null,
+      company_name: sanitised.company_name || null,
+      vat_id: sanitised.vat_id || null,
+      address_line1: sanitised.address_line1 || null,
+      address_line2: sanitised.address_line2 || null,
+      postal_code: sanitised.postal_code || null,
+      city: sanitised.city || null,
+      state: sanitised.state || null,
+      country_code: sanitised.country_code || null,
+      country_name: sanitised.country_name || null,
+      preferred_language: preferredLanguage,
+      password_hash: null,
+      is_active: formatBoolean(true),
+      must_change_password: formatBoolean(false),
+      password_changed_at: null,
+      created_by_admin_id: createdByAdminId || null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    }, { actor: createdByAdminId || null, source: 'customer.create' });
+    id = inserted?.id || inserted;
+    if (withinTransaction) await withinTransaction(trx, id);
+  });
 
   await logActivity('customer_created_passive',
     { customerId: id, email: normalisedEmail },

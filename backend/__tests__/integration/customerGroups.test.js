@@ -691,6 +691,35 @@ describe('groups on a new customer', () => {
   });
 });
 
+describe('groups on a new customer, under a race', () => {
+  it('leaves no customer behind when the group is archived between the check and the insert', async () => {
+    const group = bodyOf(await createGroup({ name: 'Create raced' })).group;
+    await request(adminApp).put(`/api/admin/customers/groups/${group.id}`)
+      .set(auth(superToken)).send({ isArchived: true });
+    // The friendly check saw the group live; the archive landed after it.
+    const service = require('../../src/services/customerGroupsService');
+    const spy = jest.spyOn(service, 'assertAssignable').mockResolvedValue(undefined);
+    let res;
+    try {
+      res = await request(adminApp).post('/api/admin/customers').set(auth(superToken))
+        .send({ email: 'created-raced@example.com', prefill: { display_name: 'Raced' }, groupIds: [group.id] });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('GROUP_ARCHIVED');
+    expect(await db('customer_accounts').where({ email: 'created-raced@example.com' }).first()).toBeUndefined();
+
+    // Nothing half-done: with the group restored, the same address goes through.
+    await request(adminApp).put(`/api/admin/customers/groups/${group.id}`)
+      .set(auth(superToken)).send({ isArchived: false });
+    const retry = await request(adminApp).post('/api/admin/customers').set(auth(superToken))
+      .send({ email: 'created-raced@example.com', prefill: { display_name: 'Raced' }, groupIds: [group.id] });
+    expect(retry.status).toBe(201);
+    expect(bodyOf(retry).customer.groups.map((g) => g.id)).toEqual([group.id]);
+  });
+});
+
 describe('bulk assign and remove', () => {
   const bulk = (body, token = superToken) => request(adminApp)
     .post('/api/admin/customers/groups/bulk-assign').set(auth(token)).send(body);
