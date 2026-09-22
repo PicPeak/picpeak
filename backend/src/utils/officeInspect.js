@@ -91,7 +91,7 @@ const EXTERNAL_HREF = /^\s*([A-Za-z][A-Za-z0-9+.-]*:|\/|\\)|(^|[/\\])\.\.([/\\]|
 // `TargetMode="&#69;xternal"` or `xlink:href="&#104;ttps://…"` through.
 function decodeXml(value) {
   return value.replace(/&(#x[0-9a-f]+|#[0-9]+|amp|lt|gt|quot|apos);/gi, (whole, ref) => {
-    const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[ref.toLowerCase()];
+    const named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: '\'' }[ref.toLowerCase()];
     if (named) return named;
     const cp = ref[1] === 'x' || ref[1] === 'X' ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
     try {
