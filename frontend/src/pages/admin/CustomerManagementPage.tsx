@@ -477,10 +477,11 @@ export const CustomerManagementPage: React.FC = () => {
                 <table className="min-w-full text-sm">
                   <thead>
                     <tr className="text-left text-neutral-500 dark:text-neutral-400">
-                      {/* On a phone the row is name + groups + email + status:
-                          the columns that only make sense side by side are
-                          hidden, and the groups move under the name so they are
-                          visible without scrolling the table sideways. */}
+                      {/* The email is always under the name. On a phone the row
+                          is that cell alone, with the groups and the status
+                          under it; below xl (the card is ~760px beside the CRM
+                          sub-navigation) Company and Last login step aside so
+                          Status and the row action stay in view. */}
                       <th className="px-3 py-2 font-medium">
                         {/* The selection checkbox lives in the name cell, so it
                             is there on a phone too, where the other columns
@@ -497,11 +498,10 @@ export const CustomerManagementPage: React.FC = () => {
                           {t('customers.table.name', 'Name')}
                         </span>
                       </th>
-                      <th className="px-3 py-2 font-medium">{t('customers.table.email', 'Email')}</th>
-                      <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.company', 'Company')}</th>
+                      <th className="hidden xl:table-cell px-3 py-2 font-medium">{t('customers.table.company', 'Company')}</th>
                       <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.groups', 'Groups')}</th>
                       <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.eventCount', 'Events')}</th>
-                      <th className="hidden md:table-cell px-3 py-2 font-medium">{t('customers.table.lastLogin', 'Last login')}</th>
+                      <th className="hidden xl:table-cell px-3 py-2 font-medium">{t('customers.table.lastLogin', 'Last login')}</th>
                       <th className="hidden sm:table-cell px-3 py-2 font-medium">{t('customers.table.status', 'Status')}</th>
                       <th className="hidden sm:table-cell px-3 py-2"></th>
                     </tr>
@@ -523,6 +523,17 @@ export const CustomerManagementPage: React.FC = () => {
                               {renderCustomerName(c)}
                             </Link>
                           </span>
+                          {/* The email sits under the name at every width, so no
+                              column of its own takes space from Status and the
+                              row action; it only breaks inside the address
+                              when it can't fit otherwise. Below xl the company
+                              follows it, where the Company column is hidden. */}
+                          <span className="mt-0.5 block text-xs text-neutral-500 dark:text-neutral-400 [overflow-wrap:anywhere]">
+                            {c.email}
+                          </span>
+                          {c.companyName && (
+                            <span className="block text-xs text-neutral-500 dark:text-neutral-400 xl:hidden">{c.companyName}</span>
+                          )}
                           {/* Phone only: the groups sit under the name, where the
                               Groups column is hidden. */}
                           {c.groups && c.groups.length > 0 && (
@@ -530,16 +541,14 @@ export const CustomerManagementPage: React.FC = () => {
                               <CustomerGroupChipList groups={c.groups} max={2} />
                             </span>
                           )}
-                          {/* …and the status, so a phone row is name, groups,
-                              state and email without scrolling sideways. */}
+                          {/* …and the status, so a phone row is name, email,
+                              groups and state without scrolling sideways. */}
                           <span className="mt-1 flex sm:hidden">{renderStatus(c)}</span>
                         </td>
-                        {/* Wraps on a phone instead of pushing the row sideways. */}
-                        <td className="px-3 py-3 text-neutral-500 dark:text-neutral-400 break-all max-w-[38vw] sm:max-w-none sm:break-normal">{c.email}</td>
-                        <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.companyName || '—'}</td>
+                        <td className="hidden xl:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.companyName || '—'}</td>
                         <td className="hidden sm:table-cell px-3 py-3"><CustomerGroupChipList groups={c.groups} /></td>
                         <td className="hidden sm:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{c.eventCount ?? 0}</td>
-                        <td className="hidden md:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
+                        <td className="hidden xl:table-cell px-3 py-3 text-neutral-500 dark:text-neutral-400">{formatDate(c.lastLogin)}</td>
                         <td className="hidden sm:table-cell px-3 py-3">
                           {renderStatus(c)}
                         </td>

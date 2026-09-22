@@ -210,23 +210,41 @@ describe('the overview', () => {
     expect(screen.getAllByText('Retired').length).toBeGreaterThan(0);
   });
 
-  it('puts the groups under the name for a phone, and drops the wide columns there', async () => {
+  it('keeps every column in view: the email under the name, and the wide columns stepping aside', async () => {
+    list.mockResolvedValue([
+      { ...customer(10, 'grouped@example.com', [vip]), companyName: 'Acme' },
+      customer(11, 'ungrouped@example.com', []),
+    ]);
     renderPage();
     await screen.findByText('grouped@example.com');
 
-    // The Groups column and the ones that only make sense side by side are
-    // hidden below the sm breakpoint; the name cell carries a copy instead,
-    // so a phone shows who they are and which groups they are in without
-    // scrolling the table sideways.
     const headers = screen.getAllByRole('columnheader');
     const byName = (name: string) => headers.find((h) => h.textContent?.trim() === name);
+    // No Email column at any width: the address is in the name cell, so it
+    // can't wrap into a narrow column on a phone or push Status and the row
+    // action out of the ~760px card at 1440.
+    expect(byName('Email')).toBeUndefined();
     expect(byName('Name')?.className).not.toContain('hidden');
-    expect(byName('Email')?.className).not.toContain('hidden');
-    expect(byName('Groups')?.className).toContain('hidden sm:table-cell');
-    expect(byName('Company')?.className).toContain('hidden sm:table-cell');
-    expect(byName('Last login')?.className).toContain('hidden md:table-cell');
+    // On a phone only the name cell shows…
+    for (const name of ['Groups', 'Events', 'Status']) {
+      expect(byName(name)?.className).toContain('hidden sm:table-cell');
+    }
+    // …and below xl Company and Last login step aside as well.
+    expect(byName('Company')?.className).toContain('hidden xl:table-cell');
+    expect(byName('Last login')?.className).toContain('hidden xl:table-cell');
 
-    const nameCell = screen.getByText('grouped@example.com').closest('tr')?.querySelector('td');
+    const nameCell = screen.getByText('grouped@example.com').closest('td');
+    expect(nameCell).toBe(screen.getByText('grouped@example.com').closest('tr')?.querySelector('td'));
+    // The address breaks inside itself only as a last resort.
+    expect(screen.getByText('grouped@example.com').className).toContain('[overflow-wrap:anywhere]');
+    expect(screen.getByText('grouped@example.com').className).not.toContain('break-all');
+    // The company follows it where the Company column is hidden.
+    const companyCopy = [...(nameCell?.querySelectorAll('.xl\\:hidden') ?? [])].map((el) => el.textContent);
+    expect(companyCopy).toContain('Acme');
+    // The email comes before the chips and the status in the name cell.
+    const text = nameCell?.textContent || '';
+    expect(text.indexOf('grouped@example.com')).toBeLessThan(text.indexOf('VIP'));
+
     const phoneChips = nameCell?.querySelector('.sm\\:hidden');
     expect(phoneChips?.textContent).toContain('VIP');
     // The status column is hidden on a phone too, so its copy under the name
@@ -234,6 +252,10 @@ describe('the overview', () => {
     const phoneCopy = [...(nameCell?.querySelectorAll('.sm\\:hidden') ?? [])].map((el) => el.textContent).join(' ');
     expect(phoneCopy).toContain('Active');
     expect(phoneCopy).toContain('Passive — admin only');
+    // The row action and the status stay columns from sm up.
+    const row = nameCell?.closest('tr');
+    expect(within(row as HTMLElement).getByRole('button', { name: /Deactivate/ }).closest('td')?.className)
+      .toContain('sm:table-cell');
   });
 
   it('drops a selected group from the filter once it is archived, instead of filtering by it with nothing to switch it off', async () => {
