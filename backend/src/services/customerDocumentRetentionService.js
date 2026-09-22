@@ -56,7 +56,10 @@ async function runCustomerDocumentRetention(now = Date.now()) {
     // contract_id is asserted again here, not only in the select: a link
     // made between the two would otherwise have this soft-delete a
     // contract-linked document.
+    // So is the rejection itself: a document accepted after all since the
+    // select (a reversed review) is kept.
     await db('customer_documents').whereIn('id', expiredRejections)
+      .where('status', 'rejected')
       .whereNull('contract_id')
       .whereNull('deleted_at')
       .update({ deleted_at: stamp, updated_at: stamp });

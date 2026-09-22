@@ -73,8 +73,10 @@ async function runDocumentRequestReminders(now = Date.now()) {
     if (!features || !features.documents) continue;
 
     const remindedAt = new Date(now).toISOString();
+    // ladder_started_at too: a request reopened since this run read it has a
+    // new ladder, which this run's arithmetic must not spend.
     const claimed = await db('customer_document_requests')
-      .where({ id: request.id, status: 'open', reminder_count: step })
+      .where({ id: request.id, status: 'open', reminder_count: step, ladder_started_at: request.ladder_started_at })
       .update({ reminder_count: due, reminded_at: remindedAt });
     if (claimed !== 1) continue;
 

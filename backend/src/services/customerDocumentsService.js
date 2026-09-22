@@ -459,7 +459,10 @@ async function createDocument({
   // conditionally, inside the write transaction.
   const request = requestId ? await customerDocumentRequestsService.getOpen(customerId, requestId) : null;
   const linkInput = { ...(links || {}) };
-  if (request && !linkInput.eventId && request.event_id) linkInput.eventId = request.event_id;
+  // The request's own links win over what the upload names: the answer
+  // belongs where the studio asked for it.
+  if (request && request.event_id) linkInput.eventId = request.event_id;
+  if (request && request.contract_id) linkInput.contractId = null;
   const resolved = await resolveLinks(customerId, linkInput, { admin });
   // The request's contract link carries over too, so the answer is part of
   // that contract (retention, contract lookup) like an upload naming it. Not

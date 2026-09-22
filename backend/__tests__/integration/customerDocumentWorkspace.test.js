@@ -1186,6 +1186,22 @@ describe('document requests', () => {
     expect((await reqRow(third.id)).status).toBe('cancelled');
   });
 
+  it('keeps the request\'s contract on its answer even when the upload names another', async () => {
+    const mk = async (n) => idOf(await db('contracts').insert({
+      contract_number: `K-OV-${n}-${Date.now()}`, customer_account_id: me, title: 'C',
+      status: 'sent', language: 'de', issue_date: new Date().toISOString().slice(0, 10), created_at: nowIso(),
+    }).returning('id'));
+    const asked = await mk(1);
+    const other = await mk(2);
+    const req = (await createRequest(me, { title: 'Page 2', contractId: asked })).body.request;
+    const up = await uploadAs(me, 'page2.pdf', { requestId: req.id, contractId: other });
+    expect(up.status).toBe(201);
+    expect(up.body.document.contractId).toBe(asked);
+    await db('customer_documents').where({ id: up.body.document.id }).update({ contract_id: null });
+    await db('customer_document_requests').where({ id: req.id }).update({ contract_id: null });
+    await db('contracts').whereIn('id', [asked, other]).del();
+  });
+
   it('links the answer to the request\'s contract, even one still in draft', async () => {
     const contractId = idOf(await db('contracts').insert({
       contract_number: `K-REQ-${Date.now()}`, customer_account_id: me, title: 'Draft',

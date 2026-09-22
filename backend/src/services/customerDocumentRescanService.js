@@ -103,8 +103,10 @@ async function rescanRow(row) {
       review_note: 'The file did not pass the security check.',
       updated_at: stamp,
     };
-  // Still pending: an admin who decided in the meantime wins.
-  const written = await db('customer_documents').where({ id: row.id, status: 'pending' }).update(update);
+  // Still pending and not deleted: an admin who decided (or deleted) in the
+  // meantime wins.
+  const written = await db('customer_documents').where({ id: row.id, status: 'pending' })
+    .whereNull('deleted_at').update(update);
   if (written !== 1) {
     await db('customer_documents').where({ id: row.id }).update({ scan_claimed_until: null });
     return null;
