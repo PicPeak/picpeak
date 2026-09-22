@@ -48,6 +48,7 @@ const createDirect = vi.fn();
 const sendInvite = vi.fn();
 const listGroups = vi.fn();
 vi.mock('../../../services/customerAdmin.service', () => ({
+  BULK_GROUP_MAX_CUSTOMERS: 500,
   customerAdminService: {
     listGroups: (...a: unknown[]) => listGroups(...a),
     listGroupCatalogue: async () => ({ groups: await listGroups(), ungroupedCount: 0 }),

@@ -32,6 +32,7 @@ import { useLocalizedDate } from '../../hooks/useLocalizedDate';
 import { Button, Card, Input, Loading } from '../../components/common';
 import {
   customerAdminService,
+  BULK_GROUP_MAX_CUSTOMERS,
   type CustomerAccountSummary,
   type CustomerGroupMatch,
   type CustomerInvitationSummary,
@@ -204,6 +205,9 @@ export const CustomerManagementPage: React.FC = () => {
   }, [invitations, debouncedTerm]);
 
   const visibleIds = filteredCustomers.map((c) => c.id);
+  // The server takes at most this many customers in one change; above it the
+  // actions are off and say why, rather than failing in the dialog.
+  const overBulkCap = selectedIds.length > BULK_GROUP_MAX_CUSTOMERS;
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
   const toggleSelected = (id: number) => setSelectedIds((current) => (
     current.includes(id) ? current.filter((value) => value !== id) : [...current, id]
@@ -438,15 +442,22 @@ export const CustomerManagementPage: React.FC = () => {
                       defaultValue_other: '{{count}} selected',
                     })}
                   </span>
-                  <Button size="sm" variant="outline" onClick={() => setBulkMode('add')}>
+                  <Button size="sm" variant="outline" disabled={overBulkCap} onClick={() => setBulkMode('add')}>
                     {t('customers.groups.bulk.add', 'Add to groups…')}
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => setBulkMode('remove')}>
+                  <Button size="sm" variant="outline" disabled={overBulkCap} onClick={() => setBulkMode('remove')}>
                     {t('customers.groups.bulk.remove', 'Remove from groups…')}
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>
                     {t('customers.groups.bulk.clearSelection', 'Clear selection')}
                   </Button>
+                  {overBulkCap && (
+                    <span className="w-full text-xs text-amber-700 dark:text-amber-400" role="status">
+                      {t('customers.groups.bulk.overCap',
+                        'At most {{max}} customers can be changed at once. Narrow the filter or clear some of the selection.',
+                        { max: BULK_GROUP_MAX_CUSTOMERS })}
+                    </span>
+                  )}
                 </div>
               )}
               <div className="overflow-x-auto">

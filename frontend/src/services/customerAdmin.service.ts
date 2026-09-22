@@ -39,6 +39,13 @@ export interface CustomerGroupCatalogue {
   ungroupedCount: number;
 }
 
+/**
+ * The most customers one bulk group change may cover. Mirrors
+ * MAX_BULK_CUSTOMERS in backend/src/routes/adminCustomers.js, which refuses
+ * more with a 400.
+ */
+export const BULK_GROUP_MAX_CUSTOMERS = 500;
+
 export interface CustomerGroupBulkPayload {
   customerIds: number[];
   addGroupIds?: number[];

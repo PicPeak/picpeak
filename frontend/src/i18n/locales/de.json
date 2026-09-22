@@ -6018,7 +6018,8 @@
         "addedToast_one": "{{count}} Zuordnung hinzugefügt",
         "addedToast_other": "{{count}} Zuordnungen hinzugefügt",
         "removedToast_one": "{{count}} Zuordnung entfernt",
-        "removedToast_other": "{{count}} Zuordnungen entfernt"
+        "removedToast_other": "{{count}} Zuordnungen entfernt",
+        "overCap": "Höchstens {{max}} Kunden können auf einmal geändert werden. Schränken Sie den Filter ein oder heben Sie einen Teil der Auswahl auf."
       }
     },
     "emptyFiltered": "Keine Kunden entsprechen diesen Filtern.",

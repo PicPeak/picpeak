@@ -59,6 +59,7 @@ const createGroup = vi.fn();
 const deleteGroup = vi.fn();
 const bulkAssignGroups = vi.fn();
 vi.mock('../../../services/customerAdmin.service', () => ({
+  BULK_GROUP_MAX_CUSTOMERS: 500,
   customerAdminService: {
     list: (...a: unknown[]) => list(...a),
     listInvitations: vi.fn().mockResolvedValue([]),
@@ -400,6 +401,25 @@ describe('bulk group changes', () => {
     expect(within(dialog).getByRole('button', { name: 'Add 0 memberships' })).toBeDisabled();
     expect(bulkAssignGroups).toHaveBeenCalledTimes(1);
   });
+
+  it('turns the bulk actions off, and says why, above the server\'s 500-customer cap', async () => {
+    list.mockResolvedValue(Array.from({ length: 501 }, (_, i) => customer(1000 + i, `bulk-${i}@example.com`)));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText('bulk-0@example.com');
+    await user.click(screen.getByRole('checkbox', { name: 'Select all shown customers' }));
+
+    const bar = screen.getByRole('region', { name: 'Selected customers' });
+    expect(within(bar).getByText('501 selected')).toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: 'Add to groups…' })).toBeDisabled();
+    expect(within(bar).getByRole('button', { name: 'Remove from groups…' })).toBeDisabled();
+    expect(within(bar).getByText(/At most 500 customers can be changed at once/)).toBeInTheDocument();
+
+    // One fewer and it is allowed again.
+    await user.click(screen.getByRole('checkbox', { name: 'Select bulk-0@example.com' }));
+    expect(within(bar).getByRole('button', { name: 'Add to groups…' })).toBeEnabled();
+    expect(within(bar).queryByText(/At most 500 customers/)).toBeNull();
+  }, 30000);
 
   it('offers for removal only the groups the selection carries', async () => {
     const user = userEvent.setup();
