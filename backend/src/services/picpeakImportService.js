@@ -462,7 +462,7 @@ function coerceForTargetEngine(rows, { timestamps, booleans }) {
 // session_replication_role=replica on the trx connection, reset before commit;
 // sqlite: defer_foreign_keys so checks run at commit). knex_migrations is never
 // in the data set, so the target's schema/migration state is left intact.
-async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine = false } = {}) {
+async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine = false, allTables } = {}) {
   await db.transaction(async (trx) => {
     if (isPostgres()) {
       try {
@@ -495,13 +495,20 @@ async function replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { c
       await dropExternalRelpathIndex(trx);
     }
 
-    // An archive made before accounting history existed must also replace
-    // the local history. Keeping it would attach later/foreign changes to
-    // restored documents whose numeric IDs happen to match.
-    const hasAccountingHistory = await trx.schema.hasTable('accounting_change_history');
-    const tablesToClear = new Set(tables);
-    if (hasAccountingHistory) tablesToClear.add('accounting_change_history');
-    for (const table of tablesToClear) {
+    // Clear every table the CURRENT schema exports (`allTables`), not just
+    // the tables this archive's manifest lists (`tables`, a subset of it).
+    // An archive made before a table existed carries no rows for it, so
+    // clearing only `tables` would leave that table's LOCAL rows in place —
+    // attached to whatever restored row happens to reuse the same id (#1586:
+    // an archive predating customer_groups left local group memberships
+    // pointing at the wrong restored customers after the restore). For a
+    // feature absent from the archive, empty is the correct restored state.
+    //
+    // This subsumes the one-off fix this used to be (clearing
+    // accounting_change_history when the archive predated it): `allTables`
+    // already includes that table whenever this instance has it, which is
+    // the same condition that fix checked for explicitly.
+    for (const table of (allTables || tables)) {
       await trx(table).del();
     }
 
@@ -652,11 +659,18 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
     }
 
     const dataDir = path.join(staging, 'data');
-    // Only touch tables that (a) the uploaded manifest lists AND (b) actually
-    // exist as real tables in THIS database. listDataTables() already excludes
-    // knex_migrations/_lock (EXCLUDED_TABLES), so a crafted or corrupted
-    // .picpeak can never make the restore delete the migration bookkeeping — or
-    // any table that isn't a genuine data table here.
+    // `tables` (loaded from the archive) is restricted to tables that (a) the
+    // uploaded manifest lists AND (b) actually exist as real tables in THIS
+    // database. listDataTables() already excludes knex_migrations/_lock
+    // (EXCLUDED_TABLES), so a crafted or corrupted .picpeak can never make
+    // the restore delete the migration bookkeeping — or any table that isn't
+    // a genuine data table here.
+    //
+    // `dbTables` itself (every real, non-excluded table in THIS database) is
+    // also passed to replaceAllTables as the CLEARING set (#1586): a table
+    // this instance has but the archive's manifest doesn't list still gets
+    // wiped, so a feature added after the archive was made doesn't leave
+    // local rows behind attached to reused ids from the restore.
     const dbTables = new Set(await listDataTables());
     const manifestTables = Object.keys(manifest.tables || {});
     const tables = manifestTables.filter((tbl) => dbTables.has(tbl) && !EXCLUDED_TABLES.has(tbl));
@@ -665,7 +679,7 @@ async function importFromPicpeak({ picpeakPath, currentAdminId }) {
       logger.warn(`[picpeak-import] ignoring ${skipped.length} backup table(s) not present in this DB (or protected): ${skipped.join(', ')}`);
     }
 
-    await replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine });
+    await replaceAllTables(tables, dataDir, currentAdmin, roleSnapshot, { crossEngine, allTables: [...dbTables] });
 
     // Post-commit fixups (must NOT run inside the restore transaction):
     //  - resync Postgres identity sequences left behind by the explicit-id
