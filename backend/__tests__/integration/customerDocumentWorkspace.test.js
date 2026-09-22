@@ -1096,6 +1096,20 @@ describe('document requests', () => {
     expect((await db('customer_document_requests').where({ id: req.id }).first()).status).toBe('open');
   });
 
+  it('links the answer to the request\'s contract, even one still in draft', async () => {
+    const contractId = idOf(await db('contracts').insert({
+      contract_number: `K-REQ-${Date.now()}`, customer_account_id: me, title: 'Draft',
+      status: 'draft', language: 'de', issue_date: new Date().toISOString().slice(0, 10), created_at: nowIso(),
+    }).returning('id'));
+    const req = (await createRequest(me, { title: 'Signed page', contractId })).body.request;
+    const up = await uploadAs(me, 'page.pdf', { requestId: req.id });
+    expect(up.status).toBe(201);
+    expect(up.body.document).toMatchObject({ contractId, canDelete: false });
+    await db('customer_documents').where({ id: up.body.document.id }).update({ contract_id: null });
+    await db('customer_document_requests').where({ id: req.id }).update({ contract_id: null });
+    await db('contracts').where({ id: contractId }).del();
+  });
+
   it('refuses another customer\'s request, a cancelled one and a bogus id with 404, and stores nothing', async () => {
     const theirs = (await createRequest(other, { title: 'Theirs' })).body.request;
     const cancelled = (await createRequest(me, { title: 'Never mind' })).body.request;

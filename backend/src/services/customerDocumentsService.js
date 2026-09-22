@@ -461,6 +461,16 @@ async function createDocument({
   const linkInput = { ...(links || {}) };
   if (request && !linkInput.eventId && request.event_id) linkInput.eventId = request.event_id;
   const resolved = await resolveLinks(customerId, linkInput, { admin });
+  // The request's contract link carries over too, so the answer is part of
+  // that contract (retention, contract lookup) like an upload naming it. Not
+  // through resolveLinks: the studio may have asked against a contract still
+  // in draft, which a customer could not name themselves.
+  if (request && !resolved.contractId && request.contract_id) {
+    const contract = await db('contracts')
+      .where({ id: request.contract_id, customer_account_id: customerId })
+      .first('id');
+    if (contract) resolved.contractId = contract.id;
+  }
   // The route's filter already chose the format from the name; checked again
   // here against the setting, so no caller can store a format the install
   // doesn't accept.
