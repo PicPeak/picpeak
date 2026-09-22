@@ -37,7 +37,22 @@ async function createFromQuote(quoteId, adminId, { contractTemplateId = null } =
   const quote = await db('quotes').where({ id: quoteId }).first();
   if (!quote) throw new AppError('Quote not found', 404);
 
-  // The contract template (#1445), resolved before the transaction: the one
+  if (quote.status !== 'accepted') {
+    throw new AppError(`Cannot convert a quote with status '${quote.status}'`, 409, 'QUOTE_NOT_ACCEPTED');
+  }
+  if (quote.converted_contract_id) {
+    return { contractId: quote.converted_contract_id, alreadyConverted: true };
+  }
+  if (quote.converted_event_id) {
+    throw new AppError(
+      'This quote was already converted to an event. Create the contract from the event instead.',
+      409, 'ALREADY_CONVERTED_TO_EVENT',
+    );
+  }
+
+  // The contract template (#1445), resolved before the transaction — and
+  // after the checks above, so a retry of a finished conversion gets its
+  // contract back even if the template has been archived since: the one
   // asked for, else the one the quote's template names, else the default.
   // One asked for must be usable; the quote template's may have been
   // archived since, which quietly falls back to the default.
@@ -52,18 +67,6 @@ async function createFromQuote(quoteId, adminId, { contractTemplateId = null } =
     versionId = await templates.usablePublishedVersionId(quoteTemplate && quoteTemplate.default_contract_template_id);
   }
   const version = await templates.resolveVersionForNewContract(versionId);
-  if (quote.status !== 'accepted') {
-    throw new AppError(`Cannot convert a quote with status '${quote.status}'`, 409, 'QUOTE_NOT_ACCEPTED');
-  }
-  if (quote.converted_contract_id) {
-    return { contractId: quote.converted_contract_id, alreadyConverted: true };
-  }
-  if (quote.converted_event_id) {
-    throw new AppError(
-      'This quote was already converted to an event. Create the contract from the event instead.',
-      409, 'ALREADY_CONVERTED_TO_EVENT',
-    );
-  }
 
   const customer = await db('customer_accounts').where({ id: quote.customer_account_id }).first();
   ensureCustomerActive(customer);

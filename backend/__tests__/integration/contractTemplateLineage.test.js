@@ -137,6 +137,7 @@ test('converting a quote: the template asked for, else the quote template\'s, el
   let quoteId = await acceptedQuote();
   let res = await ok(request(quotesApp).post(`/api/admin/quotes/${quoteId}/convert-to-contract`).set(auth).send({ contractTemplateId: chosen }));
   expect(await templateOfContract(res.contractId)).toBe(chosen);
+  const first = { quoteId, contractId: res.contractId };
 
   // The quote template names one.
   const qt = await ok(request(catalogApp).post('/api/admin/quote-catalog/templates').set(auth)
@@ -168,6 +169,13 @@ test('converting a quote: the template asked for, else the quote template\'s, el
   const kept = await request(catalogApp).put(`/api/admin/quote-catalog/templates/${qt.template.id}`).set(auth)
     .send({ description: 'Neu', defaultContractTemplateId: fromQuoteTemplate });
   expect(kept.status).toBe(200);
+
+  // A retry of a finished conversion returns its contract, even with the
+  // template it asked for archived since.
+  await db('contract_templates').where({ id: chosen }).update({ status: 'archived' });
+  const retry = await ok(request(quotesApp).post(`/api/admin/quotes/${first.quoteId}/convert-to-contract`).set(auth)
+    .send({ contractTemplateId: chosen }));
+  expect(retry.contractId).toBe(first.contractId);
 });
 
 test('a new system revision on an archived standard template adds the version and leaves it archived', async () => {
