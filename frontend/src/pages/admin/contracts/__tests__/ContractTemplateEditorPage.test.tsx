@@ -227,6 +227,13 @@ it('"Go to" opens the clause in the finding\'s language and focuses its text', a
   const textarea = await screen.findByRole('textbox', { name: /Text in this template/ });
   expect(textarea).toHaveAttribute('id', expect.stringMatching(/-body-en$/));
   await waitFor(() => expect(textarea).toHaveFocus());
+
+  // The request moves the focus once: typing elsewhere keeps it there.
+  const name = screen.getByLabelText('Name');
+  await user.click(name);
+  await user.type(name, ' 2027');
+  expect(name).toHaveFocus();
+  expect(name).toHaveValue('Hochzeit 2027');
 });
 
 it('a clean check publishes; warnings alone do not block', async () => {

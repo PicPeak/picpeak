@@ -32,17 +32,22 @@ export const LocaleTextField: React.FC<{
   const [locale, setLocale] = useState<ContractLocale>('de');
   const textarea = useRef<HTMLTextAreaElement>(null);
   const pendingFocus = useRef(false);
+  // Keyed on the nonce: the parent builds a new request object on every
+  // render, and each request must move the focus once, not on every keystroke.
+  const requestNonce = focusRequest?.nonce;
+  const requestLocale = focusRequest?.locale;
   useEffect(() => {
-    if (!focusRequest) return;
+    if (requestNonce === undefined || !requestLocale) return;
     pendingFocus.current = true;
-    setLocale(focusRequest.locale);
-  }, [focusRequest]);
+    setLocale(requestLocale);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestNonce]);
   useEffect(() => {
     if (!pendingFocus.current || !textarea.current) return;
     pendingFocus.current = false;
     textarea.current.scrollIntoView?.({ block: 'center' });
     textarea.current.focus();
-  }, [focusRequest, locale]);
+  }, [requestNonce, locale]);
   return (
     <div>
       <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
