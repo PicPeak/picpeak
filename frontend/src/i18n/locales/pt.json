@@ -340,6 +340,7 @@
     },
     "footer": {
       "forgetMeConfirm": "O seu nome e seleções serão removidos desta galeria.",
+      "forgetMeConfirmUploads": "O seu nome será removido das fotos que carregou nesta galeria.",
       "forgetMe": "Esquecer-me ({{name}})",
       "socials": "Redes sociais"
     },

@@ -2,7 +2,7 @@ const express = require('express');
 const { db, logActivity } = require('../../database/db');
 const router = express.Router();
 const { verifyGalleryAccess } = require('../../middleware/gallery');
-const { resolveGuest } = require('../../middleware/guestAuth');
+const { resolveGuest, scopeGuestToFeedback } = require('../../middleware/guestAuth');
 const { noStoreCache } = require('../../middleware/noStoreCache');
 const { generateGuestIdentifier } = require('../../middleware/feedbackRateLimit');
 const { errorResponse } = require('../../utils/routeHelpers');
@@ -33,7 +33,7 @@ function notifyGalleryOpened(event, req) {
   logActivity('gallery_opened', {}, event.id, galleryActor(req));
 }
 
-router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, noStoreCache, async (req, res) => {
+router.get('/:slug/photos', verifyGalleryAccess, resolveGuest, scopeGuestToFeedback, noStoreCache, async (req, res) => {
   try {
     const payload = await require('../../services/galleryQueryService').getGalleryPhotos({
       event: req.event, slug: req.params.slug, query: req.query,

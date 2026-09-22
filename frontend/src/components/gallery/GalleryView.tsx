@@ -33,7 +33,7 @@ import { GallerySidebar } from './GallerySidebar';
 import { PhotoFilterBar } from './PhotoFilterBar';
 import { UserPhotoUpload } from './UserPhotoUpload';
 import { CreditFilterChips } from './CreditFilterChips';
-import { creditGroups } from '../../utils/photoCredits';
+import { creditGroups, uploaderRequiresEmail } from '../../utils/photoCredits';
 import { GuestNamePromptModal } from './GuestNamePromptModal';
 import { GuestRecoveryModal } from './GuestRecoveryModal';
 import { PeopleStrip } from './PeopleStrip';
@@ -335,13 +335,12 @@ export const GalleryView: React.FC<GalleryViewProps> = ({ slug, event, requiresP
   });
 
   // Uploader names (#1561): the upload dialog's name step, from the /photos
-  // payload. The guest identity it registers is the feedback one, so the
-  // feedback email requirement travels along.
+  // payload.
   const uploaderNameProps = {
     slug,
     nameMode: data?.event?.guest_name_mode ?? 'off',
     creditsVisible: data?.event?.credits_visible === true,
-    requireEmail: !!(feedbackSettings?.feedback_enabled && feedbackSettings?.require_name_email),
+    requireEmail: uploaderRequiresEmail(feedbackSettings),
   } as const;
 
   // People in this gallery (#1074).

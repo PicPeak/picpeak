@@ -60,3 +60,19 @@ export function creditGroups(photos: CreditFields[], locale?: string): CreditGro
   return groups.sort((a, b) => (rank[a.kind] - rank[b.kind])
     || (a.name || '').localeCompare(b.name || '', locale, { sensitivity: 'base' }));
 }
+
+/**
+ * Whether the upload dialog's name step asks for an email address. The
+ * feedback setting "require name and email" belongs to the guest identity
+ * feedback uses, and only in guest identity mode is the uploader name that
+ * identity; elsewhere feedback never sees it (the backend scopes it out).
+ */
+export function uploaderRequiresEmail(settings?: {
+  feedback_enabled?: boolean;
+  identity_mode?: string;
+  require_name_email?: boolean;
+} | null): boolean {
+  return !!(settings?.feedback_enabled
+    && settings.identity_mode === 'guest'
+    && settings.require_name_email);
+}

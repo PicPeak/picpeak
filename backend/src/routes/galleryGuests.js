@@ -50,6 +50,16 @@ function checkRegistrationRate(ip) {
   return entry.count <= REGISTRATION_MAX;
 }
 
+/**
+ * The scope a guest token issued now carries (scopeGuestToFeedback). Outside
+ * guest identity mode a guest identity exists for the uploader name alone, so
+ * every token issued there (registration, recovery, invite) is upload-scoped
+ * and feedback keeps its anonymous identity.
+ */
+function guestTokenScope(settings) {
+  return settings.feedback_enabled && settings.identity_mode === 'guest' ? {} : { scope: 'upload' };
+}
+
 function sanitizeEmail(value) {
   if (typeof value !== 'string') return '';
   return value.trim().slice(0, MAX_EMAIL_LEN).toLowerCase();
@@ -90,9 +100,11 @@ router.post('/:slug/guest', verifyGalleryAccess, async (req, res) => {
     if (email && !EMAIL_REGEX.test(email)) {
       return res.status(400).json({ error: 'Invalid email format', field: 'email' });
     }
-    // require_name_email is a feedback setting; with feedback off the identity
-    // exists only for the uploader name, which asks for no address.
-    if (settings.feedback_enabled && settings.require_name_email && !email) {
+    // require_name_email is a feedback setting. Only in guest identity mode
+    // is this identity the one feedback uses; otherwise it exists only for
+    // the uploader name, which asks for no address.
+    if (settings.feedback_enabled && settings.identity_mode === 'guest'
+      && settings.require_name_email && !email) {
       return res.status(400).json({ error: 'Email is required', field: 'email' });
     }
 
@@ -115,6 +127,7 @@ router.post('/:slug/guest', verifyGalleryAccess, async (req, res) => {
       eventId: event.id,
       identifier: row.identifier,
       name: row.name,
+      ...guestTokenScope(settings),
     });
 
     logger.info('Guest registered', {
@@ -323,6 +336,7 @@ router.post('/:slug/guest/verify', verifyGalleryAccess, async (req, res) => {
       eventId: event.id,
       identifier: guest.identifier,
       name: guest.name,
+      ...guestTokenScope(await feedbackService.getEventFeedbackSettings(event.id)),
     });
 
     logger.info('Guest recovered via email', { eventId: event.id, guestId: guest.id });
@@ -410,6 +424,7 @@ router.post('/:slug/guest/redeem', verifyGalleryAccess, async (req, res) => {
       eventId: event.id,
       identifier: result.guest.identifier,
       name: result.guest.name,
+      ...guestTokenScope(await feedbackService.getEventFeedbackSettings(event.id)),
     });
 
     logger.info('Invite redeemed', { eventId: event.id, guestId: result.guest.id });

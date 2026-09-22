@@ -329,6 +329,7 @@
     },
     "footer": {
       "forgetMeConfirm": "Vaše ime in izbire bodo odstranjeni iz te galerije.",
+      "forgetMeConfirmUploads": "Vaše ime bo odstranjeno s fotografij, ki ste jih naložili v to galerijo.",
       "forgetMe": "Pozabi me ({{name}})",
       "socials": "Družbena omrežja"
     },

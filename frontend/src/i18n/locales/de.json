@@ -1740,6 +1740,7 @@
     },
     "footer": {
       "forgetMeConfirm": "Ihr Name und Ihre Auswahl werden aus dieser Galerie entfernt.",
+      "forgetMeConfirmUploads": "Ihr Name wird von den Fotos entfernt, die Sie in diese Galerie hochgeladen haben.",
       "forgetMe": "Mich vergessen ({{name}})",
       "notYou": "Nicht Sie?",
       "socials": "Soziale Netzwerke"

@@ -333,6 +333,7 @@
     },
     "footer": {
       "forgetMeConfirm": "Uw naam en selecties worden verwijderd uit deze galerij.",
+      "forgetMeConfirmUploads": "Uw naam wordt verwijderd van de foto’s die u naar deze galerij hebt geüpload.",
       "forgetMe": "Vergeet mij ({{name}})",
       "socials": "Sociale media"
     },
