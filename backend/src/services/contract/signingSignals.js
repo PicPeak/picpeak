@@ -190,7 +190,7 @@ async function checkThresholds(hour = hourOf()) {
       await logActivity('contract_signing_suspicious', {
         kind, rule: rule.alert, hour, count: total, limit, ...(contractId ? { contractId } : {}),
       },
-        null, { type: 'system', name: 'Signing alerts' });
+      null, { type: 'system', name: 'Signing alerts' });
     } catch (_) { /* logging is best-effort */ }
     const signingV2 = require('./signingV2');
     await signingV2.notifyAdmin('contract_signing_suspicious_admin_notification', {
