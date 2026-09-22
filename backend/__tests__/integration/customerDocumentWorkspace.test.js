@@ -601,6 +601,45 @@ describe('customer activity (admin)', () => {
     expect(res.body.entries.some((e) => e.metadata.documentId === otherDoc.id)).toBe(false);
   });
 
+  it('leaves document rows out without customers.documents.manage, or with the documents flag off', async () => {
+    const docRows = (res) => res.body.entries.filter((e) => e.type.startsWith('customer_document_'));
+    expect(docRows(await activity(me)).length).toBeGreaterThan(0);
+
+    // A role that may see customers but not their documents.
+    const role = await db('roles').whereNotIn('name', ['super_admin', 'admin']).first();
+    const view = await db('permissions').where({ name: 'customers.view' }).first('id');
+    const manage = await db('permissions').where({ name: 'customers.documents.manage' }).first('id');
+    const hadView = await db('role_permissions').where({ role_id: role.id, permission_id: view.id }).first();
+    const hadManage = await db('role_permissions').where({ role_id: role.id, permission_id: manage.id }).first();
+    if (!hadView) await db('role_permissions').insert({ role_id: role.id, permission_id: view.id });
+    if (hadManage) await db('role_permissions').where({ role_id: role.id, permission_id: manage.id }).del();
+    const viewerId = idOf(await db('admin_users').insert({
+      username: `viewer-${Date.now()}`, email: `viewer-${Date.now()}@example.com`, password_hash: 'x',
+      must_change_password: false, created_at: nowIso(), role_id: role.id,
+    }).returning('id'));
+    const permissions = require('../../src/middleware/permissions');
+    permissions.clearPermissionCache();
+    try {
+      const res = await activity(me, '', mintAdminToken(viewerId));
+      expect(res.status).toBe(200);
+      expect(docRows(res)).toEqual([]);
+      expect(res.body.entries.some((e) => e.type === 'customer_login')).toBe(true);
+    } finally {
+      if (!hadView) await db('role_permissions').where({ role_id: role.id, permission_id: view.id }).del();
+      if (hadManage) await db('role_permissions').insert({ role_id: role.id, permission_id: manage.id });
+      permissions.clearPermissionCache();
+    }
+
+    await setFlag('documents', false);
+    try {
+      const res = await activity(me);
+      expect(res.status).toBe(200);
+      expect(docRows(res)).toEqual([]);
+    } finally {
+      await setFlag('documents', true);
+    }
+  });
+
   it('pages by id', async () => {
     const first = await activity(me, '?limit=1');
     expect(first.body.entries).toHaveLength(1);

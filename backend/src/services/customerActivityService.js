@@ -56,15 +56,16 @@ const parseMeta = (v) => {
 
 /**
  * @param {number} customerId
- * @param {{ limit?: number, beforeId?: number|null }} options
+ * @param {{ limit?: number, beforeId?: number|null, includeDocuments?: boolean }} options
+ *   includeDocuments: false leaves every customer_document_* row out.
  * @returns {Promise<{ entries: object[], nextBeforeId: number|null }>}
  */
-async function listForCustomer(customerId, { limit = 50, beforeId = null } = {}) {
+async function listForCustomer(customerId, { limit = 50, beforeId = null, includeDocuments = true } = {}) {
   const size = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const q = db('activity_logs')
     .andWhere((w) => {
-      w.where('activity_type', 'like', 'customer_document_%')
-        .orWhereIn('activity_type', CUSTOMER_TYPES);
+      w.whereIn('activity_type', CUSTOMER_TYPES);
+      if (includeDocuments) w.orWhere('activity_type', 'like', 'customer_document_%');
     })
     .orderBy('id', 'desc')
     .limit(size + 1)

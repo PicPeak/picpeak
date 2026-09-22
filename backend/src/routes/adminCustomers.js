@@ -1008,7 +1008,9 @@ router.get('/:id/monthly-draft', [
 // ---- customer activity (#1444) -------------------------------------------
 // The customer's timeline: document, account and group activity from
 // activity_logs, newest first. ?limit (1-200, default 50) and ?beforeId (the
-// previous page's nextBeforeId). Unknown customer → 404.
+// previous page's nextBeforeId). Unknown customer → 404. Document rows are
+// left out unless the `documents` flag is on AND the admin holds
+// customers.documents.manage — the gate every other document route has.
 router.get('/:id/activity', [
   adminAuth,
   requirePermission('customers.view'),
@@ -1020,9 +1022,12 @@ router.get('/:id/activity', [
   const customerId = parseInt(req.params.id, 10);
   const customer = await db('customer_accounts').where({ id: customerId }).first('id');
   if (!customer) throw new NotFoundError('Customer', customerId);
+  const includeDocuments = await isFeatureEnabled('documents')
+    && await userHasAnyPermission(req.admin.id, ['customers.documents.manage']);
   const result = await customerActivityService.listForCustomer(customerId, {
     limit: req.query.limit ? parseInt(req.query.limit, 10) : 50,
     beforeId: req.query.beforeId ? parseInt(req.query.beforeId, 10) : null,
+    includeDocuments,
   });
   successResponse(res, result);
 }));
