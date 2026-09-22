@@ -20,21 +20,23 @@ const content = require('./content');
  *     placeholders are left literally as `{{var}}` so the admin
  *     notices the unresolved field in preview.
  *
- * Mirrors safeTemplateReplace in emailProcessor.js (lines 424-461) but
- * without HTML escaping — contract bodies are rendered into PDF via
- * pdfService.drawText, which doesn't need HTML safety.
+ * Mirrors safeTemplateReplace in emailProcessor.js. Values are escaped for
+ * `output` (utils/placeholders.escapeValue): a contract body is `markdown` —
+ * the PDF reads `**bold**` in it — so a value can't switch formatting on;
+ * `text` leaves values as they are. Substitution is one pass: a value that
+ * contains `{{…}}` is printed, never expanded.
  */
-function renderTemplatedBody(template, variables) {
+function renderTemplatedBody(template, variables, { output = 'markdown' } = {}) {
   if (typeof template !== 'string' || template.length === 0) return template;
   // One grammar, owned by utils/placeholders: the publish check accepted
   // `{{ customer_name }}` with spaces while this substituted only the tight
   // form, so a template could be published with a placeholder that printed
   // literally on every contract.
-  const { PLACEHOLDER_PATTERN, renderConditionals } = require('../../utils/placeholders');
+  const { PLACEHOLDER_PATTERN, renderConditionals, escapeValue } = require('../../utils/placeholders');
   return renderConditionals(template, variables || {})
     .replace(PLACEHOLDER_PATTERN, (match, key) => {
       if (!variables || !Object.prototype.hasOwnProperty.call(variables, key)) return match;
-      return String(variables[key]);
+      return escapeValue(String(variables[key]), output);
     });
 }
 

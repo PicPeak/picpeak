@@ -11,6 +11,7 @@
 const { db } = require('../../database/db');
 const { AppError } = require('../../utils/errors');
 const { getAppSetting } = require('../../utils/appSettings');
+const { markdownToPlain } = require('../../utils/placeholders');
 
 // Normalise a Settings → Branding logo value (absolute URL, /-rooted path,
 // or bare `uploads/...` filename) into a URL the public page can load.
@@ -33,7 +34,9 @@ function publicContractView(contract, display, customer, profile, brandingLogoUr
   // The clauses as the contract shows them (#1445): from the sent snapshot,
   // in the contract's language, placeholders filled in — the same content
   // as the PDF. The signing page renders plain `whitespace-pre-line` text,
-  // so inline `**bold**` markers are dropped (the PDF keeps them as bold).
+  // so the inline markup is dropped (the PDF draws `**bold**` as bold) and
+  // escapes are resolved — by the same parser the PDF uses, so a value typed
+  // as `**ACME**` reads `**ACME**` in both.
   const sections = display.sections.map((s) => ({
     section: s.section,
     blocks: s.blocks.map((b) => ({
@@ -41,7 +44,7 @@ function publicContractView(contract, display, customer, profile, brandingLogoUr
       section: s.section,
       position: b.position,
       name: b.name,
-      body: String(b.body || '').replace(/\*\*([^*]+)\*\*/g, '$1'),
+      body: markdownToPlain(b.body || ''),
     })),
   }));
 
@@ -52,8 +55,8 @@ function publicContractView(contract, display, customer, profile, brandingLogoUr
     issueDate: contract.issue_date,
     validUntil: contract.valid_until,
     title: display.title || contract.title,
-    introText: display.introText,
-    outroText: display.outroText,
+    introText: display.introText ? markdownToPlain(display.introText) : display.introText,
+    outroText: display.outroText ? markdownToPlain(display.outroText) : display.outroText,
     sentAt: contract.sent_at,
     signedByCustomerAt: contract.signed_by_customer_at,
     signedByAdminAt: contract.signed_by_admin_at,

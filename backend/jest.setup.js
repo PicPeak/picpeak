@@ -13,6 +13,11 @@ jest.mock('supertest/lib/test', () => {
   return Test;
 });
 
+// PDFs render in this process under test, so spies on the renderers (and on
+// PDFKit) see the calls; the render worker has its own suite
+// (__tests__/services/pdfRenderIsolation.test.js).
+if (!process.env.PDF_RENDER_ISOLATION) process.env.PDF_RENDER_ISOLATION = 'off';
+
 beforeAll(() => {
   process.env.NODE_ENV = 'test';
   process.env.JWT_SECRET = 'test-secret';

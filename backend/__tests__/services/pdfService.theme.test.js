@@ -128,3 +128,81 @@ test('page numbers can be centred or left off', () => {
   expect(texts).not.toHaveBeenCalled();
   doc.end();
 });
+
+// ---------------------------------------------------------------------
+// Render coverage (#1445 plan slice 2): long contracts, both languages.
+// ---------------------------------------------------------------------
+
+const { PDFDocument: PdfLib } = require('pdf-lib');
+
+/** Every text drawn, with the 0-based page it was drawn on. */
+function recordTexts() {
+  const drawn = [];
+  const text = PDFDocument.prototype.text;
+  jest.spyOn(PDFDocument.prototype, 'text').mockImplementation(function (str, ...rest) {
+    drawn.push({ text: String(str), page: this._pageBuffer ? this._pageBuffer.indexOf(this.page) : -1 });
+    return text.call(this, str, ...rest);
+  });
+  return drawn;
+}
+
+const longClauses = (count, body) => [{
+  section: 'scope',
+  blocks: Array.from({ length: count }, (_, i) => ({ name: `Klausel ${i + 1}`, body })),
+}];
+
+test('a contract of three or more pages numbers each page of the total and ends on the signature page', async () => {
+  const drawn = recordTexts();
+  const buffer = await pdfService.renderContractToBuffer(contractContext({
+    sections: longClauses(12, 'Der Auftragnehmer erbringt die vereinbarten Leistungen sorgfältig. '.repeat(12)),
+  }));
+  const pages = (await PdfLib.load(buffer)).getPageCount();
+  expect(pages).toBeGreaterThanOrEqual(3);
+
+  const { t } = pdfService._internal;
+  for (let n = 1; n <= pages; n += 1) {
+    const label = t('de', 'page_of', { current: n, total: pages });
+    expect(drawn.find((d) => d.text === label)).toEqual({ text: label, page: n - 1 });
+  }
+  const signature = drawn.find((d) => d.text === t('de', 'signature_page_title'));
+  expect(signature.page).toBe(pages - 1);
+  // No clause text lands on the signature page.
+  expect(drawn.filter((d) => d.text.startsWith('Klausel ')).every((d) => d.page < pages - 1)).toBe(true);
+});
+
+test('with merged attachments the signature page counts them in its number', async () => {
+  const drawn = recordTexts();
+  const buffer = await pdfService.renderContractToBuffer(contractContext({ mergedAttachmentPages: 4 }));
+  const own = (await PdfLib.load(buffer)).getPageCount();
+  const { t } = pdfService._internal;
+  expect(drawn.map((d) => d.text)).toContain(t('de', 'page_of', { current: own + 4, total: own + 4 }));
+});
+
+test('the same contract renders in English and in German with that language\'s strings', async () => {
+  const { t } = pdfService._internal;
+  for (const locale of ['en', 'de']) {
+    const drawn = recordTexts();
+    await pdfService.renderContractToBuffer(contractContext({ locale, doc: { contractNumber: 'C-1', issueDate: '2026-09-14' } }));
+    const texts = drawn.map((d) => d.text);
+    for (const key of ['contract_title', 'contract_number_label', 'section_scope', 'signature_page_title', 'signature_page_prompt']) {
+      expect(texts).toContain(t(locale, key));
+    }
+    expect(texts).toContain(t(locale, 'page_of', { current: 1, total: 2 }));
+    jest.restoreAllMocks();
+  }
+  expect(t('en', 'signature_page_title')).not.toBe(t('de', 'signature_page_title'));
+});
+
+test('a clause that is one 20 000-character paragraph flows over pages and keeps the signature page last', async () => {
+  const word = 'Nutzungsrecht ';
+  const paragraph = word.repeat(Math.ceil(20000 / word.length)).slice(0, 20000);
+  const drawn = recordTexts();
+  const buffer = await pdfService.renderContractToBuffer(contractContext({
+    sections: [{ section: 'scope', blocks: [{ name: 'Lizenz', body: paragraph }] }],
+  }));
+  const pages = (await PdfLib.load(buffer)).getPageCount();
+  expect(pages).toBeGreaterThanOrEqual(3);
+  const { t } = pdfService._internal;
+  expect(drawn.find((d) => d.text === t('de', 'signature_page_title')).page).toBe(pages - 1);
+  expect(drawn.find((d) => d.text === paragraph)).toBeDefined();
+});

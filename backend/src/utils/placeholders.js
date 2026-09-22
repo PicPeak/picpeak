@@ -10,8 +10,11 @@
  * reported, so a template can't be published with a typo that would print
  * "{{custmer_name}}" on every quote.
  *
- * Values are escaped for the output they land in: `text` (PDF, plain-text
- * mail, the editor textarea) leaves them as they are, `html` escapes them.
+ * Values are escaped for the output they land in: `text` (plain-text mail,
+ * the editor textarea) leaves them as they are, `html` escapes them, and
+ * `markdown` (a contract body: the PDF and the signing page) backslash-escapes
+ * the characters the body's inline markup reads, so a customer called
+ * `**ACME**` is printed as typed instead of turning bold in the PDF only.
  */
 
 const { escapeHtml } = require('./formatters');
@@ -124,9 +127,90 @@ function renderPlaceholders(text, values = {}, { allowlist = QUOTE_PLACEHOLDERS,
     // Own properties only — never a value inherited from Object.prototype.
     const value = values && Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
     if (value == null) return '';
-    const str = String(value);
-    return output === 'html' ? escapeHtml(str) : str;
+    return escapeValue(String(value), output);
   });
+}
+
+// The characters a contract body's inline markup gives a meaning to, plus the
+// backslash that escapes them. `_ # [ ]` mean nothing to the renderer today;
+// escaping them now means a later list or link syntax can't be switched on
+// by a customer's name.
+const MARKDOWN_SPECIAL = /[\\*_#[\]]/g;
+const MARKDOWN_ESCAPABLE = new Set(['\\', '*', '_', '#', '[', ']', '-', '>']);
+
+/** A value made literal for a contract body: see parseInlineMarkdown. */
+function escapeMarkdown(value) {
+  return String(value)
+    .replace(MARKDOWN_SPECIAL, '\\$&')
+    // A value that starts a line with `-` or `>` must not start a list or a quote.
+    .replace(/(^|\n)([ \t]*)([->])/g, '$1$2\\$3');
+}
+
+/** A placeholder value escaped for `output`: 'text' | 'html' | 'markdown'. */
+function escapeValue(value, output = 'text') {
+  if (output === 'html') return escapeHtml(value);
+  if (output === 'markdown') return escapeMarkdown(value);
+  return value;
+}
+
+/**
+ * A contract body's inline markup as runs: `[{ text, bold }]`. `**text**`
+ * is bold; a backslash before one of `\ * _ # [ ] - >` makes that character
+ * literal. An unpaired `**` stays as typed. The PDF draws these runs and the
+ * signing page prints their text, so both read the markup the same way.
+ */
+function parseInlineMarkdown(text) {
+  const source = String(text == null ? '' : text);
+  const runs = [];
+  let bold = false;
+  let buf = '';
+  const flush = () => {
+    if (!buf) return;
+    const last = runs[runs.length - 1];
+    if (last && last.bold === bold) last.text += buf;
+    else runs.push({ text: buf, bold });
+    buf = '';
+  };
+  // Where the next unescaped `**` starts, or -1; `*` alone inside bold text
+  // ends the search, matching the old `\*\*[^*]+\*\*` rule.
+  const closingAt = (from) => {
+    for (let j = from; j < source.length; j += 1) {
+      if (source[j] === '\\' && MARKDOWN_ESCAPABLE.has(source[j + 1])) { j += 1; continue; }
+      if (source[j] === '*') return source[j + 1] === '*' && j > from ? j : -1;
+    }
+    return -1;
+  };
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === '\\' && MARKDOWN_ESCAPABLE.has(source[i + 1])) {
+      buf += source[i + 1];
+      i += 1;
+      continue;
+    }
+    if (ch === '*' && source[i + 1] === '*') {
+      if (bold) {
+        flush();
+        bold = false;
+        i += 1;
+        continue;
+      }
+      const end = closingAt(i + 2);
+      if (end !== -1) {
+        flush();
+        bold = true;
+        i += 1;
+        continue;
+      }
+    }
+    buf += ch;
+  }
+  flush();
+  return runs;
+}
+
+/** A contract body as plain text: markup dropped, escapes resolved. */
+function markdownToPlain(text) {
+  return parseInlineMarkdown(text).map((run) => run.text).join('');
 }
 
 module.exports = {
@@ -139,4 +223,8 @@ module.exports = {
   renderConditionals,
   unknownPlaceholders,
   renderPlaceholders,
+  escapeMarkdown,
+  escapeValue,
+  parseInlineMarkdown,
+  markdownToPlain,
 };

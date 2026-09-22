@@ -42,7 +42,7 @@ async function appendAll(target, buffer) {
  * @returns {Promise<{ buffer: Buffer, ranges: Array<{ index: number, start: number, count: number }> }>}
  *          `start` is 0-based within the merged document.
  */
-async function mergePdfs(parts, info = {}) {
+async function mergePdfsInProcess(parts, info = {}) {
   if (!Array.isArray(parts) || parts.length === 0) throw new Error('mergePdfs needs at least one PDF');
   const merged = await PDFDocument.create({ updateMetadata: false });
   const ranges = [];
@@ -63,7 +63,7 @@ async function mergePdfs(parts, info = {}) {
  * With nothing to insert the document is returned unchanged.
  * @returns {Promise<{ buffer: Buffer, ranges: Array<{ index: number, start: number, count: number }>, lastPageIndex: number|null }>}
  */
-async function insertBeforeLastPage(documentBuffer, inserts, info = {}) {
+async function insertBeforeLastPageInProcess(documentBuffer, inserts, info = {}) {
   if (!Array.isArray(inserts) || inserts.length === 0) {
     return { buffer: documentBuffer, ranges: [], lastPageIndex: null };
   }
@@ -85,4 +85,22 @@ async function insertBeforeLastPage(documentBuffer, inserts, info = {}) {
   return { buffer: Buffer.from(bytes), ranges, lastPageIndex: merged.getPageCount() - 1 };
 }
 
-module.exports = { mergePdfs, insertBeforeLastPage };
+// pdf-lib parses every input in full, so the merge runs in the render worker
+// (services/pdf/renderIsolation) like the renderers do.
+async function mergePdfs(parts, info = {}) {
+  if (!Array.isArray(parts) || parts.length === 0) throw new Error('mergePdfs needs at least one PDF');
+  return require('./renderIsolation').renderInWorker('mergePdfs', { parts, info });
+}
+
+async function insertBeforeLastPage(documentBuffer, inserts, info = {}) {
+  if (!Array.isArray(inserts) || inserts.length === 0) {
+    return { buffer: documentBuffer, ranges: [], lastPageIndex: null };
+  }
+  return require('./renderIsolation').renderInWorker('insertBeforeLastPage', { documentBuffer, inserts, info });
+}
+
+module.exports = {
+  mergePdfs,
+  insertBeforeLastPage,
+  _raw: { mergePdfs: mergePdfsInProcess, insertBeforeLastPage: insertBeforeLastPageInProcess },
+};

@@ -29,6 +29,7 @@ const PDFDocument = require('pdfkit');
 const { SwissQRBill, Table } = require('swissqrbill/pdf');
 const { t } = require('./pdf-i18n');
 const { parsePromotionSnapshot } = require('../utils/lineItemTotals');
+const { parseInlineMarkdown } = require('../utils/placeholders');
 const pdfFonts = require('./pdf/fonts');
 const { BUILT_IN: THEME_BUILT_IN, builtInTheme } = require('./pdf/theme');
 
@@ -1996,12 +1997,17 @@ function vatRowHidden(ctx) {
   return ctx.vatRegistered === false && !Number(totals.vatRate) && !Number(totals.vatAmountMinor);
 }
 
+// The public renderers go through services/pdf/renderIsolation (#1445): a
+// worker thread with a heap limit and a timeout, so one pathological document
+// can't stall or exhaust the server. The worker calls the `_raw` functions.
+const isolation = () => require('./pdf/renderIsolation');
+
 async function renderQuoteToBuffer(context) {
-  return renderDocument('quote', context);
+  return (await isolation().renderInWorker('quote', context)).buffer;
 }
 
 async function renderInvoiceToBuffer(context) {
-  return renderDocument('invoice', context);
+  return (await isolation().renderInWorker('invoice', context)).buffer;
 }
 
 /**
@@ -2026,9 +2032,15 @@ async function renderInvoiceToBuffer(context) {
 /**
  * Render a contract. Resolves `{ buffer, slots }`: where each signature slot
  * landed on the signature page (#1445), for the stamp service and the
- * generated document's record.
+ * generated document's record. Runs in the render worker.
  */
-function renderContractWithSlots(context) {
+async function renderContractWithSlots(context) {
+  const { buffer, slots } = await isolation().renderInWorker('contract', context);
+  return { buffer, slots };
+}
+
+/** renderContractWithSlots in this thread — what the render worker runs. */
+function renderContractInProcess(context) {
   let placedSlots = [];
   return new Promise((resolve, reject) => {
     (async () => {
@@ -2124,28 +2136,25 @@ function renderContractWithSlots(context) {
         };
 
         // ---- helper: render body text with inline **bold** support.
-        // Splits on `**text**` markers, switches the font weight per
-        // chunk via PDFKit's continued: true text continuation. The
-        // first chunk anchors at (PAGE.marginLeft, y); subsequent
-        // chunks continue from PDFKit's cursor so wrapping works
-        // across font switches. After rendering, we read doc.y as
-        // the new cursor.
+        // utils/placeholders.parseInlineMarkdown splits the text into bold
+        // and regular runs (and resolves `\*`-style escapes, which is how a
+        // placeholder value stays literal); each run switches the font via
+        // PDFKit's `continued: true` text continuation. The first run anchors
+        // at (PAGE.marginLeft, y); later runs continue from PDFKit's cursor
+        // so wrapping works across font switches. After rendering, we read
+        // doc.y as the new cursor.
         const renderBodyMarkdown = (text, opts) => {
-          const parts = String(text || '').split(/(\*\*[^*]+\*\*)/g).filter((p) => p.length > 0);
-          if (parts.length === 0) return;
-          const last = parts.length - 1;
-          for (let i = 0; i < parts.length; i++) {
-            const part = parts[i];
-            const isBold = part.length > 4 && part.startsWith('**') && part.endsWith('**');
-            const chunk = isBold ? part.slice(2, -2) : part;
-            if (!chunk) continue;
-            doc.font(isBold ? doc._fonts.bold : doc._fonts.body);
+          const runs = parseInlineMarkdown(text);
+          if (runs.length === 0) return;
+          const last = runs.length - 1;
+          runs.forEach((run, i) => {
+            doc.font(run.bold ? doc._fonts.bold : doc._fonts.body);
             if (i === 0) {
-              doc.text(chunk, PAGE.marginLeft, y, { ...opts, continued: i < last });
+              doc.text(run.text, PAGE.marginLeft, y, { ...opts, continued: i < last });
             } else {
-              doc.text(chunk, { ...opts, continued: i < last });
+              doc.text(run.text, { ...opts, continued: i < last });
             }
-          }
+          });
         };
 
         // ---- intro text ---------------------------------------------
@@ -2381,6 +2390,8 @@ module.exports = {
   PAGE,
   FONT_BODY,
   FONT_BOLD,
+  // The renderers without the worker, for services/pdf/renderIsolation.
+  _raw: { renderDocument, renderContract: renderContractInProcess },
   // Exposed for unit tests + advanced callers.
   _internal: {
     formatMinor, formatDate, t, registerCustomFonts, registerThemeFonts, drawLineItems, stampPageNumbers, themeColor,

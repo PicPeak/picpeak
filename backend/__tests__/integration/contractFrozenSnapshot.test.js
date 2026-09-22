@@ -299,3 +299,26 @@ test('a contract\'s attachments and free text land in its change history', async
   expect(textEntry.source).toBe('contract.update');
   expect(entries.find((e) => e.entity_type === 'contract_attachment_inclusion').source).toBe('contract.update');
 });
+
+test('a render that fails leaves the contract a draft with no stored PDF (send fails closed)', async () => {
+  const quoteId = await acceptedQuote();
+  const { contractId } = await contractService.createFromQuote(quoteId, adminId);
+  const isolation = require('../../src/services/pdf/renderIsolation');
+  const { AppError } = require('../../src/utils/errors');
+  const spy = jest.spyOn(isolation, 'renderInWorker').mockImplementation(async () => {
+    throw new AppError('The document could not be rendered', 422, 'PDF_RENDER_FAILED');
+  });
+  try {
+    const res = await request(contractsApp).post(`/api/admin/contracts/${contractId}/send`).set(auth);
+    expect(res.status).toBe(422);
+    expect(res.body.code || res.body.error?.code).toBe('PDF_RENDER_FAILED');
+  } finally {
+    spy.mockRestore();
+  }
+  const row = await contractRow(contractId);
+  expect(row.status).toBe('draft');
+  expect(row.pdf_path || null).toBeNull();
+  expect(row.rendered_content || null).toBeNull();
+  const docs = await db('generated_documents').where({ doc_type: 'contract', doc_id: contractId });
+  expect(docs).toHaveLength(0);
+});
