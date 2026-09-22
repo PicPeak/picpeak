@@ -287,6 +287,12 @@ describe('v1 original downloads (issue 1473)', () => {
       expect(json(garbage)).toEqual(json(unknown));
     });
 
+    it('answers 404 for event and photo ids past the database integer range', async () => {
+      expect((await get(`/api/v1/events/2147483648/photos/${photos.jpeg}/download`)).status).toBe(404);
+      expect((await get(`/api/v1/events/${eventId}/photos/2147483648/download`)).status).toBe(404);
+      expect((await get('/api/v1/events/2147483648/photos/download')).status).toBe(404);
+    });
+
     it('answers 404 PHOTO_FILE_MISSING when the row exists but the file does not', async () => {
       const res = await get(`/api/v1/events/${eventId}/photos/${photos.missing}/download`);
       expect(res.status).toBe(404);
@@ -596,6 +602,11 @@ describe('v1 original downloads (issue 1473)', () => {
       const bad = await get(`/api/v1/events/${eventId}/photos/download?ids=1,abc`);
       expect(bad.status).toBe(400);
       expect(json(bad).code).toBe('INVALID_PHOTO_IDS');
+
+      // Past PostgreSQL's integer range: a 400, not a database error.
+      const huge = await get(`/api/v1/events/${eventId}/photos/download?ids=2147483648`);
+      expect(huge.status).toBe(400);
+      expect(json(huge).code).toBe('INVALID_PHOTO_IDS');
 
       const many = Array.from({ length: 501 }, (_, i) => i + 1).join(',');
       const tooMany = await get(`/api/v1/events/${eventId}/photos/download?ids=${many}`);

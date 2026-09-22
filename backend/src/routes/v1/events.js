@@ -965,10 +965,14 @@ async function loadDownloadableEvent(req, res) {
   return event;
 }
 
-// Non-numeric ids would otherwise reach the ownership lookup, where
-// PostgreSQL rejects them as a 500 before any 404 can be answered.
+// A row id as PostgreSQL's integer column accepts it. Anything else —
+// non-numeric, or past 2^31-1 — would be rejected there as a 500 before any
+// 404 or 400 could be answered.
+const PG_MAX_INT = 2147483647;
+const isRowId = (value) => /^\d{1,10}$/.test(String(value)) && Number(value) <= PG_MAX_INT;
+
 function requireNumericEventId(req, res, next) {
-  if (!/^\d+$/.test(req.params.id)) return res.status(404).json({ error: 'Event not found' });
+  if (!isRowId(req.params.id)) return res.status(404).json({ error: 'Event not found' });
   next();
 }
 
@@ -1195,7 +1199,7 @@ router.get(
       let ids = null;
       if (req.query.ids !== undefined) {
         const parts = String(req.query.ids).split(',').map((s) => s.trim()).filter(Boolean);
-        if (!parts.length || !parts.every((s) => /^\d{1,15}$/.test(s))) {
+        if (!parts.length || !parts.every(isRowId)) {
           return res.status(400).json({ error: 'ids must be a comma-separated list of photo ids', code: 'INVALID_PHOTO_IDS' });
         }
         ids = [...new Set(parts.map(Number))];
@@ -1419,7 +1423,7 @@ router.get(
       if (!event) return;
 
       // One answer for unknown, malformed and other-event ids.
-      const photo = /^\d{1,15}$/.test(req.params.photoId)
+      const photo = isRowId(req.params.photoId)
         ? await db('photos').where({ id: Number(req.params.photoId), event_id: event.id }).first()
         : null;
       if (!photo) return res.status(404).json({ error: 'Photo not found' });
