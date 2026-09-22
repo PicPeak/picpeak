@@ -240,7 +240,9 @@ async function migrateLegacyFont(logger = require('../../utils/logger')) {
       if (!isUniqueViolation(err)) throw err;
     }
   }
-  await db('business_profile').where({ id: 1 }).update({ pdf_font_ttf_path: null });
+  // business_profile is an audited table: the change goes through the recorder.
+  const { auditedUpdate } = require('../accountingHistory');
+  await auditedUpdate(db, 'business_profile', { id: 1 }, { pdf_font_ttf_path: null }, { source: 'pdf.fonts.legacy_migration' });
   logger.info('Moved the earlier custom PDF font into the uploaded fonts', { fontId: font.id });
   return font;
 }
