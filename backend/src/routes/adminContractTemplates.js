@@ -8,7 +8,8 @@
  *   GET    /:id                            template, draft, published version, history
  *   GET    /:id/versions/:version          one version with its clauses
  *   PUT    /:id/draft                      save the draft (needs lockVersion)
- *   POST   /:id/publish                    publish the draft (needs lockVersion)
+ *   POST   /:id/publish-check              the pre-publication check of the draft, with a dry-run render
+ *   POST   /:id/publish                    publish the draft (needs lockVersion; refused on any check error)
  *   POST   /:id/versions/:version/draft    a new draft from an earlier version (needs lockVersion)
  *   POST   /:id/duplicate                  copy into a new template
  *   POST   /:id/archive, /:id/restore
@@ -95,6 +96,11 @@ router.put(
     return successResponse(res, await templates.saveDraft(req.params.id, req.body, req.admin?.id));
   })
 );
+
+router.post('/:id/publish-check', MANAGE, [idParam], handleAsync(async (req, res) => {
+  validateRequest(req);
+  return successResponse(res, await templates.checkTemplate(req.params.id));
+}));
 
 router.post('/:id/publish', MANAGE, [idParam, lockBody], handleAsync(async (req, res) => {
   validateRequest(req);

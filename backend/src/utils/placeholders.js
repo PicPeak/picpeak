@@ -105,6 +105,35 @@ function renderConditionals(text, values = {}) {
   });
 }
 
+// Every opening and closing conditional tag, well-formed or not, so the check
+// can tell a nested block (which the non-greedy CONDITIONAL_PATTERN mis-pairs)
+// and an unclosed one from a correct block.
+const CONDITIONAL_TAG = /\{\{\s*(?:#(if)\s+\w+|\/(if))\s*\}\}/g;
+
+/**
+ * What is wrong with the `{{#if}}` blocks in `text`: `CONDITIONAL_NESTED`
+ * when one opens inside another (the renderer can't pair them), and
+ * `CONDITIONAL_UNCLOSED` for an opening without its `{{/if}}` or a closing
+ * without its opening. Empty when every block is flat and closed.
+ */
+function conditionalProblems(text) {
+  if (typeof text !== 'string' || !text) return [];
+  const problems = new Set();
+  let depth = 0;
+  for (const match of text.matchAll(CONDITIONAL_TAG)) {
+    if (match[1]) {
+      if (depth > 0) problems.add('CONDITIONAL_NESTED');
+      depth += 1;
+    } else if (depth === 0) {
+      problems.add('CONDITIONAL_UNCLOSED');
+    } else {
+      depth -= 1;
+    }
+  }
+  if (depth > 0) problems.add('CONDITIONAL_UNCLOSED');
+  return [...problems];
+}
+
 /** Placeholder keys in `text` that are not in `allowlist`. */
 function unknownPlaceholders(text, allowlist = QUOTE_PLACEHOLDERS) {
   return findPlaceholders(text).filter((key) => !allowlist.includes(key));
@@ -220,6 +249,7 @@ module.exports = {
   CONDITIONAL_PATTERN,
   findPlaceholders,
   hasConditional,
+  conditionalProblems,
   renderConditionals,
   unknownPlaceholders,
   renderPlaceholders,

@@ -349,6 +349,7 @@ function drawIssuerBlock(doc, issuer, x, y, width, locale) {
       logger.warn('PDFKit failed to embed logo image', {
         path: file, err: err.message,
       });
+      reportFinding(doc, { code: 'LOGO_MISSING', severity: 'warning' });
       return false;
     }
   };
@@ -1419,10 +1420,23 @@ async function appendEpcQr(doc, ctx) {
 
 /** Register the theme's faces; falls back to the issuer's family, then Helvetica. */
 function registerThemeFonts(doc, issuer = {}, theme = null) {
-  return pdfFonts.registerFonts(doc, {
-    pdfFontTtfPath: issuer.pdfFontTtfPath,
-    fontFamily: (theme && theme.fontFamily) || issuer.pdfFontFamily || null,
-  }) || { body: FONT_BODY, bold: FONT_BOLD, italic: FONT_ITALIC };
+  const fontFamily = (theme && theme.fontFamily) || issuer.pdfFontFamily || null;
+  const fonts = pdfFonts.registerFonts(doc, { pdfFontTtfPath: issuer.pdfFontTtfPath, fontFamily });
+  // A configured font that can't be loaded falls back to Helvetica without a
+  // word; a render that collects findings (the template check) hears of it.
+  if (!fonts && (fontFamily || issuer.pdfFontTtfPath)) {
+    reportFinding(doc, { code: 'FONT_MISSING', severity: 'warning', key: fontFamily || 'custom' });
+  }
+  return fonts || { body: FONT_BODY, bold: FONT_BOLD, italic: FONT_ITALIC };
+}
+
+/**
+ * Note a problem the render worked around (a missing font or logo) on
+ * `doc._findings`, when the caller asked for them (#1445 template check).
+ */
+function reportFinding(doc, finding) {
+  if (!doc || !Array.isArray(doc._findings)) return;
+  if (!doc._findings.some((f) => f.code === finding.code)) doc._findings.push(finding);
 }
 
 /** Remember that the page just added is a payment slip (QR-bill or EPC). */
@@ -2035,13 +2049,17 @@ async function renderInvoiceToBuffer(context) {
  * generated document's record. Runs in the render worker.
  */
 async function renderContractWithSlots(context) {
-  const { buffer, slots } = await isolation().renderInWorker('contract', context);
-  return { buffer, slots };
+  const { buffer, slots, itemPages, findings } = await isolation().renderInWorker('contract', context);
+  return { buffer, slots, itemPages, findings };
 }
 
 /** renderContractWithSlots in this thread — what the render worker runs. */
 function renderContractInProcess(context) {
   let placedSlots = [];
+  // Where each clause landed (1-based pages), for the template editor's
+  // page-break markers, and what the render had to work around.
+  const itemPages = [];
+  const findings = [];
   return new Promise((resolve, reject) => {
     (async () => {
       try {
@@ -2070,11 +2088,13 @@ function renderContractInProcess(context) {
 
         const chunks = [];
         doc.on('data', (c) => chunks.push(c));
-        doc.on('end', () => resolve({ buffer: Buffer.concat(chunks), slots: placedSlots }));
+        doc.on('end', () => resolve({ buffer: Buffer.concat(chunks), slots: placedSlots, itemPages, findings }));
         doc.on('error', reject);
 
         doc._theme = theme;
+        doc._findings = findings;
         doc._fonts = registerThemeFonts(doc, ctx.issuer || {}, theme);
+        const currentPage = () => doc.bufferedPageRange().count;
 
         // ---- header: issuer + recipient blocks (DIN 5008) ------------
         const issuerWidth = 180;
@@ -2185,6 +2205,7 @@ function renderContractInProcess(context) {
 
           for (const block of sec.blocks) {
             ensureSpace(48);
+            const firstPage = currentPage();
             if (block.name) {
               doc.font(doc._fonts.bold).fontSize(10).fillColor(themeColor(doc, 'text'));
               doc.text(String(block.name), PAGE.marginLeft, y, {
@@ -2259,6 +2280,9 @@ function renderContractInProcess(context) {
                 doc.y = y;
                 doc.fillColor(themeColor(doc, 'text'));
               }
+            }
+            if (block.position != null) {
+              itemPages.push({ position: Number(block.position), firstPage, lastPage: currentPage() });
             }
           }
 

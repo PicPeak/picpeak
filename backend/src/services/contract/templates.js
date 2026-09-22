@@ -23,13 +23,14 @@ const { AppError } = require('../../utils/errors');
 const { auditedInsert, deleteWithAccountingHistory } = require('../accountingHistory');
 const { ensureInt } = require('../../utils/numericHelpers');
 const { upsertAppSetting } = require('../../utils/appSettings');
-const { unknownPlaceholders, CONTRACT_PLACEHOLDERS } = require('../../utils/placeholders');
+const { unknownPlaceholders, conditionalProblems, CONTRACT_PLACEHOLDERS } = require('../../utils/placeholders');
 const { canonicalSha256 } = require('../../utils/canonicalJson');
 const { ALLOWED_SECTIONS } = require('../contractBlocksService');
 const { DEFAULT_SETTING, ensureDefaultTemplate, getDefaultTemplateId } = require('./defaultTemplate');
 const content = require('./content');
 const attachments = require('./attachments');
 const { insertBeforeLastPage } = require('../pdf/merge');
+const crypto = require('crypto');
 
 const MAX_ITEMS = 200;
 const MAX_DESCRIPTION = 2000;
@@ -400,11 +401,29 @@ async function saveDraft(id, payload, adminId) {
 }
 
 /**
- * Publish the draft. Refuses a draft with no clauses, an archived library
- * block, an empty free-text section or an unknown placeholder, listing every
- * problem at once. Returns `{ version, contentSha256 }`.
+ * Publish the draft. Runs the pre-publication check first (checkTemplate)
+ * and refuses on any error — `400 TEMPLATE_INVALID` with every finding in
+ * `details.findings` — before the transaction, so a refused publish changes
+ * nothing, the draft's lock version included. The check reads the draft as
+ * it stands; a save between the check and the publish bumps the lock, and
+ * the publish then fails its lock claim instead of going out unchecked.
+ * Returns `{ version, contentSha256 }`.
  */
 async function publishTemplate(id, { lockVersion }, adminId) {
+  const template = await db('contract_templates').where({ id }).first();
+  if (!template) throw notFound();
+  if (ensureInt(lockVersion) !== ensureInt(template.lock_version)) throw conflict();
+  assertEditable(template);
+  if (!(await db('contract_template_versions').where({ template_id: id, status: 'draft' }).first())) {
+    throw new AppError('There is no draft to publish', 409, 'TEMPLATE_NO_DRAFT');
+  }
+  const check = await checkTemplate(id);
+  if (!check.ok) {
+    const errors = check.findings.filter((f) => f.severity === 'error');
+    const err = invalid(errors.map((f) => f.message).join(' · '));
+    err.details = { findings: check.findings };
+    throw err;
+  }
   const result = await db.transaction(async (trx) => {
     const template = await claimLock(trx, id, lockVersion);
     assertEditable(template);
@@ -412,25 +431,7 @@ async function publishTemplate(id, { lockVersion }, adminId) {
     if (!draft) throw new AppError('There is no draft to publish', 409, 'TEMPLATE_NO_DRAFT');
     const items = await loadItems(draft.id, trx);
     if (!items.length) throw invalid('Add at least one clause before publishing');
-
-    const problems = [];
-    for (const item of items) {
-      if (item.kind === 'block' && !truthy(item.block_is_active)) {
-        problems.push(`"${item.block_name}" is archived in the clause library`);
-      }
-      if (item.kind === 'text' && !Object.keys(content.parseLocaleMap(item.body_override)).length) {
-        problems.push(`Free-text section "${item.heading || `#${item.position}`}" has no text`);
-      }
-    }
     const versionAttachments = await attachments.loadVersionAttachments(draft.id, trx);
-    for (const attachment of versionAttachments) {
-      if (!truthy(attachment.is_active)) problems.push(`"${attachment.name}" is archived in the attachment library`);
-    }
-    const texts = [draft.intro_text, draft.outro_text, ...items.map((item) => item.body_override)]
-      .flatMap((value) => Object.values(content.parseLocaleMap(value)));
-    const unknown = new Set(texts.flatMap((text) => unknownPlaceholders(text, CONTRACT_PLACEHOLDERS)));
-    if (unknown.size) problems.push(`Unknown placeholders: ${[...unknown].map((k) => `{{${k}}}`).join(', ')}`);
-    if (problems.length) throw invalid(problems.join(' · '));
 
     // Freeze the blocks' bodies and hash the resolved content.
     const now = new Date();
@@ -618,11 +619,8 @@ async function seedContractFromVersion(trx, contractId, version, history = { sou
   await attachments.seedContractAttachments(trx, contractId, version.id, history);
 }
 
-/**
- * A sample PDF of a template's draft (or a given version), rendered by the
- * real contract pipeline with the business profile and no customer.
- */
-async function renderTemplatePreview(id, { version: versionNumber } = {}) {
+/** The version a preview or a check renders: the one asked for, else the draft, else the published one. */
+async function previewVersion(id, versionNumber) {
   const template = await db('contract_templates').where({ id }).first();
   if (!template) throw notFound();
   const version = versionNumber
@@ -630,8 +628,18 @@ async function renderTemplatePreview(id, { version: versionNumber } = {}) {
     : (await db('contract_template_versions').where({ template_id: id, status: 'draft' }).first()
       || await db('contract_template_versions').where({ template_id: id, status: 'published' }).first());
   if (!version) throw new AppError('Template version not found', 404, 'TEMPLATE_VERSION_NOT_FOUND');
-  const items = await loadItems(version.id);
+  return { template, version };
+}
 
+/**
+ * Render a version the way a contract made from it renders, with the business
+ * profile and no customer. `skipUnreadable` leaves out a merged attachment
+ * whose file can't be read (the check reports it) instead of failing.
+ * Returns the PDF, where each clause landed, what the render worked around,
+ * the page count and the render context.
+ */
+async function renderVersion(template, version, { skipUnreadable = false } = {}) {
+  const items = await loadItems(version.id);
   const businessProfileService = require('../businessProfileService');
   const { profile } = await businessProfileService.getProfile();
   const language = (profile && profile.default_locale) || 'de';
@@ -655,15 +663,151 @@ async function renderTemplatePreview(id, { version: versionNumber } = {}) {
   const textSections = items.filter((item) => item.kind === 'text').map((item) => ({
     section: item.section, position: item.position, heading: item.heading, body: item.body_override,
   }));
+  // Merged attachments where a sent contract has them: before the signature page.
+  const merged = [];
+  for (const row of (await attachments.loadVersionAttachments(version.id)).filter((r) => r.delivery === 'merged')) {
+    try {
+      merged.push({ buffer: attachments.readStoredFile(row).buffer, pages: Number(row.page_count) || 0 });
+    } catch (err) {
+      if (!skipUnreadable) throw err;
+    }
+  }
   const { buildRenderContext } = require('./renderContext');
   const pdfService = require('../pdfService');
   const ctx = await buildRenderContext(fakeContract, inclusions, textSections);
-  const buffer = await pdfService.renderContractToBuffer(ctx);
-  // Merged attachments where a sent contract has them: before the signature page.
-  const merged = (await attachments.loadVersionAttachments(version.id))
-    .filter((row) => row.delivery === 'merged')
-    .map((row) => attachments.readStoredFile(row).buffer);
-  return (await insertBeforeLastPage(buffer, merged, { title: 'PREVIEW' })).buffer;
+  ctx.mergedAttachmentPages = merged.reduce((sum, file) => sum + file.pages, 0);
+  const rendered = await pdfService.renderContractWithSlots(ctx);
+  const own = rendered.slots && rendered.slots.length ? rendered.slots[0].pageIndex + 1 : 0;
+  const result = await insertBeforeLastPage(rendered.buffer, merged.map((file) => file.buffer), { title: 'PREVIEW' });
+  return {
+    buffer: result.buffer,
+    itemPages: rendered.itemPages || [],
+    findings: rendered.findings || [],
+    pageCount: own + ctx.mergedAttachmentPages,
+    ctx,
+    profile,
+  };
+}
+
+/**
+ * A sample PDF of a template's draft (or a given version), rendered by the
+ * real contract pipeline with the business profile and no customer.
+ */
+async function renderTemplatePreview(id, { version: versionNumber } = {}) {
+  const { template, version } = await previewVersion(id, versionNumber);
+  return (await renderVersion(template, version)).buffer;
+}
+
+// A contract past this many pages is almost always a mistake (a pasted
+// document, a clause repeated); worth a word, not a refusal.
+const PAGE_COUNT_WARNING = 30;
+const LOCALES_CHECKED = ['en', 'de'];
+
+const finding = (code, severity, message, where = {}) => ({ code, severity, ...where, message });
+
+/**
+ * The pre-publication check of a template's draft (#1445): every problem
+ * with a code, a severity and where it is — `itemPosition` (1-based clause),
+ * `locale`, `key`, `field` ('intro' | 'outro'), `attachmentId` — plus a dry
+ * run of the real render with the page each clause lands on. Errors block
+ * publishing; warnings don't. Reads only; the draft is never touched.
+ *
+ * Returns `{ ok, pageCount, itemPages, findings }`.
+ */
+async function checkTemplate(id) {
+  const template = await db('contract_templates').where({ id }).first();
+  if (!template) throw notFound();
+  const draft = await db('contract_template_versions').where({ template_id: id, status: 'draft' }).first();
+  if (!draft) throw new AppError('There is no draft to check', 409, 'TEMPLATE_NO_DRAFT');
+  const items = await loadItems(draft.id);
+  const findings = [];
+
+  if (!items.length) findings.push(finding('NO_CLAUSES', 'error', 'Add at least one clause before publishing'));
+
+  const textChecks = (text, where) => {
+    for (const key of unknownPlaceholders(text, CONTRACT_PLACEHOLDERS)) {
+      findings.push(finding('PLACEHOLDER_UNKNOWN', 'error', `Unknown placeholder {{${key}}}`, { ...where, key }));
+    }
+    for (const code of conditionalProblems(text)) {
+      findings.push(finding(code, 'error', code === 'CONDITIONAL_NESTED'
+        ? 'A "Show only if" block sits inside another one'
+        : 'A "Show only if" block is not closed', where));
+    }
+  };
+  for (const [field, value] of [['intro', draft.intro_text], ['outro', draft.outro_text]]) {
+    for (const [locale, text] of Object.entries(content.parseLocaleMap(value))) textChecks(text, { field, locale });
+  }
+
+  for (const item of items) {
+    const itemPosition = ensureInt(item.position);
+    const label = item.kind === 'block' ? (item.block_name || `#${itemPosition}`) : (item.heading || `#${itemPosition}`);
+    if (item.kind === 'block' && !truthy(item.block_is_active)) {
+      findings.push(finding('BLOCK_ARCHIVED', 'error', `"${label}" is archived in the clause library`, { itemPosition }));
+    }
+    const override = content.parseLocaleMap(item.body_override);
+    if (item.kind === 'text' && !Object.keys(override).length) {
+      findings.push(finding('SECTION_EMPTY', 'error', `Free-text section "${label}" has no text`, { itemPosition }));
+    }
+    for (const [locale, text] of Object.entries(override)) textChecks(text, { itemPosition, locale });
+    // What the clause says in each language: a block's override over its
+    // library text, a section's own text.
+    const effective = item.kind === 'block' ? content.mergeLocaleMaps(content.blockBodies(item, 'block_'), override) : override;
+    const has = (locale) => typeof effective[locale] === 'string' && effective[locale].trim() !== '';
+    const present = LOCALES_CHECKED.filter(has);
+    if (present.length === 1) {
+      const missing = LOCALES_CHECKED.find((locale) => !has(locale));
+      findings.push(finding('LOCALE_INCOMPLETE', 'warning', `"${label}" has no ${missing.toUpperCase()} text`, { itemPosition, locale: missing }));
+    }
+  }
+
+  for (const row of await attachments.loadVersionAttachments(draft.id)) {
+    const where = { attachmentId: row.attachment_id };
+    if (!truthy(row.is_active)) {
+      findings.push(finding('ATTACHMENT_ARCHIVED', 'error', `"${row.name}" is archived in the attachment library`, where));
+    }
+    let buffer = null;
+    try {
+      ({ buffer } = attachments.readStoredFile(row));
+    } catch (_) {
+      findings.push(finding('ATTACHMENT_MISSING', 'error', `The file of "${row.name}" is missing`, where));
+    }
+    if (buffer && crypto.createHash('sha256').update(buffer).digest('hex') !== row.sha256) {
+      findings.push(finding('ATTACHMENT_CHANGED', 'error', `The file of "${row.name}" no longer matches the one uploaded`, where));
+    }
+  }
+
+  // The dry run: the real pipeline, in the render worker.
+  let pageCount = null;
+  let itemPages = [];
+  try {
+    const rendered = await renderVersion(template, draft, { skipUnreadable: true });
+    pageCount = rendered.pageCount;
+    itemPages = rendered.itemPages;
+    for (const f of rendered.findings) {
+      findings.push(finding(f.code, f.severity, f.code === 'FONT_MISSING'
+        ? `The font "${f.key}" could not be loaded; the PDF falls back to Helvetica`
+        : 'The logo could not be drawn', f.key ? { key: f.key } : {}));
+    }
+    const issuer = rendered.ctx.issuer || {};
+    const { getAppSetting } = require('../../utils/appSettings');
+    const logoConfigured = (rendered.profile && rendered.profile.logo_path)
+      || await getAppSetting('branding_logo_path', null) || await getAppSetting('branding_logo_url', null);
+    if (issuer.showLogo !== false && logoConfigured && !issuer.logoPath && !findings.some((f) => f.code === 'LOGO_MISSING')) {
+      findings.push(finding('LOGO_MISSING', 'warning', 'The logo file could not be found; the PDF has no logo'));
+    }
+    if (pageCount > PAGE_COUNT_WARNING) {
+      findings.push(finding('PAGE_COUNT_HIGH', 'warning', `The contract runs to ${pageCount} pages`));
+    }
+  } catch (err) {
+    findings.push(finding('RENDER_FAILED', 'error', 'The contract could not be rendered'));
+  }
+
+  return {
+    ok: !findings.some((f) => f.severity === 'error'),
+    pageCount,
+    itemPages,
+    findings,
+  };
 }
 
 module.exports = {
@@ -682,4 +826,5 @@ module.exports = {
   resolveVersionForNewContract,
   seedContractFromVersion,
   renderTemplatePreview,
+  checkTemplate,
 };

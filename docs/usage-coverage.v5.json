@@ -1772,13 +1772,14 @@
       "signals": [
         "document_templates"
       ],
-      "reason": "Admin contract template operations only (drafts, publishing, versions, default, preview). No clause wording, customer data or contract content.",
+      "reason": "Admin contract template operations only (drafts, pre-publication check, publishing, versions, default, preview). No clause wording, customer data or contract content.",
       "route_signatures": [
         "GET /",
         "POST /",
         "GET /:id",
         "GET /:id/versions/:version",
         "PUT /:id/draft",
+        "POST /:id/publish-check",
         "POST /:id/publish",
         "POST /:id/versions/:version/draft",
         "POST /:id/duplicate",

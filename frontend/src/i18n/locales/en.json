@@ -8087,7 +8087,35 @@
       "versionEarlier": "Earlier",
       "draftFromVersion": "New draft from this version",
       "draftFromVersionConfirm": "Replace the current draft with a copy of version {{version}}?",
-      "draftCreated": "Draft created from version {{version}}"
+      "draftCreated": "Draft created from version {{version}}",
+      "check": {
+        "run": "Check",
+        "failed": "The check could not be run.",
+        "clause": "Clause {{position}}",
+        "error": "Error",
+        "warning": "Warning",
+        "goTo": "Go to",
+        "blocked": "Fix these before publishing",
+        "passed": "Ready to publish",
+        "pageCount": "{{count}} pages in the dry run",
+        "stale": "Changed since the check — check again",
+        "codes": {
+          "NO_CLAUSES": "Add at least one clause before publishing.",
+          "BLOCK_ARCHIVED": "{{where}}: archived in the clause library.",
+          "SECTION_EMPTY": "{{where}}: the free-text section has no text.",
+          "PLACEHOLDER_UNKNOWN": "{{where}} ({{locale}}): unknown placeholder {{key}}.",
+          "CONDITIONAL_NESTED": "{{where}} ({{locale}}): a \"Show only if\" block sits inside another one.",
+          "CONDITIONAL_UNCLOSED": "{{where}} ({{locale}}): a \"Show only if\" block is not closed.",
+          "LOCALE_INCOMPLETE": "{{where}}: no {{locale}} text.",
+          "ATTACHMENT_ARCHIVED": "Attachment \"{{name}}\" is archived in the attachment library.",
+          "ATTACHMENT_MISSING": "The file of attachment \"{{name}}\" is missing.",
+          "ATTACHMENT_CHANGED": "The file of attachment \"{{name}}\" no longer matches the one that was uploaded.",
+          "FONT_MISSING": "The font \"{{key}}\" could not be loaded; the PDF falls back to Helvetica.",
+          "LOGO_MISSING": "The logo could not be found; the PDF has no logo.",
+          "PAGE_COUNT_HIGH": "The contract runs to {{pages}} pages.",
+          "RENDER_FAILED": "The contract could not be rendered as a PDF."
+        }
+      }
     },
     "attachments": {
       "heading": "Attachments",

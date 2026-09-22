@@ -8,7 +8,7 @@
  * admin's save is reported instead of overwritten. Publishing freezes a
  * version; earlier versions stay in the history and can start a new draft.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -24,8 +24,16 @@ import {
 } from '../../../services/contracts.service';
 import {
   contractTemplatesService, templateError, CONTRACT_LOCALES, CONTRACT_PLACEHOLDERS,
-  type ContractLocale, type ContractTemplateDetail, type LocaleText,
+  type ContractLocale, type ContractTemplateDetail, type LocaleText, type TemplateFinding, type TemplatePublishCheck,
 } from '../../../services/contractTemplates.service';
+import { TemplateCheckPanel } from './TemplateCheckPanel';
+
+/** Ask a text field to show a language and take the focus ("Go to" from the check). */
+interface FocusRequest {
+  target: string;
+  locale: ContractLocale;
+  nonce: number;
+}
 
 interface DraftItem {
   key: string;
@@ -93,9 +101,24 @@ const LocaleTextField: React.FC<{
   hint?: LocaleText;
   rows?: number;
   readOnly?: boolean;
-}> = ({ id, label, value, onChange, hint, rows = 3, readOnly = false }) => {
+  /** Switch to a language and focus the text (a check finding's "Go to"). */
+  focusRequest?: { locale: ContractLocale; nonce: number } | null;
+}> = ({ id, label, value, onChange, hint, rows = 3, readOnly = false, focusRequest = null }) => {
   const { t } = useTranslation();
   const [locale, setLocale] = useState<ContractLocale>('de');
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const pendingFocus = useRef(false);
+  useEffect(() => {
+    if (!focusRequest) return;
+    pendingFocus.current = true;
+    setLocale(focusRequest.locale);
+  }, [focusRequest]);
+  useEffect(() => {
+    if (!pendingFocus.current || !textarea.current) return;
+    pendingFocus.current = false;
+    textarea.current.scrollIntoView?.({ block: 'center' });
+    textarea.current.focus();
+  }, [focusRequest, locale]);
   return (
     <div>
       <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
@@ -117,6 +140,7 @@ const LocaleTextField: React.FC<{
         </div>
       </div>
       <textarea
+        ref={textarea}
         id={`${id}-${locale}`}
         rows={rows}
         className={fieldClass}
@@ -160,6 +184,10 @@ export const ContractTemplateEditorPage: React.FC = () => {
   const [problem, setProblem] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The last pre-publication check, and whether the draft changed since.
+  const [check, setCheck] = useState<TemplatePublishCheck | null>(null);
+  const [checkStale, setCheckStale] = useState(false);
+  const [focus, setFocus] = useState<FocusRequest | null>(null);
   const [pickBlockId, setPickBlockId] = useState('');
 
   // Load the draft (or the published version) whenever the server copy changes.
@@ -177,6 +205,14 @@ export const ContractTemplateEditorPage: React.FC = () => {
     setLockVersion(detail.template.lockVersion);
   }, [detail]);
 
+  // Any edit after a check makes its result (and its page numbers) stale.
+  const checkedAt = useRef<unknown[] | null>(null);
+  useEffect(() => {
+    if (!checkedAt.current) return;
+    const now = [title, intro, outro, items, attachments];
+    if (now.some((value, i) => value !== checkedAt.current?.[i])) setCheckStale(true);
+  }, [title, intro, outro, items, attachments]);
+
   const readOnly = !detail || detail.template.isSystem || detail.template.status === 'archived';
   const blocksBySection = useMemo(() => {
     const out = new Map<ContractBlockSection, ContractBlock[]>();
@@ -192,10 +228,58 @@ export const ContractTemplateEditorPage: React.FC = () => {
   };
 
   const fail = (err: unknown, fallback: string) => {
-    const { message, code } = templateError(err);
+    const { message, code, findings } = templateError(err);
     if (code === 'TEMPLATE_CONFLICT') setConflict(true);
+    else if (code === 'TEMPLATE_INVALID' && findings) showCheck({ ok: false, pageCount: null, itemPages: [], findings });
     else setProblem(message || fallback);
   };
+
+  const showCheck = (result: TemplatePublishCheck) => {
+    setCheck(result);
+    setCheckStale(false);
+    checkedAt.current = [title, intro, outro, items, attachments];
+  };
+
+  /** Save, then run the check on what was saved. Null when either failed. */
+  const runCheck = async (): Promise<{ saved: ContractTemplateDetail; result: TemplatePublishCheck } | null> => {
+    const saved = await saveDraft();
+    if (!saved) return null;
+    try {
+      const result = await contractTemplatesService.check(templateId);
+      showCheck(result);
+      return { saved, result };
+    } catch (err) {
+      fail(err, t('contracts.templates.check.failed', 'The check could not be run.') as string);
+      return null;
+    }
+  };
+
+  const onCheck = async () => {
+    setBusy(true);
+    await runCheck();
+    setBusy(false);
+  };
+
+  const goTo = (finding: TemplateFinding) => {
+    const locale = (finding.locale || 'de') as ContractLocale;
+    if (finding.field) {
+      setFocus({ target: finding.field, locale, nonce: Date.now() });
+      return;
+    }
+    if (finding.itemPosition) {
+      const item = items[finding.itemPosition - 1];
+      if (!item) return;
+      update(item.key, { expanded: true });
+      setFocus({ target: item.key, locale, nonce: Date.now() });
+      return;
+    }
+    if (finding.attachmentId) {
+      const card = document.getElementById('contract-template-attachments');
+      card?.scrollIntoView?.({ block: 'center' });
+      card?.focus();
+    }
+  };
+  const focusFor = (target: string) => (focus && focus.target === target ? { locale: focus.locale, nonce: focus.nonce } : null);
 
   const saveDraft = async (): Promise<ContractTemplateDetail | null> => {
     setProblem(null);
@@ -231,10 +315,14 @@ export const ContractTemplateEditorPage: React.FC = () => {
   const onPublish = async () => {
     setBusy(true);
     try {
-      const saved = await saveDraft();
-      if (!saved) return;
-      const published = await contractTemplatesService.publish(templateId, saved.template.lockVersion);
+      // The check first: errors stay on screen with their "Go to", and the
+      // draft is not touched. The server runs the same check again.
+      const checked = await runCheck();
+      if (!checked || !checked.result.ok) return;
+      const published = await contractTemplatesService.publish(templateId, checked.saved.template.lockVersion);
       store(published);
+      setCheck(null);
+      checkedAt.current = null;
       toast.success(t('contracts.templates.published', 'Version {{version}} published', { version: published.version }));
     } catch (err) {
       fail(err, t('contracts.templates.publishFailed', 'The template could not be published.') as string);
@@ -351,9 +439,23 @@ export const ContractTemplateEditorPage: React.FC = () => {
       )}
       {problem && (
         <div role="alert" className="p-3 rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/30 text-sm text-red-800 dark:text-red-200">
-          <ul className="list-disc pl-5 space-y-1">
-            {problem.split(' · ').map((line) => <li key={line}>{line}</li>)}
-          </ul>
+          {problem}
+        </div>
+      )}
+      {check && (
+        <div role="status" aria-live="polite">
+          <TemplateCheckPanel
+            check={check}
+            stale={checkStale}
+            onGoTo={goTo}
+            labels={{
+              clauseName: (position) => {
+                const item = items[position - 1];
+                return item ? (item.kind === 'block' ? item.name : item.heading) || null : null;
+              },
+              attachmentName: (attachmentId) => attachments.find((a) => a.attachmentId === attachmentId)?.name || null,
+            }}
+          />
         </div>
       )}
 
@@ -375,9 +477,9 @@ export const ContractTemplateEditorPage: React.FC = () => {
           </div>
         </div>
         <LocaleTextField id="contract-template-intro" label={t('contracts.templates.introText', 'Intro text') as string}
-          value={intro} onChange={setIntro} readOnly={readOnly} />
+          value={intro} onChange={setIntro} readOnly={readOnly} focusRequest={focusFor('intro')} />
         <LocaleTextField id="contract-template-outro" label={t('contracts.templates.outroText', 'Closing text') as string}
-          value={outro} onChange={setOutro} rows={2} readOnly={readOnly} />
+          value={outro} onChange={setOutro} rows={2} readOnly={readOnly} focusRequest={focusFor('outro')} />
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
           {t('contracts.templates.placeholders', 'Placeholders you can use:')}{' '}
           <span className="font-mono">{CONTRACT_PLACEHOLDERS.map((key) => `{{${key}}}`).join(' ')}</span>
@@ -450,6 +552,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
                     rows={5}
                     readOnly={readOnly}
                     onChange={(body) => update(item.key, { body })}
+                    focusRequest={focusFor(item.key)}
                   />
                 </div>
               )}
@@ -481,7 +584,9 @@ export const ContractTemplateEditorPage: React.FC = () => {
       </Card>
 
       <Card padding="lg" className="space-y-3">
-        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">{t('contracts.attachments.heading', 'Attachments')}</h2>
+        <h2 id="contract-template-attachments" tabIndex={-1} className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 focus:outline-none">
+          {t('contracts.attachments.heading', 'Attachments')}
+        </h2>
         <AttachmentListEditor idPrefix="contract-template-attachment" value={attachments} onChange={setAttachments} readOnly={readOnly} />
       </Card>
 
@@ -489,6 +594,7 @@ export const ContractTemplateEditorPage: React.FC = () => {
         <Button variant="outline" onClick={() => onPreview()} disabled={busy}>{t('contracts.templates.preview', 'Preview PDF')}</Button>
         {!readOnly && (
           <PermissionGate permission="contracts.templates.manage">
+            <Button variant="outline" onClick={onCheck} disabled={busy || !name.trim()}>{t('contracts.templates.check.run', 'Check')}</Button>
             <Button variant="outline" onClick={onSave} disabled={busy || !name.trim()}>{t('contracts.templates.saveDraft', 'Save draft')}</Button>
             <Button onClick={onPublish} disabled={busy || !name.trim() || items.length === 0}>{t('contracts.templates.publish', 'Publish')}</Button>
           </PermissionGate>

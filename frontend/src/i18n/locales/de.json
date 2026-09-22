@@ -8088,7 +8088,35 @@
       "versionEarlier": "Früher",
       "draftFromVersion": "Neuer Entwurf aus dieser Version",
       "draftFromVersionConfirm": "Den aktuellen Entwurf durch eine Kopie von Version {{version}} ersetzen?",
-      "draftCreated": "Entwurf aus Version {{version}} erstellt"
+      "draftCreated": "Entwurf aus Version {{version}} erstellt",
+      "check": {
+        "run": "Prüfen",
+        "failed": "Die Prüfung konnte nicht ausgeführt werden.",
+        "clause": "Klausel {{position}}",
+        "error": "Fehler",
+        "warning": "Hinweis",
+        "goTo": "Anzeigen",
+        "blocked": "Vor dem Veröffentlichen beheben",
+        "passed": "Bereit zum Veröffentlichen",
+        "pageCount": "{{count}} Seiten im Probedruck",
+        "stale": "Seit der Prüfung geändert — bitte erneut prüfen",
+        "codes": {
+          "NO_CLAUSES": "Fügen Sie vor dem Veröffentlichen mindestens eine Klausel hinzu.",
+          "BLOCK_ARCHIVED": "{{where}}: in der Klauselbibliothek archiviert.",
+          "SECTION_EMPTY": "{{where}}: der Freitext-Abschnitt hat keinen Text.",
+          "PLACEHOLDER_UNKNOWN": "{{where}} ({{locale}}): unbekannter Platzhalter {{key}}.",
+          "CONDITIONAL_NESTED": "{{where}} ({{locale}}): ein „Nur anzeigen, wenn“-Block steht in einem anderen.",
+          "CONDITIONAL_UNCLOSED": "{{where}} ({{locale}}): ein „Nur anzeigen, wenn“-Block ist nicht geschlossen.",
+          "LOCALE_INCOMPLETE": "{{where}}: kein {{locale}}-Text.",
+          "ATTACHMENT_ARCHIVED": "Anhang „{{name}}“ ist in der Anhangbibliothek archiviert.",
+          "ATTACHMENT_MISSING": "Die Datei von Anhang „{{name}}“ fehlt.",
+          "ATTACHMENT_CHANGED": "Die Datei von Anhang „{{name}}“ stimmt nicht mehr mit der hochgeladenen überein.",
+          "FONT_MISSING": "Die Schrift „{{key}}“ konnte nicht geladen werden; das PDF verwendet Helvetica.",
+          "LOGO_MISSING": "Das Logo wurde nicht gefunden; das PDF hat kein Logo.",
+          "PAGE_COUNT_HIGH": "Der Vertrag umfasst {{pages}} Seiten.",
+          "RENDER_FAILED": "Der Vertrag konnte nicht als PDF erstellt werden."
+        }
+      }
     },
     "attachments": {
       "heading": "Anhänge",

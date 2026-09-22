@@ -44,6 +44,7 @@ vi.mock('../../../../hooks/useLocalizedDate', () => ({
 const get = vi.fn();
 const saveDraft = vi.fn();
 const publish = vi.fn();
+const check = vi.fn();
 vi.mock('../../../../services/contractTemplates.service', async () => {
   const actual = await vi.importActual<typeof import('../../../../services/contractTemplates.service')>(
     '../../../../services/contractTemplates.service',
@@ -54,6 +55,7 @@ vi.mock('../../../../services/contractTemplates.service', async () => {
       get: (...args: unknown[]) => get(...args),
       saveDraft: (...args: unknown[]) => saveDraft(...args),
       publish: (...args: unknown[]) => publish(...args),
+      check: (...args: unknown[]) => check(...args),
       previewUrl: vi.fn(),
       draftFromVersion: vi.fn(),
       duplicate: vi.fn(),
@@ -86,7 +88,9 @@ const detail = (lockVersion = 3) => ({
   versions: [],
 });
 
-const apiError = (code: string, error: string) => Object.assign(new Error(error), { response: { data: { code, error } } });
+const apiError = (code: string, error: string, details?: unknown) =>
+  Object.assign(new Error(error), { response: { data: { code, error, details } } });
+const clean = { ok: true, pageCount: 3, itemPages: [{ position: 1, firstPage: 1, lastPage: 1 }], findings: [] };
 
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -105,6 +109,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   get.mockResolvedValue(detail());
   saveDraft.mockResolvedValue(detail(4));
+  check.mockResolvedValue(clean);
+  publish.mockResolvedValue({ ...detail(5), version: 1, contentSha256: 'a'.repeat(64) });
 });
 
 it('saves the clause list with the lockVersion it loaded', async () => {
@@ -136,15 +142,60 @@ it('shows the reload banner when someone else saved first', async () => {
   expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
 });
 
-it('lists every problem the server found when publishing', async () => {
+it('publishing runs the check first and stops on an error, located and in words', async () => {
   const user = userEvent.setup();
-  publish.mockRejectedValue(apiError('TEMPLATE_INVALID',
-    '"Leistung" is archived in the clause library · Unknown placeholders: {{custmer}}'));
+  check.mockResolvedValue({
+    ok: false, pageCount: 3, itemPages: [],
+    findings: [
+      { code: 'PLACEHOLDER_UNKNOWN', severity: 'error', itemPosition: 1, locale: 'en', key: 'custmer', message: 'x' },
+      { code: 'LOCALE_INCOMPLETE', severity: 'warning', itemPosition: 1, locale: 'en', message: 'y' },
+    ],
+  });
   renderPage();
   await screen.findByText('Leistung');
   await user.click(screen.getByRole('button', { name: 'Publish' }));
 
+  expect(await screen.findByText('Clause 1 · Leistung (EN): unknown placeholder {{custmer}}.')).toBeInTheDocument();
+  expect(screen.getByText('Clause 1 · Leistung: no EN text.')).toBeInTheDocument();
+  expect(screen.getByText('Fix these before publishing')).toBeInTheDocument();
+  expect(check).toHaveBeenCalledWith(5);
+  expect(publish).not.toHaveBeenCalled();
+});
+
+it('"Go to" opens the clause in the finding\'s language and focuses its text', async () => {
+  const user = userEvent.setup();
+  check.mockResolvedValue({
+    ok: false, pageCount: 3, itemPages: [],
+    findings: [{ code: 'PLACEHOLDER_UNKNOWN', severity: 'error', itemPosition: 1, locale: 'en', key: 'x', message: 'x' }],
+  });
+  renderPage();
+  await screen.findByText('Leistung');
+  await user.click(screen.getByRole('button', { name: 'Check' }));
+  await user.click(await screen.findByRole('button', { name: 'Go to' }));
+
+  const textarea = await screen.findByRole('textbox', { name: /Text in this template/ });
+  expect(textarea).toHaveAttribute('id', expect.stringMatching(/-body-en$/));
+  await waitFor(() => expect(textarea).toHaveFocus());
+});
+
+it('a clean check publishes; warnings alone do not block', async () => {
+  const user = userEvent.setup();
+  check.mockResolvedValue({
+    ...clean, findings: [{ code: 'PAGE_COUNT_HIGH', severity: 'warning', message: 'long' }],
+  });
+  renderPage();
+  await screen.findByText('Leistung');
+  await user.click(screen.getByRole('button', { name: 'Publish' }));
   await waitFor(() => expect(publish).toHaveBeenCalledWith(5, 4));
-  expect(await screen.findByText('"Leistung" is archived in the clause library')).toBeInTheDocument();
-  expect(screen.getByText('Unknown placeholders: {{custmer}}')).toBeInTheDocument();
+});
+
+it('shows the findings of a publish the server refused', async () => {
+  const user = userEvent.setup();
+  publish.mockRejectedValue(apiError('TEMPLATE_INVALID', 'invalid', {
+    findings: [{ code: 'BLOCK_ARCHIVED', severity: 'error', itemPosition: 1, message: 'archived' }],
+  }));
+  renderPage();
+  await screen.findByText('Leistung');
+  await user.click(screen.getByRole('button', { name: 'Publish' }));
+  expect(await screen.findByText('Clause 1 · Leistung: archived in the clause library.')).toBeInTheDocument();
 });

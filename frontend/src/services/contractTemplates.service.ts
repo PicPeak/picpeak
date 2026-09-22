@@ -91,6 +91,29 @@ export interface ContractTemplateDraftPayload {
   attachments?: AttachmentSelection[];
 }
 
+/** One problem the pre-publication check found, and where it is. */
+export interface TemplateFinding {
+  code: string;
+  severity: 'error' | 'warning';
+  /** 1-based clause position in the saved draft. */
+  itemPosition?: number;
+  locale?: ContractLocale;
+  /** A placeholder key, or the font family for FONT_MISSING. */
+  key?: string;
+  field?: 'intro' | 'outro';
+  attachmentId?: number;
+  message: string;
+}
+
+/** The pre-publication check: findings plus a dry run of the real render. */
+export interface TemplatePublishCheck {
+  ok: boolean;
+  pageCount: number | null;
+  /** The pages each clause spans in the dry run (1-based). */
+  itemPages: Array<{ position: number; firstPage: number; lastPage: number }>;
+  findings: TemplateFinding[];
+}
+
 const base = '/admin/contract-templates';
 const unwrap = <T>(data: { data?: T } & T): T => (data.data || data) as T;
 
@@ -113,6 +136,11 @@ export const contractTemplatesService = {
   },
   async publish(id: number, lockVersion: number): Promise<ContractTemplateDetail & { version: number; contentSha256: string }> {
     const { data } = await api.post(`${base}/${id}/publish`, { lockVersion });
+    return unwrap(data);
+  },
+  /** Check the stored draft the way publishing does, with a dry-run render. */
+  async check(id: number): Promise<TemplatePublishCheck> {
+    const { data } = await api.post(`${base}/${id}/publish-check`);
     return unwrap(data);
   },
   async draftFromVersion(id: number, version: number, lockVersion: number): Promise<ContractTemplateDetail> {
@@ -142,8 +170,10 @@ export const contractTemplatesService = {
   },
 };
 
-/** The API's error message and code, when there is one. */
-export function templateError(err: unknown): { message?: string; code?: string } {
-  const data = (err as { response?: { data?: { error?: string; code?: string } } })?.response?.data;
-  return { message: data?.error, code: data?.code };
+/** The API's error message and code, when there is one, and a refused publish's findings. */
+export function templateError(err: unknown): { message?: string; code?: string; findings?: TemplateFinding[] } {
+  const data = (err as {
+    response?: { data?: { error?: string; code?: string; details?: { findings?: TemplateFinding[] } } };
+  })?.response?.data;
+  return { message: data?.error, code: data?.code, findings: data?.details?.findings };
 }
