@@ -9,7 +9,8 @@ const secureImageService = require('../services/secureImageService');
 const galleryAccessService = require('../services/galleryAccessService');
 const { getStorage } = require('../services/storage');
 const { resolvePhotoStorageKey, resolvePhotoFilePath } = require('../services/photoResolver');
-const { withLocalCopy } = require('../services/imageProcessor');
+const { withLocalCopy, ensurePreviewImage } = require('../services/imageProcessor');
+const { isOriginalWithheld } = require('../services/downloadQuota');
 const { isPhotoHiddenFromViewer, canSeeHiddenPhotos } = require('../utils/photoVisibility');
 const crypto = require('crypto');
 const logger = require('../utils/logger');
@@ -63,6 +64,19 @@ function verifyImageToken(token) {
     return null;
   }
 }
+
+/**
+ * Download limit (issue 1560): while a limit withholds the original, these
+ * routes serve the preview tier instead, as /gallery/:slug/photo does.
+ * Returns undefined when the original may go out, null when it is withheld
+ * and no preview exists, else the preview's storage key.
+ */
+async function withheldPreviewKey(event, photo, isAdminPreview) {
+  if (!(await isOriginalWithheld(event, photo, { isAdminPreview }))) return undefined;
+  return (await ensurePreviewImage(photo)) || null;
+}
+
+const previewContentType = (key) => (key.endsWith('.webp') ? 'image/webp' : 'image/jpeg');
 
 /**
  * Serve protected image with enhanced security
@@ -121,7 +135,9 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
 
     // Resolve photo location through the storage backend (managed) or local
     // disk (external reference mode).
-    const storageKey = resolvePhotoStorageKey(req.event, photo);
+    const previewKey = await withheldPreviewKey(req.event, photo, req.isAdminPreview);
+    if (previewKey === null) return res.status(404).json({ error: 'Preview not available' });
+    const storageKey = previewKey || resolvePhotoStorageKey(req.event, photo);
     const storage = getStorage();
 
     const needsProcessing = eventProtectionLevel === 'enhanced' ||
@@ -154,7 +170,7 @@ router.get('/:slug/photo/:photoId/view', verifyGalleryAccess, blockHiddenGallery
     
     // Set security headers
     res.set({
-      'Content-Type': resolvePhotoContentType(photo),
+      'Content-Type': previewKey ? previewContentType(previewKey) : resolvePhotoContentType(photo),
       'Content-Length': finalImage.length,
       'Cache-Control': 'private, no-cache, no-store, must-revalidate',
       'Pragma': 'no-cache',
@@ -334,14 +350,17 @@ router.get('/:slug/photo/:photoId/signed/:token', async (req, res) => {
 
     // Apply watermark — managed photos are sourced via the storage backend
     // (S3 mode materializes a tmp local copy via withLocalCopy).
-    const storageKey = resolvePhotoStorageKey(event, photo);
+    // The signed URL carries no admin-preview flag, so it is held to the limit.
+    const previewKey = await withheldPreviewKey(event, photo, false);
+    if (previewKey === null) return res.status(404).json({ error: 'Preview not available' });
+    const storageKey = previewKey || resolvePhotoStorageKey(event, photo);
     const imageBuffer = storageKey
       ? await withLocalCopy(storageKey, (lp) => watermarkService.applyWatermark(lp, watermarkSettings))
       : await watermarkService.applyWatermark(resolvePhotoFilePath(event, photo), watermarkSettings);
     
     // Set appropriate headers
     res.set({
-      'Content-Type': resolvePhotoContentType(photo),
+      'Content-Type': previewKey ? previewContentType(previewKey) : resolvePhotoContentType(photo),
       'Content-Length': imageBuffer.length,
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff'

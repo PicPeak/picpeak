@@ -35,11 +35,13 @@ function downloadLimitOf(event) {
  * photo that has since been deleted neither counts nor shows up: SQLite does
  * not run the ON DELETE CASCADE.
  */
-async function grantedPhotoIds(eventId, photoIds = null, conn = db) {
+async function grantedPhotoIds(eventId, photoIds = null, conn = db, { deliveredOnly = false } = {}) {
   let query = conn('event_download_grants')
     .join('photos', 'photos.id', 'event_download_grants.photo_id')
     .where('event_download_grants.event_id', eventId)
     .where('photos.event_id', eventId);
+  // A reserved row belongs to a zip still streaming: counted, not yet handed over.
+  if (deliveredOnly) query = query.whereNull('event_download_grants.reservation');
   if (photoIds) {
     if (photoIds.length === 0) return new Set();
     query = query.whereIn('event_download_grants.photo_id', photoIds);
@@ -94,10 +96,11 @@ async function checkDownloads(event, photoIds, { isAdminPreview = false } = {}) 
  * Admin previews and unlimited events are a no-op.
  *
  * `reserve` is for a zip that grants its whole set before streaming: its new
- * rows are tagged with a reservation id, so revokeGrants can give back the
- * ones it never shipped. Any later request that finds such a row already
- * granted clears the tag — it may deliver the photo, and the aborted zip
- * must then not take that slot back.
+ * rows are tagged with a reservation id, and when the response ends
+ * settleReservation keeps what it shipped and gives back the rest. A
+ * single-shot download that finds a reserved row delivers the photo now, so
+ * it clears the tag and the zip can no longer take that slot back. Another
+ * zip leaves the tag alone: it has not delivered anything yet either.
  */
 async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve = false } = {}) {
   if (isAdminPreview || !downloadLimitOf(event)) return { ok: true, newIds: [] };
@@ -119,7 +122,7 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve
     if (!result.ok) return result;
 
     const fresh = new Set(result.newIds);
-    const reused = ids.filter((id) => !fresh.has(id));
+    const reused = reserve ? [] : ids.filter((id) => !fresh.has(id));
     for (let i = 0; i < reused.length; i += INSERT_CHUNK) {
       await trx('event_download_grants')
         .where('event_id', event.id)
@@ -144,30 +147,42 @@ async function grantDownloads(event, photoIds, { isAdminPreview = false, reserve
 }
 
 /**
- * Give back slots a download took but did not deliver: a zip grants its whole
- * set before streaming, and a photo whose source turns out to be missing is
- * skipped rather than failing the archive. Only pass photos the same request
- * counted for the first time (grantDownloads' newIds) together with its
- * reservation — a photo granted by an earlier download, or reused by another
- * request since, stays granted.
+ * End of a zip that granted with `reserve` (issue 1560). What it shipped
+ * becomes a delivered grant — recreated if an overlapping zip gave the slot
+ * back in the meantime, because the photo did go out. What it counted for the
+ * first time and never shipped (a missing source, a cancelled download) is
+ * given back, but only while the row still carries this zip's reservation: a
+ * single download that delivered the photo meanwhile cleared it.
+ *
+ * Under the same event lock as grantDownloads.
  */
-async function revokeGrants(eventId, photoIds, reservation) {
-  const ids = uniqueIds(photoIds);
-  if (ids.length === 0 || !reservation) return 0;
-  // Under the same event lock as grantDownloads: a request that has just read
-  // a reserved row as granted clears its tag before this may delete it.
-  return db.transaction(async (trx) => {
+async function settleReservation(eventId, quota, shippedIds) {
+  if (!quota || !quota.reservation) return;
+  const shipped = uniqueIds(shippedIds);
+  const unshipped = undeliveredGrants(quota, shipped);
+  if (shipped.length === 0 && unshipped.length === 0) return;
+  await db.transaction(async (trx) => {
     if (trx.client.config.client === 'pg') {
       await trx('events').where({ id: eventId }).forUpdate().first();
     }
-    let removed = 0;
-    for (let i = 0; i < ids.length; i += INSERT_CHUNK) {
-      removed += await trx('event_download_grants')
-        .where({ event_id: eventId, reservation })
-        .whereIn('photo_id', ids.slice(i, i + INSERT_CHUNK))
+    const grantedAt = new Date().toISOString();
+    for (let i = 0; i < shipped.length; i += INSERT_CHUNK) {
+      const rows = shipped.slice(i, i + INSERT_CHUNK).map((photoId) => ({
+        event_id: eventId,
+        photo_id: photoId,
+        guest_id: null,
+        granted_at: grantedAt,
+        reservation: null,
+      }));
+      await trx('event_download_grants').insert(rows)
+        .onConflict(['event_id', 'photo_id']).merge(['reservation']);
+    }
+    for (let i = 0; i < unshipped.length; i += INSERT_CHUNK) {
+      await trx('event_download_grants')
+        .where({ event_id: eventId, reservation: quota.reservation })
+        .whereIn('photo_id', unshipped.slice(i, i + INSERT_CHUNK))
         .del();
     }
-    return removed;
   });
 }
 
@@ -203,7 +218,8 @@ async function resetGrants(eventId) {
  */
 async function isOriginalWithheld(event, photo, { isAdminPreview = false } = {}) {
   if (isAdminPreview || !downloadLimitOf(event)) return false;
-  const granted = await grantedPhotoIds(event.id, [Number(photo.id)]);
+  // Delivered grants only: a zip still streaming may yet give the slot back.
+  const granted = await grantedPhotoIds(event.id, [Number(photo.id)], db, { deliveredOnly: true });
   return !granted.has(Number(photo.id));
 }
 
@@ -216,7 +232,7 @@ module.exports = {
   grantDownloads,
   downloadLimitError,
   resetGrants,
-  revokeGrants,
+  settleReservation,
   undeliveredGrants,
   isOriginalWithheld,
 };

@@ -31,21 +31,20 @@ const { buildContentDisposition } = require('../../utils/filenameSanitizer');
 const { getStorage } = require('../../services/storage');
 const { createArchiveStreamGuard } = require('../../utils/archiveStreamGuard');
 const {
-  downloadLimitOf, grantDownloads, checkDownloads, downloadLimitError, revokeGrants, undeliveredGrants,
+  downloadLimitOf, grantDownloads, checkDownloads, downloadLimitError, settleReservation,
 } = require('../../services/downloadQuota');
 const fs = require('fs');
 /**
  * Download limit (issue 1560). A zip grants its whole set before the first
- * byte; when the response ends, whatever archiver never wrote gets its slot
- * back — a photo skipped for a missing source, or everything left when the
- * guest cancels. Entries carry their photoId into archiver's 'entry' event.
+ * byte; when the response ends, what archiver wrote is settled as delivered
+ * and whatever it never wrote gets its slot back — a photo skipped for a
+ * missing source, or everything left when the guest cancels. Entries carry
+ * their photoId into archiver's 'entry' event.
  */
 function releaseUnshipped(req, res, quota) {
   const shipped = [];
   res.once('close', () => {
-    const unshipped = undeliveredGrants(quota, shipped);
-    if (unshipped.length === 0) return;
-    revokeGrants(req.event.id, unshipped, quota.reservation).catch((err) => logger.warn('Could not release undelivered download grants', {
+    settleReservation(req.event.id, quota, shipped).catch((err) => logger.warn('Could not settle download grants', {
       eventId: req.event.id, error: err.message,
     }));
   });

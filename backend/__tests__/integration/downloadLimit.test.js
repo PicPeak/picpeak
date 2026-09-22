@@ -134,6 +134,7 @@ describe('Download limit (issue 1560)', () => {
     app.use('/api/gallery', require('../../src/routes/gallery'));
     app.use('/api/admin/events', require('../../src/routes/adminEvents'));
     app.use('/api/secure-images', require('../../src/routes/secureImages'));
+    app.use('/api/images', require('../../src/routes/protectedImages'));
   }, 120000);
 
   afterAll(async () => {
@@ -276,12 +277,36 @@ describe('Download limit (issue 1560)', () => {
       const { event, photoIds } = await makeEvent({ limit: 3 });
       const zip = await quota.grantDownloads(event, photoIds.slice(0, 2), { reserve: true });
       expect(zip.ok).toBe(true);
+      // While the zip is reserved, its photos keep the preview.
+      expect(await quota.isOriginalWithheld(event, { id: photoIds[0] })).toBe(true);
       // A single download of the first photo while the zip is still streaming.
       expect((await quota.grantDownloads(event, [photoIds[0]])).newIds).toEqual([]);
+      expect(await quota.isOriginalWithheld(event, { id: photoIds[0] })).toBe(false);
       // The zip is cancelled before either photo went out.
-      expect(await quota.revokeGrants(event.id, zip.newIds, zip.reservation)).toBe(1);
-      expect(await grantCount(event.id)).toBe(1);
-      expect(await quota.revokeGrants(event.id, [photoIds[0]], null)).toBe(0);
+      await quota.settleReservation(event.id, zip, []);
+      expect([...(await quota.grantedPhotoIds(event.id))]).toEqual([photoIds[0]]);
+    });
+
+    it('overlapping zips keep a photo neither shipped refundable, and one that shipped counted', async () => {
+      const { event, photoIds } = await makeEvent({ limit: 3 });
+      const a = await quota.grantDownloads(event, photoIds.slice(0, 2), { reserve: true });
+      const b = await quota.grantDownloads(event, photoIds.slice(0, 2), { reserve: true });
+      expect(b.newIds).toEqual([]);
+      // b ships the second photo, then a is cancelled having shipped nothing.
+      await quota.settleReservation(event.id, b, [photoIds[1]]);
+      await quota.settleReservation(event.id, a, []);
+      expect([...(await quota.grantedPhotoIds(event.id))]).toEqual([photoIds[1]]);
+      expect(await quota.isOriginalWithheld(event, { id: photoIds[1] })).toBe(false);
+    });
+
+    it('a zip that shipped a photo after an overlapping zip gave its slot back still counts it', async () => {
+      const { event, photoIds } = await makeEvent({ limit: 3 });
+      const a = await quota.grantDownloads(event, [photoIds[0]], { reserve: true });
+      const b = await quota.grantDownloads(event, [photoIds[0]], { reserve: true });
+      await quota.settleReservation(event.id, a, []);
+      expect(await grantCount(event.id)).toBe(0);
+      await quota.settleReservation(event.id, b, [photoIds[0]]);
+      expect([...(await quota.grantedPhotoIds(event.id))]).toEqual([photoIds[0]]);
     });
 
     it('a HEAD probe of download-all takes none of the quota', async () => {
@@ -448,6 +473,25 @@ describe('Download limit (issue 1560)', () => {
 
       await quota.grantDownloads(event, [photoIds[0]]);
       const granted = await view(photoIds[0], mint(photoIds[0]));
+      expect(granted.status).toBe(200);
+      expect(Buffer.compare(granted.body, jpeg)).toBe(0);
+    });
+
+    it('the legacy protected-image route serves the preview of a non-granted image', async () => {
+      const { event, photoIds, token } = await makeEvent({ limit: 2 });
+      await db('events').where({ id: event.id }).update({ protection_level: 'basic', add_fingerprint: 0 });
+      const view = (photoId) => request(app)
+        .get(`/api/images/${event.slug}/photo/${photoId}/view`)
+        .set('Authorization', `Bearer ${token}`)
+        .buffer(true)
+        .parse((res, cb) => { const c = []; res.on('data', (d) => c.push(d)); res.on('end', () => cb(null, Buffer.concat(c))); });
+
+      const withheld = await view(photoIds[1]);
+      expect(withheld.status).toBe(200);
+      expect(Buffer.compare(withheld.body, jpeg)).not.toBe(0);
+
+      await quota.grantDownloads(event, [photoIds[0]]);
+      const granted = await view(photoIds[0]);
       expect(granted.status).toBe(200);
       expect(Buffer.compare(granted.body, jpeg)).toBe(0);
     });

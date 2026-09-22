@@ -402,6 +402,11 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
   const eventQuota = await getQuota(event);
   const downloadQuota = adminPreview ? null : eventQuota;
   const grantedIds = downloadQuota ? await grantedPhotoIds(event.id) : new Set();
+  // A zip still streaming holds reserved grants it may give back; its photos
+  // keep the preview until it has shipped them.
+  const deliveredIds = downloadQuota
+    ? await grantedPhotoIds(event.id, null, undefined, { deliveredOnly: true })
+    : new Set();
   const withholdOriginals = !!downloadQuota;
 
   return {
@@ -500,7 +505,7 @@ async function getGalleryPhotos({ event, query = {}, identity, accessLevel, admi
       // A limited gallery withholds the original of every image it has not
       // granted yet (routes/gallery/media.js), so point straight at the
       // preview instead of at a redirect.
-      const originalWithheld = withholdOriginals && !isVideo && !grantedIds.has(Number(photo.id));
+      const originalWithheld = withholdOriginals && !isVideo && !deliveredIds.has(Number(photo.id));
       const photoUrl = !useJwtUrl
         ? `/api/secure-images/${slug}/secure/${photo.id}/{{token}}`
         : originalWithheld
