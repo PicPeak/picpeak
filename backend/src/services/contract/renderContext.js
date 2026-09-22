@@ -179,8 +179,14 @@ function parseContentSnapshot(value) {
   }
 }
 
-/** The current snapshot format. See buildContentSnapshot. */
-const SNAPSHOT_FORMAT = 2;
+/**
+ * The current snapshot format. See buildContentSnapshot. Format 3 changes no
+ * field: it marks a snapshot whose placeholder values are escaped for the
+ * body's markup (renderTemplatedBody). One sent before that rendered its
+ * values as they were — `**ACME**` in a customer name printed bold — and its
+ * stored PDF says so, so it keeps being read that way.
+ */
+const SNAPSHOT_FORMAT = 3;
 
 /**
  * The columns of a quote line the contract renderer reads, coerced to the
@@ -302,10 +308,12 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
   const clauses = snapshot ? snapshot.clauses : orderedClauses(contract, inclusions, textSections || []);
   const intro = snapshot ? snapshot.introText : contract.intro_text;
   const outro = snapshot ? snapshot.outroText : contract.outro_text;
+  const output = snapshot && ensureInt(snapshot.format) < 3 ? 'text' : 'markdown';
+  const render = (template) => renderTemplatedBody(template, placeholders, { output });
   return {
     title: snapshot ? snapshot.title : (contract.title || ''),
-    introText: intro ? renderTemplatedBody(intro, placeholders) : null,
-    outroText: outro ? renderTemplatedBody(outro, placeholders) : null,
+    introText: intro ? render(intro) : null,
+    outroText: outro ? render(outro) : null,
     // Placeholders filled in, then a leading `**Title**` line dropped: the
     // clause name is already printed as its heading. Inline `**bold**`
     // stays for the PDF (the signing page strips it).
@@ -326,7 +334,7 @@ async function resolveDisplayContent(contract, inclusions, textSections, locale,
         slug: clause.slug,
         name: clause.name,
         section: clause.section,
-        body: String(renderTemplatedBody(content.pickLocale(clause.body, locale), placeholders) || '')
+        body: String(render(content.pickLocale(clause.body, locale)) || '')
           .replace(/^\s*\*\*[^*\n]+\*\*\s*\n+/, ''),
       }))
       .filter((clause) => clause.slug === 'quote_line_items_table' || clause.body.trim() !== ''),

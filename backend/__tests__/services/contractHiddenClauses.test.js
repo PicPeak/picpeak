@@ -8,8 +8,8 @@ const pdfService = require('../../src/services/pdfService');
 const { resolveDisplayContent } = require('../../src/services/contract/renderContext');
 const { publicContractView } = require('../../src/services/contract/publicView');
 
-const snapshot = (placeholders) => JSON.stringify({
-  format: 2, title: 'Vertrag', introText: '', outroText: '', placeholders,
+const snapshot = (placeholders, format = 3) => JSON.stringify({
+  format, title: 'Vertrag', introText: '', outroText: '', placeholders,
   clauses: [
     { kind: 'text', blockId: null, section: 'scope', position: 1, slug: null, name: 'Leistung', body: { de: 'Fotos.' } },
     { kind: 'text', blockId: null, section: 'scope', position: 2, slug: null, name: 'Anlass', body: { de: '{{#if event_name}}Für {{event_name}}.{{/if}}' } },
@@ -56,4 +56,13 @@ test('the signing page shows no heading for a hidden clause or an emptied sectio
   const view = publicContractView({ status: 'sent' }, await display({ event_name: '', source_quote_number: 'Q-1' }), null, null, null, null);
   expect(view.sections.map((s) => s.section)).toEqual(['scope']);
   expect(view.sections[0].blocks.map((b) => b.name)).toEqual(['Leistung']);
+});
+
+test('values are escaped for the markup from format 3; an earlier snapshot keeps reading them as before', async () => {
+  const body = (d) => d.sections[0].blocks.find((b) => b.name === 'Anlass').body;
+  const current = await display({ event_name: '**Gala**', source_quote_number: '' });
+  expect(body(current)).toBe('Für \\*\\*Gala\\*\\*.');
+  // Sent before values were escaped: its stored PDF printed the value's markup.
+  const earlier = await resolveDisplayContent({ rendered_content: snapshot({ event_name: '**Gala**', source_quote_number: '' }, 2) }, [], [], 'de');
+  expect(body(earlier)).toBe('Für **Gala**.');
 });
