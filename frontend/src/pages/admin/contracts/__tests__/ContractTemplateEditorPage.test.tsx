@@ -3,7 +3,7 @@
  * the clause list, a concurrent save shows the reload banner instead of
  * overwriting, and publishing lists every problem the server found.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -138,15 +138,59 @@ it('saves the clause list with the lockVersion it loaded', async () => {
   })));
 });
 
-it('shows the reload banner when someone else saved first', async () => {
+it('a conflict keeps the local text, pauses autosave, and "Keep mine" saves it over the new version', async () => {
   const user = userEvent.setup();
-  saveDraft.mockRejectedValue(apiError('TEMPLATE_CONFLICT', 'Someone else changed this template.'));
+  saveDraft.mockRejectedValueOnce(apiError('TEMPLATE_CONFLICT', 'Someone else changed this template.'));
   renderPage();
   await screen.findByText('Leistung');
+  const title = screen.getByLabelText('Contract title');
+  await user.clear(title);
+  await user.type(title, 'Mein Titel');
   await user.click(screen.getByRole('button', { name: 'Save draft' }));
 
-  expect(await screen.findByText(/Someone else saved this template while you were editing/)).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
+  expect(await screen.findByText('Changed by someone else.')).toBeInTheDocument();
+  expect(screen.getByLabelText('Contract title')).toHaveValue('Mein Titel');
+  expect(screen.getByTestId('autosave-status')).toHaveTextContent('Not saved — changed by someone else');
+
+  // Their version is at lock 7 now; mine goes on top of it.
+  get.mockResolvedValue(detail(7));
+  saveDraft.mockResolvedValue(detail(8));
+  await user.click(screen.getByRole('button', { name: 'Keep mine' }));
+  await waitFor(() => expect(saveDraft).toHaveBeenLastCalledWith(5, expect.objectContaining({ lockVersion: 7, title: 'Mein Titel' })));
+  expect(screen.queryByText('Changed by someone else.')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Contract title')).toHaveValue('Mein Titel');
+});
+
+it('"Take theirs" loads the other version, and Undo brings mine back', async () => {
+  const user = userEvent.setup();
+  saveDraft.mockRejectedValueOnce(apiError('TEMPLATE_CONFLICT', 'conflict'));
+  renderPage();
+  await screen.findByText('Leistung');
+  const title = screen.getByLabelText('Contract title');
+  await user.clear(title);
+  await user.type(title, 'Mein Titel');
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+  await screen.findByText('Changed by someone else.');
+
+  const theirs = detail(9);
+  get.mockResolvedValue({ ...theirs, draft: { ...theirs.draft, title: 'Ihr Titel' } });
+  await user.click(screen.getByRole('button', { name: 'Take theirs' }));
+  await waitFor(() => expect(screen.getByLabelText('Contract title')).toHaveValue('Ihr Titel'));
+  await user.click(screen.getByRole('button', { name: 'Undo' }));
+  expect(screen.getByLabelText('Contract title')).toHaveValue('Mein Titel');
+});
+
+it('"Compare" shows their version against mine', async () => {
+  const user = userEvent.setup();
+  saveDraft.mockRejectedValueOnce(apiError('TEMPLATE_CONFLICT', 'conflict'));
+  renderPage();
+  await screen.findByText('Leistung');
+  await user.click(screen.getByRole('button', { name: 'Add free text' }));
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+  await screen.findByText('Changed by someone else.');
+  await user.click(screen.getByRole('button', { name: 'Compare' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Their version and yours' });
+  expect(dialog).toHaveTextContent('Added');
 });
 
 it('publishing runs the check first and stops on an error, located and in words', async () => {
@@ -193,7 +237,9 @@ it('a clean check publishes; warnings alone do not block', async () => {
   renderPage();
   await screen.findByText('Leistung');
   await user.click(screen.getByRole('button', { name: 'Publish' }));
-  await waitFor(() => expect(publish).toHaveBeenCalledWith(5, 4));
+  // Nothing changed since loading: no save, the loaded lock goes to publish.
+  await waitFor(() => expect(publish).toHaveBeenCalledWith(5, 3));
+  expect(saveDraft).not.toHaveBeenCalled();
 });
 
 it('shows the findings of a publish the server refused', async () => {
@@ -249,4 +295,118 @@ it('the version history names the publisher and compares a version with the one 
   expect(dialog).toHaveTextContent('Frist');
   expect(dialog.querySelector('del')).toHaveTextContent('30');
   expect(dialog.querySelector('ins')).toHaveTextContent('14');
+});
+
+const twoClauses = () => {
+  const d = detail();
+  return {
+    ...d,
+    draft: {
+      ...d.draft,
+      items: [
+        ...d.draft.items,
+        { kind: 'text', blockId: null, section: 'closing', heading: 'Schluss', body: { de: 'Ende' }, snapshot: {}, block: null },
+      ],
+    },
+  };
+};
+const clauseNames = () => screen.getAllByRole('listitem')
+  .map((li) => li.getAttribute('data-clause-key') && li.textContent)
+  .filter(Boolean)
+  .map((text) => (String(text).includes('Leistung') ? 'Leistung' : 'Schluss'));
+
+describe('autosave', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('saves two seconds after the last change and says so', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderPage();
+    await screen.findByText('Leistung');
+    expect(screen.getByTestId('autosave-status')).toHaveTextContent('No unsaved changes');
+    await user.type(screen.getByLabelText('Contract title'), 'X');
+    expect(screen.getByTestId('autosave-status')).toHaveTextContent('Unsaved changes');
+    expect(saveDraft).not.toHaveBeenCalled();
+
+    await act(async () => { vi.advanceTimersByTime(1500); });
+    expect(saveDraft).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(600); });
+    await waitFor(() => expect(saveDraft).toHaveBeenCalledTimes(1));
+    expect(saveDraft).toHaveBeenCalledWith(5, expect.objectContaining({ lockVersion: 3, title: 'HochzeitsvertragX' }));
+    await waitFor(() => expect(screen.getByTestId('autosave-status')).toHaveTextContent(/^Saved /));
+  });
+
+  it('stops after a conflict: no further saves until the admin decides', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    saveDraft.mockRejectedValue(apiError('TEMPLATE_CONFLICT', 'conflict'));
+    renderPage();
+    await screen.findByText('Leistung');
+    await user.type(screen.getByLabelText('Contract title'), 'X');
+    await act(async () => { vi.advanceTimersByTime(2100); });
+    await screen.findByText('Changed by someone else.');
+    await user.type(screen.getByLabelText('Contract title'), 'Y');
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(saveDraft).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Contract title')).toHaveValue('HochzeitsvertragXY');
+  });
+});
+
+it('guards leaving the page only while there are unsaved changes', async () => {
+  const user = userEvent.setup();
+  const added = vi.spyOn(window, 'addEventListener');
+  const removed = vi.spyOn(window, 'removeEventListener');
+  renderPage();
+  await screen.findByText('Leistung');
+  const guards = () => added.mock.calls.filter(([type]) => type === 'beforeunload').length;
+  expect(guards()).toBe(0);
+  await user.type(screen.getByLabelText('Contract title'), 'X');
+  expect(guards()).toBe(1);
+  await user.click(screen.getByRole('button', { name: 'Save draft' }));
+  await waitFor(() => expect(removed.mock.calls.some(([type]) => type === 'beforeunload')).toBe(true));
+  added.mockRestore();
+  removed.mockRestore();
+});
+
+it('moves clauses with the buttons and Alt+arrows, and Undo restores the order', async () => {
+  const user = userEvent.setup();
+  get.mockResolvedValue(twoClauses());
+  renderPage();
+  await screen.findByText('Schluss');
+  expect(clauseNames()).toEqual(['Leistung', 'Schluss']);
+
+  await user.click(screen.getAllByRole('button', { name: 'Move down' })[0]);
+  expect(clauseNames()).toEqual(['Schluss', 'Leistung']);
+  await user.click(screen.getByRole('button', { name: 'Undo' }));
+  expect(clauseNames()).toEqual(['Leistung', 'Schluss']);
+  await user.click(screen.getByRole('button', { name: 'Redo' }));
+  expect(clauseNames()).toEqual(['Schluss', 'Leistung']);
+
+  // Alt+↑ on the focused clause's handle.
+  const handle = screen.getByRole('button', { name: /Move “Leistung”/ });
+  handle.focus();
+  await user.keyboard('{Alt>}{ArrowUp}{/Alt}');
+  expect(clauseNames()).toEqual(['Leistung', 'Schluss']);
+
+  // Ctrl+Z outside a text field undoes the move.
+  (document.activeElement as HTMLElement).blur();
+  await user.keyboard('{Control>}z{/Control}');
+  expect(clauseNames()).toEqual(['Schluss', 'Leistung']);
+});
+
+it('marks where the dry run broke the pages between clauses', async () => {
+  const user = userEvent.setup();
+  get.mockResolvedValue(twoClauses());
+  check.mockResolvedValue({
+    ok: true, pageCount: 4, findings: [],
+    itemPages: [{ position: 1, firstPage: 1, lastPage: 2 }, { position: 2, firstPage: 3, lastPage: 3 }],
+  });
+  renderPage();
+  await screen.findByText('Schluss');
+  await user.click(screen.getByRole('button', { name: 'Check' }));
+  expect(await screen.findByText('page 3')).toBeInTheDocument();
+  expect(screen.getByText('pages 1–2')).toBeInTheDocument();
+
+  await user.type(screen.getByLabelText('Contract title'), 'X');
+  expect(screen.getByText(/page 3 · before your latest changes/)).toBeInTheDocument();
 });

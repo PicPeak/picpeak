@@ -7974,7 +7974,11 @@
       "templateHint": "The contract starts with this template's clauses and texts. You can adjust them once it's created.",
       "templateNoneHint": "Pick the clauses yourself below.",
       "textSections": "Free-text sections",
-      "textSectionsHint": "These come from the template and stay as they are when you save."
+      "textSectionsHint": "These come from the template and stay as they are when you save.",
+      "conflictTitle": "Changed by someone else.",
+      "conflictBody": "This contract was saved elsewhere while you were editing. Your changes are still here and were not saved.",
+      "keepMine": "Keep mine",
+      "takeTheirs": "Take theirs"
     },
     "blocks": {
       "back": "Back to contracts",
@@ -8044,8 +8048,6 @@
       "actionFailed": "That didn't work. Please try again.",
       "languages": "Languages",
       "systemNotice": "The standard template can't be edited. Duplicate it to make a version of your own.",
-      "conflict": "Someone else saved this template while you were editing. Reload to see their version — the changes you made here since loading will be lost.",
-      "reload": "Reload",
       "details": "Details",
       "name": "Name",
       "useCase": "Use case",
@@ -8153,6 +8155,42 @@
           "moved": "Moved",
           "changed": "Changed"
         }
+      },
+      "undo": "Undo",
+      "redo": "Redo",
+      "undoHint": "Undo (Ctrl+Z)",
+      "redoHint": "Redo (Shift+Ctrl+Z)",
+      "autosave": {
+        "saving": "Saving…",
+        "conflict": "Not saved — changed by someone else",
+        "offline": "Offline — your changes are kept here",
+        "error": "Not saved",
+        "unsaved": "Unsaved changes",
+        "saved": "Saved {{time}}",
+        "upToDate": "No unsaved changes"
+      },
+      "conflictTitle": "Changed by someone else.",
+      "conflictBody": "Another admin saved this template while you were editing. Autosave is paused and your changes are still here.",
+      "conflictCompare": "Compare",
+      "keepMine": "Keep mine",
+      "takeTheirs": "Take theirs",
+      "keptMine": "Your version is saved",
+      "conflictCompareTitle": "Their version and yours",
+      "conflictCompareSubtitle": "What you would change in the version saved by someone else",
+      "reorderHint": "Reorder with the handle, the arrow buttons, or Alt+↑/↓ on a clause.",
+      "dragHandle": "Move “{{name}}” (drag, or Space then arrow keys)",
+      "pageBreaks": {
+        "hint": "Run “Check” to see where the pages break.",
+        "page": "page {{page}}",
+        "stale": "before your latest changes",
+        "spans": "pages {{first}}–{{last}}"
+      },
+      "dnd": {
+        "start": "Picked up {{name}}, position {{position}} of {{count}}.",
+        "over": "{{name}} is now at position {{position}} of {{count}}.",
+        "end": "{{name}} dropped at position {{position}} of {{count}}.",
+        "cancel": "Moving {{name}} was cancelled.",
+        "instructions": "To move a clause, press Space or Enter, move it with the arrow keys, and press Space or Enter again to drop it. Press Escape to cancel."
       }
     },
     "attachments": {

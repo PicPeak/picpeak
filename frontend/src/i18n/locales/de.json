@@ -7975,7 +7975,11 @@
       "templateHint": "Der Vertrag beginnt mit den Klauseln und Texten dieser Vorlage. Nach dem Erstellen können Sie sie anpassen.",
       "templateNoneHint": "Wählen Sie die Klauseln unten selbst aus.",
       "textSections": "Freitext-Abschnitte",
-      "textSectionsHint": "Diese stammen aus der Vorlage und bleiben beim Speichern unverändert."
+      "textSectionsHint": "Diese stammen aus der Vorlage und bleiben beim Speichern unverändert.",
+      "conflictTitle": "Von jemand anderem geändert.",
+      "conflictBody": "Dieser Vertrag wurde anderswo gespeichert, während Sie ihn bearbeitet haben. Ihre Änderungen sind noch da und wurden nicht gespeichert.",
+      "keepMine": "Meine behalten",
+      "takeTheirs": "Ihre übernehmen"
     },
     "blocks": {
       "back": "Zurück zu den Verträgen",
@@ -8045,8 +8049,6 @@
       "actionFailed": "Das hat nicht geklappt. Bitte versuchen Sie es erneut.",
       "languages": "Sprachen",
       "systemNotice": "Die mitgelieferte Vorlage lässt sich nicht bearbeiten. Duplizieren Sie sie, um eine eigene Fassung anzulegen.",
-      "conflict": "Jemand anderes hat diese Vorlage gespeichert, während Sie sie bearbeitet haben. Laden Sie neu, um diese Fassung zu sehen — Ihre Änderungen seit dem Laden gehen dabei verloren.",
-      "reload": "Neu laden",
       "details": "Angaben",
       "name": "Name",
       "useCase": "Einsatzzweck",
@@ -8154,6 +8156,42 @@
           "moved": "Verschoben",
           "changed": "Geändert"
         }
+      },
+      "undo": "Rückgängig",
+      "redo": "Wiederholen",
+      "undoHint": "Rückgängig (Strg+Z)",
+      "redoHint": "Wiederholen (Umschalt+Strg+Z)",
+      "autosave": {
+        "saving": "Wird gespeichert…",
+        "conflict": "Nicht gespeichert — von jemand anderem geändert",
+        "offline": "Offline — Ihre Änderungen bleiben hier erhalten",
+        "error": "Nicht gespeichert",
+        "unsaved": "Ungespeicherte Änderungen",
+        "saved": "Gespeichert {{time}}",
+        "upToDate": "Keine ungespeicherten Änderungen"
+      },
+      "conflictTitle": "Von jemand anderem geändert.",
+      "conflictBody": "Eine andere Person hat diese Vorlage gespeichert, während Sie sie bearbeitet haben. Automatisches Speichern ist angehalten, Ihre Änderungen sind noch da.",
+      "conflictCompare": "Vergleichen",
+      "keepMine": "Meine behalten",
+      "takeTheirs": "Ihre übernehmen",
+      "keptMine": "Ihre Fassung ist gespeichert",
+      "conflictCompareTitle": "Deren Fassung und Ihre",
+      "conflictCompareSubtitle": "Was Sie an der von jemand anderem gespeicherten Fassung ändern würden",
+      "reorderHint": "Umsortieren mit dem Griff, den Pfeiltasten-Schaltflächen oder Alt+↑/↓ auf einer Klausel.",
+      "dragHandle": "„{{name}}“ verschieben (ziehen, oder Leertaste und Pfeiltasten)",
+      "pageBreaks": {
+        "hint": "„Prüfen“ zeigt, wo die Seiten umbrechen.",
+        "page": "Seite {{page}}",
+        "stale": "vor Ihren letzten Änderungen",
+        "spans": "Seiten {{first}}–{{last}}"
+      },
+      "dnd": {
+        "start": "{{name}} aufgenommen, Position {{position}} von {{count}}.",
+        "over": "{{name}} ist jetzt an Position {{position}} von {{count}}.",
+        "end": "{{name}} an Position {{position}} von {{count}} abgelegt.",
+        "cancel": "Verschieben von {{name}} abgebrochen.",
+        "instructions": "Um eine Klausel zu verschieben, drücken Sie Leertaste oder Enter, bewegen Sie sie mit den Pfeiltasten und drücken Sie erneut Leertaste oder Enter zum Ablegen. Escape bricht ab."
       }
     },
     "attachments": {

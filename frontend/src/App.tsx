@@ -49,6 +49,8 @@ import { HoursLoggingPage } from './pages/admin/clients/HoursLoggingPage';
 // (carved into its own chunk in vite.config.ts) doesn't ship with the
 // main app. Only pages that visit /admin/clients/calendar fetch it.
 const CalendarPage = lazy(() => import('./pages/admin/clients/CalendarPage').then((m) => ({ default: m.CalendarPage })));
+// Its own chunk: the template editor carries the drag-and-drop library (#1445).
+const ContractTemplateEditorPage = lazy(() => import('./pages/admin/contracts/ContractTemplateEditorPage').then((m) => ({ default: m.ContractTemplateEditorPage })));
 const MessagesPage = lazy(() => import('./pages/admin/messages/MessagesPage').then((m) => ({ default: m.MessagesPage })));
 import { QuoteResponsePage } from './pages/public/QuoteResponsePage';
 import { ContractResponsePage, ContractSigningSessionPage } from './pages/public/ContractResponsePage';
@@ -62,7 +64,6 @@ import { ContractEditorPage } from './pages/admin/contracts/ContractEditorPage';
 import { ContractDetailPage } from './pages/admin/contracts/ContractDetailPage';
 import { BlockLibraryPage } from './pages/admin/contracts/BlockLibraryPage';
 import { ContractTemplatesPage } from './pages/admin/contracts/ContractTemplatesPage';
-import { ContractTemplateEditorPage } from './pages/admin/contracts/ContractTemplateEditorPage';
 import { ContractAttachmentsPage } from './pages/admin/contracts/ContractAttachmentsPage';
 import { PaymentCheckPage } from './pages/public/PaymentCheckPage';
 import { AcceptInvitePage } from './pages/public/AcceptInvitePage';
@@ -328,7 +329,7 @@ function App() {
                             <Route path="contracts/new" element={<ContractEditorPage />} />
                             <Route path="contracts/blocks" element={<BlockLibraryPage />} />
                             <Route path="contracts/templates" element={<ContractTemplatesPage />} />
-                            <Route path="contracts/templates/:id" element={<ContractTemplateEditorPage />} />
+                            <Route path="contracts/templates/:id" element={<Suspense fallback={<Loading />}><ContractTemplateEditorPage /></Suspense>} />
                             <Route path="contracts/attachments" element={<ContractAttachmentsPage />} />
                             <Route path="contracts/:id" element={<ContractDetailPage />} />
                             <Route path="contracts/:id/edit" element={<ContractEditorPage />} />

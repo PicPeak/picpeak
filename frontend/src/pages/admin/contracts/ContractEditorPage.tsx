@@ -88,6 +88,13 @@ export const ContractEditorPage: React.FC = () => {
   // before the admin could read which field was wrong or whether a draft now
   // existed (issue 1447).
   const [saveError, setSaveError] = useState<SaveErrorView | null>(null);
+  // Another admin saved this contract since it was loaded (409 CONTRACT_CONFLICT).
+  // Nothing on the form is dropped: the admin keeps theirs or takes the other one.
+  const [conflict, setConflict] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  // The contract the form was filled from. A refetch (window focus, a save
+  // elsewhere on the page) must not overwrite what is being edited.
+  const hydratedFor = useRef<number | null>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   // One key per attempt to create this draft, kept across retries until a
   // create succeeds. When a response is lost after the server committed, the
@@ -182,10 +189,10 @@ export const ContractEditorPage: React.FC = () => {
 
   // Customer search moved into <CustomerPicker> (C.5).
 
-  // Hydrate state from server when the existing contract loads.
-  useEffect(() => {
-    if (!existing) return;
-    const c = existing.contract;
+  // Hydrate state from server when the existing contract loads — once, or
+  // again when the admin takes the other version after a conflict.
+  const hydrate = (c: NonNullable<typeof existing>['contract']) => {
+    hydratedFor.current = c.id;
     setCustomerAccountId(c.customerAccountId);
     setCustomerLabel(
       c.customer.companyName
@@ -223,6 +230,11 @@ export const ContractEditorPage: React.FC = () => {
       included: inc.included,
       position: inc.position,
     })));
+  };
+  useEffect(() => {
+    if (!existing || hydratedFor.current === existing.contract.id) return;
+    hydrate(existing.contract);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing]);
 
   // When creating new (no existing contract loaded yet), seed blocks
@@ -374,7 +386,9 @@ export const ContractEditorPage: React.FC = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async () => {
+    // `lock` replaces the loaded lockVersion when the admin keeps their
+    // version over one saved in between.
+    mutationFn: async (lock?: number) => {
       if (!numericId) return;
       await contractsService.update(numericId, {
         title: title || null,
@@ -391,7 +405,7 @@ export const ContractEditorPage: React.FC = () => {
         blocks: blocks.map((b) => ({
           blockId: b.blockId, included: b.included, position: b.position,
         })),
-        lockVersion: lockVersion ?? undefined,
+        lockVersion: lock ?? lockVersion ?? undefined,
         attachments: attachments.map((a) => ({ attachmentId: a.attachmentId, delivery: a.delivery })),
       });
     },
@@ -401,6 +415,10 @@ export const ContractEditorPage: React.FC = () => {
     },
     onError: (err: unknown) => {
       const view = describeSaveError(err);
+      if (view.code === 'CONTRACT_CONFLICT') {
+        setConflict(true);
+        return;
+      }
       if (view.kind === 'unconfirmed' || view.kind === 'server') outcomeUncertainRef.current = true;
       setSaveError(view);
     },
@@ -413,8 +431,40 @@ export const ContractEditorPage: React.FC = () => {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setSaveError(null);
-    if (isEdit) updateMutation.mutate();
+    if (isEdit) updateMutation.mutate(undefined);
     else createMutation.mutate(attemptRef.current);
+  }
+
+  /** The contract as it is saved now, bypassing the cache. */
+  const fetchTheirs = () => contractsService.get(numericId as number);
+
+  async function keepMine() {
+    if (submittingRef.current) return;
+    setResolving(true);
+    try {
+      const theirs = await fetchTheirs();
+      const lock = theirs.contract.lockVersion ?? undefined;
+      setLockVersion(lock ?? null);
+      setConflict(false);
+      submittingRef.current = true;
+      updateMutation.mutate(lock);
+    } catch (err) {
+      setSaveError(describeSaveError(err));
+    } finally {
+      setResolving(false);
+    }
+  }
+
+  async function takeTheirs() {
+    setResolving(true);
+    try {
+      hydrate((await fetchTheirs()).contract);
+      setConflict(false);
+    } catch (err) {
+      setSaveError(describeSaveError(err));
+    } finally {
+      setResolving(false);
+    }
   }
 
   // Localised label + corrective action for a field the server rejected.
@@ -594,6 +644,20 @@ export const ContractEditorPage: React.FC = () => {
         </Button>
       </div>
 
+      {conflict && (
+        <div role="alert" className="mb-4 p-3 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 text-sm text-amber-900 dark:text-amber-200 flex flex-wrap items-center gap-3">
+          <p className="flex-1">
+            <strong>{t('contracts.editor.conflictTitle', 'Changed by someone else.')}</strong>{' '}
+            {t('contracts.editor.conflictBody', 'This contract was saved elsewhere while you were editing. Your changes are still here and were not saved.')}
+          </p>
+          <Button variant="outline" size="sm" onClick={keepMine} disabled={resolving || isSaving}>
+            {t('contracts.editor.keepMine', 'Keep mine')}
+          </Button>
+          <Button variant="outline" size="sm" onClick={takeTheirs} disabled={resolving || isSaving}>
+            {t('contracts.editor.takeTheirs', 'Take theirs')}
+          </Button>
+        </div>
+      )}
       {saveError && (
         <div
           ref={summaryRef}
